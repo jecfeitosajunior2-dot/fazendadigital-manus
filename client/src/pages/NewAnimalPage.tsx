@@ -123,7 +123,7 @@ export const NewAnimalPage: React.FC = () => {
                     value={formData.animalId}
                     onChange={handleChange}
                     placeholder="ex: ABC123456"
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F] ${
+                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${
                       errors.animalId ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
@@ -142,7 +142,7 @@ export const NewAnimalPage: React.FC = () => {
                     value={formData.earringId}
                     onChange={handleChange}
                     placeholder="ex: 123456"
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   />
                 </div>
 
@@ -156,7 +156,7 @@ export const NewAnimalPage: React.FC = () => {
                     value={formData.sisbovId}
                     onChange={handleChange}
                     placeholder="ex: 65487"
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   />
                 </div>
               </div>
@@ -175,7 +175,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="birthDate"
                     value={formData.birthDate}
                     onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F] ${
+                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${
                       errors.birthDate ? 'border-red-500' : 'border-gray-300'
                     }`}
                   />
@@ -192,7 +192,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="sex"
                     value={formData.sex}
                     onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F] ${
+                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${
                       errors.sex ? 'border-red-500' : 'border-gray-300'
                     }`}
                   >
@@ -213,7 +213,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="breedStandard"
                     value={formData.breedStandard}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   >
                     <option value="">Selecione</option>
                     <option value="Nelore">Nelore</option>
@@ -230,7 +230,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="activity"
                     value={formData.activity}
                     onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F] ${
+                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${
                       errors.activity ? 'border-red-500' : 'border-gray-300'
                     }`}
                   >
@@ -259,7 +259,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="category"
                     value={formData.category}
                     onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F] ${
+                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${
                       errors.category ? 'border-red-500' : 'border-gray-300'
                     }`}
                   >
@@ -290,7 +290,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="farm"
                     value={formData.farm}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   >
                     <option value="">Selecione</option>
                     <option value="Fazenda Fazenda Digital">Fazenda Fazenda Digital</option>
@@ -307,7 +307,7 @@ export const NewAnimalPage: React.FC = () => {
                     name="subdivision"
                     value={formData.subdivision}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   >
                     <option value="">Selecione</option>
                     <option value="Lote Vacas">Lote Vacas</option>
@@ -327,7 +327,7 @@ export const NewAnimalPage: React.FC = () => {
                     value={formData.tags}
                     onChange={handleChange}
                     placeholder="ex: Premium, Reprodutor"
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   />
                 </div>
               </div>
@@ -344,7 +344,7 @@ export const NewAnimalPage: React.FC = () => {
                 onChange={handleChange}
                 placeholder="Adicione observações sobre o animal..."
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
               />
             </div>
 
@@ -360,7 +360,7 @@ export const NewAnimalPage: React.FC = () => {
               <Button
                 type="submit"
                 className="text-white"
-                style={{ backgroundColor: '#2D6A4F' }}
+                style={{ backgroundColor: '#4ECDC4' }}
               >
                 Salvar Animal
               </Button>

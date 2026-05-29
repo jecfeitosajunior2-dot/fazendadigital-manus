@@ -221,7 +221,7 @@ export function EditAnimalPage() {
             </Button>
             <Button
               onClick={handleSave}
-              style={{ backgroundColor: "#2D6A4F" }}
+              style={{ backgroundColor: "#4ECDC4" }}
               className="text-white"
             >
               Salvar Alterações

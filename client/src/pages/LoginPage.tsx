@@ -64,7 +64,7 @@ function LoginPage() {
               type="email"
               value={email}
               onChange={e => { setEmail(e.target.value); setError(""); }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#1B4332] transition-colors"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30 transition-colors"
               placeholder="seu@email.com"
             />
           </div>
@@ -77,7 +77,7 @@ function LoginPage() {
                 type={showPwd ? "text" : "password"}
                 value={password}
                 onChange={e => { setPassword(e.target.value); setError(""); }}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#1B4332] transition-colors pr-10"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30 transition-colors pr-10"
                 placeholder="••••••••"
               />
               <button
@@ -92,7 +92,7 @@ function LoginPage() {
 
           {/* Forgot password */}
           <div className="text-right mb-5">
-            <a href="#" className="text-[11px] text-gray-500 hover:text-[#1B4332]">Esqueceu a senha?</a>
+            <a href="#" className="text-[11px] text-gray-500 hover:text-[#4ECDC4] transition-colors">Esqueceu a senha?</a>
           </div>
 
           {/* Submit */}
@@ -100,9 +100,9 @@ function LoginPage() {
             type="submit"
             disabled={loading}
             className="w-full py-2.5 rounded text-white font-medium text-[14px] uppercase tracking-wide transition-all disabled:opacity-70"
-            style={{ backgroundColor: "#1B4332" }}
-            onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#2D6A4F")}
-            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#1B4332")}
+            style={{ backgroundColor: "#2D5A5A" }}
+            onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#4ECDC4")}
+            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#2D5A5A")}
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -118,7 +118,7 @@ function LoginPage() {
         {/* Register link */}
         <p className="text-center mt-5 text-[12px] text-gray-500">
           Não tem uma conta?{" "}
-          <a href="#" className="font-medium" style={{ color: "#1B4332" }}>Cadastre-se</a>
+          <a href="#" className="font-medium transition-colors" style={{ color: "#4ECDC4" }}>Cadastre-se</a>
         </p>
 
         {/* Footer */}

@@ -22,7 +22,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   };
 
   return (
-    <header className="h-[48px] flex items-center justify-between px-4" style={{ background: "linear-gradient(135deg, #1B4332, #2D6A4F)" }}>
+    <header className="h-[48px] flex items-center justify-between px-4" style={{ background: "linear-gradient(135deg, #2D5A5A, #4ECDC4)" }}>
       {/* Left: hamburger for mobile */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (
@@ -34,7 +34,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         <div className="md:hidden flex items-center gap-2">
           <img src="/manus-storage/fazenda-icone-quadrado_323f2f9a.png" alt="Fazenda Digital" className="h-[28px] w-[28px] rounded-md object-cover" />
           <span className="text-white font-extrabold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, letterSpacing: "0.03em" }}>
-            <span>Fazenda</span>{" "}<span style={{ color: "#C9A227" }}>Digital</span>
+            <span>Fazenda</span>{" "}<span style={{ color: "#FFFFFF" }}>Digital</span>
           </span>
         </div>
       </div>

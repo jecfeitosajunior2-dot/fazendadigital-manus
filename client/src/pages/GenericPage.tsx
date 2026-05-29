@@ -107,7 +107,7 @@ export function AnimaisPage() {
           <button
             onClick={() => setLocation('/rebanho/novo-animal')}
             className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase hover:opacity-90 cursor-pointer"
-            style={{ backgroundColor: "#2D6A4F" }}
+            style={{ backgroundColor: "#4ECDC4" }}
           >
             <span className="material-icons text-[14px]">add</span>
             Novo Animal
@@ -148,7 +148,7 @@ export function AnimaisPage() {
             placeholder="Pesquisar..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#2D6A4F]"
+            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#4ECDC4]"
           />
         </div>
         {(farmFilter || subdivisionFilter || breedFilter || search) && (
@@ -185,7 +185,7 @@ export function AnimaisPage() {
             <tbody>
               {paginated.map((animal, i) => (
                 <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.animalId}`)}>
-                  <td className="px-2 py-2 font-medium cursor-pointer hover:underline" style={{ color: "#2D6A4F" }}>{animal.animalId}</td>
+                  <td className="px-2 py-2 font-medium cursor-pointer hover:underline" style={{ color: "#4ECDC4" }}>{animal.animalId}</td>
                   <td className="px-2 py-2 text-gray-700">{animal.electronicId}</td>
                   <td className="px-2 py-2 text-gray-500">{animal.managementId || "-"}</td>
                   <td className="px-2 py-2 text-gray-700">{animal.birthDate}</td>
@@ -240,7 +240,7 @@ export function AnimaisPage() {
                 key={p}
                 onClick={() => setPage(p)}
                 className={`px-2 py-0.5 rounded text-[10px] font-medium ${p === page ? "text-white" : "text-gray-500 hover:bg-gray-100"}`}
-                style={p === page ? { backgroundColor: "#2D6A4F" } : {}}
+                style={p === page ? { backgroundColor: "#4ECDC4" } : {}}
               >
                 {p}
               </button>
@@ -275,7 +275,7 @@ export function EstoquePage() {
         <div className="flex items-center gap-2">
           <button
             className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
-            style={{ backgroundColor: "#2D6A4F" }}
+            style={{ backgroundColor: "#4ECDC4" }}
           >
             <span className="material-icons text-[14px]">add</span>
             Nova Entrada
@@ -297,7 +297,7 @@ export function EstoquePage() {
             placeholder="Pesquisar..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#2D6A4F]"
+            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#4ECDC4]"
           />
         </div>
       </div>
@@ -354,7 +354,7 @@ export function ContasPage() {
         <h1 className="text-[15px] font-medium text-gray-800">Contas</h1>
         <button
           className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase w-fit"
-          style={{ backgroundColor: "#2D6A4F" }}
+          style={{ backgroundColor: "#4ECDC4" }}
         >
           <span className="material-icons text-[14px]">add</span>
           Nova Conta
@@ -402,7 +402,7 @@ export function PlaceholderPage({ title, subtitle }: { title: string; subtitle: 
         <h1 className="text-[15px] font-medium text-gray-800">{title}</h1>
         <button
           className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
-          style={{ backgroundColor: "#2D6A4F" }}
+          style={{ backgroundColor: "#4ECDC4" }}
         >
           <span className="material-icons text-[14px]">add</span>
           Novo
