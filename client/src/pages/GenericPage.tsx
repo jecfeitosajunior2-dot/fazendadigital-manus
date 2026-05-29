@@ -2,8 +2,11 @@ import { useState, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import { animalsList, stockItems, financialAccounts } from "@/lib/data";
 
+import { useLocation } from 'wouter';
+
 // --- Animals Page (exact iRancho replica with functional search) ---
 export function AnimaisPage() {
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
@@ -106,7 +109,7 @@ export function AnimaisPage() {
             </thead>
             <tbody>
               {paginated.map((animal, i) => (
-                <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors">
+                <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.animalId}`)}>
                   <td className="px-2 py-2 font-medium cursor-pointer hover:underline" style={{ color: "#94B40B" }}>{animal.animalId}</td>
                   <td className="px-2 py-2 text-gray-700">{animal.electronicId}</td>
                   <td className="px-2 py-2 text-gray-500">{animal.managementId || "-"}</td>

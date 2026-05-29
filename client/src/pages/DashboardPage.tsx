@@ -1,20 +1,54 @@
 import AppLayout from "@/components/AppLayout";
 import { herdByAge, monitoredStock } from "@/lib/data";
-
-const kpis = [
-  { value: "243", label: "Animais ativos", sub: "-", color: "", icon: "" },
-  { value: "0", label: "Nascimentos", sub: "Desde 01/05/2026", color: "#4CAF50", icon: "arrow_upward" },
-  { value: "0", label: "Mortes", sub: "Desde 01/05/2026", color: "#F44336", icon: "arrow_downward" },
-  { value: "0", label: "Vendas", sub: "Desde 01/05/2026", color: "", icon: "" },
-  { value: "0.02", label: "Taxa de lotação (UA)", sub: "-", color: "", icon: "" },
-];
+import { useCattle } from "@/contexts/CattleContext";
 
 function BarChart() {
-  const maxVal = Math.max(...herdByAge.map(r => Math.max(r.male, r.female)));
+  const { cattle } = useCattle();
+  
+  // Calculate age groups from imported cattle
+  const ageGroups = [
+    { age: '0-8', male: 0, female: 0 },
+    { age: '9-12', male: 0, female: 0 },
+    { age: '13-24', male: 0, female: 0 },
+    { age: '25-36', male: 0, female: 0 },
+    { age: '36+', male: 0, female: 0 },
+  ];
+
+  // If we have imported cattle, calculate from them
+  if (cattle.length > 0) {
+    cattle.forEach(c => {
+      const birthDate = new Date(c.birthDate.split('/').reverse().join('-'));
+      const today = new Date();
+      const ageInMonths = (today.getFullYear() - birthDate.getFullYear()) * 12 + 
+                          (today.getMonth() - birthDate.getMonth());
+      
+      const isMale = c.sex === 'Macho';
+      
+      if (ageInMonths <= 8) {
+        isMale ? ageGroups[0].male++ : ageGroups[0].female++;
+      } else if (ageInMonths <= 12) {
+        isMale ? ageGroups[1].male++ : ageGroups[1].female++;
+      } else if (ageInMonths <= 24) {
+        isMale ? ageGroups[2].male++ : ageGroups[2].female++;
+      } else if (ageInMonths <= 36) {
+        isMale ? ageGroups[3].male++ : ageGroups[3].female++;
+      } else {
+        isMale ? ageGroups[4].male++ : ageGroups[4].female++;
+      }
+    });
+  } else {
+    // Use default data if no cattle imported
+    ageGroups[0] = { age: '0-8', male: 25, female: 25 };
+    ageGroups[1] = { age: '9-12', male: 14, female: 15 };
+    ageGroups[4] = { age: '36+', male: 69, female: 95 };
+  }
+
+  const maxVal = Math.max(...ageGroups.map(r => Math.max(r.male, r.female)));
+  
   return (
     <div className="px-4 py-3">
       <div className="flex items-end gap-2 justify-center h-[120px] sm:h-[140px]">
-        {herdByAge.map((row, i) => (
+        {ageGroups.map((row, i) => (
           <div key={i} className="flex flex-col items-center gap-1 flex-1">
             <div className="flex items-end gap-[2px] h-[100px] sm:h-[120px]">
               <div
@@ -53,6 +87,18 @@ function BarChart() {
 }
 
 export default function DashboardPage() {
+  const { cattle, getCattleStats } = useCattle();
+  const stats = getCattleStats();
+
+  // Use imported cattle stats if available, otherwise use defaults
+  const kpis = [
+    { value: cattle.length > 0 ? String(stats.total) : "243", label: "Animais ativos", sub: "-", color: "", icon: "" },
+    { value: "0", label: "Nascimentos", sub: "Desde 01/05/2026", color: "#4CAF50", icon: "arrow_upward" },
+    { value: "0", label: "Mortes", sub: "Desde 01/05/2026", color: "#F44336", icon: "arrow_downward" },
+    { value: cattle.length > 0 ? String(stats.sold) : "0", label: "Vendas", sub: "Desde 01/05/2026", color: "", icon: "" },
+    { value: "0.02", label: "Taxa de lotação (UA)", sub: "-", color: "", icon: "" },
+  ];
+
   return (
     <AppLayout>
       {/* Page title */}
@@ -170,6 +216,61 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Resumo de Sanitário, Vendas e Financeiro se houver dados importados */}
+      {cattle.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+          <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Resumo Sanitário</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Vacinados:</span>
+                <span className="font-bold text-green-600">{stats.vaccinated}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Não Vacinados:</span>
+                <span className="font-bold text-orange-600">{stats.notVaccinated}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Pendentes:</span>
+                <span className="font-bold text-yellow-600">{stats.pending}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Resumo de Vendas</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Vendidos:</span>
+                <span className="font-bold text-purple-600">{stats.sold}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Ativos:</span>
+                <span className="font-bold text-blue-600">{stats.active}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Descartados:</span>
+                <span className="font-bold text-red-600">{stats.discarded}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Resumo Financeiro</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Receita Total:</span>
+                <span className="font-bold text-green-600">R$ {stats.totalRevenue.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Preço Médio:</span>
+                <span className="font-bold text-green-600">R$ {stats.averagePrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

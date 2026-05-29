@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { CattleProvider } from "./contexts/CattleContext";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import { AnimaisPage, EstoquePage, ContasPage } from "./pages/GenericPage";
@@ -44,6 +45,7 @@ import {
   QuickAccessPage,
 } from "./pages/ModulePages";
 import BulkCattleImportPage from "./pages/BulkCattleImportPage";
+import CattleDetailPage from "./pages/CattleDetailPage";
 
 function Router() {
   return (
@@ -70,8 +72,9 @@ function Router() {
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
       <Route path="/rebanho/lotes" component={LotsPage} />
       <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
+      <Route path="/rebanho/detalhes-animal" component={CattleDetailPage} />
       
-      {/* Management */}
+      {/* Manejos */}
       <Route path="/manejos/meus" component={MyManagementsPage} />
       <Route path="/manejos/criar" component={CreateManagementPage} />
       <Route path="/manejos/listar" component={ListManagementsPage} />
@@ -126,10 +129,12 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <CattleProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </CattleProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
