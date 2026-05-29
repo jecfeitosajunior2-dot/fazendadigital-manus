@@ -25,13 +25,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           style={{ backgroundColor: "#EC5D24" }}
         >
           <span className="hidden sm:inline">
-            Você está utilizando uma versão de teste do iRancho e ainda possui <strong>7 dias de teste</strong> restantes.
+            Você está utilizando uma versão de teste do Fazenda Digital e ainda possui <strong>7 dias de teste</strong> restantes.
           </span>
           <span className="sm:hidden text-[11px]">
             Versão de teste — <strong>7 dias</strong> restantes.
           </span>
           <a href="#" className="underline text-white/90 hover:text-white ml-1">
-            Para assinar, entre em contato: (62)99981-1720 / contato@irancho.com.br
+            Para assinar, entre em contato: (62)99981-1720 / contato@fazenda-digital.com.br
           </a>
         </div>
         {/* Content area */}
@@ -40,7 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
         {/* Footer */}
         <footer className="px-4 py-3 text-center text-[11px] text-gray-400 border-t border-gray-200">
-          © Copyright 2026 | Desenvolvido por iRancho
+          © Copyright 2026 | Desenvolvido por Fazenda Digital
         </footer>
       </div>
     </div>

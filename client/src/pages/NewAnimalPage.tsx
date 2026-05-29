@@ -293,7 +293,7 @@ export const NewAnimalPage: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#94B40B]"
                   >
                     <option value="">Selecione</option>
-                    <option value="Fazenda iRancho">Fazenda iRancho</option>
+                    <option value="Fazenda Fazenda Digital">Fazenda Fazenda Digital</option>
                     <option value="Fazenda Alma Viva">Fazenda Alma Viva</option>
                     <option value="Fazenda Rancho 2">Fazenda Rancho 2</option>
                   </select>

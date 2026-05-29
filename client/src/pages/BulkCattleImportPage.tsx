@@ -225,7 +225,7 @@ export const BulkCattleImportPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-irancho-content p-6">
+    <div className="min-h-screen bg-fazenda-digital-content p-6">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Importação em Massa de Gados</h1>
@@ -240,7 +240,7 @@ export const BulkCattleImportPage: React.FC = () => {
                   onClick={() => setImportMode('manual')}
                   className={`px-4 py-2 rounded font-medium transition ${
                     importMode === 'manual'
-                      ? 'bg-irancho-green text-white'
+                      ? 'bg-fazenda-digital-green text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
@@ -250,7 +250,7 @@ export const BulkCattleImportPage: React.FC = () => {
                   onClick={() => setImportMode('csv')}
                   className={`px-4 py-2 rounded font-medium transition ${
                     importMode === 'csv'
-                      ? 'bg-irancho-green text-white'
+                      ? 'bg-fazenda-digital-green text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
@@ -328,7 +328,7 @@ export const BulkCattleImportPage: React.FC = () => {
                 <Button
                   onClick={handleImport}
                   disabled={isImporting}
-                  className="bg-irancho-green hover:bg-irancho-green-dark text-white"
+                  className="bg-fazenda-digital-green hover:bg-fazenda-digital-green-dark text-white"
                 >
                   <Upload className="w-4 h-4 mr-2" />
                   {isImporting ? 'Importando...' : 'Iniciar Importação'}
@@ -341,7 +341,7 @@ export const BulkCattleImportPage: React.FC = () => {
         {showResults && stats && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="p-4 border-l-4 border-irancho-green">
+              <Card className="p-4 border-l-4 border-fazenda-digital-green">
                 <div className="text-sm text-gray-600 mb-1">Total de Animais</div>
                 <div className="text-2xl font-bold text-gray-800">{stats.totalAnimals}</div>
               </Card>
@@ -367,13 +367,13 @@ export const BulkCattleImportPage: React.FC = () => {
 
             <Card className="p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                <CheckCircle2 className="w-5 h-5 mr-2 text-irancho-green" />
+                <CheckCircle2 className="w-5 h-5 mr-2 text-fazenda-digital-green" />
                 Resumo Sanitário
               </h3>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <div className="text-sm text-gray-600">Vacinados</div>
-                  <div className="text-xl font-bold text-irancho-green">{stats.vaccinated}</div>
+                  <div className="text-xl font-bold text-fazenda-digital-green">{stats.vaccinated}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-600">Não Vacinados</div>

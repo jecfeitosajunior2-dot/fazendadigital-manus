@@ -171,7 +171,7 @@ export function EditAnimalPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Fazenda</label>
                 <Select value={formData.farm} onValueChange={(value) => handleSelectChange("farm", value)}>
                   <option value="">Selecione</option>
-                  <option value="Fazenda iRancho">Fazenda iRancho</option>
+                  <option value="Fazenda Fazenda Digital">Fazenda Fazenda Digital</option>
                   <option value="Fazenda Alma Viva">Fazenda Alma Viva</option>
                   <option value="Fazenda Rancho 2">Fazenda Rancho 2</option>
                 </Select>

@@ -138,15 +138,15 @@
   }
 }
 
-/* iRancho exact colors (from real app inspection) */
-.bg-irancho-sidebar { background-color: #3B2110; }
-.bg-irancho-topbar { background-color: #3B2110; }
-.bg-irancho-trial { background-color: #EC5D24; }
-.bg-irancho-content { background-color: #F4F3EF; }
-.bg-irancho-green { background-color: #94B40B; }
-.text-irancho-green { color: #94B40B; }
-.border-irancho-green { border-color: #94B40B; }
-.hover\:bg-irancho-green-dark:hover { background-color: #7A9500; }
+/* Fazenda Digital exact colors (from real app inspection) */
+.bg-fazenda-digital-sidebar { background-color: #3B2110; }
+.bg-fazenda-digital-topbar { background-color: #3B2110; }
+.bg-fazenda-digital-trial { background-color: #EC5D24; }
+.bg-fazenda-digital-content { background-color: #F4F3EF; }
+.bg-fazenda-digital-green { background-color: #94B40B; }
+.text-fazenda-digital-green { color: #94B40B; }
+.border-fazenda-digital-green { border-color: #94B40B; }
+.hover\:bg-fazenda-digital-green-dark:hover { background-color: #7A9500; }
 
 /* Mobile-specific styles */
 @media (max-width: 767px) {

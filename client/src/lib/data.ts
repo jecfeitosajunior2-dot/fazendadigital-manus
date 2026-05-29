@@ -1,4 +1,4 @@
-// Menu structure - réplica exata do iRancho sidebar
+// Menu structure - réplica exata do Fazenda Digital sidebar
 export interface MenuItem {
   label: string;
   icon: string;
@@ -207,5 +207,5 @@ export const stockItems = [
 export const users = [
   { email: "pngomes1@gmail.com", password: "123456", name: "Pedro Gomes" },
   { email: "pngomes1@teste.com", password: "12345678", name: "Pedro Gomes" },
-  { email: "demo@irancho.com", password: "demo123", name: "Usuário Demo" },
+  { email: "demo@fazenda-digital.com", password: "demo123", name: "Usuário Demo" },
 ];

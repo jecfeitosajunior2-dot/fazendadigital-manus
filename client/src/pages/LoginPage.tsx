@@ -123,7 +123,7 @@ function LoginPage() {
         </p>
 
         {/* Footer */}
-        <p className="text-center mt-6 text-[10px] text-gray-400">© 2026 iRancho</p>
+        <p className="text-center mt-6 text-[10px] text-gray-400">© 2026 Fazenda Digital</p>
       </div>
     </div>
   );

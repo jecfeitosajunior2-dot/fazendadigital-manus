@@ -4,7 +4,7 @@ import { animalsList, stockItems, financialAccounts } from "@/lib/data";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 
-// --- Animals Page (exact iRancho replica with functional search) ---
+// --- Animals Page (exact Fazenda Digital replica with functional search) ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
@@ -15,7 +15,7 @@ export function AnimaisPage() {
   const perPage = 50;
 
   // Get unique values for dropdowns
-  const farms = ["Fazenda iRancho", "Fazenda Alma Viva", "Fazenda Rancho 2"];
+  const farms = ["Fazenda Fazenda Digital", "Fazenda Alma Viva", "Fazenda Rancho 2"];
   const subdivisions = ["Lote Vacas", "Lote Bezerros (as)", "Lote Engorda", "Lote Recria", "Lote novilhas da estação"];
   const breeds = ["Nelore", "Nelore Mocho", "Senepol"];
 
