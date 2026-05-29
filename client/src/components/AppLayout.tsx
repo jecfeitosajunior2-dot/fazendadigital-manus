@@ -25,10 +25,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           <span className="material-icons text-[16px]">warning</span>
           <span>
-            You are using an iRancho trial version and still have <strong>7 trial days</strong> left.
+            Você está utilizando uma versão de teste do iRancho e ainda possui <strong>7 dias de teste</strong> restantes.
           </span>
           <a href="#" className="ml-1 underline text-white/90 hover:text-white">
-            To subscribe, contact us: (62)99981-1720 / contato@irancho.com.br
+            Para assinar, entre em contato: (62)99981-1720 / contato@irancho.com.br
           </a>
         </div>
         {/* Content area */}
@@ -37,7 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
         {/* Footer */}
         <footer className="px-4 py-3 text-center text-[11px] text-gray-400 border-t border-gray-200">
-          © Copyright 2026 | Developed by iRancho
+          © Copyright 2026 | Desenvolvido por iRancho
         </footer>
       </div>
     </div>

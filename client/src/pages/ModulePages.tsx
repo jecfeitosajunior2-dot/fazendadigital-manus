@@ -2,17 +2,17 @@ import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
 
 // ============================================================
-// FARMS MODULE
+// MÓDULO FAZENDAS
 // ============================================================
 
 export function FarmsOverviewPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Farms Overview</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Farm
+          Nova Fazenda
         </button>
       </div>
       <div className="grid grid-cols-3 gap-4 mb-4">
@@ -23,7 +23,7 @@ export function FarmsOverviewPage() {
             </div>
             <div>
               <div className="text-[18px] font-bold text-gray-800">1</div>
-              <div className="text-[11px] text-gray-500">Registered farms</div>
+              <div className="text-[11px] text-gray-500">Fazendas cadastradas</div>
             </div>
           </div>
         </div>
@@ -34,7 +34,7 @@ export function FarmsOverviewPage() {
             </div>
             <div>
               <div className="text-[18px] font-bold text-gray-800">450 ha</div>
-              <div className="text-[11px] text-gray-500">Total area</div>
+              <div className="text-[11px] text-gray-500">Área total</div>
             </div>
           </div>
         </div>
@@ -45,7 +45,7 @@ export function FarmsOverviewPage() {
             </div>
             <div>
               <div className="text-[18px] font-bold text-gray-800">12</div>
-              <div className="text-[11px] text-gray-500">Subdivisions</div>
+              <div className="text-[11px] text-gray-500">Subdivisões</div>
             </div>
           </div>
         </div>
@@ -54,11 +54,11 @@ export function FarmsOverviewPage() {
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Farm</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">City/State</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Area (ha)</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Subdivisions</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animals</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Fazenda</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Cidade/Estado</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Subdivisões</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -88,20 +88,20 @@ export function FarmsListPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Farms</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Farm
+          Nova Fazenda
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">City</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">State</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Area (ha)</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Cidade</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Estado</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -128,36 +128,36 @@ export function FarmsListPage() {
 
 export function SubdivisionsPage() {
   const subdivisions = [
-    { name: "Pasto 1", area: "40.00", type: "Pasture", animals: 32 },
-    { name: "Pasto 2", area: "35.00", type: "Pasture", animals: 28 },
-    { name: "Pasto 3", area: "50.00", type: "Pasture", animals: 41 },
-    { name: "Pasto 4", area: "45.00", type: "Pasture", animals: 35 },
-    { name: "Retiro Norte", area: "60.00", type: "Retreat", animals: 22 },
-    { name: "Retiro Sul", area: "55.00", type: "Retreat", animals: 18 },
-    { name: "Confinamento", area: "10.00", type: "Feedlot", animals: 40 },
-    { name: "Maternidade", area: "15.00", type: "Maternity", animals: 12 },
-    { name: "Curral", area: "2.00", type: "Corral", animals: 0 },
-    { name: "Reserva Legal", area: "80.00", type: "Reserve", animals: 0 },
-    { name: "APP", area: "30.00", type: "Reserve", animals: 0 },
-    { name: "Sede", area: "28.00", type: "Headquarters", animals: 15 },
+    { name: "Pasto 1", area: "40.00", type: "Pasto", animals: 32 },
+    { name: "Pasto 2", area: "35.00", type: "Pasto", animals: 28 },
+    { name: "Pasto 3", area: "50.00", type: "Pasto", animals: 41 },
+    { name: "Pasto 4", area: "45.00", type: "Pasto", animals: 35 },
+    { name: "Retiro Norte", area: "60.00", type: "Retiro", animals: 22 },
+    { name: "Retiro Sul", area: "55.00", type: "Retiro", animals: 18 },
+    { name: "Confinamento", area: "10.00", type: "Confinamento", animals: 40 },
+    { name: "Maternidade", area: "15.00", type: "Maternidade", animals: 12 },
+    { name: "Curral", area: "2.00", type: "Curral", animals: 0 },
+    { name: "Reserva Legal", area: "80.00", type: "Reserva", animals: 0 },
+    { name: "APP", area: "30.00", type: "Reserva", animals: 0 },
+    { name: "Sede", area: "28.00", type: "Sede", animals: 15 },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Subdivisions</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Subdivisões</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Subdivision
+          Nova Subdivisão
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Area (ha)</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animals</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -180,7 +180,7 @@ export function SubdivisionsPage() {
           </tbody>
         </table>
         <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
-          Showing 1-{subdivisions.length} of {subdivisions.length} items
+          Exibindo 1-{subdivisions.length} de {subdivisions.length} itens
         </div>
       </div>
     </AppLayout>
@@ -188,19 +188,19 @@ export function SubdivisionsPage() {
 }
 
 // ============================================================
-// HERD MODULE
+// MÓDULO REBANHO
 // ============================================================
 
 export function HerdOverviewPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Herd Overview</h1>
+      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
       <div className="grid grid-cols-4 gap-4 mb-4">
         {[
-          { label: "Total animals", value: "243", icon: "pets", color: "green" },
-          { label: "Males", value: "108", icon: "male", color: "blue" },
-          { label: "Females", value: "135", icon: "female", color: "pink" },
-          { label: "Average weight", value: "385 kg", icon: "monitor_weight", color: "amber" },
+          { label: "Total de animais", value: "243", icon: "pets", color: "green" },
+          { label: "Machos", value: "108", icon: "male", color: "blue" },
+          { label: "Fêmeas", value: "135", icon: "female", color: "pink" },
+          { label: "Peso médio", value: "385 kg", icon: "monitor_weight", color: "amber" },
         ].map((kpi, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4">
             <div className="flex items-center gap-3">
@@ -217,12 +217,12 @@ export function HerdOverviewPage() {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribution by activity</h2>
+          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribuição por atividade</h2>
           <div className="space-y-2">
             {[
-              { label: "Breeding", value: 145, pct: 60 },
-              { label: "Fattening", value: 52, pct: 21 },
-              { label: "Rearing", value: 46, pct: 19 },
+              { label: "Cria", value: 145, pct: 60 },
+              { label: "Engorda", value: 52, pct: 21 },
+              { label: "Recria", value: 46, pct: 19 },
             ].map((item, i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="text-[11px] text-gray-600 w-20">{item.label}</span>
@@ -235,7 +235,7 @@ export function HerdOverviewPage() {
           </div>
         </div>
         <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribution by breed</h2>
+          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribuição por raça</h2>
           <div className="space-y-2">
             {[
               { label: "Nelore", value: 200, pct: 82 },
@@ -261,21 +261,21 @@ export function HerdMapPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Herd Map</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Mapa do Rebanho</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">swap_horiz</span>
-          New Movement
+          Nova Movimentação
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivision</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Males</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Females</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivisão</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Machos</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Fêmeas</th>
               <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Total</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Capacity</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Capacidade</th>
             </tr>
           </thead>
           <tbody>
@@ -305,29 +305,29 @@ export function HerdMapPage() {
 
 export function LotsPage() {
   const lots = [
-    { name: "Lote Vacas", animals: 69, activity: "Breeding", subdivision: "Pasto 1" },
-    { name: "Lote Bezerros (as)", animals: 50, activity: "Breeding", subdivision: "Maternidade" },
-    { name: "Lote Engorda", animals: 52, activity: "Fattening", subdivision: "Confinamento" },
-    { name: "Lote Recria", animals: 46, activity: "Rearing", subdivision: "Pasto 3" },
-    { name: "Lote novilhas da estação", animals: 26, activity: "Breeding", subdivision: "Pasto 2" },
+    { name: "Lote Vacas", animals: 69, activity: "Cria", subdivision: "Pasto 1" },
+    { name: "Lote Bezerros (as)", animals: 50, activity: "Cria", subdivision: "Maternidade" },
+    { name: "Lote Engorda", animals: 52, activity: "Engorda", subdivision: "Confinamento" },
+    { name: "Lote Recria", animals: 46, activity: "Recria", subdivision: "Pasto 3" },
+    { name: "Lote novilhas da estação", animals: 26, activity: "Cria", subdivision: "Pasto 2" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Lot Management</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Gestão de Lotes</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Lot
+          Novo Lote
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lot</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Activity</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivision</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animals</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lote</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Atividade</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivisão</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -350,7 +350,7 @@ export function LotsPage() {
           </tbody>
         </table>
         <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
-          Showing 1-{lots.length} of {lots.length} items
+          Exibindo 1-{lots.length} de {lots.length} itens
         </div>
       </div>
     </AppLayout>
@@ -358,11 +358,11 @@ export function LotsPage() {
 }
 
 // ============================================================
-// MANAGEMENT MODULE
+// MÓDULO MANEJOS
 // ============================================================
 
 function ManagementTabs({ active }: { active: string }) {
-  const tabs = ["My Managements", "Create Management", "List Managements", "Basic Managements"];
+  const tabs = ["Meus Manejos", "Criar Manejo", "Listar Manejos", "Manejos Básicos"];
   const paths = ["/manejos/meus", "/manejos/criar", "/manejos/listar", "/manejos/basicos"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
@@ -385,17 +385,17 @@ export function MyManagementsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">My Managements</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Meus Manejos</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Handling
+          Novo Manejo
         </button>
       </div>
-      <ManagementTabs active="My Managements" />
+      <ManagementTabs active="Meus Manejos" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">assignment</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No managements assigned to you</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum manejo atribuído a você</p>
       </div>
     </AppLayout>
   );
@@ -405,53 +405,53 @@ export function CreateManagementPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Create Management</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Criar Manejo</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Cancel
+            Cancelar
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
-            Save
+            Salvar
           </button>
         </div>
       </div>
-      <ManagementTabs active="Create Management" />
+      <ManagementTabs active="Criar Manejo" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Management type</label>
+            <label className="block text-[11px] text-gray-600 font-medium mb-1">Tipo de manejo</label>
             <select className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700">
-              <option>Sanitary</option>
-              <option>Reproductive</option>
-              <option>Weighing</option>
+              <option>Sanitário</option>
+              <option>Reprodutivo</option>
+              <option>Pesagem</option>
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Date</label>
+            <label className="block text-[11px] text-gray-600 font-medium mb-1">Data</label>
             <input type="date" className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700" />
           </div>
           <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Lot</label>
+            <label className="block text-[11px] text-gray-600 font-medium mb-1">Lote</label>
             <select className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700">
-              <option>Select a lot</option>
+              <option>Selecione um lote</option>
               <option>Lote Vacas</option>
               <option>Lote Engorda</option>
               <option>Lote Recria</option>
             </select>
           </div>
           <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Responsible</label>
-            <input type="text" placeholder="Enter name" className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700" />
+            <label className="block text-[11px] text-gray-600 font-medium mb-1">Responsável</label>
+            <input type="text" placeholder="Digite o nome" className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700" />
           </div>
         </div>
         <div className="mt-4">
-          <label className="block text-[11px] text-gray-600 font-medium mb-1">Observations</label>
-          <textarea rows={3} className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none" placeholder="Additional notes..." />
+          <label className="block text-[11px] text-gray-600 font-medium mb-1">Observações</label>
+          <textarea rows={3} className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none" placeholder="Notas adicionais..." />
         </div>
         <div className="mt-4 flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             <span className="material-icons text-[14px]">add</span>
-            Add
+            Adicionar
           </button>
         </div>
       </div>
@@ -463,22 +463,22 @@ export function ListManagementsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">List Managements</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Listar Manejos</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Handling
+          Novo Manejo
         </button>
       </div>
-      <ManagementTabs active="List Managements" />
+      <ManagementTabs active="Listar Manejos" />
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Date</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lot</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animals</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Responsible</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lote</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Responsável</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -486,7 +486,7 @@ export function ListManagementsPage() {
           </thead>
           <tbody>
             <tr className="border-t border-gray-50">
-              <td colSpan={6} className="px-3 py-8 text-center text-[12px] text-gray-400">No Data</td>
+              <td colSpan={6} className="px-3 py-8 text-center text-[12px] text-gray-400">Sem Dados</td>
             </tr>
           </tbody>
         </table>
@@ -497,27 +497,27 @@ export function ListManagementsPage() {
 
 export function BasicManagementsPage() {
   const basics = [
-    { name: "Vacinação Aftosa", type: "Sanitary", frequency: "Biannual" },
-    { name: "Vermifugação", type: "Sanitary", frequency: "Quarterly" },
-    { name: "Pesagem", type: "Weighing", frequency: "Monthly" },
-    { name: "IATF", type: "Reproductive", frequency: "Annual" },
+    { name: "Vacinação Aftosa", type: "Sanitário", frequency: "Semestral" },
+    { name: "Vermifugação", type: "Sanitário", frequency: "Trimestral" },
+    { name: "Pesagem", type: "Pesagem", frequency: "Mensal" },
+    { name: "IATF", type: "Reprodutivo", frequency: "Anual" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Basic Managements</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Manejos Básicos</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-          Clone
+          Clonar
         </button>
       </div>
-      <ManagementTabs active="Basic Managements" />
+      <ManagementTabs active="Manejos Básicos" />
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Frequency</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Frequência</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -544,11 +544,11 @@ export function BasicManagementsPage() {
 }
 
 // ============================================================
-// SUPPLIES MODULE
+// MÓDULO INSUMOS
 // ============================================================
 
 function SuppliesTabs({ active }: { active: string }) {
-  const tabs = ["Product List", "Movement", "Monitored", "Below Limit"];
+  const tabs = ["Lista de Produtos", "Movimentação", "Monitorados", "Abaixo do Limite"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
       {tabs.map((tab, i) => (
@@ -569,22 +569,22 @@ export function SuppliesEntriesPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Supplies - Entries</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Insumos - Entradas</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Movement
+            Nova Movimentação
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Register Product
+            Cadastrar Produto
           </button>
         </div>
       </div>
-      <SuppliesTabs active="Movement" />
+      <SuppliesTabs active="Movimentação" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">inventory_2</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No entry records found</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de entrada encontrado</p>
       </div>
     </AppLayout>
   );
@@ -594,38 +594,38 @@ export function SuppliesExitsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Supplies - Exits</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Insumos - Saídas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Movement
+          Nova Movimentação
         </button>
       </div>
-      <SuppliesTabs active="Movement" />
+      <SuppliesTabs active="Movimentação" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">inventory_2</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No exit records found</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de saída encontrado</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// MACHINERY MODULE
+// MÓDULO MÁQUINAS
 // ============================================================
 
 export function MachineryFuelingPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Fueling</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Abastecimento</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Supply
+            Novo Abastecimento
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Filters
+            Filtros
           </button>
         </div>
       </div>
@@ -633,11 +633,11 @@ export function MachineryFuelingPage() {
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Date</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Machine</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Fuel</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Liters</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Cost</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Máquina</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Combustível</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Litros</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Custo</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -645,7 +645,7 @@ export function MachineryFuelingPage() {
           </thead>
           <tbody>
             <tr className="border-t border-gray-50">
-              <td colSpan={6} className="px-3 py-8 text-center text-[12px] text-gray-400">No Data</td>
+              <td colSpan={6} className="px-3 py-8 text-center text-[12px] text-gray-400">Sem Dados</td>
             </tr>
           </tbody>
         </table>
@@ -658,16 +658,16 @@ export function MachineryMaintenancePage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Maintenance</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Manutenção</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Maintenance
+          Nova Manutenção
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">build</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No maintenance records</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de manutenção</p>
       </div>
     </AppLayout>
   );
@@ -675,27 +675,27 @@ export function MachineryMaintenancePage() {
 
 export function MachineryListPage() {
   const machines = [
-    { name: "Trator John Deere 5075", type: "Tractor", year: "2020", plate: "-" },
-    { name: "Caminhonete Hilux", type: "Vehicle", year: "2022", plate: "ABC-1234" },
-    { name: "Pulverizador 600L", type: "Implement", year: "2019", plate: "-" },
+    { name: "Trator John Deere 5075", type: "Trator", year: "2020", plate: "-" },
+    { name: "Caminhonete Hilux", type: "Veículo", year: "2022", plate: "ABC-1234" },
+    { name: "Pulverizador 600L", type: "Implemento", year: "2019", plate: "-" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Machines</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Máquinas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          Register Machinery
+          Cadastrar Máquina
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Year</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Plate</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Ano</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Placa</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -723,11 +723,11 @@ export function MachineryListPage() {
 }
 
 // ============================================================
-// REPRODUCTION MODULE
+// MÓDULO REPRODUÇÃO
 // ============================================================
 
 function ReproductionTabs({ active }: { active: string }) {
-  const tabs = ["Biological Stock", "Exposure", "Harvests"];
+  const tabs = ["Estoque Biológico", "Exposição", "Colheitas"];
   const paths = ["/reproducao/protocolos", "/reproducao/semen", "/reproducao/embrioes"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
@@ -748,34 +748,34 @@ function ReproductionTabs({ active }: { active: string }) {
 
 export function ReproductionProtocolsPage() {
   const stock = [
-    { name: "Sêmen Nelore PO", type: "Semen", qty: 150, batch: "LOT-2025-001" },
-    { name: "Sêmen Angus", type: "Semen", qty: 80, batch: "LOT-2025-002" },
-    { name: "Embrião Nelore", type: "Embryo", qty: 25, batch: "EMB-2025-001" },
+    { name: "Sêmen Nelore PO", type: "Sêmen", qty: 150, batch: "LOT-2025-001" },
+    { name: "Sêmen Angus", type: "Sêmen", qty: 80, batch: "LOT-2025-002" },
+    { name: "Embrião Nelore", type: "Embrião", qty: 25, batch: "EMB-2025-001" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Biological Stock</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Estoque Biológico</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Move Stock
+            Movimentar Estoque
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Biological Stock
+            Novo Estoque Biológico
           </button>
         </div>
       </div>
-      <ReproductionTabs active="Biological Stock" />
+      <ReproductionTabs active="Estoque Biológico" />
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Quantity</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Batch</th>
-              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-20">Actions</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Quantidade</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lote</th>
+              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-20">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -786,10 +786,10 @@ export function ReproductionProtocolsPage() {
                 <td className="px-3 py-1.5 text-right text-gray-700">{s.qty}</td>
                 <td className="px-3 py-1.5 text-gray-500">{s.batch}</td>
                 <td className="px-3 py-1.5 text-center flex items-center justify-center gap-1">
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Statement">
+                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Extrato">
                     <span className="material-icons text-[14px]">receipt_long</span>
                   </button>
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Deactivate">
+                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Desativar">
                     <span className="material-icons text-[14px]">block</span>
                   </button>
                 </td>
@@ -806,22 +806,22 @@ export function ReproductionSemenPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Exposures</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Exposições</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Register Birth Without Exposure
+            Registrar Nascimento Sem Exposição
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Exposure
+            Nova Exposição
           </button>
         </div>
       </div>
-      <ReproductionTabs active="Exposure" />
+      <ReproductionTabs active="Exposição" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">favorite</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No exposure records</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de exposição</p>
       </div>
     </AppLayout>
   );
@@ -831,28 +831,28 @@ export function ReproductionEmbryosPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Harvests</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Colheitas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Harvest
+          Nova Colheita
         </button>
       </div>
-      <ReproductionTabs active="Harvests" />
+      <ReproductionTabs active="Colheitas" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">eco</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No harvest records</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de colheita</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// NUTRITION MODULE
+// MÓDULO NUTRIÇÃO
 // ============================================================
 
 function NutritionTabs({ active }: { active: string }) {
-  const tabs = ["Nutrition Entry", "Formula", "Batch"];
+  const tabs = ["Lançamento Nutrição", "Fórmula", "Lote"];
   const paths = ["/nutricao/dietas", "/nutricao/cochos", "/nutricao/cochos"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
@@ -875,25 +875,25 @@ export function NutritionDietsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Nutrition</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Nutrição</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Nutrition
+            Nova Nutrição
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            New Mix
+            Nova Mistura
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            New Formula
+            Nova Fórmula
           </button>
         </div>
       </div>
-      <NutritionTabs active="Nutrition Entry" />
+      <NutritionTabs active="Lançamento Nutrição" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">restaurant</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No nutrition entries</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum lançamento de nutrição</p>
       </div>
     </AppLayout>
   );
@@ -903,32 +903,32 @@ export function NutritionTroughsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Formula</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Fórmula</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Add Input
+            Adicionar Insumo
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            New Packaging
+            Nova Embalagem
           </button>
         </div>
       </div>
-      <NutritionTabs active="Formula" />
+      <NutritionTabs active="Fórmula" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">science</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No formulas registered</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma fórmula cadastrada</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// PURCHASE AND SALE MODULE
+// MÓDULO COMPRA E VENDA
 // ============================================================
 
 function PurchaseSaleTabs({ active }: { active: string }) {
-  const tabs = ["Purchase Bordero", "Animal Entry", "Sales", "Sales Report"];
+  const tabs = ["Borderô de Compra", "Entrada de Animais", "Vendas", "Relatório de Vendas"];
   const paths = ["/compra-venda/compras", "/compra-venda/compras", "/compra-venda/vendas", "/compra-venda/vendas"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
@@ -951,22 +951,22 @@ export function PurchasesPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Purchase Bordero</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Borderô de Compra</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Search Borderos
+            Buscar Borderôs
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            New Bordero
+            Novo Borderô
           </button>
         </div>
       </div>
-      <PurchaseSaleTabs active="Purchase Bordero" />
+      <PurchaseSaleTabs active="Borderô de Compra" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">shopping_cart</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No purchase records</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de compra</p>
       </div>
     </AppLayout>
   );
@@ -976,33 +976,33 @@ export function SalesPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Sales</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Vendas</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Search Sales
+            Buscar Vendas
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
             <span className="material-icons text-[14px]">add</span>
-            Register New Sale
+            Registrar Nova Venda
           </button>
         </div>
       </div>
-      <PurchaseSaleTabs active="Sales" />
+      <PurchaseSaleTabs active="Vendas" />
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">point_of_sale</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No sale records</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de venda</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// FINANCIAL MODULE
+// MÓDULO FINANCEIRO
 // ============================================================
 
 function FinancialTabs({ active }: { active: string }) {
-  const tabs = ["Accounts", "Import Statement", "Transactions", "Cost Allocation", "Allocation Listing", "Revenue vs Expenses"];
+  const tabs = ["Contas", "Importar Extrato", "Movimentações", "Rateio de Custo", "Listagem Rateio", "Receita x Despesa"];
   const paths = ["/financeiro/contas", "/financeiro/movimentacao", "/financeiro/movimentacao", "/financeiro/categorias", "/financeiro/categorias", "/financeiro/pessoas"];
   return (
     <div className="flex border-b border-gray-200 mb-4 overflow-x-auto">
@@ -1025,34 +1025,34 @@ export function FinancialTransactionsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Transactions</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Movimentações</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4CAF50" }}>
-            Launch Revenue
+            Lançar Receita
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#F44336" }}>
-            Launch Expense
+            Lançar Despesa
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Launch Transfer
+            Lançar Transferência
           </button>
         </div>
       </div>
-      <FinancialTabs active="Transactions" />
-      {/* Month navigation */}
+      <FinancialTabs active="Movimentações" />
+      {/* Navegação por mês */}
       <div className="flex items-center gap-3 mb-4">
         <button className="p-1 rounded hover:bg-gray-100 text-gray-500">
           <span className="material-icons text-[18px]">chevron_left</span>
         </button>
-        <span className="text-[13px] font-medium text-gray-700">May 2026</span>
+        <span className="text-[13px] font-medium text-gray-700">Maio 2026</span>
         <button className="p-1 rounded hover:bg-gray-100 text-gray-500">
           <span className="material-icons text-[18px]">chevron_right</span>
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">account_balance</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No transactions for this period</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma movimentação neste período</p>
       </div>
     </AppLayout>
   );
@@ -1060,29 +1060,29 @@ export function FinancialTransactionsPage() {
 
 export function FinancialCategoriesPage() {
   const categories = [
-    { name: "Alimentação Animal", type: "Expense", icon: "restaurant" },
-    { name: "Medicamentos", type: "Expense", icon: "medical_services" },
-    { name: "Combustível", type: "Expense", icon: "local_gas_station" },
-    { name: "Mão de Obra", type: "Expense", icon: "people" },
-    { name: "Venda de Animais", type: "Revenue", icon: "payments" },
-    { name: "Venda de Leite", type: "Revenue", icon: "water_drop" },
+    { name: "Alimentação Animal", type: "Despesa", icon: "restaurant" },
+    { name: "Medicamentos", type: "Despesa", icon: "medical_services" },
+    { name: "Combustível", type: "Despesa", icon: "local_gas_station" },
+    { name: "Mão de Obra", type: "Despesa", icon: "people" },
+    { name: "Venda de Animais", type: "Receita", icon: "payments" },
+    { name: "Venda de Leite", type: "Receita", icon: "water_drop" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Categories</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Categorias</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Category
+          Nova Categoria
         </button>
       </div>
-      <FinancialTabs active="Cost Allocation" />
+      <FinancialTabs active="Rateio de Custo" />
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Categoria</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -1096,7 +1096,7 @@ export function FinancialCategoriesPage() {
                   {c.name}
                 </td>
                 <td className="px-3 py-1.5">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium ${c.type === "Revenue" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium ${c.type === "Receita" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {c.type}
                   </span>
                 </td>
@@ -1116,28 +1116,28 @@ export function FinancialCategoriesPage() {
 
 export function FinancialPeoplePage() {
   const people = [
-    { name: "João Silva", type: "Employee", role: "Vaqueiro" },
-    { name: "Agropecuária Central", type: "Supplier", role: "Insumos" },
-    { name: "Frigorífico São Paulo", type: "Client", role: "Comprador" },
-    { name: "Maria Santos", type: "Employee", role: "Administrativa" },
+    { name: "João Silva", type: "Funcionário", role: "Vaqueiro" },
+    { name: "Agropecuária Central", type: "Fornecedor", role: "Insumos" },
+    { name: "Frigorífico São Paulo", type: "Cliente", role: "Comprador" },
+    { name: "Maria Santos", type: "Funcionário", role: "Administrativa" },
   ];
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">People</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Pessoas</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          New Person
+          Nova Pessoa
         </button>
       </div>
-      <FinancialTabs active="Revenue vs Expenses" />
+      <FinancialTabs active="Receita x Despesa" />
       <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Role</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Função</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
@@ -1149,8 +1149,8 @@ export function FinancialPeoplePage() {
                 <td className="px-3 py-1.5 text-gray-700 font-medium">{p.name}</td>
                 <td className="px-3 py-1.5">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium ${
-                    p.type === "Employee" ? "bg-blue-100 text-blue-700" :
-                    p.type === "Supplier" ? "bg-amber-100 text-amber-700" :
+                    p.type === "Funcionário" ? "bg-blue-100 text-blue-700" :
+                    p.type === "Fornecedor" ? "bg-amber-100 text-amber-700" :
                     "bg-green-100 text-green-700"
                   }`}>
                     {p.type}
@@ -1172,11 +1172,11 @@ export function FinancialPeoplePage() {
 }
 
 // ============================================================
-// REPORTS MODULE
+// MÓDULO RELATÓRIOS
 // ============================================================
 
 function ReportsTabs({ active }: { active: string }) {
-  const tabs = ["Managerial", "Evolution", "Reproductive", "Operational"];
+  const tabs = ["Gerenciais", "Evolução", "Reprodutivos", "Operacionais"];
   const paths = ["/relatorios/gerenciais", "/relatorios/evolucao", "/relatorios/reprodutivos", "/relatorios/operacionais"];
   return (
     <div className="flex border-b border-gray-200 mb-4">
@@ -1198,13 +1198,13 @@ function ReportsTabs({ active }: { active: string }) {
 export function ReportsManagerialPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Managerial Reports</h1>
-      <ReportsTabs active="Managerial" />
+      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Gerenciais</h1>
+      <ReportsTabs active="Gerenciais" />
       <div className="grid grid-cols-3 gap-4">
         {[
-          { title: "Overview", icon: "dashboard", desc: "General farm overview report" },
-          { title: "Management Map", icon: "map", desc: "Management activities map" },
-          { title: "Unit Animal Cost", icon: "attach_money", desc: "Cost per animal unit" },
+          { title: "Visão Geral", icon: "dashboard", desc: "Relatório geral da fazenda" },
+          { title: "Mapa de Manejos", icon: "map", desc: "Mapa de atividades de manejo" },
+          { title: "Custo Unitário Animal", icon: "attach_money", desc: "Custo por unidade animal" },
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
@@ -1222,12 +1222,12 @@ export function ReportsManagerialPage() {
 export function ReportsEvolutionPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Evolution Reports</h1>
-      <ReportsTabs active="Evolution" />
+      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios de Evolução</h1>
+      <ReportsTabs active="Evolução" />
       <div className="grid grid-cols-2 gap-4">
         {[
-          { title: "Weight Evolution", icon: "trending_up", desc: "Track weight gain over time" },
-          { title: "Score Evolution", icon: "star", desc: "Body condition score tracking" },
+          { title: "Evolução de Peso", icon: "trending_up", desc: "Acompanhe o ganho de peso ao longo do tempo" },
+          { title: "Evolução de Escore", icon: "star", desc: "Acompanhamento do escore de condição corporal" },
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
@@ -1245,16 +1245,13 @@ export function ReportsEvolutionPage() {
 export function ReportsReproductivePage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Reproductive Reports</h1>
-      <ReportsTabs active="Reproductive" />
+      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Reprodutivos</h1>
+      <ReportsTabs active="Reprodutivos" />
       <div className="grid grid-cols-3 gap-4">
         {[
-          { title: "Reproductive Indexes", icon: "analytics", desc: "Conception and pregnancy rates" },
-          { title: "Reproductions", icon: "favorite", desc: "Reproduction history" },
-          { title: "Reproduction Statistics", icon: "bar_chart", desc: "Statistical analysis" },
-          { title: "Exposure List", icon: "list", desc: "All exposures performed" },
-          { title: "Biological Stock", icon: "inventory", desc: "Semen and embryo stock" },
-          { title: "Andrological Exams", icon: "biotech", desc: "Bull fertility exams" },
+          { title: "Índices Reprodutivos", icon: "analytics", desc: "Taxas de concepção e prenhez" },
+          { title: "Reproduções", icon: "favorite", desc: "Histórico de reproduções" },
+          { title: "Previsão de Partos", icon: "event", desc: "Calendário de partos previstos" },
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
@@ -1272,70 +1269,109 @@ export function ReportsReproductivePage() {
 export function ReportsOperationalPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Operational Reports</h1>
-      <ReportsTabs active="Operational" />
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6">
-        <h2 className="text-[13px] font-medium text-gray-800 mb-4">Generate Report</h2>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Report columns</label>
-            <select className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700">
-              <option>All columns</option>
-              <option>Basic info</option>
-              <option>Custom</option>
-            </select>
+      <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Operacionais</h1>
+      <ReportsTabs active="Operacionais" />
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { title: "Movimentação de Estoque", icon: "inventory", desc: "Entradas e saídas de insumos" },
+          { title: "Abastecimento", icon: "local_gas_station", desc: "Histórico de abastecimentos" },
+          { title: "Manutenções", icon: "build", desc: "Registro de manutenções realizadas" },
+        ].map((r, i) => (
+          <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="material-icons text-[24px]" style={{ color: "#8BC34A" }}>{r.icon}</span>
+              <h3 className="text-[13px] font-medium text-gray-800">{r.title}</h3>
+            </div>
+            <p className="text-[11px] text-gray-500">{r.desc}</p>
           </div>
-          <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Report filters</label>
-            <select className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700">
-              <option>All animals</option>
-              <option>Active only</option>
-              <option>By lot</option>
-            </select>
-          </div>
-        </div>
-        <button className="flex items-center gap-1 px-4 py-2 rounded text-white text-[12px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
-          <span className="material-icons text-[16px]">description</span>
-          Generate Report
-        </button>
+        ))}
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// SIMULATIONS MODULE
+// MÓDULO SIMULAÇÕES
 // ============================================================
 
-function SimulationsTabs({ active }: { active: string }) {
-  const tabs = ["My Simulations", "New Simulation"];
-  const paths = ["/simulacoes/confinamento", "/simulacoes/semi-confinamento"];
+export function SimulationsPage() {
   return (
-    <div className="flex border-b border-gray-200 mb-4">
-      {tabs.map((tab, i) => (
-        <a
-          key={i}
-          href={paths[i]}
-          className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          {tab}
-        </a>
-      ))}
-    </div>
+    <AppLayout>
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-[15px] font-medium text-gray-800">Minhas Simulações</h1>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <span className="material-icons text-[14px]">add</span>
+          Nova Simulação
+        </button>
+      </div>
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+        <span className="material-icons text-4xl text-gray-200 mb-2 block">calculate</span>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma simulação cadastrada</p>
+      </div>
+    </AppLayout>
   );
 }
+
+// ============================================================
+// MÓDULO ADMINISTRATIVO
+// ============================================================
+
+export function AdminOverviewPage() {
+  return (
+    <AppLayout>
+      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Administrativo - Visão Geral</h1>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Benfeitorias</h2>
+          <div className="text-center py-4">
+            <span className="material-icons text-3xl text-gray-200">construction</span>
+            <p className="text-[11px] text-gray-400 mt-2">Nenhuma benfeitoria cadastrada</p>
+          </div>
+          <button className="w-full mt-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+            <span className="material-icons text-[14px]">add</span>
+            Cadastrar Benfeitoria
+          </button>
+        </div>
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Acesso Rápido</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: "Cadastrar Fazenda", icon: "home_work" },
+              { label: "Cadastrar Rebanho", icon: "pets" },
+              { label: "Cadastrar Insumo", icon: "inventory_2" },
+              { label: "Cadastrar Máquina", icon: "agriculture" },
+            ].map((item, i) => (
+              <button key={i} className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50 transition-colors">
+                <span className="material-icons text-[16px] text-gray-400">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+
+// ============================================================
+// MÓDULO SIMULAÇÕES - CONFINAMENTO / SEMI-CONFINAMENTO
+// ============================================================
 
 export function SimulationsFeedlotPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">My Simulations</h1>
-      <SimulationsTabs active="My Simulations" />
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-[15px] font-medium text-gray-800">Simulação - Confinamento</h1>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <span className="material-icons text-[14px]">add</span>
+          Nova Simulação
+        </button>
+      </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">calculate</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No simulations created yet</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma simulação de confinamento cadastrada</p>
       </div>
     </AppLayout>
   );
@@ -1344,44 +1380,34 @@ export function SimulationsFeedlotPage() {
 export function SimulationsSemiFeedlotPage() {
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-3">New Simulation</h1>
-      <SimulationsTabs active="New Simulation" />
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-50 rounded border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer text-center">
-            <span className="material-icons text-[32px] mb-2" style={{ color: "#8BC34A" }}>calculate</span>
-            <h3 className="text-[13px] font-medium text-gray-800">Basic Simulation</h3>
-            <p className="text-[10px] text-gray-500 mt-1">Quick feedlot cost estimate</p>
-          </div>
-          <div className="bg-gray-50 rounded border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer text-center">
-            <span className="material-icons text-[32px] mb-2" style={{ color: "#FF9800" }}>analytics</span>
-            <h3 className="text-[13px] font-medium text-gray-800">Advanced Simulation</h3>
-            <p className="text-[10px] text-gray-500 mt-1">Detailed analysis with variables</p>
-          </div>
-        </div>
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-[15px] font-medium text-gray-800">Simulação - Semi-Confinamento</h1>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <span className="material-icons text-[14px]">add</span>
+          Nova Simulação
+        </button>
+      </div>
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+        <span className="material-icons text-4xl text-gray-200 mb-2 block">calculate</span>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma simulação de semi-confinamento cadastrada</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// ADMINISTRATIVE MODULE
+// MÓDULO ADMINISTRATIVO - BENFEITORIAS
 // ============================================================
 
 export function AdministrativeOverviewPage() {
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Administrative - Overview</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
-          <span className="material-icons text-[14px]">add</span>
-          Register Improvement
-        </button>
-      </div>
+      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Benfeitorias - Visão Geral</h1>
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
-        <span className="material-icons text-4xl text-gray-200 mb-2 block">business</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
-        <p className="text-[11px] text-gray-300 mt-1">No improvements registered</p>
+        <span className="material-icons text-4xl text-gray-200 mb-2 block">construction</span>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma benfeitoria cadastrada</p>
       </div>
     </AppLayout>
   );
@@ -1391,56 +1417,43 @@ export function ImprovementsPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Improvements</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Lista de Benfeitorias</h1>
         <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
           <span className="material-icons text-[14px]">add</span>
-          Register Improvement
+          Cadastrar Benfeitoria
         </button>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-[11px]">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Farm</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Value</th>
-              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
-                <span className="material-icons text-[14px]">settings</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-t border-gray-50">
-              <td colSpan={5} className="px-3 py-8 text-center text-[12px] text-gray-400">No Data</td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+        <span className="material-icons text-4xl text-gray-200 mb-2 block">construction</span>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
+        <p className="text-[11px] text-gray-300 mt-1">Nenhuma benfeitoria cadastrada</p>
       </div>
     </AppLayout>
   );
 }
 
 // ============================================================
-// QUICK ACCESS
+// ACESSO RÁPIDO
 // ============================================================
 
 export function QuickAccessPage() {
-  const actions = [
-    { label: "Register Farm", icon: "home_work", path: "/fazendas/lista-fazendas" },
-    { label: "Register Herd", icon: "pets", path: "/rebanho/lista-animais" },
-    { label: "Import", icon: "upload_file", path: "/rebanho/lista-animais" },
-    { label: "Register Supply", icon: "inventory_2", path: "/insumos/estoque" },
-    { label: "Register Machinery", icon: "agriculture", path: "/maquinas/lista-maquinas" },
-  ];
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Quick Access</h1>
-      <div className="grid grid-cols-5 gap-4">
-        {actions.map((a, i) => (
-          <a key={i} href={a.path} className="bg-white rounded shadow-sm border border-gray-100 p-6 text-center hover:shadow-md transition-shadow">
-            <span className="material-icons text-[32px] mb-2 block" style={{ color: "#8BC34A" }}>{a.icon}</span>
-            <span className="text-[12px] font-medium text-gray-700 uppercase">{a.label}</span>
+      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Acesso Rápido</h1>
+      <div className="grid grid-cols-2 gap-4">
+        {[
+          { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/lista-fazendas" },
+          { label: "Cadastrar Rebanho", icon: "pets", path: "/rebanho/lista-animais" },
+          { label: "Cadastrar Insumo", icon: "inventory_2", path: "/insumos/estoque" },
+          { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/lista-maquinas" },
+          { label: "Lançar Manejo", icon: "assignment", path: "/manejos/criar" },
+          { label: "Lançar Financeiro", icon: "account_balance", path: "/financeiro/movimentacao" },
+        ].map((item, i) => (
+          <a key={i} href={item.path} className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+            <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
+              <span className="material-icons text-[20px]" style={{ color: "#8BC34A" }}>{item.icon}</span>
+            </div>
+            <span className="text-[13px] font-medium text-gray-700">{item.label}</span>
           </a>
         ))}
       </div>

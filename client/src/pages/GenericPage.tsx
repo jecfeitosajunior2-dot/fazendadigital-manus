@@ -7,10 +7,10 @@ export function AnimaisPage() {
     <AppLayout>
       {/* Header with title and action buttons */}
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Animal list</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Lista de animais</h1>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium hover:bg-gray-50 uppercase">
-            Import Animals
+            Importar Animais
           </button>
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium hover:bg-gray-50 uppercase">
             SISBOV
@@ -20,12 +20,12 @@ export function AnimaisPage() {
             style={{ backgroundColor: "#8BC34A" }}
           >
             <span className="material-icons text-[14px]">add</span>
-            New Animal
+            Novo Animal
           </button>
-          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50" title="Export to spreadsheet">
+          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50" title="Exportar para planilha">
             <span className="material-icons text-[16px]">grid_on</span>
           </button>
-          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50" title="Export to PDF">
+          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50" title="Exportar para PDF">
             <span className="material-icons text-[16px]">picture_as_pdf</span>
           </button>
         </div>
@@ -34,26 +34,26 @@ export function AnimaisPage() {
       {/* Filters bar */}
       <div className="bg-white rounded shadow-sm border border-gray-100 mb-3 px-3 py-2 flex items-center gap-2 flex-wrap">
         <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[120px]">
-          <option>Farm</option>
+          <option>Fazenda</option>
           <option>Fazenda Modelo</option>
         </select>
         <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[120px]">
-          <option>Subdivision</option>
+          <option>Subdivisão</option>
         </select>
         <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px]">
-          <option>Breed</option>
+          <option>Raça</option>
           <option>Nelore</option>
         </select>
         <div className="flex-1 relative min-w-[150px]">
           <span className="material-icons text-[14px] text-gray-400 absolute left-2 top-1/2 -translate-y-1/2">search</span>
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Pesquisar..."
             className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#8BC34A]"
           />
         </div>
         <button className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50 uppercase font-medium">
-          More Filters
+          Mais Filtros
         </button>
       </div>
 
@@ -66,15 +66,15 @@ export function AnimaisPage() {
                 <th className="px-2 py-2 w-8">
                   <input type="checkbox" className="rounded border-gray-300" />
                 </th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Animal ID</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Electronic ID</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Mgmt ID</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Birth Date</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Castrated</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Sex</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Breed</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Lot</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Activity</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Nº Animal</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">ID Eletrônico</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">ID Manejo</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Data Nasc.</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Castrado</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Sexo</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Raça</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Lote</th>
+                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Atividade</th>
                 <th className="px-2 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                   <span className="material-icons text-[14px]">settings</span>
                 </th>
@@ -109,11 +109,11 @@ export function AnimaisPage() {
         <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
           <div className="flex items-center gap-2">
             <select className="text-[11px] border border-gray-200 rounded px-1.5 py-1 text-gray-600">
-              <option>50 items per page</option>
-              <option>20 items per page</option>
-              <option>100 items per page</option>
+              <option>50 itens por página</option>
+              <option>20 itens por página</option>
+              <option>100 itens por página</option>
             </select>
-            <span>Showing 1-50 of 50 items</span>
+            <span>Exibindo 1-50 de 50 itens</span>
           </div>
           <div className="flex items-center gap-0.5">
             <button className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-400">
@@ -135,14 +135,14 @@ export function EstoquePage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Stock</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
         <div className="flex items-center gap-2">
           <button
             className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
             style={{ backgroundColor: "#8BC34A" }}
           >
             <span className="material-icons text-[14px]">add</span>
-            New Entry
+            Nova Entrada
           </button>
           <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
             <span className="material-icons text-[16px]">grid_on</span>
@@ -158,7 +158,7 @@ export function EstoquePage() {
           <span className="material-icons text-[14px] text-gray-400 absolute left-2 top-1/2 -translate-y-1/2">search</span>
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Pesquisar..."
             className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#8BC34A]"
           />
         </div>
@@ -169,10 +169,10 @@ export function EstoquePage() {
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Unit</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Quantity</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Min. Stock</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Produto</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Unidade</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Quantidade</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Estoque Mín.</th>
                 <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                   <span className="material-icons text-[14px]">settings</span>
@@ -200,7 +200,7 @@ export function EstoquePage() {
           </table>
         </div>
         <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-          <span>Showing 1-{stockItems.length} of {stockItems.length} items</span>
+          <span>Exibindo 1-{stockItems.length} de {stockItems.length} itens</span>
           <div className="flex items-center gap-0.5">
             <span className="px-2 py-0.5 rounded text-white text-[10px] font-medium" style={{ backgroundColor: "#8BC34A" }}>1</span>
           </div>
@@ -215,14 +215,14 @@ export function ContasPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Accounts</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Contas</h1>
         <div className="flex items-center gap-2">
           <button
             className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
             style={{ backgroundColor: "#8BC34A" }}
           >
             <span className="material-icons text-[14px]">add</span>
-            New Account
+            Nova Conta
           </button>
         </div>
       </div>
@@ -232,9 +232,9 @@ export function ContasPage() {
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Balance</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Saldo</th>
                 <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                   <span className="material-icons text-[14px]">settings</span>
                 </th>
@@ -272,12 +272,12 @@ export function PlaceholderPage({ title, subtitle }: { title: string; subtitle: 
           style={{ backgroundColor: "#8BC34A" }}
         >
           <span className="material-icons text-[14px]">add</span>
-          New
+          Novo
         </button>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
         <span className="material-icons text-4xl text-gray-200 mb-2 block">inbox</span>
-        <p className="text-[12px] text-gray-400">No Data</p>
+        <p className="text-[12px] text-gray-400">Sem Dados</p>
         <p className="text-[11px] text-gray-300 mt-1">{subtitle}</p>
       </div>
     </AppLayout>

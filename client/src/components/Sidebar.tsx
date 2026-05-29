@@ -117,7 +117,7 @@ export default function Sidebar() {
       {/* Footer */}
       {!collapsed && (
         <div className="px-3 py-3 border-t border-white/10 text-[9px] text-white/30 text-center leading-tight">
-          Developed by iRancho<br />© Copyright 2026
+          Desenvolvido por iRancho<br />© Copyright 2026
         </div>
       )}
     </aside>

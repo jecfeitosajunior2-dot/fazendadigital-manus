@@ -2,18 +2,18 @@ import AppLayout from "@/components/AppLayout";
 import { herdByAge, monitoredStock } from "@/lib/data";
 
 const kpis = [
-  { value: "243", label: "Active animals", sub: "-", barColor: "", icon: "" },
-  { value: "0", label: "Births", sub: "Since 01/05/2026", barColor: "#4CAF50", icon: "arrow_upward" },
-  { value: "0", label: "Deaths", sub: "Since 01/05/2026", barColor: "#F44336", icon: "arrow_downward" },
-  { value: "0", label: "Sales", sub: "Since 01/05/2026", barColor: "", icon: "" },
-  { value: "0.02", label: "Stocking rate (AU)", sub: "-", barColor: "", icon: "" },
+  { value: "243", label: "Animais ativos", sub: "-", barColor: "", icon: "" },
+  { value: "0", label: "Nascimentos", sub: "Desde 01/05/2026", barColor: "#4CAF50", icon: "arrow_upward" },
+  { value: "0", label: "Mortes", sub: "Desde 01/05/2026", barColor: "#F44336", icon: "arrow_downward" },
+  { value: "0", label: "Vendas", sub: "Desde 01/05/2026", barColor: "", icon: "" },
+  { value: "0.02", label: "Taxa de lotação (UA)", sub: "-", barColor: "", icon: "" },
 ];
 
 export default function DashboardPage() {
   return (
     <AppLayout>
       {/* Page title */}
-      <h1 className="text-[20px] font-medium text-gray-800 mb-5">Office overview</h1>
+      <h1 className="text-[20px] font-medium text-gray-800 mb-5">Visão geral do escritório</h1>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">
@@ -40,17 +40,17 @@ export default function DashboardPage() {
 
       {/* 3-column section */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Herd by age */}
+        {/* Rebanho por idade */}
         <div className="bg-white rounded shadow-sm border border-gray-100">
           <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-[13px] font-medium text-gray-800">Herd by age</h2>
+            <h2 className="text-[13px] font-medium text-gray-800">Rebanho por idade</h2>
           </div>
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Age</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Male</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Female</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Idade</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Macho</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Fêmea</th>
                 <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Total</th>
               </tr>
             </thead>
@@ -73,40 +73,40 @@ export default function DashboardPage() {
           </table>
         </div>
 
-        {/* Upcoming activities */}
+        {/* Próximas atividades */}
         <div className="bg-white rounded shadow-sm border border-gray-100">
           <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-[13px] font-medium text-gray-800">Upcoming activities</h2>
+            <h2 className="text-[13px] font-medium text-gray-800">Próximas atividades</h2>
           </div>
           <div className="overflow-hidden">
             <table className="w-full text-[11px]">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lots</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lotes</th>
                 </tr>
               </thead>
             </table>
             <div className="p-8 text-center">
               <span className="material-icons text-3xl text-gray-200">event_busy</span>
-              <p className="text-[12px] text-gray-400 mt-2">No Data</p>
+              <p className="text-[12px] text-gray-400 mt-2">Sem Dados</p>
             </div>
           </div>
         </div>
 
-        {/* Monitored stock */}
+        {/* Estoque monitorado */}
         <div className="bg-white rounded shadow-sm border border-gray-100">
           <div className="px-4 py-3 border-b border-gray-100">
-            <h2 className="text-[13px] font-medium text-gray-800">Monitored stock</h2>
+            <h2 className="text-[13px] font-medium text-gray-800">Estoque monitorado</h2>
           </div>
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Unit</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Qty</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Stock</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Produto</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Unidade</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Qtd</th>
+                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Estoque</th>
               </tr>
             </thead>
             <tbody>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
           </table>
           <div className="px-3 py-2 border-t border-gray-100 text-[10px] text-gray-400 flex items-center gap-1">
             <span className="material-icons text-[12px] text-green-500">check_circle</span>
-            Product above minimum stock
+            Produto acima do estoque mínimo
           </div>
         </div>
       </div>

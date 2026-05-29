@@ -4,8 +4,8 @@ import { users } from "@/lib/data";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const [email, setEmail] = useState("pngomes1@gmail.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("pngomes1@teste.com");
+  const [password, setPassword] = useState("12345678");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
@@ -21,7 +21,7 @@ export default function LoginPage() {
         localStorage.setItem("user", JSON.stringify(user));
         setLocation("/admin/overview");
       } else {
-        setError("Invalid email or password.");
+        setError("E-mail ou senha inválidos.");
       }
       setLoading(false);
     }, 300);
@@ -40,7 +40,7 @@ export default function LoginPage() {
         </div>
 
         {/* Title */}
-        <h1 className="text-[18px] font-medium text-gray-800 text-center mb-6">Sign in</h1>
+        <h1 className="text-[18px] font-medium text-gray-800 text-center mb-6">Entrar</h1>
 
         {error && (
           <div className="mb-4 p-2.5 bg-red-50 border border-red-200 rounded text-[12px] text-red-600 flex items-center gap-1.5">
@@ -58,13 +58,13 @@ export default function LoginPage() {
               value={email}
               onChange={e => { setEmail(e.target.value); setError(""); }}
               className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#8BC34A] transition-colors"
-              placeholder="your@email.com"
+              placeholder="seu@email.com"
             />
           </div>
 
           {/* Password */}
           <div className="mb-4">
-            <label className="block text-[12px] text-gray-600 mb-1.5 font-medium">Password</label>
+            <label className="block text-[12px] text-gray-600 mb-1.5 font-medium">Senha</label>
             <div className="relative">
               <input
                 type={showPwd ? "text" : "password"}
@@ -85,7 +85,7 @@ export default function LoginPage() {
 
           {/* Forgot password */}
           <div className="text-right mb-5">
-            <a href="#" className="text-[11px] text-gray-500 hover:text-[#8BC34A]">Forgot password?</a>
+            <a href="#" className="text-[11px] text-gray-500 hover:text-[#8BC34A]">Esqueceu a senha?</a>
           </div>
 
           {/* Submit */}
@@ -100,18 +100,18 @@ export default function LoginPage() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="material-icons text-[16px] animate-spin">refresh</span>
-                Signing in...
+                Entrando...
               </span>
             ) : (
-              "SIGN IN"
+              "ENTRAR"
             )}
           </button>
         </form>
 
         {/* Register link */}
         <p className="text-center mt-5 text-[12px] text-gray-500">
-          Don't have an account?{" "}
-          <a href="#" className="font-medium" style={{ color: "#8BC34A" }}>Register</a>
+          Não tem uma conta?{" "}
+          <a href="#" className="font-medium" style={{ color: "#8BC34A" }}>Cadastre-se</a>
         </p>
 
         {/* Footer */}
