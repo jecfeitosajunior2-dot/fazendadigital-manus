@@ -116,13 +116,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         <div className="h-[48px] flex items-center px-3 border-b border-white/10">
           {!collapsed && (
             <div className="flex items-center gap-2.5">
-              <img src="/manus-storage/fazenda-icone-quadrado_323f2f9a.png" alt="Fazenda Digital" className="h-[32px] w-[32px] rounded-md object-cover" />
+              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp" alt="OptiGado" className="h-[32px] w-[32px] rounded-md object-cover" />
               <div className="flex flex-col leading-tight">
                 <span className="font-extrabold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, letterSpacing: "0.03em" }}>
-                  <span className="text-white">Fazenda</span>{" "}
-                  <span style={{ color: "#4ECDC4" }}>Digital</span>
+                  <span className="text-white">Opti</span><span style={{ color: "#4ECDC4" }}>Gado</span>
                 </span>
-                <span className="text-white/50 text-[9px] font-medium" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</span>
+                <span className="text-white/50 text-[9px] font-medium" style={{ fontFamily: "'Manrope', sans-serif" }}>Inteligência Pecuária</span>
               </div>
             </div>
           )}

@@ -32,9 +32,9 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
         <div className="md:hidden flex items-center gap-2">
-          <img src="/manus-storage/fazenda-icone-quadrado_323f2f9a.png" alt="Fazenda Digital" className="h-[28px] w-[28px] rounded-md object-cover" />
+          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp" alt="OptiGado" className="h-[28px] w-[28px] object-contain" />
           <span className="text-white font-extrabold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, letterSpacing: "0.03em" }}>
-            <span>Fazenda</span>{" "}<span style={{ color: "#FFFFFF" }}>Digital</span>
+            <span>Opti</span><span style={{ color: "#4ECDC4" }}>Gado</span>
           </span>
         </div>
       </div>

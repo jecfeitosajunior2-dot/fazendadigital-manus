@@ -42,8 +42,8 @@ function LoginPage() {
       <div className="relative z-10 w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
         {/* Logo */}
         <div className="flex flex-col items-center mb-6">
-          <img src="/manus-storage/fazenda-logo-completa_bdef6b43.png" alt="Fazenda Digital" className="h-[120px] w-auto mb-2" />
-          <p className="text-[11px] text-center text-gray-500 mt-1" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</p>
+          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-horizontal-X9jdErVzmyZhUhdo4CzvgD.webp" alt="OptiGado" className="h-[80px] w-auto mb-2" />
+          <p className="text-[11px] text-center text-gray-500 mt-1" style={{ fontFamily: "'Manrope', sans-serif" }}>Inteligência Pecuária. Resultados Reais.</p>
         </div>
 
         {/* Title */}
