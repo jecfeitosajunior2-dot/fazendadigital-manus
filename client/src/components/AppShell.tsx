@@ -19,6 +19,7 @@ interface AppShellProps {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  userName?: string;
 }
 
 const groupOrder: Array<"Operação" | "Comercial" | "Inteligência" | "Sistema"> = [
@@ -28,7 +29,7 @@ const groupOrder: Array<"Operação" | "Comercial" | "Inteligência" | "Sistema"
   "Sistema",
 ];
 
-export function AppShell({ children, kicker, title, subtitle, actions }: AppShellProps) {
+export function AppShell({ children, kicker, title, subtitle, actions, userName = "Paulo Nogueira" }: AppShellProps) {
   const [location, navigate] = useLocation();
   const [farmId, setFarmId] = useState(FARMS[0].id);
   const farm = FARMS.find((f) => f.id === farmId) ?? FARMS[0];
@@ -148,10 +149,10 @@ export function AppShell({ children, kicker, title, subtitle, actions }: AppShel
               <DropdownMenu>
                 <DropdownMenuTrigger className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border bg-card hover:border-[var(--moss)] transition-colors">
                   <div className="w-7 h-7 rounded-full bg-[var(--moss-deep)] text-[var(--paper)] flex items-center justify-center text-xs font-semibold">
-                    PN
+                    {userName.split(" ").map(n => n[0]).join("").toUpperCase()}
                   </div>
                   <div className="text-left hidden sm:block">
-                    <p className="text-xs leading-none font-medium">Paulo Nogueira</p>
+                    <p className="text-xs leading-none font-medium">{userName}</p>
                     <p className="text-[10px] text-muted-foreground leading-none mt-1">Administrador</p>
                   </div>
                 </DropdownMenuTrigger>
@@ -161,7 +162,7 @@ export function AppShell({ children, kicker, title, subtitle, actions }: AppShel
                   <DropdownMenuItem onClick={() => navigate("/configuracoes")}> 
                     <User className="w-4 h-4 mr-2" /> Perfil & preferências
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/")}>
+                  <DropdownMenuItem onClick={() => { navigate("/"); }}>
                     <LogOut className="w-4 h-4 mr-2" /> Sair da prévia
                   </DropdownMenuItem>
                 </DropdownMenuContent>

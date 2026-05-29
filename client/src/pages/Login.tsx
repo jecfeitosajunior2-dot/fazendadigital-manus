@@ -8,18 +8,31 @@ import { toast } from "sonner";
 const LOGIN_BG =
   "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/agrogestor_login-3fyWBB9xHpxfuqa85zQEC6.webp";
 
+const VALID_USERS = [
+  { email: "demo@agrogestor.app", password: "preview2026", name: "Demo User" },
+  { email: "pngomes1@gmail.com", password: "123456", name: "Paulo Nogueira" },
+];
+
 export default function Login() {
   const [, navigate] = useLocation();
-  const [email, setEmail] = useState("demo@agrogestor.app");
-  const [password, setPassword] = useState("preview2026");
+  const [email, setEmail] = useState("pngomes1@gmail.com");
+  const [password, setPassword] = useState("123456");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    setError("");
+    const user = VALID_USERS.find((u) => u.email === email && u.password === password);
+    if (!user) {
+      setError("E-mail ou senha incorretos");
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      toast.success("Bem-vindo à prévia AgroGestor Pro");
+      localStorage.setItem("userName", user.name);
+      toast.success(`Bem-vindo, ${user.name}!`);
       navigate("/painel");
     }, 600);
   }
@@ -69,6 +82,11 @@ export default function Login() {
           <h2 className="font-display text-2xl mb-6">Entrar</h2>
 
           <div className="space-y-4">
+            {error && (
+              <div className="px-3 py-2 rounded-md bg-[var(--clay)]/10 border border-[var(--clay)]/30 text-sm text-[var(--clay)]">
+                {error}
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="email">E-mail</Label>
               <Input
@@ -95,9 +113,12 @@ export default function Login() {
             {loading ? "Entrando…" : "Entrar na prévia"}
           </Button>
 
-          <div className="mt-5 text-xs text-muted-foreground space-y-1">
-            <p>Use as credenciais sugeridas ou clique direto em entrar.</p>
-            <p className="font-mono">demo@agrogestor.app / preview2026</p>
+          <div className="mt-5 text-xs text-muted-foreground space-y-2">
+            <p className="font-medium">Usuários disponíveis:</p>
+            <div className="space-y-1 font-mono text-[11px]">
+              <p>pngomes1@gmail.com / 123456</p>
+              <p>demo@agrogestor.app / preview2026</p>
+            </div>
           </div>
         </form>
       </div>

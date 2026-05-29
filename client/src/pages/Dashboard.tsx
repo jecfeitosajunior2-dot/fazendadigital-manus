@@ -24,8 +24,10 @@ const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 export default function Dashboard() {
+  const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Paulo Nogueira" : "Paulo Nogueira";
   return (
     <AppShell
+      userName={userName}
       kicker="Edição · Maio · 2026"
       title="Painel da fazenda"
       subtitle="Indicadores consolidados de rebanho, reprodução, nutrição e financeiro com leitura editorial."
