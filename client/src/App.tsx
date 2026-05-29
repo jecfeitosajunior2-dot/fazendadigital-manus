@@ -48,6 +48,11 @@ import BulkCattleImportPage from "./pages/BulkCattleImportPage";
 import CattleDetailPage from "./pages/CattleDetailPage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/EditAnimalPage";
+import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
+import { LotsManagementPage } from "./pages/LotsManagementPage";
+import { ReproductionManagementPage } from "./pages/ReproductionManagementPage";
+import { FinancialManagementPage } from "./pages/FinancialManagementPage";
+import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 
 function Router() {
   return (
@@ -72,9 +77,9 @@ function Router() {
       <Route path="/rebanho/visao-geral" component={HerdOverviewPage} />
       <Route path="/rebanho/lista-animais" component={AnimaisPage} />
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
-      <Route path="/rebanho/lotes" component={LotsPage} />
+      <Route path="/rebanho/lotes" component={LotsManagementPage} />
       <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
-        <Route path="/rebanho/detalhes-animal" component={CattleDetailPage} />
+        <Route path="/rebanho/detalhes-animal" component={CattleDetailPageExpanded} />
         <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
         <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
       
@@ -95,7 +100,9 @@ function Router() {
       <Route path="/maquinas/lista-maquinas" component={MachineryListPage} />
       
       {/* Reproduction */}
-      <Route path="/reproducao/protocolos" component={ReproductionProtocolsPage} />
+      <Route path="/reproducao/protocolos" component={ReproductionManagementPage} />
+      <Route path="/reproducao/semen" component={ReproductionManagementPage} />
+      <Route path="/reproducao/embrioes" component={ReproductionManagementPage} />
       <Route path="/reproducao/semen" component={ReproductionSemenPage} />
       <Route path="/reproducao/embrioes" component={ReproductionEmbryosPage} />
       
@@ -108,13 +115,19 @@ function Router() {
       <Route path="/compra-venda/vendas" component={SalesPage} />
       
       {/* Financial */}
-      <Route path="/financeiro/contas" component={ContasPage} />
+      <Route path="/financeiro/contas" component={FinancialManagementPage} />
+      <Route path="/financeiro/movimentacao" component={FinancialManagementPage} />
+      <Route path="/financeiro/categorias" component={FinancialManagementPage} />
+      <Route path="/financeiro/pessoas" component={FinancialManagementPage} />
       <Route path="/financeiro/movimentacao" component={FinancialTransactionsPage} />
       <Route path="/financeiro/categorias" component={FinancialCategoriesPage} />
       <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
       
       {/* Reports */}
-      <Route path="/relatorios/gerenciais" component={ReportsManagerialPage} />
+      <Route path="/relatorios/gerenciais" component={ReportsManagementPage} />
+      <Route path="/relatorios/evolucao" component={ReportsManagementPage} />
+      <Route path="/relatorios/reprodutivos" component={ReportsManagementPage} />
+      <Route path="/relatorios/operacionais" component={ReportsManagementPage} />
       <Route path="/relatorios/evolucao" component={ReportsEvolutionPage} />
       <Route path="/relatorios/reprodutivos" component={ReportsReproductivePage} />
       <Route path="/relatorios/operacionais" component={ReportsOperationalPage} />
