@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { AlertCircle, CheckCircle2, Download, Upload, FileUp } from 'lucide-react';
-import { useCattle } from '@/contexts/CattleContext';
+import { trpc } from '@/lib/trpc';
+import { toast } from 'sonner';
 
 interface CattleRecord {
   id: number;
@@ -101,7 +102,8 @@ const parseCSV = (csvText: string): CattleRecord[] => {
 };
 
 export const BulkCattleImportPage: React.FC = () => {
-  const { addCattle: addCattleToContext } = useCattle();
+  const utils = trpc.useUtils();
+  const createMutation = trpc.animais.create.useMutation();
   const [importCount, setImportCount] = useState('1000');
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -146,7 +148,22 @@ export const BulkCattleImportPage: React.FC = () => {
 
     const cattle = generateBulkCattle(count);
     setImportedCattle(cattle);
-    addCattleToContext(cattle);
+    // Persist to DB
+    let saved = 0;
+    for (const c of cattle) {
+      try {
+        await createMutation.mutateAsync({
+          nome: c.number,
+          brinco: c.electronicId,
+          raca: c.breed,
+          sexo: c.sex === 'Macho' ? 'macho' : 'femea',
+          categoria: c.activity,
+        });
+        saved++;
+      } catch { /* skip individual errors */ }
+    }
+    utils.animais.list.invalidate();
+    toast.success(`${saved} animais importados para o banco de dados!`);
     setImportProgress(100);
     setShowResults(true);
     setIsImporting(false);
@@ -174,7 +191,22 @@ export const BulkCattleImportPage: React.FC = () => {
       }
 
       setImportedCattle(cattle);
-      addCattleToContext(cattle);
+      // Persist to DB
+      let saved = 0;
+      for (const c of cattle) {
+        try {
+          await createMutation.mutateAsync({
+            nome: c.number,
+            brinco: c.electronicId,
+            raca: c.breed,
+            sexo: c.sex === 'Macho' ? 'macho' : 'femea',
+            categoria: c.activity,
+          });
+          saved++;
+        } catch { /* skip individual errors */ }
+      }
+      utils.animais.list.invalidate();
+      toast.success(`${saved} animais importados para o banco de dados!`);
       setImportProgress(100);
       setShowResults(true);
     } catch (error) {

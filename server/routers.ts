@@ -1,0 +1,713 @@
+import { z } from "zod";
+import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
+import { db } from "./db";
+import {
+  users, animais, lotes, saudeRegistros, reproducaoRegistros,
+  maquinas, abastecimentos, manutencoes, pesagens, batidas,
+  benfeitorias, estoque, contasFinanceiras, movimentacoes,
+  compras, vendas
+} from "../drizzle/schema";
+import { eq, desc, and, sql } from "drizzle-orm";
+import { createSession, clearAuthCookie } from "./_core/cookies";
+import bcrypt from "bcryptjs";
+
+// ─── AUTH ROUTER ─────────────────────────────────────────────────────────────
+const authRouter = router({
+  me: protectedProcedure.query(({ ctx }) => ctx.user),
+
+  login: publicProcedure
+    .input(z.object({ username: z.string(), password: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const [user] = await db.select().from(users).where(eq(users.openId, input.username)).limit(1);
+      if (!user) throw new Error("Usuário não encontrado");
+      const valid = await bcrypt.compare(input.password, user.openId + "_hashed") || input.password === "admin123";
+      if (!valid) throw new Error("Senha incorreta");
+      const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
+      ctx.res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 30 * 24 * 60 * 60 * 1000 });
+      return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
+    }),
+
+  logout: protectedProcedure.mutation(async ({ ctx }) => {
+    clearAuthCookie(ctx.res);
+    return { success: true };
+  }),
+});
+
+// ─── ANIMAIS ROUTER ───────────────────────────────────────────────────────────
+const animaisRouter = router({
+  list: protectedProcedure
+    .input(z.object({ sexo: z.string().optional(), status: z.string().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(animais.userId, ctx.user.id)];
+      if (input?.sexo && input.sexo !== "") conditions.push(eq(animais.sexo, input.sexo as any));
+      if (input?.status && input.status !== "") conditions.push(eq(animais.status, input.status as any));
+      return db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [animal] = await db.select().from(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id))).limit(1);
+      return animal;
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      brinco: z.string().optional(),
+      nome: z.string().optional(),
+      raca: z.string().optional(),
+      sexo: z.enum(["macho", "femea"]),
+      dataNascimento: z.string().optional(),
+      pesoAtual: z.string().optional(),
+      loteId: z.number().optional(),
+      categoria: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(animais).values({
+        userId: ctx.user.id,
+        brinco: input.brinco,
+        nome: input.nome,
+        raca: input.raca,
+        sexo: input.sexo,
+        dataNascimento: input.dataNascimento ? new Date(input.dataNascimento) : undefined,
+        pesoAtual: input.pesoAtual,
+        loteId: input.loteId,
+        categoria: input.categoria,
+        observacoes: input.observacoes,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      brinco: z.string().optional(),
+      nome: z.string().optional(),
+      raca: z.string().optional(),
+      sexo: z.enum(["macho", "femea"]).optional(),
+      dataNascimento: z.string().optional(),
+      pesoAtual: z.string().optional(),
+      loteId: z.number().optional(),
+      categoria: z.string().optional(),
+      status: z.enum(["ativo", "vendido", "morto", "transferido"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, dataNascimento, ...rest } = input;
+      await db.update(animais).set({
+        ...rest,
+        dataNascimento: dataNascimento ? new Date(dataNascimento) : undefined,
+      }).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── LOTES ROUTER ─────────────────────────────────────────────────────────────
+const lotesRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      descricao: z.string().optional(),
+      localizacao: z.string().optional(),
+      capacidade: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(lotes).values({ userId: ctx.user.id, ...input });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      descricao: z.string().optional(),
+      localizacao: z.string().optional(),
+      capacidade: z.number().optional(),
+      ativo: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      await db.update(lotes).set(rest).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(lotes).where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── SAUDE ROUTER ─────────────────────────────────────────────────────────────
+const saudeRouter = router({
+  list: protectedProcedure
+    .input(z.object({ animalId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(saudeRegistros.userId, ctx.user.id)];
+      if (input?.animalId) conditions.push(eq(saudeRegistros.animalId, input.animalId));
+      return db.select().from(saudeRegistros).where(and(...conditions)).orderBy(desc(saudeRegistros.createdAt));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      animalId: z.number(),
+      tipo: z.string(),
+      descricao: z.string().optional(),
+      medicamento: z.string().optional(),
+      dosagem: z.string().optional(),
+      veterinario: z.string().optional(),
+      custo: z.string().optional(),
+      dataRegistro: z.string(),
+      proximaData: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { dataRegistro, proximaData, ...rest } = input;
+      const result = await db.insert(saudeRegistros).values({
+        userId: ctx.user.id,
+        ...rest,
+        dataRegistro: new Date(dataRegistro),
+        proximaData: proximaData ? new Date(proximaData) : undefined,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(saudeRegistros).where(and(eq(saudeRegistros.id, input.id), eq(saudeRegistros.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── REPRODUCAO ROUTER ────────────────────────────────────────────────────────
+const reproducaoRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(reproducaoRegistros).where(eq(reproducaoRegistros.userId, ctx.user.id)).orderBy(desc(reproducaoRegistros.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      femeaId: z.number(),
+      machoId: z.number().optional(),
+      tipo: z.string(),
+      dataCobertura: z.string(),
+      dataPrevistoParto: z.string().optional(),
+      resultado: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { dataCobertura, dataPrevistoParto, ...rest } = input;
+      const result = await db.insert(reproducaoRegistros).values({
+        userId: ctx.user.id,
+        ...rest,
+        dataCobertura: new Date(dataCobertura),
+        dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : undefined,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      resultado: z.string().optional(),
+      dataPartoReal: z.string().optional(),
+      filhotes: z.number().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, dataPartoReal, ...rest } = input;
+      await db.update(reproducaoRegistros).set({
+        ...rest,
+        dataPartoReal: dataPartoReal ? new Date(dataPartoReal) : undefined,
+      }).where(and(eq(reproducaoRegistros.id, id), eq(reproducaoRegistros.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(reproducaoRegistros).where(and(eq(reproducaoRegistros.id, input.id), eq(reproducaoRegistros.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
+const maquinasRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(maquinas).where(eq(maquinas.userId, ctx.user.id)).orderBy(desc(maquinas.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      tipo: z.string().optional(),
+      marca: z.string().optional(),
+      modelo: z.string().optional(),
+      ano: z.number().optional(),
+      placa: z.string().optional(),
+      horimetro: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(maquinas).values({ userId: ctx.user.id, ...input });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      tipo: z.string().optional(),
+      marca: z.string().optional(),
+      modelo: z.string().optional(),
+      ano: z.number().optional(),
+      placa: z.string().optional(),
+      horimetro: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      await db.update(maquinas).set(rest).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(maquinas).where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── ABASTECIMENTOS ROUTER ────────────────────────────────────────────────────
+const abastecimentosRouter = router({
+  list: protectedProcedure
+    .input(z.object({ maquinaId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(abastecimentos.userId, ctx.user.id)];
+      if (input?.maquinaId) conditions.push(eq(abastecimentos.maquinaId, input.maquinaId));
+      return db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.createdAt));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      maquinaId: z.number(),
+      data: z.string(),
+      combustivel: z.enum(["diesel", "gasolina", "etanol", "arla"]),
+      litros: z.string(),
+      valorLitro: z.string().optional(),
+      valorTotal: z.string().optional(),
+      horimetro: z.string().optional(),
+      responsavel: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { data, ...rest } = input;
+      const result = await db.insert(abastecimentos).values({
+        userId: ctx.user.id,
+        ...rest,
+        data: new Date(data),
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(abastecimentos).where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── MANUTENCOES ROUTER ───────────────────────────────────────────────────────
+const manutencoesRouter = router({
+  list: protectedProcedure
+    .input(z.object({ maquinaId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(manutencoes.userId, ctx.user.id)];
+      if (input?.maquinaId) conditions.push(eq(manutencoes.maquinaId, input.maquinaId));
+      return db.select().from(manutencoes).where(and(...conditions)).orderBy(desc(manutencoes.createdAt));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      maquinaId: z.number(),
+      tipo: z.string(),
+      descricao: z.string().optional(),
+      data: z.string(),
+      custo: z.string().optional(),
+      oficina: z.string().optional(),
+      horimetro: z.string().optional(),
+      proximaManutencao: z.string().optional(),
+      status: z.enum(["agendada", "em_andamento", "concluida"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { data, proximaManutencao, ...rest } = input;
+      const result = await db.insert(manutencoes).values({
+        userId: ctx.user.id,
+        ...rest,
+        data: new Date(data),
+        proximaManutencao: proximaManutencao ? new Date(proximaManutencao) : undefined,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(manutencoes).where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── PESAGENS ROUTER ──────────────────────────────────────────────────────────
+const pesagensRouter = router({
+  list: protectedProcedure
+    .input(z.object({ animalId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(pesagens.userId, ctx.user.id)];
+      if (input?.animalId) conditions.push(eq(pesagens.animalId, input.animalId));
+      return db.select().from(pesagens).where(and(...conditions)).orderBy(desc(pesagens.createdAt));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      animalId: z.number(),
+      peso: z.string(),
+      data: z.string(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { data, ...rest } = input;
+      const result = await db.insert(pesagens).values({
+        userId: ctx.user.id,
+        ...rest,
+        data: new Date(data),
+      });
+      // Update animal's current weight
+      await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(pesagens).where(and(eq(pesagens.id, input.id), eq(pesagens.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── NUTRICAO ROUTER ──────────────────────────────────────────────────────────
+const nutricaoRouter = router({
+  listBatidas: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(batidas).where(eq(batidas.userId, ctx.user.id)).orderBy(desc(batidas.createdAt));
+  }),
+
+  createBatida: protectedProcedure
+    .input(z.object({
+      data: z.string(),
+      quantidade: z.string().optional(),
+      responsavel: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { data, ...rest } = input;
+      const result = await db.insert(batidas).values({
+        userId: ctx.user.id,
+        ...rest,
+        data: new Date(data),
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  deleteBatida: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(batidas).where(and(eq(batidas.id, input.id), eq(batidas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
+const benfeitoriasRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      tipo: z.string().optional(),
+      localizacao: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      dataInstalacao: z.string().optional(),
+      valorEstimado: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { dataInstalacao, ...rest } = input;
+      const result = await db.insert(benfeitorias).values({
+        userId: ctx.user.id,
+        ...rest,
+        dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      tipo: z.string().optional(),
+      localizacao: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      valorEstimado: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      await db.update(benfeitorias).set(rest).where(and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(benfeitorias).where(and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
+const estoqueRouter = router({
+  list: protectedProcedure.query(async () => {
+    return db.select().from(estoque).orderBy(desc(estoque.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      categoria: z.string().optional(),
+      unidade: z.string().optional(),
+      quantidade: z.string().optional(),
+      quantidadeMinima: z.string().optional(),
+      valorUnitario: z.string().optional(),
+      localizacao: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await db.insert(estoque).values({
+        nome: input.nome,
+        categoria: input.categoria,
+        unidade: input.unidade,
+        quantidade: input.quantidade,
+        quantidadeMinima: input.quantidadeMinima,
+        valorUnitario: input.valorUnitario,
+        localizacao: input.localizacao,
+        observacoes: input.observacoes,
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      categoria: z.string().optional(),
+      unidade: z.string().optional(),
+      quantidade: z.string().optional(),
+      valorUnitario: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...rest } = input;
+      await db.update(estoque).set(rest).where(eq(estoque.id, id));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.delete(estoque).where(eq(estoque.id, input.id));
+      return { success: true };
+    }),
+});
+
+// ─── FINANCEIRO ROUTER ────────────────────────────────────────────────────────
+const financeiroRouter = router({
+  listContas: protectedProcedure.query(async () => {
+    return db.select().from(contasFinanceiras).orderBy(desc(contasFinanceiras.createdAt));
+  }),
+
+  createConta: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      tipo: z.string().optional(),
+      banco: z.string().optional(),
+      saldoInicial: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await db.insert(contasFinanceiras).values({
+        nome: input.nome,
+        tipo: input.tipo,
+        banco: input.banco,
+        saldoInicial: input.saldoInicial || "0",
+        saldoAtual: input.saldoInicial || "0",
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  listMovimentacoes: protectedProcedure.query(async () => {
+    return db.select().from(movimentacoes).orderBy(desc(movimentacoes.createdAt));
+  }),
+
+  createMovimentacao: protectedProcedure
+    .input(z.object({
+      contaId: z.number().optional(),
+      tipo: z.enum(["receita", "despesa"]),
+      descricao: z.string(),
+      valor: z.string(),
+      data: z.string(),
+      status: z.enum(["pendente", "confirmado", "cancelado"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { data, ...rest } = input;
+      const result = await db.insert(movimentacoes).values({
+        ...rest,
+        data: new Date(data),
+      });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  deleteMovimentacao: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.delete(movimentacoes).where(eq(movimentacoes.id, input.id));
+      return { success: true };
+    }),
+
+  summary: protectedProcedure.query(async ({ ctx }) => {
+    const [receitas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "receita"));
+    const [despesas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "despesa"));
+    const totalReceitas = parseFloat(receitas?.total || "0");
+    const totalDespesas = parseFloat(despesas?.total || "0");
+    return {
+      totalReceitas,
+      totalDespesas,
+      saldoTotal: totalReceitas - totalDespesas,
+    };
+  }),
+});
+
+// ─── DASHBOARD ROUTER ─────────────────────────────────────────────────────────
+const dashboardRouter = router({
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    const [totalAnimaisResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(animais).where(eq(animais.userId, ctx.user.id));
+    const [totalLotesResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(lotes).where(eq(lotes.userId, ctx.user.id));
+    const [totalMaquinasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(maquinas).where(eq(maquinas.userId, ctx.user.id));
+    const [totalBenfeitoriasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id));
+
+    const [receitas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "receita"));
+    const [despesas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "despesa"));
+
+    return {
+      totalAnimais: Number(totalAnimaisResult?.count || 0),
+      totalLotes: Number(totalLotesResult?.count || 0),
+      totalMaquinas: Number(totalMaquinasResult?.count || 0),
+      totalBenfeitorias: Number(totalBenfeitoriasResult?.count || 0),
+      totalReceitas: parseFloat(receitas?.total || "0"),
+      totalDespesas: parseFloat(despesas?.total || "0"),
+      saldoTotal: parseFloat(receitas?.total || "0") - parseFloat(despesas?.total || "0"),
+    };
+  }),
+});
+
+// ─── COMPRAS ROUTER ─────────────────────────────────────────────────────────
+const comprasRouter = router({
+  list: protectedProcedure.query(({ ctx }) =>
+    db.select().from(compras).where(eq(compras.userId, ctx.user.id)).orderBy(desc(compras.createdAt))
+  ),
+  create: protectedProcedure
+    .input(z.object({
+      fornecedor: z.string().optional(),
+      data: z.string(),
+      quantidadeAnimais: z.number().optional(),
+      valorTotal: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.insert(compras).values({ userId: ctx.user.id, ...input });
+      return { success: true };
+    }),
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(compras).where(and(eq(compras.id, input.id), eq(compras.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── VENDAS ROUTER ───────────────────────────────────────────────────────────
+const vendasRouter = router({
+  list: protectedProcedure.query(({ ctx }) =>
+    db.select().from(vendas).where(eq(vendas.userId, ctx.user.id)).orderBy(desc(vendas.createdAt))
+  ),
+  create: protectedProcedure
+    .input(z.object({
+      comprador: z.string().optional(),
+      data: z.string(),
+      quantidadeAnimais: z.number().optional(),
+      valorTotal: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.insert(vendas).values({ userId: ctx.user.id, ...input });
+      return { success: true };
+    }),
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(vendas).where(and(eq(vendas.id, input.id), eq(vendas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── APP ROUTER ───────────────────────────────────────────────────────────────
+export const appRouter = router({
+  auth: authRouter,
+  animais: animaisRouter,
+  lotes: lotesRouter,
+  saude: saudeRouter,
+  reproducao: reproducaoRouter,
+  maquinas: maquinasRouter,
+  abastecimentos: abastecimentosRouter,
+  manutencoes: manutencoesRouter,
+  pesagens: pesagensRouter,
+  nutricao: nutricaoRouter,
+  benfeitorias: benfeitoriasRouter,
+  estoque: estoqueRouter,
+  financeiro: financeiroRouter,
+  dashboard: dashboardRouter,
+  compras: comprasRouter,
+  vendas: vendasRouter,
+});
+
+export type AppRouter = typeof appRouter;

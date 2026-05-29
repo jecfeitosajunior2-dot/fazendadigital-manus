@@ -1,417 +1,272 @@
 import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
-import { animalsList, stockItems, financialAccounts } from "@/lib/data";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
 
-// --- Animals Page (exact Fazenda Digital replica with functional search) ---
+// --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
-  const [farmFilter, setFarmFilter] = useState("");
-  const [subdivisionFilter, setSubdivisionFilter] = useState("");
-  const [breedFilter, setBreedFilter] = useState("");
+  const [sexoFilter, setSexoFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
-  // Get unique values for dropdowns
-  const farms = ["Fazenda Fazenda Digital", "Fazenda Alma Viva", "Fazenda Rancho 2"];
-  const subdivisions = ["Lote Vacas", "Lote Bezerros (as)", "Lote Engorda", "Lote Recria", "Lote novilhas da estação"];
-  const breeds = ["Nelore", "Nelore Mocho", "Senepol"];
+  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery({ status: statusFilter || undefined });
+  const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
-  const filtered = useMemo(() => {
-    let result = animalsList;
+  const animais = animaisData || [];
+  const totalPages = Math.max(1, Math.ceil(animais.length / perPage));
+  const paginated = animais.slice((page - 1) * perPage, page * perPage);
 
-    // Apply subdivision filter
-    if (subdivisionFilter && subdivisionFilter !== "Subdivisão") {
-      result = result.filter(a => a.lot === subdivisionFilter);
-    }
-
-    // Apply breed filter
-    if (breedFilter && breedFilter !== "Raça") {
-      result = result.filter(a => a.breed === breedFilter);
-    }
-
-    // Apply search filter
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(a =>
-        a.animalId.includes(q) ||
-        a.electronicId.includes(q) ||
-        a.breed.toLowerCase().includes(q) ||
-        a.lot.toLowerCase().includes(q) ||
-        a.sex.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [search, subdivisionFilter, breedFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+  const handleExportCSV = () => {
+    const headers = ["ID", "Brinco", "Nome", "Sexo", "Raça", "Status", "Peso Atual"];
+    const rows = animais.map(a => [a.id, a.brinco || "", a.nome || "", a.sexo, a.raca || "", a.status, a.pesoAtual || ""]);
+    const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `animais_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast.success("Lista exportada com sucesso!");
+  };
 
   return (
     <AppLayout>
-      {/* Header with title and action buttons */}
       <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de animais</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <button 
-            onClick={() => {
-              // Create CSV data
-              const headers = ["Nº Animal", "ID Eletrônico", "ID Manejo", "Data Nasc.", "Castrado", "Sexo", "Raça", "Lote", "Atividade"];
-              const rows = filtered.map(a => [
-                a.animalId,
-                a.electronicId,
-                a.managementId || "-",
-                a.birthDate,
-                a.castrated,
-                a.sex,
-                a.breed,
-                a.lot,
-                a.activity
-              ]);
-              
-              // Create CSV string
-              const csv = [
-                headers.join(","),
-                ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
-              ].join("\n");
-              
-              // Download
-              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-              const link = document.createElement("a");
-              const url = URL.createObjectURL(blob);
-              link.setAttribute("href", url);
-              link.setAttribute("download", `animais_${new Date().toISOString().split('T')[0]}.csv`);
-              link.click();
-              toast.success("Lista exportada com sucesso!");
-            }}
-            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px] cursor-pointer" 
-            title="Planilha"
-          >
+          <button onClick={handleExportCSV} className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px]" title="Planilha">
             <span className="material-icons text-[16px]">grid_on</span>
             <span className="hidden md:inline">Planilha</span>
           </button>
-          <button className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px]" title="PDF">
-            <span className="material-icons text-[16px]">picture_as_pdf</span>
-            <span className="hidden md:inline">PDF</span>
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium hover:bg-gray-50 uppercase">
-            <span className="hidden sm:inline">Importar Animais</span>
-            <span className="sm:hidden">Importar</span>
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium hover:bg-gray-50 uppercase">
-            SISBOV
-          </button>
-          <button
-            onClick={() => setLocation('/rebanho/novo-animal')}
-            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase hover:opacity-90 cursor-pointer"
-            style={{ backgroundColor: "#4ECDC4" }}
-          >
+          <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Animal
           </button>
         </div>
       </div>
 
-      {/* Filters bar */}
-      <div className="bg-white rounded shadow-sm border border-gray-100 mb-3 px-3 py-2 flex items-center gap-2 flex-wrap">
-        <select 
-          value={farmFilter}
-          onChange={e => { setFarmFilter(e.target.value); setPage(1); }}
-          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px]"
-        >
-          <option value="">Fazenda</option>
-          {farms.map(f => <option key={f} value={f}>{f}</option>)}
+      {/* Filters */}
+      <div className="mb-3 flex flex-wrap gap-2">
+        <input
+          type="text"
+          placeholder="Buscar por brinco, nome ou raça..."
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
+          className="border border-gray-300 rounded px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#2D5A5A] w-full sm:w-64"
+        />
+        <select value={sexoFilter} onChange={e => { setSexoFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
+          <option value="">Sexo</option>
+          <option value="macho">Macho</option>
+          <option value="femea">Fêmea</option>
         </select>
-        <select 
-          value={subdivisionFilter}
-          onChange={e => { setSubdivisionFilter(e.target.value); setPage(1); }}
-          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px] hidden sm:block"
-        >
-          <option value="">Subdivisão</option>
-          {subdivisions.map(s => <option key={s} value={s}>{s}</option>)}
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
+          <option value="">Status</option>
+          <option value="ativo">Ativo</option>
+          <option value="vendido">Vendido</option>
+          <option value="morto">Morto</option>
         </select>
-        <select 
-          value={breedFilter}
-          onChange={e => { setBreedFilter(e.target.value); setPage(1); }}
-          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[80px] hidden sm:block"
-        >
-          <option value="">Raça</option>
-          {breeds.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <div className="flex-1 relative min-w-[120px]">
-          <span className="material-icons text-[14px] text-gray-400 absolute left-2 top-1/2 -translate-y-1/2">search</span>
-          <input
-            type="text"
-            placeholder="Pesquisar..."
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#4ECDC4]"
-          />
-        </div>
-        {(farmFilter || subdivisionFilter || breedFilter || search) && (
-          <button 
-            onClick={() => { setFarmFilter(""); setSubdivisionFilter(""); setBreedFilter(""); setSearch(""); setPage(1); }}
-            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
-          >
-            Limpar Filtros
-          </button>
-        )}
-        <button className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50 uppercase font-medium hidden sm:flex">
-          Mais Filtros
-        </button>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[800px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Nº Animal</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">ID Eletrônico</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">ID Manejo</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Data Nasc.</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Castrado</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Sexo</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Raça</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Lote</th>
-                <th className="px-2 py-2 text-left text-[10px] font-medium text-gray-500 uppercase tracking-wide">Atividade</th>
-                <th className="px-2 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-16">Ações</th>
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Brinco</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Nome</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Sexo</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Raça</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Status</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Peso (kg)</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {paginated.map((animal, i) => (
-                <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.animalId}`)}>
-                  <td className="px-2 py-2 font-medium cursor-pointer hover:underline" style={{ color: "#4ECDC4" }}>{animal.animalId}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.electronicId}</td>
-                  <td className="px-2 py-2 text-gray-500">{animal.managementId || "-"}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.birthDate}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.castrated}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.sex}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.breed}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.lot}</td>
-                  <td className="px-2 py-2 text-gray-700">{animal.activity}</td>
-                  <td className="px-2 py-2 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLocation(`/rebanho/editar-animal?id=${animal.animalId}`);
-                        }}
-                        className="p-0.5 rounded hover:bg-gray-100 text-gray-400" 
-                        title="Editar"
-                      >
-                        <span className="material-icons text-[14px]">edit</span>
+              {isLoading ? (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+              ) : paginated.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
+              ) : paginated.map((animal) => (
+                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium text-[#2D5A5A]">{animal.brinco || "-"}</td>
+                  <td className="px-3 py-2">{animal.nome || "-"}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
+                      {animal.sexo === "macho" ? "Macho" : "Fêmea"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">{animal.raca || "-"}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.status === "ativo" ? "bg-green-100 text-green-700" : animal.status === "vendido" ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
+                      {animal.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">{animal.pesoAtual ? Number(animal.pesoAtual).toFixed(1) : "-"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A]" title="Ver detalhes">
+                        <span className="material-icons text-[16px]">visibility</span>
                       </button>
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Excluir">
-                        <span className="material-icons text-[14px]">delete</span>
+                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600" title="Editar">
+                        <span className="material-icons text-[16px]">edit</span>
+                      </button>
+                      <button onClick={() => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); }} className="p-1 text-gray-400 hover:text-red-600" title="Remover">
+                        <span className="material-icons text-[16px]">delete</span>
                       </button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {paginated.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-[12px]">
-                    <span className="material-icons text-3xl text-gray-200 block mb-2">search_off</span>
-                    Nenhum animal encontrado
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
         {/* Pagination */}
-        <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-          <span>Mostrando {paginated.length > 0 ? (page - 1) * perPage + 1 : 0}-{Math.min(page * perPage, filtered.length)} de {filtered.length} animais</span>
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30"
-            >
-              <span className="material-icons text-[14px]">chevron_left</span>
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-              <button
-                key={p}
-                onClick={() => setPage(p)}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium ${p === page ? "text-white" : "text-gray-500 hover:bg-gray-100"}`}
-                style={p === page ? { backgroundColor: "#4ECDC4" } : {}}
-              >
-                {p}
-              </button>
-            ))}
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-30"
-            >
-              <span className="material-icons text-[14px]">chevron_right</span>
-            </button>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+            <span className="text-[11px] text-gray-500">{animais.length} animais</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Anterior</button>
+              <span className="text-[11px] px-2">{page} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Próxima</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </AppLayout>
   );
 }
 
-// --- Stock Page ---
+// --- Estoque Page ---
 export function EstoquePage() {
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
   const [search, setSearch] = useState("");
-  const filtered = useMemo(() => {
-    if (!search.trim()) return stockItems;
-    const q = search.toLowerCase();
-    return stockItems.filter(s => s.product.toLowerCase().includes(q));
-  }, [search]);
+  const [form, setForm] = useState({ nome: "", categoria: "", unidade: "", quantidade: "", quantidadeMinima: "", valorUnitario: "", localizacao: "", observacoes: "" });
 
-  return (
-    <AppLayout>
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
-        <div className="flex items-center gap-2">
-          <button
-            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
-            style={{ backgroundColor: "#4ECDC4" }}
-          >
-            <span className="material-icons text-[14px]">add</span>
-            Nova Entrada
-          </button>
-          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
-            <span className="material-icons text-[16px]">grid_on</span>
-          </button>
-          <button className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">
-            <span className="material-icons text-[16px]">picture_as_pdf</span>
-          </button>
-        </div>
-      </div>
+  const { data: items, isLoading, refetch } = trpc.estoque.list.useQuery();
+  const createMutation = trpc.estoque.create.useMutation({ onSuccess: () => { toast.success("Item criado!"); setShowForm(false); resetForm(); refetch(); } });
+  const updateMutation = trpc.estoque.update.useMutation({ onSuccess: () => { toast.success("Item atualizado!"); setShowForm(false); resetForm(); refetch(); } });
+  const deleteMutation = trpc.estoque.delete.useMutation({ onSuccess: () => { toast.success("Item removido!"); refetch(); } });
 
-      <div className="bg-white rounded shadow-sm border border-gray-100 mb-3 px-3 py-2 flex items-center gap-2">
-        <div className="flex-1 relative">
-          <span className="material-icons text-[14px] text-gray-400 absolute left-2 top-1/2 -translate-y-1/2">search</span>
-          <input
-            type="text"
-            placeholder="Pesquisar..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#4ECDC4]"
-          />
-        </div>
-      </div>
+  const resetForm = () => { setForm({ nome: "", categoria: "", unidade: "", quantidade: "", quantidadeMinima: "", valorUnitario: "", localizacao: "", observacoes: "" }); setEditItem(null); };
 
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[500px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Produto</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Unidade</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Quantidade</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Estoque Mín.</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item, i) => (
-                <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
-                  <td className="px-3 py-2 text-gray-700">{item.product}</td>
-                  <td className="px-3 py-2 text-gray-500">{item.unit}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{item.qty}</td>
-                  <td className="px-3 py-2 text-right text-gray-500">{item.minStock}</td>
-                  <td className="px-3 py-2 text-center">
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-green-100 text-green-700">
-                      <span className="material-icons text-[10px] mr-0.5">check_circle</span>OK
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><span className="material-icons text-[14px]">edit</span></button>
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><span className="material-icons text-[14px]">delete</span></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
-          Exibindo 1-{filtered.length} de {filtered.length} itens
-        </div>
-      </div>
-    </AppLayout>
-  );
-}
+  const filtered = useMemo(() => (items || []).filter(i => !search || i.nome.toLowerCase().includes(search.toLowerCase())), [items, search]);
 
-// --- Financial Accounts Page ---
-export function ContasPage() {
-  return (
-    <AppLayout>
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Contas</h1>
-        <button
-          className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase w-fit"
-          style={{ backgroundColor: "#4ECDC4" }}
-        >
-          <span className="material-icons text-[14px]">add</span>
-          Nova Conta
-        </button>
-      </div>
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editItem) {
+      updateMutation.mutate({ id: editItem.id, ...form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
 
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px] min-w-[400px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Saldo</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {financialAccounts.map((acc, i) => (
-                <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
-                  <td className="px-3 py-2 text-gray-700 font-medium">{acc.name}</td>
-                  <td className="px-3 py-2 text-gray-500">{acc.type}</td>
-                  <td className="px-3 py-2 text-right text-gray-700">{acc.balance}</td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><span className="material-icons text-[14px]">edit</span></button>
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><span className="material-icons text-[14px]">delete</span></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </AppLayout>
-  );
-}
-
-// --- Generic Placeholder Page ---
-export function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">{title}</h1>
-        <button
-          className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
-          style={{ backgroundColor: "#4ECDC4" }}
-        >
-          <span className="material-icons text-[14px]">add</span>
-          Novo
+        <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+          <span className="material-icons text-[14px]">add</span> Novo Item
         </button>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
-        <span className="material-icons text-4xl text-gray-200 mb-2 block">inbox</span>
-        <p className="text-[12px] text-gray-400">Sem Dados</p>
-        <p className="text-[11px] text-gray-300 mt-1">{subtitle}</p>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Item" : "Novo Item de Estoque"}</h2>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Nome *</label><input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Categoria</label><input value={form.categoria} onChange={e => setForm(f => ({...f, categoria: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Unidade</label><input value={form.unidade} onChange={e => setForm(f => ({...f, unidade: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Quantidade</label><input type="number" step="0.01" value={form.quantidade} onChange={e => setForm(f => ({...f, quantidade: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Qtd. Mínima</label><input type="number" step="0.01" value={form.quantidadeMinima} onChange={e => setForm(f => ({...f, quantidadeMinima: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Valor Unitário (R$)</label><input type="number" step="0.01" value={form.valorUnitario} onChange={e => setForm(f => ({...f, valorUnitario: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Localização</label><input value={form.localizacao} onChange={e => setForm(f => ({...f, localizacao: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-3">
+        <input type="text" placeholder="Buscar item..." value={search} onChange={e => setSearch(e.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-[12px] w-full sm:w-64" />
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Nome</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Categoria</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Quantidade</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Unidade</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Valor Unit.</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Status</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum item no estoque.</td></tr>
+              ) : filtered.map((item) => {
+                const isLow = item.quantidadeMinima && Number(item.quantidade) <= Number(item.quantidadeMinima);
+                return (
+                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium">{item.nome}</td>
+                    <td className="px-3 py-2 text-gray-500">{item.categoria || "-"}</td>
+                    <td className="px-3 py-2">{Number(item.quantidade).toFixed(2)}</td>
+                    <td className="px-3 py-2">{item.unidade || "-"}</td>
+                    <td className="px-3 py-2">{item.valorUnitario ? `R$ ${Number(item.valorUnitario).toFixed(2)}` : "-"}</td>
+                    <td className="px-3 py-2">
+                      {isLow ? <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px]">Estoque Baixo</span> : <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">OK</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => { setEditItem(item); setForm({ nome: item.nome, categoria: item.categoria || "", unidade: item.unidade || "", quantidade: item.quantidade?.toString() || "", quantidadeMinima: item.quantidadeMinima?.toString() || "", valorUnitario: item.valorUnitario?.toString() || "", localizacao: item.localizacao || "", observacoes: item.observacoes || "" }); setShowForm(true); }} className="p-1 text-gray-400 hover:text-blue-600">
+                          <span className="material-icons text-[16px]">edit</span>
+                        </button>
+                        <button onClick={() => { if (confirm("Remover item?")) deleteMutation.mutate({ id: item.id }); }} className="p-1 text-gray-400 hover:text-red-600">
+                          <span className="material-icons text-[16px]">delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+
+// --- Contas Page (placeholder for financial) ---
+export function ContasPage() {
+  return (
+    <AppLayout>
+      <div className="mb-3">
+        <h1 className="text-[15px] font-medium text-gray-800">Contas Financeiras</h1>
+      </div>
+      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
+        <span className="material-icons text-[48px] mb-2 block">account_balance</span>
+        <p>Acesse o módulo Financeiro para gerenciar contas.</p>
       </div>
     </AppLayout>
   );

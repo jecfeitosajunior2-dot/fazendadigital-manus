@@ -1,27 +1,33 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
-import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
+import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
+import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  root: path.resolve(__dirname, "client"),
   plugins: [react(), tailwindcss(), jsxLocPlugin()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "client/src"),
+      "@": path.resolve(import.meta.dirname, "client/src"),
+      "@shared": path.resolve(import.meta.dirname, "shared"),
     },
   },
-  server: {
-    port: 3000,
-    strictPort: false,
-    host: true,
-  },
+  root: path.resolve(import.meta.dirname, "client"),
+  publicDir: path.resolve(import.meta.dirname, "client", "public"),
+  envDir: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(__dirname, "dist"),
-    rollupOptions: {
-      external: ["@tanstack/query-core"],
+    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    emptyOutDir: true,
+  },
+  server: {
+    port: 5173,
+    host: true,
+    allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -3,168 +3,230 @@ import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useCattle } from '@/contexts/CattleContext';
-import { animalsList } from '@/lib/data';
-import { ArrowLeft, Calendar, Syringe, Heart, DollarSign, AlertCircle, Weight, Zap, Users, TrendingUp } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { toast } from 'sonner';
+import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, TrendingUp, Zap, Plus, Trash2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const CattleDetailPageExpanded: React.FC = () => {
   const [, setLocation] = useLocation();
-  const { cattle } = useCattle();
   const [activeTab, setActiveTab] = useState('geral');
-  
-  // Get cattle ID from URL or use first cattle as default
-  const urlParams = new URLSearchParams(window.location.search);
-  const cattleId = urlParams.get('id') || '1';
-  const selectedCattle = cattle.find(c => c.number === cattleId) || 
-                        (animalsList.find(a => a.animalId === cattleId) as any);
+  const utils = trpc.useUtils();
 
-  if (!selectedCattle) {
+  // Get animal ID from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const cattleIdParam = urlParams.get('id');
+  const animalId = cattleIdParam ? parseInt(cattleIdParam) : null;
+
+  // ─── tRPC Queries ─────────────────────────────────────────────────────────
+  const { data: animal, isLoading: loadingAnimal, error: animalError } = trpc.animais.getById.useQuery(
+    { id: animalId! },
+    { enabled: !!animalId }
+  );
+
+  const { data: saudeRegistros, isLoading: loadingSaude } = trpc.saude.list.useQuery(
+    { animalId: animalId! },
+    { enabled: !!animalId }
+  );
+
+  const { data: pesagens, isLoading: loadingPesagens } = trpc.pesagens.list.useQuery(
+    { animalId: animalId! },
+    { enabled: !!animalId }
+  );
+
+  const { data: reproducaoRegistros, isLoading: loadingRepro } = trpc.reproducao.list.useQuery(
+    undefined,
+    { enabled: !!animalId }
+  );
+
+  // Filter reproduction records for this animal
+  const animalRepro = reproducaoRegistros?.filter(
+    r => r.femeaId === animalId || r.machoId === animalId
+  ) || [];
+
+  // ─── Mutations ────────────────────────────────────────────────────────────
+  const deleteSaudeMutation = trpc.saude.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Registro de saúde removido!');
+      utils.saude.list.invalidate({ animalId: animalId! });
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  const deletePesagemMutation = trpc.pesagens.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Pesagem removida!');
+      utils.pesagens.list.invalidate({ animalId: animalId! });
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  // ─── Add Saúde Form ───────────────────────────────────────────────────────
+  const [showSaudeForm, setShowSaudeForm] = useState(false);
+  const [saudeForm, setSaudeForm] = useState({
+    tipo: '',
+    descricao: '',
+    medicamento: '',
+    dosagem: '',
+    veterinario: '',
+    custo: '',
+    dataRegistro: new Date().toISOString().split('T')[0],
+    proximaData: '',
+    observacoes: '',
+  });
+
+  const createSaudeMutation = trpc.saude.create.useMutation({
+    onSuccess: () => {
+      toast.success('Registro de saúde criado!');
+      setShowSaudeForm(false);
+      setSaudeForm({ tipo: '', descricao: '', medicamento: '', dosagem: '', veterinario: '', custo: '', dataRegistro: new Date().toISOString().split('T')[0], proximaData: '', observacoes: '' });
+      utils.saude.list.invalidate({ animalId: animalId! });
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  // ─── Add Pesagem Form ─────────────────────────────────────────────────────
+  const [showPesagemForm, setShowPesagemForm] = useState(false);
+  const [pesagemForm, setPesagemForm] = useState({
+    peso: '',
+    data: new Date().toISOString().split('T')[0],
+    observacoes: '',
+  });
+
+  const createPesagemMutation = trpc.pesagens.create.useMutation({
+    onSuccess: () => {
+      toast.success('Pesagem registrada!');
+      setShowPesagemForm(false);
+      setPesagemForm({ peso: '', data: new Date().toISOString().split('T')[0], observacoes: '' });
+      utils.pesagens.list.invalidate({ animalId: animalId! });
+      utils.animais.getById.invalidate({ id: animalId! });
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+  const formatDate = (date: Date | string | null | undefined) => {
+    if (!date) return '—';
+    const d = new Date(date);
+    return d.toLocaleDateString('pt-BR');
+  };
+
+  const calculateAge = (birthDate: Date | string | null | undefined) => {
+    if (!birthDate) return '—';
+    const birth = new Date(birthDate);
+    const today = new Date();
+    const ageInMonths = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth());
+    const years = Math.floor(ageInMonths / 12);
+    const months = ageInMonths % 12;
+    if (years === 0) return `${months} meses`;
+    return `${years} anos e ${months} meses`;
+  };
+
+  const calculateWeightGain = () => {
+    if (!pesagens || pesagens.length < 2) return 0;
+    const sorted = [...pesagens].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+    const latest = parseFloat(sorted[0].peso || '0');
+    const oldest = parseFloat(sorted[sorted.length - 1].peso || '0');
+    return latest - oldest;
+  };
+
+  // ─── Loading / Error States ───────────────────────────────────────────────
+  if (!animalId) {
     return (
       <AppLayout>
         <div className="max-w-4xl mx-auto">
-          <Button
-            onClick={() => setLocation('/rebanho/lista-animais')}
-            className="mb-6 bg-gray-400 hover:bg-gray-500 text-white"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar para Lista de Animais
+          <Button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-6 bg-gray-400 hover:bg-gray-500 text-white">
+            <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Lista de Animais
           </Button>
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">Animal não encontrado. Por favor, selecione um animal válido.</p>
+            <p className="text-gray-600">ID de animal inválido na URL.</p>
           </Card>
         </div>
       </AppLayout>
     );
   }
 
-  // Map animalsList data to CattleRecord format
-  const animalData = selectedCattle as any;
-  const mappedCattle = {
-    id: parseInt(animalData.animalId || '0'),
-    number: animalData.animalId || '',
-    electronicId: animalData.electronicId || '',
-    birthDate: animalData.birthDate || '',
-    sex: (animalData.sex || 'Macho') as 'Macho' | 'Fêmea',
-    breed: animalData.breed || '',
-    lot: animalData.lot || '',
-    activity: animalData.activity || '',
-    sanitaryStatus: 'Vacinado' as const,
-    lastVaccine: '15/04/2026',
-    salePrice: undefined,
-    saleDate: undefined,
-    financialStatus: 'Ativo' as const,
-  };
+  if (loadingAnimal) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4ECDC4]" />
+          <span className="ml-3 text-gray-600">Carregando dados do animal...</span>
+        </div>
+      </AppLayout>
+    );
+  }
 
-  // Vaccination history
-  const vaccineHistory = [
-    { date: '15/04/2026', vaccine: 'Vacina Aftosa', veterinarian: 'Dr. João Silva', notes: 'Vacinação de rotina', status: 'Confirmado' },
-    { date: '20/03/2026', vaccine: 'Vermifugo', veterinarian: 'Dr. Maria Santos', notes: 'Controle parasitário', status: 'Confirmado' },
-    { date: '10/02/2026', vaccine: 'Vacina Brucelose', veterinarian: 'Dr. João Silva', notes: 'Vacinação obrigatória', status: 'Confirmado' },
-  ];
+  if (animalError || !animal) {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto">
+          <Button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-6 bg-gray-400 hover:bg-gray-500 text-white">
+            <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Lista de Animais
+          </Button>
+          <Card className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <p className="text-gray-600">Animal não encontrado no banco de dados.</p>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
-  // Reproduction history (for females)
-  const reproductionHistory = [
-    { date: '25/05/2026', type: 'Inseminação Artificial', status: 'Confirmado', details: 'Sêmen de touro Nelore Premium', result: 'Prenhe' },
-    { date: '15/04/2026', type: 'Sincronização', status: 'Concluído', details: 'Protocolo OPU/IATF', result: 'Sucesso' },
-    { date: '01/03/2026', type: 'Parto', status: 'Concluído', details: 'Bezerro macho, 38kg', result: 'Normal' },
-  ];
-
-  // Weighing history
-  const weighingHistory = [
-    { date: '29/05/2026', weight: 450, observer: 'Pedro Silva', notes: 'Pesagem de rotina' },
-    { date: '22/05/2026', weight: 448, observer: 'Maria Santos', notes: 'Pesagem pós-manejo' },
-    { date: '15/05/2026', weight: 445, observer: 'Pedro Silva', notes: 'Pesagem de controle' },
-    { date: '08/05/2026', weight: 442, observer: 'João Costa', notes: 'Pesagem inicial' },
-  ];
-
-  // Management history
-  const managementHistory = [
-    { date: '25/05/2026', type: 'Vacinação', description: 'Vacina Aftosa', responsible: 'Dr. João Silva', animals: 15 },
-    { date: '20/05/2026', type: 'Pesagem', description: 'Pesagem mensal', responsible: 'Pedro Silva', animals: 52 },
-    { date: '15/05/2026', type: 'Vermifugação', description: 'Controle parasitário', responsible: 'Dr. Maria Santos', animals: 52 },
-    { date: '10/05/2026', type: 'Inseminação', description: 'Inseminação artificial', responsible: 'Dr. João Silva', animals: 8 },
-  ];
-
-  // Sales history
-  const salesHistory = mappedCattle.saleDate ? [
-    { date: mappedCattle.saleDate, buyer: 'Fazenda Modelo Ltda', price: mappedCattle.salePrice || 0, status: 'Concluído' },
-  ] : [];
-
-  // Financial records
-  const financialRecords = [
-    { date: '29/05/2026', type: 'Venda', description: `Venda de ${mappedCattle.sex === 'Macho' ? 'touro' : 'vaca'} - ${mappedCattle.breed}`, amount: mappedCattle.salePrice || 0, status: 'Recebido' },
-    { date: '15/04/2026', type: 'Despesa', description: 'Vacinação e tratamento veterinário', amount: -150.00, status: 'Pago' },
-    { date: '01/04/2026', type: 'Despesa', description: 'Alimentação e suplementação', amount: -85.50, status: 'Pago' },
-    { date: '20/03/2026', type: 'Despesa', description: 'Vermifugação', amount: -45.00, status: 'Pago' },
-  ];
-
-  // Genealogy
-  const genealogy = {
-    father: { number: '12', breed: 'Nelore', name: 'Touro Premium' },
-    mother: { number: '45', breed: 'Nelore', name: 'Vaca Elite' },
-    children: [
-      { number: '89', sex: 'Macho', breed: 'Nelore', birthDate: '15/03/2026' },
-      { number: '90', sex: 'Fêmea', breed: 'Nelore', birthDate: '20/04/2026' },
-    ]
-  };
-
-  const calculateAge = () => {
-    const birthDate = new Date(mappedCattle.birthDate.split('/').reverse().join('-'));
-    const today = new Date();
-    const ageInMonths = (today.getFullYear() - birthDate.getFullYear()) * 12 + 
-                        (today.getMonth() - birthDate.getMonth());
-    const years = Math.floor(ageInMonths / 12);
-    const months = ageInMonths % 12;
-    return `${years} anos e ${months} meses`;
-  };
-
-  const calculateWeightGain = () => {
-    if (weighingHistory.length < 2) return 0;
-    return weighingHistory[0].weight - weighingHistory[weighingHistory.length - 1].weight;
-  };
+  const sortedPesagens = pesagens ? [...pesagens].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()) : [];
+  const latestWeight = sortedPesagens[0]?.peso || animal.pesoAtual || '—';
 
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto">
-        <Button
-          onClick={() => setLocation('/rebanho/lista-animais')}
-          className="mb-6 bg-gray-400 hover:bg-gray-500 text-white"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar para Lista de Animais
+        <Button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-6 bg-gray-400 hover:bg-gray-500 text-white">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Lista de Animais
         </Button>
 
         {/* Header Card */}
         <Card className="p-6 mb-6 bg-gradient-to-r from-green-50 to-green-100 border-green-200">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">Animal #{mappedCattle.number}</h1>
-              <p className="text-gray-600 mb-4">ID Eletrônico: {mappedCattle.electronicId}</p>
-              <div className="space-y-1 text-sm">
-                <p><span className="text-gray-600">Sexo:</span> <span className="font-semibold">{mappedCattle.sex}</span></p>
-                <p><span className="text-gray-600">Raça:</span> <span className="font-semibold">{mappedCattle.breed}</span></p>
-                <p><span className="text-gray-600">Data Nasc.:</span> <span className="font-semibold">{mappedCattle.birthDate}</span></p>
-                <p><span className="text-gray-600">Idade:</span> <span className="font-semibold">{calculateAge()}</span></p>
+              <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                {animal.nome || animal.brinco || `Animal #${animal.id}`}
+              </h1>
+              <p className="text-gray-600 mb-1">Brinco: {animal.brinco || '—'}</p>
+              <div className="space-y-1 text-sm mt-3">
+                <p><span className="text-gray-600">Sexo:</span> <span className="font-semibold">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</span></p>
+                <p><span className="text-gray-600">Raça:</span> <span className="font-semibold">{animal.raca || '—'}</span></p>
+                <p><span className="text-gray-600">Data Nasc.:</span> <span className="font-semibold">{formatDate(animal.dataNascimento)}</span></p>
+                <p><span className="text-gray-600">Idade:</span> <span className="font-semibold">{calculateAge(animal.dataNascimento)}</span></p>
               </div>
             </div>
             <div>
               <div className="space-y-1 text-sm">
-                <p><span className="text-gray-600">Lote:</span> <span className="font-semibold">{mappedCattle.lot}</span></p>
-                <p><span className="text-gray-600">Atividade:</span> <span className="font-semibold">{mappedCattle.activity}</span></p>
-                <p><span className="text-gray-600">Status Sanitário:</span> <span className="font-semibold px-2 py-0.5 rounded text-xs bg-green-100 text-green-800">{mappedCattle.sanitaryStatus}</span></p>
-                <p><span className="text-gray-600">Status Financeiro:</span> <span className="font-semibold px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">{mappedCattle.financialStatus}</span></p>
+                <p><span className="text-gray-600">Categoria:</span> <span className="font-semibold">{animal.categoria || '—'}</span></p>
+                <p><span className="text-gray-600">Status:</span> <span className={`font-semibold px-2 py-0.5 rounded text-xs ${animal.status === 'ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{animal.status}</span></p>
+                <p><span className="text-gray-600">Lote ID:</span> <span className="font-semibold">{animal.loteId || '—'}</span></p>
+                <p><span className="text-gray-600">Registros Saúde:</span> <span className="font-semibold">{saudeRegistros?.length || 0}</span></p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-white rounded p-3">
                 <p className="text-xs text-gray-600">Peso Atual</p>
-                <p className="text-2xl font-bold text-gray-800">{weighingHistory[0]?.weight || 0}kg</p>
+                <p className="text-2xl font-bold text-gray-800">{latestWeight}kg</p>
               </div>
               <div className="bg-white rounded p-3">
                 <p className="text-xs text-gray-600">Ganho</p>
-                <p className="text-2xl font-bold text-green-600">+{calculateWeightGain()}kg</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
+                </p>
+              </div>
+              <div className="col-span-2 bg-white rounded p-3">
+                <Button
+                  size="sm"
+                  onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
+                  className="w-full text-white text-xs"
+                  style={{ backgroundColor: '#4ECDC4' }}
+                >
+                  Editar Animal
+                </Button>
               </div>
             </div>
           </div>
@@ -172,263 +234,459 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="geral">Geral</TabsTrigger>
-            <TabsTrigger value="vacinacoes">Vacinações</TabsTrigger>
+            <TabsTrigger value="saude">Saúde</TabsTrigger>
             <TabsTrigger value="reproducao">Reprodução</TabsTrigger>
             <TabsTrigger value="pesagens">Pesagens</TabsTrigger>
-            <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
-            <TabsTrigger value="genealogia">Genealogia</TabsTrigger>
+            <TabsTrigger value="observacoes">Observações</TabsTrigger>
           </TabsList>
 
-          {/* Geral Tab */}
+          {/* ─── Geral Tab ─────────────────────────────────────────────────── */}
           <TabsContent value="geral">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Management History */}
               <Card className="p-6">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
                   <Zap className="w-5 h-5 mr-2 text-blue-600" />
-                  Histórico de Manejos
+                  Dados Completos
                 </h2>
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {managementHistory.map((record, idx) => (
-                    <div key={idx} className="border-l-4 border-blue-400 pl-4 py-2">
-                      <p className="text-sm font-semibold text-gray-800">{record.type} - {record.date}</p>
-                      <p className="text-xs text-gray-600">{record.description}</p>
-                      <p className="text-xs text-gray-500">Responsável: {record.responsible}</p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              {/* Key Metrics */}
-              <Card className="p-6">
-                <h2 className="text-lg font-bold text-gray-800 mb-4">Métricas Principais</h2>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-gray-600">Última Vacinação</span>
-                    <span className="font-semibold text-gray-800">{vaccineHistory[0]?.date}</span>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">ID Interno</span>
+                    <span className="font-semibold">#{animal.id}</span>
                   </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-gray-600">Dias desde última vacinação</span>
-                    <span className="font-semibold text-gray-800">14 dias</span>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Nome</span>
+                    <span className="font-semibold">{animal.nome || '—'}</span>
                   </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-gray-600">Manejos realizados</span>
-                    <span className="font-semibold text-gray-800">{managementHistory.length}</span>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Brinco</span>
+                    <span className="font-semibold">{animal.brinco || '—'}</span>
                   </div>
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="text-gray-600">Custo acumulado</span>
-                    <span className="font-semibold text-gray-800">R$ 280,50</span>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Raça</span>
+                    <span className="font-semibold">{animal.raca || '—'}</span>
                   </div>
-                </div>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Vacinações Tab */}
-          <TabsContent value="vacinacoes">
-            <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <Syringe className="w-5 h-5 mr-2 text-green-600" />
-                Histórico de Vacinações
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Vacina</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Veterinário</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Status</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Observações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vaccineHistory.map((record, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-800">{record.date}</td>
-                        <td className="px-4 py-2 text-gray-800 font-semibold">{record.vaccine}</td>
-                        <td className="px-4 py-2 text-gray-600">{record.veterinarian}</td>
-                        <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-green-100 text-green-800">{record.status}</span></td>
-                        <td className="px-4 py-2 text-gray-600">{record.notes}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* Reprodução Tab */}
-          {mappedCattle.sex === 'Fêmea' && (
-            <TabsContent value="reproducao">
-              <Card className="p-6">
-                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                  <Heart className="w-5 h-5 mr-2 text-red-600" />
-                  Histórico de Reprodução
-                </h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Tipo</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Detalhes</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Resultado</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reproductionHistory.map((record, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-2 text-gray-800">{record.date}</td>
-                          <td className="px-4 py-2 text-gray-800 font-semibold">{record.type}</td>
-                          <td className="px-4 py-2 text-gray-600">{record.details}</td>
-                          <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">{record.result}</span></td>
-                          <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-green-100 text-green-800">{record.status}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </TabsContent>
-          )}
-
-          {/* Pesagens Tab */}
-          <TabsContent value="pesagens">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="p-6">
-                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                  <Weight className="w-5 h-5 mr-2 text-purple-600" />
-                  Histórico de Pesagens
-                </h2>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {weighingHistory.map((record, idx) => (
-                    <div key={idx} className="flex justify-between items-center p-3 bg-gray-50 rounded hover:bg-gray-100">
-                      <div>
-                        <p className="font-semibold text-gray-800">{record.weight}kg</p>
-                        <p className="text-xs text-gray-600">{record.date} - {record.observer}</p>
-                      </div>
-                      {idx > 0 && (
-                        <div className="text-right">
-                          <p className={`text-sm font-semibold ${weighingHistory[idx - 1].weight > record.weight ? 'text-green-600' : 'text-red-600'}`}>
-                            {weighingHistory[idx - 1].weight > record.weight ? '+' : ''}{weighingHistory[idx - 1].weight - record.weight}kg
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Sexo</span>
+                    <span className="font-semibold">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Categoria</span>
+                    <span className="font-semibold">{animal.categoria || '—'}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Status</span>
+                    <span className={`font-semibold px-2 py-0.5 rounded text-xs ${animal.status === 'ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{animal.status}</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-2">
+                    <span className="text-gray-600">Cadastrado em</span>
+                    <span className="font-semibold">{formatDate(animal.createdAt)}</span>
+                  </div>
                 </div>
               </Card>
 
               <Card className="p-6">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
                   <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
-                  Análise de Peso
+                  Resumo de Peso
                 </h2>
                 <div className="space-y-3">
                   <div className="p-3 bg-gray-50 rounded">
-                    <p className="text-xs text-gray-600">Peso Inicial</p>
-                    <p className="text-2xl font-bold text-gray-800">{weighingHistory[weighingHistory.length - 1]?.weight || 0}kg</p>
+                    <p className="text-xs text-gray-600">Peso Atual (cadastrado)</p>
+                    <p className="text-2xl font-bold text-gray-800">{animal.pesoAtual || '—'}kg</p>
                   </div>
                   <div className="p-3 bg-gray-50 rounded">
-                    <p className="text-xs text-gray-600">Peso Atual</p>
-                    <p className="text-2xl font-bold text-gray-800">{weighingHistory[0]?.weight || 0}kg</p>
+                    <p className="text-xs text-gray-600">Última Pesagem</p>
+                    <p className="text-2xl font-bold text-gray-800">{latestWeight}kg</p>
                   </div>
                   <div className="p-3 bg-green-50 rounded border border-green-200">
-                    <p className="text-xs text-gray-600">Ganho Total</p>
-                    <p className="text-2xl font-bold text-green-600">+{calculateWeightGain()}kg</p>
+                    <p className="text-xs text-gray-600">Ganho Total (pesagens)</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
+                    </p>
                   </div>
                   <div className="p-3 bg-blue-50 rounded border border-blue-200">
-                    <p className="text-xs text-gray-600">Ganho Médio/Dia</p>
-                    <p className="text-2xl font-bold text-blue-600">{(calculateWeightGain() / weighingHistory.length).toFixed(2)}kg</p>
+                    <p className="text-xs text-gray-600">Total de Pesagens</p>
+                    <p className="text-2xl font-bold text-blue-600">{pesagens?.length || 0}</p>
                   </div>
                 </div>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Financeiro Tab */}
-          <TabsContent value="financeiro">
+          {/* ─── Saúde Tab ─────────────────────────────────────────────────── */}
+          <TabsContent value="saude">
             <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <DollarSign className="w-5 h-5 mr-2 text-green-600" />
-                Movimentações Financeiras
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Tipo</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Descrição</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">Valor</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {financialRecords.map((record, idx) => (
-                      <tr key={idx} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-800">{record.date}</td>
-                        <td className="px-4 py-2"><span className={`px-2 py-1 rounded text-xs font-semibold ${record.type === 'Venda' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{record.type}</span></td>
-                        <td className="px-4 py-2 text-gray-600">{record.description}</td>
-                        <td className="px-4 py-2 text-right font-semibold text-gray-800">R$ {Math.abs(record.amount).toFixed(2)}</td>
-                        <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">{record.status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                  <Syringe className="w-5 h-5 mr-2 text-red-600" />
+                  Registros de Saúde
+                </h2>
+                <Button
+                  size="sm"
+                  onClick={() => setShowSaudeForm(!showSaudeForm)}
+                  className="text-white text-xs"
+                  style={{ backgroundColor: '#4ECDC4' }}
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Novo Registro
+                </Button>
               </div>
-              <div className="mt-6 p-4 bg-blue-50 rounded border border-blue-200">
-                <p className="text-sm text-gray-600">Saldo Total do Animal</p>
-                <p className="text-3xl font-bold text-blue-600">R$ {financialRecords.reduce((sum, r) => sum + r.amount, 0).toFixed(2)}</p>
-              </div>
-            </Card>
-          </TabsContent>
 
-          {/* Genealogia Tab */}
-          <TabsContent value="genealogia">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Pai */}
-              <Card className="p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Pai</h3>
-                <div className="space-y-2 p-4 bg-blue-50 rounded border border-blue-200">
-                  <p><span className="text-gray-600">Nº Animal:</span> <span className="font-semibold">{genealogy.father.number}</span></p>
-                  <p><span className="text-gray-600">Raça:</span> <span className="font-semibold">{genealogy.father.breed}</span></p>
-                  <p><span className="text-gray-600">Nome:</span> <span className="font-semibold">{genealogy.father.name}</span></p>
-                  <Button className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white text-sm">Ver Detalhes</Button>
+              {showSaudeForm && (
+                <div className="mb-6 p-4 bg-gray-50 rounded border">
+                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro de Saúde</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Tipo *</label>
+                      <select
+                        value={saudeForm.tipo}
+                        onChange={e => setSaudeForm(p => ({ ...p, tipo: e.target.value }))}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      >
+                        <option value="">Selecione</option>
+                        <option value="Vacinação">Vacinação</option>
+                        <option value="Vermifugação">Vermifugação</option>
+                        <option value="Tratamento">Tratamento</option>
+                        <option value="Exame">Exame</option>
+                        <option value="Cirurgia">Cirurgia</option>
+                        <option value="Preventivo">Preventivo</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Data *</label>
+                      <input
+                        type="date"
+                        value={saudeForm.dataRegistro}
+                        onChange={e => setSaudeForm(p => ({ ...p, dataRegistro: e.target.value }))}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Medicamento</label>
+                      <input
+                        type="text"
+                        value={saudeForm.medicamento}
+                        onChange={e => setSaudeForm(p => ({ ...p, medicamento: e.target.value }))}
+                        placeholder="ex: Ivermectina"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Dosagem</label>
+                      <input
+                        type="text"
+                        value={saudeForm.dosagem}
+                        onChange={e => setSaudeForm(p => ({ ...p, dosagem: e.target.value }))}
+                        placeholder="ex: 5ml"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Veterinário</label>
+                      <input
+                        type="text"
+                        value={saudeForm.veterinario}
+                        onChange={e => setSaudeForm(p => ({ ...p, veterinario: e.target.value }))}
+                        placeholder="ex: Dr. João Silva"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Custo (R$)</label>
+                      <input
+                        type="number"
+                        value={saudeForm.custo}
+                        onChange={e => setSaudeForm(p => ({ ...p, custo: e.target.value }))}
+                        placeholder="ex: 150.00"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Descrição</label>
+                      <input
+                        type="text"
+                        value={saudeForm.descricao}
+                        onChange={e => setSaudeForm(p => ({ ...p, descricao: e.target.value }))}
+                        placeholder="Descrição do procedimento"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!saudeForm.tipo || !saudeForm.dataRegistro) {
+                          toast.error('Tipo e data são obrigatórios');
+                          return;
+                        }
+                        createSaudeMutation.mutate({
+                          animalId: animalId!,
+                          tipo: saudeForm.tipo,
+                          descricao: saudeForm.descricao || undefined,
+                          medicamento: saudeForm.medicamento || undefined,
+                          dosagem: saudeForm.dosagem || undefined,
+                          veterinario: saudeForm.veterinario || undefined,
+                          custo: saudeForm.custo || undefined,
+                          dataRegistro: saudeForm.dataRegistro,
+                          proximaData: saudeForm.proximaData || undefined,
+                          observacoes: saudeForm.observacoes || undefined,
+                        });
+                      }}
+                      disabled={createSaudeMutation.isPending}
+                      className="text-white text-xs"
+                      style={{ backgroundColor: '#4ECDC4' }}
+                    >
+                      {createSaudeMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Salvar'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowSaudeForm(false)} className="text-xs">Cancelar</Button>
+                  </div>
                 </div>
-              </Card>
+              )}
 
-              {/* Mãe */}
-              <Card className="p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Mãe</h3>
-                <div className="space-y-2 p-4 bg-pink-50 rounded border border-pink-200">
-                  <p><span className="text-gray-600">Nº Animal:</span> <span className="font-semibold">{genealogy.mother.number}</span></p>
-                  <p><span className="text-gray-600">Raça:</span> <span className="font-semibold">{genealogy.mother.breed}</span></p>
-                  <p><span className="text-gray-600">Nome:</span> <span className="font-semibold">{genealogy.mother.name}</span></p>
-                  <Button className="w-full mt-4 bg-pink-600 hover:bg-pink-700 text-white text-sm">Ver Detalhes</Button>
+              {loadingSaude ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
                 </div>
-              </Card>
-
-              {/* Filhos */}
-              <Card className="p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Filhos ({genealogy.children.length})</h3>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {genealogy.children.map((child, idx) => (
-                    <div key={idx} className="p-3 bg-green-50 rounded border border-green-200">
-                      <p className="text-sm"><span className="text-gray-600">Nº:</span> <span className="font-semibold">{child.number}</span></p>
-                      <p className="text-sm"><span className="text-gray-600">Sexo:</span> <span className="font-semibold">{child.sex}</span></p>
-                      <p className="text-sm"><span className="text-gray-600">Raça:</span> <span className="font-semibold">{child.breed}</span></p>
-                      <p className="text-sm"><span className="text-gray-600">Nasc.:</span> <span className="font-semibold">{child.birthDate}</span></p>
-                      <Button className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white text-xs">Ver</Button>
+              ) : !saudeRegistros || saudeRegistros.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Syringe className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>Nenhum registro de saúde encontrado.</p>
+                  <p className="text-xs mt-1">Clique em "Novo Registro" para adicionar.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {saudeRegistros.map((reg) => (
+                    <div key={reg.id} className="border-l-4 border-red-400 pl-4 py-2 flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{reg.tipo} — {formatDate(reg.dataRegistro)}</p>
+                        {reg.descricao && <p className="text-xs text-gray-600">{reg.descricao}</p>}
+                        {reg.medicamento && <p className="text-xs text-gray-500">Medicamento: {reg.medicamento} {reg.dosagem ? `(${reg.dosagem})` : ''}</p>}
+                        {reg.veterinario && <p className="text-xs text-gray-500">Veterinário: {reg.veterinario}</p>}
+                        {reg.custo && <p className="text-xs text-gray-500">Custo: R$ {reg.custo}</p>}
+                      </div>
+                      <button
+                        onClick={() => deleteSaudeMutation.mutate({ id: reg.id })}
+                        className="text-red-400 hover:text-red-600 ml-4"
+                        title="Remover"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                 </div>
-              </Card>
-            </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* ─── Reprodução Tab ────────────────────────────────────────────── */}
+          <TabsContent value="reproducao">
+            <Card className="p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <Heart className="w-5 h-5 mr-2 text-pink-600" />
+                Histórico Reprodutivo
+              </h2>
+              {loadingRepro ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
+                </div>
+              ) : animalRepro.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Heart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>Nenhum registro reprodutivo encontrado para este animal.</p>
+                  <p className="text-xs mt-1">Acesse o módulo de Reprodução para registrar eventos.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Tipo</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Resultado</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Prev. Parto</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Observações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {animalRepro.map((reg) => (
+                        <tr key={reg.id} className="border-b hover:bg-gray-50">
+                          <td className="px-4 py-2 text-gray-800">{formatDate(reg.dataCobertura)}</td>
+                          <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-pink-100 text-pink-800">{reg.tipo}</span></td>
+                          <td className="px-4 py-2 text-gray-600">{reg.resultado || '—'}</td>
+                          <td className="px-4 py-2 text-gray-600">{formatDate(reg.dataPrevistoParto)}</td>
+                          <td className="px-4 py-2 text-gray-500 text-xs">{reg.observacoes || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* ─── Pesagens Tab ──────────────────────────────────────────────── */}
+          <TabsContent value="pesagens">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                  <Weight className="w-5 h-5 mr-2 text-blue-600" />
+                  Histórico de Pesagens
+                </h2>
+                <Button
+                  size="sm"
+                  onClick={() => setShowPesagemForm(!showPesagemForm)}
+                  className="text-white text-xs"
+                  style={{ backgroundColor: '#4ECDC4' }}
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Nova Pesagem
+                </Button>
+              </div>
+
+              {showPesagemForm && (
+                <div className="mb-6 p-4 bg-gray-50 rounded border">
+                  <h3 className="font-semibold text-gray-700 mb-3">Registrar Pesagem</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Peso (kg) *</label>
+                      <input
+                        type="number"
+                        value={pesagemForm.peso}
+                        onChange={e => setPesagemForm(p => ({ ...p, peso: e.target.value }))}
+                        placeholder="ex: 450"
+                        min="0"
+                        step="0.1"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Data *</label>
+                      <input
+                        type="date"
+                        value={pesagemForm.data}
+                        onChange={e => setPesagemForm(p => ({ ...p, data: e.target.value }))}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Observações</label>
+                      <input
+                        type="text"
+                        value={pesagemForm.observacoes}
+                        onChange={e => setPesagemForm(p => ({ ...p, observacoes: e.target.value }))}
+                        placeholder="Opcional"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!pesagemForm.peso || !pesagemForm.data) {
+                          toast.error('Peso e data são obrigatórios');
+                          return;
+                        }
+                        createPesagemMutation.mutate({
+                          animalId: animalId!,
+                          peso: pesagemForm.peso,
+                          data: pesagemForm.data,
+                          observacoes: pesagemForm.observacoes || undefined,
+                        });
+                      }}
+                      disabled={createPesagemMutation.isPending}
+                      className="text-white text-xs"
+                      style={{ backgroundColor: '#4ECDC4' }}
+                    >
+                      {createPesagemMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Salvar'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowPesagemForm(false)} className="text-xs">Cancelar</Button>
+                  </div>
+                </div>
+              )}
+
+              {loadingPesagens ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
+                </div>
+              ) : sortedPesagens.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Weight className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>Nenhuma pesagem registrada.</p>
+                  <p className="text-xs mt-1">Clique em "Nova Pesagem" para registrar.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
+                        <th className="px-4 py-2 text-right font-medium text-gray-700">Peso (kg)</th>
+                        <th className="px-4 py-2 text-right font-medium text-gray-700">Variação</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-700">Observações</th>
+                        <th className="px-4 py-2 text-center font-medium text-gray-700">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedPesagens.map((pesagem, idx) => {
+                        const prev = sortedPesagens[idx + 1];
+                        const variation = prev ? parseFloat(pesagem.peso || '0') - parseFloat(prev.peso || '0') : null;
+                        return (
+                          <tr key={pesagem.id} className="border-b hover:bg-gray-50">
+                            <td className="px-4 py-2 text-gray-800">{formatDate(pesagem.data)}</td>
+                            <td className="px-4 py-2 text-right font-semibold text-gray-800">{pesagem.peso}kg</td>
+                            <td className="px-4 py-2 text-right">
+                              {variation !== null ? (
+                                <span className={`font-semibold ${variation >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {variation >= 0 ? '+' : ''}{variation.toFixed(1)}kg
+                                </span>
+                              ) : <span className="text-gray-400">—</span>}
+                            </td>
+                            <td className="px-4 py-2 text-gray-500 text-xs">{pesagem.observacoes || '—'}</td>
+                            <td className="px-4 py-2 text-center">
+                              <button
+                                onClick={() => deletePesagemMutation.mutate({ id: pesagem.id })}
+                                className="text-red-400 hover:text-red-600"
+                                title="Remover"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* ─── Observações Tab ───────────────────────────────────────────── */}
+          <TabsContent value="observacoes">
+            <Card className="p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">Observações do Animal</h2>
+              {animal.observacoes ? (
+                <div className="p-4 bg-gray-50 rounded border text-sm text-gray-700 whitespace-pre-wrap">
+                  {animal.observacoes}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p>Nenhuma observação registrada.</p>
+                  <Button
+                    size="sm"
+                    onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
+                    className="mt-3 text-white text-xs"
+                    style={{ backgroundColor: '#4ECDC4' }}
+                  >
+                    Editar Animal para Adicionar Observações
+                  </Button>
+                </div>
+              )}
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

@@ -1,524 +1,256 @@
-import { useState, useMemo } from 'react';
-import AppLayout from '@/components/AppLayout';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useState } from 'react';
+import AppLayout from "@/components/AppLayout";
 import { toast } from 'sonner';
-import { Plus, Trash2, Edit2, Calendar, User, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { useLocation } from 'wouter';
 
-interface Management {
-  id: string;
-  date: string;
-  type: string;
-  animalId: string;
-  animalName: string;
-  description: string;
-  status: 'Concluído' | 'Pendente' | 'Cancelado';
-  responsiblePerson: string;
-  notes: string;
-  result?: string;
-}
+// Maquinas sub-page
+function MaquinasPage() {
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [form, setForm] = useState({ nome: "", tipo: "", marca: "", modelo: "", ano: 0, placa: "", horimetro: "", status: "ativo" as "ativo"|"manutencao"|"inativo", observacoes: "" });
 
-interface ManagementType {
-  name: string;
-  description: string;
-  icon: string;
-}
+  const { data: maquinas, isLoading, refetch } = trpc.maquinas.list.useQuery();
+  const createMutation = trpc.maquinas.create.useMutation({ onSuccess: () => { toast.success("Máquina cadastrada!"); setShowForm(false); resetForm(); refetch(); } });
+  const updateMutation = trpc.maquinas.update.useMutation({ onSuccess: () => { toast.success("Máquina atualizada!"); setShowForm(false); resetForm(); refetch(); } });
+  const deleteMutation = trpc.maquinas.delete.useMutation({ onSuccess: () => { toast.success("Máquina removida!"); refetch(); } });
 
-const managementTypes: ManagementType[] = [
-  { name: 'Vacinação', description: 'Aplicação de vacinas', icon: '💉' },
-  { name: 'Pesagem', description: 'Medição de peso', icon: '⚖️' },
-  { name: 'Tratamento', description: 'Tratamento de doença', icon: '🏥' },
-  { name: 'Inseminação', description: 'Inseminação artificial', icon: '🔬' },
-  { name: 'Parto', description: 'Acompanhamento de parto', icon: '👶' },
-  { name: 'Desmama', description: 'Desmama de bezerro', icon: '🍼' },
-  { name: 'Transferência', description: 'Transferência de lote', icon: '↔️' },
-  { name: 'Descarte', description: 'Descarte de animal', icon: '🚪' },
-];
+  const resetForm = () => { setForm({ nome: "", tipo: "", marca: "", modelo: "", ano: 0, placa: "", horimetro: "", status: "ativo" as "ativo"|"manutencao"|"inativo", observacoes: "" }); setEditItem(null); };
 
-const initialManagements: Management[] = [
-  { id: '1', date: '28/05/2026', type: 'Vacinação', animalId: '1', animalName: 'Boi 001', description: 'Vacinação contra aftosa', status: 'Concluído', responsiblePerson: 'Dr. Carlos', notes: 'Animal vacinado com sucesso', result: 'Sucesso' },
-  { id: '2', date: '27/05/2026', type: 'Pesagem', animalId: '2', animalName: 'Vaca 002', description: 'Pesagem mensal', status: 'Concluído', responsiblePerson: 'João Silva', notes: 'Peso: 520kg', result: 'Ganho de 15kg' },
-  { id: '3', date: '26/05/2026', type: 'Tratamento', animalId: '3', animalName: 'Bezerro 003', description: 'Tratamento de mastite', status: 'Concluído', responsiblePerson: 'Maria Santos', notes: 'Aplicado antibiótico', result: 'Recuperado' },
-  { id: '4', date: '25/05/2026', type: 'Inseminação', animalId: '2', animalName: 'Vaca 002', description: 'Inseminação artificial', status: 'Concluído', responsiblePerson: 'Dr. Carlos', notes: 'Inseminada com sêmen de touro selecionado', result: 'Prenhe (confirmado)' },
-  { id: '5', date: '24/05/2026', type: 'Desmama', animalId: '4', animalName: 'Bezerro 004', description: 'Desmama de bezerro', status: 'Pendente', responsiblePerson: 'João Silva', notes: 'Agendado para próxima semana', result: '' },
-];
-
-const animalsList = [
-  { id: '1', name: 'Boi 001', breed: 'Nelore', sex: 'Macho', age: '3 anos' },
-  { id: '2', name: 'Vaca 002', breed: 'Nelore', sex: 'Fêmea', age: '5 anos' },
-  { id: '3', name: 'Bezerro 003', breed: 'Nelore', sex: 'Macho', age: '6 meses' },
-  { id: '4', name: 'Bezerro 004', breed: 'Nelore', sex: 'Fêmea', age: '8 meses' },
-  { id: '5', name: 'Novilho 005', breed: 'Nelore', sex: 'Macho', age: '1.5 anos' },
-];
-
-export const AdvancedManagementPage: React.FC = () => {
-  const [managements, setManagements] = useState<Management[]>(initialManagements);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedAnimal, setSelectedAnimal] = useState('');
-  const [isAddManagementOpen, setIsAddManagementOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const [managementForm, setManagementForm] = useState({
-    date: '',
-    type: '',
-    animalId: '',
-    description: '',
-    status: 'Pendente' as 'Concluído' | 'Pendente' | 'Cancelado',
-    responsiblePerson: '',
-    notes: '',
-    result: '',
-  });
-
-  const filteredManagements = useMemo(() => {
-    let result = managements;
-
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      result = result.filter(m => m.animalName.toLowerCase().includes(q) || m.description.toLowerCase().includes(q));
-    }
-
-    if (selectedType) {
-      result = result.filter(m => m.type === selectedType);
-    }
-
-    if (selectedStatus) {
-      result = result.filter(m => m.status === selectedStatus);
-    }
-
-    if (selectedAnimal) {
-      result = result.filter(m => m.animalId === selectedAnimal);
-    }
-
-    return result.sort((a, b) => new Date(b.date.split('/').reverse().join('-')).getTime() - new Date(a.date.split('/').reverse().join('-')).getTime());
-  }, [searchTerm, selectedType, selectedStatus, selectedAnimal, managements]);
-
-  const animalManagementHistory = (animalId: string) => {
-    return managements.filter(m => m.animalId === animalId);
-  };
-
-  const handleAddManagement = () => {
-    if (!managementForm.date || !managementForm.type || !managementForm.animalId || !managementForm.description) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
-    }
-
-    const animal = animalsList.find(a => a.id === managementForm.animalId);
-    if (!animal) {
-      toast.error('Animal não encontrado');
-      return;
-    }
-
-    if (editingId) {
-      setManagements(managements.map(m => {
-        if (m.id === editingId) {
-          return {
-            ...m,
-            date: managementForm.date,
-            type: managementForm.type,
-            animalId: managementForm.animalId,
-            animalName: animal.name,
-            description: managementForm.description,
-            status: managementForm.status,
-            responsiblePerson: managementForm.responsiblePerson,
-            notes: managementForm.notes,
-            result: managementForm.result,
-          };
-        }
-        return m;
-      }));
-      toast.success('Manejo atualizado com sucesso!');
-      setEditingId(null);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editItem) {
+      updateMutation.mutate({ id: editItem.id, ...form });
     } else {
-      const newManagement: Management = {
-        id: String(managements.length + 1),
-        date: managementForm.date,
-        type: managementForm.type,
-        animalId: managementForm.animalId,
-        animalName: animal.name,
-        description: managementForm.description,
-        status: managementForm.status,
-        responsiblePerson: managementForm.responsiblePerson,
-        notes: managementForm.notes,
-        result: managementForm.result,
-      };
-
-      setManagements([...managements, newManagement]);
-      toast.success('Manejo criado com sucesso!');
-    }
-
-    setManagementForm({
-      date: '',
-      type: '',
-      animalId: '',
-      description: '',
-      status: 'Pendente',
-      responsiblePerson: '',
-      notes: '',
-      result: '',
-    });
-    setIsAddManagementOpen(false);
-  };
-
-  const handleEditManagement = (m: Management) => {
-    setManagementForm({
-      date: m.date,
-      type: m.type,
-      animalId: m.animalId,
-      description: m.description,
-      status: m.status,
-      responsiblePerson: m.responsiblePerson,
-      notes: m.notes,
-      result: m.result || '',
-    });
-    setEditingId(m.id);
-    setIsAddManagementOpen(true);
-  };
-
-  const handleDeleteManagement = (id: string) => {
-    if (confirm('Tem certeza que deseja deletar este manejo?')) {
-      setManagements(managements.filter(m => m.id !== id));
-      toast.success('Manejo deletado com sucesso!');
+      createMutation.mutate(form);
     }
   };
 
-  const completedCount = managements.filter(m => m.status === 'Concluído').length;
-  const pendingCount = managements.filter(m => m.status === 'Pendente').length;
-  const canceledCount = managements.filter(m => m.status === 'Cancelado').length;
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[14px] font-medium text-gray-700">Máquinas e Equipamentos</h2>
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+          <span className="material-icons text-[14px]">add</span> Nova Máquina
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Máquina" : "Nova Máquina"}</h2>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Nome *</label><input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
+                  <select value={form.tipo} onChange={e => setForm(f => ({...f, tipo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
+                    <option value="">Selecione</option>
+                    <option value="trator">Trator</option>
+                    <option value="colheitadeira">Colheitadeira</option>
+                    <option value="caminhao">Caminhão</option>
+                    <option value="veiculo">Veículo</option>
+                    <option value="implemento">Implemento</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Status</label>
+                  <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value as "ativo"|"manutencao"|"inativo"}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
+                    <option value="ativo">Ativo</option>
+                    <option value="manutencao">Em Manutenção</option>
+                    <option value="inativo">Inativo</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Marca</label><input value={form.marca} onChange={e => setForm(f => ({...f, marca: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Modelo</label><input value={form.modelo} onChange={e => setForm(f => ({...f, modelo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Ano</label><input type="number" value={form.ano || ""} onChange={e => setForm(f => ({...f, ano: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Placa</label><input value={form.placa} onChange={e => setForm(f => ({...f, placa: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Horímetro/Km</label><input type="number" value={form.horimetro || ""} onChange={e => setForm(f => ({...f, horimetro: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {isLoading ? (
+          <div className="col-span-3 text-center py-8 text-gray-400">Carregando...</div>
+        ) : (maquinas || []).length === 0 ? (
+          <div className="col-span-3 bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
+            <span className="material-icons text-[48px] mb-2 block">agriculture</span>
+            <p>Nenhuma máquina cadastrada.</p>
+          </div>
+        ) : (maquinas || []).map((m) => (
+          <div key={m.id} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="text-[13px] font-semibold text-gray-800">{m.nome}</h3>
+                <p className="text-[11px] text-gray-500">{m.marca} {m.modelo} {m.ano ? `(${m.ano})` : ""}</p>
+              </div>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${m.status === 'ativo' ? 'bg-green-100 text-green-700' : m.status === 'manutencao' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>{m.status}</span>
+            </div>
+            {m.placa && <p className="text-[11px] text-gray-600">Placa: <strong>{m.placa}</strong></p>}
+            {m.horimetro && <p className="text-[11px] text-gray-600">Horímetro: <strong>{m.horimetro}</strong></p>}
+            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+              <button onClick={() => { setEditItem(m); setForm({ nome: m.nome, tipo: m.tipo || "", marca: m.marca || "", modelo: m.modelo || "", ano: m.ano || 0, placa: m.placa || "", horimetro: m.horimetro || "", status: m.status || "ativo", observacoes: m.observacoes || "" }); setShowForm(true); }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50">
+                <span className="material-icons text-[14px]">edit</span> Editar
+              </button>
+              <button onClick={() => { if (confirm("Remover máquina?")) deleteMutation.mutate({ id: m.id }); }} className="flex items-center justify-center gap-1 px-2 py-1 border border-red-100 rounded text-[11px] text-red-500 hover:bg-red-50">
+                <span className="material-icons text-[14px]">delete</span>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Abastecimentos sub-page
+function AbastecimentosPage() {
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [form, setForm] = useState({ maquinaId: 0, data: new Date().toISOString().split('T')[0], combustivel: "", litros: "", valorLitro: "", horimetro: "", responsavel: "", observacoes: "" });
+
+  const { data: registros, isLoading, refetch } = trpc.abastecimentos.list.useQuery({});
+  const createMutation = trpc.abastecimentos.create.useMutation({ onSuccess: () => { toast.success("Abastecimento registrado!"); setShowForm(false); resetForm(); refetch(); } });
+  const deleteMutation = trpc.abastecimentos.delete.useMutation({ onSuccess: () => { toast.success("Registro removido!"); refetch(); } });
+
+  const resetForm = () => { setForm({ maquinaId: 0, data: new Date().toISOString().split('T')[0], combustivel: "", litros: "", valorLitro: "", horimetro: "", responsavel: "", observacoes: "" }); setEditItem(null); };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createMutation.mutate({ maquinaId: form.maquinaId, data: form.data, litros: form.litros, combustivel: form.combustivel as "diesel"|"gasolina"|"etanol"|"arla", valorLitro: form.valorLitro || undefined, horimetro: form.horimetro || undefined, responsavel: form.responsavel || undefined, observacoes: form.observacoes || undefined });
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[14px] font-medium text-gray-700">Abastecimentos</h2>
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+          <span className="material-icons text-[14px]">add</span> Registrar
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Novo Abastecimento</h2>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">ID da Máquina *</label><input type="number" required value={form.maquinaId || ""} onChange={e => setForm(f => ({...f, maquinaId: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Data *</label><input type="date" required value={form.data} onChange={e => setForm(f => ({...f, data: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Combustível</label>
+                  <select value={form.combustivel} onChange={e => setForm(f => ({...f, combustivel: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
+                    <option value="">Selecione</option>
+                    <option value="diesel">Diesel</option>
+                    <option value="gasolina">Gasolina</option>
+                    <option value="etanol">Etanol</option>
+                  </select>
+                </div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Litros</label><input type="number" step="0.01" value={form.litros || ""} onChange={e => setForm(f => ({...f, litros: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Valor/Litro (R$)</label><input type="number" step="0.01" value={form.valorLitro || ""} onChange={e => setForm(f => ({...f, valorLitro: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Horímetro</label><input type="number" value={form.horimetro || ""} onChange={e => setForm(f => ({...f, horimetro: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              </div>
+              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Operador</label><input value={form.responsavel} onChange={e => setForm(f => ({...f, responsavel: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+                  {createMutation.isPending ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Máquina ID</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Data</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Combustível</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Litros</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Total</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr><td colSpan={6} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+              ) : (registros || []).length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-8 text-gray-400">Nenhum abastecimento registrado.</td></tr>
+              ) : (registros || []).map((r) => (
+                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium text-[#2D5A5A]">#{r.maquinaId}</td>
+                  <td className="px-3 py-2">{r.data ? new Date(r.data).toLocaleDateString('pt-BR') : "-"}</td>
+                  <td className="px-3 py-2 capitalize">{r.combustivel || "-"}</td>
+                  <td className="px-3 py-2">{Number(r.litros || 0).toFixed(2)} L</td>
+                  <td className="px-3 py-2">{r.litros && r.valorLitro ? `R$ ${(Number(r.litros) * Number(r.valorLitro)).toFixed(2)}` : "-"}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => { if (confirm("Remover registro?")) deleteMutation.mutate({ id: r.id }); }} className="p-1 text-gray-400 hover:text-red-600">
+                      <span className="material-icons text-[16px]">delete</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Main AdvancedManagementPage
+export function AdvancedManagementPage() {
+  const [location] = useLocation();
+  const [activeTab, setActiveTab] = useState(() => {
+    if (location.includes('abastecimento')) return 'abastecimento';
+    if (location.includes('manutencao')) return 'manutencao';
+    return 'maquinas';
+  });
 
   return (
     <AppLayout>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Gerenciamento de Manejos</h1>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-            <p className="text-sm text-gray-600">Total de Manejos</p>
-            <p className="text-3xl font-bold text-blue-600">{managements.length}</p>
-            <p className="text-xs text-gray-500">Todos os registros</p>
-          </Card>
-          <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 flex items-center gap-1">
-                  <CheckCircle className="w-4 h-4" />
-                  Concluídos
-                </p>
-                <p className="text-3xl font-bold text-green-600">{completedCount}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  Pendentes
-                </p>
-                <p className="text-3xl font-bold text-yellow-600">{pendingCount}</p>
-              </div>
-            </div>
-          </Card>
-          <Card className="p-4 bg-gradient-to-br from-red-50 to-red-100 border-red-200">
-            <p className="text-sm text-gray-600">Taxa de Conclusão</p>
-            <p className="text-3xl font-bold text-red-600">{managements.length > 0 ? Math.round((completedCount / managements.length) * 100) : 0}%</p>
-            <p className="text-xs text-gray-500">Manejos concluídos</p>
-          </Card>
-        </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="managements" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="managements">Manejos</TabsTrigger>
-            <TabsTrigger value="animals">Histórico por Animal</TabsTrigger>
-          </TabsList>
-
-          {/* Managements Tab */}
-          <TabsContent value="managements">
-            <Card className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-gray-800">Registro de Manejos</h2>
-                <Dialog open={isAddManagementOpen} onOpenChange={(open) => {
-                  setIsAddManagementOpen(open);
-                  if (!open) {
-                    setEditingId(null);
-                    setManagementForm({
-                      date: '',
-                      type: '',
-                      animalId: '',
-                      description: '',
-                      status: 'Pendente',
-                      responsiblePerson: '',
-                      notes: '',
-                      result: '',
-                    });
-                  }
-                }}>
-                  <DialogTrigger asChild>
-                    <Button className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
-                      <Plus className="w-4 h-4" />
-                      Novo Manejo
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>{editingId ? 'Editar Manejo' : 'Registrar Novo Manejo'}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label>Data *</Label>
-                        <Input
-                          type="date"
-                          value={managementForm.date}
-                          onChange={(e) => setManagementForm({ ...managementForm, date: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>Tipo de Manejo *</Label>
-                        <Select value={managementForm.type} onValueChange={(v) => setManagementForm({ ...managementForm, type: v })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o tipo" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {managementTypes.map(t => (
-                              <SelectItem key={t.name} value={t.name}>{t.icon} {t.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Animal *</Label>
-                        <Select value={managementForm.animalId} onValueChange={(v) => setManagementForm({ ...managementForm, animalId: v })}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o animal" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {animalsList.map(a => (
-                              <SelectItem key={a.id} value={a.id}>{a.name} ({a.breed})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Descrição *</Label>
-                        <Input
-                          placeholder="Descrição do manejo"
-                          value={managementForm.description}
-                          onChange={(e) => setManagementForm({ ...managementForm, description: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>Status</Label>
-                        <Select value={managementForm.status} onValueChange={(v) => setManagementForm({ ...managementForm, status: v as 'Concluído' | 'Pendente' | 'Cancelado' })}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Pendente">Pendente</SelectItem>
-                            <SelectItem value="Concluído">Concluído</SelectItem>
-                            <SelectItem value="Cancelado">Cancelado</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Responsável</Label>
-                        <Input
-                          placeholder="Nome da pessoa responsável"
-                          value={managementForm.responsiblePerson}
-                          onChange={(e) => setManagementForm({ ...managementForm, responsiblePerson: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>Observações</Label>
-                        <Input
-                          placeholder="Observações"
-                          value={managementForm.notes}
-                          onChange={(e) => setManagementForm({ ...managementForm, notes: e.target.value })}
-                        />
-                      </div>
-                      {managementForm.status === 'Concluído' && (
-                        <div>
-                          <Label>Resultado</Label>
-                          <Input
-                            placeholder="Resultado do manejo"
-                            value={managementForm.result}
-                            onChange={(e) => setManagementForm({ ...managementForm, result: e.target.value })}
-                          />
-                        </div>
-                      )}
-                      <Button onClick={handleAddManagement} className="w-full bg-green-600 hover:bg-green-700 text-white">
-                        {editingId ? 'Atualizar Manejo' : 'Registrar Manejo'}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <Input
-                  placeholder="Pesquisar..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <Select value={selectedType} onValueChange={setSelectedType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filtrar por tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Todos os tipos</SelectItem>
-                    {managementTypes.map(t => (
-                      <SelectItem key={t.name} value={t.name}>{t.icon} {t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filtrar por status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Todos os status</SelectItem>
-                    <SelectItem value="Concluído">Concluído</SelectItem>
-                    <SelectItem value="Pendente">Pendente</SelectItem>
-                    <SelectItem value="Cancelado">Cancelado</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={selectedAnimal} onValueChange={setSelectedAnimal}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filtrar por animal" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Todos os animais</SelectItem>
-                    {animalsList.map(a => (
-                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Tipo</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Animal</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Descrição</th>
-                      <th className="px-4 py-2 text-center font-medium text-gray-700">Status</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Responsável</th>
-                      <th className="px-4 py-2 text-center font-medium text-gray-700">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredManagements.map((m) => (
-                      <tr key={m.id} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-600">{m.date}</td>
-                        <td className="px-4 py-2 font-semibold text-gray-800">{m.type}</td>
-                        <td className="px-4 py-2 text-gray-600">{m.animalName}</td>
-                        <td className="px-4 py-2 text-gray-600">{m.description}</td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                            m.status === 'Concluído' ? 'bg-green-100 text-green-800' :
-                            m.status === 'Pendente' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {m.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-gray-600">{m.responsiblePerson}</td>
-                        <td className="px-4 py-2 text-center space-x-2">
-                          <button onClick={() => handleEditManagement(m)} className="text-blue-600 hover:text-blue-800">
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleDeleteManagement(m.id)} className="text-red-600 hover:text-red-800">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* Animal History Tab */}
-          <TabsContent value="animals">
-            <div className="space-y-4">
-              {animalsList.map((animal) => {
-                const history = animalManagementHistory(animal.id);
-                return (
-                  <Card key={animal.id} className="p-6">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">{animal.name} ({animal.breed})</h3>
-                    <div className="grid grid-cols-4 gap-4 mb-4">
-                      <div className="p-3 bg-blue-50 rounded">
-                        <p className="text-xs text-gray-600">Sexo</p>
-                        <p className="font-semibold text-gray-800">{animal.sex}</p>
-                      </div>
-                      <div className="p-3 bg-green-50 rounded">
-                        <p className="text-xs text-gray-600">Idade</p>
-                        <p className="font-semibold text-gray-800">{animal.age}</p>
-                      </div>
-                      <div className="p-3 bg-purple-50 rounded">
-                        <p className="text-xs text-gray-600">Total de Manejos</p>
-                        <p className="font-semibold text-gray-800">{history.length}</p>
-                      </div>
-                      <div className="p-3 bg-orange-50 rounded">
-                        <p className="text-xs text-gray-600">Últimas 30 dias</p>
-                        <p className="font-semibold text-gray-800">{history.filter(m => {
-                          const mDate = new Date(m.date.split('/').reverse().join('-'));
-                          const now = new Date();
-                          const diff = (now.getTime() - mDate.getTime()) / (1000 * 60 * 60 * 24);
-                          return diff <= 30;
-                        }).length}</p>
-                      </div>
-                    </div>
-
-                    {history.length === 0 ? (
-                      <p className="text-gray-600 text-center py-4">Nenhum manejo registrado para este animal</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {history.map((m) => (
-                          <div key={m.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded border-l-4 border-blue-600">
-                            <Calendar className="w-5 h-5 text-gray-600 mt-1 flex-shrink-0" />
-                            <div className="flex-1">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <p className="font-semibold text-gray-800">{m.type}: {m.description}</p>
-                                  <p className="text-sm text-gray-600 mt-1">{m.notes}</p>
-                                </div>
-                                <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ml-2 ${
-                                  m.status === 'Concluído' ? 'bg-green-100 text-green-800' :
-                                  m.status === 'Pendente' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                                }`}>
-                                  {m.status}
-                                </span>
-                              </div>
-                              <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                                <span>📅 {m.date}</span>
-                                <span>👤 {m.responsiblePerson}</span>
-                                {m.result && <span>✓ {m.result}</span>}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-          </TabsContent>
-        </Tabs>
+      <div className="mb-3">
+        <h1 className="text-[15px] font-medium text-gray-800">Máquinas e Manejos</h1>
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 border-b border-gray-200">
+        {[
+          { id: 'maquinas', label: 'Máquinas', icon: 'agriculture' },
+          { id: 'abastecimento', label: 'Abastecimento', icon: 'local_gas_station' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1 px-3 py-2 text-[12px] font-medium border-b-2 transition-colors ${activeTab === tab.id ? 'border-[#2D5A5A] text-[#2D5A5A]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <span className="material-icons text-[16px]">{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'maquinas' && <MaquinasPage />}
+      {activeTab === 'abastecimento' && <AbastecimentosPage />}
     </AppLayout>
   );
-};
+}
+
+export default AdvancedManagementPage;

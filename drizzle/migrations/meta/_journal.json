@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1780086304657,
+      "tag": "0000_omniscient_jigsaw",
+      "breakpoints": true
+    }
+  ]
+}

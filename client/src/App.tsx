@@ -6,56 +6,33 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CattleProvider } from "./contexts/CattleContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
-import { NotificationCenter } from "./components/NotificationCenter";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
-import { AnimaisPage, EstoquePage, ContasPage } from "./pages/GenericPage";
+import { AnimaisPage, EstoquePage } from "./pages/GenericPage";
 import {
   FarmsOverviewPage,
   FarmsListPage,
   SubdivisionsPage,
   HerdOverviewPage,
   HerdMapPage,
-  LotsPage,
-  MyManagementsPage,
-  CreateManagementPage,
-  ListManagementsPage,
-  BasicManagementsPage,
-  SuppliesEntriesPage,
-  SuppliesExitsPage,
-  MachineryFuelingPage,
-  MachineryMaintenancePage,
-  MachineryListPage,
-  ReproductionProtocolsPage,
-  ReproductionSemenPage,
-  ReproductionEmbryosPage,
-  NutritionDietsPage,
-  NutritionTroughsPage,
-  PurchasesPage,
-  SalesPage,
-  FinancialTransactionsPage,
-  FinancialCategoriesPage,
-  FinancialPeoplePage,
-  ReportsManagerialPage,
-  ReportsEvolutionPage,
-  ReportsReproductivePage,
-  ReportsOperationalPage,
-  SimulationsFeedlotPage,
-  SimulationsSemiFeedlotPage,
+  QuickAccessPage,
   AdministrativeOverviewPage,
   ImprovementsPage,
-  QuickAccessPage,
+  PurchasesPage,
+  SalesPage,
+  SimulationsFeedlotPage,
+  SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
 import BulkCattleImportPage from "./pages/BulkCattleImportPage";
-import CattleDetailPage from "./pages/CattleDetailPage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/EditAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
-import { LotsManagementPage } from "./pages/LotsManagementPage";
+import LotsManagementPage from "./pages/LotsManagementPage";
+import { SaudePage } from "./pages/ReproductionManagementPage";
 import { ReproductionManagementPage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
-import { SuppliesManagementPage } from "./pages/SuppliesManagementPage";
+import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 
 function Router() {
@@ -64,85 +41,76 @@ function Router() {
       <Route path="/" component={() => <Redirect to="/entrar" />} />
       <Route path="/entrar" component={LoginPage} />
       <Route path="/admin/overview" component={DashboardPage} />
-      
+
       {/* Quick Access */}
       <Route path="/primeiro-uso/help" component={QuickAccessPage} />
-      
+
       {/* Farms */}
       <Route path="/fazendas/visao-geral" component={FarmsOverviewPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
       <Route path="/fazendas/subdivisoes" component={SubdivisionsPage} />
-      
-      {/* Administrative */}
+
+      {/* Administrative / Benfeitorias */}
       <Route path="/benfeitorias/visao-geral" component={AdministrativeOverviewPage} />
       <Route path="/benfeitorias/lista-benfeitorias" component={ImprovementsPage} />
-      
+
       {/* Herd */}
       <Route path="/rebanho/visao-geral" component={HerdOverviewPage} />
       <Route path="/rebanho/lista-animais" component={AnimaisPage} />
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
       <Route path="/rebanho/lotes" component={LotsManagementPage} />
       <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
-        <Route path="/rebanho/detalhes-animal" component={CattleDetailPageExpanded} />
-        <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
-        <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
-      
+      <Route path="/rebanho/detalhes-animal" component={CattleDetailPageExpanded} />
+      <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
+      <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
+
       {/* Manejos */}
-      <Route path="/manejos/meus" component={MyManagementsPage} />
-      <Route path="/manejos/criar" component={AdvancedManagementPage} />
       <Route path="/manejos/meus" component={AdvancedManagementPage} />
+      <Route path="/manejos/criar" component={AdvancedManagementPage} />
       <Route path="/manejos/listar" component={AdvancedManagementPage} />
       <Route path="/manejos/basicos" component={AdvancedManagementPage} />
-      <Route path="/manejos/listar" component={ListManagementsPage} />
-      <Route path="/manejos/basicos" component={BasicManagementsPage} />
-      
-      {/* Supplies */}
+
+      {/* Supplies / Insumos */}
       <Route path="/insumos/estoque" component={EstoquePage} />
-      <Route path="/insumos/entradas" component={SuppliesEntriesPage} />
-      <Route path="/insumos/saidas" component={SuppliesExitsPage} />
-      
+      <Route path="/insumos/entradas" component={SuppliesManagementPage} />
+      <Route path="/insumos/saidas" component={SuppliesManagementPage} />
+
       {/* Machinery */}
-      <Route path="/maquinas/abastecimento" component={MachineryFuelingPage} />
-      <Route path="/maquinas/manutencao" component={MachineryMaintenancePage} />
-      <Route path="/maquinas/lista-maquinas" component={MachineryListPage} />
-      
-      {/* Reproduction */}
+      <Route path="/maquinas/abastecimento" component={AdvancedManagementPage} />
+      <Route path="/maquinas/manutencao" component={AdvancedManagementPage} />
+      <Route path="/maquinas/lista-maquinas" component={AdvancedManagementPage} />
+
+      {/* Reproduction & Saude */}
       <Route path="/reproducao/protocolos" component={ReproductionManagementPage} />
       <Route path="/reproducao/semen" component={ReproductionManagementPage} />
       <Route path="/reproducao/embrioes" component={ReproductionManagementPage} />
-      <Route path="/reproducao/semen" component={ReproductionSemenPage} />
-      <Route path="/reproducao/embrioes" component={ReproductionEmbryosPage} />
-      
+      <Route path="/saude/registros" component={SaudePage} />
+
       {/* Nutrition */}
-      <Route path="/nutricao/dietas" component={NutritionDietsPage} />
-      <Route path="/nutricao/cochos" component={NutritionTroughsPage} />
-      
+      <Route path="/nutricao/dietas" component={SuppliesManagementPage} />
+      <Route path="/nutricao/cochos" component={SuppliesManagementPage} />
+      <Route path="/nutricao/batidas" component={SuppliesManagementPage} />
+
       {/* Purchase and Sale */}
       <Route path="/compra-venda/compras" component={PurchasesPage} />
       <Route path="/compra-venda/vendas" component={SalesPage} />
-      
+
       {/* Financial */}
       <Route path="/financeiro/contas" component={FinancialManagementPage} />
       <Route path="/financeiro/movimentacao" component={FinancialManagementPage} />
       <Route path="/financeiro/categorias" component={FinancialManagementPage} />
       <Route path="/financeiro/pessoas" component={FinancialManagementPage} />
-      <Route path="/financeiro/movimentacao" component={FinancialTransactionsPage} />
-      <Route path="/financeiro/categorias" component={FinancialCategoriesPage} />
-      <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
-      
+
       {/* Reports */}
       <Route path="/relatorios/gerenciais" component={ReportsManagementPage} />
       <Route path="/relatorios/evolucao" component={ReportsManagementPage} />
       <Route path="/relatorios/reprodutivos" component={ReportsManagementPage} />
       <Route path="/relatorios/operacionais" component={ReportsManagementPage} />
-      <Route path="/relatorios/evolucao" component={ReportsEvolutionPage} />
-      <Route path="/relatorios/reprodutivos" component={ReportsReproductivePage} />
-      <Route path="/relatorios/operacionais" component={ReportsOperationalPage} />
-      
+
       {/* Simulations */}
       <Route path="/simulacoes/confinamento" component={SimulationsFeedlotPage} />
       <Route path="/simulacoes/semi-confinamento" component={SimulationsSemiFeedlotPage} />
-      
+
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

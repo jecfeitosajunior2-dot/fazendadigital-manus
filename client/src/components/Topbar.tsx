@@ -1,12 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { NotificationCenter } from "./NotificationCenter";
+import { trpc } from "@/lib/trpc";
 
 export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const [, setLocation] = useLocation();
   const [showUser, setShowUser] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
-  const user = JSON.parse(localStorage.getItem("user") || '{"name":"Pedro Gomes","email":"pngomes1@teste.com"}');
+
+  const { data: user } = trpc.auth.me.useQuery();
+  const logoutMutation = trpc.auth.logout.useMutation({
+    onSuccess: () => setLocation("/entrar"),
+  });
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -17,9 +22,11 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
-    setLocation("/entrar");
+    logoutMutation.mutate();
   };
+
+  const displayName = user?.name || "Administrador";
+  const displayEmail = user?.email || "admin@optigado.com.br";
 
   return (
     <header className="h-[48px] flex items-center justify-between px-4" style={{ background: "linear-gradient(135deg, #2D5A5A, #4ECDC4)" }}>
@@ -53,14 +60,17 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
             className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/10"
           >
             <span className="material-icons text-[20px] text-white/80">person</span>
-            <span className="text-[13px] text-white font-medium hidden sm:inline">{user.name}</span>
+            <span className="text-[13px] text-white font-medium hidden sm:inline">{displayName}</span>
             <span className="material-icons text-[14px] text-white/60">expand_more</span>
           </button>
           {showUser && (
             <div className="absolute right-0 top-11 w-52 bg-white rounded shadow-lg border border-gray-200 py-1 z-50">
               <div className="px-4 py-2.5 border-b border-gray-100">
-                <p className="text-sm font-medium text-gray-800">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="text-sm font-medium text-gray-800">{displayName}</p>
+                <p className="text-xs text-gray-500">{displayEmail}</p>
+                {user?.role === "admin" && (
+                  <span className="inline-block mt-1 px-1.5 py-0.5 bg-[#2D5A5A]/10 text-[#2D5A5A] text-[10px] rounded font-medium">Admin</span>
+                )}
               </div>
               <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                 <span className="material-icons text-[16px] text-gray-400">person</span> Perfil

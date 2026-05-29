@@ -1,5 +1,12 @@
 import AppLayout from "@/components/AppLayout";
 import { useState } from "react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 // ============================================================
 // MÓDULO FAZENDAS
@@ -10,7 +17,7 @@ export function FarmsOverviewPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -72,7 +79,7 @@ export function FarmsOverviewPage() {
               <td className="px-3 py-2 text-right text-gray-700">12</td>
               <td className="px-3 py-2 text-right text-gray-700">243</td>
               <td className="px-3 py-2 text-center">
-                <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
                   <span className="material-icons text-[14px]">more_vert</span>
                 </button>
               </td>
@@ -89,7 +96,7 @@ export function FarmsListPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -145,7 +152,7 @@ export function SubdivisionsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Subdivisões</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Subdivisão
         </button>
@@ -262,7 +269,7 @@ export function HerdMapPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Mapa do Rebanho</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">swap_horiz</span>
           Nova Movimentação
         </button>
@@ -506,7 +513,7 @@ export function BasicManagementsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Manejos Básicos</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
           Clonar
         </button>
       </div>
@@ -571,11 +578,11 @@ export function SuppliesEntriesPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Insumos - Entradas</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Movimentação
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Cadastrar Produto
           </button>
         </div>
@@ -595,7 +602,7 @@ export function SuppliesExitsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Insumos - Saídas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Movimentação
         </button>
@@ -620,11 +627,11 @@ export function MachineryFuelingPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Abastecimento</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Abastecimento
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Filtros
           </button>
         </div>
@@ -659,7 +666,7 @@ export function MachineryMaintenancePage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Manutenção</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Manutenção
         </button>
@@ -683,7 +690,7 @@ export function MachineryListPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Máquinas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Cadastrar Máquina
         </button>
@@ -757,10 +764,10 @@ export function ReproductionProtocolsPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Estoque Biológico</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Movimentar Estoque
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Estoque Biológico
           </button>
@@ -786,10 +793,10 @@ export function ReproductionProtocolsPage() {
                 <td className="px-3 py-1.5 text-right text-gray-700">{s.qty}</td>
                 <td className="px-3 py-1.5 text-gray-500">{s.batch}</td>
                 <td className="px-3 py-1.5 text-center flex items-center justify-center gap-1">
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Extrato">
+                  <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Extrato">
                     <span className="material-icons text-[14px]">receipt_long</span>
                   </button>
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Desativar">
+                  <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Desativar">
                     <span className="material-icons text-[14px]">block</span>
                   </button>
                 </td>
@@ -808,10 +815,10 @@ export function ReproductionSemenPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Exposições</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Registrar Nascimento Sem Exposição
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Exposição
           </button>
@@ -832,7 +839,7 @@ export function ReproductionEmbryosPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Colheitas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Colheita
         </button>
@@ -877,14 +884,14 @@ export function NutritionDietsPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Nutrição</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Nutrição
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Nova Mistura
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Nova Fórmula
           </button>
         </div>
@@ -905,10 +912,10 @@ export function NutritionTroughsPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fórmula</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Adicionar Insumo
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Nova Embalagem
           </button>
         </div>
@@ -948,51 +955,165 @@ function PurchaseSaleTabs({ active }: { active: string }) {
 }
 
 export function PurchasesPage() {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ data: "", fornecedor: "", quantidade: "", valorTotal: "", observacoes: "" });
+  const { data: compras, refetch, isLoading } = trpc.compras.list.useQuery();
+  const createMutation = trpc.compras.create.useMutation({
+    onSuccess: () => { toast.success("Compra registrada com sucesso!"); setShowForm(false); setForm({ data: "", fornecedor: "", quantidade: "", valorTotal: "", observacoes: "" }); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.compras.delete.useMutation({
+    onSuccess: () => { toast.success("Compra removida."); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   return (
     <AppLayout>
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Novo Borderô de Compra</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Data</Label><Input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
+            <div><Label>Fornecedor</Label><Input placeholder="Nome do fornecedor" value={form.fornecedor} onChange={e => setForm(f => ({ ...f, fornecedor: e.target.value }))} /></div>
+            <div><Label>Quantidade de Animais</Label><Input type="number" placeholder="0" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: e.target.value }))} /></div>
+            <div><Label>Valor Total (R$)</Label><Input type="number" placeholder="0.00" value={form.valorTotal} onChange={e => setForm(f => ({ ...f, valorTotal: e.target.value }))} /></div>
+            <div><Label>Observações</Label><Textarea placeholder="Observações..." value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} /></div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+              <Button onClick={() => createMutation.mutate({ data: form.data, fornecedor: form.fornecedor, quantidadeAnimais: parseInt(form.quantidade) || 0, valorTotal: form.valorTotal || "0", observacoes: form.observacoes })} disabled={createMutation.isPending || !form.fornecedor || !form.data}>Salvar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Borderô de Compra</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Buscar Borderôs
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-            <span className="material-icons text-[14px]">add</span>
-            Novo Borderô
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Borderôs</button>
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+            <span className="material-icons text-[14px]">add</span>Novo Borderô
           </button>
         </div>
       </div>
       <PurchaseSaleTabs active="Borderô de Compra" />
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
-        <span className="material-icons text-4xl text-gray-200 mb-2 block">shopping_cart</span>
-        <p className="text-[12px] text-gray-400">Sem Dados</p>
-        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de compra</p>
-      </div>
+      {isLoading ? (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center"><p className="text-[12px] text-gray-400">Carregando...</p></div>
+      ) : !compras?.length ? (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+          <span className="material-icons text-4xl text-gray-200 mb-2 block">shopping_cart</span>
+          <p className="text-[12px] text-gray-400">Sem Dados</p>
+          <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de compra</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-[11px]">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Fornecedor</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Qtd</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor Total</th>
+                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-16">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compras.map((c: any) => (
+                <tr key={c.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                  <td className="px-3 py-1.5 text-gray-700">{c.data}</td>
+                  <td className="px-3 py-1.5 text-gray-700 font-medium">{c.fornecedor}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">{c.quantidade}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">R$ {Number(c.valorTotal).toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <button onClick={() => { if (confirm("Remover esta compra?")) deleteMutation.mutate({ id: c.id }); }} className="p-0.5 rounded hover:bg-red-50 text-red-400" title="Excluir">
+                      <span className="material-icons text-[14px]">delete</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </AppLayout>
   );
 }
 
 export function SalesPage() {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ data: "", comprador: "", quantidade: "", valorTotal: "", observacoes: "" });
+  const { data: vendas, refetch, isLoading } = trpc.vendas.list.useQuery();
+  const createMutation = trpc.vendas.create.useMutation({
+    onSuccess: () => { toast.success("Venda registrada com sucesso!"); setShowForm(false); setForm({ data: "", comprador: "", quantidade: "", valorTotal: "", observacoes: "" }); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.vendas.delete.useMutation({
+    onSuccess: () => { toast.success("Venda removida."); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   return (
     <AppLayout>
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Registrar Nova Venda</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Data</Label><Input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
+            <div><Label>Comprador</Label><Input placeholder="Nome do comprador" value={form.comprador} onChange={e => setForm(f => ({ ...f, comprador: e.target.value }))} /></div>
+            <div><Label>Quantidade de Animais</Label><Input type="number" placeholder="0" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: e.target.value }))} /></div>
+            <div><Label>Valor Total (R$)</Label><Input type="number" placeholder="0.00" value={form.valorTotal} onChange={e => setForm(f => ({ ...f, valorTotal: e.target.value }))} /></div>
+            <div><Label>Observações</Label><Textarea placeholder="Observações..." value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} /></div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+              <Button onClick={() => createMutation.mutate({ data: form.data, comprador: form.comprador, quantidadeAnimais: parseInt(form.quantidade) || 0, valorTotal: form.valorTotal || "0", observacoes: form.observacoes })} disabled={createMutation.isPending || !form.comprador || !form.data}>Salvar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Vendas</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
-            Buscar Vendas
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-            <span className="material-icons text-[14px]">add</span>
-            Registrar Nova Venda
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Vendas</button>
+          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+            <span className="material-icons text-[14px]">add</span>Registrar Nova Venda
           </button>
         </div>
       </div>
       <PurchaseSaleTabs active="Vendas" />
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
-        <span className="material-icons text-4xl text-gray-200 mb-2 block">point_of_sale</span>
-        <p className="text-[12px] text-gray-400">Sem Dados</p>
-        <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de venda</p>
-      </div>
+      {isLoading ? (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center"><p className="text-[12px] text-gray-400">Carregando...</p></div>
+      ) : !vendas?.length ? (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+          <span className="material-icons text-4xl text-gray-200 mb-2 block">point_of_sale</span>
+          <p className="text-[12px] text-gray-400">Sem Dados</p>
+          <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de venda</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-[11px]">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Comprador</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Qtd</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor Total</th>
+                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-16">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vendas.map((v: any) => (
+                <tr key={v.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                  <td className="px-3 py-1.5 text-gray-700">{v.data}</td>
+                  <td className="px-3 py-1.5 text-gray-700 font-medium">{v.comprador}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">{v.quantidade}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">R$ {Number(v.valorTotal).toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <button onClick={() => { if (confirm("Remover esta venda?")) deleteMutation.mutate({ id: v.id }); }} className="p-0.5 rounded hover:bg-red-50 text-red-400" title="Excluir">
+                      <span className="material-icons text-[14px]">delete</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </AppLayout>
   );
 }
@@ -1027,13 +1148,13 @@ export function FinancialTransactionsPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Movimentações</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4CAF50" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4CAF50" }}>
             Lançar Receita
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#F44336" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#F44336" }}>
             Lançar Despesa
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Lançar Transferência
           </button>
         </div>
@@ -1041,11 +1162,11 @@ export function FinancialTransactionsPage() {
       <FinancialTabs active="Movimentações" />
       {/* Navegação por mês */}
       <div className="flex items-center gap-3 mb-4">
-        <button className="p-1 rounded hover:bg-gray-100 text-gray-500">
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-1 rounded hover:bg-gray-100 text-gray-500">
           <span className="material-icons text-[18px]">chevron_left</span>
         </button>
         <span className="text-[13px] font-medium text-gray-700">Maio 2026</span>
-        <button className="p-1 rounded hover:bg-gray-100 text-gray-500">
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-1 rounded hover:bg-gray-100 text-gray-500">
           <span className="material-icons text-[18px]">chevron_right</span>
         </button>
       </div>
@@ -1071,7 +1192,7 @@ export function FinancialCategoriesPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Categorias</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Categoria
         </button>
@@ -1101,7 +1222,7 @@ export function FinancialCategoriesPage() {
                   </span>
                 </td>
                 <td className="px-3 py-1.5 text-center">
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                  <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
                     <span className="material-icons text-[14px]">more_vert</span>
                   </button>
                 </td>
@@ -1125,7 +1246,7 @@ export function FinancialPeoplePage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Pessoas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Pessoa
         </button>
@@ -1158,7 +1279,7 @@ export function FinancialPeoplePage() {
                 </td>
                 <td className="px-3 py-1.5 text-gray-500">{p.role}</td>
                 <td className="px-3 py-1.5 text-center">
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                  <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
                     <span className="material-icons text-[14px]">more_vert</span>
                   </button>
                 </td>
@@ -1299,7 +1420,7 @@ export function SimulationsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Minhas Simulações</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1328,7 +1449,7 @@ export function AdminOverviewPage() {
             <span className="material-icons text-3xl text-gray-200">construction</span>
             <p className="text-[11px] text-gray-400 mt-2">Nenhuma benfeitoria cadastrada</p>
           </div>
-          <button className="w-full mt-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="w-full mt-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>
             Cadastrar Benfeitoria
           </button>
@@ -1342,7 +1463,7 @@ export function AdminOverviewPage() {
               { label: "Cadastrar Insumo", icon: "inventory_2" },
               { label: "Cadastrar Máquina", icon: "agriculture" },
             ].map((item, i) => (
-              <button key={i} className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50 transition-colors">
+              <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} key={i} className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50 transition-colors">
                 <span className="material-icons text-[16px] text-gray-400">{item.icon}</span>
                 {item.label}
               </button>
@@ -1363,7 +1484,7 @@ export function SimulationsFeedlotPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Simulação - Confinamento</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1382,7 +1503,7 @@ export function SimulationsSemiFeedlotPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Simulação - Semi-Confinamento</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1418,7 +1539,7 @@ export function ImprovementsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de Benfeitorias</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Cadastrar Benfeitoria
         </button>

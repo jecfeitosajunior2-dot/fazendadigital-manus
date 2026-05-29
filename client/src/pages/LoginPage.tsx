@@ -1,131 +1,75 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { users } from "@/lib/data";
+import { trpc } from "@/lib/trpc";
 
-function LoginPage() {
+export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const [email, setEmail] = useState("pngomes1@teste.com");
-  const [password, setPassword] = useState("12345678");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showPwd, setShowPwd] = useState(false);
+  const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  useEffect(() => {
+    if (user) {
+      setLocation("/admin/overview");
+    }
+  }, [user, setLocation]);
 
-    setTimeout(() => {
-      const user = users.find(u => u.email === email && u.password === password);
-      if (user) {
-        localStorage.setItem("user", JSON.stringify(user));
-        setLocation("/admin/overview");
-      } else {
-        setError("E-mail ou senha inválidos.");
-      }
-      setLoading(false);
-    }, 300);
+  const handleLogin = () => {
+    // Redirect to Manus OAuth
+    const origin = window.location.origin;
+    const returnPath = "/admin/overview";
+    const state = btoa(JSON.stringify({ origin, returnPath }));
+    const redirectUri = `${origin}/api/oauth/callback`;
+    const oauthUrl = `${import.meta.env.VITE_OAUTH_PORTAL_URL || "https://manus.im"}/oauth/authorize?client_id=${import.meta.env.VITE_APP_ID || ""}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`;
+    window.location.href = oauthUrl;
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2D5A5A] mx-auto mb-4"></div>
+          <p className="text-gray-500 text-sm">Verificando sessão...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{
-        backgroundImage: "url('https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/login-background-cattle-EbNTxMYieBoFozPTYMykGS.webp')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundAttachment: "fixed"
-      }}
-    >
-      {/* Dark overlay for better text contrast */}
-      <div className="absolute inset-0 bg-black/40"></div>
-      <div className="relative z-10 w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
+      <div className="bg-white rounded-lg shadow-md p-8 w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-6">
-          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-horizontal-X9jdErVzmyZhUhdo4CzvgD.webp" alt="OptiGado" className="h-[80px] w-auto mb-2" />
-          <p className="text-[11px] text-center text-gray-500 mt-1" style={{ fontFamily: "'Manrope', sans-serif" }}>Inteligência Pecuária. Resultados Reais.</p>
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ backgroundColor: "#2D5A5A" }}>
+            <span className="material-icons text-white text-3xl">agriculture</span>
+          </div>
+          <h1 className="text-2xl font-bold" style={{ color: "#2D5A5A" }}>OptiGado</h1>
+          <p className="text-gray-500 text-sm mt-1">Sistema de Gestão Pecuária</p>
         </div>
 
-        {/* Title */}
-        <h2 className="text-[16px] font-semibold text-gray-800 text-center mb-6" style={{ fontFamily: "'Manrope', sans-serif" }}>Entrar</h2>
-
-        {error && (
-          <div className="mb-4 p-2.5 bg-red-50 border border-red-200 rounded text-[12px] text-red-600 flex items-center gap-1.5">
-            <span className="material-icons text-[14px]">error_outline</span>
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          {/* Email */}
-          <div className="mb-4">
-            <label className="block text-[12px] text-gray-600 mb-1.5 font-medium">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError(""); }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30 transition-colors"
-              placeholder="seu@email.com"
-            />
-          </div>
-
-          {/* Password */}
-          <div className="mb-4">
-            <label className="block text-[12px] text-gray-600 mb-1.5 font-medium">Senha</label>
-            <div className="relative">
-              <input
-                type={showPwd ? "text" : "password"}
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError(""); }}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30 transition-colors pr-10"
-                placeholder="••••••••"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPwd(!showPwd)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <span className="material-icons text-[18px]">{showPwd ? "visibility_off" : "visibility"}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Forgot password */}
-          <div className="text-right mb-5">
-            <a href="#" className="text-[11px] text-gray-500 hover:text-[#4ECDC4] transition-colors">Esqueceu a senha?</a>
-          </div>
-
-          {/* Submit */}
+        {/* Login Button */}
+        <div className="space-y-4">
           <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded text-white font-medium text-[14px] uppercase tracking-wide transition-all disabled:opacity-70"
+            onClick={handleLogin}
+            className="w-full py-3 px-4 rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
             style={{ backgroundColor: "#2D5A5A" }}
-            onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#4ECDC4")}
-            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#2D5A5A")}
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="material-icons text-[16px] animate-spin">refresh</span>
-                Entrando...
-              </span>
-            ) : (
-              "ENTRAR"
-            )}
+            <span className="material-icons text-[20px]">login</span>
+            Entrar com Manus
           </button>
-        </form>
-
-        {/* Register link */}
-        <p className="text-center mt-5 text-[12px] text-gray-500">
-          Não tem uma conta?{" "}
-          <a href="#" className="font-medium transition-colors" style={{ color: "#4ECDC4" }}>Cadastre-se</a>
-        </p>
+          
+          <p className="text-center text-xs text-gray-400">
+            Autenticação segura via Manus OAuth
+          </p>
+        </div>
 
         {/* Footer */}
-        <p className="text-center mt-6 text-[10px] text-gray-400">© 2026 Fazenda Digital</p>
+        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+          <p className="text-xs text-gray-400">
+            OptiGado © 2024 — Gestão Pecuária Inteligente
+          </p>
+        </div>
       </div>
     </div>
   );
 }
-
-export default LoginPage;

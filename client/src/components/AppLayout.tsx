@@ -1,47 +1,46 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location, setLocation] = useLocation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+interface AppLayoutProps {
+  children: React.ReactNode;
+}
+
+export default function AppLayout({ children }: AppLayoutProps) {
+  const [, setLocation] = useLocation();
+  const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+  });
 
   useEffect(() => {
-    const user = localStorage.getItem("user");
-    if (!user && location !== "/entrar") {
+    if (!isLoading && !user) {
       setLocation("/entrar");
     }
-  }, [location, setLocation]);
+  }, [user, isLoading, setLocation]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2D5A5A] mx-auto mb-4"></div>
+          <p className="text-gray-500 text-sm">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: "#F8F9FA" }}>
-      <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Topbar onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)} />
-        {/* Trial banner */}
-        <div
-          className="px-4 py-2 flex flex-wrap items-center gap-1 text-white text-[12px]"
-          style={{ backgroundColor: "#EC5D24" }}
-        >
-          <span className="hidden sm:inline">
-            Você está utilizando uma versão de teste do Fazenda Digital e ainda possui <strong>7 dias de teste</strong> restantes.
-          </span>
-          <span className="sm:hidden text-[11px]">
-            Versão de teste — <strong>7 dias</strong> restantes.
-          </span>
-          <a href="#" className="underline text-white/90 hover:text-white ml-1">
-            Para assinar, entre em contato: (62)99981-1720 / contato@fazenda-digital.com.br
-          </a>
-        </div>
-        {/* Content area */}
-        <main className="flex-1 p-3 sm:p-5 overflow-y-auto overflow-x-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "#F5F5F5" }}>
+      <Sidebar />
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <Topbar />
+        <main className="flex-1 overflow-y-auto p-4">
           {children}
         </main>
-        {/* Footer */}
-        <footer className="px-4 py-3 text-center text-[11px] text-gray-400 border-t border-gray-200">
-          © Copyright 2026 | Desenvolvido por Fazenda Digital
-        </footer>
       </div>
     </div>
   );

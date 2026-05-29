@@ -1,33 +1,47 @@
 import express from "express";
-import { createServer } from "http";
-import path from "path";
-import { fileURLToPath } from "url";
+import cookieParser from "cookie-parser";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { appRouter } from "./routers";
+import { createContext } from "./_core/context";
+import { handleOAuthCallback } from "./_core/oauth";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const app = express();
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-async function startServer() {
-  const app = express();
-  const server = createServer(app);
+app.use(cookieParser());
+app.use(express.json());
 
-  // Serve static files from dist/public in production
-  const staticPath =
-    process.env.NODE_ENV === "production"
-      ? path.resolve(__dirname, "public")
-      : path.resolve(__dirname, "..", "dist", "public");
+// OAuth callback
+app.get("/api/oauth/callback", handleOAuthCallback);
 
-  app.use(express.static(staticPath));
+// tRPC API
+app.use("/api/trpc", createExpressMiddleware({
+  router: appRouter,
+  createContext,
+}));
 
-  // Handle client-side routing - serve index.html for all routes
+// Serve frontend (Vite in dev, static in prod)
+if (process.env.NODE_ENV === "production") {
+  const path = await import("path");
+  const { fileURLToPath } = await import("url");
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  app.use(express.static(path.join(__dirname, "public")));
   app.get("*", (_req, res) => {
-    res.sendFile(path.join(staticPath, "index.html"));
+    res.sendFile(path.join(__dirname, "public", "index.html"));
   });
-
-  const port = process.env.PORT || 3000;
-
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+} else {
+  const { createServer: createViteServer } = await import("vite");
+  const vite = await createViteServer({
+    server: {
+      middlewareMode: true,
+      hmr: true,
+      allowedHosts: ["all", ".manus.computer", ".manuspre.computer", ".manus-asia.computer", ".manuscomputer.ai", ".manusvm.computer"],
+    },
+    appType: "spa",
   });
+  app.use(vite.middlewares);
 }
 
-startServer().catch(console.error);
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}/`);
+});
