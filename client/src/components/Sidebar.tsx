@@ -110,14 +110,20 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           ${collapsed ? "w-[60px]" : "w-[220px]"}
           h-screen md:min-h-screen flex flex-col transition-all duration-200 flex-shrink-0
         `}
-        style={{ backgroundColor: "#1B4332" }}
+        style={{ backgroundColor: "#1B4332", backgroundImage: "linear-gradient(180deg, #1B4332 0%, #162e28 100%)" }}
       >
         {/* Logo area */}
         <div className="h-[48px] flex items-center px-3 border-b border-white/10">
           {!collapsed && (
-            <div className="flex items-center gap-2">
-              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-compressed.png" alt="Fazenda Digital" className="h-[28px] w-auto" />
-              <span className="text-white font-bold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", letterSpacing: "0.03em" }}>Fazenda Digital</span>
+            <div className="flex items-center gap-2.5">
+              <img src="/manus-storage/fazenda-icone-quadrado_323f2f9a.png" alt="Fazenda Digital" className="h-[32px] w-[32px] rounded-md object-cover" />
+              <div className="flex flex-col leading-tight">
+                <span className="font-extrabold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, letterSpacing: "0.03em" }}>
+                  <span className="text-white">Fazenda</span>{" "}
+                  <span style={{ color: "#C9A227" }}>Digital</span>
+                </span>
+                <span className="text-white/50 text-[9px] font-medium" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</span>
+              </div>
             </div>
           )}
           <button

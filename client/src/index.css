@@ -143,9 +143,9 @@
 .bg-fazenda-digital-topbar { background-color: #3B2110; }
 .bg-fazenda-digital-trial { background-color: #EC5D24; }
 .bg-fazenda-digital-content { background-color: #F4F3EF; }
-.bg-fazenda-digital-green { background-color: #94B40B; }
-.text-fazenda-digital-green { color: #94B40B; }
-.border-fazenda-digital-green { border-color: #94B40B; }
+.bg-fazenda-digital-green { background-color: #2D6A4F; }
+.text-fazenda-digital-green { color: #2D6A4F; }
+.border-fazenda-digital-green { border-color: #2D6A4F; }
 .hover\:bg-fazenda-digital-green-dark:hover { background-color: #7A9500; }
 
 /* Mobile-specific styles */

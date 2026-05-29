@@ -41,14 +41,13 @@ function LoginPage() {
       <div className="absolute inset-0 bg-black/40"></div>
       <div className="relative z-10 w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
         {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-compressed.png" alt="Fazenda Digital" className="h-[40px] w-auto" />
+        <div className="flex flex-col items-center mb-6">
+          <img src="/manus-storage/fazenda-logo-completa_bdef6b43.png" alt="Fazenda Digital" className="h-[120px] w-auto mb-2" />
+          <p className="text-[11px] text-center text-gray-500 mt-1" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</p>
         </div>
 
         {/* Title */}
-        <h1 className="text-[20px] font-bold text-center mb-2" style={{ color: "#1B4332", fontFamily: "'Manrope', sans-serif", letterSpacing: "0.03em" }}>Fazenda Digital</h1>
-        <p className="text-[12px] text-center text-gray-600 mb-6" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</p>
-        <h2 className="text-[16px] font-medium text-gray-800 text-center mb-6">Entrar</h2>
+        <h2 className="text-[16px] font-semibold text-gray-800 text-center mb-6" style={{ fontFamily: "'Manrope', sans-serif" }}>Entrar</h2>
 
         {error && (
           <div className="mb-4 p-2.5 bg-red-50 border border-red-200 rounded text-[12px] text-red-600 flex items-center gap-1.5">
@@ -65,7 +64,7 @@ function LoginPage() {
               type="email"
               value={email}
               onChange={e => { setEmail(e.target.value); setError(""); }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#94B40B] transition-colors"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#1B4332] transition-colors"
               placeholder="seu@email.com"
             />
           </div>
@@ -119,7 +118,7 @@ function LoginPage() {
         {/* Register link */}
         <p className="text-center mt-5 text-[12px] text-gray-500">
           Não tem uma conta?{" "}
-          <a href="#" className="font-medium" style={{ color: "#94B40B" }}>Cadastre-se</a>
+          <a href="#" className="font-medium" style={{ color: "#1B4332" }}>Cadastre-se</a>
         </p>
 
         {/* Footer */}

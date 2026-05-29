@@ -15,7 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [location, setLocation]);
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: "#F4F3EF" }}>
+    <div className="flex min-h-screen" style={{ backgroundColor: "#F8F9FA" }}>
       <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)} />
