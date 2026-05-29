@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { users } from "@/lib/data";
 
-export default function LoginPage() {
+function LoginPage() {
   const [, setLocation] = useLocation();
   const [email, setEmail] = useState("pngomes1@teste.com");
   const [password, setPassword] = useState("12345678");
@@ -29,10 +29,17 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center"
-      style={{ background: "linear-gradient(135deg, #3B2110 0%, #2A1508 50%, #1B3A0E 100%)" }}
+      className="min-h-screen flex items-center justify-center relative overflow-hidden"
+      style={{
+        backgroundImage: "url('https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/login-background-cattle-EbNTxMYieBoFozPTYMykGS.webp')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed"
+      }}
     >
-      <div className="w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
+      {/* Dark overlay for better text contrast */}
+      <div className="absolute inset-0 bg-black/40"></div>
+      <div className="relative z-10 w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-6">
           <span className="material-icons text-[32px]" style={{ color: "#94B40B" }}>pets</span>
@@ -120,3 +127,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+export default LoginPage;

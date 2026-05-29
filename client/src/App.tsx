@@ -5,6 +5,8 @@ import { Route, Switch, Redirect } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CattleProvider } from "./contexts/CattleContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
+import { NotificationCenter } from "./components/NotificationCenter";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import { AnimaisPage, EstoquePage, ContasPage } from "./pages/GenericPage";
@@ -53,6 +55,8 @@ import { LotsManagementPage } from "./pages/LotsManagementPage";
 import { ReproductionManagementPage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
+import { SuppliesManagementPage } from "./pages/SuppliesManagementPage";
+import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 
 function Router() {
   return (
@@ -85,7 +89,10 @@ function Router() {
       
       {/* Manejos */}
       <Route path="/manejos/meus" component={MyManagementsPage} />
-      <Route path="/manejos/criar" component={CreateManagementPage} />
+      <Route path="/manejos/criar" component={AdvancedManagementPage} />
+      <Route path="/manejos/meus" component={AdvancedManagementPage} />
+      <Route path="/manejos/listar" component={AdvancedManagementPage} />
+      <Route path="/manejos/basicos" component={AdvancedManagementPage} />
       <Route path="/manejos/listar" component={ListManagementsPage} />
       <Route path="/manejos/basicos" component={BasicManagementsPage} />
       
@@ -146,12 +153,14 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <CattleProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </CattleProvider>
+        <NotificationProvider>
+          <CattleProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </CattleProvider>
+        </NotificationProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

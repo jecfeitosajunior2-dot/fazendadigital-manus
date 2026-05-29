@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
+import { NotificationCenter } from "./NotificationCenter";
 
 export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const [, setLocation] = useLocation();
@@ -38,15 +39,10 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
       {/* Right side: notification bell + user name */}
       <div className="flex items-center gap-3" ref={userRef}>
-        {/* Notification bell */}
-        <button className="relative text-white/70 hover:text-white p-1">
-          <span className="material-icons text-[20px]">notifications_none</span>
-          <span
-            className="absolute -top-0.5 -right-0.5 w-[16px] h-[16px] rounded-full text-[9px] font-bold flex items-center justify-center text-white bg-red-500"
-          >
-            1
-          </span>
-        </button>
+        {/* Notification Center */}
+        <div className="text-white/70 hover:text-white">
+          <NotificationCenter />
+        </div>
 
         {/* User dropdown */}
         <div className="relative">
