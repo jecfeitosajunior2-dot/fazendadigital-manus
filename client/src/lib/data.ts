@@ -1,236 +1,208 @@
-import type { ComponentType } from "react";
-import {
-  LayoutDashboard,
-  Beef,
-  Workflow,
-  Wheat,
-  Boxes,
-  Tractor,
-  Repeat,
-  ShoppingBasket,
-  Wallet,
-  BarChart3,
-  Sparkles,
-  Settings,
-} from "lucide-react";
-
-export type ModuleKey =
-  | "overview"
-  | "rebanho"
-  | "manejo"
-  | "reproducao"
-  | "nutricao"
-  | "insumos"
-  | "maquinario"
-  | "compra-venda"
-  | "financeiro"
-  | "relatorios"
-  | "simulacoes"
-  | "configuracoes";
-
-export interface ModuleDef {
-  key: ModuleKey;
+// Menu structure - exact replica of iRancho sidebar (English labels as in original)
+export interface MenuItem {
   label: string;
-  path: string;
-  icon: ComponentType<{ className?: string }>;
-  group: "Operação" | "Comercial" | "Inteligência" | "Sistema";
-  description: string;
+  icon: string;
+  path?: string;
+  children?: MenuItem[];
 }
 
-export const MODULES: ModuleDef[] = [
+export const menuItems: MenuItem[] = [
+  { label: "Quick Access", icon: "flash_on", path: "/primeiro-uso/help" },
+  { label: "Control Panel", icon: "dashboard", path: "/admin/overview" },
   {
-    key: "overview",
-    label: "Painel",
-    path: "/painel",
-    icon: LayoutDashboard,
-    group: "Operação",
-    description: "Visão geral da fazenda: rebanho, GMD, financeiro e alertas.",
+    label: "Farms", icon: "home_work", children: [
+      { label: "Overview", icon: "", path: "/fazendas/visao-geral" },
+      { label: "Farms", icon: "", path: "/fazendas/lista-fazendas" },
+      { label: "Subdivisions", icon: "", path: "/fazendas/subdivisoes" },
+    ]
   },
   {
-    key: "rebanho",
-    label: "Rebanho",
-    path: "/rebanho",
-    icon: Beef,
-    group: "Operação",
-    description: "Cadastro de animais, lotes e mapa do rebanho.",
+    label: "Administrative", icon: "business", children: [
+      { label: "Overview", icon: "", path: "/benfeitorias/visao-geral" },
+      { label: "Improvements", icon: "", path: "/benfeitorias/lista-benfeitorias" },
+    ]
   },
   {
-    key: "manejo",
-    label: "Manejo",
-    path: "/manejo",
-    icon: Workflow,
-    group: "Operação",
-    description: "Manejos sanitários, reprodutivos e de pesagem.",
+    label: "Herd", icon: "pets", children: [
+      { label: "Overview", icon: "", path: "/rebanho/visao-geral" },
+      { label: "Animals", icon: "", path: "/rebanho/lista-animais" },
+      { label: "Herd Map", icon: "", path: "/rebanho/mapa-rebanho" },
+      { label: "Lots", icon: "", path: "/rebanho/lotes" },
+    ]
   },
   {
-    key: "reproducao",
-    label: "Reprodução",
-    path: "/reproducao",
-    icon: Repeat,
-    group: "Operação",
-    description: "Estoque biológico, exposições, IATF e safras.",
+    label: "Management", icon: "assignment", children: [
+      { label: "My Managements", icon: "", path: "/manejos/meus" },
+      { label: "Create Management", icon: "", path: "/manejos/criar" },
+      { label: "List Managements", icon: "", path: "/manejos/listar" },
+      { label: "Basic Managements", icon: "", path: "/manejos/basicos" },
+    ]
   },
   {
-    key: "nutricao",
-    label: "Nutrição",
-    path: "/nutricao",
-    icon: Wheat,
-    group: "Operação",
-    description: "Fórmulas, batidas e lançamentos nutricionais.",
+    label: "Supplies", icon: "inventory_2", children: [
+      { label: "Stock", icon: "", path: "/insumos/estoque" },
+      { label: "Entries", icon: "", path: "/insumos/entradas" },
+      { label: "Exits", icon: "", path: "/insumos/saidas" },
+    ]
   },
   {
-    key: "insumos",
-    label: "Insumos",
-    path: "/insumos",
-    icon: Boxes,
-    group: "Operação",
-    description: "Estoque de insumos, produtos e movimentações.",
+    label: "Machinery", icon: "agriculture", children: [
+      { label: "Fueling", icon: "", path: "/maquinas/abastecimento" },
+      { label: "Maintenance", icon: "", path: "/maquinas/manutencao" },
+      { label: "Machines", icon: "", path: "/maquinas/lista-maquinas" },
+    ]
   },
   {
-    key: "maquinario",
-    label: "Maquinário",
-    path: "/maquinario",
-    icon: Tractor,
-    group: "Operação",
-    description: "Frota, abastecimentos e manutenções.",
+    label: "Reproduction", icon: "favorite", children: [
+      { label: "Protocols", icon: "", path: "/reproducao/protocolos" },
+      { label: "Semen", icon: "", path: "/reproducao/semen" },
+      { label: "Embryos", icon: "", path: "/reproducao/embrioes" },
+    ]
   },
   {
-    key: "compra-venda",
-    label: "Compra & Venda",
-    path: "/comercial",
-    icon: ShoppingBasket,
-    group: "Comercial",
-    description: "Borderôs de compra, entrada de animais e vendas.",
+    label: "Nutrition", icon: "restaurant", children: [
+      { label: "Diets", icon: "", path: "/nutricao/dietas" },
+      { label: "Troughs", icon: "", path: "/nutricao/cochos" },
+    ]
   },
   {
-    key: "financeiro",
-    label: "Financeiro",
-    path: "/financeiro",
-    icon: Wallet,
-    group: "Comercial",
-    description: "Contas, lançamentos, rateio e receitas vs. despesas.",
+    label: "Purchase and Sale", icon: "swap_horiz", children: [
+      { label: "Purchases", icon: "", path: "/compra-venda/compras" },
+      { label: "Sales", icon: "", path: "/compra-venda/vendas" },
+    ]
   },
   {
-    key: "relatorios",
-    label: "Relatórios",
-    path: "/relatorios",
-    icon: BarChart3,
-    group: "Inteligência",
-    description: "Gerenciais, evolutivos, reprodutivos e operacionais.",
+    label: "Financial", icon: "account_balance_wallet", children: [
+      { label: "Accounts", icon: "", path: "/financeiro/contas" },
+      { label: "Transactions", icon: "", path: "/financeiro/movimentacao" },
+      { label: "Categories", icon: "", path: "/financeiro/categorias" },
+      { label: "People", icon: "", path: "/financeiro/pessoas" },
+    ]
   },
   {
-    key: "simulacoes",
-    label: "Simulações",
-    path: "/simulacoes",
-    icon: Sparkles,
-    group: "Inteligência",
-    description: "Cenários de engorda, custo e ROI por lote.",
+    label: "Reports", icon: "description", children: [
+      { label: "Managerial", icon: "", path: "/relatorios/gerenciais" },
+      { label: "Evolution", icon: "", path: "/relatorios/evolucao" },
+      { label: "Reproductive", icon: "", path: "/relatorios/reprodutivos" },
+      { label: "Operational", icon: "", path: "/relatorios/operacionais" },
+    ]
   },
   {
-    key: "configuracoes",
-    label: "Configurações",
-    path: "/configuracoes",
-    icon: Settings,
-    group: "Sistema",
-    description: "Fazendas, usuários, permissões e preferências.",
+    label: "Simulations", icon: "calculate", children: [
+      { label: "Feedlot", icon: "", path: "/simulacoes/confinamento" },
+      { label: "Semi-feedlot", icon: "", path: "/simulacoes/semi-confinamento" },
+    ]
   },
 ];
 
-export const FARMS = [
-  { id: "f-001", name: "Fazenda Boa Esperança", city: "Uberaba/MG", area: 1840, currency: "BRL" },
-  { id: "f-002", name: "Fazenda São Mateus", city: "Rondonópolis/MT", area: 3270, currency: "BRL" },
-  { id: "f-003", name: "Fazenda Recanto", city: "Araguaína/TO", area: 920, currency: "BRL" },
+// Dashboard KPIs (matching original "Office overview")
+export const dashboardKPIs = [
+  { value: "0", label: "Active animals", sublabel: "-", icon: "", iconColor: "" },
+  { value: "0", label: "Births", sublabel: "Since 01/05/2026", icon: "arrow_upward", iconColor: "text-green-600" },
+  { value: "0", label: "Deaths", sublabel: "Since 01/05/2026", icon: "arrow_downward", iconColor: "text-red-600" },
+  { value: "0", label: "Sales", sublabel: "Since 01/05/2026", icon: "", iconColor: "" },
+  { value: "0", label: "Stocking rate (AU)", sublabel: "-", icon: "", iconColor: "" },
 ];
 
-export const KPIS = [
-  { label: "Cabeças no rebanho", value: "4.218", delta: "+1,8%", trend: "up" as const, hint: "vs. mês anterior" },
-  { label: "GMD médio (kg/dia)", value: "0,742", delta: "+0,03", trend: "up" as const, hint: "últimos 30 dias" },
-  { label: "Taxa de prenhez", value: "87,4%", delta: "+2,1 p.p.", trend: "up" as const, hint: "estação 2025/26" },
-  { label: "Mortalidade", value: "0,6%", delta: "-0,2 p.p.", trend: "down" as const, hint: "12 meses" },
-  { label: "Custo arroba (R$)", value: "248,90", delta: "-3,1%", trend: "down" as const, hint: "fechamento parcial" },
-  { label: "Margem operacional", value: "31,2%", delta: "+1,4 p.p.", trend: "up" as const, hint: "trimestre" },
+// Herd by age table
+export const herdByAge = [
+  { age: "0-8", male: 25, female: 25 },
+  { age: "9-12", male: 14, female: 15 },
+  { age: "13-24", male: 0, female: 0 },
+  { age: "25-36", male: 0, female: 0 },
+  { age: "36+", male: 69, female: 95 },
 ];
 
-export const HERD_EVOLUTION = [
-  { month: "Jun", cabecas: 3820, gmd: 0.69 },
-  { month: "Jul", cabecas: 3905, gmd: 0.7 },
-  { month: "Ago", cabecas: 3980, gmd: 0.71 },
-  { month: "Set", cabecas: 4060, gmd: 0.72 },
-  { month: "Out", cabecas: 4128, gmd: 0.73 },
-  { month: "Nov", cabecas: 4180, gmd: 0.74 },
-  { month: "Dez", cabecas: 4218, gmd: 0.74 },
+// Monitored stock
+export const monitoredStock = [
+  { product: "Etanol", unit: "Litro", qty: "3000.00", status: "ok" },
+  { product: "Prostaglandina", unit: "Mililitro", qty: "6000.00", status: "ok" },
+  { product: "Vacina Aftosa", unit: "Mililitro", qty: "4462.00", status: "ok" },
+  { product: "Cipionato de Estradiol", unit: "Mililitro", qty: "3000.00", status: "ok" },
+  { product: "Vermifugo", unit: "Mililitro", qty: "5840.00", status: "ok" },
+  { product: "Gasolina", unit: "Litro", qty: "4000.00", status: "ok" },
+  { product: "Diesel", unit: "Litro", qty: "2000.00", status: "ok" },
+  { product: "Benzoato de Estradiol", unit: "Mililitro", qty: "4500.00", status: "ok" },
+  { product: "Implante", unit: "Unidade", qty: "2985.00", status: "ok" },
+  { product: "FSH", unit: "Mililitro", qty: "1500.00", status: "ok" },
 ];
 
-export const FINANCIAL_FLOW = [
-  { month: "Jun", receita: 920000, despesa: 612000 },
-  { month: "Jul", receita: 880000, despesa: 598000 },
-  { month: "Ago", receita: 1010000, despesa: 645000 },
-  { month: "Set", receita: 970000, despesa: 660000 },
-  { month: "Out", receita: 1180000, despesa: 702000 },
-  { month: "Nov", receita: 1240000, despesa: 715000 },
-  { month: "Dez", receita: 1320000, despesa: 740000 },
+// Animals list sample data (matching iRancho columns)
+export const animalsList = [
+  { animalId: "1", electronicId: "982000455038273", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "3", electronicId: "982000455038275", managementId: "", birthDate: "01/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "4", electronicId: "982000455038276", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "5", electronicId: "982000455038277", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "7", electronicId: "982000455038279", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "8", electronicId: "982000455038280", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "9", electronicId: "982000455038281", managementId: "", birthDate: "02/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "10", electronicId: "982000455038282", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "11", electronicId: "982000455038283", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "12", electronicId: "982000455038284", managementId: "", birthDate: "03/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "13", electronicId: "982000455038285", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "14", electronicId: "982000455038286", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "15", electronicId: "982000455038287", managementId: "", birthDate: "04/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "16", electronicId: "982000455038288", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "17", electronicId: "982000455038289", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "18", electronicId: "982000455038290", managementId: "", birthDate: "05/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "19", electronicId: "982000455038291", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "20", electronicId: "982000455038292", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "21", electronicId: "982000455038293", managementId: "", birthDate: "06/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "22", electronicId: "982000455038294", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "23", electronicId: "982000455038295", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "24", electronicId: "982000455038296", managementId: "", birthDate: "07/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "25", electronicId: "982000455038297", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "26", electronicId: "982000455038298", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "27", electronicId: "982000455038299", managementId: "", birthDate: "08/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "28", electronicId: "982000455038300", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "29", electronicId: "982000455038301", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "30", electronicId: "982000455038302", managementId: "", birthDate: "09/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "31", electronicId: "982000455038303", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "32", electronicId: "982000455038304", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "33", electronicId: "982000455038305", managementId: "", birthDate: "10/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "34", electronicId: "982000455038306", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "35", electronicId: "982000455038307", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "36", electronicId: "982000455038308", managementId: "", birthDate: "11/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "37", electronicId: "982000455038309", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "38", electronicId: "982000455038310", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "39", electronicId: "982000455038311", managementId: "", birthDate: "12/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "40", electronicId: "982000455038312", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "41", electronicId: "982000455038313", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "42", electronicId: "982000455038314", managementId: "", birthDate: "13/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "43", electronicId: "982000455038315", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "44", electronicId: "982000455038316", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
+  { animalId: "45", electronicId: "982000455038317", managementId: "", birthDate: "14/08/2025", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "46", electronicId: "982000455038318", managementId: "", birthDate: "07/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Engorda", activity: "Fattening" },
+  { animalId: "47", electronicId: "982000455038319", managementId: "", birthDate: "02/03/2020", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Recria", activity: "Rearing" },
+  { animalId: "48", electronicId: "982000455038320", managementId: "", birthDate: "15/08/2025", castrated: "No", sex: "Male", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Breeding" },
+  { animalId: "49", electronicId: "982000455038321", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote Vacas", activity: "Breeding" },
+  { animalId: "50", electronicId: "982000455038322", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Female", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Breeding" },
 ];
 
-export const LOTS = [
-  { id: "L-014", name: "Recria Norte", category: "Recria", animals: 412, gmd: 0.78, area: 142, status: "Ativo" },
-  { id: "L-021", name: "Engorda Confinamento", category: "Engorda", animals: 318, gmd: 1.21, area: 18, status: "Ativo" },
-  { id: "L-033", name: "Matrizes Estação", category: "Cria", animals: 540, gmd: 0.42, area: 320, status: "Ativo" },
-  { id: "L-045", name: "Bezerros 2025", category: "Cria", animals: 268, gmd: 0.66, area: 96, status: "Ativo" },
-  { id: "L-052", name: "Reposição Sul", category: "Recria", animals: 196, gmd: 0.74, area: 88, status: "Ativo" },
-  { id: "L-060", name: "Touros", category: "Reprodutor", animals: 24, gmd: 0.18, area: 12, status: "Ativo" },
+// Financial accounts
+export const financialAccounts = [
+  { id: 1, name: "Conta Principal", type: "Corrente", balance: "R$ 45.000,00" },
+  { id: 2, name: "Caixa Fazenda", type: "Caixa", balance: "R$ 3.200,00" },
+  { id: 3, name: "Poupança", type: "Poupança", balance: "R$ 120.000,00" },
 ];
 
-export const ANIMALS = [
-  { tag: "BR-00481", category: "Matriz", lot: "Matrizes Estação", weight: 482, lastEvent: "Diagnóstico de prenhez", date: "12/05" },
-  { tag: "BR-00497", category: "Bezerro", lot: "Bezerros 2025", weight: 168, lastEvent: "Vacinação Aftosa", date: "10/05" },
-  { tag: "BR-00512", category: "Novilha", lot: "Recria Norte", weight: 312, lastEvent: "Pesagem", date: "08/05" },
-  { tag: "BR-00528", category: "Boi", lot: "Engorda Confinamento", weight: 498, lastEvent: "Embarque parcial", date: "06/05" },
-  { tag: "BR-00541", category: "Touro", lot: "Touros", weight: 812, lastEvent: "Andrológico", date: "02/05" },
-  { tag: "BR-00553", category: "Novilha", lot: "Reposição Sul", weight: 298, lastEvent: "IATF", date: "29/04" },
+// Stock items
+export const stockItems = [
+  { id: 1, product: "Etanol", unit: "Litro", qty: "3000.00", minStock: "500.00", status: "ok" },
+  { id: 2, product: "Prostaglandina", unit: "Mililitro", qty: "6000.00", minStock: "1000.00", status: "ok" },
+  { id: 3, product: "Vacina Aftosa", unit: "Mililitro", qty: "4462.00", minStock: "500.00", status: "ok" },
+  { id: 4, product: "Cipionato de Estradiol", unit: "Mililitro", qty: "3000.00", minStock: "500.00", status: "ok" },
+  { id: 5, product: "Vermifugo", unit: "Mililitro", qty: "5840.00", minStock: "1000.00", status: "ok" },
+  { id: 6, product: "Gasolina", unit: "Litro", qty: "4000.00", minStock: "500.00", status: "ok" },
+  { id: 7, product: "Diesel", unit: "Litro", qty: "2000.00", minStock: "500.00", status: "ok" },
+  { id: 8, product: "Benzoato de Estradiol", unit: "Mililitro", qty: "4500.00", minStock: "500.00", status: "ok" },
+  { id: 9, product: "Implante", unit: "Unidade", qty: "2985.00", minStock: "500.00", status: "ok" },
+  { id: 10, product: "FSH", unit: "Mililitro", qty: "1500.00", minStock: "300.00", status: "ok" },
 ];
 
-export const MANAGEMENTS = [
-  { id: "M-1043", type: "Vacinação Aftosa", lot: "Recria Norte", animals: 412, date: "12/05/2026", responsible: "Carla Mendes" },
-  { id: "M-1044", type: "Pesagem", lot: "Engorda Confinamento", animals: 318, date: "11/05/2026", responsible: "João Pires" },
-  { id: "M-1045", type: "IATF", lot: "Matrizes Estação", animals: 240, date: "08/05/2026", responsible: "Dr. Renato" },
-  { id: "M-1046", type: "Vermifugação", lot: "Bezerros 2025", animals: 268, date: "06/05/2026", responsible: "Carla Mendes" },
-  { id: "M-1047", type: "Diagnóstico de prenhez", lot: "Matrizes Estação", animals: 540, date: "02/05/2026", responsible: "Dr. Renato" },
-];
-
-export const SUPPLIES = [
-  { sku: "SAL-005", name: "Sal Mineral 80", category: "Suplemento", stock: 14200, unit: "kg", min: 6000 },
-  { sku: "VAC-012", name: "Vacina Aftosa", category: "Sanidade", stock: 380, unit: "doses", min: 200 },
-  { sku: "MIL-003", name: "Milho moído", category: "Volumoso", stock: 86000, unit: "kg", min: 30000 },
-  { sku: "URE-001", name: "Ureia pecuária", category: "Suplemento", stock: 5800, unit: "kg", min: 2500 },
-  { sku: "ANT-007", name: "Antibiótico injetável", category: "Sanidade", stock: 92, unit: "frascos", min: 40 },
-];
-
-export const FUEL = [
-  { date: "12/05", asset: "Trator Massey 4708", liters: 84, price: 6.12, total: 514.08, hours: 6.4 },
-  { date: "10/05", asset: "Caminhão MB Atego", liters: 142, price: 6.18, total: 877.56, hours: 8.1 },
-  { date: "08/05", asset: "Pulverizador Jacto", liters: 36, price: 6.12, total: 220.32, hours: 3.2 },
-  { date: "05/05", asset: "Trator John Deere 5078", liters: 72, price: 6.05, total: 435.6, hours: 5.5 },
-];
-
-export const FINANCIAL_TX = [
-  { date: "12/05", description: "Venda boi gordo - Frigorífico Sul", category: "Receita - Venda animal", value: 412800, type: "C" as const },
-  { date: "11/05", description: "Compra suplemento mineral", category: "Despesa - Nutrição", value: -38400, type: "D" as const },
-  { date: "10/05", description: "Folha de pagamento", category: "Despesa - Pessoal", value: -86200, type: "D" as const },
-  { date: "08/05", description: "Aluguel de pastagem", category: "Despesa - Operacional", value: -22000, type: "D" as const },
-  { date: "06/05", description: "Venda bezerros desmama", category: "Receita - Venda animal", value: 184500, type: "C" as const },
-];
-
-export const REPORTS = [
-  { name: "Gerencial consolidado", category: "Gerenciais", lastRun: "12/05/2026", format: "PDF / XLSX" },
-  { name: "Evolução de rebanho", category: "Evolutivos", lastRun: "11/05/2026", format: "PDF" },
-  { name: "Eficiência reprodutiva", category: "Reprodutivos", lastRun: "10/05/2026", format: "PDF / XLSX" },
-  { name: "Custo por arroba produzida", category: "Operacionais", lastRun: "08/05/2026", format: "XLSX" },
-  { name: "Receitas vs. despesas", category: "Gerenciais", lastRun: "06/05/2026", format: "PDF" },
-  { name: "Movimentação de insumos", category: "Operacionais", lastRun: "04/05/2026", format: "XLSX" },
-];
-
-export const SIMULATIONS = [
-  { id: "S-08", name: "Engorda confinamento Q3", animals: 320, days: 110, projectedGmd: 1.25, projectedMargin: 0.34 },
-  { id: "S-09", name: "Recria pasto suplementado", animals: 480, days: 180, projectedGmd: 0.82, projectedMargin: 0.27 },
-  { id: "S-10", name: "Cenário de venda antecipada", animals: 210, days: 60, projectedGmd: 1.05, projectedMargin: 0.31 },
+// Users for auth
+export const users = [
+  { email: "pngomes1@gmail.com", password: "123456", name: "Pedro Gomes" },
+  { email: "pngomes1@teste.com", password: "12345678", name: "Pedro Gomes" },
+  { email: "demo@irancho.com", password: "demo123", name: "Usuário Demo" },
 ];
