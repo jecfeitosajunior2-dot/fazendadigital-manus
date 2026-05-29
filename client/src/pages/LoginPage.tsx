@@ -42,12 +42,13 @@ function LoginPage() {
       <div className="relative z-10 w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          <span className="material-icons text-[32px]" style={{ color: "#94B40B" }}>pets</span>
-          <span className="text-[22px] font-medium text-gray-800">iRancho</span>
+          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-compressed.png" alt="Fazenda Digital" className="h-[40px] w-auto" />
         </div>
 
         {/* Title */}
-        <h1 className="text-[18px] font-medium text-gray-800 text-center mb-6">Entrar</h1>
+        <h1 className="text-[20px] font-bold text-center mb-2" style={{ color: "#1B4332", fontFamily: "'Manrope', sans-serif", letterSpacing: "0.03em" }}>Fazenda Digital</h1>
+        <p className="text-[12px] text-center text-gray-600 mb-6" style={{ fontFamily: "'Manrope', sans-serif" }}>Gestão Pecuária Inteligente</p>
+        <h2 className="text-[16px] font-medium text-gray-800 text-center mb-6">Entrar</h2>
 
         {error && (
           <div className="mb-4 p-2.5 bg-red-50 border border-red-200 rounded text-[12px] text-red-600 flex items-center gap-1.5">
@@ -77,7 +78,7 @@ function LoginPage() {
                 type={showPwd ? "text" : "password"}
                 value={password}
                 onChange={e => { setPassword(e.target.value); setError(""); }}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#94B40B] transition-colors pr-10"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#1B4332] transition-colors pr-10"
                 placeholder="••••••••"
               />
               <button
@@ -92,7 +93,7 @@ function LoginPage() {
 
           {/* Forgot password */}
           <div className="text-right mb-5">
-            <a href="#" className="text-[11px] text-gray-500 hover:text-[#94B40B]">Esqueceu a senha?</a>
+            <a href="#" className="text-[11px] text-gray-500 hover:text-[#1B4332]">Esqueceu a senha?</a>
           </div>
 
           {/* Submit */}
@@ -100,9 +101,9 @@ function LoginPage() {
             type="submit"
             disabled={loading}
             className="w-full py-2.5 rounded text-white font-medium text-[14px] uppercase tracking-wide transition-all disabled:opacity-70"
-            style={{ backgroundColor: "#94B40B" }}
-            onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#7CB342")}
-            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#94B40B")}
+            style={{ backgroundColor: "#1B4332" }}
+            onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#2D6A4F")}
+            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#1B4332")}
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">

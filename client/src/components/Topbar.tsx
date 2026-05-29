@@ -22,7 +22,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   };
 
   return (
-    <header className="h-[48px] flex items-center justify-between px-4" style={{ backgroundColor: "#3B2110" }}>
+    <header className="h-[48px] flex items-center justify-between px-4" style={{ backgroundColor: "#1B4332" }}>
       {/* Left: hamburger for mobile */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (
@@ -32,8 +32,8 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
         <div className="md:hidden flex items-center gap-2">
-          <span className="material-icons text-[20px] text-white">pets</span>
-          <span className="text-white font-medium text-[14px]">iRancho</span>
+          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-compressed.png" alt="Fazenda Digital" className="h-[32px] w-auto" />
+          <span className="text-white font-bold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", letterSpacing: "0.03em" }}>Fazenda Digital</span>
         </div>
       </div>
 

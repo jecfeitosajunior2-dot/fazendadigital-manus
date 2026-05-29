@@ -110,14 +110,14 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           ${collapsed ? "w-[60px]" : "w-[220px]"}
           h-screen md:min-h-screen flex flex-col transition-all duration-200 flex-shrink-0
         `}
-        style={{ backgroundColor: "#3B2110" }}
+        style={{ backgroundColor: "#1B4332" }}
       >
         {/* Logo area */}
         <div className="h-[48px] flex items-center px-3 border-b border-white/10">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <span className="material-icons text-[22px] text-white">pets</span>
-              <span className="text-white font-medium text-[14px]">iRancho</span>
+              <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-compressed.png" alt="Fazenda Digital" className="h-[28px] w-auto" />
+              <span className="text-white font-bold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", letterSpacing: "0.03em" }}>Fazenda Digital</span>
             </div>
           )}
           <button
