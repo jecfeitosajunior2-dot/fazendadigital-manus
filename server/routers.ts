@@ -18,9 +18,19 @@ const authRouter = router({
   login: publicProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const [user] = await db.select().from(users).where(eq(users.openId, input.username)).limit(1);
+      // Support login by email OR by openId
+      const { or } = await import("drizzle-orm");
+      const [user] = await db.select().from(users).where(
+        or(eq(users.openId, input.username), eq(users.email, input.username))
+      ).limit(1);
       if (!user) throw new Error("Usuário não encontrado");
-      const valid = await bcrypt.compare(input.password, user.openId + "_hashed") || input.password === "admin123";
+      // Check password: use passwordHash if available, otherwise fallback to admin123
+      let valid = false;
+      if (user.passwordHash) {
+        valid = await bcrypt.compare(input.password, user.passwordHash);
+      } else {
+        valid = input.password === "admin123";
+      }
       if (!valid) throw new Error("Senha incorreta");
       const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
       ctx.res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 30 * 24 * 60 * 60 * 1000 });
