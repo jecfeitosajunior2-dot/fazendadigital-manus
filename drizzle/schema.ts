@@ -14,6 +14,23 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn"),
 });
 
+// Fazendas table
+export const fazendas = mysqlTable("fazendas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  nome: varchar("nome", { length: 200 }).notNull(),
+  cidade: varchar("cidade", { length: 100 }),
+  estado: varchar("estado", { length: 2 }),
+  area: decimal("area", { precision: 10, scale: 2 }),
+  endereco: varchar("endereco", { length: 300 }),
+  cep: varchar("cep", { length: 10 }),
+  telefone: varchar("telefone", { length: 20 }),
+  responsavel: varchar("responsavel", { length: 200 }),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
 // Animais table
 export const animais = mysqlTable("animais", {
   id: int("id").primaryKey().autoincrement(),

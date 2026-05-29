@@ -5,7 +5,7 @@ import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, pesagens, batidas,
   benfeitorias, estoque, contasFinanceiras, movimentacoes,
-  compras, vendas
+  compras, vendas, fazendas
 } from "../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
@@ -700,6 +700,56 @@ const vendasRouter = router({
     }),
 });
 
+// ─── FAZENDAS ROUTER ────────────────────────────────────────────────────────
+const fazendasRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(fazendas).where(eq(fazendas.userId, ctx.user.id)).orderBy(desc(fazendas.createdAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      nome: z.string(),
+      cidade: z.string().optional(),
+      estado: z.string().optional(),
+      area: z.string().optional(),
+      endereco: z.string().optional(),
+      cep: z.string().optional(),
+      telefone: z.string().optional(),
+      responsavel: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(fazendas).values({ userId: ctx.user.id, ...input });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      cidade: z.string().optional(),
+      estado: z.string().optional(),
+      area: z.string().optional(),
+      endereco: z.string().optional(),
+      cep: z.string().optional(),
+      telefone: z.string().optional(),
+      responsavel: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      await db.update(fazendas).set(rest).where(and(eq(fazendas.id, id), eq(fazendas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: authRouter,
@@ -718,6 +768,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   compras: comprasRouter,
   vendas: vendasRouter,
+  fazendas: fazendasRouter,
 });
 
 export type AppRouter = typeof appRouter;

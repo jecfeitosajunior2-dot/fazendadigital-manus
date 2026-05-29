@@ -1,5 +1,5 @@
 import AppLayout from "@/components/AppLayout";
-import { useState } from "react";
+import React, { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,12 +12,108 @@ import { Textarea } from "@/components/ui/textarea";
 // MÓDULO FAZENDAS
 // ============================================================
 
+function FazendaFormModal({ open, onClose, fazenda, onSuccess }: {
+  open: boolean;
+  onClose: () => void;
+  fazenda?: any;
+  onSuccess: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState({
+    nome: fazenda?.nome || "",
+    cidade: fazenda?.cidade || "",
+    estado: fazenda?.estado || "",
+    area: fazenda?.area || "",
+    endereco: fazenda?.endereco || "",
+    responsavel: fazenda?.responsavel || "",
+    observacoes: fazenda?.observacoes || "",
+  });
+  const createMutation = trpc.fazendas.create.useMutation({
+    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda criada com sucesso!"); onSuccess(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateMutation = trpc.fazendas.update.useMutation({
+    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda atualizada!"); onSuccess(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.nome.trim()) { toast.error("Nome da fazenda é obrigatório"); return; }
+    if (fazenda) {
+      updateMutation.mutate({ id: fazenda.id, ...form });
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+  const isBusy = createMutation.isPending || updateMutation.isPending;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{fazenda ? "Editar Fazenda" : "Nova Fazenda"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3 mt-2">
+          <div>
+            <Label className="text-[11px]">Nome da Fazenda *</Label>
+            <Input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Fazenda Santa Maria" className="h-8 text-[12px]" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-[11px]">Cidade</Label>
+              <Input value={form.cidade} onChange={e => setForm(f => ({ ...f, cidade: e.target.value }))} placeholder="Ex: Goiânia" className="h-8 text-[12px]" />
+            </div>
+            <div>
+              <Label className="text-[11px]">Estado (UF)</Label>
+              <Input value={form.estado} onChange={e => setForm(f => ({ ...f, estado: e.target.value.toUpperCase().slice(0,2) }))} placeholder="GO" maxLength={2} className="h-8 text-[12px]" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-[11px]">Área (ha)</Label>
+              <Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} placeholder="450" type="number" step="0.01" className="h-8 text-[12px]" />
+            </div>
+            <div>
+              <Label className="text-[11px]">Responsável</Label>
+              <Input value={form.responsavel} onChange={e => setForm(f => ({ ...f, responsavel: e.target.value }))} placeholder="Nome" className="h-8 text-[12px]" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-[11px]">Endereço</Label>
+            <Input value={form.endereco} onChange={e => setForm(f => ({ ...f, endereco: e.target.value }))} placeholder="Rodovia, km, etc." className="h-8 text-[12px]" />
+          </div>
+          <div>
+            <Label className="text-[11px]">Observações</Label>
+            <Textarea value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} rows={2} className="text-[12px]" />
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <Button type="button" variant="outline" onClick={onClose} className="h-8 text-[11px]">Cancelar</Button>
+            <Button type="submit" disabled={isBusy} className="h-8 text-[11px] text-white" style={{ backgroundColor: "#4ECDC4" }}>
+              {isBusy ? "Salvando..." : fazenda ? "Salvar" : "Criar Fazenda"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function FarmsOverviewPage() {
+  const [showModal, setShowModal] = useState(false);
+  const [editFazenda, setEditFazenda] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState<number | null>(null);
+  const utils = trpc.useUtils();
+  const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
+  const deleteMutation = trpc.fazendas.delete.useMutation({
+    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const totalArea = fazendaList.reduce((s: number, f: any) => s + parseFloat(f.area || "0"), 0);
   return (
     <AppLayout>
+      {showModal && <FazendaFormModal open={showModal} onClose={() => { setShowModal(false); setEditFazenda(null); }} fazenda={editFazenda} onSuccess={() => {}} />}
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
-        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => { setEditFazenda(null); setShowModal(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -29,7 +125,7 @@ export function FarmsOverviewPage() {
               <span className="material-icons text-[20px] text-green-600">home_work</span>
             </div>
             <div>
-              <div className="text-[18px] font-bold text-gray-800">1</div>
+              <div className="text-[18px] font-bold text-gray-800">{isLoading ? "..." : fazendaList.length}</div>
               <div className="text-[11px] text-gray-500">Fazendas cadastradas</div>
             </div>
           </div>
@@ -40,19 +136,8 @@ export function FarmsOverviewPage() {
               <span className="material-icons text-[20px] text-blue-600">landscape</span>
             </div>
             <div>
-              <div className="text-[18px] font-bold text-gray-800">450 ha</div>
+              <div className="text-[18px] font-bold text-gray-800">{isLoading ? "..." : `${totalArea.toFixed(0)} ha`}</div>
               <div className="text-[11px] text-gray-500">Área total</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-              <span className="material-icons text-[20px] text-amber-600">grid_view</span>
-            </div>
-            <div>
-              <div className="text-[18px] font-bold text-gray-800">12</div>
-              <div className="text-[11px] text-gray-500">Subdivisões</div>
             </div>
           </div>
         </div>
@@ -64,26 +149,38 @@ export function FarmsOverviewPage() {
               <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Fazenda</th>
               <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Cidade/Estado</th>
               <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Subdivisões</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Responsável</th>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
                 <span className="material-icons text-[14px]">settings</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-gray-50 hover:bg-gray-50/50">
-              <td className="px-3 py-2 text-[#4ECDC4] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
-              <td className="px-3 py-2 text-gray-700">Goiânia/GO</td>
-              <td className="px-3 py-2 text-right text-gray-700">450.00</td>
-              <td className="px-3 py-2 text-right text-gray-700">12</td>
-              <td className="px-3 py-2 text-right text-gray-700">243</td>
-              <td className="px-3 py-2 text-center">
-                <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
-                  <span className="material-icons text-[14px]">more_vert</span>
-                </button>
-              </td>
-            </tr>
+            {isLoading && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Carregando...</td></tr>}
+            {!isLoading && fazendaList.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Nenhuma fazenda cadastrada. Clique em "Nova Fazenda" para começar.</td></tr>}
+            {fazendaList.map((f: any) => (
+              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50 relative">
+                <td className="px-3 py-2 text-[#4ECDC4] font-medium">{f.nome}</td>
+                <td className="px-3 py-2 text-gray-700">{[f.cidade, f.estado].filter(Boolean).join("/") || "-"}</td>
+                <td className="px-3 py-2 text-right text-gray-700">{f.area || "-"}</td>
+                <td className="px-3 py-2 text-right text-gray-700">{f.responsavel || "-"}</td>
+                <td className="px-3 py-2 text-center relative">
+                  <button onClick={() => setMenuOpen(menuOpen === f.id ? null : f.id)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                    <span className="material-icons text-[14px]">more_vert</span>
+                  </button>
+                  {menuOpen === f.id && (
+                    <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
+                      <button onClick={() => { setEditFazenda(f); setShowModal(true); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
+                        <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
+                      </button>
+                      <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
+                        <span className="material-icons text-[13px]">delete</span> Excluir
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -92,11 +189,21 @@ export function FarmsOverviewPage() {
 }
 
 export function FarmsListPage() {
+  const [showModal, setShowModal] = useState(false);
+  const [editFazenda, setEditFazenda] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState<number | null>(null);
+  const utils = trpc.useUtils();
+  const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
+  const deleteMutation = trpc.fazendas.delete.useMutation({
+    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
+    onError: (e) => toast.error(e.message),
+  });
   return (
     <AppLayout>
+      {showModal && <FazendaFormModal open={showModal} onClose={() => { setShowModal(false); setEditFazenda(null); }} fazenda={editFazenda} onSuccess={() => {}} />}
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
-        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => { setEditFazenda(null); setShowModal(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -115,17 +222,31 @@ export function FarmsListPage() {
             </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-gray-50 hover:bg-gray-50/50">
-              <td className="px-3 py-2 text-[#4ECDC4] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
-              <td className="px-3 py-2 text-gray-700">Goiânia</td>
-              <td className="px-3 py-2 text-gray-700">GO</td>
-              <td className="px-3 py-2 text-right text-gray-700">450.00</td>
-              <td className="px-3 py-2 text-center">
-                <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
-                  <span className="material-icons text-[14px]">more_vert</span>
-                </button>
-              </td>
-            </tr>
+            {isLoading && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Carregando...</td></tr>}
+            {!isLoading && fazendaList.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>}
+            {fazendaList.map((f: any) => (
+              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50 relative">
+                <td className="px-3 py-2 text-[#4ECDC4] font-medium">{f.nome}</td>
+                <td className="px-3 py-2 text-gray-700">{f.cidade || "-"}</td>
+                <td className="px-3 py-2 text-gray-700">{f.estado || "-"}</td>
+                <td className="px-3 py-2 text-right text-gray-700">{f.area || "-"}</td>
+                <td className="px-3 py-2 text-center relative">
+                  <button onClick={() => setMenuOpen(menuOpen === f.id ? null : f.id)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                    <span className="material-icons text-[14px]">more_vert</span>
+                  </button>
+                  {menuOpen === f.id && (
+                    <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
+                      <button onClick={() => { setEditFazenda(f); setShowModal(true); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
+                        <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
+                      </button>
+                      <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
+                        <span className="material-icons text-[13px]">delete</span> Excluir
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
