@@ -8,20 +8,44 @@ import { useLocation } from 'wouter';
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [farmFilter, setFarmFilter] = useState("");
+  const [subdivisionFilter, setSubdivisionFilter] = useState("");
+  const [breedFilter, setBreedFilter] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 50;
 
+  // Get unique values for dropdowns
+  const farms = ["Fazenda iRancho", "Fazenda Alma Viva", "Fazenda Rancho 2"];
+  const subdivisions = ["Lote Vacas", "Lote Bezerros (as)", "Lote Engorda", "Lote Recria", "Lote novilhas da estação"];
+  const breeds = ["Nelore", "Nelore Mocho", "Senepol"];
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return animalsList;
-    const q = search.toLowerCase();
-    return animalsList.filter(a =>
-      a.animalId.includes(q) ||
-      a.electronicId.includes(q) ||
-      a.breed.toLowerCase().includes(q) ||
-      a.lot.toLowerCase().includes(q) ||
-      a.sex.toLowerCase().includes(q)
-    );
-  }, [search]);
+    let result = animalsList;
+
+    // Apply subdivision filter
+    if (subdivisionFilter && subdivisionFilter !== "Subdivisão") {
+      result = result.filter(a => a.lot === subdivisionFilter);
+    }
+
+    // Apply breed filter
+    if (breedFilter && breedFilter !== "Raça") {
+      result = result.filter(a => a.breed === breedFilter);
+    }
+
+    // Apply search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(a =>
+        a.animalId.includes(q) ||
+        a.electronicId.includes(q) ||
+        a.breed.toLowerCase().includes(q) ||
+        a.lot.toLowerCase().includes(q) ||
+        a.sex.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [search, subdivisionFilter, breedFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
@@ -48,7 +72,8 @@ export function AnimaisPage() {
             SISBOV
           </button>
           <button
-            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
+            onClick={() => setLocation('/rebanho/novo-animal')}
+            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase hover:opacity-90 cursor-pointer"
             style={{ backgroundColor: "#94B40B" }}
           >
             <span className="material-icons text-[14px]">add</span>
@@ -59,20 +84,29 @@ export function AnimaisPage() {
 
       {/* Filters bar */}
       <div className="bg-white rounded shadow-sm border border-gray-100 mb-3 px-3 py-2 flex items-center gap-2 flex-wrap">
-        <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px]">
-          <option>Fazenda</option>
-          <option>Fazenda iRancho</option>
-          <option>Fazenda Alma Viva</option>
-          <option>Fazenda Rancho 2</option>
+        <select 
+          value={farmFilter}
+          onChange={e => { setFarmFilter(e.target.value); setPage(1); }}
+          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px]"
+        >
+          <option value="">Fazenda</option>
+          {farms.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
-        <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px] hidden sm:block">
-          <option>Subdivisão</option>
+        <select 
+          value={subdivisionFilter}
+          onChange={e => { setSubdivisionFilter(e.target.value); setPage(1); }}
+          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[100px] hidden sm:block"
+        >
+          <option value="">Subdivisão</option>
+          {subdivisions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[80px] hidden sm:block">
-          <option>Raça</option>
-          <option>Nelore</option>
-          <option>Nelore Mocho</option>
-          <option>Senepol</option>
+        <select 
+          value={breedFilter}
+          onChange={e => { setBreedFilter(e.target.value); setPage(1); }}
+          className="text-[11px] border border-gray-200 rounded px-2 py-1.5 text-gray-600 min-w-[80px] hidden sm:block"
+        >
+          <option value="">Raça</option>
+          {breeds.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
         <div className="flex-1 relative min-w-[120px]">
           <span className="material-icons text-[14px] text-gray-400 absolute left-2 top-1/2 -translate-y-1/2">search</span>
@@ -84,6 +118,14 @@ export function AnimaisPage() {
             className="w-full pl-7 pr-2 py-1.5 border border-gray-200 rounded text-[11px] focus:outline-none focus:border-[#94B40B]"
           />
         </div>
+        {(farmFilter || subdivisionFilter || breedFilter || search) && (
+          <button 
+            onClick={() => { setFarmFilter(""); setSubdivisionFilter(""); setBreedFilter(""); setSearch(""); setPage(1); }}
+            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+          >
+            Limpar Filtros
+          </button>
+        )}
         <button className="flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50 uppercase font-medium hidden sm:flex">
           Mais Filtros
         </button>
@@ -144,7 +186,7 @@ export function AnimaisPage() {
         </div>
         {/* Pagination */}
         <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-          <span>Exibindo {filtered.length > 0 ? (page - 1) * perPage + 1 : 0}-{Math.min(page * perPage, filtered.length)} de {filtered.length} itens</span>
+          <span>Exibindo {paginated.length > 0 ? (page - 1) * perPage + 1 : 0}-{Math.min(page * perPage, filtered.length)} de {filtered.length} animais</span>
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}

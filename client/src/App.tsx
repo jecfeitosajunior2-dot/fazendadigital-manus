@@ -46,6 +46,7 @@ import {
 } from "./pages/ModulePages";
 import BulkCattleImportPage from "./pages/BulkCattleImportPage";
 import CattleDetailPage from "./pages/CattleDetailPage";
+import { NewAnimalPage } from "./pages/NewAnimalPage";
 
 function Router() {
   return (
@@ -72,7 +73,8 @@ function Router() {
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
       <Route path="/rebanho/lotes" component={LotsPage} />
       <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
-      <Route path="/rebanho/detalhes-animal" component={CattleDetailPage} />
+        <Route path="/rebanho/detalhes-animal" component={CattleDetailPage} />
+        <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
       
       {/* Manejos */}
       <Route path="/manejos/meus" component={MyManagementsPage} />
