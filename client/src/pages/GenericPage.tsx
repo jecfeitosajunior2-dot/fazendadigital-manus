@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
 import { animalsList, stockItems, financialAccounts } from "@/lib/data";
-
 import { useLocation } from 'wouter';
+import { toast } from 'sonner';
 
 // --- Animals Page (exact iRancho replica with functional search) ---
 export function AnimaisPage() {
@@ -56,7 +56,40 @@ export function AnimaisPage() {
       <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de animais</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <button className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px]" title="Planilha">
+          <button 
+            onClick={() => {
+              // Create CSV data
+              const headers = ["Nº Animal", "ID Eletrônico", "ID Manejo", "Data Nasc.", "Castrado", "Sexo", "Raça", "Lote", "Atividade"];
+              const rows = filtered.map(a => [
+                a.animalId,
+                a.electronicId,
+                a.managementId || "-",
+                a.birthDate,
+                a.castrated,
+                a.sex,
+                a.breed,
+                a.lot,
+                a.activity
+              ]);
+              
+              // Create CSV string
+              const csv = [
+                headers.join(","),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+              ].join("\n");
+              
+              // Download
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const link = document.createElement("a");
+              const url = URL.createObjectURL(blob);
+              link.setAttribute("href", url);
+              link.setAttribute("download", `animais_${new Date().toISOString().split('T')[0]}.csv`);
+              link.click();
+              toast.success("Lista exportada com sucesso!");
+            }}
+            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px] cursor-pointer" 
+            title="Planilha"
+          >
             <span className="material-icons text-[16px]">grid_on</span>
             <span className="hidden md:inline">Planilha</span>
           </button>
@@ -163,7 +196,14 @@ export function AnimaisPage() {
                   <td className="px-2 py-2 text-gray-700">{animal.activity}</td>
                   <td className="px-2 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Editar">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLocation(`/rebanho/editar-animal?id=${animal.animalId}`);
+                        }}
+                        className="p-0.5 rounded hover:bg-gray-100 text-gray-400" 
+                        title="Editar"
+                      >
                         <span className="material-icons text-[14px]">edit</span>
                       </button>
                       <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400" title="Excluir">
