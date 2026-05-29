@@ -4,34 +4,52 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import {
+  RebanhoPage,
+  LotesPage,
+  ManejoPage,
+  ReproducaoPage,
+  NutricaoPage,
+  InsumosPage,
+  MaquinarioPage,
+  ComercialPage,
+  FinanceiroPage,
+  RelatoriosPage,
+  SimulacoesPage,
+  ConfiguracoesPage,
+} from "./pages/Modules";
 
 function Router() {
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
+      <Route path="/" component={Login} />
+      <Route path="/painel" component={Dashboard} />
+      <Route path="/rebanho" component={RebanhoPage} />
+      <Route path="/rebanho/lotes" component={LotesPage} />
+      <Route path="/manejo" component={ManejoPage} />
+      <Route path="/reproducao" component={ReproducaoPage} />
+      <Route path="/nutricao" component={NutricaoPage} />
+      <Route path="/insumos" component={InsumosPage} />
+      <Route path="/maquinario" component={MaquinarioPage} />
+      <Route path="/comercial" component={ComercialPage} />
+      <Route path="/financeiro" component={FinanceiroPage} />
+      <Route path="/relatorios" component={RelatoriosPage} />
+      <Route path="/simulacoes" component={SimulacoesPage} />
+      <Route path="/configuracoes" component={ConfiguracoesPage} />
+      <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
+          <Toaster richColors closeButton position="top-right" />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
