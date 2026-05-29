@@ -178,6 +178,8 @@ export const animalsList = [
   { animalId: "48", electronicId: "982000455038320", managementId: "", birthDate: "15/08/2025", castrated: "Não", sex: "Macho", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Cria" },
   { animalId: "49", electronicId: "982000455038321", managementId: "", birthDate: "01/01/2020", castrated: "-", sex: "Fêmea", breed: "Nelore", lot: "Lote Vacas", activity: "Cria" },
   { animalId: "50", electronicId: "982000455038322", managementId: "", birthDate: "01/02/2022", castrated: "-", sex: "Fêmea", breed: "Nelore", lot: "Lote novilhas da estação", activity: "Cria" },
+  { animalId: "51", electronicId: "982000455038323", managementId: "", birthDate: "16/08/2025", castrated: "-", sex: "Fêmea", breed: "Nelore", lot: "Lote Bezerros (as)", activity: "Cria" },
+  { animalId: "52", electronicId: "982000455038324", managementId: "", birthDate: "07/03/2020", castrated: "Não", sex: "Macho", breed: "Nelore", lot: "Lote Engorda", activity: "Engorda" },
 ];
 
 // Contas financeiras

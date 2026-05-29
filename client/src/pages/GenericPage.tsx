@@ -226,7 +226,7 @@ export function AnimaisPage() {
         </div>
         {/* Pagination */}
         <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-          <span>Exibindo {paginated.length > 0 ? (page - 1) * perPage + 1 : 0}-{Math.min(page * perPage, filtered.length)} de {filtered.length} animais</span>
+          <span>Mostrando {paginated.length > 0 ? (page - 1) * perPage + 1 : 0}-{Math.min(page * perPage, filtered.length)} de {filtered.length} animais</span>
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
