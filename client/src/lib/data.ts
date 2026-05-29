@@ -28,6 +28,7 @@ export const menuItems: MenuItem[] = [
       { label: "Animais", icon: "", path: "/rebanho/lista-animais" },
       { label: "Mapa do Rebanho", icon: "", path: "/rebanho/mapa-rebanho" },
       { label: "Lotes", icon: "", path: "/rebanho/lotes" },
+      { label: "Importação em Massa", icon: "", path: "/rebanho/importacao-em-massa" },
     ]
   },
   {

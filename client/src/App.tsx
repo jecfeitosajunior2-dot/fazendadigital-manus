@@ -43,6 +43,7 @@ import {
   ImprovementsPage,
   QuickAccessPage,
 } from "./pages/ModulePages";
+import BulkCattleImportPage from "./pages/BulkCattleImportPage";
 
 function Router() {
   return (
@@ -68,6 +69,7 @@ function Router() {
       <Route path="/rebanho/lista-animais" component={AnimaisPage} />
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
       <Route path="/rebanho/lotes" component={LotsPage} />
+      <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
       
       {/* Management */}
       <Route path="/manejos/meus" component={MyManagementsPage} />
