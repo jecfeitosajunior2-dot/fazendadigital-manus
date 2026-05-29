@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const user = localStorage.getItem("user");
@@ -14,25 +15,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [location, setLocation]);
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: "#F5F5F5" }}>
-      <Sidebar />
+    <div className="flex min-h-screen" style={{ backgroundColor: "#F4F3EF" }}>
+      <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Topbar />
+        <Topbar onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)} />
         {/* Trial banner */}
         <div
-          className="px-4 py-2 flex items-center gap-2 text-white text-[12px]"
-          style={{ backgroundColor: "#E65100" }}
+          className="px-4 py-2 flex flex-wrap items-center gap-1 text-white text-[12px]"
+          style={{ backgroundColor: "#EC5D24" }}
         >
-          <span className="material-icons text-[16px]">warning</span>
-          <span>
+          <span className="hidden sm:inline">
             Você está utilizando uma versão de teste do iRancho e ainda possui <strong>7 dias de teste</strong> restantes.
           </span>
-          <a href="#" className="ml-1 underline text-white/90 hover:text-white">
+          <span className="sm:hidden text-[11px]">
+            Versão de teste — <strong>7 dias</strong> restantes.
+          </span>
+          <a href="#" className="underline text-white/90 hover:text-white ml-1">
             Para assinar, entre em contato: (62)99981-1720 / contato@irancho.com.br
           </a>
         </div>
         {/* Content area */}
-        <main className="flex-1 p-5 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-5 overflow-y-auto overflow-x-hidden">
           {children}
         </main>
         {/* Footer */}

@@ -47,9 +47,9 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
           depth === 0 ? "px-4 py-2.5" : "pl-10 pr-4 py-[7px]"
         } ${
           isActive
-            ? "text-white bg-[#4A2524] font-medium"
+            ? "text-white bg-[#5C3A1E] font-medium"
             : isChildActive
-            ? "text-white bg-[#4A2524]/60"
+            ? "text-white bg-[#5C3A1E]/50"
             : "text-white/80 hover:text-white hover:bg-white/5"
         }`}
       >
@@ -75,51 +75,92 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
   );
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [location] = useLocation();
 
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    if (mobileOpen && onMobileClose) {
+      onMobileClose();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
   return (
-    <aside
-      className={`${collapsed ? "w-[60px]" : "w-[220px]"} min-h-screen flex flex-col transition-all duration-200 flex-shrink-0`}
-      style={{ backgroundColor: "#3C1B1A" }}
-    >
-      {/* Logo area */}
-      <div className="h-[48px] flex items-center px-3 border-b border-white/10">
+    <>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed md:relative z-50 md:z-auto
+          ${mobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+          ${collapsed ? "w-[60px]" : "w-[220px]"}
+          h-screen md:min-h-screen flex flex-col transition-all duration-200 flex-shrink-0
+        `}
+        style={{ backgroundColor: "#3B2110" }}
+      >
+        {/* Logo area */}
+        <div className="h-[48px] flex items-center px-3 border-b border-white/10">
+          {!collapsed && (
+            <div className="flex items-center gap-2">
+              <span className="material-icons text-[22px] text-white">pets</span>
+              <span className="text-white font-medium text-[14px]">iRancho</span>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              if (window.innerWidth < 768 && onMobileClose) {
+                onMobileClose();
+              } else {
+                setCollapsed(!collapsed);
+              }
+            }}
+            className={`${collapsed ? "mx-auto" : "ml-auto"} text-white/60 hover:text-white p-1`}
+          >
+            <span className="material-icons text-[18px]">{collapsed ? "chevron_right" : "chevron_left"}</span>
+          </button>
+        </div>
+
+        {/* Menu label */}
         {!collapsed && (
-          <div className="flex items-center gap-2">
-            <span className="material-icons text-[22px]" style={{ color: "#8BC34A" }}>pets</span>
-            <span className="text-white font-medium text-[14px]">iRancho</span>
+          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+            <span className="text-[11px] text-white/50 font-medium">Menu</span>
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="text-white/50 hover:text-white hidden md:block"
+            >
+              <span className="material-icons text-[16px]">chevron_left</span>
+            </button>
           </div>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={`${collapsed ? "mx-auto" : "ml-auto"} text-white/60 hover:text-white p-1`}
-        >
-          <span className="material-icons text-[18px]">{collapsed ? "chevron_right" : "chevron_left"}</span>
-        </button>
-      </div>
 
-      {/* Menu label */}
-      {!collapsed && (
-        <div className="px-4 pt-3 pb-1">
-          <span className="text-[10px] text-white/40 uppercase tracking-wider font-medium">Menu</span>
-        </div>
-      )}
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto pb-2 scrollbar-thin">
+          {menuItems.map((item, i) => (
+            <MenuItemComponent key={i} item={item} collapsed={collapsed} currentPath={location} />
+          ))}
+        </nav>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto pb-2 scrollbar-thin">
-        {menuItems.map((item, i) => (
-          <MenuItemComponent key={i} item={item} collapsed={collapsed} currentPath={location} />
-        ))}
-      </nav>
-
-      {/* Footer */}
-      {!collapsed && (
-        <div className="px-3 py-3 border-t border-white/10 text-[9px] text-white/30 text-center leading-tight">
-          Desenvolvido por iRancho<br />© Copyright 2026
-        </div>
-      )}
-    </aside>
+        {/* Footer */}
+        {!collapsed && (
+          <div className="px-3 py-3 border-t border-white/10 text-[9px] text-white/30 text-center leading-tight">
+            Desenvolvido por iRancho<br />© Copyright 2026
+          </div>
+        )}
+      </aside>
+    </>
   );
 }

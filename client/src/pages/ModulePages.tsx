@@ -10,12 +10,12 @@ export function FarmsOverviewPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4">
         <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
@@ -66,7 +66,7 @@ export function FarmsOverviewPage() {
           </thead>
           <tbody>
             <tr className="border-t border-gray-50 hover:bg-gray-50/50">
-              <td className="px-3 py-2 text-[#8BC34A] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
+              <td className="px-3 py-2 text-[#94B40B] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
               <td className="px-3 py-2 text-gray-700">Goiânia/GO</td>
               <td className="px-3 py-2 text-right text-gray-700">450.00</td>
               <td className="px-3 py-2 text-right text-gray-700">12</td>
@@ -89,7 +89,7 @@ export function FarmsListPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -109,7 +109,7 @@ export function FarmsListPage() {
           </thead>
           <tbody>
             <tr className="border-t border-gray-50 hover:bg-gray-50/50">
-              <td className="px-3 py-2 text-[#8BC34A] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
+              <td className="px-3 py-2 text-[#94B40B] font-medium cursor-pointer hover:underline">Fazenda Modelo</td>
               <td className="px-3 py-2 text-gray-700">Goiânia</td>
               <td className="px-3 py-2 text-gray-700">GO</td>
               <td className="px-3 py-2 text-right text-gray-700">450.00</td>
@@ -145,7 +145,7 @@ export function SubdivisionsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Subdivisões</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Subdivisão
         </button>
@@ -195,7 +195,7 @@ export function HerdOverviewPage() {
   return (
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
-      <div className="grid grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
         {[
           { label: "Total de animais", value: "243", icon: "pets", color: "green" },
           { label: "Machos", value: "108", icon: "male", color: "blue" },
@@ -227,7 +227,7 @@ export function HerdOverviewPage() {
               <div key={i} className="flex items-center gap-3">
                 <span className="text-[11px] text-gray-600 w-20">{item.label}</span>
                 <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                  <div className="h-full rounded" style={{ width: `${item.pct}%`, backgroundColor: "#8BC34A" }} />
+                  <div className="h-full rounded" style={{ width: `${item.pct}%`, backgroundColor: "#94B40B" }} />
                 </div>
                 <span className="text-[11px] text-gray-700 font-medium w-8 text-right">{item.value}</span>
               </div>
@@ -262,7 +262,7 @@ export function HerdMapPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Mapa do Rebanho</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">swap_horiz</span>
           Nova Movimentação
         </button>
@@ -315,7 +315,7 @@ export function LotsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Gestão de Lotes</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Novo Lote
         </button>
@@ -336,7 +336,7 @@ export function LotsPage() {
           <tbody>
             {lots.map((lot, i) => (
               <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
-                <td className="px-3 py-1.5 text-[#8BC34A] font-medium cursor-pointer hover:underline">{lot.name}</td>
+                <td className="px-3 py-1.5 text-[#94B40B] font-medium cursor-pointer hover:underline">{lot.name}</td>
                 <td className="px-3 py-1.5 text-gray-700">{lot.activity}</td>
                 <td className="px-3 py-1.5 text-gray-500">{lot.subdivision}</td>
                 <td className="px-3 py-1.5 text-right text-gray-700">{lot.animals}</td>
@@ -371,7 +371,7 @@ function ManagementTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -386,7 +386,7 @@ export function MyManagementsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Meus Manejos</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Novo Manejo
         </button>
@@ -410,7 +410,7 @@ export function CreateManagementPage() {
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Cancelar
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             Salvar
           </button>
         </div>
@@ -464,7 +464,7 @@ export function ListManagementsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Listar Manejos</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Novo Manejo
         </button>
@@ -555,7 +555,7 @@ function SuppliesTabs({ active }: { active: string }) {
         <button
           key={i}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -571,7 +571,7 @@ export function SuppliesEntriesPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Insumos - Entradas</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Movimentação
           </button>
@@ -595,7 +595,7 @@ export function SuppliesExitsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Insumos - Saídas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Movimentação
         </button>
@@ -620,7 +620,7 @@ export function MachineryFuelingPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Abastecimento</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Abastecimento
           </button>
@@ -659,7 +659,7 @@ export function MachineryMaintenancePage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Manutenção</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Manutenção
         </button>
@@ -683,7 +683,7 @@ export function MachineryListPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Máquinas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Cadastrar Máquina
         </button>
@@ -736,7 +736,7 @@ function ReproductionTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -760,7 +760,7 @@ export function ReproductionProtocolsPage() {
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Movimentar Estoque
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Estoque Biológico
           </button>
@@ -811,7 +811,7 @@ export function ReproductionSemenPage() {
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Registrar Nascimento Sem Exposição
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Exposição
           </button>
@@ -832,7 +832,7 @@ export function ReproductionEmbryosPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Colheitas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Colheita
         </button>
@@ -861,7 +861,7 @@ function NutritionTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -877,7 +877,7 @@ export function NutritionDietsPage() {
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Nutrição</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Nova Nutrição
           </button>
@@ -937,7 +937,7 @@ function PurchaseSaleTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -956,7 +956,7 @@ export function PurchasesPage() {
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Buscar Borderôs
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Borderô
           </button>
@@ -981,7 +981,7 @@ export function SalesPage() {
           <button className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">
             Buscar Vendas
           </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Registrar Nova Venda
           </button>
@@ -1011,7 +1011,7 @@ function FinancialTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-3 py-2 text-[11px] font-medium border-b-2 transition-colors whitespace-nowrap ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -1071,7 +1071,7 @@ export function FinancialCategoriesPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Categorias</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Categoria
         </button>
@@ -1125,7 +1125,7 @@ export function FinancialPeoplePage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Pessoas</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Pessoa
         </button>
@@ -1185,7 +1185,7 @@ function ReportsTabs({ active }: { active: string }) {
           key={i}
           href={paths[i]}
           className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#8BC34A] text-[#8BC34A]" : "border-transparent text-gray-500 hover:text-gray-700"
+            active === tab ? "border-[#94B40B] text-[#94B40B]" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
           {tab}
@@ -1200,7 +1200,7 @@ export function ReportsManagerialPage() {
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Gerenciais</h1>
       <ReportsTabs active="Gerenciais" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[
           { title: "Visão Geral", icon: "dashboard", desc: "Relatório geral da fazenda" },
           { title: "Mapa de Manejos", icon: "map", desc: "Mapa de atividades de manejo" },
@@ -1208,7 +1208,7 @@ export function ReportsManagerialPage() {
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
-              <span className="material-icons text-[24px]" style={{ color: "#8BC34A" }}>{r.icon}</span>
+              <span className="material-icons text-[24px]" style={{ color: "#94B40B" }}>{r.icon}</span>
               <h3 className="text-[13px] font-medium text-gray-800">{r.title}</h3>
             </div>
             <p className="text-[11px] text-gray-500">{r.desc}</p>
@@ -1231,7 +1231,7 @@ export function ReportsEvolutionPage() {
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
-              <span className="material-icons text-[24px]" style={{ color: "#8BC34A" }}>{r.icon}</span>
+              <span className="material-icons text-[24px]" style={{ color: "#94B40B" }}>{r.icon}</span>
               <h3 className="text-[13px] font-medium text-gray-800">{r.title}</h3>
             </div>
             <p className="text-[11px] text-gray-500">{r.desc}</p>
@@ -1247,7 +1247,7 @@ export function ReportsReproductivePage() {
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Reprodutivos</h1>
       <ReportsTabs active="Reprodutivos" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[
           { title: "Índices Reprodutivos", icon: "analytics", desc: "Taxas de concepção e prenhez" },
           { title: "Reproduções", icon: "favorite", desc: "Histórico de reproduções" },
@@ -1255,7 +1255,7 @@ export function ReportsReproductivePage() {
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
-              <span className="material-icons text-[24px]" style={{ color: "#8BC34A" }}>{r.icon}</span>
+              <span className="material-icons text-[24px]" style={{ color: "#94B40B" }}>{r.icon}</span>
               <h3 className="text-[13px] font-medium text-gray-800">{r.title}</h3>
             </div>
             <p className="text-[11px] text-gray-500">{r.desc}</p>
@@ -1271,7 +1271,7 @@ export function ReportsOperationalPage() {
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-3">Relatórios Operacionais</h1>
       <ReportsTabs active="Operacionais" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[
           { title: "Movimentação de Estoque", icon: "inventory", desc: "Entradas e saídas de insumos" },
           { title: "Abastecimento", icon: "local_gas_station", desc: "Histórico de abastecimentos" },
@@ -1279,7 +1279,7 @@ export function ReportsOperationalPage() {
         ].map((r, i) => (
           <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer">
             <div className="flex items-center gap-3 mb-2">
-              <span className="material-icons text-[24px]" style={{ color: "#8BC34A" }}>{r.icon}</span>
+              <span className="material-icons text-[24px]" style={{ color: "#94B40B" }}>{r.icon}</span>
               <h3 className="text-[13px] font-medium text-gray-800">{r.title}</h3>
             </div>
             <p className="text-[11px] text-gray-500">{r.desc}</p>
@@ -1299,7 +1299,7 @@ export function SimulationsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Minhas Simulações</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1328,7 +1328,7 @@ export function AdminOverviewPage() {
             <span className="material-icons text-3xl text-gray-200">construction</span>
             <p className="text-[11px] text-gray-400 mt-2">Nenhuma benfeitoria cadastrada</p>
           </div>
-          <button className="w-full mt-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+          <button className="w-full mt-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
             <span className="material-icons text-[14px]">add</span>
             Cadastrar Benfeitoria
           </button>
@@ -1363,7 +1363,7 @@ export function SimulationsFeedlotPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Simulação - Confinamento</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1382,7 +1382,7 @@ export function SimulationsSemiFeedlotPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Simulação - Semi-Confinamento</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Simulação
         </button>
@@ -1418,7 +1418,7 @@ export function ImprovementsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de Benfeitorias</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#8BC34A" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#94B40B" }}>
           <span className="material-icons text-[14px]">add</span>
           Cadastrar Benfeitoria
         </button>
@@ -1451,7 +1451,7 @@ export function QuickAccessPage() {
         ].map((item, i) => (
           <a key={i} href={item.path} className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
-              <span className="material-icons text-[20px]" style={{ color: "#8BC34A" }}>{item.icon}</span>
+              <span className="material-icons text-[20px]" style={{ color: "#94B40B" }}>{item.icon}</span>
             </div>
             <span className="text-[13px] font-medium text-gray-700">{item.label}</span>
           </a>

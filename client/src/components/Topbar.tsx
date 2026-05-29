@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 
-export default function Topbar() {
+export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const [, setLocation] = useLocation();
   const [showUser, setShowUser] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
-  const user = JSON.parse(localStorage.getItem("user") || '{"name":"Pedro Gomes","email":"pngomes1@gmail.com"}');
+  const user = JSON.parse(localStorage.getItem("user") || '{"name":"Pedro Gomes","email":"pngomes1@teste.com"}');
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -20,25 +20,31 @@ export default function Topbar() {
     setLocation("/entrar");
   };
 
-  const initials = user.name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
-    <header className="h-[48px] flex items-center justify-end px-4 bg-white border-b border-gray-200">
-      {/* Right side: notification bell + user name + dropdown */}
+    <header className="h-[48px] flex items-center justify-between px-4" style={{ backgroundColor: "#3B2110" }}>
+      {/* Left: hamburger for mobile */}
+      <div className="flex items-center gap-3">
+        {onMenuToggle && (
+          <button onClick={onMenuToggle} className="md:hidden text-white/80 hover:text-white p-1">
+            <span className="material-icons text-[22px]">menu</span>
+          </button>
+        )}
+        {/* Logo in topbar (visible on mobile when sidebar hidden) */}
+        <div className="md:hidden flex items-center gap-2">
+          <span className="material-icons text-[20px] text-white">pets</span>
+          <span className="text-white font-medium text-[14px]">iRancho</span>
+        </div>
+      </div>
+
+      {/* Right side: notification bell + user name */}
       <div className="flex items-center gap-3" ref={userRef}>
         {/* Notification bell */}
-        <button className="relative text-gray-500 hover:text-gray-700 p-1">
+        <button className="relative text-white/70 hover:text-white p-1">
           <span className="material-icons text-[20px]">notifications_none</span>
           <span
-            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-            style={{ backgroundColor: "#8BC34A" }}
+            className="absolute -top-0.5 -right-0.5 w-[16px] h-[16px] rounded-full text-[9px] font-bold flex items-center justify-center text-white bg-red-500"
           >
-            0
+            1
           </span>
         </button>
 
@@ -46,17 +52,11 @@ export default function Topbar() {
         <div className="relative">
           <button
             onClick={() => setShowUser(!showUser)}
-            className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50"
+            className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/10"
           >
-            {/* Avatar circle */}
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-medium"
-              style={{ backgroundColor: "#8BC34A" }}
-            >
-              {initials}
-            </div>
-            <span className="text-[13px] text-gray-700 font-medium">{user.name}</span>
-            <span className="material-icons text-[14px] text-gray-400">expand_more</span>
+            <span className="material-icons text-[20px] text-white/80">person</span>
+            <span className="text-[13px] text-white font-medium hidden sm:inline">{user.name}</span>
+            <span className="material-icons text-[14px] text-white/60">expand_more</span>
           </button>
           {showUser && (
             <div className="absolute right-0 top-11 w-52 bg-white rounded shadow-lg border border-gray-200 py-1 z-50">

@@ -30,12 +30,12 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ background: "linear-gradient(135deg, #2E1B0E 0%, #3C1B00 40%, #1B5E20 100%)" }}
+      style={{ background: "linear-gradient(135deg, #3B2110 0%, #2A1508 50%, #1B3A0E 100%)" }}
     >
       <div className="w-full max-w-[380px] bg-white rounded-lg shadow-xl p-8">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          <span className="material-icons text-[32px]" style={{ color: "#8BC34A" }}>pets</span>
+          <span className="material-icons text-[32px]" style={{ color: "#94B40B" }}>pets</span>
           <span className="text-[22px] font-medium text-gray-800">iRancho</span>
         </div>
 
@@ -57,7 +57,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={e => { setEmail(e.target.value); setError(""); }}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#8BC34A] transition-colors"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#94B40B] transition-colors"
               placeholder="seu@email.com"
             />
           </div>
@@ -70,7 +70,7 @@ export default function LoginPage() {
                 type={showPwd ? "text" : "password"}
                 value={password}
                 onChange={e => { setPassword(e.target.value); setError(""); }}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#8BC34A] transition-colors pr-10"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#94B40B] transition-colors pr-10"
                 placeholder="••••••••"
               />
               <button
@@ -85,7 +85,7 @@ export default function LoginPage() {
 
           {/* Forgot password */}
           <div className="text-right mb-5">
-            <a href="#" className="text-[11px] text-gray-500 hover:text-[#8BC34A]">Esqueceu a senha?</a>
+            <a href="#" className="text-[11px] text-gray-500 hover:text-[#94B40B]">Esqueceu a senha?</a>
           </div>
 
           {/* Submit */}
@@ -93,9 +93,9 @@ export default function LoginPage() {
             type="submit"
             disabled={loading}
             className="w-full py-2.5 rounded text-white font-medium text-[14px] uppercase tracking-wide transition-all disabled:opacity-70"
-            style={{ backgroundColor: "#8BC34A" }}
+            style={{ backgroundColor: "#94B40B" }}
             onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = "#7CB342")}
-            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#8BC34A")}
+            onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = "#94B40B")}
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -111,7 +111,7 @@ export default function LoginPage() {
         {/* Register link */}
         <p className="text-center mt-5 text-[12px] text-gray-500">
           Não tem uma conta?{" "}
-          <a href="#" className="font-medium" style={{ color: "#8BC34A" }}>Cadastre-se</a>
+          <a href="#" className="font-medium" style={{ color: "#94B40B" }}>Cadastre-se</a>
         </p>
 
         {/* Footer */}
