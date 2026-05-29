@@ -3,7 +3,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { Bell, X, AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-export const NotificationCenter: React.FC = () => {
+const NotificationCenterContent: React.FC = () => {
   const { notifications, removeNotification, markAsRead, clearAll, unreadCount } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -54,7 +54,7 @@ export const NotificationCenter: React.FC = () => {
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors">
+        <button className="relative p-2 text-white/70 hover:text-white transition-colors">
           <Bell className="w-6 h-6" />
           {unreadCount > 0 && (
             <span className="absolute top-0 right-0 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
@@ -148,4 +148,17 @@ export const NotificationCenter: React.FC = () => {
       </PopoverContent>
     </Popover>
   );
+};
+
+export const NotificationCenter: React.FC = () => {
+  try {
+    return <NotificationCenterContent />;
+  } catch (error) {
+    // Fallback if NotificationProvider is not available
+    return (
+      <button className="relative p-2 text-white/70 hover:text-white transition-colors">
+        <Bell className="w-6 h-6" />
+      </button>
+    );
+  }
 };
