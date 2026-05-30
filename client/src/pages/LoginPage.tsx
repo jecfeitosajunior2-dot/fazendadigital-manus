@@ -75,16 +75,15 @@ export default function LoginPage() {
         >
           {/* Logo */}
           <div className="text-center mb-8">
-            <div
-              className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg"
-              style={{ backgroundColor: "#2D5A5A" }}
-            >
-              <span className="material-icons text-white text-3xl">agriculture</span>
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <div className="w-12 h-12 flex items-center justify-center">
+                <span className="material-icons text-4xl" style={{ color: "#4ECDC4" }}>pets</span>
+              </div>
+              <h1 className="text-3xl font-bold" style={{ color: "#2D5A5A", fontFamily: "'Fraunces', serif", fontWeight: 700 }}>
+                Fazenda Digital
+              </h1>
             </div>
-            <h1 className="text-2xl font-bold" style={{ color: "#2D5A5A" }}>
-              Fazenda Digital
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">Sistema de Gestão Pecuária</p>
+            <p className="text-gray-500 text-sm mt-2" style={{ fontFamily: "'Fraunces', serif" }}>Inteligência Pecuária. Resultados Reais.</p>
           </div>
 
           {/* Form */}
