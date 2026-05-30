@@ -158,7 +158,7 @@ export default function BenfeitoriaRegistrationPage() {
           : "",
         vidaUtil: benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : "",
         percentual: benfeitoria.percentualAtividade
-          ? formatPercent(String(Math.round(parseFloat(String(benfeitoria.percentualAtividade))))
+          ? formatPercent(String(Math.round(parseFloat(String(benfeitoria.percentualAtividade)))))
           : "",
         observacoes: benfeitoria.observacoes || "",
       });
