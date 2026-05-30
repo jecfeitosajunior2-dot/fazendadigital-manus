@@ -36,6 +36,7 @@ import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
+import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -52,6 +53,7 @@ function ProtectedRoutes() {
       {/* Farms — iRancho + FD */}
       <Route path="/fazendas/visao-geral" component={FarmsOverviewPage} />
       <Route path="/fazendas/benfeitorias" component={BenfeitoriasListPage} />
+      <Route path="/fazendas/benfeitorias/cadastro" component={BenfeitoriaRegistrationPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
       <Route path="/fazendas/cadastro" component={FarmRegistrationPage} />
       <Route path="/fazendas/subdivisoes" component={SubdivisionsPage} />

@@ -72,7 +72,12 @@ export async function ensureSchema() {
     const [benfTable] = await pool.query(`SHOW TABLES LIKE 'benfeitorias'`);
     if ((benfTable as unknown[]).length > 0) {
       await ensureColumn(pool, "benfeitorias", "anoConstrucao", "int");
-      await ensureColumn(pool, "benfeitorias", "vidaUtil", "int");
+      await ensureColumn(pool, "benfeitorias", "vidaUtil", "varchar(50)");
+      await ensureColumn(pool, "benfeitorias", "fazendaId", "int");
+      await ensureColumn(pool, "benfeitorias", "percentualAtividade", "decimal(5,2)");
+      await ensureColumn(pool, "benfeitorias", "imagem1", "text");
+      await ensureColumn(pool, "benfeitorias", "imagem2", "text");
+      await ensureColumn(pool, "benfeitorias", "imagem3", "text");
     }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);

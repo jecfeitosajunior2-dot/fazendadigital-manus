@@ -9,7 +9,7 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
-import bcrypt from "bcryptjs";
+import { resolveImageSlots } from "./_core/storage";
 
 // ─── AUTH ROUTER ─────────────────────────────────────────────────────────────
 const authRouter = router({
@@ -618,48 +618,71 @@ const nutricaoRouter = router({
 });
 
 // ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
+const imageSlotInput = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("empty") }),
+  z.object({ type: z.literal("keep"), path: z.string() }),
+  z.object({ type: z.literal("new"), data: z.string(), mimeType: z.string() }),
+]);
+
+const benfeitoriasInputFields = {
+  fazendaId: z.number(),
+  nome: z.string(),
+  anoConstrucao: z.number(),
+  percentualAtividade: z.number(),
+  tipo: z.string().optional(),
+  vidaUtil: z.string().optional(),
+  localizacao: z.string().optional(),
+  status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+  dataInstalacao: z.string().optional(),
+  valorEstimado: z.string().optional(),
+  observacoes: z.string().optional(),
+  imageSlots: z.array(imageSlotInput).length(3).optional(),
+};
+
 const benfeitoriasRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
   }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await db.select().from(benfeitorias).where(
+        and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id))
+      );
+      return row ?? null;
+    }),
+
   create: protectedProcedure
-    .input(z.object({
-      nome: z.string(),
-      tipo: z.string().optional(),
-      anoConstrucao: z.number().optional(),
-      vidaUtil: z.number().optional(),
-      localizacao: z.string().optional(),
-      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
-      dataInstalacao: z.string().optional(),
-      valorEstimado: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object(benfeitoriasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const { dataInstalacao, ...rest } = input;
+      const { dataInstalacao, imageSlots, ...rest } = input;
+      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       const result = await db.insert(benfeitorias).values({
         userId: ctx.user.id,
         ...rest,
+        percentualAtividade: String(rest.percentualAtividade),
         dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
       });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      nome: z.string().optional(),
-      tipo: z.string().optional(),
-      anoConstrucao: z.number().optional(),
-      vidaUtil: z.number().optional(),
-      localizacao: z.string().optional(),
-      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
-      valorEstimado: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object({ id: z.number(), ...benfeitoriasInputFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...rest } = input;
-      await db.update(benfeitorias).set(rest).where(and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)));
+      const { id, dataInstalacao, imageSlots, ...rest } = input;
+      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
+      await db.update(benfeitorias).set({
+        ...rest,
+        percentualAtividade: String(rest.percentualAtividade),
+        dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
+      }).where(and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)));
       return { success: true };
     }),
 
