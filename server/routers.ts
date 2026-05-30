@@ -701,41 +701,58 @@ const vendasRouter = router({
 });
 
 // ─── FAZENDAS ROUTER ────────────────────────────────────────────────────────
+const fazendaFields = {
+  sigla: z.string().optional(),
+  cidade: z.string().optional(),
+  estado: z.string().optional(),
+  pais: z.string().optional(),
+  unidadeArea: z.string().optional(),
+  area: z.string().optional(),
+  areaReserva: z.string().optional(),
+  areaLiquida: z.string().optional(),
+  endereco: z.string().optional(),
+  cep: z.string().optional(),
+  telefone: z.string().optional(),
+  responsavel: z.string().optional(),
+  atividadeCria: z.boolean().optional(),
+  atividadeRecria: z.boolean().optional(),
+  atividadeEngorda: z.boolean().optional(),
+  atividadeConfinamento: z.boolean().optional(),
+  cpfCnpj: z.string().optional(),
+  inscricaoEstadual: z.string().optional(),
+  registroIncra: z.string().optional(),
+  nirf: z.string().optional(),
+  possuiSisbov: z.boolean().optional(),
+  razaoSocial: z.string().optional(),
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
+  distanciaMunicipio: z.string().optional(),
+  valorHectare: z.string().optional(),
+  melhoramentoGenetico: z.string().optional(),
+  observacoes: z.string().optional(),
+};
+
 const fazendasRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(fazendas).where(eq(fazendas.userId, ctx.user.id)).orderBy(desc(fazendas.createdAt));
   }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await db.select().from(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
+      return row ?? null;
+    }),
+
   create: protectedProcedure
-    .input(z.object({
-      nome: z.string(),
-      cidade: z.string().optional(),
-      estado: z.string().optional(),
-      area: z.string().optional(),
-      endereco: z.string().optional(),
-      cep: z.string().optional(),
-      telefone: z.string().optional(),
-      responsavel: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object({ nome: z.string(), ...fazendaFields }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(fazendas).values({ userId: ctx.user.id, ...input });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      nome: z.string().optional(),
-      cidade: z.string().optional(),
-      estado: z.string().optional(),
-      area: z.string().optional(),
-      endereco: z.string().optional(),
-      cep: z.string().optional(),
-      telefone: z.string().optional(),
-      responsavel: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object({ id: z.number(), nome: z.string().optional(), ...fazendaFields }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
       await db.update(fazendas).set(rest).where(and(eq(fazendas.id, id), eq(fazendas.userId, ctx.user.id)));

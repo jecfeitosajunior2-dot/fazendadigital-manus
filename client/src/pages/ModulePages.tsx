@@ -1,183 +1,15 @@
 import AppLayout from "@/components/AppLayout";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const ESTADOS_BR = [
-  { uf: "AC", nome: "Acre" },
-  { uf: "AL", nome: "Alagoas" },
-  { uf: "AP", nome: "Amapá" },
-  { uf: "AM", nome: "Amazonas" },
-  { uf: "BA", nome: "Bahia" },
-  { uf: "CE", nome: "Ceará" },
-  { uf: "DF", nome: "Distrito Federal" },
-  { uf: "ES", nome: "Espírito Santo" },
-  { uf: "GO", nome: "Goiás" },
-  { uf: "MA", nome: "Maranhão" },
-  { uf: "MT", nome: "Mato Grosso" },
-  { uf: "MS", nome: "Mato Grosso do Sul" },
-  { uf: "MG", nome: "Minas Gerais" },
-  { uf: "PA", nome: "Pará" },
-  { uf: "PB", nome: "Paraíba" },
-  { uf: "PR", nome: "Paraná" },
-  { uf: "PE", nome: "Pernambuco" },
-  { uf: "PI", nome: "Piauí" },
-  { uf: "RJ", nome: "Rio de Janeiro" },
-  { uf: "RN", nome: "Rio Grande do Norte" },
-  { uf: "RS", nome: "Rio Grande do Sul" },
-  { uf: "RO", nome: "Rondônia" },
-  { uf: "RR", nome: "Roraima" },
-  { uf: "SC", nome: "Santa Catarina" },
-  { uf: "SP", nome: "São Paulo" },
-  { uf: "SE", nome: "Sergipe" },
-  { uf: "TO", nome: "Tocantins" },
-];
 
 // ============================================================
 // MÓDULO FAZENDAS
 // ============================================================
 
-function FazendaFormModal({ open, onClose, fazenda, onSuccess }: {
-  open: boolean;
-  onClose: () => void;
-  fazenda?: any;
-  onSuccess: () => void;
-}) {
-  const utils = trpc.useUtils();
-  const [form, setForm] = useState({
-    nome: fazenda?.nome || "",
-    cidade: fazenda?.cidade || "",
-    estado: fazenda?.estado || "",
-    area: fazenda?.area || "",
-    endereco: fazenda?.endereco || "",
-    responsavel: fazenda?.responsavel || "",
-    observacoes: fazenda?.observacoes || "",
-  });
-  const [cidades, setCidades] = useState<string[]>([]);
-  const [loadingCidades, setLoadingCidades] = useState(false);
-
-  useEffect(() => {
-    if (!form.estado) {
-      setCidades([]);
-      return;
-    }
-    setLoadingCidades(true);
-    fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${form.estado}/municipios`)
-      .then(r => r.json())
-      .then((data: { nome: string }[]) => {
-        setCidades(data.map(m => m.nome).sort((a, b) => a.localeCompare(b, "pt-BR")));
-      })
-      .catch(() => {
-        setCidades([]);
-        toast.error("Não foi possível carregar as cidades");
-      })
-      .finally(() => setLoadingCidades(false));
-  }, [form.estado]);
-
-  const createMutation = trpc.fazendas.create.useMutation({
-    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda criada com sucesso!"); onSuccess(); onClose(); },
-    onError: (e) => toast.error(e.message),
-  });
-  const updateMutation = trpc.fazendas.update.useMutation({
-    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda atualizada!"); onSuccess(); onClose(); },
-    onError: (e) => toast.error(e.message),
-  });
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.nome.trim()) { toast.error("Nome da fazenda é obrigatório"); return; }
-    if (fazenda) {
-      updateMutation.mutate({ id: fazenda.id, ...form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
-  const isBusy = createMutation.isPending || updateMutation.isPending;
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{fazenda ? "Editar Fazenda" : "Nova Fazenda"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3 mt-2">
-          <div>
-            <Label className="text-[11px]">Nome da Fazenda *</Label>
-            <Input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Fazenda Santa Maria" className="h-8 text-[12px]" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-[11px]">Estado (UF)</Label>
-              <Select value={form.estado || undefined} onValueChange={v => setForm(f => ({ ...f, estado: v, cidade: "" }))}>
-                <SelectTrigger className="w-full h-8 text-[12px]">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ESTADOS_BR.map(e => (
-                    <SelectItem key={e.uf} value={e.uf} className="text-[12px]">
-                      {e.uf} — {e.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-[11px]">Cidade</Label>
-              <Select
-                value={form.cidade || undefined}
-                onValueChange={v => setForm(f => ({ ...f, cidade: v }))}
-                disabled={!form.estado || loadingCidades}
-              >
-                <SelectTrigger className="w-full h-8 text-[12px]">
-                  <SelectValue placeholder={loadingCidades ? "Carregando..." : form.estado ? "Selecione" : "Selecione o estado"} />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {cidades.map(c => (
-                    <SelectItem key={c} value={c} className="text-[12px]">
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-[11px]">Área (ha)</Label>
-              <Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} placeholder="450" type="number" step="0.01" className="h-8 text-[12px]" />
-            </div>
-            <div>
-              <Label className="text-[11px]">Responsável</Label>
-              <Input value={form.responsavel} onChange={e => setForm(f => ({ ...f, responsavel: e.target.value }))} placeholder="Nome" className="h-8 text-[12px]" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-[11px]">Endereço</Label>
-            <Input value={form.endereco} onChange={e => setForm(f => ({ ...f, endereco: e.target.value }))} placeholder="Rodovia, km, etc." className="h-8 text-[12px]" />
-          </div>
-          <div>
-            <Label className="text-[11px]">Observações</Label>
-            <Textarea value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} rows={2} className="text-[12px]" />
-          </div>
-          <div className="flex gap-2 justify-end pt-1">
-            <Button type="button" variant="outline" onClick={onClose} className="h-8 text-[11px]">Cancelar</Button>
-            <Button type="submit" disabled={isBusy} className="h-8 text-[11px] text-white" style={{ backgroundColor: "#4ECDC4" }}>
-              {isBusy ? "Salvando..." : fazenda ? "Salvar" : "Criar Fazenda"}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function FarmsOverviewPage() {
-  const [showModal, setShowModal] = useState(false);
-  const [editFazenda, setEditFazenda] = useState<any>(null);
+  const [, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
@@ -188,10 +20,9 @@ export function FarmsOverviewPage() {
   const totalArea = fazendaList.reduce((s: number, f: any) => s + parseFloat(f.area || "0"), 0);
   return (
     <AppLayout>
-      {showModal && <FazendaFormModal open={showModal} onClose={() => { setShowModal(false); setEditFazenda(null); }} fazenda={editFazenda} onSuccess={() => {}} />}
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
-        <button onClick={() => { setEditFazenda(null); setShowModal(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -248,7 +79,7 @@ export function FarmsOverviewPage() {
                   </button>
                   {menuOpen === f.id && (
                     <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
-                      <button onClick={() => { setEditFazenda(f); setShowModal(true); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
+                      <button onClick={() => { setLocation(`/fazendas/cadastro?id=${f.id}`); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
                         <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
                       </button>
                       <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
@@ -267,8 +98,7 @@ export function FarmsOverviewPage() {
 }
 
 export function FarmsListPage() {
-  const [showModal, setShowModal] = useState(false);
-  const [editFazenda, setEditFazenda] = useState<any>(null);
+  const [, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
@@ -278,10 +108,9 @@ export function FarmsListPage() {
   });
   return (
     <AppLayout>
-      {showModal && <FazendaFormModal open={showModal} onClose={() => { setShowModal(false); setEditFazenda(null); }} fazenda={editFazenda} onSuccess={() => {}} />}
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
-        <button onClick={() => { setEditFazenda(null); setShowModal(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Nova Fazenda
         </button>
@@ -314,7 +143,7 @@ export function FarmsListPage() {
                   </button>
                   {menuOpen === f.id && (
                     <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
-                      <button onClick={() => { setEditFazenda(f); setShowModal(true); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
+                      <button onClick={() => { setLocation(`/fazendas/cadastro?id=${f.id}`); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
                         <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
                       </button>
                       <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
@@ -1638,6 +1467,7 @@ export function SimulationsPage() {
 // ============================================================
 
 export function AdminOverviewPage() {
+  const [, setLocation] = useLocation();
   return (
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Administrativo - Visão Geral</h1>
@@ -1657,12 +1487,16 @@ export function AdminOverviewPage() {
           <h2 className="text-[13px] font-medium text-gray-800 mb-3">Acesso Rápido</h2>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { label: "Cadastrar Fazenda", icon: "home_work" },
+              { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/cadastro" },
               { label: "Cadastrar Rebanho", icon: "pets" },
               { label: "Cadastrar Insumo", icon: "inventory_2" },
               { label: "Cadastrar Máquina", icon: "agriculture" },
             ].map((item, i) => (
-              <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} key={i} className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={() => item.path ? setLocation(item.path) : toast.info("Funcionalidade em desenvolvimento")}
+                key={i}
+                className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50 transition-colors"
+              >
                 <span className="material-icons text-[16px] text-gray-400">{item.icon}</span>
                 {item.label}
               </button>
@@ -1762,7 +1596,7 @@ export function QuickAccessPage() {
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Acesso Rápido</h1>
       <div className="grid grid-cols-2 gap-4">
         {[
-          { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/lista-fazendas" },
+          { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/cadastro" },
           { label: "Cadastrar Rebanho", icon: "pets", path: "/rebanho/lista-animais" },
           { label: "Cadastrar Insumo", icon: "inventory_2", path: "/insumos/estoque" },
           { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/lista-maquinas" },

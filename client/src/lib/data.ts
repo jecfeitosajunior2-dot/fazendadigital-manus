@@ -13,6 +13,7 @@ export const menuItems: MenuItem[] = [
     label: "Fazendas", icon: "home_work", children: [
       { label: "Visão Geral", icon: "", path: "/fazendas/visao-geral" },
       { label: "Fazendas", icon: "", path: "/fazendas/lista-fazendas" },
+      { label: "Cadastrar Fazenda", icon: "", path: "/fazendas/cadastro" },
       { label: "Subdivisões", icon: "", path: "/fazendas/subdivisoes" },
     ]
   },

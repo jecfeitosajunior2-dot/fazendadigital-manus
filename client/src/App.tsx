@@ -34,6 +34,7 @@ import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
+import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 
 function Router() {
   return (
@@ -48,6 +49,7 @@ function Router() {
       {/* Farms */}
       <Route path="/fazendas/visao-geral" component={FarmsOverviewPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
+      <Route path="/fazendas/cadastro" component={FarmRegistrationPage} />
       <Route path="/fazendas/subdivisoes" component={SubdivisionsPage} />
 
       {/* Administrative / Benfeitorias */}
