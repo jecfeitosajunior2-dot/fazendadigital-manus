@@ -117,15 +117,15 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           {!collapsed && (
             <div className="flex items-center gap-2.5">
               <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-icon-85XdcrwC957vJHgLuuZPYM.webp"
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
                 alt="Fazenda Digital"
-                className="h-[32px] w-[32px] object-contain"
+                className="h-[38px] w-[38px] object-contain"
               />
               <div className="flex flex-col leading-tight">
-                <span className="text-[13px] text-white" style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, letterSpacing: "-0.01em" }}>
+                <span className="text-[14px] text-white" style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, letterSpacing: "-0.02em" }}>
                   Fazenda Digital
                 </span>
-                <span className="text-white/50 text-[9px]" style={{ fontFamily: "'Fraunces', serif" }}>Inteligência Pecuária</span>
+                <span className="text-white/50 text-[9px]" style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic" }}>Inteligência Pecuária</span>
               </div>
             </div>
           )}

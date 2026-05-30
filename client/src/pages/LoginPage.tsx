@@ -75,17 +75,17 @@ export default function LoginPage() {
         >
           {/* Logo */}
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="flex flex-col items-center gap-2 mb-2">
               <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-icon-85XdcrwC957vJHgLuuZPYM.webp"
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
                 alt="Fazenda Digital"
-                className="w-14 h-14 object-contain"
+                className="w-24 h-24 object-contain drop-shadow-md"
               />
-              <h1 className="text-3xl" style={{ color: "#2D5A5A", fontFamily: "'Fraunces', serif", fontWeight: 600, letterSpacing: "-0.01em" }}>
+              <h1 style={{ color: "#1a4040", fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: "2rem", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
                 Fazenda Digital
               </h1>
             </div>
-            <p className="text-gray-500 text-sm" style={{ fontFamily: "'Fraunces', serif" }}>Inteligência Pecuária. Resultados Reais.</p>
+            <p style={{ color: "#6b7280", fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: "0.9rem", marginTop: "6px" }}>Inteligência Pecuária. Resultados Reais.</p>
           </div>
 
           {/* Form */}
