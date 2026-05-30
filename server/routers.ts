@@ -5,9 +5,9 @@ import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, pesagens, batidas,
   benfeitorias, estoque, contasFinanceiras, movimentacoes,
-  compras, vendas, fazendas
+  compras, vendas, fazendas, pastos, lotePastoMovimentacoes
 } from "../drizzle/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import bcrypt from "bcryptjs";
 
@@ -120,11 +120,175 @@ const animaisRouter = router({
     }),
 });
 
+// ─── LOTES / PASTOS HELPERS ───────────────────────────────────────────────────
+function diasEntre(inicio: string | Date, fim: string | Date = new Date()): number {
+  const a = new Date(inicio);
+  const b = new Date(fim);
+  a.setHours(0, 0, 0, 0);
+  b.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function hojeISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function countAnimaisLote(loteId: number) {
+  const [row] = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(animais)
+    .where(and(eq(animais.loteId, loteId), eq(animais.status, "ativo")));
+  return Number(row?.count ?? 0);
+}
+
+async function syncPastoStatus(pastoId: number, userId: number) {
+  const [ocupacao] = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(lotes)
+    .where(and(eq(lotes.pastoAtualId, pastoId), eq(lotes.userId, userId)));
+  const temLotes = Number(ocupacao?.count ?? 0) > 0;
+  await db.update(pastos).set({ status: temLotes ? "ativo" : "descanso" })
+    .where(and(eq(pastos.id, pastoId), eq(pastos.userId, userId)));
+}
+
+async function enrichLote(lote: typeof lotes.$inferSelect) {
+  const qtdAnimais = await countAnimaisLote(lote.id);
+  let pastoNome: string | null = null;
+  let pastoCapacidade: number | null = null;
+  let fazendaNome: string | null = null;
+  if (lote.pastoAtualId) {
+    const [pasto] = await db.select().from(pastos).where(eq(pastos.id, lote.pastoAtualId)).limit(1);
+    pastoNome = pasto?.nome ?? null;
+    pastoCapacidade = pasto?.capacidade ?? null;
+    if (pasto?.fazendaId) {
+      const [fazenda] = await db.select({ nome: fazendas.nome }).from(fazendas).where(eq(fazendas.id, pasto.fazendaId)).limit(1);
+      fazendaNome = fazenda?.nome ?? null;
+    }
+  }
+  const diasNoPasto = lote.dataEntradaPasto ? diasEntre(lote.dataEntradaPasto) : null;
+  return { ...lote, qtdAnimais, pastoNome, pastoCapacidade, fazendaNome, diasNoPasto };
+}
+
 // ─── LOTES ROUTER ─────────────────────────────────────────────────────────────
 const lotesRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
+    const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
+    return Promise.all(lotesList.map(enrichLote));
   }),
+
+  listByPasto: protectedProcedure
+    .input(z.object({ pastoId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const lotesList = await db.select().from(lotes).where(
+        and(eq(lotes.pastoAtualId, input.pastoId), eq(lotes.userId, ctx.user.id))
+      );
+      return Promise.all(lotesList.map(enrichLote));
+    }),
+
+  listMovimentacoes: protectedProcedure
+    .input(z.object({ loteId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await db.select().from(lotePastoMovimentacoes).where(
+        and(eq(lotePastoMovimentacoes.loteId, input.loteId), eq(lotePastoMovimentacoes.userId, ctx.user.id))
+      ).orderBy(desc(lotePastoMovimentacoes.dataEntrada));
+      const pastoIds = [...new Set(rows.flatMap(r => [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]))];
+      const pastoMap: Record<number, string> = {};
+      if (pastoIds.length) {
+        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome }).from(pastos).where(inArray(pastos.id, pastoIds));
+        pastosRows.forEach(p => { pastoMap[p.id] = p.nome; });
+      }
+      return rows.map(r => ({
+        ...r,
+        pastoOrigemNome: r.pastoOrigemId ? pastoMap[r.pastoOrigemId] ?? null : null,
+        pastoDestinoNome: r.pastoDestinoId ? pastoMap[r.pastoDestinoId] ?? null : null,
+      }));
+    }),
+
+  moveToPasto: protectedProcedure
+    .input(z.object({
+      loteId: z.number(),
+      pastoId: z.number().nullable(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [lote] = await db.select().from(lotes).where(
+        and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id))
+      ).limit(1);
+      if (!lote) throw new Error("Lote não encontrado");
+
+      const hoje = hojeISO();
+      const qtdAnimais = await countAnimaisLote(lote.id);
+      const pastoOrigemId = lote.pastoAtualId ?? null;
+
+      if (input.pastoId === pastoOrigemId) {
+        return { success: true };
+      }
+
+      // Fecha estadia anterior
+      if (pastoOrigemId) {
+        const [aberta] = await db.select().from(lotePastoMovimentacoes).where(
+          and(
+            eq(lotePastoMovimentacoes.loteId, lote.id),
+            eq(lotePastoMovimentacoes.pastoDestinoId, pastoOrigemId),
+            isNull(lotePastoMovimentacoes.dataSaida),
+          )
+        ).limit(1);
+
+        const dataEntrada = aberta?.dataEntrada ?? lote.dataEntradaPasto ?? hoje;
+        const dias = diasEntre(dataEntrada, hoje);
+
+        if (aberta) {
+          await db.update(lotePastoMovimentacoes).set({ dataSaida: hoje, diasNoPasto: dias })
+            .where(eq(lotePastoMovimentacoes.id, aberta.id));
+        } else {
+          await db.insert(lotePastoMovimentacoes).values({
+            userId: ctx.user.id,
+            loteId: lote.id,
+            pastoOrigemId: null,
+            pastoDestinoId: pastoOrigemId,
+            dataEntrada,
+            dataSaida: hoje,
+            diasNoPasto: dias,
+            qtdAnimais,
+          });
+        }
+        await syncPastoStatus(pastoOrigemId, ctx.user.id);
+      }
+
+      if (input.pastoId === null) {
+        await db.update(lotes).set({
+          pastoAtualId: null,
+          dataEntradaPasto: null,
+          fazendaId: null,
+        }).where(eq(lotes.id, lote.id));
+        return { success: true };
+      }
+
+      const [pasto] = await db.select().from(pastos).where(
+        and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id))
+      ).limit(1);
+      if (!pasto) throw new Error("Pasto não encontrado");
+
+      await db.insert(lotePastoMovimentacoes).values({
+        userId: ctx.user.id,
+        loteId: lote.id,
+        pastoOrigemId,
+        pastoDestinoId: input.pastoId,
+        dataEntrada: hoje,
+        qtdAnimais,
+        observacoes: input.observacoes,
+      });
+
+      await db.update(lotes).set({
+        pastoAtualId: input.pastoId,
+        fazendaId: pasto.fazendaId,
+        dataEntradaPasto: hoje,
+        localizacao: pasto.nome,
+      }).where(eq(lotes.id, lote.id));
+
+      await db.update(pastos).set({ status: "ativo" })
+        .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id)));
+
+      return { success: true };
+    }),
 
   create: protectedProcedure
     .input(z.object({
@@ -160,8 +324,6 @@ const lotesRouter = router({
       return { success: true };
     }),
 });
-
-// ─── SAUDE ROUTER ─────────────────────────────────────────────────────────────
 const saudeRouter = router({
   list: protectedProcedure
     .input(z.object({ animalId: z.number().optional() }).optional())
@@ -767,6 +929,107 @@ const fazendasRouter = router({
     }),
 });
 
+// ─── PASTOS ROUTER ──────────────────────────────────────────────────────────
+const pastosRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.select().from(pastos).where(eq(pastos.userId, ctx.user.id)).orderBy(desc(pastos.createdAt));
+  }),
+
+  listByFazenda: protectedProcedure
+    .input(z.object({ fazendaId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return db.select().from(pastos).where(
+        and(eq(pastos.fazendaId, input.fazendaId), eq(pastos.userId, ctx.user.id))
+      ).orderBy(desc(pastos.createdAt));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      nome: z.string(),
+      tipo: z.string().optional(),
+      area: z.string().optional(),
+      capacidade: z.number().optional(),
+      status: z.enum(["ativo", "descanso", "vazio"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(pastos).values({ userId: ctx.user.id, ...input });
+      return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      tipo: z.string().optional(),
+      area: z.string().optional(),
+      capacidade: z.number().optional(),
+      status: z.enum(["ativo", "descanso", "vazio"]).optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      await db.update(pastos).set(rest).where(and(eq(pastos.id, id), eq(pastos.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.delete(pastos).where(and(eq(pastos.id, input.id), eq(pastos.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  listWithDetails: protectedProcedure
+    .input(z.object({ fazendaId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(pastos.userId, ctx.user.id)];
+      if (input?.fazendaId) conditions.push(eq(pastos.fazendaId, input.fazendaId));
+
+      const pastosList = await db.select().from(pastos).where(and(...conditions)).orderBy(desc(pastos.createdAt));
+      const fazendaIds = [...new Set(pastosList.map(p => p.fazendaId))];
+      const fazendaMap: Record<number, string> = {};
+      if (fazendaIds.length) {
+        const fazRows = await db.select({ id: fazendas.id, nome: fazendas.nome }).from(fazendas).where(inArray(fazendas.id, fazendaIds));
+        fazRows.forEach(f => { fazendaMap[f.id] = f.nome; });
+      }
+
+      return Promise.all(pastosList.map(async (pasto) => {
+        const lotesNoPasto = await db.select().from(lotes).where(
+          and(eq(lotes.pastoAtualId, pasto.id), eq(lotes.userId, ctx.user.id))
+        );
+        const lotesEnriched = await Promise.all(lotesNoPasto.map(enrichLote));
+        const qtdAnimais = lotesEnriched.reduce((s, l) => s + (l.qtdAnimais ?? 0), 0);
+        const capacidade = pasto.capacidade ?? 0;
+        const pctOcupacao = capacidade > 0 ? Math.min(100, Math.round((qtdAnimais / capacidade) * 100)) : null;
+
+        const [ultimaSaida] = await db.select().from(lotePastoMovimentacoes).where(
+          and(eq(lotePastoMovimentacoes.pastoOrigemId, pasto.id), eq(lotePastoMovimentacoes.userId, ctx.user.id))
+        ).orderBy(desc(lotePastoMovimentacoes.dataSaida)).limit(1);
+
+        const diasDescanso = !lotesNoPasto.length && ultimaSaida?.dataSaida
+          ? diasEntre(ultimaSaida.dataSaida)
+          : null;
+
+        const diasPastejo = lotesEnriched.length
+          ? Math.max(...lotesEnriched.map(l => l.diasNoPasto ?? 0))
+          : null;
+
+        return {
+          ...pasto,
+          fazendaNome: fazendaMap[pasto.fazendaId] ?? null,
+          qtdAnimais,
+          qtdLotes: lotesNoPasto.length,
+          pctOcupacao,
+          diasPastejo,
+          diasDescanso,
+          lotes: lotesEnriched,
+        };
+      }));
+    }),
+});
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: authRouter,
@@ -786,6 +1049,7 @@ export const appRouter = router({
   compras: comprasRouter,
   vendas: vendasRouter,
   fazendas: fazendasRouter,
+  pastos: pastosRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,7 +1,16 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import AppLayout from "@/components/AppLayout";
+import FarmPastosSheet from "@/components/FarmPastosSheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -12,11 +21,50 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 
 // ============================================================
-// LAYOUT WRAPPER
+// AÇÕES DA LINHA DE FAZENDA
 // ============================================================
 
-function AppLayout({ children }: { children: React.ReactNode }) {
-  return <div className="p-4 max-w-7xl mx-auto">{children}</div>;
+function FarmRowActions({
+  fazenda,
+  onPastos,
+  onDelete,
+}: {
+  fazenda: { id: number; nome: string };
+  onPastos: () => void;
+  onDelete: () => void;
+}) {
+  const [, setLocation] = useLocation();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-400 outline-none">
+          <span className="material-icons text-[16px]">more_vert</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[150px] z-[100]">
+        <DropdownMenuItem
+          className="text-[12px] cursor-pointer gap-2"
+          onClick={() => setLocation(`/fazendas/cadastro?id=${fazenda.id}`)}
+        >
+          <span className="material-icons text-[14px] text-blue-500">edit</span>
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-[12px] cursor-pointer gap-2" onClick={onPastos}>
+          <span className="material-icons text-[14px]" style={{ color: "#4ECDC4" }}>grass</span>
+          Pastos
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
+          onClick={onDelete}
+        >
+          <span className="material-icons text-[14px]">delete</span>
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 // ============================================================
@@ -25,9 +73,15 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 export function FarmsOverviewPage() {
   const [, setLocation] = useLocation();
-  const [menuOpen, setMenuOpen] = useState<number | null>(null);
+  const [pastosFazenda, setPastosFazenda] = useState<any>(null);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
+  const { data: allPastos = [] } = trpc.pastos.list.useQuery();
+  const pastosPorFazenda = useMemo(() => {
+    const map: Record<number, number> = {};
+    allPastos.forEach(p => { map[p.fazendaId] = (map[p.fazendaId] || 0) + 1; });
+    return map;
+  }, [allPastos]);
   const deleteMutation = trpc.fazendas.delete.useMutation({
     onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
     onError: (e) => toast.error(e.message),
@@ -35,6 +89,11 @@ export function FarmsOverviewPage() {
   const totalArea = fazendaList.reduce((s: number, f: any) => s + parseFloat(f.area || "0"), 0);
   return (
     <AppLayout>
+      <FarmPastosSheet
+        fazenda={pastosFazenda}
+        open={!!pastosFazenda}
+        onClose={() => setPastosFazenda(null)}
+      />
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Visão Geral das Fazendas</h1>
         <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
@@ -66,7 +125,7 @@ export function FarmsOverviewPage() {
           </div>
         </div>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded shadow-sm border border-gray-100">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -83,25 +142,26 @@ export function FarmsOverviewPage() {
             {isLoading && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Carregando...</td></tr>}
             {!isLoading && fazendaList.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Nenhuma fazenda cadastrada. Clique em "Nova Fazenda" para começar.</td></tr>}
             {fazendaList.map((f: any) => (
-              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50 relative">
-                <td className="px-3 py-2 text-[#4ECDC4] font-medium">{f.nome}</td>
+              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#4ECDC4] font-medium">{f.nome}</span>
+                    {(pastosPorFazenda[f.id] ?? 0) > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">
+                        {pastosPorFazenda[f.id]} pasto{pastosPorFazenda[f.id] > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-gray-700">{[f.cidade, f.estado].filter(Boolean).join("/") || "-"}</td>
                 <td className="px-3 py-2 text-right text-gray-700">{f.area || "-"}</td>
                 <td className="px-3 py-2 text-right text-gray-700">{f.responsavel || "-"}</td>
-                <td className="px-3 py-2 text-center relative">
-                  <button onClick={() => setMenuOpen(menuOpen === f.id ? null : f.id)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
-                    <span className="material-icons text-[14px]">more_vert</span>
-                  </button>
-                  {menuOpen === f.id && (
-                    <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
-                      <button onClick={() => { setLocation(`/fazendas/cadastro?id=${f.id}`); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
-                        <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
-                      </button>
-                      <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
-                        <span className="material-icons text-[13px]">delete</span> Excluir
-                      </button>
-                    </div>
-                  )}
+                <td className="px-3 py-2 text-center">
+                  <FarmRowActions
+                    fazenda={f}
+                    onPastos={() => setPastosFazenda(f)}
+                    onDelete={() => { if (confirm("Excluir esta fazenda?")) deleteMutation.mutate({ id: f.id }); }}
+                  />
                 </td>
               </tr>
             ))}
@@ -114,15 +174,26 @@ export function FarmsOverviewPage() {
 
 export function FarmsListPage() {
   const [, setLocation] = useLocation();
-  const [menuOpen, setMenuOpen] = useState<number | null>(null);
+  const [pastosFazenda, setPastosFazenda] = useState<any>(null);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
+  const { data: allPastos = [] } = trpc.pastos.list.useQuery();
+  const pastosPorFazenda = useMemo(() => {
+    const map: Record<number, number> = {};
+    allPastos.forEach(p => { map[p.fazendaId] = (map[p.fazendaId] || 0) + 1; });
+    return map;
+  }, [allPastos]);
   const deleteMutation = trpc.fazendas.delete.useMutation({
     onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
     onError: (e) => toast.error(e.message),
   });
   return (
     <AppLayout>
+      <FarmPastosSheet
+        fazenda={pastosFazenda}
+        open={!!pastosFazenda}
+        onClose={() => setPastosFazenda(null)}
+      />
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
         <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
@@ -130,7 +201,7 @@ export function FarmsListPage() {
           Nova Fazenda
         </button>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded shadow-sm border border-gray-100">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -147,25 +218,26 @@ export function FarmsListPage() {
             {isLoading && <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">Carregando...</td></tr>}
             {!isLoading && fazendaList.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>}
             {fazendaList.map((f: any) => (
-              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50 relative">
-                <td className="px-3 py-2 text-[#4ECDC4] font-medium">{f.nome}</td>
+              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#4ECDC4] font-medium">{f.nome}</span>
+                    {(pastosPorFazenda[f.id] ?? 0) > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">
+                        {pastosPorFazenda[f.id]} pasto{pastosPorFazenda[f.id] > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-gray-700">{f.cidade || "-"}</td>
                 <td className="px-3 py-2 text-gray-700">{f.estado || "-"}</td>
                 <td className="px-3 py-2 text-right text-gray-700">{f.area || "-"}</td>
-                <td className="px-3 py-2 text-center relative">
-                  <button onClick={() => setMenuOpen(menuOpen === f.id ? null : f.id)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
-                    <span className="material-icons text-[14px]">more_vert</span>
-                  </button>
-                  {menuOpen === f.id && (
-                    <div className="absolute right-2 top-7 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[120px]">
-                      <button onClick={() => { setLocation(`/fazendas/cadastro?id=${f.id}`); setMenuOpen(null); }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-gray-50 flex items-center gap-2">
-                        <span className="material-icons text-[13px] text-blue-500">edit</span> Editar
-                      </button>
-                      <button onClick={() => { if (confirm("Excluir esta fazenda?")) { deleteMutation.mutate({ id: f.id }); setMenuOpen(null); } }} className="w-full text-left px-3 py-2 text-[11px] hover:bg-red-50 text-red-600 flex items-center gap-2">
-                        <span className="material-icons text-[13px]">delete</span> Excluir
-                      </button>
-                    </div>
-                  )}
+                <td className="px-3 py-2 text-center">
+                  <FarmRowActions
+                    fazenda={f}
+                    onPastos={() => setPastosFazenda(f)}
+                    onDelete={() => { if (confirm("Excluir esta fazenda?")) deleteMutation.mutate({ id: f.id }); }}
+                  />
                 </td>
               </tr>
             ))}
@@ -177,62 +249,133 @@ export function FarmsListPage() {
 }
 
 export function SubdivisionsPage() {
-  const subdivisions = [
-    { name: "Pasto 1", area: "40.00", type: "Pasto", animals: 32 },
-    { name: "Pasto 2", area: "35.00", type: "Pasto", animals: 28 },
-    { name: "Pasto 3", area: "50.00", type: "Pasto", animals: 41 },
-    { name: "Pasto 4", area: "45.00", type: "Pasto", animals: 35 },
-    { name: "Retiro Norte", area: "60.00", type: "Retiro", animals: 22 },
-    { name: "Retiro Sul", area: "55.00", type: "Retiro", animals: 18 },
-    { name: "Confinamento", area: "10.00", type: "Confinamento", animals: 40 },
-    { name: "Maternidade", area: "15.00", type: "Maternidade", animals: 12 },
-    { name: "Curral", area: "2.00", type: "Curral", animals: 0 },
-    { name: "Reserva Legal", area: "80.00", type: "Reserva", animals: 0 },
-    { name: "APP", area: "30.00", type: "Reserva", animals: 0 },
-    { name: "Sede", area: "28.00", type: "Sede", animals: 15 },
-  ];
+  const [fazendaId, setFazendaId] = useState<string>("");
+  const [pastosFazenda, setPastosFazenda] = useState<any>(null);
+
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const fazendaNum = fazendaId ? parseInt(fazendaId) : undefined;
+  const { data: pastosList = [], isLoading } = trpc.pastos.listWithDetails.useQuery(
+    { fazendaId: fazendaNum },
+    { enabled: !!fazendaNum }
+  );
+
+  const totalAnimais = pastosList.reduce((s, p) => s + (p.qtdAnimais ?? 0), 0);
+  const totalArea = pastosList.reduce((s, p) => s + parseFloat(String(p.area || "0")), 0);
+
+  const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+    ativo: { label: "Em uso", color: "#166534", bg: "#DCFCE7" },
+    descanso: { label: "Descanso", color: "#92400E", bg: "#FEF3C7" },
+    vazio: { label: "Vazio", color: "#6B7280", bg: "#F3F4F6" },
+  };
+
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-gray-800">Subdivisões</h1>
-        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-          <span className="material-icons text-[14px]">add</span>
-          Nova Subdivisão
-        </button>
-      </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-[11px]">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
-              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-12">
-                <span className="material-icons text-[14px]">settings</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {subdivisions.map((s, i) => (
-              <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
-                <td className="px-3 py-1.5 text-gray-700 font-medium">{s.name}</td>
-                <td className="px-3 py-1.5 text-gray-500">{s.type}</td>
-                <td className="px-3 py-1.5 text-right text-gray-700">{s.area}</td>
-                <td className="px-3 py-1.5 text-right text-gray-700">{s.animals}</td>
-                <td className="px-3 py-1.5 text-center">
-                  <button className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
-                    <span className="material-icons text-[14px]">more_vert</span>
-                  </button>
-                </td>
-              </tr>
+      <FarmPastosSheet
+        fazenda={pastosFazenda}
+        open={!!pastosFazenda}
+        onClose={() => setPastosFazenda(null)}
+      />
+      <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-[15px] font-medium text-gray-800">Subdivisões / Pastos</h1>
+        <div className="flex items-center gap-2">
+          <select
+            value={fazendaId}
+            onChange={e => setFazendaId(e.target.value)}
+            className="h-8 text-[11px] border border-gray-200 rounded px-2 bg-white"
+          >
+            <option value="">Selecione a fazenda</option>
+            {fazendas.map(f => (
+              <option key={f.id} value={String(f.id)}>{f.nome}</option>
             ))}
-          </tbody>
-        </table>
-        <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
-          Exibindo 1-{subdivisions.length} de {subdivisions.length} itens
+          </select>
+          {fazendaNum && (
+            <button
+              onClick={() => {
+                const f = fazendas.find(x => x.id === fazendaNum);
+                if (f) setPastosFazenda(f);
+              }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
+              style={{ backgroundColor: "#4ECDC4" }}
+            >
+              <span className="material-icons text-[14px]">add</span>
+              Gerenciar Pastos
+            </button>
+          )}
         </div>
       </div>
+
+      {!fazendaId && (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center text-gray-400">
+          <span className="material-icons text-4xl block mb-2 opacity-30">agriculture</span>
+          <p className="text-[12px]">Selecione uma fazenda para ver os pastos e lotação</p>
+        </div>
+      )}
+
+      {fazendaId && (
+        <>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-white rounded shadow-sm border border-gray-100 p-3 text-center">
+              <div className="text-[16px] font-bold text-gray-800">{pastosList.length}</div>
+              <div className="text-[10px] text-gray-500">Pastos</div>
+            </div>
+            <div className="bg-white rounded shadow-sm border border-gray-100 p-3 text-center">
+              <div className="text-[16px] font-bold text-gray-800">{totalAnimais}</div>
+              <div className="text-[10px] text-gray-500">Cabeças</div>
+            </div>
+            <div className="bg-white rounded shadow-sm border border-gray-100 p-3 text-center">
+              <div className="text-[16px] font-bold text-gray-800">{totalArea.toFixed(0)} ha</div>
+              <div className="text-[10px] text-gray-500">Área mapeada</div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded shadow-sm border border-gray-100">
+            <table className="w-full text-[11px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nome</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Área (ha)</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Cabeças</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Lotes</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Pastejo</th>
+                  <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-400">Carregando...</td></tr>}
+                {!isLoading && pastosList.length === 0 && (
+                  <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">Nenhum pasto nesta fazenda. Clique em &quot;Gerenciar Pastos&quot;.</td></tr>
+                )}
+                {pastosList.map(p => {
+                  const st = STATUS_LABEL[p.status || "vazio"] || STATUS_LABEL.vazio;
+                  return (
+                    <tr key={p.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                      <td className="px-3 py-2 text-gray-700 font-medium">{p.nome}</td>
+                      <td className="px-3 py-2 text-gray-500">{p.tipo}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{p.area || "-"}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{p.qtdAnimais ?? 0}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{p.qtdLotes ?? 0}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">
+                        {p.diasPastejo != null ? `${p.diasPastejo}d` : p.diasDescanso != null ? `desc. ${p.diasDescanso}d` : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ color: st.color, backgroundColor: st.bg }}>
+                          {st.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {pastosList.length > 0 && (
+              <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
+                {pastosList.length} pasto{pastosList.length > 1 ? "s" : ""} · {totalAnimais} cabeças no total
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </AppLayout>
   );
 }

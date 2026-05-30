@@ -70,6 +70,21 @@ export const animais = mysqlTable("animais", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
 
+// Pastos (subdivisões/piquetes por fazenda)
+export const pastos = mysqlTable("pastos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  tipo: varchar("tipo", { length: 50 }).default("Pasto"),
+  area: decimal("area", { precision: 10, scale: 2 }),
+  capacidade: int("capacidade"),
+  status: mysqlEnum("status", ["ativo", "descanso", "vazio"]).default("vazio"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
 // Lotes table
 export const lotes = mysqlTable("lotes", {
   id: int("id").primaryKey().autoincrement(),
@@ -78,9 +93,27 @@ export const lotes = mysqlTable("lotes", {
   descricao: text("descricao"),
   localizacao: varchar("localizacao", { length: 200 }),
   capacidade: int("capacidade"),
+  fazendaId: int("fazendaId"),
+  pastoAtualId: int("pastoAtualId"),
+  dataEntradaPasto: date("dataEntradaPasto"),
   ativo: boolean("ativo").default(true),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+// Histórico de movimentação lote ↔ pasto
+export const lotePastoMovimentacoes = mysqlTable("lote_pasto_movimentacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  loteId: int("loteId").notNull(),
+  pastoOrigemId: int("pastoOrigemId"),
+  pastoDestinoId: int("pastoDestinoId"),
+  dataEntrada: date("dataEntrada").notNull(),
+  dataSaida: date("dataSaida"),
+  diasNoPasto: int("diasNoPasto"),
+  qtdAnimais: int("qtdAnimais"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Saude registros table
