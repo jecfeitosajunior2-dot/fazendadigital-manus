@@ -26,7 +26,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   };
 
   const displayName = user?.name || "Administrador";
-  const displayEmail = user?.email || "admin@optigado.com.br";
+  const displayEmail = user?.email || "admin@fazendadigital.com.br";
 
   return (
     <header className="h-[48px] flex items-center justify-between px-4" style={{ background: "linear-gradient(135deg, #2D5A5A, #4ECDC4)" }}>
@@ -39,9 +39,9 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
         <div className="md:hidden flex items-center gap-2">
-          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp" alt="OptiGado" className="h-[28px] w-[28px] object-contain" />
+          <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp" alt="Fazenda Digital" className="h-[28px] w-[28px] object-contain" />
           <span className="text-white font-extrabold text-[14px]" style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, letterSpacing: "0.03em" }}>
-            <span>Opti</span><span style={{ color: "#4ECDC4" }}>Gado</span>
+            <span>Fazenda</span><span style={{ color: "#4ECDC4" }}>Digital</span>
           </span>
         </div>
       </div>

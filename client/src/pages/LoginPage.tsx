@@ -82,7 +82,7 @@ export default function LoginPage() {
               <span className="material-icons text-white text-3xl">agriculture</span>
             </div>
             <h1 className="text-2xl font-bold" style={{ color: "#2D5A5A" }}>
-              OptiGado
+              Fazenda Digital
             </h1>
             <p className="text-gray-500 text-sm mt-1">Sistema de Gestão Pecuária</p>
           </div>
@@ -178,7 +178,7 @@ export default function LoginPage() {
           {/* Footer */}
           <div className="mt-6 pt-5 border-t border-gray-100 text-center">
             <p className="text-xs text-gray-400">
-              OptiGado © 2024 — Gestão Pecuária Inteligente
+              Fazenda Digital © 2024 — Gestão Pecuária Inteligente
             </p>
           </div>
         </div>
