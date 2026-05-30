@@ -75,15 +75,17 @@ export default function LoginPage() {
         >
           {/* Logo */}
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-6">
-              <div className="w-12 h-12 flex items-center justify-center">
-                <span className="material-icons text-4xl" style={{ color: "#4ECDC4" }}>pets</span>
-              </div>
-              <h1 className="text-3xl font-bold" style={{ color: "#2D5A5A", fontFamily: "'Fraunces', serif", fontWeight: 700 }}>
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <img
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp"
+                alt="Fazenda Digital"
+                className="w-14 h-14 object-contain"
+              />
+              <h1 className="text-3xl" style={{ color: "#2D5A5A", fontFamily: "'Fraunces', serif", fontWeight: 600, letterSpacing: "-0.01em" }}>
                 Fazenda Digital
               </h1>
             </div>
-            <p className="text-gray-500 text-sm mt-2" style={{ fontFamily: "'Fraunces', serif" }}>Inteligência Pecuária. Resultados Reais.</p>
+            <p className="text-gray-500 text-sm" style={{ fontFamily: "'Fraunces', serif" }}>Inteligência Pecuária. Resultados Reais.</p>
           </div>
 
           {/* Form */}
