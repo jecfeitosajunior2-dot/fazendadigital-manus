@@ -23,8 +23,11 @@ export async function ensureSchema() {
         \`userId\` int NOT NULL,
         \`fazendaId\` int NOT NULL,
         \`nome\` varchar(100) NOT NULL,
-        \`tipo\` varchar(50) DEFAULT 'Pasto',
+        \`sigla\` varchar(20),
+        \`tipo\` varchar(80) DEFAULT 'Pasto',
+        \`tipoPastagem\` varchar(80),
         \`area\` decimal(10,2),
+        \`incluirArea\` boolean DEFAULT true,
         \`capacidade\` int,
         \`status\` enum('ativo','descanso','vazio') DEFAULT 'vazio',
         \`observacoes\` text,
@@ -58,6 +61,12 @@ export async function ensureSchema() {
       await ensureColumn(pool, "lotes", "dataEntradaPasto", "date");
     }
 
+    const [pastosTable] = await pool.query(`SHOW TABLES LIKE 'pastos'`);
+    if ((pastosTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "pastos", "sigla", "varchar(20)");
+      await ensureColumn(pool, "pastos", "tipoPastagem", "varchar(80)");
+      await ensureColumn(pool, "pastos", "incluirArea", "boolean DEFAULT true");
+    }
     console.log("[schema] Tabelas de pastos verificadas");
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);

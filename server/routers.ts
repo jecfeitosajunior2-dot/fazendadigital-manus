@@ -947,8 +947,11 @@ const pastosRouter = router({
     .input(z.object({
       fazendaId: z.number(),
       nome: z.string(),
+      sigla: z.string().optional(),
       tipo: z.string().optional(),
+      tipoPastagem: z.string().optional(),
       area: z.string().optional(),
+      incluirArea: z.boolean().optional(),
       capacidade: z.number().optional(),
       status: z.enum(["ativo", "descanso", "vazio"]).optional(),
       observacoes: z.string().optional(),
@@ -962,8 +965,11 @@ const pastosRouter = router({
     .input(z.object({
       id: z.number(),
       nome: z.string().optional(),
+      sigla: z.string().optional(),
       tipo: z.string().optional(),
+      tipoPastagem: z.string().optional(),
       area: z.string().optional(),
+      incluirArea: z.boolean().optional(),
       capacidade: z.number().optional(),
       status: z.enum(["ativo", "descanso", "vazio"]).optional(),
       observacoes: z.string().optional(),
