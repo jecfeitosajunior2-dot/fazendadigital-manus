@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { menuItems, type MenuItem } from "@/lib/data";
 
@@ -84,20 +84,24 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [location] = useLocation();
 
-  // Close mobile sidebar on navigation
+  // Fecha o menu mobile apenas após navegação (não no mount inicial)
+  const isFirstRender = useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     if (mobileOpen && onMobileClose) {
       onMobileClose();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location]);
+  }, [location, mobileOpen, onMobileClose]);
 
   return (
     <>
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={onMobileClose}
         />
       )}
@@ -105,10 +109,13 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed md:relative z-50 md:z-auto
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+          h-screen flex flex-col flex-shrink-0
+          max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50
+          md:relative md:z-auto
+          transition-[width,transform] duration-200 ease-out
+          ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
+          md:translate-x-0
           ${collapsed ? "w-[60px]" : "w-[220px]"}
-          h-screen md:min-h-screen flex flex-col transition-all duration-200 flex-shrink-0
         `}
         style={{ backgroundColor: "#3D4E5C", backgroundImage: "linear-gradient(180deg, #3D4E5C 0%, #2D5A5A 100%)" }}
       >
@@ -130,7 +137,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           )}
           <button
             onClick={() => {
-              if (window.innerWidth < 768 && onMobileClose) {
+              if (window.innerWidth < 1024 && onMobileClose) {
                 onMobileClose();
               } else {
                 setCollapsed(!collapsed);

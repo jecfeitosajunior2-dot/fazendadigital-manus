@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CattleProvider } from "./contexts/CattleContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { AuthGuard, AppShell } from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import { AnimaisPage, EstoquePage } from "./pages/GenericPage";
@@ -36,11 +37,9 @@ import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 
-function Router() {
+function ProtectedRoutes() {
   return (
     <Switch>
-      <Route path="/" component={() => <Redirect to="/entrar" />} />
-      <Route path="/entrar" component={LoginPage} />
       <Route path="/admin/overview" component={DashboardPage} />
 
       {/* Quick Access */}
@@ -115,6 +114,24 @@ function Router() {
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={() => <Redirect to="/entrar" />} />
+      <Route path="/entrar" component={LoginPage} />
+      <Route>
+        {() => (
+          <AuthGuard>
+            <AppShell>
+              <ProtectedRoutes />
+            </AppShell>
+          </AuthGuard>
+        )}
+      </Route>
     </Switch>
   );
 }

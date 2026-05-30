@@ -1606,6 +1606,7 @@ export function ImprovementsPage() {
 // ============================================================
 
 export function QuickAccessPage() {
+  const [, setLocation] = useLocation();
   return (
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Acesso Rápido</h1>
@@ -1618,12 +1619,17 @@ export function QuickAccessPage() {
           { label: "Lançar Manejo", icon: "assignment", path: "/manejos/criar" },
           { label: "Lançar Financeiro", icon: "account_balance", path: "/financeiro/movimentacao" },
         ].map((item, i) => (
-          <a key={i} href={item.path} className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <button
+            key={i}
+            type="button"
+            onClick={() => setLocation(item.path)}
+            className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 hover:shadow-md transition-shadow text-left w-full"
+          >
             <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
               <span className="material-icons text-[20px]" style={{ color: "#4ECDC4" }}>{item.icon}</span>
             </div>
             <span className="text-[13px] font-medium text-gray-700">{item.label}</span>
-          </a>
+          </button>
         ))}
       </div>
     </AppLayout>

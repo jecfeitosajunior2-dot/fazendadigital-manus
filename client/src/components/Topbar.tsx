@@ -33,12 +33,12 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
       {/* Left: hamburger for mobile */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (
-          <button onClick={onMenuToggle} className="md:hidden text-white/80 hover:text-white p-1">
+          <button onClick={onMenuToggle} className="lg:hidden text-white/80 hover:text-white p-1">
             <span className="material-icons text-[22px]">menu</span>
           </button>
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
-        <div className="md:hidden flex items-center gap-2">
+        <div className="lg:hidden flex items-center gap-2">
           <img
             src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
             alt="Fazenda Digital"
