@@ -1,8 +1,23 @@
-import AppLayout from "@/components/AppLayout";
 import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+
+// ============================================================
+// LAYOUT WRAPPER
+// ============================================================
+
+function AppLayout({ children }: { children: React.ReactNode }) {
+  return <div className="p-4 max-w-7xl mx-auto">{children}</div>;
+}
 
 // ============================================================
 // MÓDULO FAZENDAS
