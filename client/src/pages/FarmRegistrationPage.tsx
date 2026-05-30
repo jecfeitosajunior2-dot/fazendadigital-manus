@@ -88,7 +88,7 @@ function FormLabel({ children, required }: { children: React.ReactNode; required
 
 function FieldBox({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <div className={cn("bg-[#EEEEEE] border-b border-gray-300", required && "border-l-[3px] border-l-[#2563EB]")}>
+    <div className={cn("bg-[#EEEEEE] border-b border-gray-300", required && "border-l-[3px] border-l-[#4ECDC4]")}>
       {children}
     </div>
   );
