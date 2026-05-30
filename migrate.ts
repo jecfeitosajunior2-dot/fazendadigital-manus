@@ -8,7 +8,7 @@ async function main() {
   const pool = mysql.createPool({ uri: url, connectionLimit: 1 });
   const db = drizzle(pool);
   console.log("Running migrations...");
-  await migrate(db, { migrationsFolder: "/home/ubuntu/irancho-preview-system/drizzle/migrations" });
+  await migrate(db, { migrationsFolder: new URL("../drizzle/migrations", import.meta.url).pathname });
   console.log("Migrations complete!");
   await pool.end();
 }

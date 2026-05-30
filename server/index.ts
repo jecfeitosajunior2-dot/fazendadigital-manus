@@ -4,6 +4,9 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { handleOAuthCallback } from "./_core/oauth";
+import { ensureSchema } from "./ensureSchema";
+
+await ensureSchema();
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
