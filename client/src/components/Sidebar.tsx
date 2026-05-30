@@ -121,11 +121,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                 alt="Fazenda Digital"
                 className="h-[38px] w-[38px] object-contain"
               />
-              <div className="flex flex-col leading-tight">
-                <span className="text-[14px] text-white" style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, letterSpacing: "-0.02em" }}>
-                  Fazenda Digital
-                </span>
-                <span className="text-white/50 text-[9px]" style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic" }}>Inteligência Pecuária</span>
+              <div className="flex flex-col" style={{ lineHeight: 1 }}>
+                <span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "13px", letterSpacing: "-0.02em", color: "white" }}>FAZENDA</span>
+                <span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 700, fontSize: "10px", letterSpacing: "0.25em", color: "#4ECDC4", marginTop: "1px" }}>DIGITAL</span>
+                <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: "italic", fontSize: "8px", color: "rgba(255,255,255,0.45)", marginTop: "2px" }}>Inteligência Pecuária</span>
               </div>
             </div>
           )}
