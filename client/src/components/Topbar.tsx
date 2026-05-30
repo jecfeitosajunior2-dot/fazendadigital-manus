@@ -40,7 +40,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
         <div className="md:hidden flex items-center gap-2">
           <img
-            src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp"
+            src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-icon-85XdcrwC957vJHgLuuZPYM.webp"
             alt="Fazenda Digital"
             className="h-[28px] w-[28px] object-contain"
           />

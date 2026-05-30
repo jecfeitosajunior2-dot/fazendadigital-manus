@@ -77,7 +77,7 @@ export default function LoginPage() {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center gap-3 mb-6">
               <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/optigado-logo-main-mXWXN4srP6kxgWxXHn5rhA.webp"
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-icon-85XdcrwC957vJHgLuuZPYM.webp"
                 alt="Fazenda Digital"
                 className="w-14 h-14 object-contain"
               />
