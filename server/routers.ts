@@ -627,6 +627,8 @@ const benfeitoriasRouter = router({
     .input(z.object({
       nome: z.string(),
       tipo: z.string().optional(),
+      anoConstrucao: z.number().optional(),
+      vidaUtil: z.number().optional(),
       localizacao: z.string().optional(),
       status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
       dataInstalacao: z.string().optional(),
@@ -648,6 +650,8 @@ const benfeitoriasRouter = router({
       id: z.number(),
       nome: z.string().optional(),
       tipo: z.string().optional(),
+      anoConstrucao: z.number().optional(),
+      vidaUtil: z.number().optional(),
       localizacao: z.string().optional(),
       status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
       valorEstimado: z.string().optional(),

@@ -1,4 +1,4 @@
-// Menu structure - réplica exata do Fazenda Digital sidebar
+// Menu — iRancho (estrutura/labels) + funcionalidades extras Fazenda Digital
 export interface MenuItem {
   label: string;
   icon: string;
@@ -10,90 +10,124 @@ export const menuItems: MenuItem[] = [
   { label: "Acesso Rápido", icon: "flash_on", path: "/primeiro-uso/help" },
   { label: "Painel de Controle", icon: "dashboard", path: "/admin/overview" },
   {
-    label: "Fazendas", icon: "home_work", children: [
+    label: "Fazendas",
+    icon: "home_work",
+    children: [
       { label: "Visão Geral", icon: "", path: "/fazendas/visao-geral" },
+      { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
       { label: "Fazendas", icon: "", path: "/fazendas/lista-fazendas" },
       { label: "Cadastrar Fazenda", icon: "", path: "/fazendas/cadastro" },
       { label: "Subdivisões", icon: "", path: "/fazendas/subdivisoes" },
-    ]
+    ],
   },
   {
-    label: "Administrativo", icon: "business", children: [
-      { label: "Visão Geral", icon: "", path: "/benfeitorias/visao-geral" },
-      { label: "Benfeitorias", icon: "", path: "/benfeitorias/lista-benfeitorias" },
-    ]
+    label: "Administrativo",
+    icon: "settings",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/administrativo/visao-geral" },
+      { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
+    ],
   },
   {
-    label: "Rebanho", icon: "pets", children: [
+    label: "Rebanho",
+    icon: "pets",
+    children: [
       { label: "Visão Geral", icon: "", path: "/rebanho/visao-geral" },
       { label: "Animais", icon: "", path: "/rebanho/lista-animais" },
       { label: "Mapa do Rebanho", icon: "", path: "/rebanho/mapa-rebanho" },
       { label: "Lotes", icon: "", path: "/rebanho/lotes" },
       { label: "Importação em Massa", icon: "", path: "/rebanho/importacao-em-massa" },
-    ]
+    ],
   },
   {
-    label: "Manejos", icon: "assignment", children: [
+    label: "Manejo",
+    icon: "playlist_add_check",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/manejo/visao-geral" },
       { label: "Meus Manejos", icon: "", path: "/manejos/meus" },
       { label: "Criar Manejo", icon: "", path: "/manejos/criar" },
       { label: "Listar Manejos", icon: "", path: "/manejos/listar" },
       { label: "Manejos Básicos", icon: "", path: "/manejos/basicos" },
-    ]
+    ],
   },
   {
-    label: "Insumos", icon: "inventory_2", children: [
+    label: "Insumos",
+    icon: "inventory_2",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/insumos/visao-geral" },
       { label: "Estoque", icon: "", path: "/insumos/estoque" },
       { label: "Entradas", icon: "", path: "/insumos/entradas" },
       { label: "Saídas", icon: "", path: "/insumos/saidas" },
-    ]
+    ],
   },
   {
-    label: "Máquinas", icon: "agriculture", children: [
+    label: "Máquinas",
+    icon: "agriculture",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/maquinas/visao-geral" },
       { label: "Abastecimento", icon: "", path: "/maquinas/abastecimento" },
       { label: "Manutenção", icon: "", path: "/maquinas/manutencao" },
       { label: "Máquinas", icon: "", path: "/maquinas/lista-maquinas" },
-    ]
+    ],
   },
   {
-    label: "Reprodução", icon: "favorite", children: [
+    label: "Reprodução",
+    icon: "favorite",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/reproducao/visao-geral" },
       { label: "Protocolos", icon: "", path: "/reproducao/protocolos" },
       { label: "Sêmen", icon: "", path: "/reproducao/semen" },
       { label: "Embriões", icon: "", path: "/reproducao/embrioes" },
-    ]
+    ],
   },
   {
-    label: "Nutrição", icon: "restaurant", children: [
+    label: "Nutrição",
+    icon: "grass",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/nutricao/visao-geral" },
       { label: "Dietas", icon: "", path: "/nutricao/dietas" },
       { label: "Cochos", icon: "", path: "/nutricao/cochos" },
-    ]
+    ],
   },
   {
-    label: "Compra e Venda", icon: "swap_horiz", children: [
+    label: "Compra e Venda",
+    icon: "attach_money",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/compra-venda/visao-geral" },
       { label: "Compras", icon: "", path: "/compra-venda/compras" },
       { label: "Vendas", icon: "", path: "/compra-venda/vendas" },
-    ]
+    ],
   },
   {
-    label: "Financeiro", icon: "account_balance_wallet", children: [
+    label: "Financeiro",
+    icon: "account_balance_wallet",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/financeiro/visao-geral" },
       { label: "Contas", icon: "", path: "/financeiro/contas" },
       { label: "Movimentação", icon: "", path: "/financeiro/movimentacao" },
       { label: "Categorias", icon: "", path: "/financeiro/categorias" },
       { label: "Pessoas", icon: "", path: "/financeiro/pessoas" },
-    ]
+    ],
   },
   {
-    label: "Relatórios", icon: "description", children: [
+    label: "Relatórios",
+    icon: "description",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/relatorios/visao-geral" },
       { label: "Gerenciais", icon: "", path: "/relatorios/gerenciais" },
       { label: "Evolução", icon: "", path: "/relatorios/evolucao" },
       { label: "Reprodutivos", icon: "", path: "/relatorios/reprodutivos" },
       { label: "Operacionais", icon: "", path: "/relatorios/operacionais" },
-    ]
+    ],
   },
   {
-    label: "Simulações", icon: "calculate", children: [
+    label: "Simulações",
+    icon: "calculate",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/simulacoes/visao-geral" },
       { label: "Confinamento", icon: "", path: "/simulacoes/confinamento" },
       { label: "Semi-confinamento", icon: "", path: "/simulacoes/semi-confinamento" },
-    ]
+    ],
   },
 ];
 
@@ -105,7 +139,6 @@ export const dashboardKPIs = [
   { value: "0", label: "Vendas", sublabel: "Desde 01/05/2026", icon: "", iconColor: "" },
   { value: "0", label: "Taxa de lotação (UA)", sublabel: "-", icon: "", iconColor: "" },
 ];
-
 // Rebanho por idade
 export const herdByAge = [
   { age: "0-8", male: 25, female: 25 },

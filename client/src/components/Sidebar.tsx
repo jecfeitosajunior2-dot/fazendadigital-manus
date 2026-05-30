@@ -47,7 +47,9 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
           depth === 0 ? "px-4 py-2.5" : "pl-10 pr-4 py-[7px]"
         } ${
           isActive
-            ? "text-white bg-[#4ECDC4]/20 font-medium border-l-2 border-[#4ECDC4]"
+            ? depth > 0
+              ? "text-[#4ECDC4] font-semibold bg-white/5"
+              : "text-white bg-[#4ECDC4]/20 font-medium border-l-2 border-[#4ECDC4]"
             : isChildActive
             ? "text-white bg-[#4ECDC4]/10"
             : "text-white/80 hover:text-white hover:bg-white/5"

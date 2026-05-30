@@ -232,6 +232,8 @@ export const benfeitorias = mysqlTable("benfeitorias", {
   userId: int("userId").notNull(),
   nome: varchar("nome", { length: 100 }).notNull(),
   tipo: varchar("tipo", { length: 50 }),
+  anoConstrucao: int("anoConstrucao"),
+  vidaUtil: int("vidaUtil"),
   localizacao: varchar("localizacao", { length: 200 }),
   status: mysqlEnum("status", ["ativo", "manutencao", "inativo"]).default("ativo"),
   dataInstalacao: date("dataInstalacao"),

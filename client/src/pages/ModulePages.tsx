@@ -1727,7 +1727,7 @@ export function QuickAccessPage() {
           { label: "Cadastrar Rebanho", icon: "pets", path: "/rebanho/lista-animais" },
           { label: "Cadastrar Insumo", icon: "inventory_2", path: "/insumos/estoque" },
           { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/lista-maquinas" },
-          { label: "Lançar Manejo", icon: "assignment", path: "/manejos/criar" },
+          { label: "Lançar Manejo", icon: "playlist_add_check", path: "/manejos/criar" },
           { label: "Lançar Financeiro", icon: "account_balance", path: "/financeiro/movimentacao" },
         ].map((item, i) => (
           <button

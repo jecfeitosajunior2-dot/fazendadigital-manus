@@ -68,6 +68,12 @@ export async function ensureSchema() {
       await ensureColumn(pool, "pastos", "incluirArea", "boolean DEFAULT true");
     }
     console.log("[schema] Tabelas de pastos verificadas");
+
+    const [benfTable] = await pool.query(`SHOW TABLES LIKE 'benfeitorias'`);
+    if ((benfTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "benfeitorias", "anoConstrucao", "int");
+      await ensureColumn(pool, "benfeitorias", "vidaUtil", "int");
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;
