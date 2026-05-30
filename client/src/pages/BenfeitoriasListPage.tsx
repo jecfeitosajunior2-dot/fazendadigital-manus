@@ -42,18 +42,75 @@ export default function BenfeitoriasListPage() {
 
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
+  const exportRows = useMemo(() =>
+    filtered.map(b => ({
+      benfeitoria: b.nome,
+      fazenda: b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "" : "",
+      ano: b.anoConstrucao ?? "",
+      vidaUtil: b.vidaUtil ?? "",
+      valor: b.valorEstimado ? parseFloat(String(b.valorEstimado)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+    })),
+  [filtered, fazendaMap]);
+
+  const exportSpreadsheet = () => {
+    if (exportRows.length === 0) { toast.error("Nenhum dado para exportar"); return; }
+    const header = ["Benfeitoria", "Fazenda", "Ano de Construção", "Vida Útil", "Valor(R$)"];
+    const lines = exportRows.map(r =>
+      [r.benfeitoria, r.fazenda, r.ano, r.vidaUtil, r.valor]
+        .map(v => `"${String(v).replace(/"/g, '""')}"`)
+        .join(";")
+    );
+    const csv = "\uFEFF" + [header.join(";"), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `benfeitorias_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Planilha exportada!");
+  };
+
+  const exportPdf = () => {
+    if (exportRows.length === 0) { toast.error("Nenhum dado para exportar"); return; }
+    const rows = exportRows.map(r =>
+      `<tr><td>${r.benfeitoria}</td><td>${r.fazenda}</td><td style="text-align:right">${r.ano}</td><td style="text-align:right">${r.vidaUtil}</td><td style="text-align:right">${r.valor}</td></tr>`
+    ).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Benfeitorias</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px}h1{font-size:18px;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:8px}
+      th{background:#f5f5f5;text-align:left}</style></head><body>
+      <h1>Lista de Benfeitorias</h1>
+      <table><thead><tr><th>Benfeitoria</th><th>Fazenda</th><th>Ano</th><th>Vida Útil</th><th>Valor(R$)</th></tr></thead>
+      <tbody>${rows}</tbody></table></body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) { toast.error("Permita pop-ups para exportar PDF"); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
+
   return (
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[13px] font-semibold text-gray-800">Lista de benfeitorias</h1>
-          <div className="flex items-center gap-4 text-[10px] text-gray-500">
-            <button type="button" onClick={() => toast.info("Exportação em desenvolvimento")} className="flex items-center gap-1 hover:text-gray-700">
-              <span className="material-icons text-[14px]">table_chart</span>
+          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de benfeitorias</h1>
+          <div className="flex items-center gap-4 text-[10px] text-gray-600 shrink-0">
+            <button
+              type="button"
+              onClick={exportSpreadsheet}
+              className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium"
+            >
+              <span className="material-icons text-[16px]">table_chart</span>
               Exportar Planilha
             </button>
-            <button type="button" onClick={() => toast.info("Exportação PDF em desenvolvimento")} className="flex items-center gap-1 hover:text-gray-700">
-              <span className="material-icons text-[14px]">picture_as_pdf</span>
+            <button
+              type="button"
+              onClick={exportPdf}
+              className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium"
+            >
+              <span className="material-icons text-[16px]">picture_as_pdf</span>
               PDF
             </button>
           </div>

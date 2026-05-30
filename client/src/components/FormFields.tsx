@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useRef } from "react";
+import { Calendar } from "lucide-react";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
@@ -25,15 +26,18 @@ export function FieldBox({
   children,
   required,
   className,
+  variant = "default",
 }: {
   children: React.ReactNode;
   required?: boolean;
   className?: string;
+  variant?: "default" | "light";
 }) {
   return (
     <div
       className={cn(
-        "bg-[#EEEEEE] border border-gray-200 rounded-sm overflow-hidden",
+        variant === "light" ? "bg-white" : "bg-[#EEEEEE]",
+        "border border-gray-200 rounded-sm",
         required && "border-l-[3px] border-l-[#4ECDC4]",
         className
       )}
@@ -113,7 +117,68 @@ export function FormSelect({
   );
 }
 
-export function FormTextarea({
+/** Campo de ano com ícone de calendário clicável — estilo iRancho. */
+export function FormYearPicker({
+  value,
+  onChange,
+  placeholder = "Selecione o ano de construção",
+  required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  const dateRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const el = dateRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === "function") el.showPicker();
+    else el.click();
+  };
+
+  const handleDatePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.value) return;
+    onChange(String(new Date(`${e.target.value}T12:00:00`).getFullYear()));
+  };
+
+  return (
+    <FieldBox required={required} variant="light">
+      <div className="relative flex items-center min-h-[42px]">
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={openPicker}
+          className="absolute left-2.5 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
+          aria-label="Abrir calendário"
+        >
+          <Calendar className="w-[18px] h-[18px]" strokeWidth={1.75} />
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={e => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          onFocus={openPicker}
+          placeholder={placeholder}
+          className={cn(inputClass, "pl-10 bg-white min-h-[42px] cursor-pointer")}
+          readOnly={false}
+        />
+        <input
+          ref={dateRef}
+          type="date"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={handleDatePick}
+          value={value && value.length === 4 ? `${value}-01-01` : ""}
+        />
+      </div>
+    </FieldBox>
+  );
+}
+
   value,
   onChange,
   placeholder,

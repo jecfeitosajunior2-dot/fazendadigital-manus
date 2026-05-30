@@ -4,15 +4,14 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { SelectItem } from "@/components/ui/select";
-import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
   FormInput,
   FormSelect,
   FormTextarea,
-  FieldBox,
-  inputClass,
+  FormYearPicker,
 } from "@/components/FormFields";
 
 type ImageSlot =
@@ -315,22 +314,12 @@ export default function BenfeitoriaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Ano</FormLabel>
-              <FieldBox required>
-                <div className="relative">
-                  <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">
-                    calendar_today
-                  </span>
-                  <input
-                    type="number"
-                    min={1900}
-                    max={2100}
-                    value={form.anoConstrucao}
-                    onChange={e => set("anoConstrucao", e.target.value)}
-                    placeholder="Selecione o ano de construção"
-                    className={cn(inputClass, "pl-9")}
-                  />
-                </div>
-              </FieldBox>
+              <FormYearPicker
+                value={form.anoConstrucao}
+                onChange={v => set("anoConstrucao", v)}
+                placeholder="Selecione o ano de construção"
+                required
+              />
             </div>
             <div>
               <FormLabel>Valor</FormLabel>
