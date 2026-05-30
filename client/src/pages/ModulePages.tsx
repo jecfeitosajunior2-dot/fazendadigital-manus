@@ -1,5 +1,5 @@
 import AppLayout from "@/components/AppLayout";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,6 +59,27 @@ function FazendaFormModal({ open, onClose, fazenda, onSuccess }: {
     responsavel: fazenda?.responsavel || "",
     observacoes: fazenda?.observacoes || "",
   });
+  const [cidades, setCidades] = useState<string[]>([]);
+  const [loadingCidades, setLoadingCidades] = useState(false);
+
+  useEffect(() => {
+    if (!form.estado) {
+      setCidades([]);
+      return;
+    }
+    setLoadingCidades(true);
+    fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${form.estado}/municipios`)
+      .then(r => r.json())
+      .then((data: { nome: string }[]) => {
+        setCidades(data.map(m => m.nome).sort((a, b) => a.localeCompare(b, "pt-BR")));
+      })
+      .catch(() => {
+        setCidades([]);
+        toast.error("Não foi possível carregar as cidades");
+      })
+      .finally(() => setLoadingCidades(false));
+  }, [form.estado]);
+
   const createMutation = trpc.fazendas.create.useMutation({
     onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda criada com sucesso!"); onSuccess(); onClose(); },
     onError: (e) => toast.error(e.message),
@@ -90,12 +111,8 @@ function FazendaFormModal({ open, onClose, fazenda, onSuccess }: {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-[11px]">Cidade</Label>
-              <Input value={form.cidade} onChange={e => setForm(f => ({ ...f, cidade: e.target.value }))} placeholder="Ex: Goiânia" className="h-8 text-[12px]" />
-            </div>
-            <div>
               <Label className="text-[11px]">Estado (UF)</Label>
-              <Select value={form.estado || undefined} onValueChange={v => setForm(f => ({ ...f, estado: v }))}>
+              <Select value={form.estado || undefined} onValueChange={v => setForm(f => ({ ...f, estado: v, cidade: "" }))}>
                 <SelectTrigger className="w-full h-8 text-[12px]">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
@@ -103,6 +120,25 @@ function FazendaFormModal({ open, onClose, fazenda, onSuccess }: {
                   {ESTADOS_BR.map(e => (
                     <SelectItem key={e.uf} value={e.uf} className="text-[12px]">
                       {e.uf} — {e.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[11px]">Cidade</Label>
+              <Select
+                value={form.cidade || undefined}
+                onValueChange={v => setForm(f => ({ ...f, cidade: v }))}
+                disabled={!form.estado || loadingCidades}
+              >
+                <SelectTrigger className="w-full h-8 text-[12px]">
+                  <SelectValue placeholder={loadingCidades ? "Carregando..." : form.estado ? "Selecione" : "Selecione o estado"} />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {cidades.map(c => (
+                    <SelectItem key={c} value={c} className="text-[12px]">
+                      {c}
                     </SelectItem>
                   ))}
                 </SelectContent>
