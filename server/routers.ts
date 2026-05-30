@@ -1,4 +1,5 @@
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
