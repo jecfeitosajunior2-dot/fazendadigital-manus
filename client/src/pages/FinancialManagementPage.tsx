@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 
 export function FinancialManagementPage() {
   const [activeTab, setActiveTab] = useState('movimentacoes');
@@ -70,18 +71,41 @@ export function FinancialManagementPage() {
               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
                 <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Nova Movimentação</h2>
                 <form onSubmit={e => { e.preventDefault(); createMovMutation.mutate({ contaId: movForm.contaId, tipo: movForm.tipo as "receita"|"despesa", descricao: movForm.descricao, valor: movForm.valor, data: movForm.data, observacoes: movForm.observacoes || undefined }); }} className="space-y-3">
-                  <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo *</label>
-                    <select required value={movForm.tipo} onChange={e => setMovForm(f => ({...f, tipo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
-                      <option value="receita">Receita</option>
-                      <option value="despesa">Despesa</option>
-                    </select>
+                  <div>
+                    <FormLabel required>Tipo</FormLabel>
+                    <FieldBox required>
+                      <select required value={movForm.tipo} onChange={e => setMovForm(f => ({...f, tipo: e.target.value}))} className={inputClassCompact}>
+                        <option value="receita">Receita</option>
+                        <option value="despesa">Despesa</option>
+                      </select>
+                    </FieldBox>
                   </div>
-                  <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Descrição *</label><input required value={movForm.descricao} onChange={e => setMovForm(f => ({...f, descricao: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                  <div>
+                    <FormLabel required>Descrição</FormLabel>
+                    <FieldBox required>
+                      <input required value={movForm.descricao} onChange={e => setMovForm(f => ({...f, descricao: e.target.value}))} className={inputClassCompact} />
+                    </FieldBox>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Valor (R$) *</label><input type="number" step="0.01" required value={movForm.valor || ""} onChange={e => setMovForm(f => ({...f, valor: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-                    <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Data *</label><input type="date" required value={movForm.data} onChange={e => setMovForm(f => ({...f, data: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                    <div>
+                      <FormLabel required>Valor (R$)</FormLabel>
+                      <FieldBox required>
+                        <input type="number" step="0.01" required value={movForm.valor || ""} onChange={e => setMovForm(f => ({...f, valor: e.target.value}))} className={inputClassCompact} />
+                      </FieldBox>
+                    </div>
+                    <div>
+                      <FormLabel required>Data</FormLabel>
+                      <FieldBox required>
+                        <input type="date" required value={movForm.data} onChange={e => setMovForm(f => ({...f, data: e.target.value}))} className={inputClassCompact} />
+                      </FieldBox>
+                    </div>
                   </div>
-                  <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Categoria</label><input value={movForm.categoria} onChange={e => setMovForm(f => ({...f, categoria: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" placeholder="Ex: Venda de gado, Medicamentos..." /></div>
+                  <div>
+                    <FormLabel>Categoria</FormLabel>
+                    <FieldBox>
+                      <input value={movForm.categoria} onChange={e => setMovForm(f => ({...f, categoria: e.target.value}))} className={inputClassCompact} placeholder="Ex: Venda de gado, Medicamentos..." />
+                    </FieldBox>
+                  </div>
                   <div className="flex gap-2 pt-2">
                     <button type="button" onClick={() => setShowMovForm(false)} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
                     <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
@@ -151,7 +175,12 @@ export function FinancialManagementPage() {
               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
                 <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Nova Conta</h2>
                 <form onSubmit={e => { e.preventDefault(); createContaMutation.mutate(contaForm); }} className="space-y-3">
-                  <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Nome *</label><input required value={contaForm.nome} onChange={e => setContaForm(f => ({...f, nome: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+                  <div>
+                    <FormLabel required>Nome</FormLabel>
+                    <FieldBox required>
+                      <input required value={contaForm.nome} onChange={e => setContaForm(f => ({...f, nome: e.target.value}))} className={inputClassCompact} />
+                    </FieldBox>
+                  </div>
                   <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
                     <select value={contaForm.tipo} onChange={e => setContaForm(f => ({...f, tipo: e.target.value as "corrente"|"poupanca"|"caixa"|"investimento"}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
                       <option value="">Selecione</option>

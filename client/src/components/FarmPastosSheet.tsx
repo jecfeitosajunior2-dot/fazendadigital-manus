@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormLabel, FormInput } from "@/components/FormFields";
 import {
   Select,
   SelectContent,
@@ -200,12 +200,12 @@ export function FarmPastosSheet({
                 {editId ? "Editar pasto" : "Cadastrar pasto"}
               </div>
               <div>
-                <Label className="text-[10px]">Nome *</Label>
-                <Input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex. Pasto 1" className="h-8 text-[12px]" />
+                <FormLabel required className="text-[10px]">Nome</FormLabel>
+                <FormInput compact value={form.nome} onChange={v => setForm(f => ({ ...f, nome: v }))} placeholder="Ex. Pasto 1" required />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-[10px]">Tipo</Label>
+                  <FormLabel className="text-[10px]">Tipo</FormLabel>
                   <Select value={form.tipo} onValueChange={v => setForm(f => ({ ...f, tipo: v }))}>
                     <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -214,7 +214,7 @@ export function FarmPastosSheet({
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-[10px]">Status</Label>
+                  <FormLabel className="text-[10px]">Status</FormLabel>
                   <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as typeof form.status }))}>
                     <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -227,11 +227,11 @@ export function FarmPastosSheet({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-[10px]">Área (ha)</Label>
+                  <FormLabel className="text-[10px]">Área (ha)</FormLabel>
                   <Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} type="number" placeholder="0" className="h-8 text-[12px]" />
                 </div>
                 <div>
-                  <Label className="text-[10px]">Capacidade (UA)</Label>
+                  <FormLabel className="text-[10px]">Capacidade (UA)</FormLabel>
                   <Input value={form.capacidade} onChange={e => setForm(f => ({ ...f, capacidade: e.target.value }))} type="number" placeholder="0" className="h-8 text-[12px]" />
                 </div>
               </div>

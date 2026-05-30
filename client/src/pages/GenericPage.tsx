@@ -3,6 +3,7 @@ import AppLayout from "@/components/AppLayout";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 
 // --- Animals Page ---
 export function AnimaisPage() {
@@ -179,7 +180,12 @@ export function EstoquePage() {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Item" : "Novo Item de Estoque"}</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Nome *</label><input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>Nome</FormLabel>
+                <FieldBox required>
+                  <input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Categoria</label><input value={form.categoria} onChange={e => setForm(f => ({...f, categoria: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
                 <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Unidade</label><input value={form.unidade} onChange={e => setForm(f => ({...f, unidade: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>

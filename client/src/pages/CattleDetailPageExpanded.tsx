@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, TrendingUp, Zap, Plus, Trash2 } from 'lucide-react';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const CattleDetailPageExpanded: React.FC = () => {
@@ -339,29 +340,33 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <h3 className="font-semibold text-gray-700 mb-3">Novo Registro de Saúde</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Tipo *</label>
-                      <select
-                        value={saudeForm.tipo}
-                        onChange={e => setSaudeForm(p => ({ ...p, tipo: e.target.value }))}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
-                      >
-                        <option value="">Selecione</option>
-                        <option value="Vacinação">Vacinação</option>
-                        <option value="Vermifugação">Vermifugação</option>
-                        <option value="Tratamento">Tratamento</option>
-                        <option value="Exame">Exame</option>
-                        <option value="Cirurgia">Cirurgia</option>
-                        <option value="Preventivo">Preventivo</option>
-                      </select>
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo</FormLabel>
+                      <FieldBox required>
+                        <select
+                          value={saudeForm.tipo}
+                          onChange={e => setSaudeForm(p => ({ ...p, tipo: e.target.value }))}
+                          className={inputClassCompact}
+                        >
+                          <option value="">Selecione</option>
+                          <option value="Vacinação">Vacinação</option>
+                          <option value="Vermifugação">Vermifugação</option>
+                          <option value="Tratamento">Tratamento</option>
+                          <option value="Exame">Exame</option>
+                          <option value="Cirurgia">Cirurgia</option>
+                          <option value="Preventivo">Preventivo</option>
+                        </select>
+                      </FieldBox>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Data *</label>
-                      <input
-                        type="date"
-                        value={saudeForm.dataRegistro}
-                        onChange={e => setSaudeForm(p => ({ ...p, dataRegistro: e.target.value }))}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
-                      />
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
+                      <FieldBox required>
+                        <input
+                          type="date"
+                          value={saudeForm.dataRegistro}
+                          onChange={e => setSaudeForm(p => ({ ...p, dataRegistro: e.target.value }))}
+                          className={inputClassCompact}
+                        />
+                      </FieldBox>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Medicamento</label>
@@ -551,25 +556,29 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <h3 className="font-semibold text-gray-700 mb-3">Registrar Pesagem</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Peso (kg) *</label>
-                      <input
-                        type="number"
-                        value={pesagemForm.peso}
-                        onChange={e => setPesagemForm(p => ({ ...p, peso: e.target.value }))}
-                        placeholder="ex: 450"
-                        min="0"
-                        step="0.1"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
-                      />
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Peso (kg)</FormLabel>
+                      <FieldBox required>
+                        <input
+                          type="number"
+                          value={pesagemForm.peso}
+                          onChange={e => setPesagemForm(p => ({ ...p, peso: e.target.value }))}
+                          placeholder="ex: 450"
+                          min="0"
+                          step="0.1"
+                          className={inputClassCompact}
+                        />
+                      </FieldBox>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Data *</label>
-                      <input
-                        type="date"
-                        value={pesagemForm.data}
-                        onChange={e => setPesagemForm(p => ({ ...p, data: e.target.value }))}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
-                      />
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
+                      <FieldBox required>
+                        <input
+                          type="date"
+                          value={pesagemForm.data}
+                          onChange={e => setPesagemForm(p => ({ ...p, data: e.target.value }))}
+                          className={inputClassCompact}
+                        />
+                      </FieldBox>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Observações</label>

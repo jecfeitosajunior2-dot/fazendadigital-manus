@@ -9,8 +9,14 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCpfCnpj } from "@/lib/utils";
-
-const FD_PRIMARY = "#4ECDC4";
+import {
+  FD_PRIMARY,
+  FormLabel,
+  FormInput,
+  FormSelect,
+  FieldBox,
+  inputClass,
+} from "@/components/FormFields";
 
 type FormState = {
   nome: string;
@@ -76,79 +82,6 @@ function str(v: unknown) {
 
 function bool(v: unknown) {
   return v === true || v === 1;
-}
-
-function FormLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">
-      {children}{required && <span className="text-red-500">*</span>}
-    </label>
-  );
-}
-
-function FieldBox({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <div className={cn("bg-[#EEEEEE] border-b border-gray-300", required && "border-l-[3px] border-l-[#4ECDC4]")}>
-      {children}
-    </div>
-  );
-}
-
-const inputClass = "w-full bg-transparent px-3 py-2.5 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none border-0 h-auto";
-
-function FormInput({
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  required,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <FieldBox required={required}>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={inputClass}
-      />
-    </FieldBox>
-  );
-}
-
-function FormSelect({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-  required,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  disabled?: boolean;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <FieldBox required={required}>
-      <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className={cn(inputClass, "shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60")}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent className="max-h-60">
-          {children}
-        </SelectContent>
-      </Select>
-    </FieldBox>
-  );
 }
 
 export function FarmRegistrationPage() {
@@ -504,15 +437,15 @@ export function FarmRegistrationPage() {
           {/* Observação */}
           <div className="mb-4">
             <FormLabel>Observação</FormLabel>
-            <div className="bg-[#EEEEEE] border border-gray-200 rounded-sm">
+            <FieldBox>
               <textarea
                 value={form.observacoes}
                 onChange={e => set("observacoes", e.target.value)}
                 placeholder="Informações adicionais sobre a fazenda..."
-                className="w-full bg-transparent text-[13px] text-gray-800 placeholder:text-gray-400 outline-none resize-y px-3 py-3 min-h-[140px]"
+                className={cn(inputClass, "resize-y min-h-[140px]")}
                 rows={6}
               />
-            </div>
+            </FieldBox>
           </div>
 
           {/* Footer buttons */}

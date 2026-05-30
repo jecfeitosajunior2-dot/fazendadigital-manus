@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Trash2, Utensils } from "lucide-react";
 import { toast } from "sonner";
+import { FormLabel, FieldBox } from "@/components/FormFields";
 
 export default function SuppliesManagementPage() {
   const [open, setOpen] = useState(false);
@@ -39,7 +40,12 @@ export default function SuppliesManagementPage() {
           <DialogContent>
             <DialogHeader><DialogTitle>Registrar Batida</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              <div><Label>Data *</Label><Input type="date" value={form.data} onChange={e => setForm(p => ({ ...p, data: e.target.value }))} /></div>
+              <div>
+                <FormLabel required>Data</FormLabel>
+                <FieldBox required>
+                  <Input type="date" value={form.data} onChange={e => setForm(p => ({ ...p, data: e.target.value }))} className="border-0 shadow-none bg-transparent h-auto px-2 py-1.5 text-[12px]" />
+                </FieldBox>
+              </div>
               <div><Label>Quantidade (kg)</Label><Input type="number" step="0.01" value={form.quantidade} onChange={e => setForm(p => ({ ...p, quantidade: e.target.value }))} placeholder="0.00" /></div>
               <div><Label>Responsável</Label><Input value={form.responsavel} onChange={e => setForm(p => ({ ...p, responsavel: e.target.value }))} placeholder="Nome do responsável" /></div>
               <div><Label>Observações</Label><Textarea value={form.observacoes} onChange={e => setForm(p => ({ ...p, observacoes: e.target.value }))} /></div>

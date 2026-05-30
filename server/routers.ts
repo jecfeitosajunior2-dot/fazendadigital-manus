@@ -628,7 +628,7 @@ const benfeitoriasInputFields = {
   fazendaId: z.number(),
   nome: z.string(),
   anoConstrucao: z.number(),
-  percentualAtividade: z.number(),
+  percentualAtividade: z.number().optional(),
   tipo: z.string().optional(),
   vidaUtil: z.string().optional(),
   localizacao: z.string().optional(),
@@ -656,12 +656,12 @@ const benfeitoriasRouter = router({
   create: protectedProcedure
     .input(z.object(benfeitoriasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const { dataInstalacao, imageSlots, ...rest } = input;
+      const { dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       const result = await db.insert(benfeitorias).values({
         userId: ctx.user.id,
         ...rest,
-        percentualAtividade: String(rest.percentualAtividade),
+        percentualAtividade: percentualAtividade != null ? String(percentualAtividade) : undefined,
         dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
         imagem1: img1,
         imagem2: img2,
@@ -673,11 +673,11 @@ const benfeitoriasRouter = router({
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...benfeitoriasInputFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataInstalacao, imageSlots, ...rest } = input;
+      const { id, dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       await db.update(benfeitorias).set({
         ...rest,
-        percentualAtividade: String(rest.percentualAtividade),
+        percentualAtividade: percentualAtividade != null ? String(percentualAtividade) : undefined,
         dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
         imagem1: img1,
         imagem2: img2,

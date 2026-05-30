@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/card';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { ArrowLeft, CheckCircle, Loader2 } from 'lucide-react';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
+import { cn } from '@/lib/utils';
 
 export const NewAnimalPage: React.FC = () => {
   const [, setLocation] = useLocation();
@@ -112,17 +114,17 @@ export const NewAnimalPage: React.FC = () => {
               <h2 className="text-sm font-semibold text-gray-700 mb-4 uppercase border-b pb-2">Identificação</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    ID / Nome do Animal *
-                  </label>
-                  <input
-                    type="text"
-                    name="animalId"
-                    value={formData.animalId}
-                    onChange={handleChange}
-                    placeholder="ex: BOI-001 ou Touro Bravo"
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${errors.animalId ? 'border-red-500' : 'border-gray-300'}`}
-                  />
+                  <FormLabel required>ID / Nome do Animal</FormLabel>
+                  <FieldBox required>
+                    <input
+                      type="text"
+                      name="animalId"
+                      value={formData.animalId}
+                      onChange={handleChange}
+                      placeholder="ex: BOI-001 ou Touro Bravo"
+                      className={cn(inputClassCompact, errors.animalId && "text-red-600")}
+                    />
+                  </FieldBox>
                   {errors.animalId && <p className="text-xs text-red-600 mt-1">{errors.animalId}</p>}
                 </div>
 
@@ -151,14 +153,16 @@ export const NewAnimalPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Data de Nascimento *</label>
-                  <input
-                    type="date"
-                    name="birthDate"
-                    value={formData.birthDate}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${errors.birthDate ? 'border-red-500' : 'border-gray-300'}`}
-                  />
+                  <FormLabel required>Data de Nascimento</FormLabel>
+                  <FieldBox required>
+                    <input
+                      type="date"
+                      name="birthDate"
+                      value={formData.birthDate}
+                      onChange={handleChange}
+                      className={inputClassCompact}
+                    />
+                  </FieldBox>
                   {errors.birthDate && <p className="text-xs text-red-600 mt-1">{errors.birthDate}</p>}
                 </div>
               </div>
@@ -169,17 +173,19 @@ export const NewAnimalPage: React.FC = () => {
               <h2 className="text-sm font-semibold text-gray-700 mb-4 uppercase border-b pb-2">Características</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Sexo *</label>
-                  <select
-                    name="sex"
-                    value={formData.sex}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${errors.sex ? 'border-red-500' : 'border-gray-300'}`}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="Macho">Macho</option>
-                    <option value="Fêmea">Fêmea</option>
-                  </select>
+                  <FormLabel required>Sexo</FormLabel>
+                  <FieldBox required>
+                    <select
+                      name="sex"
+                      value={formData.sex}
+                      onChange={handleChange}
+                      className={inputClassCompact}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="Macho">Macho</option>
+                      <option value="Fêmea">Fêmea</option>
+                    </select>
+                  </FieldBox>
                   {errors.sex && <p className="text-xs text-red-600 mt-1">{errors.sex}</p>}
                 </div>
 
@@ -243,13 +249,14 @@ export const NewAnimalPage: React.FC = () => {
               <h2 className="text-sm font-semibold text-gray-700 mb-4 uppercase border-b pb-2">Classificação</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Categoria *</label>
-                  <select
-                    name="category"
-                    value={formData.category}
-                    onChange={handleChange}
-                    className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4] ${errors.category ? 'border-red-500' : 'border-gray-300'}`}
-                  >
+                  <FormLabel required>Categoria</FormLabel>
+                  <FieldBox required>
+                    <select
+                      name="category"
+                      value={formData.category}
+                      onChange={handleChange}
+                      className={inputClassCompact}
+                    >
                     <option value="">Selecione</option>
                     {formData.sex === 'Macho' && (
                       <>
@@ -278,6 +285,7 @@ export const NewAnimalPage: React.FC = () => {
                       </>
                     )}
                   </select>
+                  </FieldBox>
                   {errors.category && <p className="text-xs text-red-600 mt-1">{errors.category}</p>}
                 </div>
 

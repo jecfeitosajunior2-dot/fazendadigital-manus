@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Edit, MapPin, Users, ArrowRightLeft, History } from "lucide-react";
 import { toast } from "sonner";
+import { FormLabel, FieldBox, inputClassCompact } from "@/components/FormFields";
 import { MoveLotePastoDialog, OccupancyBar } from "@/components/MoveLotePastoDialog";
 
 export default function LotsManagementPage() {
@@ -94,7 +95,12 @@ export default function LotsManagementPage() {
           <DialogContent>
             <DialogHeader><DialogTitle>{editId ? "Editar Lote" : "Novo Lote"}</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              <div><Label>Nome *</Label><Input value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome do lote" /></div>
+              <div>
+                <FormLabel required>Nome</FormLabel>
+                <FieldBox required>
+                  <Input value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} placeholder="Nome do lote" className="border-0 shadow-none bg-transparent h-auto px-2 py-1.5 text-[12px]" />
+                </FieldBox>
+              </div>
               <div><Label>Descrição</Label><Textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" /></div>
               <div><Label>Localização</Label><Input value={form.localizacao} onChange={e => setForm(p => ({ ...p, localizacao: e.target.value }))} placeholder="Ex: Setor Norte" /></div>
               <div><Label>Capacidade (animais)</Label><Input type="number" value={form.capacidade} onChange={e => setForm(p => ({ ...p, capacidade: e.target.value }))} placeholder="0" /></div>

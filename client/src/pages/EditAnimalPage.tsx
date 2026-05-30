@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save, AlertCircle } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
+import { FormLabel, FieldBox, inputClassCompact } from "@/components/FormFields";
 
 export function EditAnimalPage() {
   const [, setLocation] = useLocation();
@@ -176,15 +177,17 @@ export function EditAnimalPage() {
               <h2 className="text-sm font-semibold text-gray-700 mb-4 uppercase border-b pb-2">Identificação</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome / ID *</label>
-                  <input
-                    type="text"
-                    name="nome"
-                    value={formData.nome}
-                    onChange={handleChange}
-                    placeholder="ex: BOI-001"
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-                  />
+                  <FormLabel required>Nome / ID</FormLabel>
+                  <FieldBox required>
+                    <input
+                      type="text"
+                      name="nome"
+                      value={formData.nome}
+                      onChange={handleChange}
+                      placeholder="ex: BOI-001"
+                      className={inputClassCompact}
+                    />
+                  </FieldBox>
                 </div>
 
                 <div>
@@ -211,17 +214,19 @@ export function EditAnimalPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Sexo *</label>
-                  <select
-                    name="sex"
-                    value={formData.sex}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-                  >
+                  <FormLabel required>Sexo</FormLabel>
+                  <FieldBox required>
+                    <select
+                      name="sex"
+                      value={formData.sex}
+                      onChange={handleChange}
+                      className={inputClassCompact}
+                    >
                     <option value="">Selecione</option>
                     <option value="Macho">Macho</option>
                     <option value="Fêmea">Fêmea</option>
                   </select>
+                  </FieldBox>
                 </div>
               </div>
             </div>

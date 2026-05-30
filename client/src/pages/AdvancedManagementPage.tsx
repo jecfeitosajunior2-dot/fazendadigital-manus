@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 import { useLocation } from 'wouter';
 
 // Maquinas sub-page
@@ -40,7 +41,12 @@ function MaquinasPage() {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Máquina" : "Nova Máquina"}</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Nome *</label><input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>Nome</FormLabel>
+                <FieldBox required>
+                  <input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
                   <select value={form.tipo} onChange={e => setForm(f => ({...f, tipo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
@@ -146,8 +152,18 @@ function AbastecimentosPage() {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Novo Abastecimento</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">ID da Máquina *</label><input type="number" required value={form.maquinaId || ""} onChange={e => setForm(f => ({...f, maquinaId: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Data *</label><input type="date" required value={form.data} onChange={e => setForm(f => ({...f, data: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>ID da Máquina</FormLabel>
+                <FieldBox required>
+                  <input type="number" required value={form.maquinaId || ""} onChange={e => setForm(f => ({...f, maquinaId: Number(e.target.value)}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
+              <div>
+                <FormLabel required>Data</FormLabel>
+                <FieldBox required>
+                  <input type="date" required value={form.data} onChange={e => setForm(f => ({...f, data: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Combustível</label>
                   <select value={form.combustivel} onChange={e => setForm(f => ({...f, combustivel: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">

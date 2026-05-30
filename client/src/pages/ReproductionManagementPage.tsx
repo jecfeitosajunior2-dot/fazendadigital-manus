@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 
 // Saúde Page
 export function SaudePage() {
@@ -31,7 +32,12 @@ export function SaudePage() {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Novo Registro de Saúde</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">ID do Animal *</label><input required type="number" value={form.animalId || ""} onChange={e => setForm(f => ({...f, animalId: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>ID do Animal</FormLabel>
+                <FieldBox required>
+                  <input required type="number" value={form.animalId || ""} onChange={e => setForm(f => ({...f, animalId: Number(e.target.value)}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
                 <select value={form.tipo} onChange={e => setForm(f => ({...f, tipo: e.target.value as any}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
                   <option value="vacinacao">Vacinação</option>
@@ -41,8 +47,18 @@ export function SaudePage() {
                   <option value="outro">Outro</option>
                 </select>
               </div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Data *</label><input required type="date" value={form.dataRegistro} onChange={e => setForm(f => ({...f, dataRegistro: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Descrição *</label><input required value={form.descricao} onChange={e => setForm(f => ({...f, descricao: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>Data</FormLabel>
+                <FieldBox required>
+                  <input required type="date" value={form.dataRegistro} onChange={e => setForm(f => ({...f, dataRegistro: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
+              <div>
+                <FormLabel required>Descrição</FormLabel>
+                <FieldBox required>
+                  <input required value={form.descricao} onChange={e => setForm(f => ({...f, descricao: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Medicamento</label><input value={form.medicamento} onChange={e => setForm(f => ({...f, medicamento: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Veterinário</label><input value={form.veterinario} onChange={e => setForm(f => ({...f, veterinario: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Custo (R$)</label><input type="number" step="0.01" value={form.custo || ""} onChange={e => setForm(f => ({...f, custo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
@@ -124,7 +140,12 @@ export function ReproductionManagementPage() {
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
             <h2 className="text-[14px] font-semibold text-gray-800 mb-4">Novo Registro Reprodutivo</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">ID da Fêmea *</label><input required type="number" value={form.femeaId || ""} onChange={e => setForm(f => ({...f, femeaId: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>ID da Fêmea</FormLabel>
+                <FieldBox required>
+                  <input required type="number" value={form.femeaId || ""} onChange={e => setForm(f => ({...f, femeaId: Number(e.target.value)}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
                 <select value={form.tipo} onChange={e => setForm(f => ({...f, tipo: e.target.value as any}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
                   <option value="inseminacao">Inseminação</option>
@@ -132,7 +153,12 @@ export function ReproductionManagementPage() {
                   <option value="transferencia_embriao">Transferência de Embrião</option>
                 </select>
               </div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Cobertura *</label><input required type="date" value={form.dataCobertura} onChange={e => setForm(f => ({...f, dataCobertura: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
+              <div>
+                <FormLabel required>Data da Cobertura</FormLabel>
+                <FieldBox required>
+                  <input required type="date" value={form.dataCobertura} onChange={e => setForm(f => ({...f, dataCobertura: e.target.value}))} className={inputClassCompact} />
+                </FieldBox>
+              </div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">ID do Macho</label><input type="number" value={form.machoId || ""} onChange={e => setForm(f => ({...f, machoId: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
               <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Observações</label><textarea value={form.observacoes} onChange={e => setForm(f => ({...f, observacoes: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" rows={2} /></div>
               <div className="flex gap-2 pt-2">

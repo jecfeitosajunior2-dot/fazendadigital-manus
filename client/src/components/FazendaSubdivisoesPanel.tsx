@@ -2,14 +2,9 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { TIPOS_DIVISAO, TIPOS_PASTAGEM } from "@/lib/subdivisao-types";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SelectItem } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FormLabel, FormInput, FormSelect } from "@/components/FormFields";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -150,66 +145,56 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
         <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/50">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-1">
-                Tipo de Divisão <span className="text-red-500">*</span>
-              </label>
-              <Select value={form.tipo} onValueChange={v => setForm(f => ({ ...f, tipo: v }))}>
-                <SelectTrigger className="h-9 text-[11px] bg-white"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {TIPOS_DIVISAO.map(t => (
-                    <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Divisão</FormLabel>
+              <FormSelect compact value={form.tipo} onChange={v => setForm(f => ({ ...f, tipo: v }))} placeholder="Tipo" required>
+                {TIPOS_DIVISAO.map(t => (
+                  <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
+                ))}
+              </FormSelect>
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-1">
-                Nome da Subdivisão <span className="text-red-500">*</span>
-              </label>
-              <input
+              <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Nome da Subdivisão</FormLabel>
+              <FormInput
+                compact
+                required
                 value={form.nome}
-                onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
+                onChange={v => setForm(f => ({ ...f, nome: v }))}
                 placeholder="Ex. Pasto A"
-                className="w-full h-9 px-2 text-[11px] border border-gray-200 rounded bg-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-1">Sigla da Subdivisão</label>
-              <input
+              <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Sigla da Subdivisão</FormLabel>
+              <FormInput
+                compact
                 value={form.sigla}
-                onChange={e => setForm(f => ({ ...f, sigla: e.target.value }))}
+                onChange={v => setForm(f => ({ ...f, sigla: v }))}
                 placeholder="Ex. SSB"
-                className="w-full h-9 px-2 text-[11px] border border-gray-200 rounded bg-white"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-1">
-                Área em Hectare <span className="text-red-500">*</span>
-              </label>
-              <input
-                value={form.area}
-                onChange={e => setForm(f => ({ ...f, area: e.target.value }))}
-                placeholder="Ex. 65487"
+              <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Área em Hectare</FormLabel>
+              <FormInput
+                compact
+                required
                 type="number"
-                className="w-full h-9 px-2 text-[11px] border border-gray-200 rounded bg-white"
+                value={form.area}
+                onChange={v => setForm(f => ({ ...f, area: v }))}
+                placeholder="Ex. 65487"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-1">Tipo de Pastagem</label>
-              <Select
+              <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Pastagem</FormLabel>
+              <FormSelect
+                compact
                 value={form.tipoPastagem || "__none__"}
-                onValueChange={v => setForm(f => ({ ...f, tipoPastagem: v === "__none__" ? "" : v }))}
+                onChange={v => setForm(f => ({ ...f, tipoPastagem: v === "__none__" ? "" : v }))}
+                placeholder="Selecione o tipo de Pastagem"
               >
-                <SelectTrigger className="h-9 text-[11px] bg-white">
-                  <SelectValue placeholder="Selecione o tipo de Pastagem" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__" className="text-[11px] text-gray-400">Selecione o tipo de Pastagem</SelectItem>
-                  {TIPOS_PASTAGEM.map(t => (
-                    <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <SelectItem value="__none__" className="text-[11px] text-gray-400">Selecione o tipo de Pastagem</SelectItem>
+                {TIPOS_PASTAGEM.map(t => (
+                  <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
+                ))}
+              </FormSelect>
             </div>
             <div className="flex items-center gap-3 pb-1">
               <label className="flex items-center gap-2 cursor-pointer">

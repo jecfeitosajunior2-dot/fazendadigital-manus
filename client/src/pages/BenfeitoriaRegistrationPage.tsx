@@ -3,16 +3,17 @@ import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { SelectItem } from "@/components/ui/select";
+import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn, formatCurrencyBrl, formatPercent, parseCurrencyBrl, parsePercent } from "@/lib/utils";
-
-const FD_PRIMARY = "#4ECDC4";
+  FD_PRIMARY,
+  FormLabel,
+  FormInput,
+  FormSelect,
+  FormTextarea,
+  FieldBox,
+  inputClass,
+} from "@/components/FormFields";
 
 type ImageSlot =
   | { kind: "empty" }
@@ -25,7 +26,6 @@ type FormState = {
   anoConstrucao: string;
   valor: string;
   vidaUtil: string;
-  percentual: string;
   observacoes: string;
 };
 
@@ -35,18 +35,8 @@ const emptyForm = (): FormState => ({
   anoConstrucao: "",
   valor: "",
   vidaUtil: "",
-  percentual: "",
   observacoes: "",
 });
-
-function FormLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">
-      {children}
-      {required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-  );
-}
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -157,9 +147,6 @@ export default function BenfeitoriaRegistrationPage() {
           ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
           : "",
         vidaUtil: benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : "",
-        percentual: benfeitoria.percentualAtividade
-          ? formatPercent(String(Math.round(parseFloat(String(benfeitoria.percentualAtividade)))))
-          : "",
         observacoes: benfeitoria.observacoes || "",
       });
       setImageSlots(
@@ -248,14 +235,11 @@ export default function BenfeitoriaRegistrationPage() {
     if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
     if (!form.nome.trim()) { toast.error("Nome da benfeitoria é obrigatório"); return; }
     if (!form.anoConstrucao.trim()) { toast.error("Ano de construção é obrigatório"); return; }
-    const percentual = parsePercent(form.percentual);
-    if (percentual == null) { toast.error("Porcentagem utilizada na atividade é obrigatória"); return; }
 
     const payload = {
       fazendaId: parseInt(form.fazendaId),
       nome: form.nome.trim(),
       anoConstrucao: parseInt(form.anoConstrucao),
-      percentualAtividade: percentual,
       vidaUtil: form.vidaUtil.trim() || undefined,
       valorEstimado: parseCurrencyBrl(form.valor) || undefined,
       observacoes: form.observacoes.trim() || undefined,
@@ -285,7 +269,6 @@ export default function BenfeitoriaRegistrationPage() {
             {isEdit ? "Editar benfeitoria" : "Cadastro de benfeitoria"}
           </h1>
 
-          {/* Fotos */}
           <div className="mb-6">
             <p className="text-[11px] text-gray-600 mb-3">
               Selecione até três fotos para sua Benfeitoria
@@ -302,97 +285,81 @@ export default function BenfeitoriaRegistrationPage() {
             </div>
           </div>
 
-          {/* Linha 1 — Fazenda + Nome */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <FormLabel required>Fazenda</FormLabel>
-              <Select value={form.fazendaId || undefined} onValueChange={v => set("fazendaId", v)}>
-                <SelectTrigger className="h-10 text-[12px] border-gray-200 bg-white">
-                  <SelectValue placeholder="Selecione uma fazenda" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {fazendas.map(f => (
-                    <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                      {f.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FormSelect
+                value={form.fazendaId}
+                onChange={v => set("fazendaId", v)}
+                placeholder="Selecione uma fazenda"
+                required
+              >
+                {fazendas.map(f => (
+                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
+                    {f.nome}
+                  </SelectItem>
+                ))}
+              </FormSelect>
             </div>
             <div>
               <FormLabel required>Nome</FormLabel>
-              <input
+              <FormInput
                 value={form.nome}
-                onChange={e => set("nome", e.target.value)}
+                onChange={v => set("nome", v)}
                 placeholder="Digite um nome para a benfeitoria"
-                className="w-full h-10 px-3 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
+                required
               />
             </div>
           </div>
 
-          {/* Linha 2 — Ano + Valor + Vida útil */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Ano</FormLabel>
-              <div className="relative">
-                <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">
-                  calendar_today
-                </span>
-                <input
-                  type="number"
-                  min={1900}
-                  max={2100}
-                  value={form.anoConstrucao}
-                  onChange={e => set("anoConstrucao", e.target.value)}
-                  placeholder="Selecione o ano de construção"
-                  className="w-full h-10 pl-9 pr-3 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
-                />
-              </div>
+              <FieldBox required>
+                <div className="relative">
+                  <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">
+                    calendar_today
+                  </span>
+                  <input
+                    type="number"
+                    min={1900}
+                    max={2100}
+                    value={form.anoConstrucao}
+                    onChange={e => set("anoConstrucao", e.target.value)}
+                    placeholder="Selecione o ano de construção"
+                    className={cn(inputClass, "pl-9")}
+                  />
+                </div>
+              </FieldBox>
             </div>
             <div>
               <FormLabel>Valor</FormLabel>
-              <input
+              <FormInput
                 value={form.valor}
-                onChange={e => set("valor", formatCurrencyBrl(e.target.value))}
+                onChange={v => set("valor", formatCurrencyBrl(v))}
                 placeholder="R$ 0,00"
-                className="w-full h-10 px-3 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
               />
             </div>
             <div>
               <FormLabel>Vida útil</FormLabel>
-              <input
+              <FormInput
                 value={form.vidaUtil}
-                onChange={e => set("vidaUtil", e.target.value)}
+                onChange={v => set("vidaUtil", v)}
                 placeholder="Ex: 10 anos"
-                className="w-full h-10 px-3 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
               />
             </div>
           </div>
 
-          {/* Linha 3 — Porcentagem + Observações */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div>
-              <FormLabel required>Porcentagem utilizada na atividade</FormLabel>
-              <input
-                value={form.percentual}
-                onChange={e => set("percentual", formatPercent(e.target.value))}
-                placeholder="Ex: 90%"
-                className="w-full h-10 px-3 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <FormLabel>Observações</FormLabel>
-              <textarea
-                value={form.observacoes}
-                onChange={e => set("observacoes", e.target.value)}
-                placeholder="Descreva sua benfeitoria"
-                rows={3}
-                className="w-full px-3 py-2.5 text-[12px] border border-gray-200 rounded bg-white text-gray-800 placeholder:text-gray-400 outline-none resize-y min-h-[80px] focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]/30"
-              />
-            </div>
+          <div className="mb-6">
+            <FormLabel>Observações</FormLabel>
+            <FormTextarea
+              value={form.observacoes}
+              onChange={v => set("observacoes", v)}
+              placeholder="Descreva sua benfeitoria"
+              rows={3}
+            />
           </div>
 
-          {/* Botões */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
