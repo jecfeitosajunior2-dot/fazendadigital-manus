@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn } from "@/lib/utils";
+import { cn, formatCpfCnpj } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -195,7 +195,7 @@ export function FarmRegistrationPage() {
         atividadeRecria: bool(fazenda.atividadeRecria),
         atividadeEngorda: bool(fazenda.atividadeEngorda),
         atividadeConfinamento: bool(fazenda.atividadeConfinamento),
-        cpfCnpj: fazenda.cpfCnpj || "",
+        cpfCnpj: formatCpfCnpj(fazenda.cpfCnpj || ""),
         inscricaoEstadual: fazenda.inscricaoEstadual || "",
         registroIncra: fazenda.registroIncra || "",
         nirf: fazenda.nirf || "",
@@ -432,7 +432,11 @@ export function FarmRegistrationPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
                   <FormLabel>CPF/CNPJ</FormLabel>
-                  <FormInput value={form.cpfCnpj} onChange={v => set("cpfCnpj", v)} placeholder="000.000.000-00" />
+                  <FormInput
+                    value={form.cpfCnpj}
+                    onChange={v => set("cpfCnpj", formatCpfCnpj(v))}
+                    placeholder={form.cpfCnpj.replace(/\D/g, "").length > 11 ? "00.000.000/0000-00" : "000.000.000-00"}
+                  />
                 </div>
                 <div>
                   <FormLabel>Inscrição Estadual</FormLabel>
