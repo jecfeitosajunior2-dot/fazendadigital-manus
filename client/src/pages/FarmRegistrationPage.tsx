@@ -38,7 +38,7 @@ type FormState = {
   longitude: string;
   distanciaMunicipio: string;
   valorHectare: string;
-  melhoramentoGenetico: string;
+  observacoes: string;
 };
 
 const emptyForm = (responsavel = ""): FormState => ({
@@ -67,7 +67,7 @@ const emptyForm = (responsavel = ""): FormState => ({
   longitude: "",
   distanciaMunicipio: "",
   valorHectare: "",
-  melhoramentoGenetico: "",
+  observacoes: "",
 });
 
 function str(v: unknown) {
@@ -86,9 +86,9 @@ function FormLabel({ children, required }: { children: React.ReactNode; required
   );
 }
 
-function FieldBox({ children, accent }: { children: React.ReactNode; accent?: boolean }) {
+function FieldBox({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <div className={cn("bg-[#EEEEEE] border-b border-gray-300", accent && "border-l-[3px] border-l-[#4ECDC4]")}>
+    <div className={cn("bg-[#EEEEEE] border-b border-gray-300", required && "border-l-[3px] border-l-[#2563EB]")}>
       {children}
     </div>
   );
@@ -101,16 +101,16 @@ function FormInput({
   onChange,
   placeholder,
   type = "text",
-  accent,
+  required,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
-  accent?: boolean;
+  required?: boolean;
 }) {
   return (
-    <FieldBox accent={accent}>
+    <FieldBox required={required}>
       <input
         type={type}
         value={value}
@@ -127,18 +127,18 @@ function FormSelect({
   onChange,
   placeholder,
   disabled,
-  accent,
+  required,
   children,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   disabled?: boolean;
-  accent?: boolean;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <FieldBox accent={accent}>
+    <FieldBox required={required}>
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger className={cn(inputClass, "shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60")}>
           <SelectValue placeholder={placeholder} />
@@ -205,7 +205,7 @@ export function FarmRegistrationPage() {
         longitude: fazenda.longitude || "",
         distanciaMunicipio: str(fazenda.distanciaMunicipio),
         valorHectare: str(fazenda.valorHectare),
-        melhoramentoGenetico: fazenda.melhoramentoGenetico || "",
+        observacoes: fazenda.observacoes || "",
       });
       setInitialized(true);
     }
@@ -255,7 +255,7 @@ export function FarmRegistrationPage() {
     longitude: form.longitude || undefined,
     distanciaMunicipio: form.distanciaMunicipio || undefined,
     valorHectare: form.valorHectare || undefined,
-    melhoramentoGenetico: form.melhoramentoGenetico || undefined,
+    observacoes: form.observacoes || undefined,
   });
 
   const createMutation = trpc.fazendas.create.useMutation({
@@ -322,7 +322,7 @@ export function FarmRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Nome da Fazenda</FormLabel>
-              <FormInput value={form.nome} onChange={v => set("nome", v)} placeholder="Ex. Fazenda Santa Maria" />
+              <FormInput value={form.nome} onChange={v => set("nome", v)} placeholder="Ex. Fazenda Santa Maria" required />
             </div>
             <div>
               <FormLabel>Sigla da Fazenda</FormLabel>
@@ -330,7 +330,7 @@ export function FarmRegistrationPage() {
             </div>
             <div>
               <FormLabel>Nome do Proprietário</FormLabel>
-              <FormInput value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Nome completo" accent />
+              <FormInput value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Nome completo" />
             </div>
           </div>
 
@@ -338,7 +338,7 @@ export function FarmRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>País</FormLabel>
-              <FormSelect value={form.pais} onChange={v => set("pais", v)} placeholder="Selecione">
+              <FormSelect value={form.pais} onChange={v => set("pais", v)} placeholder="Selecione" required>
                 <SelectItem value="Brasil" className="text-[13px]">Brasil</SelectItem>
                 <SelectItem value="Argentina" className="text-[13px]">Argentina</SelectItem>
                 <SelectItem value="Paraguai" className="text-[13px]">Paraguai</SelectItem>
@@ -351,6 +351,7 @@ export function FarmRegistrationPage() {
                 value={form.estado}
                 onChange={v => setForm(f => ({ ...f, estado: v, cidade: "" }))}
                 placeholder="Selecione"
+                required
               >
                 {ESTADOS_BR.map(e => (
                   <SelectItem key={e.uf} value={e.uf} className="text-[13px]">{e.nome}</SelectItem>
@@ -364,6 +365,7 @@ export function FarmRegistrationPage() {
                 onChange={v => set("cidade", v)}
                 placeholder={loadingCidades ? "Carregando..." : form.estado ? "Selecione um município" : "Selecione o estado"}
                 disabled={!form.estado || loadingCidades}
+                required
               >
                 {cidades.map(c => (
                   <SelectItem key={c} value={c} className="text-[13px]">{c}</SelectItem>
@@ -376,7 +378,7 @@ export function FarmRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <FormLabel required>Unidade de Medida da Área</FormLabel>
-              <FormSelect value={form.unidadeArea} onChange={v => set("unidadeArea", v)} placeholder="Selecione">
+              <FormSelect value={form.unidadeArea} onChange={v => set("unidadeArea", v)} placeholder="Selecione" required>
                 <SelectItem value="Hectare" className="text-[13px]">Hectare</SelectItem>
                 <SelectItem value="Alqueire" className="text-[13px]">Alqueire</SelectItem>
                 <SelectItem value="Metro²" className="text-[13px]">Metro²</SelectItem>
@@ -384,15 +386,15 @@ export function FarmRegistrationPage() {
             </div>
             <div>
               <FormLabel required>Área Total da Fazenda</FormLabel>
-              <FormInput value={form.area} onChange={v => set("area", v)} placeholder="0" type="number" />
+              <FormInput value={form.area} onChange={v => set("area", v)} placeholder="0" type="number" required />
             </div>
             <div>
-              <FormLabel required>Área de Reserva</FormLabel>
+              <FormLabel>Área de Reserva</FormLabel>
               <FormInput value={form.areaReserva} onChange={v => set("areaReserva", v)} placeholder="0" type="number" />
             </div>
             <div>
               <FormLabel>Área Líquida da Fazenda</FormLabel>
-              <FormInput value={form.areaLiquida} onChange={v => set("areaLiquida", v)} placeholder="0" type="number" accent />
+              <FormInput value={form.areaLiquida} onChange={v => set("areaLiquida", v)} placeholder="0" type="number" />
             </div>
           </div>
 
@@ -492,20 +494,22 @@ export function FarmRegistrationPage() {
                 </div>
               </div>
 
-              <div className="mb-4">
-                <FormLabel>Melhoramento genético</FormLabel>
-                <div className="border border-gray-200 rounded-sm bg-[#FAFAFA] p-3 min-h-[80px]">
-                  <textarea
-                    value={form.melhoramentoGenetico}
-                    onChange={e => set("melhoramentoGenetico", e.target.value)}
-                    placeholder="Informações sobre programas de melhoramento genético..."
-                    className="w-full bg-transparent text-[13px] text-gray-800 placeholder:text-gray-400 outline-none resize-none min-h-[60px]"
-                    rows={3}
-                  />
-                </div>
-              </div>
             </>
           )}
+
+          {/* Observação */}
+          <div className="mb-4">
+            <FormLabel>Observação</FormLabel>
+            <div className="bg-[#EEEEEE] border border-gray-200 rounded-sm">
+              <textarea
+                value={form.observacoes}
+                onChange={e => set("observacoes", e.target.value)}
+                placeholder="Informações adicionais sobre a fazenda..."
+                className="w-full bg-transparent text-[13px] text-gray-800 placeholder:text-gray-400 outline-none resize-y px-3 py-3 min-h-[140px]"
+                rows={6}
+              />
+            </div>
+          </div>
 
           {/* Footer buttons */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
