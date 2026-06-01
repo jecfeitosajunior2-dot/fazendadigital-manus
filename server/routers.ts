@@ -807,6 +807,16 @@ const estoqueRouter = router({
       return { success: true, count: input.ids.length };
     }),
 
+  ativarProdutos: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ input }) => {
+      await db
+        .update(estoque)
+        .set({ situacao: "ativo" })
+        .where(inArray(estoque.id, input.ids));
+      return { success: true, count: input.ids.length };
+    }),
+
   resumo: protectedProcedure.query(async () => {
     const itens = await db.select().from(estoque);
     const monitorados = itens.filter(i => i.monitorarEstoque);

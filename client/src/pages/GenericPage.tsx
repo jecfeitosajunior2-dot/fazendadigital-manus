@@ -181,6 +181,24 @@ export function EstoquePage() {
     },
     onError: () => toast.error("Não foi possível inativar os produtos."),
   });
+  const ativarMutation = trpc.estoque.ativarProdutos.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.count} produto(s) ativado(s)!`);
+      setSelectedIds(new Set());
+      refetch();
+    },
+    onError: () => toast.error("Não foi possível ativar os produtos."),
+  });
+
+  const acaoEmLote = useMemo((): "ativar" | "inativar" | null => {
+    if (selectedIds.size === 0) return null;
+    if (statusFiltro === "inativo") return "ativar";
+    if (statusFiltro === "ativo") return "inativar";
+    const selecionados = items.filter(i => selectedIds.has(i.id));
+    if (selecionados.every(i => i.situacao === "inativo")) return "ativar";
+    if (selecionados.every(i => (i.situacao ?? "ativo") === "ativo")) return "inativar";
+    return null;
+  }, [selectedIds, statusFiltro, items]);
 
   const filtered = useMemo(() => {
     let list = [...items];
@@ -286,19 +304,24 @@ export function EstoquePage() {
           >
             Novo Produto
           </button>
-          {selectedIds.size > 0 && (
+          {acaoEmLote && (
             <button
               type="button"
               onClick={() => {
                 const qtd = selectedIds.size;
-                if (confirm(`Inativar ${qtd} produto(s) selecionado(s)?`)) {
-                  inativarMutation.mutate({ ids: Array.from(selectedIds) });
+                const ids = Array.from(selectedIds);
+                if (acaoEmLote === "ativar") {
+                  if (confirm(`Ativar ${qtd} produto(s) selecionado(s)?`)) {
+                    ativarMutation.mutate({ ids });
+                  }
+                } else if (confirm(`Inativar ${qtd} produto(s) selecionado(s)?`)) {
+                  inativarMutation.mutate({ ids });
                 }
               }}
-              disabled={inativarMutation.isPending}
+              disabled={inativarMutation.isPending || ativarMutation.isPending}
               className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white bg-[#E85D5D] hover:bg-[#d44f4f] disabled:opacity-60 transition-colors"
             >
-              Inativar Produtos
+              {acaoEmLote === "ativar" ? "Ativar Produtos" : "Inativar Produtos"}
             </button>
           )}
         </div>
@@ -314,7 +337,7 @@ export function EstoquePage() {
           </select>
           <select
             value={statusFiltro}
-            onChange={e => { setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos"); setPage(1); }}
+            onChange={e => { setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos"); setPage(1); setSelectedIds(new Set()); }}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px]"
           >
             <option value="ativo">Ativas</option>
