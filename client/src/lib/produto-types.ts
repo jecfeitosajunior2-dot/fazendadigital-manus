@@ -20,19 +20,21 @@ export const SUBCATEGORIAS: Record<string, string[]> = {
   Outros: ["Geral"],
 };
 
-/** Unidades base — abreviações para reconhecimento rápido. */
-export const UNIDADES_BASE = [
-  "un",
-  "L",
-  "ml",
-  "kg",
-  "g",
-  "sc",
-  "fr",
-  "dose",
+/** Unidades base — siglas exibidas no cadastro (reconhecimento rápido). */
+export const UNIDADES_OPCOES = [
+  { sigla: "un", legenda: "unidade" },
+  { sigla: "L", legenda: "litro" },
+  { sigla: "ml", legenda: "mililitro" },
+  { sigla: "kg", legenda: "quilograma" },
+  { sigla: "g", legenda: "grama" },
+  { sigla: "sc", legenda: "saco" },
+  { sigla: "fr", legenda: "frasco" },
+  { sigla: "dose", legenda: "dose" },
 ] as const;
 
-/** Converte nomes antigos (cadastros legados) para abreviação. */
+export const UNIDADES_BASE = UNIDADES_OPCOES.map(u => u.sigla);
+
+/** Converte nomes antigos (cadastros legados) para sigla. */
 export const normalizarUnidade = (unidade: string | null | undefined): string => {
   if (!unidade) return "";
   const map: Record<string, string> = {
@@ -44,9 +46,27 @@ export const normalizarUnidade = (unidade: string | null | undefined): string =>
     Saco: "sc",
     Frasco: "fr",
     Dose: "dose",
+    unidade: "un",
+    litro: "L",
+    mililitro: "ml",
+    quilograma: "kg",
+    grama: "g",
+    saco: "sc",
+    frasco: "fr",
   };
-  return map[unidade] ?? unidade;
+  const trimmed = unidade.trim();
+  if (UNIDADES_BASE.includes(trimmed as typeof UNIDADES_BASE[number])) return trimmed;
+  return map[trimmed] ?? map[trimmed.toLowerCase()] ?? trimmed;
 };
+
+export const siglaUnidade = (unidade: string | null | undefined): string =>
+  normalizarUnidade(unidade);
+
+/** Unidades de tempo para carência de abate. */
+export const UNIDADES_CARENCIA = [
+  { sigla: "d", legenda: "dias" },
+  { sigla: "h", legenda: "horas" },
+] as const;
 
 export const FABRICANTES = [
   "Ourofino",

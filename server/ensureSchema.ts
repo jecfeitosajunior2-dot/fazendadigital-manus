@@ -90,6 +90,11 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "monitorar_estoque", "boolean DEFAULT false");
       await ensureColumn(pool, "estoque", "situacao", "varchar(20) DEFAULT 'ativo'");
       await ensureColumn(pool, "estoque", "embalagens", "text");
+      await ensureColumn(pool, "estoque", "possui_carencia", "boolean DEFAULT false");
+      await ensureColumn(pool, "estoque", "carencia_abate_dias", "int");
+      await ensureColumn(pool, "estoque", "carencia_abate_unidade", "varchar(8) DEFAULT 'd'");
+      await ensureColumn(pool, "estoque", "carencia_leite_dias", "int");
+      await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
     }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);

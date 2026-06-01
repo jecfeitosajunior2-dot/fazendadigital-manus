@@ -15,11 +15,13 @@ import {
 import {
   CATEGORIAS_PRODUTO,
   SUBCATEGORIAS,
-  UNIDADES_BASE,
+  UNIDADES_OPCOES,
   FABRICANTES,
   EMBALAGENS_PADRAO,
   normalizarUnidade,
+  siglaUnidade,
 } from "@/lib/produto-types";
+import CarenciaAbateCard, { type CarenciaFormState } from "@/components/CarenciaAbateCard";
 
 type FormState = {
   nome: string;
@@ -34,6 +36,11 @@ type FormState = {
   monitorarEstoque: "sim" | "nao";
   situacao: "ativo" | "inativo";
   embalagemSelecionada: string;
+  possuiCarencia: "sim" | "nao";
+  carenciaAbate: string;
+  carenciaAbateUnidade: "d" | "h";
+  carenciaLeite: string;
+  observacoesCarencia: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -49,6 +56,11 @@ const emptyForm = (): FormState => ({
   monitorarEstoque: "nao",
   situacao: "ativo",
   embalagemSelecionada: "",
+  possuiCarencia: "nao",
+  carenciaAbate: "",
+  carenciaAbateUnidade: "d",
+  carenciaLeite: "",
+  observacoesCarencia: "",
 });
 
 function FormRadioGroup({
@@ -119,6 +131,12 @@ export default function ProductRegistrationPage() {
         monitorarEstoque: produto.monitorarEstoque ? "sim" : "nao",
         situacao: produto.situacao === "inativo" ? "inativo" : "ativo",
         embalagemSelecionada: embalagensSalvas[0] || "",
+        possuiCarencia: produto.possuiCarencia ? "sim" : "nao",
+        carenciaAbate: produto.carenciaAbateDias != null ? String(produto.carenciaAbateDias) : "",
+        carenciaAbateUnidade:
+          produto.carenciaAbateUnidade === "h" ? "h" : "d",
+        carenciaLeite: produto.carenciaLeiteDias != null ? String(produto.carenciaLeiteDias) : "",
+        observacoesCarencia: produto.observacoesCarencia || "",
       });
 
       if (embalagensSalvas.length) {
@@ -151,6 +169,9 @@ export default function ProductRegistrationPage() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
 
+  const setCarencia = <K extends keyof CarenciaFormState>(key: K, val: CarenciaFormState[K]) =>
+    setForm(f => ({ ...f, [key]: val }));
+
   const handleAddEmbalagem = () => {
     const nome = novaEmbalagem.trim();
     if (!nome) { toast.error("Informe o nome da embalagem"); return; }
@@ -167,7 +188,7 @@ export default function ProductRegistrationPage() {
     nome: form.nome.trim(),
     categoria: form.categoria,
     subcategoria: form.subcategoria,
-    unidade: form.unidade,
+    unidade: siglaUnidade(form.unidade),
     quantidadeMinima: form.quantidadeMinima || undefined,
     quantidadeMaxima: form.quantidadeMaxima || undefined,
     fabricante: form.fabricante || undefined,
@@ -176,6 +197,21 @@ export default function ProductRegistrationPage() {
     monitorarEstoque: form.monitorarEstoque === "sim",
     situacao: form.situacao,
     embalagens: form.embalagemSelecionada ? [form.embalagemSelecionada] : undefined,
+    possuiCarencia: form.possuiCarencia === "sim",
+    carenciaAbateDias:
+      form.possuiCarencia === "sim" && form.carenciaAbate
+        ? parseInt(form.carenciaAbate, 10)
+        : null,
+    carenciaAbateUnidade:
+      form.possuiCarencia === "sim" ? form.carenciaAbateUnidade : null,
+    carenciaLeiteDias:
+      form.possuiCarencia === "sim" && form.carenciaLeite
+        ? parseInt(form.carenciaLeite, 10)
+        : null,
+    observacoesCarencia:
+      form.possuiCarencia === "sim" && form.observacoesCarencia.trim()
+        ? form.observacoesCarencia.trim()
+        : null,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -184,6 +220,10 @@ export default function ProductRegistrationPage() {
     if (!form.categoria) { toast.error("Categoria é obrigatória"); return; }
     if (!form.subcategoria) { toast.error("Subcategoria é obrigatória"); return; }
     if (!form.unidade) { toast.error("Unidade base é obrigatória"); return; }
+    if (form.possuiCarencia === "sim" && !form.carenciaAbate.trim()) {
+      toast.error("Informe o período de carência para abate");
+      return;
+    }
 
     const payload = buildPayload();
     if (isEdit && produtoId) updateMutation.mutate({ id: produtoId, ...payload });
@@ -275,10 +315,13 @@ export default function ProductRegistrationPage() {
                 value={form.unidade}
                 onChange={v => set("unidade", v)}
                 placeholder="Selecione"
+                displayValue={form.unidade ? siglaUnidade(form.unidade) : undefined}
                 required
               >
-                {UNIDADES_BASE.map(u => (
-                  <SelectItem key={u} value={u} className="text-[12px]">{u}</SelectItem>
+                {UNIDADES_OPCOES.map(u => (
+                  <SelectItem key={u.sigla} value={u.sigla} className="text-[12px] font-medium">
+                    {u.sigla}
+                  </SelectItem>
                 ))}
               </FormSelect>
             </div>
@@ -341,6 +384,18 @@ export default function ProductRegistrationPage() {
               />
             </div>
           </div>
+
+          <CarenciaAbateCard
+            nomeProduto={form.nome.trim() || undefined}
+            value={{
+              possuiCarencia: form.possuiCarencia,
+              carenciaAbate: form.carenciaAbate,
+              carenciaAbateUnidade: form.carenciaAbateUnidade,
+              carenciaLeite: form.carenciaLeite,
+              observacoesCarencia: form.observacoesCarencia,
+            }}
+            onChange={setCarencia}
+          />
 
           {/* Tipos de embalagem — estilo iRancho */}
           <div className="border border-gray-200 rounded-md mb-6">

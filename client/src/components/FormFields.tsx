@@ -90,6 +90,7 @@ export function FormSelect({
   disabled,
   required,
   compact,
+  displayValue,
   children,
 }: {
   value: string;
@@ -98,6 +99,8 @@ export function FormSelect({
   disabled?: boolean;
   required?: boolean;
   compact?: boolean;
+  /** Texto exibido no trigger (útil quando o value é sigla/código). */
+  displayValue?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -109,7 +112,9 @@ export function FormSelect({
             "shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
           )}
         >
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={placeholder}>
+            {displayValue || undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent className="max-h-60">{children}</SelectContent>
       </Select>
