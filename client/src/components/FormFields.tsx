@@ -83,6 +83,48 @@ export function FormInput({
   );
 }
 
+export function FormNativeSelect({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  required,
+  compact,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  required?: boolean;
+  compact?: boolean;
+  options: readonly { value: string; label: string }[];
+}) {
+  return (
+    <FieldBox required={required}>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        className={cn(
+          compact ? inputClassCompact : inputClass,
+          "appearance-none cursor-pointer w-full min-h-[42px]"
+        )}
+        required={required}
+      >
+        <option value="" disabled={!!value}>
+          {placeholder}
+        </option>
+        {options.map(o => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </FieldBox>
+  );
+}
+
 export function FormSelect({
   value,
   onChange,

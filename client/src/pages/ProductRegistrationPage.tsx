@@ -3,13 +3,12 @@ import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { SelectItem } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   FD_PRIMARY,
   FormLabel,
   FormInput,
-  FormSelect,
+  FormNativeSelect,
   FieldBox,
 } from "@/components/FormFields";
 import {
@@ -25,6 +24,13 @@ import {
   extrairVolumeEmbalagem,
   type EmbalagemProduto,
 } from "@/lib/produto-types";
+
+const fmtDecimalInput = (v: string | number | null | undefined): string => {
+  if (v == null || v === "") return "";
+  const n = Number(v);
+  if (Number.isNaN(n)) return String(v);
+  return String(n);
+};
 
 type FormState = {
   nome: string;
@@ -124,6 +130,25 @@ export default function ProductRegistrationPage() {
     return [...FABRICANTES];
   }, [form.fabricante]);
 
+  const unidadesOpcoes = useMemo(() => {
+    const opts = UNIDADES_OPCOES.map(u => ({
+      value: u.sigla,
+      label: rotuloUnidade(u.sigla),
+    }));
+    if (form.unidade && !opts.some(o => o.value === form.unidade)) {
+      opts.push({ value: form.unidade, label: rotuloUnidade(form.unidade) });
+    }
+    return opts;
+  }, [form.unidade]);
+
+  const categoriasOpcoes = useMemo(() => {
+    const opts = CATEGORIAS_PRODUTO.map(c => ({ value: c, label: c }));
+    if (form.categoria && !opts.some(o => o.value === form.categoria)) {
+      opts.push({ value: form.categoria, label: form.categoria });
+    }
+    return opts;
+  }, [form.categoria]);
+
   useEffect(() => {
     if (isEdit && produto && !initialized) {
       const embalagensSalvas = parseEmbalagens(produto.embalagens);
@@ -132,8 +157,8 @@ export default function ProductRegistrationPage() {
         nome: produto.nome || "",
         categoria: produto.categoria || "",
         subcategoria: produto.subcategoria || "",
-        quantidadeMinima: produto.quantidadeMinima ? String(produto.quantidadeMinima) : "",
-        quantidadeMaxima: produto.quantidadeMaxima ? String(produto.quantidadeMaxima) : "",
+        quantidadeMinima: fmtDecimalInput(produto.quantidadeMinima),
+        quantidadeMaxima: fmtDecimalInput(produto.quantidadeMaxima),
         unidade: normalizarUnidade(produto.unidade),
         fabricante: produto.fabricante || "",
         identificadorUnico: produto.identificadorUnico || "",
@@ -300,32 +325,24 @@ export default function ProductRegistrationPage() {
             </div>
             <div>
               <FormLabel required>Categoria</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.categoria}
                 onChange={v => setForm(f => ({ ...f, categoria: v, subcategoria: "" }))}
                 placeholder="Selecione"
-                displayValue={form.categoria || undefined}
+                options={categoriasOpcoes}
                 required
-              >
-                {CATEGORIAS_PRODUTO.map(c => (
-                  <SelectItem key={c} value={c} className="text-[12px]">{c}</SelectItem>
-                ))}
-              </FormSelect>
+              />
             </div>
             <div>
               <FormLabel required>Subcategoria</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.subcategoria}
                 onChange={v => set("subcategoria", v)}
                 placeholder="Selecione"
-                displayValue={form.subcategoria || undefined}
+                options={subcategorias.map(s => ({ value: s, label: s }))}
                 required
                 disabled={!form.categoria}
-              >
-                {subcategorias.map(s => (
-                  <SelectItem key={s} value={s} className="text-[12px]">{s}</SelectItem>
-                ))}
-              </FormSelect>
+              />
             </div>
           </div>
 
@@ -351,19 +368,13 @@ export default function ProductRegistrationPage() {
             </div>
             <div>
               <FormLabel required>Unidade Base</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.unidade}
                 onChange={v => set("unidade", v)}
                 placeholder="Selecione"
-                displayValue={form.unidade ? rotuloUnidade(form.unidade) : undefined}
+                options={unidadesOpcoes}
                 required
-              >
-                {UNIDADES_OPCOES.map(u => (
-                  <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
-                    {rotuloUnidade(u.sigla)}
-                  </SelectItem>
-                ))}
-              </FormSelect>
+              />
               {form.unidade && (
                 <div
                   className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
@@ -376,20 +387,45 @@ export default function ProductRegistrationPage() {
             </div>
             <div>
               <FormLabel>Fabricante</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.fabricante}
                 onChange={v => set("fabricante", v)}
                 placeholder="Selecione"
-                displayValue={form.fabricante || undefined}
-              >
-                {fabricantesOpcoes.map(f => (
-                  <SelectItem key={f} value={f} className="text-[12px]">{f}</SelectItem>
-                ))}
-              </FormSelect>
+                options={fabricantesOpcoes.map(f => ({ value: f, label: f }))}
+              />
+              {form.fabricante && (
+                <div
+                  className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
+                  style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+                >
+                  <span className="font-semibold text-gray-800">Fabricante: </span>
+                  {form.fabricante}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Linha 3 */}
+          {/* Linha 3 — quantidades mín/máx com confirmação */}
+          {(form.quantidadeMinima || form.quantidadeMaxima) && (
+            <div
+              className="mb-4 px-3 py-2 rounded border text-[12px] text-gray-700 flex flex-wrap gap-x-6 gap-y-1"
+              style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+            >
+              {form.quantidadeMinima && (
+                <span>
+                  <span className="font-semibold text-gray-800">Qtd. mínima: </span>
+                  {Number(form.quantidadeMinima).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              )}
+              {form.quantidadeMaxima && (
+                <span>
+                  <span className="font-semibold text-gray-800">Qtd. máxima: </span>
+                  {Number(form.quantidadeMaxima).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div>
               <FormLabel>Identificador único</FormLabel>
@@ -488,22 +524,12 @@ export default function ProductRegistrationPage() {
                   </div>
                   <div className="w-36">
                     <FormLabel>Unidade</FormLabel>
-                    <FormSelect
+                    <FormNativeSelect
                       value={novaEmbalagemUnidade || form.unidade}
                       onChange={v => setNovaEmbalagemUnidade(v)}
                       placeholder="Unidade"
-                      displayValue={
-                        (novaEmbalagemUnidade || form.unidade)
-                          ? rotuloUnidade(novaEmbalagemUnidade || form.unidade)
-                          : undefined
-                      }
-                    >
-                      {UNIDADES_OPCOES.map(u => (
-                        <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
-                          {rotuloUnidade(u.sigla)}
-                        </SelectItem>
-                      ))}
-                    </FormSelect>
+                      options={unidadesOpcoes}
+                    />
                   </div>
                   <button
                     type="button"
@@ -517,16 +543,12 @@ export default function ProductRegistrationPage() {
               )}
               <div>
                 <FormLabel>Embalagens do produto</FormLabel>
-                <FormSelect
+                <FormNativeSelect
                   value={form.embalagemSelecionada}
                   onChange={v => set("embalagemSelecionada", v)}
                   placeholder="Selecione"
-                  displayValue={form.embalagemSelecionada || undefined}
-                >
-                  {embalagensOpcoes.map(e => (
-                    <SelectItem key={e.nome} value={e.nome} className="text-[12px]">{e.nome}</SelectItem>
-                  ))}
-                </FormSelect>
+                  options={embalagensOpcoes.map(e => ({ value: e.nome, label: e.nome }))}
+                />
                 {embalagemAtiva && (embalagemAtiva.volume || embalagemAtiva.unidade) && (
                   <div
                     className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
