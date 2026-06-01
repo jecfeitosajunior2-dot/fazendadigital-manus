@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import InsumosMovimentacoesTable from "@/components/insumos/InsumosMovimentacoesTable";
-import InsumosResumoCards from "@/components/insumos/InsumosResumoCards";
+import InsumosMonitoradoPanels from "@/components/insumos/InsumosMonitoradoPanels";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -51,7 +51,7 @@ export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
         </div>
       )}
 
-      {isOverview && <InsumosResumoCards />}
+      {isOverview && <InsumosMonitoradoPanels />}
 
       <InsumosMovimentacoesTable
         title={isOverview ? "Últimas Movimentações" : "Movimentação"}
