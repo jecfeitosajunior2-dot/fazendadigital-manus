@@ -27,31 +27,43 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
   const displayName = user?.name || "Administrador";
   const displayEmail = user?.email || "admin@fazendadigital.com.br";
+  const initials = displayName.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <header className="h-[48px] flex items-center justify-between px-4" style={{ background: "linear-gradient(135deg, #2D5A5A, #4ECDC4)" }}>
+    <header
+      className="h-[48px] flex items-center justify-between px-4 border-b"
+      style={{
+        background: "linear-gradient(135deg, #0F172A 0%, #164E63 60%, #0891B2 100%)",
+        borderBottomColor: "rgba(27,197,189,0.15)",
+      }}
+    >
       {/* Left: hamburger for mobile */}
       <div className="flex items-center gap-3">
         {onMenuToggle && (
-          <button onClick={onMenuToggle} className="lg:hidden text-white/80 hover:text-white p-1">
+          <button
+            onClick={onMenuToggle}
+            className="lg:hidden text-white/70 hover:text-white p-1 rounded transition-colors"
+          >
             <span className="material-icons text-[22px]">menu</span>
           </button>
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
         <div className="lg:hidden flex items-center gap-2">
-          <img
-            src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
-            alt="Fazenda Digital"
-            className="h-[32px] w-[32px] object-contain"
-          />
-          <span className="text-white text-[13px]" style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, letterSpacing: "-0.01em" }}>
-            Fazenda Digital
-          </span>
+          <div
+            className="h-[30px] w-[30px] rounded-lg flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
+          >
+            <span className="material-icons text-white text-[18px]">agriculture</span>
+          </div>
+          <div className="flex flex-col" style={{ lineHeight: 1 }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "12px", letterSpacing: "0.05em", color: "white" }}>FAZENDA</span>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "8px", letterSpacing: "0.2em", color: "#1BC5BD" }}>DIGITAL</span>
+          </div>
         </div>
       </div>
 
-      {/* Right side: notification bell + user name */}
-      <div className="flex items-center gap-3" ref={userRef}>
+      {/* Right side: notification bell + user */}
+      <div className="flex items-center gap-2" ref={userRef}>
         {/* Notification Center */}
         <div className="text-white/70 hover:text-white">
           <NotificationCenter />
@@ -61,29 +73,64 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         <div className="relative">
           <button
             onClick={() => setShowUser(!showUser)}
-            className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/10"
+            className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/10 transition-all duration-150"
           >
-            <span className="material-icons text-[20px] text-white/80">person</span>
+            {/* Avatar circle */}
+            <div
+              className="h-[28px] w-[28px] rounded-full flex items-center justify-center text-[11px] font-bold text-white"
+              style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
+            >
+              {initials}
+            </div>
             <span className="text-[13px] text-white font-medium hidden sm:inline">{displayName}</span>
-            <span className="material-icons text-[14px] text-white/60">expand_more</span>
+            <span className="material-icons text-[14px] text-white/50">expand_more</span>
           </button>
+
           {showUser && (
-            <div className="absolute right-0 top-11 w-52 bg-white rounded shadow-lg border border-gray-200 py-1 z-50">
-              <div className="px-4 py-2.5 border-b border-gray-100">
-                <p className="text-sm font-medium text-gray-800">{displayName}</p>
-                <p className="text-xs text-gray-500">{displayEmail}</p>
+            <div
+              className="absolute right-0 top-12 w-56 rounded-xl shadow-2xl border py-1 z-50"
+              style={{
+                background: "#0F172A",
+                borderColor: "rgba(27,197,189,0.2)",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(27,197,189,0.1)",
+              }}
+            >
+              <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="h-[32px] w-[32px] rounded-full flex items-center justify-center text-[12px] font-bold text-white shrink-0"
+                    style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
+                  >
+                    {initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+                    <p className="text-xs text-white/40 truncate">{displayEmail}</p>
+                  </div>
+                </div>
                 {user?.role === "admin" && (
-                  <span className="inline-block mt-1 px-1.5 py-0.5 bg-[#2D5A5A]/10 text-[#2D5A5A] text-[10px] rounded font-medium">Admin</span>
+                  <span
+                    className="inline-block mt-2 px-2 py-0.5 text-[10px] rounded-full font-semibold"
+                    style={{ background: "rgba(27,197,189,0.15)", color: "#1BC5BD", border: "1px solid rgba(27,197,189,0.3)" }}
+                  >
+                    Admin
+                  </span>
                 )}
               </div>
-              <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                <span className="material-icons text-[16px] text-gray-400">person</span> Perfil
+              <button className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors">
+                <span className="material-icons text-[16px] text-white/40">person</span> Perfil
               </button>
-              <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                <span className="material-icons text-[16px] text-gray-400">settings</span> Configurações
+              <button className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors">
+                <span className="material-icons text-[16px] text-white/40">settings</span> Configurações
               </button>
-              <hr className="my-1 border-gray-100" />
-              <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+              <hr className="my-1" style={{ borderColor: "rgba(255,255,255,0.07)" }} />
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                style={{ color: "#F87171" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
                 <span className="material-icons text-[16px]">logout</span> Sair
               </button>
             </div>
