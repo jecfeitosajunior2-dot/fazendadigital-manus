@@ -33,6 +33,7 @@ const fmtDecimalInput = (v: string | number | null | undefined): string => {
 };
 
 type FormState = {
+  fazendaId: string;
   nome: string;
   categoria: string;
   subcategoria: string;
@@ -49,6 +50,7 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
+  fazendaId: "",
   nome: "",
   categoria: "",
   subcategoria: "",
@@ -94,8 +96,10 @@ export default function ProductRegistrationPage() {
   const utils = trpc.useUtils();
   const searchParams = new URLSearchParams(window.location.search);
   const produtoId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
+  const fazendaIdParam = searchParams.get("fazendaId") ?? "";
   const isEdit = produtoId != null && !isNaN(produtoId);
 
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: produto, isLoading: loadingProduto } = trpc.estoque.get.useQuery(
     { id: produtoId! },
     { enabled: isEdit }
@@ -113,6 +117,26 @@ export default function ProductRegistrationPage() {
   const [novaEmbalagemUnidade, setNovaEmbalagemUnidade] = useState("");
   const [showNovaEmbalagem, setShowNovaEmbalagem] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!isEdit && fazendaIdParam && !form.fazendaId) {
+      setForm(f => ({ ...f, fazendaId: fazendaIdParam }));
+    }
+  }, [isEdit, fazendaIdParam, form.fazendaId]);
+
+  useEffect(() => {
+    if (!isEdit && !fazendaIdParam && fazendas.length === 1 && !form.fazendaId) {
+      setForm(f => ({ ...f, fazendaId: String(fazendas[0]!.id) }));
+    }
+  }, [isEdit, fazendaIdParam, fazendas, form.fazendaId]);
+
+  const fazendasOpcoes = useMemo(() => {
+    const opts = fazendas.map(f => ({ value: String(f.id), label: f.nome }));
+    if (form.fazendaId && !opts.some(o => o.value === form.fazendaId)) {
+      opts.push({ value: form.fazendaId, label: `Fazenda #${form.fazendaId}` });
+    }
+    return opts;
+  }, [fazendas, form.fazendaId]);
 
   const subcategorias = useMemo(() => {
     if (!form.categoria) return form.subcategoria ? [form.subcategoria] : [];
@@ -154,6 +178,7 @@ export default function ProductRegistrationPage() {
       const embalagensSalvas = parseEmbalagens(produto.embalagens);
 
       setForm({
+        fazendaId: produto.fazendaId ? String(produto.fazendaId) : "",
         nome: produto.nome || "",
         categoria: produto.categoria || "",
         subcategoria: produto.subcategoria || "",
@@ -233,6 +258,7 @@ export default function ProductRegistrationPage() {
   );
 
   const buildPayload = () => ({
+    fazendaId: form.fazendaId ? parseInt(form.fazendaId, 10) : undefined,
     nome: form.nome.trim(),
     categoria: form.categoria,
     subcategoria: form.subcategoria,
@@ -262,6 +288,7 @@ export default function ProductRegistrationPage() {
     if (!form.categoria) { toast.error("Categoria é obrigatória"); return; }
     if (!form.subcategoria) { toast.error("Subcategoria é obrigatória"); return; }
     if (!form.unidade) { toast.error("Unidade base é obrigatória"); return; }
+    if (!form.fazendaId) { toast.error("Fazenda (estoque) é obrigatória"); return; }
 
     const payload = buildPayload();
     if (isEdit && produtoId) updateMutation.mutate({ id: produtoId, ...payload });
@@ -313,7 +340,17 @@ export default function ProductRegistrationPage() {
           </h1>
 
           {/* Linha 1 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <div>
+              <FormLabel required>Estoque (Fazenda)</FormLabel>
+              <FormNativeSelect
+                value={form.fazendaId}
+                onChange={v => set("fazendaId", v)}
+                placeholder="Selecione"
+                options={fazendasOpcoes}
+                required
+              />
+            </div>
             <div>
               <FormLabel required>Nome do Produto</FormLabel>
               <FormInput

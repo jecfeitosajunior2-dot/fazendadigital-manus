@@ -728,6 +728,7 @@ const benfeitoriasRouter = router({
 
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
 const estoqueInputFields = {
+  fazendaId: z.number().optional(),
   nome: z.string(),
   categoria: z.string(),
   subcategoria: z.string(),

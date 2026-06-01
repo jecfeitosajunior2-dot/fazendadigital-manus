@@ -95,6 +95,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "carencia_abate_unidade", "varchar(8) DEFAULT 'd'");
       await ensureColumn(pool, "estoque", "carencia_leite_dias", "int");
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
+      await ensureColumn(pool, "estoque", "fazenda_id", "int");
     }
 
     await pool.query(`

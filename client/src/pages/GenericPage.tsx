@@ -162,6 +162,7 @@ type SortKeyEstoque =
 export function EstoquePage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [estoqueFiltro, setEstoqueFiltro] = useState<string>("todos");
   const [statusFiltro, setStatusFiltro] = useState<"ativo" | "inativo" | "todos">("ativo");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -169,6 +170,7 @@ export function EstoquePage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: items = [], isLoading, refetch } = trpc.estoque.list.useQuery();
   const deleteMutation = trpc.estoque.delete.useMutation({
     onSuccess: () => { toast.success("Produto removido!"); refetch(); },
@@ -202,6 +204,10 @@ export function EstoquePage() {
 
   const filtered = useMemo(() => {
     let list = [...items];
+    if (estoqueFiltro !== "todos") {
+      const fazendaId = parseInt(estoqueFiltro, 10);
+      list = list.filter(i => i.fazendaId === fazendaId);
+    }
     if (statusFiltro !== "todos") {
       list = list.filter(i => (i.situacao ?? "ativo") === statusFiltro);
     }
@@ -233,7 +239,7 @@ export function EstoquePage() {
       return 0;
     });
     return list;
-  }, [items, search, statusFiltro, sortKey, sortAsc]);
+  }, [items, search, estoqueFiltro, statusFiltro, sortKey, sortAsc]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
@@ -298,7 +304,11 @@ export function EstoquePage() {
         <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
           <button
             type="button"
-            onClick={() => setLocation("/insumos/cadastro")}
+            onClick={() => setLocation(
+              estoqueFiltro !== "todos"
+                ? `/insumos/cadastro?fazendaId=${estoqueFiltro}`
+                : "/insumos/cadastro"
+            )}
             className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white"
             style={{ backgroundColor: FD_PRIMARY }}
           >
@@ -329,11 +339,14 @@ export function EstoquePage() {
         {/* Filtros de status + busca */}
         <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
           <select
-            value="todos"
-            disabled
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[140px]"
+            value={estoqueFiltro}
+            onChange={e => { setEstoqueFiltro(e.target.value); setPage(1); setSelectedIds(new Set()); }}
+            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[180px]"
           >
             <option value="todos">Todos Estoques</option>
+            {fazendas.map(f => (
+              <option key={f.id} value={String(f.id)}>{f.nome}</option>
+            ))}
           </select>
           <select
             value={statusFiltro}

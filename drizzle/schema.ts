@@ -260,6 +260,7 @@ export const benfeitorias = mysqlTable("benfeitorias", {
 // Estoque table (uses snake_case)
 export const estoque = mysqlTable("estoque", {
   id: int("id").primaryKey().autoincrement(),
+  fazendaId: int("fazenda_id"),
   nome: varchar("nome", { length: 100 }).notNull(),
   categoria: varchar("categoria", { length: 50 }),
   subcategoria: varchar("subcategoria", { length: 80 }),
