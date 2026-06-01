@@ -819,6 +819,7 @@ const estoqueRouter = router({
         dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
         quantidade: estoqueMovimentacoes.quantidade,
         dataValidade: estoqueMovimentacoes.dataValidade,
+        observacoes: estoqueMovimentacoes.observacoes,
         nome: estoque.nome,
         categoria: estoque.categoria,
         fabricante: estoque.fabricante,
@@ -829,6 +830,26 @@ const estoqueRouter = router({
       .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
     return rows;
   }),
+
+  getMovimentacao: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const [row] = await db
+        .select({
+          id: estoqueMovimentacoes.id,
+          estoqueId: estoqueMovimentacoes.estoqueId,
+          dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
+          quantidade: estoqueMovimentacoes.quantidade,
+          dataValidade: estoqueMovimentacoes.dataValidade,
+          observacoes: estoqueMovimentacoes.observacoes,
+          nome: estoque.nome,
+          unidade: estoque.unidade,
+        })
+        .from(estoqueMovimentacoes)
+        .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+        .where(eq(estoqueMovimentacoes.id, input.id));
+      return row ?? null;
+    }),
 
   createMovimentacao: protectedProcedure
     .input(z.object({
@@ -878,6 +899,76 @@ const estoqueRouter = router({
       await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
 
       return { success: true, id: (result as { insertId?: number }).insertId };
+    }),
+
+  updateMovimentacao: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      estoqueId: z.number(),
+      dataMovimentacao: z.string(),
+      quantidade: z.string(),
+      dataValidade: z.string().optional(),
+      observacoes: z.string().optional(),
+      modo: z.enum(["direto", "unidades"]).optional(),
+      sinal: z.enum(["entrada", "saida"]).optional(),
+      quantidadeUnidades: z.string().optional(),
+      quantidadePorUnidade: z.string().optional(),
+      unidadeLancamento: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const qty = parseFloat(input.quantidade.replace(",", "."));
+      if (Number.isNaN(qty) || qty === 0) {
+        throw new Error("Informe uma quantidade válida.");
+      }
+
+      const [mov] = await db
+        .select()
+        .from(estoqueMovimentacoes)
+        .where(eq(estoqueMovimentacoes.id, input.id));
+      if (!mov) throw new Error("Movimentação não encontrada.");
+
+      const oldQty = Number(mov.quantidade);
+      const oldEstoqueId = mov.estoqueId;
+
+      if (oldEstoqueId === input.estoqueId) {
+        const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+        if (!item) throw new Error("Produto não encontrado.");
+        const base = Number(item.quantidade ?? 0) - oldQty;
+        const novo = base + qty;
+        if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+      } else {
+        const [oldItem] = await db.select().from(estoque).where(eq(estoque.id, oldEstoqueId));
+        const [newItem] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+        if (!oldItem || !newItem) throw new Error("Produto não encontrado.");
+        const oldStock = Number(oldItem.quantidade ?? 0) - oldQty;
+        const newStock = Number(newItem.quantidade ?? 0) + qty;
+        if (newStock < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        await db.update(estoque).set({ quantidade: String(oldStock) }).where(eq(estoque.id, oldEstoqueId));
+        await db.update(estoque).set({ quantidade: String(newStock) }).where(eq(estoque.id, input.estoqueId));
+      }
+
+      let observacoes = input.observacoes;
+      if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
+        observacoes = JSON.stringify({
+          modo: input.modo,
+          sinal: input.sinal,
+          unidades: input.quantidadeUnidades,
+          porUnidade: input.quantidadePorUnidade,
+          unidade: input.unidadeLancamento,
+          total: qty,
+        });
+      }
+
+      await db.update(estoqueMovimentacoes).set({
+        estoqueId: input.estoqueId,
+        dataMovimentacao: input.dataMovimentacao,
+        quantidade: String(qty),
+        dataValidade: input.dataValidade || null,
+        observacoes: observacoes ?? null,
+      }).where(eq(estoqueMovimentacoes.id, input.id));
+
+      return { success: true };
     }),
 
   deleteMovimentacao: protectedProcedure

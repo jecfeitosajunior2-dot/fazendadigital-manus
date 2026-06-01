@@ -18,12 +18,18 @@ import {
   formatTotalMovimentacao,
   normalizarUnidade,
   parseEmbalagens,
+  parseObsMovimentacao,
   rotuloUnidade,
+  toDateInput,
   type ModoQuantidadeMov,
 } from "@/lib/produto-types";
 
 export default function InsumosNovaMovimentacaoPage() {
   const [, setLocation] = useLocation();
+  const searchParams = new URLSearchParams(window.location.search);
+  const movId = searchParams.get("id") ? parseInt(searchParams.get("id")!, 10) : null;
+  const isEdit = movId != null && !isNaN(movId);
+
   const [estoqueId, setEstoqueId] = useState("");
   const [dataMov, setDataMov] = useState(() => new Date().toISOString().slice(0, 10));
   const [dataValidade, setDataValidade] = useState("");
@@ -34,9 +40,14 @@ export default function InsumosNovaMovimentacaoPage() {
   const [quantidadePorUnidade, setQuantidadePorUnidade] = useState("");
   const [unidadeLancamento, setUnidadeLancamento] = useState("");
   const [embalagemNome, setEmbalagemNome] = useState("");
+  const [initialized, setInitialized] = useState(false);
 
   const utils = trpc.useUtils();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
+  const { data: movimentacao, isLoading: loadingMov } = trpc.estoque.getMovimentacao.useQuery(
+    { id: movId! },
+    { enabled: isEdit }
+  );
 
   const produto = useMemo(
     () => produtos.find(p => String(p.id) === estoqueId),
@@ -51,6 +62,34 @@ export default function InsumosNovaMovimentacaoPage() {
   const unidadeBase = normalizarUnidade(produto?.unidade);
 
   useEffect(() => {
+    if (!isEdit || !movimentacao || initialized) return;
+
+    const obs = parseObsMovimentacao(movimentacao.observacoes ?? undefined);
+    const qty = Number(movimentacao.quantidade);
+
+    setEstoqueId(String(movimentacao.estoqueId));
+    setDataMov(toDateInput(movimentacao.dataMovimentacao));
+    setDataValidade(toDateInput(movimentacao.dataValidade));
+
+    if (obs?.modo === "unidades") {
+      setModo("unidades");
+      setSinal(obs.sinal ?? (qty >= 0 ? "entrada" : "saida"));
+      setQuantidadeUnidades(obs.unidades ?? "");
+      setQuantidadePorUnidade(obs.porUnidade ?? "");
+      setUnidadeLancamento(
+        normalizarUnidade(obs.unidade) || normalizarUnidade(movimentacao.unidade)
+      );
+    } else {
+      setModo("direto");
+      setSinal(qty >= 0 ? "entrada" : "saida");
+      setQuantidadeDireta(String(Math.abs(qty)));
+      setUnidadeLancamento(normalizarUnidade(movimentacao.unidade));
+    }
+    setInitialized(true);
+  }, [isEdit, movimentacao, initialized]);
+
+  useEffect(() => {
+    if (isEdit) return;
     if (!produto) {
       setEmbalagemNome("");
       setUnidadeLancamento("");
@@ -109,10 +148,60 @@ export default function InsumosNovaMovimentacaoPage() {
     onError: e => toast.error(e.message),
   });
 
+  const updateMutation = trpc.estoque.updateMovimentacao.useMutation({
+    onSuccess: () => {
+      toast.success("Movimentação atualizada!");
+      utils.estoque.listMovimentacoes.invalidate();
+      utils.estoque.list.invalidate();
+      utils.estoque.resumo.invalidate();
+      setLocation("/insumos/visao-geral");
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const isBusy = createMutation.isPending || updateMutation.isPending;
+
+  const payload = () => ({
+    estoqueId: Number(estoqueId),
+    dataMovimentacao: dataMov,
+    quantidade: String(calculo.total),
+    dataValidade: dataValidade || undefined,
+    modo,
+    quantidadeUnidades: modo === "unidades" ? quantidadeUnidades : undefined,
+    quantidadePorUnidade: modo === "unidades" ? quantidadePorUnidade : undefined,
+    unidadeLancamento: modo === "unidades" ? unidadeLancamento : unidadeBase || undefined,
+    sinal,
+  });
+
   const resumoUnidades =
     modo === "unidades" && quantidadeUnidades && quantidadePorUnidade
       ? `${quantidadeUnidades} un × ${quantidadePorUnidade} ${rotuloUnidade(unidadeLancamento)}`
       : null;
+
+  if (isEdit && loadingMov) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
+      </AppLayout>
+    );
+  }
+
+  if (isEdit && !loadingMov && !movimentacao) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400 text-sm gap-3">
+          <p>Movimentação não encontrada.</p>
+          <button
+            type="button"
+            onClick={() => setLocation("/insumos/visao-geral")}
+            className="text-[12px] text-[#4ECDC4] hover:underline"
+          >
+            Voltar
+          </button>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -133,7 +222,7 @@ export default function InsumosNovaMovimentacaoPage() {
             className="text-[20px] font-semibold text-gray-900"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Nova Movimentação
+            {isEdit ? "Editar Movimentação" : "Nova Movimentação"}
           </h1>
         </div>
 
@@ -149,17 +238,11 @@ export default function InsumosNovaMovimentacaoPage() {
               toast.error(calculo.erro);
               return;
             }
-            createMutation.mutate({
-              estoqueId: Number(estoqueId),
-              dataMovimentacao: dataMov,
-              quantidade: String(calculo.total),
-              dataValidade: dataValidade || undefined,
-              modo,
-              quantidadeUnidades: modo === "unidades" ? quantidadeUnidades : undefined,
-              quantidadePorUnidade: modo === "unidades" ? quantidadePorUnidade : undefined,
-              unidadeLancamento: modo === "unidades" ? unidadeLancamento : unidadeBase || undefined,
-              sinal,
-            });
+            if (isEdit && movId) {
+              updateMutation.mutate({ id: movId, ...payload() });
+            } else {
+              createMutation.mutate(payload());
+            }
           }}
         >
           <div>
@@ -351,11 +434,11 @@ export default function InsumosNovaMovimentacaoPage() {
           <div className="flex flex-wrap gap-2 pt-2">
             <button
               type="submit"
-              disabled={createMutation.isPending || !!calculo.erro || calculo.total === 0}
+              disabled={isBusy || !!calculo.erro || calculo.total === 0}
               className="px-5 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-60"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              {createMutation.isPending ? "Salvando..." : "Salvar"}
+              {isBusy ? "Salvando..." : "Salvar"}
             </button>
             <button
               type="button"

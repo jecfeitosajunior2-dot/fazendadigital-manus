@@ -94,6 +94,37 @@ export const formatDataBr = (data: string | Date | null | undefined): string => 
   return d.toLocaleDateString("pt-BR");
 };
 
+/** Formato YYYY-MM-DD para inputs type="date". */
+export const toDateInput = (val: string | Date | null | undefined): string => {
+  if (!val) return "";
+  if (typeof val === "string") {
+    if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+    const d = new Date(val.includes("T") ? val : `${val}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  }
+  return val.toISOString().slice(0, 10);
+};
+
+export type ObsMovimentacao = {
+  modo: ModoQuantidadeMov;
+  sinal?: "entrada" | "saida";
+  unidades?: string;
+  porUnidade?: string;
+  unidade?: string;
+  total?: number;
+};
+
+export function parseObsMovimentacao(obs: string | null | undefined): ObsMovimentacao | null {
+  if (!obs) return null;
+  try {
+    const p = JSON.parse(obs) as ObsMovimentacao;
+    if (p?.modo === "unidades" || p?.modo === "direto") return p;
+  } catch {
+    /* legado sem JSON */
+  }
+  return null;
+}
+
 export const FABRICANTES = [
   "Ourofino",
   "Zoetis",

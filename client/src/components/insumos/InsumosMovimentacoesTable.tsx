@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import ListExportButtons from "@/components/ListExportButtons";
 import { trpc } from "@/lib/trpc";
@@ -24,6 +25,7 @@ type Props = {
 };
 
 export default function InsumosMovimentacoesTable({ title, exportFilename, toolbar }: Props) {
+  const [, setLocation] = useLocation();
   const [sortKey, setSortKey] = useState<SortKey>("dataMovimentacao");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -164,7 +166,7 @@ export default function InsumosMovimentacoesTable({ title, exportFilename, toolb
                   </span>
                 </th>
               ))}
-              <th className="w-14 px-2" />
+              <th className="w-24 px-2" />
             </tr>
           </thead>
           <tbody>
@@ -192,18 +194,28 @@ export default function InsumosMovimentacoesTable({ title, exportFilename, toolb
                 <td className="px-4 py-3 text-gray-700">{nomeUnidadeExibicao(m.unidade)}</td>
                 <td className="px-4 py-3 text-gray-900 tabular-nums">{formatQuantidadeMov(m.quantidade)}</td>
                 <td className="px-2 py-3 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm("Excluir esta movimentação? O estoque será recalculado.")) {
-                        deleteMutation.mutate({ id: m.id });
-                      }
-                    }}
-                    className="p-1 text-gray-800 hover:text-red-600"
-                    title="Excluir"
-                  >
-                    <span className="material-icons text-[20px]">delete</span>
-                  </button>
+                  <div className="flex items-center justify-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setLocation(`/insumos/nova-movimentacao?id=${m.id}`)}
+                      className="p-1 text-gray-800 hover:text-[#4ECDC4]"
+                      title="Editar"
+                    >
+                      <span className="material-icons text-[20px]">edit</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Excluir esta movimentação? O estoque será recalculado.")) {
+                          deleteMutation.mutate({ id: m.id });
+                        }
+                      }}
+                      className="p-1 text-gray-800 hover:text-red-600"
+                      title="Excluir"
+                    >
+                      <span className="material-icons text-[20px]">delete</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
