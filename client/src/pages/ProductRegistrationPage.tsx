@@ -18,6 +18,7 @@ import {
   UNIDADES_BASE,
   FABRICANTES,
   EMBALAGENS_PADRAO,
+  normalizarUnidade,
 } from "@/lib/produto-types";
 
 type FormState = {
@@ -111,7 +112,7 @@ export default function ProductRegistrationPage() {
         subcategoria: produto.subcategoria || "",
         quantidadeMinima: produto.quantidadeMinima ? String(produto.quantidadeMinima) : "",
         quantidadeMaxima: produto.quantidadeMaxima ? String(produto.quantidadeMaxima) : "",
-        unidade: produto.unidade || "",
+        unidade: normalizarUnidade(produto.unidade),
         fabricante: produto.fabricante || "",
         identificadorUnico: produto.identificadorUnico || "",
         produzidoNaFazenda: produto.produzidoNaFazenda ? "sim" : "nao",

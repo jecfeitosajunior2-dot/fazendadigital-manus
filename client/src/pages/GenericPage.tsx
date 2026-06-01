@@ -3,6 +3,7 @@ import AppLayout from "@/components/AppLayout";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { normalizarUnidade } from '@/lib/produto-types';
 
 // --- Animals Page ---
 export function AnimaisPage() {
@@ -190,7 +191,7 @@ export function EstoquePage() {
                     <td className="px-3 py-2 text-gray-500">{item.categoria || "-"}</td>
                     <td className="px-3 py-2 text-gray-500">{item.subcategoria || "-"}</td>
                     <td className="px-3 py-2">{Number(item.quantidade).toFixed(2)}</td>
-                    <td className="px-3 py-2">{item.unidade || "-"}</td>
+                    <td className="px-3 py-2">{normalizarUnidade(item.unidade) || "-"}</td>
                     <td className="px-3 py-2">
                       {item.situacao === "inativo" ? (
                         <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">Inativo</span>
