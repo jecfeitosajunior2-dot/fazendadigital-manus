@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
@@ -40,6 +41,8 @@ function AbastecimentosPage() {
   const [form, setForm] = useState({ maquinaId: 0, data: new Date().toISOString().split('T')[0], combustivel: "", litros: "", valorLitro: "", horimetro: "", responsavel: "", observacoes: "" });
 
   const { data: registros, isLoading, refetch } = trpc.abastecimentos.list.useQuery({});
+  const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
+  const maquinaMap = Object.fromEntries(maquinas.map(m => [m.id, m.nome]));
   const createMutation = trpc.abastecimentos.create.useMutation({ onSuccess: () => { toast.success("Abastecimento registrado!"); setShowForm(false); resetForm(); refetch(); } });
   const deleteMutation = trpc.abastecimentos.delete.useMutation({ onSuccess: () => { toast.success("Registro removido!"); refetch(); } });
 
@@ -52,11 +55,27 @@ function AbastecimentosPage() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[14px] font-medium text-gray-700">Abastecimentos</h2>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-          <span className="material-icons text-[14px]">add</span> Registrar
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Abastecimentos"
+            filename="abastecimentos"
+            headers={["Máquina", "Data", "Combustível", "Litros", "Total (R$)", "Horímetro"]}
+            rows={(registros ?? []).map(r => [
+              maquinaMap[r.maquinaId] ?? `#${r.maquinaId}`,
+              r.data ? new Date(r.data).toLocaleDateString("pt-BR") : "",
+              r.combustivel || "",
+              Number(r.litros || 0).toFixed(2),
+              r.litros && r.valorLitro ? (Number(r.litros) * Number(r.valorLitro)).toFixed(2) : "",
+              r.horimetro || "",
+            ])}
+            alignRightFrom={3}
+          />
+          <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+            <span className="material-icons text-[14px]">add</span> Registrar
+          </button>
+        </div>
       </div>
 
       {showForm && (

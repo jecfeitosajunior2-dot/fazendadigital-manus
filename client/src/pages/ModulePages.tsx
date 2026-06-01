@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import FarmPastosSheet from "@/components/FarmPastosSheet";
 import { FazendaSubdivisoesPanel } from "@/components/FazendaSubdivisoesPanel";
 import {
@@ -256,6 +257,15 @@ export function FarmsListPage() {
     onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
     onError: (e) => toast.error(e.message),
   });
+  const exportData = useMemo(
+    () => fazendaList.map((f: { nome: string; cidade?: string | null; estado?: string | null; area?: string | null }) => [
+      f.nome,
+      f.cidade || "",
+      f.estado || "",
+      f.area || "",
+    ]),
+    [fazendaList]
+  );
   return (
     <AppLayout>
       <FarmPastosSheet
@@ -263,12 +273,21 @@ export function FarmsListPage() {
         open={!!pastosFazenda}
         onClose={() => setPastosFazenda(null)}
       />
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Fazendas</h1>
-        <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-          <span className="material-icons text-[14px]">add</span>
-          Nova Fazenda
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Lista de Fazendas"
+            filename="fazendas"
+            headers={["Nome", "Cidade", "Estado", "Área (ha)"]}
+            rows={exportData}
+            alignRightFrom={3}
+          />
+          <button onClick={() => setLocation("/fazendas/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+            <span className="material-icons text-[14px]">add</span>
+            Nova Fazenda
+          </button>
+        </div>
       </div>
       <div className="bg-white rounded shadow-sm border border-gray-100">
         <table className="w-full text-[11px]">
@@ -1138,9 +1157,21 @@ export function PurchasesPage() {
           </div>
         </DialogContent>
       </Dialog>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Borderô de Compra</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Borderô de Compra"
+            filename="compras"
+            headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)"]}
+            rows={(compras ?? []).map((c: { data: string; fornecedor: string; quantidade: number; valorTotal: string }) => [
+              c.data,
+              c.fornecedor,
+              c.quantidade,
+              Number(c.valorTotal).toFixed(2),
+            ])}
+            alignRightFrom={2}
+          />
           <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Borderôs</button>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>Novo Borderô
@@ -1220,9 +1251,21 @@ export function SalesPage() {
           </div>
         </DialogContent>
       </Dialog>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Vendas</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Vendas"
+            filename="vendas"
+            headers={["Data", "Comprador", "Quantidade", "Valor Total (R$)"]}
+            rows={(vendas ?? []).map((v: { data: string; comprador: string; quantidade: number; valorTotal: string }) => [
+              v.data,
+              v.comprador,
+              v.quantidade,
+              Number(v.valorTotal).toFixed(2),
+            ])}
+            alignRightFrom={2}
+          />
           <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Vendas</button>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
             <span className="material-icons text-[14px]">add</span>Registrar Nova Venda

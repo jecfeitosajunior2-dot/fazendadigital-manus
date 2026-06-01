@@ -288,20 +288,17 @@ export default function MaquinaRegistrationPage() {
     e.preventDefault();
     if (!form.tipo) { toast.error("Selecione o tipo de máquina"); return; }
     if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
-    if (!form.apelido.trim()) { toast.error("Apelido é obrigatório"); return; }
     if (!form.marca) { toast.error("Selecione a marca"); return; }
-    if (!form.anoFabricacao.trim()) { toast.error("Ano de fabricação é obrigatório"); return; }
-    if (!form.anoAquisicao.trim()) { toast.error("Ano de aquisição é obrigatório"); return; }
 
     const payload = {
       fazendaId: parseInt(form.fazendaId),
-      nome: form.apelido.trim(),
+      nome: form.apelido.trim() || undefined,
       tipo: form.tipo,
       marca: form.marca,
       modelo: form.modelo.trim() || undefined,
       placa: form.placa.trim() || undefined,
-      ano: parseInt(form.anoFabricacao, 10),
-      anoAquisicao: parseInt(form.anoAquisicao, 10),
+      ano: form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : undefined,
+      anoAquisicao: form.anoAquisicao.trim() ? parseInt(form.anoAquisicao, 10) : undefined,
       valor: parseCurrencyBrl(form.valor) || undefined,
       vidaUtil: form.vidaUtil.trim() || undefined,
       dataDesativacao: form.dataDesativacao || undefined,
@@ -380,12 +377,11 @@ export default function MaquinaRegistrationPage() {
               </FormSelect>
             </div>
             <div>
-              <FormLabel required>Apelido</FormLabel>
+              <FormLabel>Apelido</FormLabel>
               <FormInput
                 value={form.apelido}
                 onChange={v => set("apelido", v)}
                 placeholder="Digite um nome para a máquina"
-                required
               />
             </div>
           </div>
@@ -438,21 +434,19 @@ export default function MaquinaRegistrationPage() {
           {/* Linha 4 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <FormLabel required>Ano de Fabricação</FormLabel>
+              <FormLabel>Ano de Fabricação</FormLabel>
               <FormYearPicker
                 value={form.anoFabricacao}
                 onChange={v => set("anoFabricacao", v)}
                 placeholder="Selecione o ano de fabricação"
-                required
               />
             </div>
             <div>
-              <FormLabel required>Ano de Aquisição</FormLabel>
+              <FormLabel>Ano de Aquisição</FormLabel>
               <FormYearPicker
                 value={form.anoAquisicao}
                 onChange={v => set("anoAquisicao", v)}
                 placeholder="Selecione o ano de aquisição"
-                required
               />
             </div>
             <div>

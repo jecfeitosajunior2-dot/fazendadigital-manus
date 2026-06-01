@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
@@ -18,30 +19,40 @@ export function AnimaisPage() {
   const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
   const animais = animaisData || [];
-  const totalPages = Math.max(1, Math.ceil(animais.length / perPage));
-  const paginated = animais.slice((page - 1) * perPage, page * perPage);
+  const filteredAnimais = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return animais.filter(a => {
+      if (sexoFilter && a.sexo !== sexoFilter) return false;
+      if (!q) return true;
+      return [a.brinco, a.nome, a.raca].some(v => String(v || "").toLowerCase().includes(q));
+    });
+  }, [animais, search, sexoFilter]);
 
-  const handleExportCSV = () => {
-    const headers = ["ID", "Brinco", "Nome", "Sexo", "Raça", "Status", "Peso Atual"];
-    const rows = animais.map(a => [a.id, a.brinco || "", a.nome || "", a.sexo, a.raca || "", a.status, a.pesoAtual || ""]);
-    const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `animais_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    toast.success("Lista exportada com sucesso!");
-  };
+  const totalPages = Math.max(1, Math.ceil(filteredAnimais.length / perPage));
+  const paginated = filteredAnimais.slice((page - 1) * perPage, page * perPage);
+
+  const exportHeaders = ["Brinco", "Nome", "Sexo", "Raça", "Status", "Peso (kg)"];
+  const exportData = filteredAnimais.map(a => [
+    a.brinco || "",
+    a.nome || "",
+    a.sexo === "macho" ? "Macho" : "Fêmea",
+    a.raca || "",
+    a.status || "",
+    a.pesoAtual ? Number(a.pesoAtual).toFixed(1) : "",
+  ]);
 
   return (
     <AppLayout>
       <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de animais</h1>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExportCSV} className="hidden sm:flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:bg-gray-100 text-[11px]" title="Planilha">
-            <span className="material-icons text-[16px]">grid_on</span>
-            <span className="hidden md:inline">Planilha</span>
-          </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Lista de Animais"
+            filename="animais"
+            headers={exportHeaders}
+            rows={exportData}
+            alignRightFrom={5}
+          />
           <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
             <span className="material-icons text-[14px]">add</span>
             Novo Animal
@@ -128,7 +139,7 @@ export function AnimaisPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
-            <span className="text-[11px] text-gray-500">{animais.length} animais</span>
+            <span className="text-[11px] text-gray-500">{filteredAnimais.length} animais</span>
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Anterior</button>
               <span className="text-[11px] px-2">{page} / {totalPages}</span>
@@ -151,13 +162,33 @@ export function EstoquePage() {
 
   const filtered = useMemo(() => (items || []).filter(i => !search || i.nome.toLowerCase().includes(search.toLowerCase())), [items, search]);
 
+  const exportHeaders = ["Nome", "Categoria", "Subcategoria", "Quantidade", "Unidade", "Situação", "Carência Abate (d)"];
+  const exportData = filtered.map(item => [
+    item.nome,
+    item.categoria || "",
+    item.subcategoria || "",
+    Number(item.quantidade).toFixed(2),
+    normalizarUnidade(item.unidade) || "",
+    item.situacao === "inativo" ? "Inativo" : "Ativo",
+    item.carenciaAbateDias ?? "",
+  ]);
+
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
-        <button onClick={() => setLocation("/insumos/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-          <span className="material-icons text-[14px]">add</span> Cadastrar Produto
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <ListExportButtons
+            title="Estoque de Insumos"
+            filename="estoque"
+            headers={exportHeaders}
+            rows={exportData}
+            alignRightFrom={3}
+          />
+          <button onClick={() => setLocation("/insumos/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+            <span className="material-icons text-[14px]">add</span> Cadastrar Produto
+          </button>
+        </div>
       </div>
 
       <div className="mb-3">

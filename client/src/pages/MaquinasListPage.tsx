@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -42,11 +43,38 @@ export default function MaquinasListPage() {
 
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
+  const exportRows = useMemo(() =>
+    filtered.map(m => ({
+      apelido: m.nome,
+      tipo: m.tipo ?? "",
+      fazenda: m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "",
+      marca: m.marca ?? "",
+      modelo: m.modelo ?? "",
+      anoFab: m.ano ?? "",
+      anoAquis: m.anoAquisicao ?? "",
+      placa: m.placa ?? "",
+      estado: m.estado ?? "",
+      valor: m.valor ? parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+    })),
+  [filtered, fazendaMap]);
+
+  const exportHeaders = ["Apelido", "Tipo", "Fazenda", "Marca", "Modelo", "Ano Fab.", "Ano Aquis.", "Placa", "Estado", "Valor(R$)"];
+  const exportData = exportRows.map(r => [
+    r.apelido, r.tipo, r.fazenda, r.marca, r.modelo, r.anoFab, r.anoAquis, r.placa, r.estado, r.valor,
+  ]);
+
   return (
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h1 className="text-[13px] font-semibold text-gray-800">Lista de maquinário</h1>
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de maquinário</h1>
+          <ListExportButtons
+            title="Lista de Maquinário"
+            filename="maquinario"
+            headers={exportHeaders}
+            rows={exportData}
+            alignRightFrom={5}
+          />
         </div>
 
         <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-50">

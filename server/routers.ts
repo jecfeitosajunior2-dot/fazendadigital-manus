@@ -421,11 +421,11 @@ const reproducaoRouter = router({
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
 const maquinasInputFields = {
   fazendaId: z.number(),
-  nome: z.string(),
+  nome: z.string().optional(),
   tipo: z.string(),
   marca: z.string(),
-  ano: z.number(),
-  anoAquisicao: z.number(),
+  ano: z.number().optional(),
+  anoAquisicao: z.number().optional(),
   modelo: z.string().optional(),
   placa: z.string().optional(),
   valor: z.string().optional(),
@@ -455,11 +455,12 @@ const maquinasRouter = router({
   create: protectedProcedure
     .input(z.object(maquinasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const { dataDesativacao, imageSlots, ...rest } = input;
+      const { dataDesativacao, imageSlots, nome, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       const result = await db.insert(maquinas).values({
         userId: ctx.user.id,
         ...rest,
+        nome: nome?.trim() || "Sem apelido",
         dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
         imagem1: img1,
         imagem2: img2,
@@ -471,10 +472,11 @@ const maquinasRouter = router({
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...maquinasInputFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataDesativacao, imageSlots, ...rest } = input;
+      const { id, dataDesativacao, imageSlots, nome, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       await db.update(maquinas).set({
         ...rest,
+        ...(nome !== undefined ? { nome: nome.trim() || "Sem apelido" } : {}),
         dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null,
         imagem1: img1,
         imagem2: img2,
