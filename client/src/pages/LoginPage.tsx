@@ -61,19 +61,17 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center relative overflow-hidden"
-      style={{ background: "linear-gradient(160deg, #0d1b2e 0%, #0f2744 50%, #0d1b2e 100%)" }}
+      style={{
+        background: "#0d1b2e",
+        backgroundImage: `url('https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-login-bg-eEvanysYRdc4cQz3Zr2BKR.webp')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
     >
-      {/* Subtle grid pattern */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(27,197,189,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(27,197,189,0.03) 1px, transparent 1px)
-          `,
-          backgroundSize: "60px 60px",
-        }}
-      />
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 pointer-events-none" style={{ background: "rgba(10,18,32,0.72)" }} />
+
 
       {/* Glow top-right */}
       <div
@@ -112,15 +110,12 @@ export default function LoginPage() {
         >
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div
-              className="h-[52px] w-[52px] rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: "linear-gradient(135deg, #1BC5BD 0%, #0891B2 100%)",
-                boxShadow: "0 4px 16px rgba(27,197,189,0.35)",
-              }}
-            >
-              <span className="material-icons text-white" style={{ fontSize: "26px" }}>agriculture</span>
-            </div>
+            <img
+              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-icon-bull-new-9aYJEWBxP7vf2ogfzT5b8k.webp"
+              alt="Fazenda Digital"
+              className="h-[60px] w-[60px] rounded-xl flex-shrink-0"
+              style={{ boxShadow: "0 4px 20px rgba(27,197,189,0.4)" }}
+            />
             <div style={{ lineHeight: 1 }}>
               <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "20px", letterSpacing: "0.08em", color: "white" }}>
                 FAZENDA
