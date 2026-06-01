@@ -1,5 +1,4 @@
 import { z } from "zod";
-import bcrypt from "bcryptjs";
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
@@ -419,69 +418,44 @@ const reproducaoRouter = router({
 });
 
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
-const maquinasInputFields = {
-  fazendaId: z.number(),
-  nome: z.string().optional(),
-  tipo: z.string(),
-  marca: z.string(),
-  ano: z.number().optional(),
-  anoAquisicao: z.number().optional(),
-  modelo: z.string().optional(),
-  placa: z.string().optional(),
-  valor: z.string().optional(),
-  vidaUtil: z.string().optional(),
-  dataDesativacao: z.string().optional(),
-  estado: z.enum(["novo", "usado"]).optional(),
-  horimetro: z.string().optional(),
-  status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
-  observacoes: z.string().optional(),
-  imageSlots: z.array(imageSlotInput).length(3).optional(),
-};
-
 const maquinasRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(maquinas).where(eq(maquinas.userId, ctx.user.id)).orderBy(desc(maquinas.createdAt));
   }),
 
-  get: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      const [row] = await db.select().from(maquinas).where(
-        and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id))
-      );
-      return row ?? null;
-    }),
-
   create: protectedProcedure
-    .input(z.object(maquinasInputFields))
+    .input(z.object({
+      nome: z.string(),
+      tipo: z.string().optional(),
+      marca: z.string().optional(),
+      modelo: z.string().optional(),
+      ano: z.number().optional(),
+      placa: z.string().optional(),
+      horimetro: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      observacoes: z.string().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const { dataDesativacao, imageSlots, nome, ...rest } = input;
-      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      const result = await db.insert(maquinas).values({
-        userId: ctx.user.id,
-        ...rest,
-        nome: nome?.trim() || "Sem apelido",
-        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      });
+      const result = await db.insert(maquinas).values({ userId: ctx.user.id, ...input });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), ...maquinasInputFields }))
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      tipo: z.string().optional(),
+      marca: z.string().optional(),
+      modelo: z.string().optional(),
+      ano: z.number().optional(),
+      placa: z.string().optional(),
+      horimetro: z.string().optional(),
+      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+      observacoes: z.string().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataDesativacao, imageSlots, nome, ...rest } = input;
-      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      await db.update(maquinas).set({
-        ...rest,
-        ...(nome !== undefined ? { nome: nome.trim() || "Sem apelido" } : {}),
-        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      }).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      const { id, ...rest } = input;
+      await db.update(maquinas).set(rest).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -721,61 +695,49 @@ const benfeitoriasRouter = router({
 });
 
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
-const estoqueInputFields = {
-  nome: z.string(),
-  categoria: z.string(),
-  subcategoria: z.string(),
-  unidade: z.string(),
-  quantidadeMinima: z.string().optional(),
-  quantidadeMaxima: z.string().optional(),
-  fabricante: z.string().optional(),
-  identificadorUnico: z.string().optional(),
-  produzidoNaFazenda: z.boolean().optional(),
-  monitorarEstoque: z.boolean(),
-  situacao: z.enum(["ativo", "inativo"]).optional(),
-  embalagens: z.array(z.string()).optional(),
-  possuiCarencia: z.boolean().optional(),
-  carenciaAbateDias: z.number().nullish(),
-  carenciaAbateUnidade: z.enum(["d", "h"]).nullish(),
-  carenciaLeiteDias: z.number().nullish(),
-  observacoesCarencia: z.string().nullish(),
-  quantidade: z.string().optional(),
-  valorUnitario: z.string().optional(),
-  localizacao: z.string().optional(),
-  observacoes: z.string().optional(),
-};
-
 const estoqueRouter = router({
   list: protectedProcedure.query(async () => {
     return db.select().from(estoque).orderBy(desc(estoque.createdAt));
   }),
 
-  get: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
-      return row ?? null;
-    }),
-
   create: protectedProcedure
-    .input(z.object(estoqueInputFields))
+    .input(z.object({
+      nome: z.string(),
+      categoria: z.string().optional(),
+      unidade: z.string().optional(),
+      quantidade: z.string().optional(),
+      quantidadeMinima: z.string().optional(),
+      valorUnitario: z.string().optional(),
+      localizacao: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
-      const { embalagens, ...rest } = input;
       const result = await db.insert(estoque).values({
-        ...rest,
-        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
+        nome: input.nome,
+        categoria: input.categoria,
+        unidade: input.unidade,
+        quantidade: input.quantidade,
+        quantidadeMinima: input.quantidadeMinima,
+        valorUnitario: input.valorUnitario,
+        localizacao: input.localizacao,
+        observacoes: input.observacoes,
       });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), ...estoqueInputFields }))
+    .input(z.object({
+      id: z.number(),
+      nome: z.string().optional(),
+      categoria: z.string().optional(),
+      unidade: z.string().optional(),
+      quantidade: z.string().optional(),
+      valorUnitario: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
-      const { id, embalagens, ...rest } = input;
-      await db.update(estoque).set({
-        ...rest,
-        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
-      }).where(eq(estoque.id, id));
+      const { id, ...rest } = input;
+      await db.update(estoque).set(rest).where(eq(estoque.id, id));
       return { success: true };
     }),
 

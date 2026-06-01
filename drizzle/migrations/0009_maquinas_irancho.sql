@@ -1,9 +1,0 @@
-ALTER TABLE `maquinas` ADD COLUMN `fazendaId` int;
-ALTER TABLE `maquinas` ADD COLUMN `valor` decimal(12,2);
-ALTER TABLE `maquinas` ADD COLUMN `anoAquisicao` int;
-ALTER TABLE `maquinas` ADD COLUMN `vidaUtil` varchar(50);
-ALTER TABLE `maquinas` ADD COLUMN `dataDesativacao` date;
-ALTER TABLE `maquinas` ADD COLUMN `estado` varchar(20);
-ALTER TABLE `maquinas` ADD COLUMN `imagem1` text;
-ALTER TABLE `maquinas` ADD COLUMN `imagem2` text;
-ALTER TABLE `maquinas` ADD COLUMN `imagem3` text;

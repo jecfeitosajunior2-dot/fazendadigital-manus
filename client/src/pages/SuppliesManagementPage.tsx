@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import ListExportButtons from "@/components/ListExportButtons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,25 +28,12 @@ export default function SuppliesManagementPage() {
 
   return (
     <div className="p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Nutrição / Cochos</h1>
           <p className="text-gray-500 text-sm mt-1">Registro de batidas e fornecimento de alimentação</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Batidas de Nutrição"
-            filename="batidas"
-            headers={["Data", "Quantidade (kg)", "Responsável", "Observações"]}
-            rows={(batidas ?? []).map(b => [
-              b.data,
-              b.quantidade ?? "",
-              b.responsavel ?? "",
-              b.observacoes ?? "",
-            ])}
-            alignRightFrom={1}
-          />
-          <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="bg-green-600 hover:bg-green-700 text-white"><Plus className="w-4 h-4 mr-2" />Nova Batida</Button>
           </DialogTrigger>
@@ -70,7 +56,6 @@ export default function SuppliesManagementPage() {
             </div>
           </DialogContent>
         </Dialog>
-        </div>
       </div>
 
       {isLoading ? (

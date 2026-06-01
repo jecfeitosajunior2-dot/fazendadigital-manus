@@ -27,7 +27,7 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
         <button
           onClick={handleClick}
           className={`w-full flex items-center justify-center py-3 transition-colors ${
-            isActive || isChildActive ? "text-white bg-[#1BC5BD]/20" : "text-white/70 hover:text-white hover:bg-white/5"
+            isActive || isChildActive ? "text-white bg-white/10" : "text-white/70 hover:text-white hover:bg-white/5"
           }`}
         >
           <span className="material-icons text-[20px]">{item.icon}</span>
@@ -48,10 +48,10 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
         } ${
           isActive
             ? depth > 0
-              ? "text-[#1BC5BD] font-semibold bg-white/5"
-              : "text-white bg-[#1BC5BD]/20 font-medium border-l-2 border-[#1BC5BD]"
+              ? "text-[#4ECDC4] font-semibold bg-white/5"
+              : "text-white bg-[#4ECDC4]/20 font-medium border-l-2 border-[#4ECDC4]"
             : isChildActive
-            ? "text-white bg-[#1BC5BD]/10"
+            ? "text-white bg-[#4ECDC4]/10"
             : "text-white/80 hover:text-white hover:bg-white/5"
         }`}
       >
@@ -119,24 +119,21 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           md:translate-x-0
           ${collapsed ? "w-[60px]" : "w-[220px]"}
         `}
-        style={{ backgroundColor: "#0F172A", backgroundImage: "linear-gradient(180deg, #0F172A 0%, #0D1B2A 100%)" }}
+        style={{ backgroundColor: "#3D4E5C", backgroundImage: "linear-gradient(180deg, #3D4E5C 0%, #2D5A5A 100%)" }}
       >
         {/* Logo area */}
         <div className="h-[48px] flex items-center px-3 border-b border-white/10">
           {!collapsed && (
             <div className="flex items-center gap-2.5">
               <img
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp"
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
                 alt="Fazenda Digital"
-                className="h-[36px] w-[36px] object-contain"
+                className="h-[38px] w-[38px] object-contain"
               />
               <div className="flex flex-col" style={{ lineHeight: 1 }}>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "13px", letterSpacing: "0.05em", color: "white" }}>FAZENDA</span>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
-                  <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.6 }} />
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "9px", letterSpacing: "0.2em", color: "#1BC5BD" }}>DIGITAL</span>
-                  <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.6 }} />
-                </div>
+                <span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "13px", letterSpacing: "-0.02em", color: "white" }}>FAZENDA</span>
+                <span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 700, fontSize: "10px", letterSpacing: "0.25em", color: "#4ECDC4", marginTop: "1px" }}>DIGITAL</span>
+                <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: "italic", fontSize: "8px", color: "rgba(255,255,255,0.45)", marginTop: "2px" }}>Inteligência Pecuária</span>
               </div>
             </div>
           )}

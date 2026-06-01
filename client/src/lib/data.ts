@@ -15,6 +15,9 @@ export const menuItems: MenuItem[] = [
     children: [
       { label: "Visão Geral", icon: "", path: "/fazendas/visao-geral" },
       { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
+      { label: "Fazendas", icon: "", path: "/fazendas/lista-fazendas" },
+      { label: "Cadastrar Fazenda", icon: "", path: "/fazendas/cadastro" },
+      { label: "Subdivisões", icon: "", path: "/fazendas/subdivisoes" },
     ],
   },
   {
@@ -52,7 +55,6 @@ export const menuItems: MenuItem[] = [
     icon: "inventory_2",
     children: [
       { label: "Visão Geral", icon: "", path: "/insumos/visao-geral" },
-      { label: "Cadastro de Produtos", icon: "", path: "/insumos/cadastro" },
       { label: "Estoque", icon: "", path: "/insumos/estoque" },
       { label: "Entradas", icon: "", path: "/insumos/entradas" },
       { label: "Saídas", icon: "", path: "/insumos/saidas" },
@@ -63,7 +65,6 @@ export const menuItems: MenuItem[] = [
     icon: "agriculture",
     children: [
       { label: "Visão Geral", icon: "", path: "/maquinas/visao-geral" },
-      { label: "Cadastro de Maquinário", icon: "", path: "/maquinas/cadastro" },
       { label: "Abastecimento", icon: "", path: "/maquinas/abastecimento" },
       { label: "Manutenção", icon: "", path: "/maquinas/manutencao" },
       { label: "Máquinas", icon: "", path: "/maquinas/lista-maquinas" },

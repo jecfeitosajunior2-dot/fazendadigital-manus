@@ -37,9 +37,6 @@ import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
-import ProductRegistrationPage from "./pages/ProductRegistrationPage";
-import MaquinaRegistrationPage from "./pages/MaquinaRegistrationPage";
-import MaquinasListPage from "./pages/MaquinasListPage";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -86,16 +83,14 @@ function ProtectedRoutes() {
       {/* Insumos */}
       <Route path="/insumos/visao-geral" component={EstoquePage} />
       <Route path="/insumos/estoque" component={EstoquePage} />
-      <Route path="/insumos/cadastro" component={ProductRegistrationPage} />
       <Route path="/insumos/entradas" component={SuppliesManagementPage} />
       <Route path="/insumos/saidas" component={SuppliesManagementPage} />
 
       {/* Machinery */}
-      <Route path="/maquinas/visao-geral" component={MaquinasListPage} />
-      <Route path="/maquinas/cadastro" component={MaquinaRegistrationPage} />
-      <Route path="/maquinas/lista-maquinas" component={MaquinasListPage} />
+      <Route path="/maquinas/visao-geral" component={AdvancedManagementPage} />
       <Route path="/maquinas/abastecimento" component={AdvancedManagementPage} />
       <Route path="/maquinas/manutencao" component={AdvancedManagementPage} />
+      <Route path="/maquinas/lista-maquinas" component={AdvancedManagementPage} />
 
       {/* Reproduction & Saude */}
       <Route path="/reproducao/visao-geral" component={ReproductionManagementPage} />

@@ -1,6 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import ListExportButtons from "@/components/ListExportButtons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,28 +45,6 @@ export default function LotsManagementPage() {
     setOpen(true);
   };
 
-  const exportData = useMemo(
-    () => (lotes ?? []).map((l: {
-      nome: string;
-      pastoNome?: string | null;
-      fazendaNome?: string | null;
-      localizacao?: string | null;
-      qtdAnimais?: number | null;
-      diasNoPasto?: number | null;
-      capacidade?: number | null;
-      ativo?: boolean | null;
-    }) => [
-      l.nome,
-      l.pastoNome || l.localizacao || "",
-      l.fazendaNome || "",
-      l.qtdAnimais ?? 0,
-      l.diasNoPasto ?? "",
-      l.capacidade ?? "",
-      l.ativo ? "Ativo" : "Inativo",
-    ]),
-    [lotes]
-  );
-
   return (
     <div className="p-6">
       <MoveLotePastoDialog
@@ -104,20 +81,12 @@ export default function LotsManagementPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestão de Lotes</h1>
           <p className="text-gray-500 text-sm mt-1">Alocie lotes nos pastos e acompanhe dias de pastejo</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Lotes"
-            filename="lotes"
-            headers={["Nome", "Pasto/Local", "Fazenda", "Cabeças", "Dias no Pasto", "Capacidade", "Status"]}
-            rows={exportData}
-            alignRightFrom={3}
-          />
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
             <Button style={{ backgroundColor: "#4ECDC4" }} className="hover:opacity-90 text-gray-800">
               <Plus className="w-4 h-4 mr-2" />Novo Lote
@@ -144,7 +113,6 @@ export default function LotsManagementPage() {
             </div>
           </DialogContent>
         </Dialog>
-        </div>
       </div>
 
       {isLoading ? (

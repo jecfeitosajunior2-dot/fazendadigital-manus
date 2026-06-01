@@ -7,7 +7,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [showPass, setShowPass] = useState(false);
 
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -46,15 +45,10 @@ export default function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0F172A" }}>
+      <div className="min-h-screen flex items-center justify-center bg-[#1a2e1a]">
         <div className="text-center">
-          <div
-            className="h-10 w-10 rounded-full border-2 border-transparent animate-spin mx-auto mb-4"
-            style={{ borderTopColor: "#1BC5BD", borderRightColor: "#0891B2" }}
-          />
-          <p className="text-white/50 text-sm font-medium" style={{ fontFamily: "'Inter', sans-serif" }}>
-            Verificando sessão...
-          </p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#4ECDC4] mx-auto mb-4"></div>
+          <p className="text-gray-300 text-sm">Verificando sessão...</p>
         </div>
       </div>
     );
@@ -62,166 +56,71 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex relative overflow-hidden"
-      style={{ background: "#0F172A" }}
+      className="min-h-screen flex items-center justify-end relative overflow-hidden"
+      style={{
+        backgroundImage: `url(/manus-storage/cattle-bg2_e020b600.jpg)`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }}
     >
-      {/* Background image with overlay */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: `url(/manus-storage/cattle-bg2_e020b600.jpg)`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          opacity: 0.12,
-        }}
-      />
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/45" />
 
-      {/* Gradient overlay */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(135deg, #0F172A 0%, #0F172A 40%, rgba(8,145,178,0.15) 100%)",
-        }}
-      />
-
-      {/* Decorative glow */}
-      <div
-        className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(27,197,189,0.08) 0%, transparent 70%)",
-          transform: "translate(20%, -20%)",
-        }}
-      />
-      <div
-        className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(8,145,178,0.06) 0%, transparent 70%)",
-          transform: "translate(-30%, 30%)",
-        }}
-      />
-
-      {/* Left branding panel — hidden on mobile */}
-      <div className="hidden lg:flex flex-col justify-between flex-1 relative z-10 p-12 max-w-[55%]">
-        {/* Top logo */}
-        <div className="flex items-center gap-3">
-          <div
-            className="h-[40px] w-[40px] rounded-xl flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
-          >
-            <span className="material-icons text-white text-[22px]">agriculture</span>
-          </div>
-          <div className="flex flex-col" style={{ lineHeight: 1 }}>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "15px", letterSpacing: "0.06em", color: "white" }}>FAZENDA</span>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "3px" }}>
-              <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.5 }} />
-              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "9px", letterSpacing: "0.25em", color: "#1BC5BD" }}>DIGITAL</span>
-              <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.5 }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Center tagline */}
-        <div>
-          <h1
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: 700,
-              fontSize: "3.2rem",
-              lineHeight: 1.1,
-              letterSpacing: "-0.02em",
-              color: "white",
-              marginBottom: "1.5rem",
-            }}
-          >
-            Inteligência que<br />
-            <span style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-              transforma dados
-            </span><br />
-            em resultados.
-          </h1>
-          <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "1rem", fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
-            Gestão pecuária de precisão para produtores<br />
-            que buscam resultados reais.
-          </p>
-
-          {/* Feature pills */}
-          <div className="flex flex-wrap gap-2 mt-8">
-            {["Gestão Pecuária", "Inteligência de Dados", "Tecnologia", "Escalabilidade"].map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  padding: "4px 12px",
-                  borderRadius: "100px",
-                  background: "rgba(27,197,189,0.1)",
-                  color: "#1BC5BD",
-                  border: "1px solid rgba(27,197,189,0.2)",
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom */}
-        <p style={{ color: "rgba(255,255,255,0.2)", fontSize: "12px", fontFamily: "'Inter', sans-serif" }}>
-          Fazenda Digital © 2024 — Gestão Pecuária Inteligente
-        </p>
-      </div>
-
-      {/* Right login panel */}
-      <div className="relative z-10 w-full lg:w-[480px] flex items-center justify-center p-6 lg:p-12">
+      {/* Login card — right side */}
+      <div className="relative z-10 w-full max-w-md mr-0 md:mr-16 lg:mr-24 px-4 md:px-0">
         <div
-          className="w-full max-w-[400px] rounded-2xl p-8"
-          style={{
-            background: "rgba(15,23,42,0.85)",
-            backdropFilter: "blur(24px)",
-            border: "1px solid rgba(27,197,189,0.15)",
-            boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(27,197,189,0.08)",
-          }}
+          className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-8"
+          style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.4)" }}
         >
-          {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div
-              className="h-[36px] w-[36px] rounded-xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
-            >
-              <span className="material-icons text-white text-[20px]">agriculture</span>
-            </div>
-            <div className="flex flex-col" style={{ lineHeight: 1 }}>
-              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "14px", letterSpacing: "0.06em", color: "white" }}>FAZENDA</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "2px" }}>
-                <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.5 }} />
-                <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "8px", letterSpacing: "0.25em", color: "#1BC5BD" }}>DIGITAL</span>
-                <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.5 }} />
+          {/* Logo */}
+          <div className="text-center mb-8">
+            <div className="flex flex-col items-center gap-3 mb-2">
+              <img
+                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fazenda-digital-logo-v2-UBn5eDwDv8iCkG2GWK3wG7.webp"
+                alt="Fazenda Digital"
+                className="w-24 h-24 object-contain drop-shadow-md"
+              />
+              {/* Brand name — multinational-grade typography */}
+              <div style={{ textAlign: "center" }}>
+                <div style={{
+                  fontFamily: "'Playfair Display', 'DM Serif Display', Georgia, serif",
+                  fontWeight: 900,
+                  fontSize: "2.4rem",
+                  letterSpacing: "-0.03em",
+                  lineHeight: 1,
+                  background: "linear-gradient(135deg, #0d3d2e 0%, #1a6b50 50%, #2D9B8A 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}>
+                  FAZENDA
+                </div>
+                <div style={{
+                  fontFamily: "'Playfair Display', 'DM Serif Display', Georgia, serif",
+                  fontWeight: 700,
+                  fontSize: "1.5rem",
+                  letterSpacing: "0.35em",
+                  lineHeight: 1,
+                  color: "#2D9B8A",
+                  marginTop: "2px",
+                  textTransform: "uppercase" as const,
+                }}>
+                  DIGITAL
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* Heading */}
-          <div className="mb-7">
-            <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "1.5rem", color: "white", marginBottom: "4px" }}>
-              Bem-vindo de volta
-            </h2>
-            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "13px", fontFamily: "'Inter', sans-serif" }}>
-              Acesse sua conta para continuar
-            </p>
+            <p style={{ color: "#6b7280", fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: "italic", fontSize: "1rem", letterSpacing: "0.03em", marginTop: "4px" }}>Inteligência Pecuária. Resultados Reais.</p>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label
-                style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: "6px" }}
-              >
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
                 E-mail ou Usuário
               </label>
               <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">
                   person
                 </span>
                 <input
@@ -229,88 +128,49 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="seu@email.com"
-                  className="w-full pl-9 pr-4 py-2.5 text-sm rounded-lg transition-all focus:outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "white",
-                    fontFamily: "'Inter', sans-serif",
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = "rgba(27,197,189,0.5)"; e.currentTarget.style.background = "rgba(27,197,189,0.05)"; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                  style={{ "--tw-ring-color": "#4ECDC4" } as React.CSSProperties}
                   autoComplete="username"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: "6px" }}
-              >
+              <label className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">
                 Senha
               </label>
               <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">
                   lock
                 </span>
                 <input
-                  type={showPass ? "text" : "password"}
+                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 text-sm rounded-lg transition-all focus:outline-none"
-                  style={{
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "white",
-                    fontFamily: "'Inter', sans-serif",
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = "rgba(27,197,189,0.5)"; e.currentTarget.style.background = "rgba(27,197,189,0.05)"; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:border-transparent transition-all"
+                  style={{ "--tw-ring-color": "#4ECDC4" } as React.CSSProperties}
                   autoComplete="current-password"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: "rgba(255,255,255,0.3)" }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.3)")}
-                >
-                  <span className="material-icons text-[18px]">{showPass ? "visibility_off" : "visibility"}</span>
-                </button>
               </div>
             </div>
 
             {loginMutation.isError && (
-              <div
-                className="rounded-lg px-3 py-2.5 flex items-center gap-2"
-                style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)" }}
-              >
-                <span className="material-icons text-[16px]" style={{ color: "#F87171" }}>error</span>
-                <p style={{ fontSize: "12px", color: "#F87171", fontFamily: "'Inter', sans-serif" }}>
-                  Usuário ou senha inválidos.
-                </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                <span className="material-icons text-red-400 text-[16px]">error</span>
+                <p className="text-xs text-red-600">Usuário ou senha inválidos.</p>
               </div>
             )}
 
             <button
               type="submit"
               disabled={isLoggingIn || !email || !password}
-              className="w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed mt-1"
-              style={{
-                background: isLoggingIn || !email || !password ? "rgba(27,197,189,0.4)" : "linear-gradient(135deg, #1BC5BD, #0891B2)",
-                color: "white",
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "14px",
-                boxShadow: "0 4px 20px rgba(27,197,189,0.25)",
-              }}
-              onMouseEnter={e => { if (!isLoggingIn && email && password) e.currentTarget.style.boxShadow = "0 6px 28px rgba(27,197,189,0.4)"; }}
-              onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(27,197,189,0.25)"; }}
+              className="w-full py-3 px-4 rounded-lg text-white font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+              style={{ backgroundColor: "#2D5A5A" }}
             >
               {isLoggingIn ? (
                 <>
-                  <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                   Entrando...
                 </>
               ) : (
@@ -324,35 +184,38 @@ export default function LoginPage() {
 
           {/* Divider */}
           <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
-            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", fontFamily: "'Inter', sans-serif" }}>ou</span>
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400 font-medium">ou</span>
+            <div className="flex-1 h-px bg-gray-200" />
           </div>
 
           {/* OAuth button */}
           <button
             onClick={handleOAuth}
-            className="w-full py-2.5 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
-            style={{
-              background: "rgba(27,197,189,0.08)",
-              border: "1px solid rgba(27,197,189,0.25)",
-              color: "#1BC5BD",
-              fontFamily: "'Inter', sans-serif",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(27,197,189,0.14)"; e.currentTarget.style.borderColor = "rgba(27,197,189,0.4)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(27,197,189,0.08)"; e.currentTarget.style.borderColor = "rgba(27,197,189,0.25)"; }}
+            className="w-full py-2.5 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98] border"
+            style={{ borderColor: "#4ECDC4", color: "#2D5A5A" }}
           >
-            <span className="material-icons text-[18px]">verified_user</span>
+            <span className="material-icons text-[18px]" style={{ color: "#4ECDC4" }}>
+              verified_user
+            </span>
             Entrar com Manus OAuth
           </button>
 
           {/* Footer */}
-          <div className="mt-6 pt-5 text-center" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.2)", fontFamily: "'Inter', sans-serif" }}>
+          <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+            <p className="text-xs text-gray-400">
               Fazenda Digital © 2024 — Gestão Pecuária Inteligente
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Left side branding overlay */}
+      <div className="absolute left-8 bottom-8 z-10 hidden md:block">
+        <p className="text-white/80 text-sm font-light max-w-xs leading-relaxed drop-shadow">
+          Inteligência Pecuária.<br />
+          <span className="font-semibold text-white">Resultados Reais.</span>
+        </p>
       </div>
     </div>
   );

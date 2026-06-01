@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
-import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
@@ -21,27 +20,11 @@ export function SaudePage() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Saúde Animal</h1>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Registros de Saúde"
-            filename="saude"
-            headers={["Animal", "Tipo", "Data", "Descrição", "Medicamento", "Custo (R$)"]}
-            rows={(registros ?? []).map(r => [
-              r.animalId,
-              r.tipo,
-              r.dataRegistro ? new Date(r.dataRegistro).toLocaleDateString("pt-BR") : "",
-              r.descricao,
-              r.medicamento || "",
-              r.custo ? Number(r.custo).toFixed(2) : "",
-            ])}
-            alignRightFrom={5}
-          />
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-            <span className="material-icons text-[14px]">add</span> Novo Registro
-          </button>
-        </div>
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+          <span className="material-icons text-[14px]">add</span> Novo Registro
+        </button>
       </div>
 
       {showForm && (
@@ -145,25 +128,11 @@ export function ReproductionManagementPage() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Reprodução</h1>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Registros Reprodutivos"
-            filename="reproducao"
-            headers={["Fêmea", "Tipo", "Data Cobertura", "Resultado", "Macho"]}
-            rows={(registros ?? []).map(r => [
-              r.femeaId,
-              r.tipo?.replace(/_/g, " ") ?? "",
-              r.dataCobertura ? new Date(r.dataCobertura).toLocaleDateString("pt-BR") : "",
-              r.resultado || "pendente",
-              r.machoId ?? "",
-            ])}
-          />
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-            <span className="material-icons text-[14px]">add</span> Novo Registro
-          </button>
-        </div>
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+          <span className="material-icons text-[14px]">add</span> Novo Registro
+        </button>
       </div>
 
       {showForm && (

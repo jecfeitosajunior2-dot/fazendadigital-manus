@@ -4,7 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { SelectItem } from "@/components/ui/select";
-import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
