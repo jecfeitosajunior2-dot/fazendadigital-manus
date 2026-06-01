@@ -4,7 +4,7 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { normalizarUnidade } from '@/lib/produto-types';
+import { normalizarUnidade, nomeUnidadeExibicao } from '@/lib/produto-types';
 
 // --- Animals Page ---
 export function AnimaisPage() {
@@ -204,59 +204,69 @@ export function EstoquePage() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1
-          className="text-[18px] font-semibold text-gray-900"
-          style={{ fontFamily: "Fraunces, serif" }}
-        >
-          {tituloLista}
-        </h1>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Estoque de Insumos"
-            filename="estoque"
-            headers={exportHeaders}
-            rows={exportData}
-            alignRightFrom={3}
-          />
-          <button onClick={() => setLocation("/insumos/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-            <span className="material-icons text-[14px]">add</span> Cadastrar Produto
-          </button>
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <h1
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {tituloLista}
+          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <ListExportButtons
+              title={tituloLista}
+              filename="lista-produtos"
+              headers={exportHeaders}
+              rows={exportData}
+              alignRightFrom={3}
+            />
+            <button
+              type="button"
+              onClick={() => setLocation("/insumos/cadastro")}
+              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white"
+              style={{ backgroundColor: "#4ECDC4" }}
+            >
+              Cadastrar Produto
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="mb-3">
-        <input type="text" placeholder="Buscar item..." value={search} onChange={e => setSearch(e.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-[12px] w-full sm:w-64" />
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-50">
+          <input
+            type="text"
+            placeholder="Buscar produto..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-[12px] w-full sm:w-72"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Nome</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Categoria</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Subcategoria</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Quantidade</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Unidade</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Situação</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
+              <tr className="border-b border-gray-200">
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Nome</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Categoria</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Subcategoria</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Quantidade</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Unidade</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-700 uppercase">Situação</th>
+                <th className="text-left px-4 py-3 w-20" />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">Carregando...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum item no estoque.</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">Sem dados</td></tr>
               ) : filtered.map((item) => {
                 const isLow = item.monitorarEstoque && item.quantidadeMinima && Number(item.quantidade) <= Number(item.quantidadeMinima);
                 return (
-                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium">{item.nome}</td>
-                    <td className="px-3 py-2 text-gray-500">{item.categoria || "-"}</td>
-                    <td className="px-3 py-2 text-gray-500">{item.subcategoria || "-"}</td>
-                    <td className="px-3 py-2">{Number(item.quantidade).toFixed(2)}</td>
-                    <td className="px-3 py-2">{normalizarUnidade(item.unidade) || "-"}</td>
+                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium uppercase">{item.nome}</td>
+                    <td className="px-4 py-3 text-gray-700">{item.categoria || ""}</td>
+                    <td className="px-4 py-3 text-gray-700">{item.subcategoria || ""}</td>
+                    <td className="px-4 py-3 tabular-nums">{Number(item.quantidade).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-gray-700">{nomeUnidadeExibicao(item.unidade)}</td>
                     <td className="px-3 py-2">
                       {item.situacao === "inativo" ? (
                         <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">Inativo</span>
