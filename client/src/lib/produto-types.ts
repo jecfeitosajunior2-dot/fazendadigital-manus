@@ -209,6 +209,55 @@ export function serializarEmbalagens(lista: EmbalagemProduto[]): string {
   return JSON.stringify(lista);
 }
 
+/**
+ * Fator de cada unidade em relação à unidade canônica da sua família.
+ * volume: litro (L) = 1 · massa: quilograma (kg) = 1.
+ * Unidades de contagem (un, sc, fr, dose) não se convertem entre si.
+ */
+const FATOR_UNIDADE: Record<string, { fator: number; familia: string }> = {
+  L: { fator: 1, familia: "volume" },
+  ml: { fator: 0.001, familia: "volume" },
+  kg: { fator: 1, familia: "massa" },
+  g: { fator: 0.001, familia: "massa" },
+  un: { fator: 1, familia: "un" },
+  sc: { fator: 1, familia: "sc" },
+  fr: { fator: 1, familia: "fr" },
+  dose: { fator: 1, familia: "dose" },
+};
+
+/** Duas unidades pertencem à mesma família (são conversíveis entre si)? */
+export function unidadesCompativeis(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  const ua = normalizarUnidade(a);
+  const ub = normalizarUnidade(b);
+  if (!ua || !ub) return true;
+  if (ua === ub) return true;
+  const fa = FATOR_UNIDADE[ua];
+  const fb = FATOR_UNIDADE[ub];
+  if (!fa || !fb) return false;
+  return fa.familia === fb.familia;
+}
+
+/**
+ * Converte uma quantidade da unidade de lançamento para a unidade base.
+ * Retorna `null` quando as unidades são incompatíveis (famílias diferentes).
+ */
+export function converterUnidade(
+  quantidade: number,
+  de: string | null | undefined,
+  para: string | null | undefined
+): number | null {
+  const ude = normalizarUnidade(de);
+  const upara = normalizarUnidade(para);
+  if (!ude || !upara || ude === upara) return quantidade;
+  const fde = FATOR_UNIDADE[ude];
+  const fpara = FATOR_UNIDADE[upara];
+  if (!fde || !fpara || fde.familia !== fpara.familia) return null;
+  return (quantidade * fde.fator) / fpara.fator;
+}
+
 export type ModoQuantidadeMov = "direto" | "unidades";
 
 /** Calcula quantidade final na unidade base do produto. */

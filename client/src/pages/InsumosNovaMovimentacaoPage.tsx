@@ -9,6 +9,10 @@ import {
   sinalDoTipo,
   normalizarUnidade,
   nomeUnidadeExibicao,
+  rotuloUnidade,
+  converterUnidade,
+  unidadesCompativeis,
+  formatQuantidadeMov,
   formatDataBr,
   toDateInput,
 } from "@/lib/produto-types";
@@ -19,8 +23,7 @@ const inputCls =
 const selectCls =
   "w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4] appearance-none";
 const labelCls = "block text-[12px] font-medium text-gray-600 mb-1";
-const sectionTitleCls =
-  "text-[12px] font-semibold text-gray-600 uppercase tracking-wide";
+const sectionTitleCls = "text-[12px] font-semibold text-gray-600 uppercase tracking-wide";
 
 const fmtMoeda = (v: string) => {
   if (!v) return "R$ 0,00";
@@ -55,14 +58,14 @@ export default function InsumosNovaMovimentacaoPage() {
   const [dataEntrada, setDataEntrada] = useState(() => new Date().toISOString().slice(0, 10));
   const [frete, setFrete] = useState("");
 
-  // Mini-formulário de produto (linha sendo adicionada)
+  // Mini-formulário de produto (linha sendo preenchida)
   const [prodEstoqueId, setProdEstoqueId] = useState("");
   const [prodUnidade, setProdUnidade] = useState("");
   const [prodDataValidade, setProdDataValidade] = useState("");
   const [prodValorUnitario, setProdValorUnitario] = useState("");
   const [prodQuantidade, setProdQuantidade] = useState("");
 
-  // Lista de produtos da movimentação
+  // Lista de produtos da movimentação (modo criação, multi-produto)
   const [produtos, setProdutos] = useState<ProdutoLinha[]>([]);
 
   // Inicialização no modo edição
@@ -79,10 +82,42 @@ export default function InsumosNovaMovimentacaoPage() {
   const utils = trpc.useUtils();
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const tiposFiltrados = useMemo(() => {
-    if (direcao === "Entrada") return TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada");
-    return TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida");
-  }, [direcao]);
+  const tiposFiltrados = useMemo(
+    () =>
+      direcao === "Entrada"
+        ? TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada")
+        : TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida"),
+    [direcao]
+  );
+
+  const produtoSelecionado = useMemo(
+    () => estoqueList.find(p => String(p.id) === prodEstoqueId),
+    [estoqueList, prodEstoqueId]
+  );
+  const unidadeBaseSelecionada = normalizarUnidade(produtoSelecionado?.unidade);
+
+  /** Preview da conversão lançamento → unidade base, exibido sob a quantidade. */
+  const previewConversao = useMemo(() => {
+    const qtd = parseFloat(prodQuantidade.replace(",", "."));
+    if (!prodEstoqueId || isNaN(qtd) || qtd === 0 || !prodUnidade || !unidadeBaseSelecionada) {
+      return null;
+    }
+    if (normalizarUnidade(prodUnidade) === unidadeBaseSelecionada) return null;
+    if (!unidadesCompativeis(prodUnidade, unidadeBaseSelecionada)) {
+      return {
+        erro: `Unidade ${rotuloUnidade(prodUnidade)} é incompatível com a unidade base ${rotuloUnidade(
+          unidadeBaseSelecionada
+        )} do produto.`,
+      };
+    }
+    const convertida = converterUnidade(Math.abs(qtd), prodUnidade, unidadeBaseSelecionada);
+    if (convertida == null) return null;
+    return {
+      texto: `${formatQuantidadeMov(Math.abs(qtd))} ${nomeUnidadeExibicao(prodUnidade)} = ${formatQuantidadeMov(
+        convertida
+      )} ${nomeUnidadeExibicao(unidadeBaseSelecionada)} (unidade base do estoque).`,
+    };
+  }, [prodEstoqueId, prodQuantidade, prodUnidade, unidadeBaseSelecionada]);
 
   // ── Inicializar edição ────────────────────────────────────────────────────
   useEffect(() => {
@@ -97,15 +132,18 @@ export default function InsumosNovaMovimentacaoPage() {
     setDataEntrada(toDateInput(movimentacao.dataMovimentacao));
     setFrete(movimentacao.frete != null ? String(movimentacao.frete) : "");
 
-    // Produto como linha única
-    setProdutos([{
-      localId: "edit-0",
-      estoqueId: String(movimentacao.estoqueId),
-      unidadeMov: normalizarUnidade(movimentacao.unidade),
-      dataValidade: toDateInput(movimentacao.dataValidade),
-      valorUnitario: movimentacao.valor != null ? String(movimentacao.valor) : "",
-      quantidade: String(Math.abs(Number(movimentacao.quantidade))),
-    }]);
+    // A movimentação é armazenada na unidade base do produto: pré-preenche o
+    // mini-formulário na unidade base para edição direta (sem reselecionar tudo).
+    const baseUnit = normalizarUnidade(movimentacao.unidade);
+    const qtdBase = Math.abs(Number(movimentacao.quantidade));
+    const valorTotal = movimentacao.valor != null ? Number(movimentacao.valor) : null;
+    const unitario = valorTotal != null && qtdBase > 0 ? valorTotal / qtdBase : valorTotal;
+
+    setProdEstoqueId(String(movimentacao.estoqueId));
+    setProdUnidade(baseUnit);
+    setProdDataValidade(toDateInput(movimentacao.dataValidade));
+    setProdQuantidade(String(qtdBase));
+    setProdValorUnitario(unitario != null ? String(unitario) : "");
 
     setInitialized(true);
   }, [isEdit, movimentacao, initialized]);
@@ -114,42 +152,64 @@ export default function InsumosNovaMovimentacaoPage() {
   const onProdutoChange = (id: string) => {
     setProdEstoqueId(id);
     const prod = estoqueList.find(p => String(p.id) === id);
-    if (prod) setProdUnidade(normalizarUnidade(prod.unidade));
-    else setProdUnidade("");
+    setProdUnidade(prod ? normalizarUnidade(prod.unidade) : "");
   };
 
   // ── Ao mudar direção, reajustar tipo se necessário ────────────────────────
   const onDirecaoChange = (dir: string) => {
     setDirecao(dir);
-    const tipos = dir === "Entrada"
-      ? TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada")
-      : TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida");
-    if (!tipos.find(t => t.value === tipoMov)) {
-      setTipoMov(tipos[0]?.value ?? "");
-    }
+    const tipos =
+      dir === "Entrada"
+        ? TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada")
+        : TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida");
+    if (!tipos.find(t => t.value === tipoMov)) setTipoMov(tipos[0]?.value ?? "");
   };
 
-  // ── Adicionar produto à lista ─────────────────────────────────────────────
-  const adicionarProduto = () => {
-    if (!prodEstoqueId) { toast.error("Selecione o produto."); return; }
-    if (!prodQuantidade) { toast.error("Informe a quantidade."); return; }
-    if (!prodUnidade) { toast.error("Selecione a unidade de movimentação."); return; }
-    setProdutos(prev => [
-      ...prev,
-      {
-        localId: String(Date.now()),
-        estoqueId: prodEstoqueId,
-        unidadeMov: prodUnidade,
-        dataValidade: prodDataValidade,
-        valorUnitario: prodValorUnitario,
-        quantidade: prodQuantidade,
-      },
-    ]);
+  const limparMiniForm = () => {
     setProdEstoqueId("");
     setProdUnidade("");
     setProdDataValidade("");
     setProdValorUnitario("");
     setProdQuantidade("");
+  };
+
+  // ── Validação de uma linha (mini-form ou da lista) ────────────────────────
+  const validarLinha = (p: ProdutoLinha): string | null => {
+    const prod = estoqueList.find(e => String(e.id) === p.estoqueId);
+    if (!prod) return "Produto não encontrado.";
+    const qtd = parseFloat(p.quantidade.replace(",", "."));
+    if (isNaN(qtd) || qtd === 0) return `Informe a quantidade de ${prod.nome}.`;
+    if (!p.unidadeMov) return `Selecione a unidade de ${prod.nome}.`;
+    const baseUnit = normalizarUnidade(prod.unidade);
+    if (baseUnit && !unidadesCompativeis(p.unidadeMov, baseUnit)) {
+      return `Unidade ${rotuloUnidade(p.unidadeMov)} é incompatível com a unidade base ${rotuloUnidade(
+        baseUnit
+      )} de ${prod.nome}.`;
+    }
+    return null;
+  };
+
+  // ── Adicionar produto à lista (modo criação) ──────────────────────────────
+  const adicionarProduto = () => {
+    if (!prodEstoqueId) {
+      toast.error("Selecione o produto.");
+      return;
+    }
+    const linha: ProdutoLinha = {
+      localId: String(Date.now()),
+      estoqueId: prodEstoqueId,
+      unidadeMov: prodUnidade,
+      dataValidade: prodDataValidade,
+      valorUnitario: prodValorUnitario,
+      quantidade: prodQuantidade,
+    };
+    const erro = validarLinha(linha);
+    if (erro) {
+      toast.error(erro);
+      return;
+    }
+    setProdutos(prev => [...prev, linha]);
+    limparMiniForm();
   };
 
   const removerProduto = (localId: string) =>
@@ -172,81 +232,99 @@ export default function InsumosNovaMovimentacaoPage() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
+  /** Monta uma linha a partir do mini-formulário, se houver dados pendentes. */
+  const linhaPendente = (): ProdutoLinha | null => {
+    if (!prodEstoqueId || !prodQuantidade.trim()) return null;
+    return {
+      localId: "pendente",
+      estoqueId: prodEstoqueId,
+      unidadeMov: prodUnidade,
+      dataValidade: prodDataValidade,
+      valorUnitario: prodValorUnitario,
+      quantidade: prodQuantidade,
+    };
+  };
+
+  /** Converte uma linha para o payload do servidor (quantidade na unidade base). */
+  const prepararPayload = (p: ProdutoLinha, sinal: "entrada" | "saida") => {
+    const prod = estoqueList.find(e => String(e.id) === p.estoqueId)!;
+    const baseUnit = normalizarUnidade(prod.unidade);
+    const qtd = Math.abs(parseFloat(p.quantidade.replace(",", ".")));
+    const convertida = converterUnidade(qtd, p.unidadeMov, baseUnit) ?? qtd;
+    const qtdFinal = sinal === "saida" ? -convertida : convertida;
+    const vu = p.valorUnitario.trim() ? parseFloat(p.valorUnitario.replace(",", ".")) : NaN;
+    const valorTotal = !isNaN(vu) ? String(vu * qtd) : undefined;
+    return {
+      estoqueId: Number(p.estoqueId),
+      fazendaId: fazendaId ? Number(fazendaId) : undefined,
+      tipo: tipoMov,
+      dataMovimentacao: dataEntrada,
+      quantidade: String(qtdFinal),
+      dataValidade: p.dataValidade || undefined,
+      fornecedor: fornecedor.trim() || undefined,
+      notaFiscal: notaFiscal.trim() || undefined,
+      frete: frete.trim() ? frete.replace(",", ".") : undefined,
+      valor: valorTotal,
+      modo: "direto" as const,
+      sinal,
+      unidadeLancamento: baseUnit || undefined,
+    };
+  };
+
   // ── Salvar ────────────────────────────────────────────────────────────────
   const salvar = async () => {
-    if (!tipoMov) { toast.error("Selecione o tipo de movimentação."); return; }
-    if (produtos.length === 0) { toast.error("Adicione ao menos um produto."); return; }
+    if (!tipoMov) {
+      toast.error("Selecione o tipo de movimentação.");
+      return;
+    }
+
+    // Combina a lista com a linha pendente no mini-formulário (não exige clicar
+    // em "Adicionar Produto" antes de salvar).
+    const linhas = [...produtos];
+    const pendente = linhaPendente();
+    if (pendente) linhas.push(pendente);
+
+    if (linhas.length === 0) {
+      toast.error("Adicione ao menos um produto.");
+      return;
+    }
+
+    for (const p of linhas) {
+      const erro = validarLinha(p);
+      if (erro) {
+        toast.error(erro);
+        return;
+      }
+    }
 
     const sinal = sinalDoTipo(tipoMov);
 
-    if (isEdit && movId && produtos[0]) {
-      const p = produtos[0];
-      const qtd = parseFloat(p.quantidade.replace(",", "."));
-      if (isNaN(qtd) || qtd === 0) { toast.error("Quantidade inválida."); return; }
-      const qtdFinal = sinal === "saida" ? -Math.abs(qtd) : Math.abs(qtd);
-      updateMutation.mutate({
-        id: movId,
-        estoqueId: Number(p.estoqueId),
-        fazendaId: fazendaId ? Number(fazendaId) : undefined,
-        tipo: tipoMov,
-        dataMovimentacao: dataEntrada,
-        quantidade: String(qtdFinal),
-        dataValidade: p.dataValidade || undefined,
-        fornecedor: fornecedor.trim() || undefined,
-        notaFiscal: notaFiscal.trim() || undefined,
-        frete: frete.trim() ? frete.replace(",", ".") : undefined,
-        valor: p.valorUnitario.trim() ? p.valorUnitario.replace(",", ".") : undefined,
-        modo: "direto",
-        sinal,
-        unidadeLancamento: p.unidadeMov || undefined,
-      });
+    if (isEdit && movId) {
+      updateMutation.mutate({ id: movId, ...prepararPayload(linhas[0], sinal) });
       return;
     }
 
     try {
-      for (const p of produtos) {
-        const qtd = parseFloat(p.quantidade.replace(",", "."));
-        if (isNaN(qtd) || qtd === 0) { toast.error("Quantidade inválida em um dos produtos."); return; }
-        const qtdFinal = sinal === "saida" ? -Math.abs(qtd) : Math.abs(qtd);
-        const vu = p.valorUnitario ? parseFloat(p.valorUnitario.replace(",", ".")) : undefined;
-        const valorTotal =
-          vu != null && !isNaN(vu) ? String(vu * Math.abs(qtd)) : undefined;
-
-        await createMutation.mutateAsync({
-          estoqueId: Number(p.estoqueId),
-          fazendaId: fazendaId ? Number(fazendaId) : undefined,
-          tipo: tipoMov,
-          dataMovimentacao: dataEntrada,
-          quantidade: String(qtdFinal),
-          dataValidade: p.dataValidade || undefined,
-          unidadeLancamento: p.unidadeMov || undefined,
-          fornecedor: fornecedor.trim() || undefined,
-          notaFiscal: notaFiscal.trim() || undefined,
-          frete: frete.trim() ? frete.replace(",", ".") : undefined,
-          valor: valorTotal,
-          modo: "direto",
-          sinal,
-        });
+      for (const p of linhas) {
+        await createMutation.mutateAsync(prepararPayload(p, sinal));
       }
       toast.success(
-        produtos.length > 1
-          ? `${produtos.length} movimentações registradas!`
-          : "Movimentação registrada!"
+        linhas.length > 1 ? `${linhas.length} movimentações registradas!` : "Movimentação registrada!"
       );
       utils.estoque.listMovimentacoes.invalidate();
       utils.estoque.list.invalidate();
       utils.estoque.resumo.invalidate();
       setLocation("/insumos/visao-geral");
-    } catch (_) {}
+    } catch {
+      /* erros tratados em onError */
+    }
   };
 
   // ── Loading state para edição ─────────────────────────────────────────────
   if (isEdit && (loadingMov || !initialized)) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
-          Carregando...
-        </div>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
       </AppLayout>
     );
   }
@@ -254,13 +332,10 @@ export default function InsumosNovaMovimentacaoPage() {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      {/* Overlay escuro */}
       <div className="fixed inset-0 bg-black/40 z-[60]" />
 
-      {/* Modal scrollável */}
       <div className="fixed inset-0 z-[70] overflow-y-auto flex items-start justify-center py-8 px-4">
         <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl">
-
           {/* ── Cabeçalho ── */}
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-[18px] font-semibold text-gray-900">
@@ -269,7 +344,6 @@ export default function InsumosNovaMovimentacaoPage() {
           </div>
 
           <div className="px-6 py-5 space-y-5">
-
             {/* ── Movimentação + Tipo ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -277,11 +351,7 @@ export default function InsumosNovaMovimentacaoPage() {
                   Movimentação <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <select
-                    value={direcao}
-                    onChange={e => onDirecaoChange(e.target.value)}
-                    className={selectCls}
-                  >
+                  <select value={direcao} onChange={e => onDirecaoChange(e.target.value)} className={selectCls}>
                     <option value="">Selecione uma movimentação</option>
                     <option value="Entrada">Entrada</option>
                     <option value="Saída">Saída</option>
@@ -296,11 +366,7 @@ export default function InsumosNovaMovimentacaoPage() {
                   Tipo de Movimentação <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <select
-                    value={tipoMov}
-                    onChange={e => setTipoMov(e.target.value)}
-                    className={selectCls}
-                  >
+                  <select value={tipoMov} onChange={e => setTipoMov(e.target.value)} className={selectCls}>
                     <option value="">Selecione um tipo de movimentação</option>
                     {tiposFiltrados.map(t => (
                       <option key={t.value} value={t.value}>
@@ -318,15 +384,10 @@ export default function InsumosNovaMovimentacaoPage() {
             {/* ── Estoque Destino ── */}
             <div>
               <label className={labelCls}>
-                Estoque Destino{" "}
-                <span className="text-red-500 text-[11px]">**</span>
+                Estoque Destino <span className="text-red-500 text-[11px]">**</span>
               </label>
               <div className="relative">
-                <select
-                  value={fazendaId}
-                  onChange={e => setFazendaId(e.target.value)}
-                  className={selectCls}
-                >
+                <select value={fazendaId} onChange={e => setFazendaId(e.target.value)} className={selectCls}>
                   <option value="">Selecione um estoque</option>
                   {fazendas.map(f => (
                     <option key={f.id} value={String(f.id)}>
@@ -353,13 +414,11 @@ export default function InsumosNovaMovimentacaoPage() {
               <p className={sectionTitleCls + " mb-3"}>Dados Nota Fiscal</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelCls}>
-                    Fornecedor <span className="text-red-500">*</span>
-                  </label>
+                  <label className={labelCls}>Fornecedor</label>
                   <input
                     value={fornecedor}
                     onChange={e => setFornecedor(e.target.value)}
-                    placeholder="Selecione um fornecedor"
+                    placeholder="Nome do fornecedor"
                     className={inputCls}
                   />
                 </div>
@@ -405,13 +464,15 @@ export default function InsumosNovaMovimentacaoPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className={sectionTitleCls}>Produtos</p>
-                <button
-                  type="button"
-                  onClick={adicionarProduto}
-                  className="px-4 py-1.5 rounded border border-gray-400 text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  ADICIONAR PRODUTO
-                </button>
+                {!isEdit && (
+                  <button
+                    type="button"
+                    onClick={adicionarProduto}
+                    className="px-4 py-1.5 rounded border border-gray-400 text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    ADICIONAR PRODUTO
+                  </button>
+                )}
               </div>
 
               {/* Mini-formulário de produto */}
@@ -426,6 +487,7 @@ export default function InsumosNovaMovimentacaoPage() {
                         value={prodEstoqueId}
                         onChange={e => onProdutoChange(e.target.value)}
                         className={selectCls}
+                        disabled={isEdit}
                       >
                         <option value="">Selecione o produto</option>
                         {estoqueList.map(p => (
@@ -460,6 +522,11 @@ export default function InsumosNovaMovimentacaoPage() {
                         expand_more
                       </span>
                     </div>
+                    {unidadeBaseSelecionada && (
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        Unidade base do produto: <span className="font-medium">{rotuloUnidade(unidadeBaseSelecionada)}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -471,7 +538,6 @@ export default function InsumosNovaMovimentacaoPage() {
                         value={prodDataValidade}
                         onChange={e => setProdDataValidade(e.target.value)}
                         className={inputCls + " pr-9"}
-                        placeholder="Selecione a data"
                       />
                       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
                         calendar_today
@@ -479,9 +545,7 @@ export default function InsumosNovaMovimentacaoPage() {
                     </div>
                   </div>
                   <div>
-                    <label className={labelCls}>
-                      Valor Unitário <span className="text-red-500">*</span>
-                    </label>
+                    <label className={labelCls}>Valor Unitário</label>
                     <input
                       value={prodValorUnitario}
                       onChange={e => setProdValorUnitario(e.target.value)}
@@ -503,82 +567,79 @@ export default function InsumosNovaMovimentacaoPage() {
                     />
                   </div>
                 </div>
+
+                {/* Preview / aviso de conversão de unidade */}
+                {previewConversao?.texto && (
+                  <div
+                    className="px-3 py-2 rounded border text-[12px] text-gray-700"
+                    style={{ borderColor: "#4ECDC4", backgroundColor: "#4ECDC418" }}
+                  >
+                    {previewConversao.texto}
+                  </div>
+                )}
+                {previewConversao?.erro && (
+                  <div className="px-3 py-2 rounded border border-red-200 bg-red-50 text-[12px] text-red-600">
+                    {previewConversao.erro}
+                  </div>
+                )}
               </div>
 
-              {/* Tabela de produtos adicionados */}
-              <div className="border border-gray-200 rounded overflow-hidden">
-                <table className="w-full text-[12px]">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      {[
-                        "PRODUTO",
-                        "QTD",
-                        "UNIDADE",
-                        "VALIDADE",
-                        "VALOR UN.",
-                      ].map(h => (
-                        <th
-                          key={h}
-                          className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                      <th className="w-10" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {produtos.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-3 py-8 text-center text-[12px] text-gray-400"
-                        >
-                          Sem dados
-                        </td>
-                      </tr>
-                    ) : (
-                      produtos.map(p => {
-                        const prod = estoqueList.find(
-                          e => String(e.id) === p.estoqueId
-                        );
-                        return (
-                          <tr
-                            key={p.localId}
-                            className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50"
+              {/* Tabela de produtos adicionados (apenas no modo criação) */}
+              {!isEdit && (
+                <div className="border border-gray-200 rounded overflow-hidden">
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        {["PRODUTO", "QTD", "UNIDADE", "VALIDADE", "VALOR UN."].map(h => (
+                          <th
+                            key={h}
+                            className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap"
                           >
-                            <td className="px-3 py-2.5 font-medium text-gray-900 uppercase whitespace-nowrap">
-                              {prod?.nome ?? "—"}
-                            </td>
-                            <td className="px-3 py-2.5 text-gray-700 tabular-nums">
-                              {p.quantidade}
-                            </td>
-                            <td className="px-3 py-2.5 text-gray-700">
-                              {nomeUnidadeExibicao(p.unidadeMov)}
-                            </td>
-                            <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
-                              {p.dataValidade ? formatDataBr(p.dataValidade) : "—"}
-                            </td>
-                            <td className="px-3 py-2.5 text-gray-700 tabular-nums">
-                              {fmtMoeda(p.valorUnitario)}
-                            </td>
-                            <td className="px-2 py-2.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => removerProduto(p.localId)}
-                                className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
-                                title="Remover"
-                              >
-                                <span className="material-icons text-[16px]">close</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            {h}
+                          </th>
+                        ))}
+                        <th className="w-10" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {produtos.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-[12px] text-gray-400">
+                            Sem dados
+                          </td>
+                        </tr>
+                      ) : (
+                        produtos.map(p => {
+                          const prod = estoqueList.find(e => String(e.id) === p.estoqueId);
+                          return (
+                            <tr key={p.localId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                              <td className="px-3 py-2.5 font-medium text-gray-900 uppercase whitespace-nowrap">
+                                {prod?.nome ?? "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-700 tabular-nums">{p.quantidade}</td>
+                              <td className="px-3 py-2.5 text-gray-700">{nomeUnidadeExibicao(p.unidadeMov)}</td>
+                              <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
+                                {p.dataValidade ? formatDataBr(p.dataValidade) : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-700 tabular-nums">{fmtMoeda(p.valorUnitario)}</td>
+                              <td className="px-2 py-2.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removerProduto(p.localId)}
+                                  className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                                  title="Remover"
+                                >
+                                  <span className="material-icons text-[16px]">close</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 
