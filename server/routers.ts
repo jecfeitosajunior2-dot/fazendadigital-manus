@@ -12,6 +12,12 @@ import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
 
+const imageSlotInput = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("empty") }),
+  z.object({ type: z.literal("keep"), path: z.string() }),
+  z.object({ type: z.literal("new"), data: z.string(), mimeType: z.string() }),
+]);
+
 // ─── AUTH ROUTER ─────────────────────────────────────────────────────────────
 const authRouter = router({
   me: protectedProcedure.query(({ ctx }) => ctx.user),
@@ -455,18 +461,24 @@ const maquinasRouter = router({
   create: protectedProcedure
     .input(z.object(maquinasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const { dataDesativacao, imageSlots, nome, ...rest } = input;
+      const { dataDesativacao, imageSlots, nome, valor, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      const result = await db.insert(maquinas).values({
-        userId: ctx.user.id,
-        ...rest,
-        nome: nome?.trim() || "Sem apelido",
-        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      });
-      return { success: true, id: (result as any).insertId };
+      try {
+        const result = await db.insert(maquinas).values({
+          userId: ctx.user.id,
+          ...rest,
+          nome: nome?.trim() || "Sem apelido",
+          valor: valor && valor !== "0" && valor !== "0.00" ? valor : undefined,
+          dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
+          imagem1: img1,
+          imagem2: img2,
+          imagem3: img3,
+        });
+        return { success: true, id: (result as { insertId?: number }).insertId };
+      } catch (err) {
+        console.error("[maquinas.create]", err);
+        throw new Error("Não foi possível salvar o maquinário. Verifique se o banco está atualizado e tente novamente.");
+      }
     }),
 
   update: protectedProcedure
@@ -644,12 +656,6 @@ const nutricaoRouter = router({
 });
 
 // ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
-const imageSlotInput = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("empty") }),
-  z.object({ type: z.literal("keep"), path: z.string() }),
-  z.object({ type: z.literal("new"), data: z.string(), mimeType: z.string() }),
-]);
-
 const benfeitoriasInputFields = {
   fazendaId: z.number(),
   nome: z.string(),

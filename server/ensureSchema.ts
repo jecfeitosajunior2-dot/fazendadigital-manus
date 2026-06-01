@@ -99,6 +99,9 @@ export async function ensureSchema() {
 
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
     if ((maquinasTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "maquinas", "userId", "int");
+      await ensureColumn(pool, "maquinas", "createdAt", "timestamp DEFAULT CURRENT_TIMESTAMP");
+      await ensureColumn(pool, "maquinas", "updatedAt", "timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
       await ensureColumn(pool, "maquinas", "fazendaId", "int");
       await ensureColumn(pool, "maquinas", "valor", "decimal(12,2)");
       await ensureColumn(pool, "maquinas", "anoAquisicao", "int");
@@ -108,6 +111,13 @@ export async function ensureSchema() {
       await ensureColumn(pool, "maquinas", "imagem1", "text");
       await ensureColumn(pool, "maquinas", "imagem2", "text");
       await ensureColumn(pool, "maquinas", "imagem3", "text");
+      try {
+        await pool.query(
+          "ALTER TABLE `maquinas` MODIFY COLUMN `status` enum('ativo','manutencao','inativo','operacional') DEFAULT 'ativo'"
+        );
+      } catch {
+        /* coluna já compatível */
+      }
     }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
