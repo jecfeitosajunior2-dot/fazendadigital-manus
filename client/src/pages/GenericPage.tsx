@@ -3,7 +3,6 @@ import AppLayout from "@/components/AppLayout";
 import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 
 // --- Animals Page ---
 export function AnimaisPage() {
@@ -143,69 +142,22 @@ export function AnimaisPage() {
 
 // --- Estoque Page ---
 export function EstoquePage() {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ nome: "", categoria: "", unidade: "", quantidade: "", quantidadeMinima: "", valorUnitario: "", localizacao: "", observacoes: "" });
 
   const { data: items, isLoading, refetch } = trpc.estoque.list.useQuery();
-  const createMutation = trpc.estoque.create.useMutation({ onSuccess: () => { toast.success("Item criado!"); setShowForm(false); resetForm(); refetch(); } });
-  const updateMutation = trpc.estoque.update.useMutation({ onSuccess: () => { toast.success("Item atualizado!"); setShowForm(false); resetForm(); refetch(); } });
   const deleteMutation = trpc.estoque.delete.useMutation({ onSuccess: () => { toast.success("Item removido!"); refetch(); } });
 
-  const resetForm = () => { setForm({ nome: "", categoria: "", unidade: "", quantidade: "", quantidadeMinima: "", valorUnitario: "", localizacao: "", observacoes: "" }); setEditItem(null); };
-
   const filtered = useMemo(() => (items || []).filter(i => !search || i.nome.toLowerCase().includes(search.toLowerCase())), [items, search]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editItem) {
-      updateMutation.mutate({ id: editItem.id, ...form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
 
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-          <span className="material-icons text-[14px]">add</span> Novo Item
+        <button onClick={() => setLocation("/insumos/cadastro")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+          <span className="material-icons text-[14px]">add</span> Cadastrar Produto
         </button>
       </div>
-
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
-            <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Item" : "Novo Item de Estoque"}</h2>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <FormLabel required>Nome</FormLabel>
-                <FieldBox required>
-                  <input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className={inputClassCompact} />
-                </FieldBox>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Categoria</label><input value={form.categoria} onChange={e => setForm(f => ({...f, categoria: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Unidade</label><input value={form.unidade} onChange={e => setForm(f => ({...f, unidade: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Quantidade</label><input type="number" step="0.01" value={form.quantidade} onChange={e => setForm(f => ({...f, quantidade: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Qtd. Mínima</label><input type="number" step="0.01" value={form.quantidadeMinima} onChange={e => setForm(f => ({...f, quantidadeMinima: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              </div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Valor Unitário (R$)</label><input type="number" step="0.01" value={form.valorUnitario} onChange={e => setForm(f => ({...f, valorUnitario: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Localização</label><input value={form.localizacao} onChange={e => setForm(f => ({...f, localizacao: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       <div className="mb-3">
         <input type="text" placeholder="Buscar item..." value={search} onChange={e => setSearch(e.target.value)} className="border border-gray-300 rounded px-3 py-1.5 text-[12px] w-full sm:w-64" />
@@ -218,10 +170,10 @@ export function EstoquePage() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Nome</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Categoria</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Subcategoria</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Quantidade</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Unidade</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Valor Unit.</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Status</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Situação</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
               </tr>
             </thead>
@@ -231,20 +183,26 @@ export function EstoquePage() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum item no estoque.</td></tr>
               ) : filtered.map((item) => {
-                const isLow = item.quantidadeMinima && Number(item.quantidade) <= Number(item.quantidadeMinima);
+                const isLow = item.monitorarEstoque && item.quantidadeMinima && Number(item.quantidade) <= Number(item.quantidadeMinima);
                 return (
                   <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 font-medium">{item.nome}</td>
                     <td className="px-3 py-2 text-gray-500">{item.categoria || "-"}</td>
+                    <td className="px-3 py-2 text-gray-500">{item.subcategoria || "-"}</td>
                     <td className="px-3 py-2">{Number(item.quantidade).toFixed(2)}</td>
                     <td className="px-3 py-2">{item.unidade || "-"}</td>
-                    <td className="px-3 py-2">{item.valorUnitario ? `R$ ${Number(item.valorUnitario).toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-2">
-                      {isLow ? <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px]">Estoque Baixo</span> : <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">OK</span>}
+                      {item.situacao === "inativo" ? (
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">Inativo</span>
+                      ) : isLow ? (
+                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[10px]">Estoque Baixo</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">Ativo</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
-                        <button onClick={() => { setEditItem(item); setForm({ nome: item.nome, categoria: item.categoria || "", unidade: item.unidade || "", quantidade: item.quantidade?.toString() || "", quantidadeMinima: item.quantidadeMinima?.toString() || "", valorUnitario: item.valorUnitario?.toString() || "", localizacao: item.localizacao || "", observacoes: item.observacoes || "" }); setShowForm(true); }} className="p-1 text-gray-400 hover:text-blue-600">
+                        <button onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)} className="p-1 text-gray-400 hover:text-blue-600">
                           <span className="material-icons text-[16px]">edit</span>
                         </button>
                         <button onClick={() => { if (confirm("Remover item?")) deleteMutation.mutate({ id: item.id }); }} className="p-1 text-gray-400 hover:text-red-600">

@@ -696,49 +696,56 @@ const benfeitoriasRouter = router({
 });
 
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
+const estoqueInputFields = {
+  nome: z.string(),
+  categoria: z.string(),
+  subcategoria: z.string(),
+  unidade: z.string(),
+  quantidadeMinima: z.string().optional(),
+  quantidadeMaxima: z.string().optional(),
+  fabricante: z.string().optional(),
+  identificadorUnico: z.string().optional(),
+  produzidoNaFazenda: z.boolean().optional(),
+  monitorarEstoque: z.boolean(),
+  situacao: z.enum(["ativo", "inativo"]).optional(),
+  embalagens: z.array(z.string()).optional(),
+  quantidade: z.string().optional(),
+  valorUnitario: z.string().optional(),
+  localizacao: z.string().optional(),
+  observacoes: z.string().optional(),
+};
+
 const estoqueRouter = router({
   list: protectedProcedure.query(async () => {
     return db.select().from(estoque).orderBy(desc(estoque.createdAt));
   }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
+      return row ?? null;
+    }),
+
   create: protectedProcedure
-    .input(z.object({
-      nome: z.string(),
-      categoria: z.string().optional(),
-      unidade: z.string().optional(),
-      quantidade: z.string().optional(),
-      quantidadeMinima: z.string().optional(),
-      valorUnitario: z.string().optional(),
-      localizacao: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object(estoqueInputFields))
     .mutation(async ({ input }) => {
+      const { embalagens, ...rest } = input;
       const result = await db.insert(estoque).values({
-        nome: input.nome,
-        categoria: input.categoria,
-        unidade: input.unidade,
-        quantidade: input.quantidade,
-        quantidadeMinima: input.quantidadeMinima,
-        valorUnitario: input.valorUnitario,
-        localizacao: input.localizacao,
-        observacoes: input.observacoes,
+        ...rest,
+        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
       });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      nome: z.string().optional(),
-      categoria: z.string().optional(),
-      unidade: z.string().optional(),
-      quantidade: z.string().optional(),
-      valorUnitario: z.string().optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object({ id: z.number(), ...estoqueInputFields }))
     .mutation(async ({ input }) => {
-      const { id, ...rest } = input;
-      await db.update(estoque).set(rest).where(eq(estoque.id, id));
+      const { id, embalagens, ...rest } = input;
+      await db.update(estoque).set({
+        ...rest,
+        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
+      }).where(eq(estoque.id, id));
       return { success: true };
     }),
 

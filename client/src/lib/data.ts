@@ -52,6 +52,7 @@ export const menuItems: MenuItem[] = [
     icon: "inventory_2",
     children: [
       { label: "Visão Geral", icon: "", path: "/insumos/visao-geral" },
+      { label: "Cadastro de Produtos", icon: "", path: "/insumos/cadastro" },
       { label: "Estoque", icon: "", path: "/insumos/estoque" },
       { label: "Entradas", icon: "", path: "/insumos/entradas" },
       { label: "Saídas", icon: "", path: "/insumos/saidas" },

@@ -79,6 +79,18 @@ export async function ensureSchema() {
       await ensureColumn(pool, "benfeitorias", "imagem2", "text");
       await ensureColumn(pool, "benfeitorias", "imagem3", "text");
     }
+
+    const [estoqueTable] = await pool.query(`SHOW TABLES LIKE 'estoque'`);
+    if ((estoqueTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "estoque", "subcategoria", "varchar(80)");
+      await ensureColumn(pool, "estoque", "quantidade_maxima", "decimal(10,2)");
+      await ensureColumn(pool, "estoque", "fabricante", "varchar(100)");
+      await ensureColumn(pool, "estoque", "identificador_unico", "varchar(100)");
+      await ensureColumn(pool, "estoque", "produzido_na_fazenda", "boolean DEFAULT false");
+      await ensureColumn(pool, "estoque", "monitorar_estoque", "boolean DEFAULT false");
+      await ensureColumn(pool, "estoque", "situacao", "varchar(20) DEFAULT 'ativo'");
+      await ensureColumn(pool, "estoque", "embalagens", "text");
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

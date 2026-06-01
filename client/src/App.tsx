@@ -37,6 +37,7 @@ import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
+import ProductRegistrationPage from "./pages/ProductRegistrationPage";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -83,6 +84,7 @@ function ProtectedRoutes() {
       {/* Insumos */}
       <Route path="/insumos/visao-geral" component={EstoquePage} />
       <Route path="/insumos/estoque" component={EstoquePage} />
+      <Route path="/insumos/cadastro" component={ProductRegistrationPage} />
       <Route path="/insumos/entradas" component={SuppliesManagementPage} />
       <Route path="/insumos/saidas" component={SuppliesManagementPage} />
 
