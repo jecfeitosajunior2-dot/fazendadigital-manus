@@ -14,6 +14,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { trpc } from "@/lib/trpc";
 import {
   UNIDADES_OPCOES,
+  TIPOS_MOVIMENTACAO,
+  sinalDoTipo,
   calcularQuantidadeMovimentacao,
   formatTotalMovimentacao,
   normalizarUnidade,
@@ -32,19 +34,29 @@ export default function InsumosNovaMovimentacaoPage() {
   const isEdit = movId != null && !isNaN(movId);
 
   const [estoqueId, setEstoqueId] = useState("");
+  const [tipoMov, setTipoMov] = useState("Compra");
+  const [fazendaId, setFazendaId] = useState("");
   const [dataMov, setDataMov] = useState(() => new Date().toISOString().slice(0, 10));
   const [dataValidade, setDataValidade] = useState("");
-  const [sinal, setSinal] = useState<"entrada" | "saida">("entrada");
   const [modo, setModo] = useState<ModoQuantidadeMov>("unidades");
   const [quantidadeDireta, setQuantidadeDireta] = useState("");
   const [quantidadeUnidades, setQuantidadeUnidades] = useState("");
   const [quantidadePorUnidade, setQuantidadePorUnidade] = useState("");
   const [unidadeLancamento, setUnidadeLancamento] = useState("");
   const [embalagemNome, setEmbalagemNome] = useState("");
+  const [destino, setDestino] = useState("");
+  const [manejo, setManejo] = useState("");
+  const [notaFiscal, setNotaFiscal] = useState("");
+  const [frete, setFrete] = useState("");
+  const [fornecedor, setFornecedor] = useState("");
+  const [valor, setValor] = useState("");
   const [initialized, setInitialized] = useState(false);
+
+  const sinal = sinalDoTipo(tipoMov);
 
   const utils = trpc.useUtils();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: movimentacao, isLoading: loadingMov } = trpc.estoque.getMovimentacao.useQuery(
     { id: movId! },
     { enabled: isEdit }
@@ -76,9 +88,24 @@ export default function InsumosNovaMovimentacaoPage() {
     setDataMov(toDateInput(movimentacao.dataMovimentacao));
     setDataValidade(toDateInput(movimentacao.dataValidade));
 
+    const fazendaSalva = movimentacao.fazendaId ?? movimentacao.produtoFazendaId;
+    if (fazendaSalva) setFazendaId(String(fazendaSalva));
+
+    if (movimentacao.tipo) {
+      setTipoMov(movimentacao.tipo);
+    } else {
+      setTipoMov(qty >= 0 ? "Compra" : "Consumo interno");
+    }
+
+    setDestino(movimentacao.destino ?? "");
+    setManejo(movimentacao.manejo ?? "");
+    setNotaFiscal(movimentacao.notaFiscal ?? "");
+    setFrete(movimentacao.frete != null ? String(movimentacao.frete) : "");
+    setFornecedor(movimentacao.fornecedor ?? "");
+    setValor(movimentacao.valor != null ? String(movimentacao.valor) : "");
+
     if (obs?.modo === "unidades") {
       setModo("unidades");
-      setSinal(obs.sinal ?? (qty >= 0 ? "entrada" : "saida"));
       setQuantidadeUnidades(obs.unidades ?? "");
       setQuantidadePorUnidade(obs.porUnidade ?? "");
       setUnidadeLancamento(
@@ -86,7 +113,6 @@ export default function InsumosNovaMovimentacaoPage() {
       );
     } else {
       setModo("direto");
-      setSinal(qty >= 0 ? "entrada" : "saida");
       setQuantidadeDireta(String(Math.abs(qty)));
       setUnidadeLancamento(normalizarUnidade(movimentacao.unidade));
     }
@@ -100,6 +126,7 @@ export default function InsumosNovaMovimentacaoPage() {
       setUnidadeLancamento("");
       return;
     }
+    if (produto.fazendaId) setFazendaId(String(produto.fazendaId));
     const base = normalizarUnidade(produto.unidade);
     setUnidadeLancamento(base);
     const emb = parseEmbalagens(produto.embalagens);
@@ -168,9 +195,17 @@ export default function InsumosNovaMovimentacaoPage() {
 
   const payload = () => ({
     estoqueId: Number(estoqueId),
+    fazendaId: fazendaId ? Number(fazendaId) : undefined,
+    tipo: tipoMov,
     dataMovimentacao: dataMov,
     quantidade: String(calculo.total),
     dataValidade: dataValidade || undefined,
+    destino: destino.trim() || undefined,
+    manejo: manejo.trim() || undefined,
+    notaFiscal: notaFiscal.trim() || undefined,
+    frete: frete.trim() ? frete.replace(",", ".") : undefined,
+    fornecedor: fornecedor.trim() || undefined,
+    valor: valor.trim() ? valor.replace(",", ".") : undefined,
     modo,
     quantidadeUnidades: modo === "unidades" ? quantidadeUnidades : undefined,
     quantidadePorUnidade: modo === "unidades" ? quantidadePorUnidade : undefined,
@@ -311,29 +346,43 @@ export default function InsumosNovaMovimentacaoPage() {
             </div>
           </div>
 
-          <div>
-            <FormLabel required>Tipo</FormLabel>
-            <div className="flex flex-wrap gap-4 px-1 py-1">
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                <input
-                  type="radio"
-                  name="sinal"
-                  checked={sinal === "entrada"}
-                  onChange={() => setSinal("entrada")}
-                  className="accent-[#4ECDC4]"
-                />
-                Entrada
-              </label>
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                <input
-                  type="radio"
-                  name="sinal"
-                  checked={sinal === "saida"}
-                  onChange={() => setSinal("saida")}
-                  className="accent-[#4ECDC4]"
-                />
-                Saída
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <FormLabel required>Tipo de movimentação</FormLabel>
+              <FormSelect
+                value={tipoMov}
+                onChange={setTipoMov}
+                placeholder="Selecione o tipo"
+                displayValue={tipoMov || undefined}
+                required
+              >
+                {TIPOS_MOVIMENTACAO.map(t => (
+                  <SelectItem key={t.value} value={t.value} className="text-[12px]">
+                    {t.value}
+                  </SelectItem>
+                ))}
+              </FormSelect>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Este tipo é uma{" "}
+                <span className={sinal === "entrada" ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                  {sinal === "entrada" ? "entrada (soma ao estoque)" : "saída (reduz o estoque)"}
+                </span>.
+              </p>
+            </div>
+            <div>
+              <FormLabel>Origem (Fazenda)</FormLabel>
+              <FormSelect
+                value={fazendaId}
+                onChange={setFazendaId}
+                placeholder="Selecione a fazenda"
+                displayValue={fazendas.find(f => String(f.id) === fazendaId)?.nome || undefined}
+              >
+                {fazendas.map(f => (
+                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
+                    {f.nome}
+                  </SelectItem>
+                ))}
+              </FormSelect>
             </div>
           </div>
 
@@ -459,6 +508,38 @@ export default function InsumosNovaMovimentacaoPage() {
           {calculo.erro && (quantidadeDireta || quantidadeUnidades) && (
             <p className="text-[12px] text-red-600">{calculo.erro}</p>
           )}
+
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-[11px] font-semibold uppercase text-gray-500 tracking-wide mb-3">
+              Detalhes (opcional)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel>Destino</FormLabel>
+                <FormInput value={destino} onChange={setDestino} placeholder="Ex.: Curral, Lote 3, Cliente..." />
+              </div>
+              <div>
+                <FormLabel>Manejo</FormLabel>
+                <FormInput value={manejo} onChange={setManejo} placeholder="Manejo vinculado" />
+              </div>
+              <div>
+                <FormLabel>Fornecedor</FormLabel>
+                <FormInput value={fornecedor} onChange={setFornecedor} placeholder="Nome do fornecedor" />
+              </div>
+              <div>
+                <FormLabel>Nota Fiscal</FormLabel>
+                <FormInput value={notaFiscal} onChange={setNotaFiscal} placeholder="nº nota fiscal" />
+              </div>
+              <div>
+                <FormLabel>Frete (R$)</FormLabel>
+                <FormInput type="text" inputMode="decimal" value={frete} onChange={setFrete} placeholder="0,00" />
+              </div>
+              <div>
+                <FormLabel>Valor (R$)</FormLabel>
+                <FormInput type="text" inputMode="decimal" value={valor} onChange={setValor} placeholder="0,00" />
+              </div>
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-2 pt-2">
             <button

@@ -125,6 +125,23 @@ export function parseObsMovimentacao(obs: string | null | undefined): ObsMovimen
   return null;
 }
 
+/** Tipos de movimentação (iRancho) com o sinal que aplicam ao estoque. */
+export const TIPOS_MOVIMENTACAO: { value: string; sinal: "entrada" | "saida" }[] = [
+  { value: "Compra", sinal: "entrada" },
+  { value: "Produção própria", sinal: "entrada" },
+  { value: "Ajuste de entrada", sinal: "entrada" },
+  { value: "Consumo interno", sinal: "saida" },
+  { value: "Venda", sinal: "saida" },
+  { value: "Transferência", sinal: "saida" },
+  { value: "Perda/Descarte", sinal: "saida" },
+  { value: "Ajuste de saída", sinal: "saida" },
+];
+
+export const sinalDoTipo = (tipo: string | null | undefined): "entrada" | "saida" => {
+  const t = TIPOS_MOVIMENTACAO.find(x => x.value === tipo);
+  return t?.sinal ?? "entrada";
+};
+
 export const FABRICANTES = [
   "Ourofino",
   "Zoetis",

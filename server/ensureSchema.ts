@@ -111,6 +111,15 @@ export async function ensureSchema() {
       )
     `);
 
+    await ensureColumn(pool, "estoque_movimentacoes", "fazenda_id", "int");
+    await ensureColumn(pool, "estoque_movimentacoes", "tipo", "varchar(40)");
+    await ensureColumn(pool, "estoque_movimentacoes", "destino", "varchar(150)");
+    await ensureColumn(pool, "estoque_movimentacoes", "manejo", "varchar(150)");
+    await ensureColumn(pool, "estoque_movimentacoes", "nota_fiscal", "varchar(60)");
+    await ensureColumn(pool, "estoque_movimentacoes", "frete", "decimal(12,2)");
+    await ensureColumn(pool, "estoque_movimentacoes", "fornecedor", "varchar(150)");
+    await ensureColumn(pool, "estoque_movimentacoes", "valor", "decimal(12,2)");
+
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
     if ((maquinasTable as unknown[]).length > 0) {
       await ensureColumn(pool, "maquinas", "userId", "int");

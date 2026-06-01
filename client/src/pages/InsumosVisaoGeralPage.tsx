@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import InsumosMovimentacoesTable from "@/components/insumos/InsumosMovimentacoesTable";
 import InsumosMonitoradoPanels from "@/components/insumos/InsumosMonitoradoPanels";
+import InsumosMovimentacaoPanel from "@/components/insumos/InsumosMovimentacaoPanel";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -32,6 +33,14 @@ function MovimentacaoToolbar({ onNova, onCadastrar }: { onNova: () => void; onCa
 export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
   const [, setLocation] = useLocation();
   const isOverview = variant === "overview";
+
+  if (variant === "movimentacao") {
+    return (
+      <AppLayout>
+        <InsumosMovimentacaoPanel />
+      </AppLayout>
+    );
+  }
 
   const toolbar = (
     <MovimentacaoToolbar

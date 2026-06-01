@@ -289,9 +289,17 @@ export const estoque = mysqlTable("estoque", {
 export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),
   estoqueId: int("estoque_id").notNull(),
+  fazendaId: int("fazenda_id"),
+  tipo: varchar("tipo", { length: 40 }),
   dataMovimentacao: date("data_movimentacao").notNull(),
   quantidade: decimal("quantidade", { precision: 12, scale: 2 }).notNull(),
   dataValidade: date("data_validade"),
+  destino: varchar("destino", { length: 150 }),
+  manejo: varchar("manejo", { length: 150 }),
+  notaFiscal: varchar("nota_fiscal", { length: 60 }),
+  frete: decimal("frete", { precision: 12, scale: 2 }),
+  fornecedor: varchar("fornecedor", { length: 150 }),
+  valor: decimal("valor", { precision: 12, scale: 2 }),
   observacoes: text("observacoes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
