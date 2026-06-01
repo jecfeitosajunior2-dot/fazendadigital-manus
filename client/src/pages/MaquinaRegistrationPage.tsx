@@ -4,6 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { SelectItem } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
@@ -12,7 +13,10 @@ import {
   FormSelect,
   FormTextarea,
   FormYearPicker,
+  FormDatePicker,
+  FieldBox,
 } from "@/components/FormFields";
+import { TIPOS_MAQUINA, MARCAS_MAQUINA } from "@/lib/maquina-types";
 
 type ImageSlot =
   | { kind: "empty" }
@@ -20,20 +24,34 @@ type ImageSlot =
   | { kind: "file"; file: File; previewUrl: string };
 
 type FormState = {
+  tipo: string;
   fazendaId: string;
-  nome: string;
-  anoConstrucao: string;
+  apelido: string;
   valor: string;
+  marca: string;
+  modelo: string;
+  placa: string;
+  anoFabricacao: string;
+  anoAquisicao: string;
   vidaUtil: string;
+  dataDesativacao: string;
+  estado: "novo" | "usado";
   observacoes: string;
 };
 
 const emptyForm = (): FormState => ({
+  tipo: "",
   fazendaId: "",
-  nome: "",
-  anoConstrucao: "",
+  apelido: "",
   valor: "",
+  marca: "",
+  modelo: "",
+  placa: "",
+  anoFabricacao: "",
+  anoAquisicao: "",
   vidaUtil: "",
+  dataDesativacao: "",
+  estado: "novo",
   observacoes: "",
 });
 
@@ -115,16 +133,46 @@ function ImageUploadSlot({
   );
 }
 
-export default function BenfeitoriaRegistrationPage() {
+function FormRadioGroup({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <FieldBox variant="light">
+      <RadioGroup value={value} onValueChange={onChange} className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center">
+        {options.map(opt => (
+          <label key={opt.value} className="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer">
+            <RadioGroupItem value={opt.value} className="border-gray-400 text-[#4ECDC4]" />
+            {opt.label}
+          </label>
+        ))}
+      </RadioGroup>
+    </FieldBox>
+  );
+}
+
+function toDateInput(value: unknown): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+export default function MaquinaRegistrationPage() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const searchParams = new URLSearchParams(window.location.search);
-  const benfeitoriaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
-  const isEdit = benfeitoriaId != null && !isNaN(benfeitoriaId);
+  const maquinaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
+  const isEdit = maquinaId != null && !isNaN(maquinaId);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: benfeitoria, isLoading: loadingBenfeitoria } = trpc.benfeitorias.get.useQuery(
-    { id: benfeitoriaId! },
+  const { data: maquina, isLoading: loadingMaquina } = trpc.maquinas.get.useQuery(
+    { id: maquinaId! },
     { enabled: isEdit }
   );
 
@@ -137,19 +185,26 @@ export default function BenfeitoriaRegistrationPage() {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    if (isEdit && benfeitoria && !initialized) {
+    if (isEdit && maquina && !initialized) {
       setForm({
-        fazendaId: benfeitoria.fazendaId ? String(benfeitoria.fazendaId) : "",
-        nome: benfeitoria.nome || "",
-        anoConstrucao: benfeitoria.anoConstrucao ? String(benfeitoria.anoConstrucao) : "",
-        valor: benfeitoria.valorEstimado
-          ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
+        tipo: maquina.tipo || "",
+        fazendaId: maquina.fazendaId ? String(maquina.fazendaId) : "",
+        apelido: maquina.nome || "",
+        valor: maquina.valor
+          ? formatCurrencyBrl(String(Math.round(parseFloat(String(maquina.valor)) * 100)))
           : "",
-        vidaUtil: benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : "",
-        observacoes: benfeitoria.observacoes || "",
+        marca: maquina.marca || "",
+        modelo: maquina.modelo || "",
+        placa: maquina.placa || "",
+        anoFabricacao: maquina.ano ? String(maquina.ano) : "",
+        anoAquisicao: maquina.anoAquisicao ? String(maquina.anoAquisicao) : "",
+        vidaUtil: maquina.vidaUtil || "",
+        dataDesativacao: toDateInput(maquina.dataDesativacao),
+        estado: maquina.estado === "usado" ? "usado" : "novo",
+        observacoes: maquina.observacoes || "",
       });
       setImageSlots(
-        [benfeitoria.imagem1, benfeitoria.imagem2, benfeitoria.imagem3].map(path =>
+        [maquina.imagem1, maquina.imagem2, maquina.imagem3].map(path =>
           path
             ? { kind: "preview" as const, url: path, existingPath: path }
             : { kind: "empty" as const }
@@ -157,22 +212,22 @@ export default function BenfeitoriaRegistrationPage() {
       );
       setInitialized(true);
     }
-  }, [isEdit, benfeitoria, initialized]);
+  }, [isEdit, maquina, initialized]);
 
-  const createMutation = trpc.benfeitorias.create.useMutation({
+  const createMutation = trpc.maquinas.create.useMutation({
     onSuccess: () => {
-      utils.benfeitorias.list.invalidate();
-      toast.success("Benfeitoria cadastrada!");
-      setLocation("/fazendas/benfeitorias");
+      utils.maquinas.list.invalidate();
+      toast.success("Maquinário cadastrado!");
+      setLocation("/maquinas/lista-maquinas");
     },
     onError: e => toast.error(e.message),
   });
 
-  const updateMutation = trpc.benfeitorias.update.useMutation({
+  const updateMutation = trpc.maquinas.update.useMutation({
     onSuccess: () => {
-      utils.benfeitorias.list.invalidate();
-      toast.success("Benfeitoria atualizada!");
-      setLocation("/fazendas/benfeitorias");
+      utils.maquinas.list.invalidate();
+      toast.success("Maquinário atualizado!");
+      setLocation("/maquinas/lista-maquinas");
     },
     onError: e => toast.error(e.message),
   });
@@ -231,25 +286,32 @@ export default function BenfeitoriaRegistrationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.tipo) { toast.error("Selecione o tipo de máquina"); return; }
     if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
-    if (!form.nome.trim()) { toast.error("Nome da benfeitoria é obrigatório"); return; }
-    if (!form.anoConstrucao.trim()) { toast.error("Ano de construção é obrigatório"); return; }
+    if (!form.marca) { toast.error("Selecione a marca"); return; }
 
     const payload = {
       fazendaId: parseInt(form.fazendaId),
-      nome: form.nome.trim(),
-      anoConstrucao: parseInt(form.anoConstrucao),
+      nome: form.apelido.trim() || undefined,
+      tipo: form.tipo,
+      marca: form.marca,
+      modelo: form.modelo.trim() || undefined,
+      placa: form.placa.trim() || undefined,
+      ano: form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : undefined,
+      anoAquisicao: form.anoAquisicao.trim() ? parseInt(form.anoAquisicao, 10) : undefined,
+      valor: parseCurrencyBrl(form.valor) || undefined,
       vidaUtil: form.vidaUtil.trim() || undefined,
-      valorEstimado: parseCurrencyBrl(form.valor) || undefined,
+      dataDesativacao: form.dataDesativacao || undefined,
+      estado: form.estado,
       observacoes: form.observacoes.trim() || undefined,
       imageSlots: await buildImageSlotsPayload(),
     };
 
-    if (isEdit && benfeitoriaId) updateMutation.mutate({ id: benfeitoriaId, ...payload });
+    if (isEdit && maquinaId) updateMutation.mutate({ id: maquinaId, ...payload });
     else createMutation.mutate(payload);
   };
 
-  if (isEdit && loadingBenfeitoria) {
+  if (isEdit && loadingMaquina) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
@@ -265,12 +327,12 @@ export default function BenfeitoriaRegistrationPage() {
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            {isEdit ? "Editar benfeitoria" : "Cadastro de benfeitoria"}
+            {isEdit ? "Editar maquinário" : "Cadastro de maquinário"}
           </h1>
 
           <div className="mb-6">
             <p className="text-[11px] text-gray-600 mb-3">
-              Selecione até três fotos para sua Benfeitoria
+              Selecione até três fotos para seu maquinário
             </p>
             <div className="flex gap-3">
               {imageSlots.map((slot, i) => (
@@ -284,7 +346,21 @@ export default function BenfeitoriaRegistrationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          {/* Linha 1 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <FormLabel required>Tipo</FormLabel>
+              <FormSelect
+                value={form.tipo}
+                onChange={v => set("tipo", v)}
+                placeholder="Selecione um tipo de máquina"
+                required
+              >
+                {TIPOS_MAQUINA.map(t => (
+                  <SelectItem key={t} value={t} className="text-[12px]">{t}</SelectItem>
+                ))}
+              </FormSelect>
+            </div>
             <div>
               <FormLabel required>Fazenda</FormLabel>
               <FormSelect
@@ -301,32 +377,76 @@ export default function BenfeitoriaRegistrationPage() {
               </FormSelect>
             </div>
             <div>
-              <FormLabel required>Nome</FormLabel>
+              <FormLabel>Apelido</FormLabel>
               <FormInput
-                value={form.nome}
-                onChange={v => set("nome", v)}
-                placeholder="Digite um nome para a benfeitoria"
-                required
+                value={form.apelido}
+                onChange={v => set("apelido", v)}
+                placeholder="Digite um nome para a máquina"
               />
             </div>
           </div>
 
+          {/* Linha 2 — Valor (sem combustível / unidade de medição) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <FormLabel required>Ano</FormLabel>
-              <FormYearPicker
-                value={form.anoConstrucao}
-                onChange={v => set("anoConstrucao", v)}
-                placeholder="Selecione o ano de construção"
-                required
-              />
-            </div>
             <div>
               <FormLabel>Valor</FormLabel>
               <FormInput
                 value={form.valor}
                 onChange={v => set("valor", formatCurrencyBrl(v))}
                 placeholder="R$ 0,00"
+              />
+            </div>
+          </div>
+
+          {/* Linha 3 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <FormLabel required>Marca</FormLabel>
+              <FormSelect
+                value={form.marca}
+                onChange={v => set("marca", v)}
+                placeholder="Selecione a marca da máquina"
+                required
+              >
+                {MARCAS_MAQUINA.map(m => (
+                  <SelectItem key={m} value={m} className="text-[12px]">{m}</SelectItem>
+                ))}
+              </FormSelect>
+            </div>
+            <div>
+              <FormLabel>Modelo</FormLabel>
+              <FormInput
+                value={form.modelo}
+                onChange={v => set("modelo", v)}
+                placeholder="Digite o modelo da máquina"
+              />
+            </div>
+            <div>
+              <FormLabel>Placa ou nº de série</FormLabel>
+              <FormInput
+                value={form.placa}
+                onChange={v => set("placa", v)}
+                placeholder="Placa do veículo ou nº de série da máquina"
+              />
+            </div>
+          </div>
+
+          {/* Linha 4 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <FormLabel>Ano de Fabricação</FormLabel>
+              <FormYearPicker
+                value={form.anoFabricacao}
+                onChange={v => set("anoFabricacao", v)}
+                placeholder="Selecione o ano de fabricação"
+              />
+            </div>
+            <div>
+              <FormLabel>Ano de Aquisição</FormLabel>
+              <FormYearPicker
+                value={form.anoAquisicao}
+                onChange={v => set("anoAquisicao", v)}
+                placeholder="Selecione o ano de aquisição"
               />
             </div>
             <div>
@@ -339,12 +459,35 @@ export default function BenfeitoriaRegistrationPage() {
             </div>
           </div>
 
+          {/* Linha 5 — sem porcentagem utilizada na atividade */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <FormLabel>Data de Desativação</FormLabel>
+              <FormDatePicker
+                value={form.dataDesativacao}
+                onChange={v => set("dataDesativacao", v)}
+                placeholder="Selecione a data de desativação"
+              />
+            </div>
+            <div>
+              <FormLabel>Estado</FormLabel>
+              <FormRadioGroup
+                value={form.estado}
+                onChange={v => set("estado", v as "novo" | "usado")}
+                options={[
+                  { value: "novo", label: "Novo" },
+                  { value: "usado", label: "Usado" },
+                ]}
+              />
+            </div>
+          </div>
+
           <div className="mb-6">
             <FormLabel>Observações</FormLabel>
             <FormTextarea
               value={form.observacoes}
               onChange={v => set("observacoes", v)}
-              placeholder="Descreva sua benfeitoria"
+              placeholder="Descreva seu maquinário"
               rows={3}
             />
           </div>
@@ -352,10 +495,10 @@ export default function BenfeitoriaRegistrationPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => setLocation("/fazendas/benfeitorias")}
+              onClick={() => setLocation("/maquinas/lista-maquinas")}
               className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
             >
-              Voltar
+              Cancelar
             </button>
             <button
               type="submit"
@@ -363,7 +506,7 @@ export default function BenfeitoriaRegistrationPage() {
               className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
+              {isBusy ? "Salvando..." : "Salvar maquinário"}
             </button>
           </div>
         </div>
@@ -372,4 +515,4 @@ export default function BenfeitoriaRegistrationPage() {
   );
 }
 
-export { BenfeitoriaRegistrationPage };
+export { MaquinaRegistrationPage };

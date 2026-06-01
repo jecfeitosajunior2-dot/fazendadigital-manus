@@ -40,54 +40,63 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Fraunces', serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
 :root {
   --radius: 0.25rem;
-  /* Professional AgroHub Brand Colors */
-  --fd-primary: #4ECDC4;
-  --fd-primary-light: #2D5A5A;
-  --fd-secondary: #3D4E5C;
-  --fd-accent: #1A3A3A;
-  --fd-warm-beige: #4ECDC4;
-  --fd-bg: #F5F5F5;
-  --fd-text: #1F2937;
-  
-  --background: #F5F5F5;
-  --foreground: #1F2937;
+  /* Fazenda Digital — Nova Identidade Visual Oficial */
+  /* Turquesa */
+  --fd-turquesa-1: #1BC5BD;
+  --fd-turquesa-2: #14B8A6;
+  --fd-turquesa-3: #0EA5A4;
+  --fd-turquesa-4: #0891B2;
+  /* Azul Escuro */
+  --fd-navy-1: #164E63;
+  --fd-navy-2: #155E75;
+  --fd-navy-3: #0F172A;
+  /* Dourado Premium */
+  --fd-gold: #D4AF37;
+  /* Aliases */
+  --fd-primary: #1BC5BD;
+  --fd-primary-dark: #0891B2;
+  --fd-bg: #F8FAFC;
+  --fd-text: #0F172A;
+
+  --background: #F8FAFC;
+  --foreground: #0F172A;
   --card: #FFFFFF;
-  --card-foreground: #1F2937;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #1F2937;
-  --primary: #4ECDC4;
-  --primary-foreground: #1F2937;
-  --secondary: #2D5A5A;
+  --popover-foreground: #0F172A;
+  --primary: #1BC5BD;
+  --primary-foreground: #FFFFFF;
+  --secondary: #155E75;
   --secondary-foreground: #FFFFFF;
-  --muted: #E5E7EB;
-  --muted-foreground: #6B7280;
-  --accent: #4ECDC4;
-  --accent-foreground: #1F2937;
+  --muted: #E2E8F0;
+  --muted-foreground: #64748B;
+  --accent: #14B8A6;
+  --accent-foreground: #FFFFFF;
   --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
-  --border: #D1D5DB;
+  --border: #CBD5E1;
   --input: #FFFFFF;
-  --ring: #4ECDC4;
-  --chart-1: #4ECDC4;
-  --chart-2: #2D5A5A;
-  --chart-3: #3D4E5C;
-  --chart-4: #1A3A3A;
-  --chart-5: #10B981;
-  --sidebar: #3D4E5C;
+  --ring: #1BC5BD;
+  --chart-1: #1BC5BD;
+  --chart-2: #0891B2;
+  --chart-3: #164E63;
+  --chart-4: #D4AF37;
+  --chart-5: #14B8A6;
+  --sidebar: #0F172A;
   --sidebar-foreground: #FFFFFF;
-  --sidebar-primary: #4ECDC4;
-  --sidebar-primary-foreground: #1F2937;
-  --sidebar-accent: #4ECDC4;
-  --sidebar-accent-foreground: #1F2937;
-  --sidebar-border: #2D5A5A;
-  --sidebar-ring: #4ECDC4;
+  --sidebar-primary: #1BC5BD;
+  --sidebar-primary-foreground: #0F172A;
+  --sidebar-accent: #164E63;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #1BC5BD;
 }
 
 @layer base {
@@ -96,7 +105,12 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
-    font-family: 'Roboto', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-weight: 400;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -138,15 +152,30 @@
   }
 }
 
-/* Fazenda Digital exact colors (from real app inspection) */
-.bg-fazenda-digital-sidebar { background-color: #3B2110; }
-.bg-fazenda-digital-topbar { background-color: #3B2110; }
-.bg-fazenda-digital-trial { background-color: #EC5D24; }
-.bg-fazenda-digital-content { background-color: #F4F3EF; }
-.bg-fazenda-digital-green { background-color: #2D6A4F; }
-.text-fazenda-digital-green { color: #2D6A4F; }
-.border-fazenda-digital-green { border-color: #2D6A4F; }
-.hover\:bg-fazenda-digital-green-dark:hover { background-color: #7A9500; }
+/* Fazenda Digital — Nova Identidade Visual Oficial */
+.bg-fd-sidebar { background-color: #0F172A; }
+.bg-fd-topbar { background: linear-gradient(135deg, #164E63, #0891B2); }
+.bg-fd-primary { background-color: #1BC5BD; }
+.text-fd-primary { color: #1BC5BD; }
+.border-fd-primary { border-color: #1BC5BD; }
+.text-fd-gold { color: #D4AF37; }
+.bg-fd-navy { background-color: #0F172A; }
+.hover\:bg-fd-primary-dark:hover { background-color: #0891B2; }
+/* Primary button style */
+.btn-fd-primary {
+  background: linear-gradient(135deg, #1BC5BD, #0891B2);
+  color: #FFFFFF;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.18s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.btn-fd-primary:hover {
+  background: linear-gradient(135deg, #14B8A6, #0EA5A4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(27, 197, 189, 0.35);
+}
+.btn-fd-primary:active { transform: scale(0.97); }
 
 /* Mobile-specific styles */
 @media (max-width: 767px) {

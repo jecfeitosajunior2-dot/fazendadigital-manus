@@ -8,17 +8,17 @@ import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
 
-export default function BenfeitoriasListPage() {
+export default function MaquinasListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  const { data: list = [], isLoading } = trpc.benfeitorias.list.useQuery();
+  const { data: list = [], isLoading } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const utils = trpc.useUtils();
-  const deleteMutation = trpc.benfeitorias.delete.useMutation({
-    onSuccess: () => { toast.success("Benfeitoria excluída!"); utils.benfeitorias.list.invalidate(); },
+  const deleteMutation = trpc.maquinas.delete.useMutation({
+    onSuccess: () => { toast.success("Maquinário excluído!"); utils.maquinas.list.invalidate(); },
     onError: e => toast.error(e.message),
   });
 
@@ -31,8 +31,8 @@ export default function BenfeitoriasListPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return list;
-    return list.filter(b =>
-      [b.nome, b.tipo, b.fazendaId ? fazendaMap.get(b.fazendaId) : ""].some(v =>
+    return list.filter(m =>
+      [m.nome, m.tipo, m.marca, m.modelo, m.fazendaId ? fazendaMap.get(m.fazendaId) : ""].some(v =>
         String(v || "").toLowerCase().includes(q)
       )
     );
@@ -44,40 +44,47 @@ export default function BenfeitoriasListPage() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const exportRows = useMemo(() =>
-    filtered.map(b => ({
-      benfeitoria: b.nome,
-      fazenda: b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "" : "",
-      ano: b.anoConstrucao ?? "",
-      vidaUtil: b.vidaUtil ?? "",
-      valor: b.valorEstimado ? parseFloat(String(b.valorEstimado)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+    filtered.map(m => ({
+      apelido: m.nome,
+      tipo: m.tipo ?? "",
+      fazenda: m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "",
+      marca: m.marca ?? "",
+      modelo: m.modelo ?? "",
+      anoFab: m.ano ?? "",
+      anoAquis: m.anoAquisicao ?? "",
+      placa: m.placa ?? "",
+      estado: m.estado ?? "",
+      valor: m.valor ? parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
     })),
   [filtered, fazendaMap]);
 
-  const exportHeaders = ["Benfeitoria", "Fazenda", "Ano de Construção", "Vida Útil", "Valor(R$)"];
-  const exportData = exportRows.map(r => [r.benfeitoria, r.fazenda, r.ano, r.vidaUtil, r.valor]);
+  const exportHeaders = ["Apelido", "Tipo", "Fazenda", "Marca", "Modelo", "Ano Fab.", "Ano Aquis.", "Placa", "Estado", "Valor(R$)"];
+  const exportData = exportRows.map(r => [
+    r.apelido, r.tipo, r.fazenda, r.marca, r.modelo, r.anoFab, r.anoAquis, r.placa, r.estado, r.valor,
+  ]);
 
   return (
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de benfeitorias</h1>
+          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de maquinário</h1>
           <ListExportButtons
-            title="Lista de Benfeitorias"
-            filename="benfeitorias"
+            title="Lista de Maquinário"
+            filename="maquinario"
             headers={exportHeaders}
             rows={exportData}
-            alignRightFrom={2}
+            alignRightFrom={5}
           />
         </div>
 
         <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-50">
           <button
             type="button"
-            onClick={() => setLocation("/fazendas/benfeitorias/cadastro")}
+            onClick={() => setLocation("/maquinas/cadastro")}
             className="px-4 py-2 rounded text-[10px] font-semibold uppercase text-white"
             style={{ backgroundColor: FD_PRIMARY }}
           >
-            Cadastrar Benfeitoria
+            Cadastrar Maquinário
           </button>
           <div className="relative">
             <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
@@ -94,41 +101,36 @@ export default function BenfeitoriasListPage() {
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {["Benfeitoria", "Fazenda", "Ano de Construção", "Vida Útil", "Valor(R$)"].map(col => (
+                {["Apelido", "Tipo", "Fazenda", "Marca", "Ano Fab.", "Estado"].map(col => (
                   <th key={col} className={cn(
-                    "px-4 py-2.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide",
-                    col === "Benfeitoria" || col === "Fazenda" ? "text-left" : "text-right"
+                    "px-4 py-2.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide text-left"
                   )}>
-                    <span className="inline-flex items-center gap-0.5">
-                      {col}
-                      <span className="material-icons text-[12px] opacity-40">unfold_more</span>
-                    </span>
+                    {col}
                   </th>
                 ))}
                 <th className="px-4 py-2.5 w-20" />
               </tr>
             </thead>
             <tbody>
-              {isLoading && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>}
+              {isLoading && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>}
               {!isLoading && pageItems.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Sem dados</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Sem dados</td></tr>
               )}
-              {pageItems.map(b => (
-                <tr key={b.id} className="border-t border-gray-50 hover:bg-gray-50/60">
-                  <td className="px-4 py-2.5 font-medium text-gray-800">{b.nome}</td>
+              {pageItems.map(m => (
+                <tr key={m.id} className="border-t border-gray-50 hover:bg-gray-50/60">
+                  <td className="px-4 py-2.5 font-medium text-gray-800">{m.nome}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{m.tipo ?? "-"}</td>
                   <td className="px-4 py-2.5 text-gray-600">
-                    {b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "-" : "-"}
+                    {m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "-" : "-"}
                   </td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{b.anoConstrucao ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{b.vidaUtil ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">
-                    {b.valorEstimado ? parseFloat(String(b.valorEstimado)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "-"}
-                  </td>
+                  <td className="px-4 py-2.5 text-gray-600">{m.marca ?? "-"}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{m.ano ?? "-"}</td>
+                  <td className="px-4 py-2.5 text-gray-600 capitalize">{m.estado ?? "-"}</td>
                   <td className="px-4 py-2.5 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
-                        onClick={() => setLocation(`/fazendas/benfeitorias/cadastro?id=${b.id}`)}
+                        onClick={() => setLocation(`/maquinas/cadastro?id=${m.id}`)}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400"
                       >
                         <span className="material-icons text-[15px]">edit</span>
@@ -136,7 +138,7 @@ export default function BenfeitoriasListPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm("Excluir esta benfeitoria?")) deleteMutation.mutate({ id: b.id });
+                          if (confirm("Excluir este maquinário?")) deleteMutation.mutate({ id: m.id });
                         }}
                         className="p-1 rounded hover:bg-red-50 text-red-400"
                       >
@@ -171,3 +173,5 @@ export default function BenfeitoriasListPage() {
     </AppLayout>
   );
 }
+
+export { MaquinasListPage };

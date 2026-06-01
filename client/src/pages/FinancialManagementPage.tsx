@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
@@ -59,11 +60,26 @@ export function FinancialManagementPage() {
       {/* Movimentações Tab */}
       {activeTab === 'movimentacoes' && (
         <div>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-[13px] font-medium text-gray-700">Movimentações</h2>
-            <button onClick={() => setShowMovForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-              <span className="material-icons text-[14px]">add</span> Nova Movimentação
-            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <ListExportButtons
+                title="Movimentações Financeiras"
+                filename="movimentacoes"
+                headers={["Tipo", "Descrição", "Categoria", "Data", "Valor (R$)"]}
+                rows={(movimentacoes ?? []).map(m => [
+                  m.tipo,
+                  m.descricao,
+                  m.categoriaId ?? "",
+                  m.data ? new Date(m.data).toLocaleDateString("pt-BR") : "",
+                  Number(m.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+                ])}
+                alignRightFrom={4}
+              />
+              <button onClick={() => setShowMovForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+                <span className="material-icons text-[14px]">add</span> Nova Movimentação
+              </button>
+            </div>
           </div>
 
           {showMovForm && (
@@ -163,11 +179,25 @@ export function FinancialManagementPage() {
       {/* Contas Tab */}
       {activeTab === 'contas' && (
         <div>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-[13px] font-medium text-gray-700">Contas Financeiras</h2>
-            <button onClick={() => setShowContaForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-              <span className="material-icons text-[14px]">add</span> Nova Conta
-            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <ListExportButtons
+                title="Contas Financeiras"
+                filename="contas_financeiras"
+                headers={["Nome", "Tipo", "Banco", "Saldo Inicial (R$)"]}
+                rows={(contas ?? []).map(c => [
+                  c.nome,
+                  c.tipo || "",
+                  c.banco || "",
+                  Number(c.saldoInicial || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+                ])}
+                alignRightFrom={3}
+              />
+              <button onClick={() => setShowContaForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+                <span className="material-icons text-[14px]">add</span> Nova Conta
+              </button>
+            </div>
           </div>
 
           {showContaForm && (
