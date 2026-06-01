@@ -843,7 +843,10 @@ const estoqueRouter = router({
           dataValidade: estoqueMovimentacoes.dataValidade,
           observacoes: estoqueMovimentacoes.observacoes,
           nome: estoque.nome,
+          categoria: estoque.categoria,
+          fabricante: estoque.fabricante,
           unidade: estoque.unidade,
+          embalagens: estoque.embalagens,
         })
         .from(estoqueMovimentacoes)
         .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))

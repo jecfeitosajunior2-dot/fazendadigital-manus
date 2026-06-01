@@ -17,6 +17,7 @@ import {
   calcularQuantidadeMovimentacao,
   formatTotalMovimentacao,
   normalizarUnidade,
+  nomeUnidadeExibicao,
   parseEmbalagens,
   parseObsMovimentacao,
   rotuloUnidade,
@@ -54,12 +55,16 @@ export default function InsumosNovaMovimentacaoPage() {
     [produtos, estoqueId]
   );
 
-  const embalagens = useMemo(
-    () => (produto?.embalagens ? parseEmbalagens(produto.embalagens) : []),
-    [produto]
-  );
+  /** Nome/unidade: lista de produtos ou dados da movimentação (edição). */
+  const produtoNome = produto?.nome ?? movimentacao?.nome ?? "";
+  const produtoCategoria = produto?.categoria ?? movimentacao?.categoria ?? "";
+  const produtoFabricante = produto?.fabricante ?? movimentacao?.fabricante ?? "";
+  const unidadeBase = normalizarUnidade(produto?.unidade ?? movimentacao?.unidade);
 
-  const unidadeBase = normalizarUnidade(produto?.unidade);
+  const embalagens = useMemo(() => {
+    const raw = produto?.embalagens ?? movimentacao?.embalagens;
+    return raw ? parseEmbalagens(raw) : [];
+  }, [produto, movimentacao]);
 
   useEffect(() => {
     if (!isEdit || !movimentacao || initialized) return;
@@ -178,7 +183,7 @@ export default function InsumosNovaMovimentacaoPage() {
       ? `${quantidadeUnidades} un × ${quantidadePorUnidade} ${rotuloUnidade(unidadeLancamento)}`
       : null;
 
-  if (isEdit && loadingMov) {
+  if (isEdit && (loadingMov || !movimentacao || !initialized)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
@@ -226,6 +231,30 @@ export default function InsumosNovaMovimentacaoPage() {
           </h1>
         </div>
 
+        {isEdit && movimentacao && (
+          <div
+            className="mx-5 mt-4 mb-1 px-4 py-3 rounded border text-[12px] space-y-2"
+            style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}12` }}
+          >
+            <p className="text-[11px] font-semibold uppercase text-gray-500 tracking-wide">Produto da movimentação</p>
+            <p className="text-[15px] font-semibold text-gray-900 uppercase">{produtoNome}</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-gray-700">
+              {produtoCategoria && <span><span className="font-medium">Categoria:</span> {produtoCategoria}</span>}
+              {produtoFabricante && <span><span className="font-medium">Fabricante:</span> {produtoFabricante}</span>}
+            </div>
+            {unidadeBase && (
+              <div
+                className="mt-1 px-3 py-2 rounded border bg-white/80"
+                style={{ borderColor: FD_PRIMARY }}
+              >
+                <span className="font-semibold text-gray-800">Unidade base: </span>
+                {rotuloUnidade(unidadeBase)}
+                <span className="text-gray-500 ml-2">({nomeUnidadeExibicao(unidadeBase)})</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <form
           className="p-5 space-y-5"
           onSubmit={e => {
@@ -251,7 +280,7 @@ export default function InsumosNovaMovimentacaoPage() {
               value={estoqueId}
               onChange={v => setEstoqueId(v)}
               placeholder="Selecione o produto..."
-              displayValue={produto?.nome}
+              displayValue={produtoNome || undefined}
               required
             >
               {produtos.map(p => (

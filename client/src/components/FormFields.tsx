@@ -103,19 +103,21 @@ export function FormSelect({
   displayValue?: string;
   children: React.ReactNode;
 }) {
-  const textoExibido = value ? (displayValue ?? value) : null;
+  /** Texto exibido no trigger — usa displayValue, senão value, senão placeholder. */
+  const labelExibido = (displayValue ?? value)?.trim() || null;
+  const selectValue = value?.trim() ? value : undefined;
 
   return (
     <FieldBox required={required}>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <Select value={selectValue} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           className={cn(
             compact ? inputClassCompact : inputClass,
             "w-full shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
           )}
         >
-          {textoExibido ? (
-            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{textoExibido}</span>
+          {labelExibido ? (
+            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{labelExibido}</span>
           ) : (
             <SelectValue placeholder={placeholder} />
           )}

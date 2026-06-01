@@ -109,9 +109,20 @@ export default function ProductRegistrationPage() {
   const [initialized, setInitialized] = useState(false);
 
   const subcategorias = useMemo(() => {
-    if (!form.categoria) return [];
-    return SUBCATEGORIAS[form.categoria] ?? SUBCATEGORIAS.Outros;
-  }, [form.categoria]);
+    if (!form.categoria) return form.subcategoria ? [form.subcategoria] : [];
+    const base = SUBCATEGORIAS[form.categoria] ?? SUBCATEGORIAS.Outros;
+    if (form.subcategoria && !base.includes(form.subcategoria)) {
+      return [...base, form.subcategoria];
+    }
+    return base;
+  }, [form.categoria, form.subcategoria]);
+
+  const fabricantesOpcoes = useMemo(() => {
+    if (form.fabricante && !(FABRICANTES as readonly string[]).includes(form.fabricante)) {
+      return [...FABRICANTES, form.fabricante];
+    }
+    return [...FABRICANTES];
+  }, [form.fabricante]);
 
   useEffect(() => {
     if (isEdit && produto && !initialized) {
@@ -240,6 +251,31 @@ export default function ProductRegistrationPage() {
     );
   }
 
+  if (isEdit && !produto) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400 text-sm gap-3">
+          <p>Produto não encontrado.</p>
+          <button
+            type="button"
+            onClick={() => setLocation("/insumos/lista-produtos")}
+            className="text-[12px] text-[#4ECDC4] hover:underline"
+          >
+            Voltar
+          </button>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isEdit && !initialized) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <form onSubmit={handleSubmit}>
@@ -268,6 +304,7 @@ export default function ProductRegistrationPage() {
                 value={form.categoria}
                 onChange={v => setForm(f => ({ ...f, categoria: v, subcategoria: "" }))}
                 placeholder="Selecione"
+                displayValue={form.categoria || undefined}
                 required
               >
                 {CATEGORIAS_PRODUTO.map(c => (
@@ -281,6 +318,7 @@ export default function ProductRegistrationPage() {
                 value={form.subcategoria}
                 onChange={v => set("subcategoria", v)}
                 placeholder="Selecione"
+                displayValue={form.subcategoria || undefined}
                 required
                 disabled={!form.categoria}
               >
@@ -342,8 +380,9 @@ export default function ProductRegistrationPage() {
                 value={form.fabricante}
                 onChange={v => set("fabricante", v)}
                 placeholder="Selecione"
+                displayValue={form.fabricante || undefined}
               >
-                {FABRICANTES.map(f => (
+                {fabricantesOpcoes.map(f => (
                   <SelectItem key={f} value={f} className="text-[12px]">{f}</SelectItem>
                 ))}
               </FormSelect>
