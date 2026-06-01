@@ -2,184 +2,163 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
-import {
-  FD_PRIMARY,
-  FormLabel,
-  FormInput,
-  FormSelect,
-  FormDatePicker,
-} from "@/components/FormFields";
-import { SelectItem } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { trpc } from "@/lib/trpc";
 import {
   UNIDADES_OPCOES,
   TIPOS_MOVIMENTACAO,
   sinalDoTipo,
-  calcularQuantidadeMovimentacao,
-  formatTotalMovimentacao,
   normalizarUnidade,
   nomeUnidadeExibicao,
-  parseEmbalagens,
-  parseObsMovimentacao,
-  rotuloUnidade,
+  formatDataBr,
   toDateInput,
-  type ModoQuantidadeMov,
 } from "@/lib/produto-types";
 
+// ─── Estilos compartilhados ─────────────────────────────────────────────────
+const inputCls =
+  "w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white placeholder-gray-400 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]";
+const selectCls =
+  "w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4] appearance-none";
+const labelCls = "block text-[12px] font-medium text-gray-600 mb-1";
+const sectionTitleCls =
+  "text-[12px] font-semibold text-gray-600 uppercase tracking-wide";
+
+const fmtMoeda = (v: string) => {
+  if (!v) return "R$ 0,00";
+  const n = parseFloat(v.replace(",", "."));
+  if (isNaN(n)) return "R$ 0,00";
+  return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+// ─── Tipo local de produto adicionado ───────────────────────────────────────
+type ProdutoLinha = {
+  localId: string;
+  estoqueId: string;
+  unidadeMov: string;
+  dataValidade: string;
+  valorUnitario: string;
+  quantidade: string;
+};
+
+// ─── Componente ─────────────────────────────────────────────────────────────
 export default function InsumosNovaMovimentacaoPage() {
   const [, setLocation] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   const movId = searchParams.get("id") ? parseInt(searchParams.get("id")!, 10) : null;
   const isEdit = movId != null && !isNaN(movId);
 
-  const [estoqueId, setEstoqueId] = useState("");
+  // Campos globais da movimentação
+  const [direcao, setDirecao] = useState("Entrada");
   const [tipoMov, setTipoMov] = useState("Compra");
   const [fazendaId, setFazendaId] = useState("");
-  const [dataMov, setDataMov] = useState(() => new Date().toISOString().slice(0, 10));
-  const [dataValidade, setDataValidade] = useState("");
-  const [modo, setModo] = useState<ModoQuantidadeMov>("unidades");
-  const [quantidadeDireta, setQuantidadeDireta] = useState("");
-  const [quantidadeUnidades, setQuantidadeUnidades] = useState("");
-  const [quantidadePorUnidade, setQuantidadePorUnidade] = useState("");
-  const [unidadeLancamento, setUnidadeLancamento] = useState("");
-  const [embalagemNome, setEmbalagemNome] = useState("");
-  const [destino, setDestino] = useState("");
-  const [manejo, setManejo] = useState("");
-  const [notaFiscal, setNotaFiscal] = useState("");
-  const [frete, setFrete] = useState("");
   const [fornecedor, setFornecedor] = useState("");
-  const [valor, setValor] = useState("");
+  const [notaFiscal, setNotaFiscal] = useState("");
+  const [dataEntrada, setDataEntrada] = useState(() => new Date().toISOString().slice(0, 10));
+  const [frete, setFrete] = useState("");
+
+  // Mini-formulário de produto (linha sendo adicionada)
+  const [prodEstoqueId, setProdEstoqueId] = useState("");
+  const [prodUnidade, setProdUnidade] = useState("");
+  const [prodDataValidade, setProdDataValidade] = useState("");
+  const [prodValorUnitario, setProdValorUnitario] = useState("");
+  const [prodQuantidade, setProdQuantidade] = useState("");
+
+  // Lista de produtos da movimentação
+  const [produtos, setProdutos] = useState<ProdutoLinha[]>([]);
+
+  // Inicialização no modo edição
   const [initialized, setInitialized] = useState(false);
 
-  const sinal = sinalDoTipo(tipoMov);
-
-  const utils = trpc.useUtils();
-  const { data: produtos = [] } = trpc.estoque.list.useQuery();
+  // ── Queries ──────────────────────────────────────────────────────────────
+  const { data: estoqueList = [] } = trpc.estoque.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: movimentacao, isLoading: loadingMov } = trpc.estoque.getMovimentacao.useQuery(
     { id: movId! },
     { enabled: isEdit }
   );
 
-  const produto = useMemo(
-    () => produtos.find(p => String(p.id) === estoqueId),
-    [produtos, estoqueId]
-  );
+  const utils = trpc.useUtils();
 
-  /** Nome/unidade: lista de produtos ou dados da movimentação (edição). */
-  const produtoNome = produto?.nome ?? movimentacao?.nome ?? "";
-  const produtoCategoria = produto?.categoria ?? movimentacao?.categoria ?? "";
-  const produtoFabricante = produto?.fabricante ?? movimentacao?.fabricante ?? "";
-  const unidadeBase = normalizarUnidade(produto?.unidade ?? movimentacao?.unidade);
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const tiposFiltrados = useMemo(() => {
+    if (direcao === "Entrada") return TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada");
+    return TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida");
+  }, [direcao]);
 
-  const embalagens = useMemo(() => {
-    const raw = produto?.embalagens ?? movimentacao?.embalagens;
-    return raw ? parseEmbalagens(raw) : [];
-  }, [produto, movimentacao]);
-
+  // ── Inicializar edição ────────────────────────────────────────────────────
   useEffect(() => {
     if (!isEdit || !movimentacao || initialized) return;
 
-    const obs = parseObsMovimentacao(movimentacao.observacoes ?? undefined);
-    const qty = Number(movimentacao.quantidade);
-
-    setEstoqueId(String(movimentacao.estoqueId));
-    setDataMov(toDateInput(movimentacao.dataMovimentacao));
-    setDataValidade(toDateInput(movimentacao.dataValidade));
-
-    const fazendaSalva = movimentacao.fazendaId ?? movimentacao.produtoFazendaId;
-    if (fazendaSalva) setFazendaId(String(fazendaSalva));
-
-    if (movimentacao.tipo) {
-      setTipoMov(movimentacao.tipo);
-    } else {
-      setTipoMov(qty >= 0 ? "Compra" : "Consumo interno");
-    }
-
-    setDestino(movimentacao.destino ?? "");
-    setManejo(movimentacao.manejo ?? "");
-    setNotaFiscal(movimentacao.notaFiscal ?? "");
-    setFrete(movimentacao.frete != null ? String(movimentacao.frete) : "");
+    const sinal = sinalDoTipo(movimentacao.tipo ?? undefined);
+    setDirecao(sinal === "entrada" ? "Entrada" : "Saída");
+    setTipoMov(movimentacao.tipo ?? "");
+    if (movimentacao.fazendaId) setFazendaId(String(movimentacao.fazendaId));
     setFornecedor(movimentacao.fornecedor ?? "");
-    setValor(movimentacao.valor != null ? String(movimentacao.valor) : "");
+    setNotaFiscal(movimentacao.notaFiscal ?? "");
+    setDataEntrada(toDateInput(movimentacao.dataMovimentacao));
+    setFrete(movimentacao.frete != null ? String(movimentacao.frete) : "");
 
-    if (obs?.modo === "unidades") {
-      setModo("unidades");
-      setQuantidadeUnidades(obs.unidades ?? "");
-      setQuantidadePorUnidade(obs.porUnidade ?? "");
-      setUnidadeLancamento(
-        normalizarUnidade(obs.unidade) || normalizarUnidade(movimentacao.unidade)
-      );
-    } else {
-      setModo("direto");
-      setQuantidadeDireta(String(Math.abs(qty)));
-      setUnidadeLancamento(normalizarUnidade(movimentacao.unidade));
-    }
+    // Produto como linha única
+    setProdutos([{
+      localId: "edit-0",
+      estoqueId: String(movimentacao.estoqueId),
+      unidadeMov: normalizarUnidade(movimentacao.unidade),
+      dataValidade: toDateInput(movimentacao.dataValidade),
+      valorUnitario: movimentacao.valor != null ? String(movimentacao.valor) : "",
+      quantidade: String(Math.abs(Number(movimentacao.quantidade))),
+    }]);
+
     setInitialized(true);
   }, [isEdit, movimentacao, initialized]);
 
-  useEffect(() => {
-    if (isEdit) return;
-    if (!produto) {
-      setEmbalagemNome("");
-      setUnidadeLancamento("");
-      return;
-    }
-    if (produto.fazendaId) setFazendaId(String(produto.fazendaId));
-    const base = normalizarUnidade(produto.unidade);
-    setUnidadeLancamento(base);
-    const emb = parseEmbalagens(produto.embalagens);
-    if (emb.length === 1) {
-      setEmbalagemNome(emb[0].nome);
-      setQuantidadePorUnidade(emb[0].volume ? String(emb[0].volume) : "");
-      setUnidadeLancamento(normalizarUnidade(emb[0].unidade) || base);
-    } else {
-      setEmbalagemNome("");
-    }
-  }, [produto?.id]);
-
-  const onEmbalagemChange = (nome: string) => {
-    setEmbalagemNome(nome);
-    const emb = embalagens.find(e => e.nome === nome);
-    if (emb?.volume) setQuantidadePorUnidade(String(emb.volume));
-    if (emb?.unidade) setUnidadeLancamento(normalizarUnidade(emb.unidade));
-    else if (unidadeBase) setUnidadeLancamento(unidadeBase);
+  // ── Auto-preencher unidade ao selecionar produto ──────────────────────────
+  const onProdutoChange = (id: string) => {
+    setProdEstoqueId(id);
+    const prod = estoqueList.find(p => String(p.id) === id);
+    if (prod) setProdUnidade(normalizarUnidade(prod.unidade));
+    else setProdUnidade("");
   };
 
-  const calculo = useMemo(
-    () =>
-      calcularQuantidadeMovimentacao({
-        modo,
-        sinal,
-        quantidadeDireta,
-        quantidadeUnidades,
-        quantidadePorUnidade,
-        unidadeLancamento,
-        unidadeBaseProduto: unidadeBase,
-      }),
-    [
-      modo,
-      sinal,
-      quantidadeDireta,
-      quantidadeUnidades,
-      quantidadePorUnidade,
-      unidadeLancamento,
-      unidadeBase,
-    ]
-  );
+  // ── Ao mudar direção, reajustar tipo se necessário ────────────────────────
+  const onDirecaoChange = (dir: string) => {
+    setDirecao(dir);
+    const tipos = dir === "Entrada"
+      ? TIPOS_MOVIMENTACAO.filter(t => t.sinal === "entrada")
+      : TIPOS_MOVIMENTACAO.filter(t => t.sinal === "saida");
+    if (!tipos.find(t => t.value === tipoMov)) {
+      setTipoMov(tipos[0]?.value ?? "");
+    }
+  };
 
+  // ── Adicionar produto à lista ─────────────────────────────────────────────
+  const adicionarProduto = () => {
+    if (!prodEstoqueId) { toast.error("Selecione o produto."); return; }
+    if (!prodQuantidade) { toast.error("Informe a quantidade."); return; }
+    if (!prodUnidade) { toast.error("Selecione a unidade de movimentação."); return; }
+    setProdutos(prev => [
+      ...prev,
+      {
+        localId: String(Date.now()),
+        estoqueId: prodEstoqueId,
+        unidadeMov: prodUnidade,
+        dataValidade: prodDataValidade,
+        valorUnitario: prodValorUnitario,
+        quantidade: prodQuantidade,
+      },
+    ]);
+    setProdEstoqueId("");
+    setProdUnidade("");
+    setProdDataValidade("");
+    setProdValorUnitario("");
+    setProdQuantidade("");
+  };
+
+  const removerProduto = (localId: string) =>
+    setProdutos(prev => prev.filter(p => p.localId !== localId));
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = trpc.estoque.createMovimentacao.useMutation({
-    onSuccess: () => {
-      toast.success("Movimentação registrada!");
-      utils.estoque.listMovimentacoes.invalidate();
-      utils.estoque.list.invalidate();
-      utils.estoque.resumo.invalidate();
-      setLocation("/insumos/visao-geral");
-    },
     onError: e => toast.error(e.message),
   });
-
   const updateMutation = trpc.estoque.updateMovimentacao.useMutation({
     onSuccess: () => {
       toast.success("Movimentação atualizada!");
@@ -193,372 +172,436 @@ export default function InsumosNovaMovimentacaoPage() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
-  const payload = () => ({
-    estoqueId: Number(estoqueId),
-    fazendaId: fazendaId ? Number(fazendaId) : undefined,
-    tipo: tipoMov,
-    dataMovimentacao: dataMov,
-    quantidade: String(calculo.total),
-    dataValidade: dataValidade || undefined,
-    destino: destino.trim() || undefined,
-    manejo: manejo.trim() || undefined,
-    notaFiscal: notaFiscal.trim() || undefined,
-    frete: frete.trim() ? frete.replace(",", ".") : undefined,
-    fornecedor: fornecedor.trim() || undefined,
-    valor: valor.trim() ? valor.replace(",", ".") : undefined,
-    modo,
-    quantidadeUnidades: modo === "unidades" ? quantidadeUnidades : undefined,
-    quantidadePorUnidade: modo === "unidades" ? quantidadePorUnidade : undefined,
-    unidadeLancamento: modo === "unidades" ? unidadeLancamento : unidadeBase || undefined,
-    sinal,
-  });
+  // ── Salvar ────────────────────────────────────────────────────────────────
+  const salvar = async () => {
+    if (!tipoMov) { toast.error("Selecione o tipo de movimentação."); return; }
+    if (produtos.length === 0) { toast.error("Adicione ao menos um produto."); return; }
 
-  const resumoUnidades =
-    modo === "unidades" && quantidadeUnidades && quantidadePorUnidade
-      ? `${quantidadeUnidades} un × ${quantidadePorUnidade} ${rotuloUnidade(unidadeLancamento)}`
-      : null;
+    const sinal = sinalDoTipo(tipoMov);
 
-  if (isEdit && (loadingMov || !movimentacao || !initialized)) {
+    if (isEdit && movId && produtos[0]) {
+      const p = produtos[0];
+      const qtd = parseFloat(p.quantidade.replace(",", "."));
+      if (isNaN(qtd) || qtd === 0) { toast.error("Quantidade inválida."); return; }
+      const qtdFinal = sinal === "saida" ? -Math.abs(qtd) : Math.abs(qtd);
+      updateMutation.mutate({
+        id: movId,
+        estoqueId: Number(p.estoqueId),
+        fazendaId: fazendaId ? Number(fazendaId) : undefined,
+        tipo: tipoMov,
+        dataMovimentacao: dataEntrada,
+        quantidade: String(qtdFinal),
+        dataValidade: p.dataValidade || undefined,
+        fornecedor: fornecedor.trim() || undefined,
+        notaFiscal: notaFiscal.trim() || undefined,
+        frete: frete.trim() ? frete.replace(",", ".") : undefined,
+        valor: p.valorUnitario.trim() ? p.valorUnitario.replace(",", ".") : undefined,
+        modo: "direto",
+        sinal,
+        unidadeLancamento: p.unidadeMov || undefined,
+      });
+      return;
+    }
+
+    try {
+      for (const p of produtos) {
+        const qtd = parseFloat(p.quantidade.replace(",", "."));
+        if (isNaN(qtd) || qtd === 0) { toast.error("Quantidade inválida em um dos produtos."); return; }
+        const qtdFinal = sinal === "saida" ? -Math.abs(qtd) : Math.abs(qtd);
+        const vu = p.valorUnitario ? parseFloat(p.valorUnitario.replace(",", ".")) : undefined;
+        const valorTotal =
+          vu != null && !isNaN(vu) ? String(vu * Math.abs(qtd)) : undefined;
+
+        await createMutation.mutateAsync({
+          estoqueId: Number(p.estoqueId),
+          fazendaId: fazendaId ? Number(fazendaId) : undefined,
+          tipo: tipoMov,
+          dataMovimentacao: dataEntrada,
+          quantidade: String(qtdFinal),
+          dataValidade: p.dataValidade || undefined,
+          unidadeLancamento: p.unidadeMov || undefined,
+          fornecedor: fornecedor.trim() || undefined,
+          notaFiscal: notaFiscal.trim() || undefined,
+          frete: frete.trim() ? frete.replace(",", ".") : undefined,
+          valor: valorTotal,
+          modo: "direto",
+          sinal,
+        });
+      }
+      toast.success(
+        produtos.length > 1
+          ? `${produtos.length} movimentações registradas!`
+          : "Movimentação registrada!"
+      );
+      utils.estoque.listMovimentacoes.invalidate();
+      utils.estoque.list.invalidate();
+      utils.estoque.resumo.invalidate();
+      setLocation("/insumos/visao-geral");
+    } catch (_) {}
+  };
+
+  // ── Loading state para edição ─────────────────────────────────────────────
+  if (isEdit && (loadingMov || !initialized)) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
-      </AppLayout>
-    );
-  }
-
-  if (isEdit && !loadingMov && !movimentacao) {
-    return (
-      <AppLayout>
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400 text-sm gap-3">
-          <p>Movimentação não encontrada.</p>
-          <button
-            type="button"
-            onClick={() => setLocation("/insumos/visao-geral")}
-            className="text-[12px] text-[#4ECDC4] hover:underline"
-          >
-            Voltar
-          </button>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
+          Carregando...
         </div>
       </AppLayout>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setLocation("/insumos/visao-geral")}
-          className="flex items-center gap-1 text-[12px] text-gray-600 hover:text-gray-900"
-        >
-          <span className="material-icons text-[18px]">arrow_back</span>
-          Voltar
-        </button>
-      </div>
+      {/* Overlay escuro */}
+      <div className="fixed inset-0 bg-black/40 z-[60]" />
 
-      <div className="bg-white border border-gray-200 rounded shadow-sm max-w-3xl">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {isEdit ? "Editar Movimentação" : "Nova Movimentação"}
-          </h1>
-        </div>
+      {/* Modal scrollável */}
+      <div className="fixed inset-0 z-[70] overflow-y-auto flex items-start justify-center py-8 px-4">
+        <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl">
 
-        {isEdit && movimentacao && (
-          <div
-            className="mx-5 mt-4 mb-1 px-4 py-3 rounded border text-[12px] space-y-2"
-            style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}12` }}
-          >
-            <p className="text-[11px] font-semibold uppercase text-gray-500 tracking-wide">Produto da movimentação</p>
-            <p className="text-[15px] font-semibold text-gray-900 uppercase">{produtoNome}</p>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-gray-700">
-              {produtoCategoria && <span><span className="font-medium">Categoria:</span> {produtoCategoria}</span>}
-              {produtoFabricante && <span><span className="font-medium">Fabricante:</span> {produtoFabricante}</span>}
-            </div>
-            {unidadeBase && (
-              <div
-                className="mt-1 px-3 py-2 rounded border bg-white/80"
-                style={{ borderColor: FD_PRIMARY }}
-              >
-                <span className="font-semibold text-gray-800">Unidade base: </span>
-                {rotuloUnidade(unidadeBase)}
-                <span className="text-gray-500 ml-2">({nomeUnidadeExibicao(unidadeBase)})</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <form
-          className="p-5 space-y-5"
-          onSubmit={e => {
-            e.preventDefault();
-            if (!estoqueId) {
-              toast.error("Selecione um produto.");
-              return;
-            }
-            if (calculo.erro) {
-              toast.error(calculo.erro);
-              return;
-            }
-            if (isEdit && movId) {
-              updateMutation.mutate({ id: movId, ...payload() });
-            } else {
-              createMutation.mutate(payload());
-            }
-          }}
-        >
-          <div>
-            <FormLabel required>Produto</FormLabel>
-            <FormSelect
-              value={estoqueId}
-              onChange={v => setEstoqueId(v)}
-              placeholder="Selecione o produto..."
-              displayValue={produtoNome || undefined}
-              required
-            >
-              {produtos.map(p => (
-                <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
-                  {p.nome}
-                </SelectItem>
-              ))}
-            </FormSelect>
-            {unidadeBase && (
-              <div
-                className="mt-2 px-3 py-2 rounded border text-[12px]"
-                style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
-              >
-                <span className="font-semibold text-gray-800">Unidade base do produto: </span>
-                {rotuloUnidade(unidadeBase)}
-              </div>
-            )}
+          {/* ── Cabeçalho ── */}
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-[18px] font-semibold text-gray-900">
+              {isEdit ? "Editar Movimentação" : "Nova Movimentação"}
+            </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <FormLabel required>Data de movimentação</FormLabel>
-              <FormDatePicker value={dataMov} onChange={setDataMov} required />
-            </div>
-            <div>
-              <FormLabel>Data de validade</FormLabel>
-              <FormDatePicker value={dataValidade} onChange={setDataValidade} />
-            </div>
-          </div>
+          <div className="px-6 py-5 space-y-5">
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <FormLabel required>Tipo de movimentação</FormLabel>
-              <FormSelect
-                value={tipoMov}
-                onChange={setTipoMov}
-                placeholder="Selecione o tipo"
-                displayValue={tipoMov || undefined}
-                required
-              >
-                {TIPOS_MOVIMENTACAO.map(t => (
-                  <SelectItem key={t.value} value={t.value} className="text-[12px]">
-                    {t.value}
-                  </SelectItem>
-                ))}
-              </FormSelect>
-              <p className="mt-1 text-[11px] text-gray-500">
-                Este tipo é uma{" "}
-                <span className={sinal === "entrada" ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
-                  {sinal === "entrada" ? "entrada (soma ao estoque)" : "saída (reduz o estoque)"}
-                </span>.
-              </p>
-            </div>
-            <div>
-              <FormLabel>Origem (Fazenda)</FormLabel>
-              <FormSelect
-                value={fazendaId}
-                onChange={setFazendaId}
-                placeholder="Selecione a fazenda"
-                displayValue={fazendas.find(f => String(f.id) === fazendaId)?.nome || undefined}
-              >
-                {fazendas.map(f => (
-                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                    {f.nome}
-                  </SelectItem>
-                ))}
-              </FormSelect>
-            </div>
-          </div>
-
-          <div>
-            <FormLabel required>Forma de lançamento</FormLabel>
-            <RadioGroup
-              value={modo}
-              onValueChange={v => setModo(v as ModoQuantidadeMov)}
-              className="flex flex-wrap gap-4 px-1 py-2"
-            >
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                <RadioGroupItem value="unidades" className="border-gray-400 text-[#4ECDC4]" />
-                Por unidades / embalagem
-              </label>
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
-                <RadioGroupItem value="direto" className="border-gray-400 text-[#4ECDC4]" />
-                Quantidade direta na unidade base
-              </label>
-            </RadioGroup>
-          </div>
-
-          {modo === "unidades" ? (
-            <>
-              {embalagens.length > 0 && (
-                <div>
-                  <FormLabel>Embalagem (opcional)</FormLabel>
-                  <FormSelect
-                    value={embalagemNome}
-                    onChange={onEmbalagemChange}
-                    placeholder="Selecione a embalagem"
-                    displayValue={embalagemNome || undefined}
-                  >
-                    {embalagens.map(e => (
-                      <SelectItem key={e.nome} value={e.nome} className="text-[12px]">
-                        {e.nome}
-                      </SelectItem>
-                    ))}
-                  </FormSelect>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <FormLabel required>Quantidade de unidades</FormLabel>
-                  <FormInput
-                    type="number"
-                    value={quantidadeUnidades}
-                    onChange={setQuantidadeUnidades}
-                    placeholder="4"
-                    required
-                  />
-                </div>
-                <div>
-                  <FormLabel required>Quantidade por unidade</FormLabel>
-                  <FormInput
-                    type="number"
-                    value={quantidadePorUnidade}
-                    onChange={setQuantidadePorUnidade}
-                    placeholder="500"
-                    required
-                  />
-                </div>
-                <div>
-                  <FormLabel required>Unidade</FormLabel>
-                  <FormSelect
-                    value={unidadeLancamento}
-                    onChange={setUnidadeLancamento}
-                    placeholder="Selecione"
-                    displayValue={unidadeLancamento ? rotuloUnidade(unidadeLancamento) : undefined}
-                    required
-                  >
-                    {UNIDADES_OPCOES.map(u => (
-                      <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
-                        {rotuloUnidade(u.sigla)}
-                      </SelectItem>
-                    ))}
-                  </FormSelect>
-                </div>
-              </div>
-            </>
-          ) : (
+            {/* ── Movimentação + Tipo ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <FormLabel required>Quantidade</FormLabel>
-                <FormInput
-                  type="text"
-                  inputMode="decimal"
-                  value={quantidadeDireta}
-                  onChange={setQuantidadeDireta}
-                  placeholder="2000"
-                  required
-                />
+                <label className={labelCls}>
+                  Movimentação <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={direcao}
+                    onChange={e => onDirecaoChange(e.target.value)}
+                    className={selectCls}
+                  >
+                    <option value="">Selecione uma movimentação</option>
+                    <option value="Entrada">Entrada</option>
+                    <option value="Saída">Saída</option>
+                  </select>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                    expand_more
+                  </span>
+                </div>
               </div>
               <div>
-                <FormLabel>Unidade</FormLabel>
-                <div
-                  className="px-3 py-2.5 text-[13px] text-gray-700 border border-gray-200 rounded-sm bg-[#EEEEEE] min-h-[42px] flex items-center"
+                <label className={labelCls}>
+                  Tipo de Movimentação <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={tipoMov}
+                    onChange={e => setTipoMov(e.target.value)}
+                    className={selectCls}
+                  >
+                    <option value="">Selecione um tipo de movimentação</option>
+                    {tiposFiltrados.map(t => (
+                      <option key={t.value} value={t.value}>
+                        {t.value}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                    expand_more
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Estoque Destino ── */}
+            <div>
+              <label className={labelCls}>
+                Estoque Destino{" "}
+                <span className="text-red-500 text-[11px]">**</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={fazendaId}
+                  onChange={e => setFazendaId(e.target.value)}
+                  className={selectCls}
                 >
-                  {unidadeBase ? rotuloUnidade(unidadeBase) : "Selecione um produto"}
+                  <option value="">Selecione um estoque</option>
+                  {fazendas.map(f => (
+                    <option key={f.id} value={String(f.id)}>
+                      {f.nome}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                  expand_more
+                </span>
+              </div>
+            </div>
+
+            {/* ── Botão Brinco SISBOV ── */}
+            <button
+              type="button"
+              className="w-full py-2.5 border border-gray-300 rounded text-[11px] font-semibold uppercase tracking-widest text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              ENTRADA DE BRINCO SISBOV
+            </button>
+
+            {/* ── Dados Nota Fiscal ── */}
+            <div>
+              <p className={sectionTitleCls + " mb-3"}>Dados Nota Fiscal</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>
+                    Fornecedor <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={fornecedor}
+                    onChange={e => setFornecedor(e.target.value)}
+                    placeholder="Selecione um fornecedor"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Número da NF</label>
+                  <input
+                    value={notaFiscal}
+                    onChange={e => setNotaFiscal(e.target.value)}
+                    placeholder="Ex. 323.567"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>
+                    Data de Entrada <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={dataEntrada}
+                      onChange={e => setDataEntrada(e.target.value)}
+                      className={inputCls + " pr-9"}
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                      calendar_today
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Frete</label>
+                  <input
+                    value={frete}
+                    onChange={e => setFrete(e.target.value)}
+                    placeholder="R$ 0,00"
+                    inputMode="decimal"
+                    className={inputCls}
+                  />
                 </div>
               </div>
             </div>
-          )}
 
-          {!calculo.erro && calculo.total !== 0 && (
-            <div
-              className="px-4 py-3 rounded border"
-              style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}18` }}
-            >
-              <p className="text-[11px] font-semibold uppercase text-gray-600 mb-1">Total no estoque</p>
-              {resumoUnidades && (
-                <p className="text-[12px] text-gray-600 mb-1">{resumoUnidades}</p>
-              )}
-              <p className="text-[16px] font-semibold text-gray-900">
-                = {formatTotalMovimentacao(calculo.total, unidadeBase)}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                O estoque do produto será {sinal === "entrada" ? "acrescido" : "reduzido"} neste valor.
-              </p>
-            </div>
-          )}
+            {/* ── Produtos ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className={sectionTitleCls}>Produtos</p>
+                <button
+                  type="button"
+                  onClick={adicionarProduto}
+                  className="px-4 py-1.5 rounded border border-gray-400 text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  ADICIONAR PRODUTO
+                </button>
+              </div>
 
-          {calculo.erro && (quantidadeDireta || quantidadeUnidades) && (
-            <p className="text-[12px] text-red-600">{calculo.erro}</p>
-          )}
+              {/* Mini-formulário de produto */}
+              <div className="space-y-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>
+                      Produto <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={prodEstoqueId}
+                        onChange={e => onProdutoChange(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="">Selecione o produto</option>
+                        {estoqueList.map(p => (
+                          <option key={p.id} value={String(p.id)}>
+                            {p.nome}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                        expand_more
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      Unidade Movimentação <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={prodUnidade}
+                        onChange={e => setProdUnidade(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="">Selecione a unidade</option>
+                        {UNIDADES_OPCOES.map(u => (
+                          <option key={u.sigla} value={u.sigla}>
+                            {u.legenda.charAt(0).toUpperCase() + u.legenda.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                        expand_more
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>Data de Validade</label>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={prodDataValidade}
+                        onChange={e => setProdDataValidade(e.target.value)}
+                        className={inputCls + " pr-9"}
+                        placeholder="Selecione a data"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 material-icons text-gray-400 text-[18px]">
+                        calendar_today
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      Valor Unitário <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      value={prodValorUnitario}
+                      onChange={e => setProdValorUnitario(e.target.value)}
+                      placeholder="R$ 0,00"
+                      inputMode="decimal"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      Quantidade <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      value={prodQuantidade}
+                      onChange={e => setProdQuantidade(e.target.value)}
+                      placeholder="Quantidade de produtos"
+                      inputMode="decimal"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+              </div>
 
-          <div className="pt-2 border-t border-gray-100">
-            <p className="text-[11px] font-semibold uppercase text-gray-500 tracking-wide mb-3">
-              Detalhes (opcional)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FormLabel>Destino</FormLabel>
-                <FormInput value={destino} onChange={setDestino} placeholder="Ex.: Curral, Lote 3, Cliente..." />
-              </div>
-              <div>
-                <FormLabel>Manejo</FormLabel>
-                <FormInput value={manejo} onChange={setManejo} placeholder="Manejo vinculado" />
-              </div>
-              <div>
-                <FormLabel>Fornecedor</FormLabel>
-                <FormInput value={fornecedor} onChange={setFornecedor} placeholder="Nome do fornecedor" />
-              </div>
-              <div>
-                <FormLabel>Nota Fiscal</FormLabel>
-                <FormInput value={notaFiscal} onChange={setNotaFiscal} placeholder="nº nota fiscal" />
-              </div>
-              <div>
-                <FormLabel>Frete (R$)</FormLabel>
-                <FormInput type="text" inputMode="decimal" value={frete} onChange={setFrete} placeholder="0,00" />
-              </div>
-              <div>
-                <FormLabel>Valor (R$)</FormLabel>
-                <FormInput type="text" inputMode="decimal" value={valor} onChange={setValor} placeholder="0,00" />
+              {/* Tabela de produtos adicionados */}
+              <div className="border border-gray-200 rounded overflow-hidden">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      {[
+                        "PRODUTO",
+                        "QTD",
+                        "UNIDADE",
+                        "VALIDADE",
+                        "VALOR UN.",
+                      ].map(h => (
+                        <th
+                          key={h}
+                          className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                      <th className="w-10" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {produtos.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="px-3 py-8 text-center text-[12px] text-gray-400"
+                        >
+                          Sem dados
+                        </td>
+                      </tr>
+                    ) : (
+                      produtos.map(p => {
+                        const prod = estoqueList.find(
+                          e => String(e.id) === p.estoqueId
+                        );
+                        return (
+                          <tr
+                            key={p.localId}
+                            className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50"
+                          >
+                            <td className="px-3 py-2.5 font-medium text-gray-900 uppercase whitespace-nowrap">
+                              {prod?.nome ?? "—"}
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700 tabular-nums">
+                              {p.quantidade}
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700">
+                              {nomeUnidadeExibicao(p.unidadeMov)}
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
+                              {p.dataValidade ? formatDataBr(p.dataValidade) : "—"}
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700 tabular-nums">
+                              {fmtMoeda(p.valorUnitario)}
+                            </td>
+                            <td className="px-2 py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => removerProduto(p.localId)}
+                                className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                                title="Remover"
+                              >
+                                <span className="material-icons text-[16px]">close</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2">
-            <button
-              type="submit"
-              disabled={isBusy || !!calculo.erro || calculo.total === 0}
-              className="px-5 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-60"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : "Salvar"}
-            </button>
+          {/* ── Rodapé ── */}
+          <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
             <button
               type="button"
               onClick={() => setLocation("/insumos/visao-geral")}
-              className="px-5 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide border border-gray-300 text-gray-700 hover:bg-gray-50"
+              className="px-6 py-2 rounded border border-gray-300 text-[12px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              Cancelar
+              CANCELAR
+            </button>
+            <button
+              type="button"
+              onClick={salvar}
+              disabled={isBusy}
+              className="px-6 py-2 rounded text-[12px] font-semibold uppercase tracking-wide text-white disabled:opacity-60 transition-colors"
+              style={{ backgroundColor: "#6B8E23" }}
+            >
+              {isBusy ? "Salvando..." : "SALVAR"}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </AppLayout>
   );
