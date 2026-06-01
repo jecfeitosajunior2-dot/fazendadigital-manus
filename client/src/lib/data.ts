@@ -18,8 +18,9 @@ export const menuItems: MenuItem[] = [
   },
   {
     label: "Administrativo", icon: "business", children: [
-      { label: "Visão Geral", icon: "", path: "/benfeitorias/visao-geral" },
+      { label: "Visao Geral", icon: "", path: "/benfeitorias/visao-geral" },
       { label: "Benfeitorias", icon: "", path: "/benfeitorias/lista-benfeitorias" },
+      { label: "Cadastrar Benfeitoria", icon: "", path: "/benfeitorias/cadastrar" },
     ]
   },
   {

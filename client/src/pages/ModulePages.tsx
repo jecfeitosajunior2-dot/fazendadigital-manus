@@ -1,5 +1,6 @@
 import AppLayout from "@/components/AppLayout";
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1656,11 +1657,12 @@ export function AdministrativeOverviewPage() {
 }
 
 export function ImprovementsPage() {
+  const [, setLocation] = useLocation();
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Lista de Benfeitorias</h1>
-        <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button onClick={() => setLocation("/benfeitorias/cadastrar")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
           <span className="material-icons text-[14px]">add</span>
           Cadastrar Benfeitoria
         </button>

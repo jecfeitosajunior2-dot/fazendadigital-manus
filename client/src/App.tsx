@@ -34,6 +34,7 @@ import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
+import { CadastrarBenfeitoriaPage } from "./pages/CadastrarBenfeitoriaPage";
 
 function Router() {
   return (
@@ -53,6 +54,7 @@ function Router() {
       {/* Administrative / Benfeitorias */}
       <Route path="/benfeitorias/visao-geral" component={AdministrativeOverviewPage} />
       <Route path="/benfeitorias/lista-benfeitorias" component={ImprovementsPage} />
+      <Route path="/benfeitorias/cadastrar" component={CadastrarBenfeitoriaPage} />
 
       {/* Herd */}
       <Route path="/rebanho/visao-geral" component={HerdOverviewPage} />
