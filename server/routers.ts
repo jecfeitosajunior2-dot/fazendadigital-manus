@@ -5,7 +5,7 @@ import { db } from "./db";
 import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, pesagens, batidas,
-  benfeitorias, estoque, contasFinanceiras, movimentacoes,
+  benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
@@ -788,7 +788,94 @@ const estoqueRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.estoqueId, input.id));
       await db.delete(estoque).where(eq(estoque.id, input.id));
+      return { success: true };
+    }),
+
+  resumo: protectedProcedure.query(async () => {
+    const itens = await db.select().from(estoque);
+    const monitorados = itens.filter(i => i.monitorarEstoque);
+    const abaixoLimite = monitorados.filter(i => {
+      const q = Number(i.quantidade ?? 0);
+      const min = Number(i.quantidadeMinima ?? 0);
+      return min > 0 && q <= min;
+    });
+    return {
+      totalMonitorados: monitorados.length,
+      totalAbaixoLimite: abaixoLimite.length,
+    };
+  }),
+
+  listMovimentacoes: protectedProcedure.query(async () => {
+    const rows = await db
+      .select({
+        id: estoqueMovimentacoes.id,
+        estoqueId: estoqueMovimentacoes.estoqueId,
+        dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
+        quantidade: estoqueMovimentacoes.quantidade,
+        dataValidade: estoqueMovimentacoes.dataValidade,
+        nome: estoque.nome,
+        categoria: estoque.categoria,
+        fabricante: estoque.fabricante,
+        unidade: estoque.unidade,
+      })
+      .from(estoqueMovimentacoes)
+      .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+      .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
+    return rows;
+  }),
+
+  createMovimentacao: protectedProcedure
+    .input(z.object({
+      estoqueId: z.number(),
+      dataMovimentacao: z.string(),
+      quantidade: z.string(),
+      dataValidade: z.string().optional(),
+      observacoes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const qty = parseFloat(input.quantidade.replace(",", "."));
+      if (Number.isNaN(qty) || qty === 0) {
+        throw new Error("Informe uma quantidade válida (use negativo para saída).");
+      }
+      const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+      if (!item) throw new Error("Produto não encontrado.");
+
+      const atual = Number(item.quantidade ?? 0);
+      const novo = atual + qty;
+      if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+
+      const result = await db.insert(estoqueMovimentacoes).values({
+        estoqueId: input.estoqueId,
+        dataMovimentacao: input.dataMovimentacao,
+        quantidade: String(qty),
+        dataValidade: input.dataValidade || undefined,
+        observacoes: input.observacoes || undefined,
+      });
+
+      await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+
+      return { success: true, id: (result as { insertId?: number }).insertId };
+    }),
+
+  deleteMovimentacao: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const [mov] = await db
+        .select()
+        .from(estoqueMovimentacoes)
+        .where(eq(estoqueMovimentacoes.id, input.id));
+      if (!mov) throw new Error("Movimentação não encontrada.");
+
+      const [item] = await db.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
+      if (item) {
+        const atual = Number(item.quantidade ?? 0);
+        const revertido = atual - Number(mov.quantidade);
+        await db.update(estoque).set({ quantidade: String(revertido) }).where(eq(estoque.id, mov.estoqueId));
+      }
+
+      await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.id, input.id));
       return { success: true };
     }),
 });

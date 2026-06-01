@@ -285,6 +285,16 @@ export const estoque = mysqlTable("estoque", {
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
 
+export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  estoqueId: int("estoque_id").notNull(),
+  dataMovimentacao: date("data_movimentacao").notNull(),
+  quantidade: decimal("quantidade", { precision: 12, scale: 2 }).notNull(),
+  dataValidade: date("data_validade"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Contas financeiras table (uses snake_case)
 export const contasFinanceiras = mysqlTable("contas_financeiras", {
   id: int("id").primaryKey().autoincrement(),

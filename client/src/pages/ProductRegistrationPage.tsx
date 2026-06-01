@@ -137,7 +137,7 @@ export default function ProductRegistrationPage() {
     onSuccess: () => {
       utils.estoque.list.invalidate();
       toast.success("Produto cadastrado!");
-      setLocation("/insumos/estoque");
+      setLocation("/insumos/lista-produtos");
     },
     onError: e => toast.error(e.message),
   });
@@ -146,7 +146,7 @@ export default function ProductRegistrationPage() {
     onSuccess: () => {
       utils.estoque.list.invalidate();
       toast.success("Produto atualizado!");
-      setLocation("/insumos/estoque");
+      setLocation("/insumos/lista-produtos");
     },
     onError: e => toast.error(e.message),
   });

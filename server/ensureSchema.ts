@@ -97,6 +97,19 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
     }
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`estoque_movimentacoes\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`estoque_id\` int NOT NULL,
+        \`data_movimentacao\` date NOT NULL,
+        \`quantidade\` decimal(12,2) NOT NULL,
+        \`data_validade\` date,
+        \`observacoes\` text,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`)
+      )
+    `);
+
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
     if ((maquinasTable as unknown[]).length > 0) {
       await ensureColumn(pool, "maquinas", "userId", "int");

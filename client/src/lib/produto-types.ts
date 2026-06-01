@@ -72,6 +72,28 @@ export const rotuloUnidade = (unidade: string | null | undefined): string => {
   return `${nome} (${opt.sigla})`;
 };
 
+/** Nome da unidade como no iRancho (ex.: Quilograma). */
+export const nomeUnidadeExibicao = (unidade: string | null | undefined): string => {
+  const sigla = normalizarUnidade(unidade);
+  if (!sigla) return "";
+  const opt = UNIDADES_OPCOES.find(u => u.sigla === sigla);
+  if (!opt) return sigla;
+  return opt.legenda.charAt(0).toUpperCase() + opt.legenda.slice(1);
+};
+
+export const formatQuantidadeMov = (valor: string | number): string => {
+  const n = typeof valor === "number" ? valor : parseFloat(String(valor).replace(",", "."));
+  if (Number.isNaN(n)) return String(valor);
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+export const formatDataBr = (data: string | Date | null | undefined): string => {
+  if (!data) return "";
+  const d = typeof data === "string" ? new Date(data.includes("T") ? data : `${data}T12:00:00`) : data;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("pt-BR");
+};
+
 export const FABRICANTES = [
   "Ourofino",
   "Zoetis",

@@ -40,6 +40,7 @@ import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
 import ProductRegistrationPage from "./pages/ProductRegistrationPage";
 import MaquinaRegistrationPage from "./pages/MaquinaRegistrationPage";
 import MaquinasListPage from "./pages/MaquinasListPage";
+import InsumosVisaoGeralPage from "./pages/InsumosVisaoGeralPage";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -84,11 +85,13 @@ function ProtectedRoutes() {
       <Route path="/manejos/basicos" component={AdvancedManagementPage} />
 
       {/* Insumos */}
-      <Route path="/insumos/visao-geral" component={EstoquePage} />
-      <Route path="/insumos/estoque" component={EstoquePage} />
+      <Route path="/insumos/visao-geral" component={InsumosVisaoGeralPage} />
+      <Route path="/insumos/lista-produtos" component={EstoquePage} />
+      <Route path="/insumos/estoque" component={() => <RedirectTo to="/insumos/lista-produtos" />} />
+      <Route path="/insumos/movimentacao" component={() => <InsumosVisaoGeralPage variant="movimentacao" />} />
       <Route path="/insumos/cadastro" component={ProductRegistrationPage} />
-      <Route path="/insumos/entradas" component={SuppliesManagementPage} />
-      <Route path="/insumos/saidas" component={SuppliesManagementPage} />
+      <Route path="/insumos/entradas" component={() => <RedirectTo to="/insumos/movimentacao" />} />
+      <Route path="/insumos/saidas" component={() => <RedirectTo to="/insumos/movimentacao" />} />
 
       {/* Machinery */}
       <Route path="/maquinas/visao-geral" component={MaquinasListPage} />

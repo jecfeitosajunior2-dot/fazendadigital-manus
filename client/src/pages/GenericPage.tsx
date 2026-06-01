@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { normalizarUnidade } from '@/lib/produto-types';
@@ -155,12 +155,41 @@ export function AnimaisPage() {
 // --- Estoque Page ---
 export function EstoquePage() {
   const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const [search, setSearch] = useState("");
+
+  const filtro = useMemo(() => {
+    const q = new URLSearchParams(searchParams.startsWith("?") ? searchParams.slice(1) : searchParams);
+    return q.get("filtro");
+  }, [searchParams]);
 
   const { data: items, isLoading, refetch } = trpc.estoque.list.useQuery();
   const deleteMutation = trpc.estoque.delete.useMutation({ onSuccess: () => { toast.success("Item removido!"); refetch(); } });
 
-  const filtered = useMemo(() => (items || []).filter(i => !search || i.nome.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const filtered = useMemo(() => {
+    let list = items || [];
+    if (filtro === "monitorado") {
+      list = list.filter(i => i.monitorarEstoque);
+    } else if (filtro === "abaixo") {
+      list = list.filter(i => {
+        if (!i.monitorarEstoque) return false;
+        const q = Number(i.quantidade ?? 0);
+        const min = Number(i.quantidadeMinima ?? 0);
+        return min > 0 && q <= min;
+      });
+    }
+    if (search) {
+      list = list.filter(i => i.nome.toLowerCase().includes(search.toLowerCase()));
+    }
+    return list;
+  }, [items, search, filtro]);
+
+  const tituloLista =
+    filtro === "monitorado"
+      ? "Produtos monitorados"
+      : filtro === "abaixo"
+        ? "Produtos abaixo do limite"
+        : "Lista de produtos";
 
   const exportHeaders = ["Nome", "Categoria", "Subcategoria", "Quantidade", "Unidade", "Situação", "Carência Abate (d)"];
   const exportData = filtered.map(item => [
@@ -176,7 +205,12 @@ export function EstoquePage() {
   return (
     <AppLayout>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Estoque</h1>
+        <h1
+          className="text-[18px] font-semibold text-gray-900"
+          style={{ fontFamily: "Fraunces, serif" }}
+        >
+          {tituloLista}
+        </h1>
         <div className="flex items-center gap-3 flex-wrap">
           <ListExportButtons
             title="Estoque de Insumos"
