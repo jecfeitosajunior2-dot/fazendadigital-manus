@@ -62,11 +62,15 @@ export const normalizarUnidade = (unidade: string | null | undefined): string =>
 export const siglaUnidade = (unidade: string | null | undefined): string =>
   normalizarUnidade(unidade);
 
-/** Unidades de tempo para carência de abate. */
-export const UNIDADES_CARENCIA = [
-  { sigla: "d", legenda: "dias" },
-  { sigla: "h", legenda: "horas" },
-] as const;
+/** Rótulo para exibição: "Mililitro (ml)". */
+export const rotuloUnidade = (unidade: string | null | undefined): string => {
+  const sigla = normalizarUnidade(unidade);
+  if (!sigla) return "";
+  const opt = UNIDADES_OPCOES.find(u => u.sigla === sigla);
+  if (!opt) return sigla;
+  const nome = opt.legenda.charAt(0).toUpperCase() + opt.legenda.slice(1);
+  return `${nome} (${opt.sigla})`;
+};
 
 export const FABRICANTES = [
   "Ourofino",

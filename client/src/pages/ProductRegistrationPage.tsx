@@ -20,8 +20,8 @@ import {
   EMBALAGENS_PADRAO,
   normalizarUnidade,
   siglaUnidade,
+  rotuloUnidade,
 } from "@/lib/produto-types";
-import CarenciaAbateCard, { type CarenciaFormState } from "@/components/CarenciaAbateCard";
 
 type FormState = {
   nome: string;
@@ -36,11 +36,7 @@ type FormState = {
   monitorarEstoque: "sim" | "nao";
   situacao: "ativo" | "inativo";
   embalagemSelecionada: string;
-  possuiCarencia: "sim" | "nao";
   carenciaAbate: string;
-  carenciaAbateUnidade: "d" | "h";
-  carenciaLeite: string;
-  observacoesCarencia: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -56,11 +52,7 @@ const emptyForm = (): FormState => ({
   monitorarEstoque: "nao",
   situacao: "ativo",
   embalagemSelecionada: "",
-  possuiCarencia: "nao",
   carenciaAbate: "",
-  carenciaAbateUnidade: "d",
-  carenciaLeite: "",
-  observacoesCarencia: "",
 });
 
 function FormRadioGroup({
@@ -131,12 +123,7 @@ export default function ProductRegistrationPage() {
         monitorarEstoque: produto.monitorarEstoque ? "sim" : "nao",
         situacao: produto.situacao === "inativo" ? "inativo" : "ativo",
         embalagemSelecionada: embalagensSalvas[0] || "",
-        possuiCarencia: produto.possuiCarencia ? "sim" : "nao",
         carenciaAbate: produto.carenciaAbateDias != null ? String(produto.carenciaAbateDias) : "",
-        carenciaAbateUnidade:
-          produto.carenciaAbateUnidade === "h" ? "h" : "d",
-        carenciaLeite: produto.carenciaLeiteDias != null ? String(produto.carenciaLeiteDias) : "",
-        observacoesCarencia: produto.observacoesCarencia || "",
       });
 
       if (embalagensSalvas.length) {
@@ -169,9 +156,6 @@ export default function ProductRegistrationPage() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
 
-  const setCarencia = <K extends keyof CarenciaFormState>(key: K, val: CarenciaFormState[K]) =>
-    setForm(f => ({ ...f, [key]: val }));
-
   const handleAddEmbalagem = () => {
     const nome = novaEmbalagem.trim();
     if (!nome) { toast.error("Informe o nome da embalagem"); return; }
@@ -197,21 +181,13 @@ export default function ProductRegistrationPage() {
     monitorarEstoque: form.monitorarEstoque === "sim",
     situacao: form.situacao,
     embalagens: form.embalagemSelecionada ? [form.embalagemSelecionada] : undefined,
-    possuiCarencia: form.possuiCarencia === "sim",
-    carenciaAbateDias:
-      form.possuiCarencia === "sim" && form.carenciaAbate
-        ? parseInt(form.carenciaAbate, 10)
-        : null,
-    carenciaAbateUnidade:
-      form.possuiCarencia === "sim" ? form.carenciaAbateUnidade : null,
-    carenciaLeiteDias:
-      form.possuiCarencia === "sim" && form.carenciaLeite
-        ? parseInt(form.carenciaLeite, 10)
-        : null,
-    observacoesCarencia:
-      form.possuiCarencia === "sim" && form.observacoesCarencia.trim()
-        ? form.observacoesCarencia.trim()
-        : null,
+    possuiCarencia: !!form.carenciaAbate.trim(),
+    carenciaAbateDias: form.carenciaAbate.trim()
+      ? parseInt(form.carenciaAbate, 10)
+      : null,
+    carenciaAbateUnidade: form.carenciaAbate.trim() ? "d" : null,
+    carenciaLeiteDias: null,
+    observacoesCarencia: null,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -220,10 +196,6 @@ export default function ProductRegistrationPage() {
     if (!form.categoria) { toast.error("Categoria é obrigatória"); return; }
     if (!form.subcategoria) { toast.error("Subcategoria é obrigatória"); return; }
     if (!form.unidade) { toast.error("Unidade base é obrigatória"); return; }
-    if (form.possuiCarencia === "sim" && !form.carenciaAbate.trim()) {
-      toast.error("Informe o período de carência para abate");
-      return;
-    }
 
     const payload = buildPayload();
     if (isEdit && produtoId) updateMutation.mutate({ id: produtoId, ...payload });
@@ -315,12 +287,12 @@ export default function ProductRegistrationPage() {
                 value={form.unidade}
                 onChange={v => set("unidade", v)}
                 placeholder="Selecione"
-                displayValue={form.unidade ? siglaUnidade(form.unidade) : undefined}
+                displayValue={form.unidade ? rotuloUnidade(form.unidade) : undefined}
                 required
               >
                 {UNIDADES_OPCOES.map(u => (
-                  <SelectItem key={u.sigla} value={u.sigla} className="text-[12px] font-medium">
-                    {u.sigla}
+                  <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
+                    {rotuloUnidade(u.sigla)}
                   </SelectItem>
                 ))}
               </FormSelect>
@@ -385,17 +357,24 @@ export default function ProductRegistrationPage() {
             </div>
           </div>
 
-          <CarenciaAbateCard
-            nomeProduto={form.nome.trim() || undefined}
-            value={{
-              possuiCarencia: form.possuiCarencia,
-              carenciaAbate: form.carenciaAbate,
-              carenciaAbateUnidade: form.carenciaAbateUnidade,
-              carenciaLeite: form.carenciaLeite,
-              observacoesCarencia: form.observacoesCarencia,
-            }}
-            onChange={setCarencia}
-          />
+          {/* Carência de abate — estilo iRancho */}
+          <div className="border border-gray-200 rounded-md mb-6">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-[13px] font-semibold text-gray-800">Carência de abate</h2>
+            </div>
+            <div className="px-4 py-4">
+              <div className="max-w-xs">
+                <FormLabel>Carência de abate (dias)</FormLabel>
+                <FormInput
+                  type="number"
+                  min={0}
+                  value={form.carenciaAbate}
+                  onChange={v => set("carenciaAbate", v.replace(/\D/g, ""))}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Tipos de embalagem — estilo iRancho */}
           <div className="border border-gray-200 rounded-md mb-6">
