@@ -7,116 +7,28 @@ import { useLocation } from 'wouter';
 
 // Maquinas sub-page
 function MaquinasPage() {
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
-  const [form, setForm] = useState({ nome: "", tipo: "", marca: "", modelo: "", ano: 0, placa: "", horimetro: "", status: "ativo" as "ativo"|"manutencao"|"inativo", observacoes: "" });
-
-  const { data: maquinas, isLoading, refetch } = trpc.maquinas.list.useQuery();
-  const createMutation = trpc.maquinas.create.useMutation({ onSuccess: () => { toast.success("Máquina cadastrada!"); setShowForm(false); resetForm(); refetch(); } });
-  const updateMutation = trpc.maquinas.update.useMutation({ onSuccess: () => { toast.success("Máquina atualizada!"); setShowForm(false); resetForm(); refetch(); } });
-  const deleteMutation = trpc.maquinas.delete.useMutation({ onSuccess: () => { toast.success("Máquina removida!"); refetch(); } });
-
-  const resetForm = () => { setForm({ nome: "", tipo: "", marca: "", modelo: "", ano: 0, placa: "", horimetro: "", status: "ativo" as "ativo"|"manutencao"|"inativo", observacoes: "" }); setEditItem(null); };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editItem) {
-      updateMutation.mutate({ id: editItem.id, ...form });
-    } else {
-      createMutation.mutate(form);
-    }
-  };
+  const [, setLocation] = useLocation();
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px] font-medium text-gray-700">Máquinas e Equipamentos</h2>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
+        <button
+          type="button"
+          onClick={() => setLocation("/maquinas/cadastro")}
+          className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium"
+          style={{ backgroundColor: "#2D5A5A" }}
+        >
           <span className="material-icons text-[14px]">add</span> Nova Máquina
         </button>
       </div>
-
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-[14px] font-semibold text-gray-800 mb-4">{editItem ? "Editar Máquina" : "Nova Máquina"}</h2>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <FormLabel required>Nome</FormLabel>
-                <FieldBox required>
-                  <input required value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} className={inputClassCompact} />
-                </FieldBox>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Tipo</label>
-                  <select value={form.tipo} onChange={e => setForm(f => ({...f, tipo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
-                    <option value="">Selecione</option>
-                    <option value="trator">Trator</option>
-                    <option value="colheitadeira">Colheitadeira</option>
-                    <option value="caminhao">Caminhão</option>
-                    <option value="veiculo">Veículo</option>
-                    <option value="implemento">Implemento</option>
-                    <option value="outro">Outro</option>
-                  </select>
-                </div>
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Status</label>
-                  <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value as "ativo"|"manutencao"|"inativo"}))} className="w-full border rounded px-2 py-1.5 text-[12px]">
-                    <option value="ativo">Ativo</option>
-                    <option value="manutencao">Em Manutenção</option>
-                    <option value="inativo">Inativo</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Marca</label><input value={form.marca} onChange={e => setForm(f => ({...f, marca: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Modelo</label><input value={form.modelo} onChange={e => setForm(f => ({...f, modelo: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Ano</label><input type="number" value={form.ano || ""} onChange={e => setForm(f => ({...f, ano: Number(e.target.value)}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-                <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Placa</label><input value={form.placa} onChange={e => setForm(f => ({...f, placa: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              </div>
-              <div><label className="block text-[11px] font-medium text-gray-600 mb-1">Horímetro/Km</label><input type="number" value={form.horimetro || ""} onChange={e => setForm(f => ({...f, horimetro: e.target.value}))} className="w-full border rounded px-2 py-1.5 text-[12px]" /></div>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 px-3 py-2 border border-gray-300 rounded text-[12px] text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button type="submit" className="flex-1 px-3 py-2 rounded text-white text-[12px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-                  {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {isLoading ? (
-          <div className="col-span-3 text-center py-8 text-gray-400">Carregando...</div>
-        ) : (maquinas || []).length === 0 ? (
-          <div className="col-span-3 bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
-            <span className="material-icons text-[48px] mb-2 block">agriculture</span>
-            <p>Nenhuma máquina cadastrada.</p>
-          </div>
-        ) : (maquinas || []).map((m) => (
-          <div key={m.id} className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h3 className="text-[13px] font-semibold text-gray-800">{m.nome}</h3>
-                <p className="text-[11px] text-gray-500">{m.marca} {m.modelo} {m.ano ? `(${m.ano})` : ""}</p>
-              </div>
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${m.status === 'ativo' ? 'bg-green-100 text-green-700' : m.status === 'manutencao' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>{m.status}</span>
-            </div>
-            {m.placa && <p className="text-[11px] text-gray-600">Placa: <strong>{m.placa}</strong></p>}
-            {m.horimetro && <p className="text-[11px] text-gray-600">Horímetro: <strong>{m.horimetro}</strong></p>}
-            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-              <button onClick={() => { setEditItem(m); setForm({ nome: m.nome, tipo: m.tipo || "", marca: m.marca || "", modelo: m.modelo || "", ano: m.ano || 0, placa: m.placa || "", horimetro: m.horimetro || "", status: m.status || "ativo", observacoes: m.observacoes || "" }); setShowForm(true); }} className="flex-1 flex items-center justify-center gap-1 px-2 py-1 border border-gray-200 rounded text-[11px] text-gray-600 hover:bg-gray-50">
-                <span className="material-icons text-[14px]">edit</span> Editar
-              </button>
-              <button onClick={() => { if (confirm("Remover máquina?")) deleteMutation.mutate({ id: m.id }); }} className="flex items-center justify-center gap-1 px-2 py-1 border border-red-100 rounded text-[11px] text-red-500 hover:bg-red-50">
-                <span className="material-icons text-[14px]">delete</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <p className="text-[12px] text-gray-500">
+        Use o{" "}
+        <button type="button" onClick={() => setLocation("/maquinas/lista-maquinas")} className="text-[#4ECDC4] underline">
+          cadastro de maquinário
+        </button>{" "}
+        para gerenciar máquinas e equipamentos.
+      </p>
     </div>
   );
 }

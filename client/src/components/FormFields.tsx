@@ -184,6 +184,66 @@ export function FormYearPicker({
   );
 }
 
+/** Campo de data com ícone de calendário — estilo iRancho. */
+export function FormDatePicker({
+  value,
+  onChange,
+  placeholder = "Selecione a data",
+  required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  const dateRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const el = dateRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === "function") el.showPicker();
+    else el.click();
+  };
+
+  const displayValue = value
+    ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR")
+    : "";
+
+  return (
+    <FieldBox required={required} variant="light">
+      <div className="relative flex items-center min-h-[42px]">
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={openPicker}
+          className="absolute left-2.5 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
+          aria-label="Abrir calendário"
+        >
+          <Calendar className="w-[18px] h-[18px]" strokeWidth={1.75} />
+        </button>
+        <input
+          type="text"
+          value={displayValue}
+          onClick={openPicker}
+          onFocus={openPicker}
+          placeholder={placeholder}
+          readOnly
+          className={cn(inputClass, "pl-10 bg-white min-h-[42px] cursor-pointer")}
+        />
+        <input
+          ref={dateRef}
+          type="date"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+      </div>
+    </FieldBox>
+  );
+}
+
 export function FormTextarea({
   value,
   onChange,

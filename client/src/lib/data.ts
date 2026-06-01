@@ -63,6 +63,7 @@ export const menuItems: MenuItem[] = [
     icon: "agriculture",
     children: [
       { label: "Visão Geral", icon: "", path: "/maquinas/visao-geral" },
+      { label: "Cadastro de Maquinário", icon: "", path: "/maquinas/cadastro" },
       { label: "Abastecimento", icon: "", path: "/maquinas/abastecimento" },
       { label: "Manutenção", icon: "", path: "/maquinas/manutencao" },
       { label: "Máquinas", icon: "", path: "/maquinas/lista-maquinas" },

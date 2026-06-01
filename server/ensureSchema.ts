@@ -96,6 +96,19 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "carencia_leite_dias", "int");
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
     }
+
+    const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
+    if ((maquinasTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "maquinas", "fazendaId", "int");
+      await ensureColumn(pool, "maquinas", "valor", "decimal(12,2)");
+      await ensureColumn(pool, "maquinas", "anoAquisicao", "int");
+      await ensureColumn(pool, "maquinas", "vidaUtil", "varchar(50)");
+      await ensureColumn(pool, "maquinas", "dataDesativacao", "date");
+      await ensureColumn(pool, "maquinas", "estado", "varchar(20)");
+      await ensureColumn(pool, "maquinas", "imagem1", "text");
+      await ensureColumn(pool, "maquinas", "imagem2", "text");
+      await ensureColumn(pool, "maquinas", "imagem3", "text");
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

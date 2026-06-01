@@ -419,44 +419,67 @@ const reproducaoRouter = router({
 });
 
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
+const maquinasInputFields = {
+  fazendaId: z.number(),
+  nome: z.string(),
+  tipo: z.string(),
+  marca: z.string(),
+  ano: z.number(),
+  anoAquisicao: z.number(),
+  modelo: z.string().optional(),
+  placa: z.string().optional(),
+  valor: z.string().optional(),
+  vidaUtil: z.string().optional(),
+  dataDesativacao: z.string().optional(),
+  estado: z.enum(["novo", "usado"]).optional(),
+  horimetro: z.string().optional(),
+  status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+  observacoes: z.string().optional(),
+  imageSlots: z.array(imageSlotInput).length(3).optional(),
+};
+
 const maquinasRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(maquinas).where(eq(maquinas.userId, ctx.user.id)).orderBy(desc(maquinas.createdAt));
   }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await db.select().from(maquinas).where(
+        and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id))
+      );
+      return row ?? null;
+    }),
+
   create: protectedProcedure
-    .input(z.object({
-      nome: z.string(),
-      tipo: z.string().optional(),
-      marca: z.string().optional(),
-      modelo: z.string().optional(),
-      ano: z.number().optional(),
-      placa: z.string().optional(),
-      horimetro: z.string().optional(),
-      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object(maquinasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(maquinas).values({ userId: ctx.user.id, ...input });
+      const { dataDesativacao, imageSlots, ...rest } = input;
+      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
+      const result = await db.insert(maquinas).values({
+        userId: ctx.user.id,
+        ...rest,
+        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
+      });
       return { success: true, id: (result as any).insertId };
     }),
 
   update: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      nome: z.string().optional(),
-      tipo: z.string().optional(),
-      marca: z.string().optional(),
-      modelo: z.string().optional(),
-      ano: z.number().optional(),
-      placa: z.string().optional(),
-      horimetro: z.string().optional(),
-      status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(z.object({ id: z.number(), ...maquinasInputFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...rest } = input;
-      await db.update(maquinas).set(rest).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      const { id, dataDesativacao, imageSlots, ...rest } = input;
+      const [img1, img2, img3] = await resolveImageSlots(imageSlots);
+      await db.update(maquinas).set({
+        ...rest,
+        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null,
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
+      }).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
       return { success: true };
     }),
 
