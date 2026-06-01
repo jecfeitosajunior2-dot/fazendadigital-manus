@@ -173,6 +173,14 @@ export function EstoquePage() {
   const deleteMutation = trpc.estoque.delete.useMutation({
     onSuccess: () => { toast.success("Produto removido!"); refetch(); },
   });
+  const inativarMutation = trpc.estoque.inativarProdutos.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.count} produto(s) inativado(s)!`);
+      setSelectedIds(new Set());
+      refetch();
+    },
+    onError: () => toast.error("Não foi possível inativar os produtos."),
+  });
 
   const filtered = useMemo(() => {
     let list = [...items];
@@ -237,7 +245,7 @@ export function EstoquePage() {
   const exportRows = filtered.map(i => [
     i.nome,
     i.categoria ?? "",
-    i.situacao === "inativo" ? "Inativo" : "Ativo",
+    i.situacao === "inativo" ? "Inativa" : "Ativa",
     i.fabricante ?? "",
     i.identificadorUnico ?? "",
     Number(i.quantidadeMinima ?? 0).toFixed(2),
@@ -268,7 +276,7 @@ export function EstoquePage() {
           </div>
         </div>
 
-        {/* Botão + Filtros */}
+        {/* Botões de ação */}
         <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
           <button
             type="button"
@@ -278,6 +286,21 @@ export function EstoquePage() {
           >
             Novo Produto
           </button>
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const qtd = selectedIds.size;
+                if (confirm(`Inativar ${qtd} produto(s) selecionado(s)?`)) {
+                  inativarMutation.mutate({ ids: Array.from(selectedIds) });
+                }
+              }}
+              disabled={inativarMutation.isPending}
+              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white bg-[#E85D5D] hover:bg-[#d44f4f] disabled:opacity-60 transition-colors"
+            >
+              Inativar Produtos
+            </button>
+          )}
         </div>
 
         {/* Filtros de status + busca */}
@@ -294,8 +317,8 @@ export function EstoquePage() {
             onChange={e => { setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos"); setPage(1); }}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px]"
           >
-            <option value="ativo">Ativos</option>
-            <option value="inativo">Inativos</option>
+            <option value="ativo">Ativas</option>
+            <option value="inativo">Inativas</option>
             <option value="todos">Todos</option>
           </select>
           <div className="relative">
@@ -349,7 +372,6 @@ export function EstoquePage() {
               ) : pageItems.length === 0 ? (
                 <tr><td colSpan={13} className="text-center py-12 text-gray-400">Sem dados</td></tr>
               ) : pageItems.map(item => {
-                const isLow = item.monitorarEstoque && Number(item.quantidadeMinima ?? 0) > 0 && Number(item.quantidade ?? 0) <= Number(item.quantidadeMinima ?? 0);
                 const isInativo = item.situacao === "inativo";
                 return (
                   <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
@@ -368,11 +390,9 @@ export function EstoquePage() {
                     <td className="px-3 py-2.5 text-gray-700">{item.categoria ?? ""}</td>
                     <td className="px-3 py-2.5">
                       {isInativo ? (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-medium">Inativo</span>
-                      ) : isLow ? (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">Estoque Baixo</span>
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">Inativa</span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">Ativo</span>
+                        <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">Ativa</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-700">{item.fabricante ?? ""}</td>
