@@ -21,6 +21,9 @@ import {
   normalizarUnidade,
   siglaUnidade,
   rotuloUnidade,
+  parseEmbalagens,
+  extrairVolumeEmbalagem,
+  type EmbalagemProduto,
 } from "@/lib/produto-types";
 
 type FormState = {
@@ -93,8 +96,15 @@ export default function ProductRegistrationPage() {
   );
 
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [embalagensOpcoes, setEmbalagensOpcoes] = useState<string[]>([...EMBALAGENS_PADRAO]);
+  const [embalagensOpcoes, setEmbalagensOpcoes] = useState<EmbalagemProduto[]>(
+    EMBALAGENS_PADRAO.map(nome => {
+      const vol = extrairVolumeEmbalagem(nome);
+      return { nome, volume: vol.volume, unidade: vol.unidade };
+    })
+  );
   const [novaEmbalagem, setNovaEmbalagem] = useState("");
+  const [novaEmbalagemVolume, setNovaEmbalagemVolume] = useState("");
+  const [novaEmbalagemUnidade, setNovaEmbalagemUnidade] = useState("");
   const [showNovaEmbalagem, setShowNovaEmbalagem] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -105,10 +115,7 @@ export default function ProductRegistrationPage() {
 
   useEffect(() => {
     if (isEdit && produto && !initialized) {
-      let embalagensSalvas: string[] = [];
-      try {
-        embalagensSalvas = produto.embalagens ? JSON.parse(produto.embalagens) : [];
-      } catch { /* ignore */ }
+      const embalagensSalvas = parseEmbalagens(produto.embalagens);
 
       setForm({
         nome: produto.nome || "",
@@ -122,12 +129,16 @@ export default function ProductRegistrationPage() {
         produzidoNaFazenda: produto.produzidoNaFazenda ? "sim" : "nao",
         monitorarEstoque: produto.monitorarEstoque ? "sim" : "nao",
         situacao: produto.situacao === "inativo" ? "inativo" : "ativo",
-        embalagemSelecionada: embalagensSalvas[0] || "",
+        embalagemSelecionada: embalagensSalvas[0]?.nome || "",
         carenciaAbate: produto.carenciaAbateDias != null ? String(produto.carenciaAbateDias) : "",
       });
 
       if (embalagensSalvas.length) {
-        setEmbalagensOpcoes(prev => [...new Set([...prev, ...embalagensSalvas])]);
+        setEmbalagensOpcoes(prev => {
+          const nomes = new Set(prev.map(e => e.nome));
+          const extras = embalagensSalvas.filter(e => !nomes.has(e.nome));
+          return [...prev, ...extras];
+        });
       }
       setInitialized(true);
     }
@@ -159,14 +170,31 @@ export default function ProductRegistrationPage() {
   const handleAddEmbalagem = () => {
     const nome = novaEmbalagem.trim();
     if (!nome) { toast.error("Informe o nome da embalagem"); return; }
-    if (!embalagensOpcoes.includes(nome)) {
-      setEmbalagensOpcoes(prev => [...prev, nome]);
+    const parsed = extrairVolumeEmbalagem(nome);
+    const volume = novaEmbalagemVolume
+      ? parseFloat(novaEmbalagemVolume.replace(",", "."))
+      : parsed.volume;
+    const unidade = novaEmbalagemUnidade || parsed.unidade || form.unidade;
+    const item: EmbalagemProduto = {
+      nome,
+      volume: volume && !Number.isNaN(volume) ? volume : undefined,
+      unidade: unidade || undefined,
+    };
+    if (!embalagensOpcoes.some(e => e.nome === nome)) {
+      setEmbalagensOpcoes(prev => [...prev, item]);
     }
     setForm(f => ({ ...f, embalagemSelecionada: nome }));
     setNovaEmbalagem("");
+    setNovaEmbalagemVolume("");
+    setNovaEmbalagemUnidade("");
     setShowNovaEmbalagem(false);
     toast.success("Embalagem adicionada!");
   };
+
+  const embalagemAtiva = useMemo(
+    () => embalagensOpcoes.find(e => e.nome === form.embalagemSelecionada),
+    [embalagensOpcoes, form.embalagemSelecionada]
+  );
 
   const buildPayload = () => ({
     nome: form.nome.trim(),
@@ -180,7 +208,9 @@ export default function ProductRegistrationPage() {
     produzidoNaFazenda: form.produzidoNaFazenda === "sim",
     monitorarEstoque: form.monitorarEstoque === "sim",
     situacao: form.situacao,
-    embalagens: form.embalagemSelecionada ? [form.embalagemSelecionada] : undefined,
+    embalagens: form.embalagemSelecionada
+      ? embalagensOpcoes.filter(e => e.nome === form.embalagemSelecionada)
+      : undefined,
     possuiCarencia: !!form.carenciaAbate.trim(),
     carenciaAbateDias: form.carenciaAbate.trim()
       ? parseInt(form.carenciaAbate, 10)
@@ -296,6 +326,15 @@ export default function ProductRegistrationPage() {
                   </SelectItem>
                 ))}
               </FormSelect>
+              {form.unidade && (
+                <div
+                  className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
+                  style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+                >
+                  <span className="font-semibold text-gray-800">Unidade base: </span>
+                  {rotuloUnidade(form.unidade)}
+                </div>
+              )}
             </div>
             <div>
               <FormLabel>Fabricante</FormLabel>
@@ -391,13 +430,41 @@ export default function ProductRegistrationPage() {
             <div className="px-4 py-4">
               {showNovaEmbalagem && (
                 <div className="flex flex-wrap items-end gap-2 mb-4">
-                  <div className="flex-1 min-w-[200px]">
+                  <div className="flex-1 min-w-[180px]">
                     <FormLabel>Nova embalagem</FormLabel>
                     <FormInput
                       value={novaEmbalagem}
                       onChange={v => setNovaEmbalagem(v)}
-                      placeholder="Ex: Frasco 250ml"
+                      placeholder="Ex: Frasco 500ml"
                     />
+                  </div>
+                  <div className="w-28">
+                    <FormLabel>Qtd / unidade</FormLabel>
+                    <FormInput
+                      type="number"
+                      value={novaEmbalagemVolume}
+                      onChange={v => setNovaEmbalagemVolume(v)}
+                      placeholder="500"
+                    />
+                  </div>
+                  <div className="w-36">
+                    <FormLabel>Unidade</FormLabel>
+                    <FormSelect
+                      value={novaEmbalagemUnidade || form.unidade}
+                      onChange={v => setNovaEmbalagemUnidade(v)}
+                      placeholder="Unidade"
+                      displayValue={
+                        (novaEmbalagemUnidade || form.unidade)
+                          ? rotuloUnidade(novaEmbalagemUnidade || form.unidade)
+                          : undefined
+                      }
+                    >
+                      {UNIDADES_OPCOES.map(u => (
+                        <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
+                          {rotuloUnidade(u.sigla)}
+                        </SelectItem>
+                      ))}
+                    </FormSelect>
                   </div>
                   <button
                     type="button"
@@ -415,11 +482,22 @@ export default function ProductRegistrationPage() {
                   value={form.embalagemSelecionada}
                   onChange={v => set("embalagemSelecionada", v)}
                   placeholder="Selecione"
+                  displayValue={form.embalagemSelecionada || undefined}
                 >
                   {embalagensOpcoes.map(e => (
-                    <SelectItem key={e} value={e} className="text-[12px]">{e}</SelectItem>
+                    <SelectItem key={e.nome} value={e.nome} className="text-[12px]">{e.nome}</SelectItem>
                   ))}
                 </FormSelect>
+                {embalagemAtiva && (embalagemAtiva.volume || embalagemAtiva.unidade) && (
+                  <div
+                    className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
+                    style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+                  >
+                    <span className="font-semibold">Por unidade: </span>
+                    {embalagemAtiva.volume?.toLocaleString("pt-BR") ?? "—"}
+                    {embalagemAtiva.unidade ? ` ${rotuloUnidade(embalagemAtiva.unidade)}` : ""}
+                  </div>
+                )}
               </div>
             </div>
           </div>

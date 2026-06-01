@@ -1,20 +1,102 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import {
+  FD_PRIMARY,
+  FormLabel,
+  FormInput,
+  FormSelect,
+  FormDatePicker,
+} from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { trpc } from "@/lib/trpc";
-
-const FD_PRIMARY = "#4ECDC4";
+import {
+  UNIDADES_OPCOES,
+  calcularQuantidadeMovimentacao,
+  formatTotalMovimentacao,
+  normalizarUnidade,
+  parseEmbalagens,
+  rotuloUnidade,
+  type ModoQuantidadeMov,
+} from "@/lib/produto-types";
 
 export default function InsumosNovaMovimentacaoPage() {
   const [, setLocation] = useLocation();
   const [estoqueId, setEstoqueId] = useState("");
   const [dataMov, setDataMov] = useState(() => new Date().toISOString().slice(0, 10));
-  const [quantidade, setQuantidade] = useState("");
   const [dataValidade, setDataValidade] = useState("");
+  const [sinal, setSinal] = useState<"entrada" | "saida">("entrada");
+  const [modo, setModo] = useState<ModoQuantidadeMov>("unidades");
+  const [quantidadeDireta, setQuantidadeDireta] = useState("");
+  const [quantidadeUnidades, setQuantidadeUnidades] = useState("");
+  const [quantidadePorUnidade, setQuantidadePorUnidade] = useState("");
+  const [unidadeLancamento, setUnidadeLancamento] = useState("");
+  const [embalagemNome, setEmbalagemNome] = useState("");
 
   const utils = trpc.useUtils();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
+
+  const produto = useMemo(
+    () => produtos.find(p => String(p.id) === estoqueId),
+    [produtos, estoqueId]
+  );
+
+  const embalagens = useMemo(
+    () => (produto?.embalagens ? parseEmbalagens(produto.embalagens) : []),
+    [produto]
+  );
+
+  const unidadeBase = normalizarUnidade(produto?.unidade);
+
+  useEffect(() => {
+    if (!produto) {
+      setEmbalagemNome("");
+      setUnidadeLancamento("");
+      return;
+    }
+    const base = normalizarUnidade(produto.unidade);
+    setUnidadeLancamento(base);
+    const emb = parseEmbalagens(produto.embalagens);
+    if (emb.length === 1) {
+      setEmbalagemNome(emb[0].nome);
+      setQuantidadePorUnidade(emb[0].volume ? String(emb[0].volume) : "");
+      setUnidadeLancamento(normalizarUnidade(emb[0].unidade) || base);
+    } else {
+      setEmbalagemNome("");
+    }
+  }, [produto?.id]);
+
+  const onEmbalagemChange = (nome: string) => {
+    setEmbalagemNome(nome);
+    const emb = embalagens.find(e => e.nome === nome);
+    if (emb?.volume) setQuantidadePorUnidade(String(emb.volume));
+    if (emb?.unidade) setUnidadeLancamento(normalizarUnidade(emb.unidade));
+    else if (unidadeBase) setUnidadeLancamento(unidadeBase);
+  };
+
+  const calculo = useMemo(
+    () =>
+      calcularQuantidadeMovimentacao({
+        modo,
+        sinal,
+        quantidadeDireta,
+        quantidadeUnidades,
+        quantidadePorUnidade,
+        unidadeLancamento,
+        unidadeBaseProduto: unidadeBase,
+      }),
+    [
+      modo,
+      sinal,
+      quantidadeDireta,
+      quantidadeUnidades,
+      quantidadePorUnidade,
+      unidadeLancamento,
+      unidadeBase,
+    ]
+  );
 
   const createMutation = trpc.estoque.createMovimentacao.useMutation({
     onSuccess: () => {
@@ -26,6 +108,11 @@ export default function InsumosNovaMovimentacaoPage() {
     },
     onError: e => toast.error(e.message),
   });
+
+  const resumoUnidades =
+    modo === "unidades" && quantidadeUnidades && quantidadePorUnidade
+      ? `${quantidadeUnidades} un × ${quantidadePorUnidade} ${rotuloUnidade(unidadeLancamento)}`
+      : null;
 
   return (
     <AppLayout>
@@ -40,7 +127,7 @@ export default function InsumosNovaMovimentacaoPage() {
         </button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded shadow-sm max-w-2xl">
+      <div className="bg-white border border-gray-200 rounded shadow-sm max-w-3xl">
         <div className="px-5 py-4 border-b border-gray-100">
           <h1
             className="text-[20px] font-semibold text-gray-900"
@@ -51,89 +138,221 @@ export default function InsumosNovaMovimentacaoPage() {
         </div>
 
         <form
-          className="p-5 space-y-4"
+          className="p-5 space-y-5"
           onSubmit={e => {
             e.preventDefault();
             if (!estoqueId) {
               toast.error("Selecione um produto.");
               return;
             }
+            if (calculo.erro) {
+              toast.error(calculo.erro);
+              return;
+            }
             createMutation.mutate({
               estoqueId: Number(estoqueId),
               dataMovimentacao: dataMov,
-              quantidade,
+              quantidade: String(calculo.total),
               dataValidade: dataValidade || undefined,
+              modo,
+              quantidadeUnidades: modo === "unidades" ? quantidadeUnidades : undefined,
+              quantidadePorUnidade: modo === "unidades" ? quantidadePorUnidade : undefined,
+              unidadeLancamento: modo === "unidades" ? unidadeLancamento : unidadeBase || undefined,
+              sinal,
             });
           }}
         >
           <div>
-            <label className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
-              Produto *
-            </label>
-            <select
+            <FormLabel required>Produto</FormLabel>
+            <FormSelect
               value={estoqueId}
-              onChange={e => setEstoqueId(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2.5 text-[13px] bg-white"
+              onChange={v => setEstoqueId(v)}
+              placeholder="Selecione o produto..."
+              displayValue={produto?.nome}
               required
             >
-              <option value="">Selecione o produto...</option>
               {produtos.map(p => (
-                <option key={p.id} value={p.id}>
+                <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
                   {p.nome}
-                </option>
+                </SelectItem>
               ))}
-            </select>
+            </FormSelect>
+            {unidadeBase && (
+              <div
+                className="mt-2 px-3 py-2 rounded border text-[12px]"
+                style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+              >
+                <span className="font-semibold text-gray-800">Unidade base do produto: </span>
+                {rotuloUnidade(unidadeBase)}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
-                Data de movimentação *
-              </label>
-              <input
-                type="date"
-                value={dataMov}
-                onChange={e => setDataMov(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2.5 text-[13px]"
-                required
-              />
+              <FormLabel required>Data de movimentação</FormLabel>
+              <FormDatePicker value={dataMov} onChange={setDataMov} required />
             </div>
             <div>
-              <label className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
-                Data de validade
-              </label>
-              <input
-                type="date"
-                value={dataValidade}
-                onChange={e => setDataValidade(e.target.value)}
-                className="w-full border border-gray-300 rounded px-3 py-2.5 text-[13px]"
-              />
+              <FormLabel>Data de validade</FormLabel>
+              <FormDatePicker value={dataValidade} onChange={setDataValidade} />
             </div>
           </div>
 
           <div>
-            <label className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
-              Quantidade *
-            </label>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="-400,00"
-              value={quantidade}
-              onChange={e => setQuantidade(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2.5 text-[13px]"
-              required
-            />
-            <p className="text-[11px] text-gray-500 mt-1">
-              Use valor negativo para saída (ex.: -400,00) e positivo para entrada.
-            </p>
+            <FormLabel required>Tipo</FormLabel>
+            <div className="flex flex-wrap gap-4 px-1 py-1">
+              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
+                <input
+                  type="radio"
+                  name="sinal"
+                  checked={sinal === "entrada"}
+                  onChange={() => setSinal("entrada")}
+                  className="accent-[#4ECDC4]"
+                />
+                Entrada
+              </label>
+              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
+                <input
+                  type="radio"
+                  name="sinal"
+                  checked={sinal === "saida"}
+                  onChange={() => setSinal("saida")}
+                  className="accent-[#4ECDC4]"
+                />
+                Saída
+              </label>
+            </div>
           </div>
+
+          <div>
+            <FormLabel required>Forma de lançamento</FormLabel>
+            <RadioGroup
+              value={modo}
+              onValueChange={v => setModo(v as ModoQuantidadeMov)}
+              className="flex flex-wrap gap-4 px-1 py-2"
+            >
+              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
+                <RadioGroupItem value="unidades" className="border-gray-400 text-[#4ECDC4]" />
+                Por unidades / embalagem
+              </label>
+              <label className="flex items-center gap-2 text-[12px] cursor-pointer">
+                <RadioGroupItem value="direto" className="border-gray-400 text-[#4ECDC4]" />
+                Quantidade direta na unidade base
+              </label>
+            </RadioGroup>
+          </div>
+
+          {modo === "unidades" ? (
+            <>
+              {embalagens.length > 0 && (
+                <div>
+                  <FormLabel>Embalagem (opcional)</FormLabel>
+                  <FormSelect
+                    value={embalagemNome}
+                    onChange={onEmbalagemChange}
+                    placeholder="Selecione a embalagem"
+                    displayValue={embalagemNome || undefined}
+                  >
+                    {embalagens.map(e => (
+                      <SelectItem key={e.nome} value={e.nome} className="text-[12px]">
+                        {e.nome}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <FormLabel required>Quantidade de unidades</FormLabel>
+                  <FormInput
+                    type="number"
+                    value={quantidadeUnidades}
+                    onChange={setQuantidadeUnidades}
+                    placeholder="4"
+                    required
+                  />
+                </div>
+                <div>
+                  <FormLabel required>Quantidade por unidade</FormLabel>
+                  <FormInput
+                    type="number"
+                    value={quantidadePorUnidade}
+                    onChange={setQuantidadePorUnidade}
+                    placeholder="500"
+                    required
+                  />
+                </div>
+                <div>
+                  <FormLabel required>Unidade</FormLabel>
+                  <FormSelect
+                    value={unidadeLancamento}
+                    onChange={setUnidadeLancamento}
+                    placeholder="Selecione"
+                    displayValue={unidadeLancamento ? rotuloUnidade(unidadeLancamento) : undefined}
+                    required
+                  >
+                    {UNIDADES_OPCOES.map(u => (
+                      <SelectItem key={u.sigla} value={u.sigla} className="text-[12px]">
+                        {rotuloUnidade(u.sigla)}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel required>Quantidade</FormLabel>
+                <FormInput
+                  type="text"
+                  inputMode="decimal"
+                  value={quantidadeDireta}
+                  onChange={setQuantidadeDireta}
+                  placeholder="2000"
+                  required
+                />
+              </div>
+              <div>
+                <FormLabel>Unidade</FormLabel>
+                <div
+                  className="px-3 py-2.5 text-[13px] text-gray-700 border border-gray-200 rounded-sm bg-[#EEEEEE] min-h-[42px] flex items-center"
+                >
+                  {unidadeBase ? rotuloUnidade(unidadeBase) : "Selecione um produto"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!calculo.erro && calculo.total !== 0 && (
+            <div
+              className="px-4 py-3 rounded border"
+              style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}18` }}
+            >
+              <p className="text-[11px] font-semibold uppercase text-gray-600 mb-1">Total no estoque</p>
+              {resumoUnidades && (
+                <p className="text-[12px] text-gray-600 mb-1">{resumoUnidades}</p>
+              )}
+              <p className="text-[16px] font-semibold text-gray-900">
+                = {formatTotalMovimentacao(calculo.total, unidadeBase)}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-1">
+                O estoque do produto será {sinal === "entrada" ? "acrescido" : "reduzido"} neste valor.
+              </p>
+            </div>
+          )}
+
+          {calculo.erro && (quantidadeDireta || quantidadeUnidades) && (
+            <p className="text-[12px] text-red-600">{calculo.erro}</p>
+          )}
 
           <div className="flex flex-wrap gap-2 pt-2">
             <button
               type="submit"
-              disabled={createMutation.isPending}
-              className="px-5 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-white disabled:opacity-60"
+              disabled={createMutation.isPending || !!calculo.erro || calculo.total === 0}
+              className="px-5 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-60"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               {createMutation.isPending ? "Salvando..." : "Salvar"}

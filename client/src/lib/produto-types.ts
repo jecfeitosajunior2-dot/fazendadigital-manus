@@ -113,3 +113,95 @@ export const EMBALAGENS_PADRAO = [
   "Caixa",
   "Unidade",
 ] as const;
+
+export type EmbalagemProduto = {
+  nome: string;
+  volume?: number;
+  unidade?: string;
+};
+
+/** Converte embalagens salvas (string[] legado ou EmbalagemProduto[]). */
+export function parseEmbalagens(raw: string | null | undefined): EmbalagemProduto[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => {
+      if (typeof item === "string") {
+        const vol = extrairVolumeEmbalagem(item);
+        return { nome: item, volume: vol.volume, unidade: vol.unidade };
+      }
+      if (item && typeof item === "object" && "nome" in item) {
+        const o = item as EmbalagemProduto;
+        return {
+          nome: String(o.nome),
+          volume: o.volume != null ? Number(o.volume) : undefined,
+          unidade: o.unidade ? normalizarUnidade(o.unidade) : undefined,
+        };
+      }
+      return { nome: String(item) };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Tenta ler volume da descrição, ex.: "Frasco 500ml" → 500 ml. */
+export function extrairVolumeEmbalagem(texto: string): { volume?: number; unidade?: string } {
+  const m = texto.trim().match(/(\d+(?:[.,]\d+)?)\s*(ml|mL|l|L|kg|g|un)\b/i);
+  if (!m) return {};
+  const volume = parseFloat(m[1].replace(",", "."));
+  let unidade = m[2].toLowerCase();
+  if (unidade === "l") unidade = "L";
+  if (unidade === "ml") unidade = "ml";
+  return { volume: Number.isNaN(volume) ? undefined : volume, unidade: normalizarUnidade(unidade) };
+}
+
+export function serializarEmbalagens(lista: EmbalagemProduto[]): string {
+  return JSON.stringify(lista);
+}
+
+export type ModoQuantidadeMov = "direto" | "unidades";
+
+/** Calcula quantidade final na unidade base do produto. */
+export function calcularQuantidadeMovimentacao(opts: {
+  modo: ModoQuantidadeMov;
+  sinal: "entrada" | "saida";
+  quantidadeDireta?: string;
+  quantidadeUnidades?: string;
+  quantidadePorUnidade?: string;
+  unidadeLancamento?: string;
+  unidadeBaseProduto?: string;
+}): { total: number; erro?: string } {
+  const mult = opts.sinal === "saida" ? -1 : 1;
+
+  if (opts.modo === "direto") {
+    const n = parseFloat(String(opts.quantidadeDireta ?? "").replace(",", "."));
+    if (Number.isNaN(n) || n === 0) return { total: 0, erro: "Informe a quantidade." };
+    return { total: n * mult };
+  }
+
+  const un = parseFloat(String(opts.quantidadeUnidades ?? "").replace(",", "."));
+  const por = parseFloat(String(opts.quantidadePorUnidade ?? "").replace(",", "."));
+  if (Number.isNaN(un) || un === 0) return { total: 0, erro: "Informe a quantidade de unidades." };
+  if (Number.isNaN(por) || por === 0) return { total: 0, erro: "Informe a quantidade por unidade." };
+
+  const unidadeLanc = normalizarUnidade(opts.unidadeLancamento);
+  const unidadeBase = normalizarUnidade(opts.unidadeBaseProduto);
+  if (unidadeLanc && unidadeBase && unidadeLanc !== unidadeBase) {
+    return {
+      total: 0,
+      erro: `A unidade do lançamento (${rotuloUnidade(unidadeLanc)}) deve ser igual à unidade base do produto (${rotuloUnidade(unidadeBase)}).`,
+    };
+  }
+
+  return { total: un * por * mult };
+}
+
+export function formatTotalMovimentacao(total: number, unidadeBase?: string): string {
+  const abs = Math.abs(total);
+  const fmt = abs.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const un = unidadeBase ? ` ${nomeUnidadeExibicao(unidadeBase)}` : "";
+  const sinal = total < 0 ? "−" : "";
+  return `${sinal}${fmt}${un}`.trim();
+}

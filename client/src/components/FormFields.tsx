@@ -103,18 +103,22 @@ export function FormSelect({
   displayValue?: string;
   children: React.ReactNode;
 }) {
+  const textoExibido = value ? (displayValue ?? value) : null;
+
   return (
     <FieldBox required={required}>
-      <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           className={cn(
             compact ? inputClassCompact : inputClass,
-            "shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
+            "w-full shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
           )}
         >
-          <SelectValue placeholder={placeholder}>
-            {displayValue || undefined}
-          </SelectValue>
+          {textoExibido ? (
+            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{textoExibido}</span>
+          ) : (
+            <SelectValue placeholder={placeholder} />
+          )}
         </SelectTrigger>
         <SelectContent className="max-h-60">{children}</SelectContent>
       </Select>

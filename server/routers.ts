@@ -739,7 +739,11 @@ const estoqueInputFields = {
   produzidoNaFazenda: z.boolean().optional(),
   monitorarEstoque: z.boolean(),
   situacao: z.enum(["ativo", "inativo"]).optional(),
-  embalagens: z.array(z.string()).optional(),
+  embalagens: z.array(z.object({
+    nome: z.string(),
+    volume: z.number().optional(),
+    unidade: z.string().optional(),
+  })).optional(),
   possuiCarencia: z.boolean().optional(),
   carenciaAbateDias: z.number().nullish(),
   carenciaAbateUnidade: z.enum(["d", "h"]).nullish(),
@@ -833,11 +837,16 @@ const estoqueRouter = router({
       quantidade: z.string(),
       dataValidade: z.string().optional(),
       observacoes: z.string().optional(),
+      modo: z.enum(["direto", "unidades"]).optional(),
+      sinal: z.enum(["entrada", "saida"]).optional(),
+      quantidadeUnidades: z.string().optional(),
+      quantidadePorUnidade: z.string().optional(),
+      unidadeLancamento: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const qty = parseFloat(input.quantidade.replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) {
-        throw new Error("Informe uma quantidade válida (use negativo para saída).");
+        throw new Error("Informe uma quantidade válida.");
       }
       const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
       if (!item) throw new Error("Produto não encontrado.");
@@ -846,12 +855,24 @@ const estoqueRouter = router({
       const novo = atual + qty;
       if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
 
+      let observacoes = input.observacoes;
+      if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
+        observacoes = JSON.stringify({
+          modo: input.modo,
+          sinal: input.sinal,
+          unidades: input.quantidadeUnidades,
+          porUnidade: input.quantidadePorUnidade,
+          unidade: input.unidadeLancamento,
+          total: qty,
+        });
+      }
+
       const result = await db.insert(estoqueMovimentacoes).values({
         estoqueId: input.estoqueId,
         dataMovimentacao: input.dataMovimentacao,
         quantidade: String(qty),
         dataValidade: input.dataValidade || undefined,
-        observacoes: input.observacoes || undefined,
+        observacoes,
       });
 
       await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
