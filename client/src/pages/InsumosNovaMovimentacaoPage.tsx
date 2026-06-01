@@ -452,7 +452,7 @@ export default function InsumosNovaMovimentacaoPage() {
                         <option value="">Selecione a unidade</option>
                         {UNIDADES_OPCOES.map(u => (
                           <option key={u.sigla} value={u.sigla}>
-                            {u.legenda.charAt(0).toUpperCase() + u.legenda.slice(1)}
+                            {u.legenda.charAt(0).toUpperCase() + u.legenda.slice(1)} ({u.sigla})
                           </option>
                         ))}
                       </select>
