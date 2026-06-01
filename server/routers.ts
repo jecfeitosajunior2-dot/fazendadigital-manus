@@ -993,6 +993,41 @@ const estoqueRouter = router({
       await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.id, input.id));
       return { success: true };
     }),
+
+  listMovimentacoesByProduto: protectedProcedure
+    .input(z.object({ estoqueId: z.number() }))
+    .query(async ({ input }) => {
+      const rows = await db
+        .select({
+          id: estoqueMovimentacoes.id,
+          estoqueId: estoqueMovimentacoes.estoqueId,
+          dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
+          quantidade: estoqueMovimentacoes.quantidade,
+          dataValidade: estoqueMovimentacoes.dataValidade,
+          observacoes: estoqueMovimentacoes.observacoes,
+          nome: estoque.nome,
+          categoria: estoque.categoria,
+          unidade: estoque.unidade,
+        })
+        .from(estoqueMovimentacoes)
+        .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+        .where(eq(estoqueMovimentacoes.estoqueId, input.estoqueId))
+        .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
+      return rows;
+    }),
+
+  deleteAllMovimentacoesByProduto: protectedProcedure
+    .input(z.object({ estoqueId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db
+        .delete(estoqueMovimentacoes)
+        .where(eq(estoqueMovimentacoes.estoqueId, input.estoqueId));
+      await db
+        .update(estoque)
+        .set({ quantidade: "0" })
+        .where(eq(estoque.id, input.estoqueId));
+      return { success: true };
+    }),
 });
 
 // ─── FINANCEIRO ROUTER ────────────────────────────────────────────────────────

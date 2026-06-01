@@ -387,9 +387,9 @@ export function EstoquePage() {
                     <td className="px-2 py-2.5">
                       <div className="flex items-center gap-0.5">
                         <button
-                          onClick={() => setLocation(`/insumos/visao-geral`)}
+                          onClick={() => setLocation(`/insumos/historico-produto?id=${item.id}`)}
                           className="p-1 text-gray-500 hover:text-[#4ECDC4]"
-                          title="Ver movimentações"
+                          title="Ver histórico de movimentações"
                         >
                           <span className="material-icons text-[17px]">format_list_bulleted</span>
                         </button>
