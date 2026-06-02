@@ -17,6 +17,18 @@ type SortKey =
   | "data" | "tipo" | "produto" | "categoria" | "subcategoria"
   | "quantidade" | "unidade" | "idUnico" | "valor";
 
+type Filtros = {
+  fazenda: string; categoria: string; subcategoria: string; destino: string; tipo: string;
+  notaFiscal: string; produto: string; idUnico: string;
+  periodoIni: string; periodoFim: string; validadeIni: string; validadeFim: string;
+};
+
+const FILTROS_VAZIOS: Filtros = {
+  fazenda: "", categoria: "", subcategoria: "", destino: "", tipo: "",
+  notaFiscal: "", produto: "", idUnico: "",
+  periodoIni: "", periodoFim: "", validadeIni: "", validadeFim: "",
+};
+
 const fmtMoeda = (v: string | number | null | undefined): string => {
   if (v == null || v === "") return "";
   const n = Number(v);
@@ -36,6 +48,7 @@ export default function InsumosMovimentacaoPanel() {
 
   const { data: movimentacoes = [], isLoading } = trpc.estoque.listMovimentacoes.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: produtos = [] } = trpc.estoque.list.useQuery();
 
   const deleteMutation = trpc.estoque.deleteMovimentacao.useMutation({
     onSuccess: () => {
@@ -47,7 +60,7 @@ export default function InsumosMovimentacaoPanel() {
     onError: e => toast.error(e.message),
   });
 
-  // Filtros
+  // Filtros — rascunho (editado no painel) x aplicado (usado na tabela ao clicar "Filtrar")
   const [filtrosAbertos, setFiltrosAbertos] = useState(true);
   const [fFazenda, setFFazenda] = useState("");
   const [fCategoria, setFCategoria] = useState("");
@@ -55,13 +68,20 @@ export default function InsumosMovimentacaoPanel() {
   const [fDestino, setFDestino] = useState("");
   const [fTipo, setFTipo] = useState("");
   const [fNotaFiscal, setFNotaFiscal] = useState("");
-  const [fFrete, setFFrete] = useState("");
+  const [fProduto, setFProduto] = useState("");
   const [fIdUnico, setFIdUnico] = useState("");
   const [fPeriodoIni, setFPeriodoIni] = useState("");
   const [fPeriodoFim, setFPeriodoFim] = useState("");
   const [fValidadeIni, setFValidadeIni] = useState("");
   const [fValidadeFim, setFValidadeFim] = useState("");
   const [busca, setBusca] = useState("");
+
+  const filtrosRascunho: Filtros = {
+    fazenda: fFazenda, categoria: fCategoria, subcategoria: fSubcategoria, destino: fDestino,
+    tipo: fTipo, notaFiscal: fNotaFiscal, produto: fProduto, idUnico: fIdUnico,
+    periodoIni: fPeriodoIni, periodoFim: fPeriodoFim, validadeIni: fValidadeIni, validadeFim: fValidadeFim,
+  };
+  const [aplicados, setAplicados] = useState<Filtros>(FILTROS_VAZIOS);
 
   // Ordenação / paginação
   const [sortKey, setSortKey] = useState<SortKey>("data");
@@ -91,20 +111,20 @@ export default function InsumosMovimentacaoPanel() {
 
   const filtradas = useMemo(() => {
     return movimentacoes.filter(m => {
-      if (fFazenda && String(m.fazendaId ?? m.produtoFazendaId ?? "") !== fFazenda) return false;
-      if (fCategoria && m.categoria !== fCategoria) return false;
-      if (fSubcategoria && m.subcategoria !== fSubcategoria) return false;
-      if (fDestino && m.destino !== fDestino) return false;
-      if (fTipo && tipoExibicao(m) !== fTipo) return false;
-      if (fNotaFiscal && !(m.notaFiscal ?? "").toLowerCase().includes(fNotaFiscal.toLowerCase())) return false;
-      if (fFrete && !String(m.frete ?? "").includes(fFrete)) return false;
-      if (fIdUnico && !String(m.identificadorUnico ?? "").toLowerCase().includes(fIdUnico.toLowerCase())) return false;
+      if (aplicados.fazenda && String(m.fazendaId ?? m.produtoFazendaId ?? "") !== aplicados.fazenda) return false;
+      if (aplicados.categoria && m.categoria !== aplicados.categoria) return false;
+      if (aplicados.subcategoria && m.subcategoria !== aplicados.subcategoria) return false;
+      if (aplicados.destino && m.destino !== aplicados.destino) return false;
+      if (aplicados.tipo && tipoExibicao(m) !== aplicados.tipo) return false;
+      if (aplicados.notaFiscal && !(m.notaFiscal ?? "").toLowerCase().includes(aplicados.notaFiscal.toLowerCase())) return false;
+      if (aplicados.produto && String(m.estoqueId ?? "") !== aplicados.produto) return false;
+      if (aplicados.idUnico && !String(m.identificadorUnico ?? "").toLowerCase().includes(aplicados.idUnico.toLowerCase())) return false;
       const data = String(m.dataMovimentacao ?? "").slice(0, 10);
-      if (fPeriodoIni && data < fPeriodoIni) return false;
-      if (fPeriodoFim && data > fPeriodoFim) return false;
+      if (aplicados.periodoIni && data < aplicados.periodoIni) return false;
+      if (aplicados.periodoFim && data > aplicados.periodoFim) return false;
       const validade = String(m.dataValidade ?? "").slice(0, 10);
-      if (fValidadeIni && (!validade || validade < fValidadeIni)) return false;
-      if (fValidadeFim && (!validade || validade > fValidadeFim)) return false;
+      if (aplicados.validadeIni && (!validade || validade < aplicados.validadeIni)) return false;
+      if (aplicados.validadeFim && (!validade || validade > aplicados.validadeFim)) return false;
       if (busca.trim()) {
         const q = busca.trim().toLowerCase();
         const campos = [
@@ -115,10 +135,7 @@ export default function InsumosMovimentacaoPanel() {
       }
       return true;
     });
-  }, [
-    movimentacoes, fFazenda, fCategoria, fSubcategoria, fDestino, fTipo,
-    fNotaFiscal, fFrete, fIdUnico, fPeriodoIni, fPeriodoFim, fValidadeIni, fValidadeFim, busca,
-  ]);
+  }, [movimentacoes, aplicados, busca]);
 
   const ordenadas = useMemo(() => {
     const rows = [...filtradas];
@@ -154,10 +171,16 @@ export default function InsumosMovimentacaoPanel() {
     else { setSortKey(key); setSortAsc(true); }
   };
 
+  const aplicarFiltros = () => {
+    setAplicados(filtrosRascunho);
+    setPage(1);
+  };
+
   const limparFiltros = () => {
     setFFazenda(""); setFCategoria(""); setFSubcategoria(""); setFDestino(""); setFTipo("");
-    setFNotaFiscal(""); setFFrete(""); setFIdUnico("");
+    setFNotaFiscal(""); setFProduto(""); setFIdUnico("");
     setFPeriodoIni(""); setFPeriodoFim(""); setFValidadeIni(""); setFValidadeFim("");
+    setAplicados(FILTROS_VAZIOS);
     setBusca(""); setPage(1);
   };
 
@@ -225,35 +248,35 @@ export default function InsumosMovimentacaoPanel() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-3">
               <div>
                 <label className={labelClass}>Fazenda</label>
-                <select value={fFazenda} onChange={e => { setFFazenda(e.target.value); setPage(1); }} className={selectClass}>
+                <select value={fFazenda} onChange={e => setFFazenda(e.target.value)} className={selectClass}>
                   <option value="">Todas</option>
                   {fazendas.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
                 </select>
               </div>
               <div>
                 <label className={labelClass}>Categoria</label>
-                <select value={fCategoria} onChange={e => { setFCategoria(e.target.value); setPage(1); }} className={selectClass}>
+                <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={selectClass}>
                   <option value="">Selecione uma categoria</option>
                   {categoriasDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className={labelClass}>Subcategoria</label>
-                <select value={fSubcategoria} onChange={e => { setFSubcategoria(e.target.value); setPage(1); }} className={selectClass}>
+                <select value={fSubcategoria} onChange={e => setFSubcategoria(e.target.value)} className={selectClass}>
                   <option value="">Selecione uma subcategoria</option>
                   {subcategoriasDisponiveis.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
                 <label className={labelClass}>Destino</label>
-                <select value={fDestino} onChange={e => { setFDestino(e.target.value); setPage(1); }} className={selectClass}>
+                <select value={fDestino} onChange={e => setFDestino(e.target.value)} className={selectClass}>
                   <option value="">Selecione um destino</option>
                   {destinosDisponiveis.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
                 <label className={labelClass}>Tipo Movimentação</label>
-                <select value={fTipo} onChange={e => { setFTipo(e.target.value); setPage(1); }} className={selectClass}>
+                <select value={fTipo} onChange={e => setFTipo(e.target.value)} className={selectClass}>
                   <option value="">Selecione um tipo</option>
                   {TIPOS_MOVIMENTACAO.map(t => <option key={t.value} value={t.value}>{t.value}</option>)}
                 </select>
@@ -262,16 +285,21 @@ export default function InsumosMovimentacaoPanel() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
               <div>
-                <label className={labelClass}>Nota Fiscal</label>
-                <input value={fNotaFiscal} onChange={e => { setFNotaFiscal(e.target.value); setPage(1); }} placeholder="nº nota fiscal" className={inputClass} />
+                <label className={labelClass}>Produto</label>
+                <select value={fProduto} onChange={e => setFProduto(e.target.value)} className={selectClass}>
+                  <option value="">Todos os produtos</option>
+                  {[...produtos]
+                    .sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? ""))
+                    .map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
+                </select>
               </div>
               <div>
-                <label className={labelClass}>Frete</label>
-                <input value={fFrete} onChange={e => { setFFrete(e.target.value); setPage(1); }} placeholder="R$ frete" className={inputClass} />
+                <label className={labelClass}>Nota Fiscal</label>
+                <input value={fNotaFiscal} onChange={e => setFNotaFiscal(e.target.value)} placeholder="nº nota fiscal" className={inputClass} />
               </div>
               <div>
                 <label className={labelClass}>ID Único</label>
-                <input value={fIdUnico} onChange={e => { setFIdUnico(e.target.value); setPage(1); }} placeholder="id único" className={inputClass} />
+                <input value={fIdUnico} onChange={e => setFIdUnico(e.target.value)} placeholder="id único" className={inputClass} />
               </div>
             </div>
 
@@ -279,17 +307,17 @@ export default function InsumosMovimentacaoPanel() {
               <div>
                 <label className={labelClass}>Período</label>
                 <div className="flex items-center gap-1">
-                  <input type="date" value={fPeriodoIni} onChange={e => { setFPeriodoIni(e.target.value); setPage(1); }} className={inputClass} />
+                  <input type="date" value={fPeriodoIni} onChange={e => setFPeriodoIni(e.target.value)} className={inputClass} />
                   <span className="text-gray-400 text-[12px]">–</span>
-                  <input type="date" value={fPeriodoFim} onChange={e => { setFPeriodoFim(e.target.value); setPage(1); }} className={inputClass} />
+                  <input type="date" value={fPeriodoFim} onChange={e => setFPeriodoFim(e.target.value)} className={inputClass} />
                 </div>
               </div>
               <div>
                 <label className={labelClass}>Data Validade</label>
                 <div className="flex items-center gap-1">
-                  <input type="date" value={fValidadeIni} onChange={e => { setFValidadeIni(e.target.value); setPage(1); }} className={inputClass} />
+                  <input type="date" value={fValidadeIni} onChange={e => setFValidadeIni(e.target.value)} className={inputClass} />
                   <span className="text-gray-400 text-[12px]">–</span>
-                  <input type="date" value={fValidadeFim} onChange={e => { setFValidadeFim(e.target.value); setPage(1); }} className={inputClass} />
+                  <input type="date" value={fValidadeFim} onChange={e => setFValidadeFim(e.target.value)} className={inputClass} />
                 </div>
               </div>
             </div>
@@ -297,8 +325,8 @@ export default function InsumosMovimentacaoPanel() {
             <div className="flex justify-center gap-3 mt-4">
               <button
                 type="button"
-                onClick={() => setPage(1)}
-                className="px-8 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white"
+                onClick={aplicarFiltros}
+                className="px-8 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:opacity-90 transition-opacity"
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 Filtrar
