@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import InsumosMovimentacoesTable from "@/components/insumos/InsumosMovimentacoesTable";
-import InsumosMonitoradoPanels from "@/components/insumos/InsumosMonitoradoPanels";
+import InsumosVisaoGeralDashboard from "@/components/insumos/InsumosVisaoGeralDashboard";
 import InsumosMovimentacaoPanel from "@/components/insumos/InsumosMovimentacaoPanel";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -51,16 +51,7 @@ export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
 
   return (
     <AppLayout>
-      {isOverview && (
-        <div
-          className="mb-4 px-4 py-2.5 text-[12px] text-white text-center leading-snug rounded"
-          style={{ backgroundColor: "#F5A623" }}
-        >
-          Cadastre produtos e registre movimentações para controlar entradas e saídas do estoque da fazenda.
-        </div>
-      )}
-
-      {isOverview && <InsumosMonitoradoPanels />}
+      {isOverview && <InsumosVisaoGeralDashboard />}
 
       <InsumosMovimentacoesTable
         title={isOverview ? "Últimas Movimentações" : "Movimentação"}
