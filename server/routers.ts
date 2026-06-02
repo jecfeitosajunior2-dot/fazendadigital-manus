@@ -518,6 +518,83 @@ const maquinasRouter = router({
     }),
 });
 
+// ─── ABASTECIMENTOS: HELPER DE BAIXA NO ESTOQUE ─────────────────────────────
+
+const COMBUSTIVEL_KEYWORDS_SERVER: Record<string, string[]> = {
+  diesel: ["diesel", "s10", "s500", "óleo diesel", "oleo diesel"],
+  gasolina: ["gasolina"],
+  etanol: ["etanol", "álcool", "alcool"],
+  arla: ["arla"],
+};
+
+function matchCombustivelEstoque(
+  item: { nome: string | null; categoria: string | null },
+  combustivel: string
+): boolean {
+  const keywords = COMBUSTIVEL_KEYWORDS_SERVER[combustivel] ?? [combustivel];
+  const nome = (item.nome ?? "").toLowerCase();
+  const cat = (item.categoria ?? "").toLowerCase();
+  return keywords.some(k => nome.includes(k) || cat.includes(k));
+}
+
+/**
+ * Encontra o item de estoque de combustível para a fazenda.
+ * Retorna o primeiro item que bate com o tipo de combustível e fazendaId.
+ */
+async function findEstoqueCombustivel(
+  fazendaId: number,
+  combustivel: string
+): Promise<{ id: number; quantidade: string | null } | null> {
+  const itens = await db
+    .select({ id: estoque.id, nome: estoque.nome, categoria: estoque.categoria, quantidade: estoque.quantidade })
+    .from(estoque)
+    .where(eq(estoque.fazendaId, fazendaId));
+  const match = itens.find(i => matchCombustivelEstoque(i, combustivel));
+  return match ?? null;
+}
+
+/**
+ * Aplica baixa no estoque de combustível (saída).
+ * Registra movimentação de saída e atualiza saldo.
+ */
+async function darBaixaEstoqueCombustivel(
+  fazendaId: number,
+  combustivel: string,
+  litros: number,
+  data: string,
+  observacoes?: string
+): Promise<void> {
+  const item = await findEstoqueCombustivel(fazendaId, combustivel);
+  if (!item) return; // sem item de estoque cadastrado — silencioso
+  const atual = parseFloat(String(item.quantidade ?? 0));
+  const novo = atual - litros;
+  // Registra movimentação de saída
+  await db.insert(estoqueMovimentacoes).values({
+    estoqueId: item.id,
+    fazendaId,
+    tipo: "Saída",
+    dataMovimentacao: data,
+    quantidade: String(-litros), // negativo = saída
+    observacoes: observacoes ?? `Abastecimento interno de ${combustivel}`,
+  });
+  // Atualiza saldo
+  await db.update(estoque).set({ quantidade: String(Math.max(0, novo)) }).where(eq(estoque.id, item.id));
+}
+
+/**
+ * Reverte uma baixa anterior no estoque (para update/delete de abastecimento).
+ */
+async function reverterBaixaEstoqueCombustivel(
+  fazendaId: number,
+  combustivel: string,
+  litros: number
+): Promise<void> {
+  const item = await findEstoqueCombustivel(fazendaId, combustivel);
+  if (!item) return;
+  const atual = parseFloat(String(item.quantidade ?? 0));
+  await db.update(estoque).set({ quantidade: String(atual + litros) }).where(eq(estoque.id, item.id));
+}
+
 // ─── ABASTECIMENTOS ROUTER ────────────────────────────────────────────────────
 const abastecimentosBaseFields = {
   maquinaId: z.number().optional(),
@@ -567,6 +644,7 @@ const abastecimentosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { data, valorLitro, litros, ...rest } = input;
+      const dataISO = data.slice(0, 10);
       const total = input.valorTotal
         ?? (valorLitro && litros
           ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
@@ -577,8 +655,21 @@ const abastecimentosRouter = router({
         litros,
         valorLitro,
         valorTotal: total,
-        data: new Date(data).toISOString().slice(0, 10),
+        data: dataISO,
       });
+      // Dar baixa automática no estoque quando abastecimento é interno
+      if (input.abastecidoNaFazenda && input.fazendaId && litros) {
+        const qtd = parseFloat(litros);
+        if (qtd > 0) {
+          await darBaixaEstoqueCombustivel(
+            input.fazendaId,
+            input.combustivel,
+            qtd,
+            dataISO,
+            input.observacoes
+          );
+        }
+      }
       return { success: true, id: (result as any).insertId };
     }),
 
@@ -586,25 +677,90 @@ const abastecimentosRouter = router({
     .input(z.object({ id: z.number(), ...abastecimentosBaseFields }))
     .mutation(async ({ ctx, input }) => {
       const { id, data, valorLitro, litros, fazendaId, ...rest } = input;
+      const dataISO = data ? data.slice(0, 10) : undefined;
       const total = input.valorTotal
         ?? (valorLitro && litros
           ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
           : undefined);
+
+      // Buscar registro anterior para reverter baixa se necessário
+      const [anterior] = await db
+        .select()
+        .from(abastecimentos)
+        .where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+
       await db.update(abastecimentos).set({
         ...rest,
-        ...(data ? { data: new Date(data).toISOString().slice(0, 10) } : {}),
+        ...(dataISO ? { data: dataISO } : {}),
         ...(litros !== undefined ? { litros } : {}),
         ...(valorLitro !== undefined ? { valorLitro } : {}),
         ...(total !== undefined ? { valorTotal: total } : {}),
         ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
       }).where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+
+      // Reverter baixa anterior e aplicar nova baixa se necessário
+      if (anterior) {
+        const eraInterno = anterior.abastecidoNaFazenda && anterior.fazendaId && anterior.combustivel;
+        const eAgora = (input.abastecidoNaFazenda ?? anterior.abastecidoNaFazenda) &&
+                       (fazendaId ?? anterior.fazendaId) &&
+                       (input.combustivel ?? anterior.combustivel);
+
+        // Reverter baixa anterior
+        if (eraInterno) {
+          const litrosAnt = parseFloat(String(anterior.litros ?? 0));
+          if (litrosAnt > 0) {
+            await reverterBaixaEstoqueCombustivel(
+              anterior.fazendaId!,
+              anterior.combustivel!,
+              litrosAnt
+            );
+          }
+        }
+
+        // Aplicar nova baixa
+        if (eAgora) {
+          const novoFazendaId = (fazendaId ?? anterior.fazendaId) as number;
+          const novoCombustivel = (input.combustivel ?? anterior.combustivel) as string;
+          const novosLitros = parseFloat(String(litros ?? anterior.litros ?? 0));
+          const novaData = dataISO ?? anterior.data;
+          if (novosLitros > 0) {
+            await darBaixaEstoqueCombustivel(
+              novoFazendaId,
+              novoCombustivel,
+              novosLitros,
+              novaData,
+              input.observacoes ?? anterior.observacoes ?? undefined
+            );
+          }
+        }
+      }
+
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      // Buscar registro para reverter baixa no estoque
+      const [anterior] = await db
+        .select()
+        .from(abastecimentos)
+        .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+
       await db.delete(abastecimentos).where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+
+      // Reverter baixa no estoque se era abastecimento interno
+      if (anterior?.abastecidoNaFazenda && anterior.fazendaId && anterior.combustivel) {
+        const litrosAnt = parseFloat(String(anterior.litros ?? 0));
+        if (litrosAnt > 0) {
+          await reverterBaixaEstoqueCombustivel(
+            anterior.fazendaId,
+            anterior.combustivel,
+            litrosAnt
+          );
+        }
+      }
+
       return { success: true };
     }),
 });
