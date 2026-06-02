@@ -149,18 +149,6 @@ export default function InsumosMovimentacaoPanel() {
   const fim = Math.min(inicio + perPage, ordenadas.length);
   const pageItems = ordenadas.slice(inicio, fim);
 
-  // Totais (sugestão: somatório de entradas, saídas e saldo do período filtrado)
-  const totais = useMemo(() => {
-    let entradas = 0;
-    let saidas = 0;
-    for (const m of filtradas) {
-      const q = Number(m.quantidade);
-      if (q >= 0) entradas += q;
-      else saidas += Math.abs(q);
-    }
-    return { entradas, saidas, saldo: entradas - saidas };
-  }, [filtradas]);
-
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(a => !a);
     else { setSortKey(key); setSortAsc(true); }
@@ -293,7 +281,7 @@ export default function InsumosMovimentacaoPanel() {
                   <input type="date" value={fPeriodoFim} onChange={e => { setFPeriodoFim(e.target.value); setPage(1); }} className={inputClass} />
                 </div>
               </div>
-              <div>
+              <div className="lg:pl-6">
                 <label className={labelClass}>Data Validade</label>
                 <div className="flex items-center gap-1">
                   <input type="date" value={fValidadeIni} onChange={e => { setFValidadeIni(e.target.value); setPage(1); }} className={inputClass} />
@@ -453,16 +441,6 @@ export default function InsumosMovimentacaoPanel() {
             </tbody>
           </table>
         </div>
-
-        {/* Totais do período filtrado */}
-        {!isLoading && filtradas.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center gap-x-6 gap-y-1 text-[12px]">
-            <span className="text-gray-500 font-medium uppercase text-[10px] tracking-wide">Totais do filtro:</span>
-            <span className="text-green-700">Entradas: <span className="font-semibold tabular-nums">{formatQuantidadeMov(totais.entradas)}</span></span>
-            <span className="text-red-700">Saídas: <span className="font-semibold tabular-nums">{formatQuantidadeMov(totais.saidas)}</span></span>
-            <span className="text-gray-800">Saldo: <span className="font-semibold tabular-nums">{formatQuantidadeMov(totais.saldo)}</span></span>
-          </div>
-        )}
 
         {/* Paginação */}
         <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
