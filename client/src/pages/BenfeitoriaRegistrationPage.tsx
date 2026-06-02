@@ -3,13 +3,12 @@ import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { SelectItem } from "@/components/ui/select";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
   FormInput,
-  FormSelect,
+  FormNativeSelect,
   FormTextarea,
   FormYearPicker,
 } from "@/components/FormFields";
@@ -287,19 +286,13 @@ export default function BenfeitoriaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <FormLabel required>Fazenda</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.fazendaId}
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
-                displayValue={fazendas.find(f => String(f.id) === form.fazendaId)?.nome}
                 required
-              >
-                {fazendas.map(f => (
-                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                    {f.nome}
-                  </SelectItem>
-                ))}
-              </FormSelect>
+                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+              />
             </div>
             <div>
               <FormLabel required>Nome</FormLabel>
