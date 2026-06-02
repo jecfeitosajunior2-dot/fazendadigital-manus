@@ -4,7 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -31,6 +31,7 @@ type FormState = {
   horimetro: string;
   abastecidoNaFazenda: "sim" | "nao";
   fazendaId: string;
+  valorLitro: string;
   responsavel: string;
   observacoes: string;
 };
@@ -43,6 +44,7 @@ const emptyForm = (): FormState => ({
   horimetro: "",
   abastecidoNaFazenda: "sim",
   fazendaId: "",
+  valorLitro: "",
   responsavel: "",
   observacoes: "",
 });
@@ -122,6 +124,9 @@ export default function AbastecimentoFormPage() {
       horimetro: registro.horimetro ?? "",
       abastecidoNaFazenda: registro.abastecidoNaFazenda ? "sim" : "nao",
       fazendaId: registro.fazendaId ? String(registro.fazendaId) : "",
+      valorLitro: registro.valorLitro
+        ? formatCurrencyBrl(String(Math.round(parseFloat(String(registro.valorLitro)) * 100)))
+        : "",
       responsavel: registro.responsavel ?? "",
       observacoes: registro.observacoes ?? "",
     });
@@ -166,7 +171,7 @@ export default function AbastecimentoFormPage() {
   }, [historicoMaquina, isEdit, editId]);
 
   const estoqueAtualLitros = useMemo(() => {
-    if (!form.fazendaId) return null;
+    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId) return null;
     const fazendaIdNum = Number(form.fazendaId);
     const total = estoque
       .filter(item => {
@@ -177,14 +182,32 @@ export default function AbastecimentoFormPage() {
       })
       .reduce((sum, item) => sum + parseFloat(String(item.quantidade ?? 0)), 0);
     return total;
-  }, [estoque, form.fazendaId]);
+  }, [estoque, form.abastecidoNaFazenda, form.fazendaId]);
+
+  const valorTotalPreview = useMemo(() => {
+    const litros = parseFloat(form.litros.replace(",", "."));
+    const valor = parseFloat(parseCurrencyBrl(form.valorLitro) || "0");
+    if (Number.isNaN(litros) || Number.isNaN(valor) || !form.valorLitro) return "";
+    return (litros * valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+  }, [form.litros, form.valorLitro]);
+
+  const handleAbastecidoChange = (v: "sim" | "nao") => {
+    setForm(f => ({
+      ...f,
+      abastecidoNaFazenda: v,
+      // Sim → debita estoque: limpa valores monetários
+      ...(v === "sim" ? { valorLitro: "" } : { fazendaId: "" }),
+    }));
+  };
+
+  const abastecidoNaFazenda = form.abastecidoNaFazenda === "sim";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.maquinaId) return toast.error("Selecione a máquina.");
     if (!form.combustivel) return toast.error("Selecione o combustível.");
     if (!form.litros.trim()) return toast.error("Informe a quantidade abastecida.");
-    if (form.abastecidoNaFazenda === "sim" && !form.fazendaId) {
+    if (abastecidoNaFazenda && !form.fazendaId) {
       return toast.error("Selecione o estoque (fazenda).");
     }
 
@@ -192,10 +215,19 @@ export default function AbastecimentoFormPage() {
       maquinaId: Number(form.maquinaId),
       data: form.data,
       combustivel: form.combustivel as Combustivel,
-      litros: form.litros,
+      litros: form.litros.replace(",", "."),
       horimetro: form.horimetro.trim() || undefined,
-      abastecidoNaFazenda: form.abastecidoNaFazenda === "sim",
-      fazendaId: form.abastecidoNaFazenda === "sim" && form.fazendaId ? Number(form.fazendaId) : null,
+      abastecidoNaFazenda,
+      fazendaId: abastecidoNaFazenda && form.fazendaId ? Number(form.fazendaId) : null,
+      valorLitro: !abastecidoNaFazenda && form.valorLitro
+        ? parseCurrencyBrl(form.valorLitro)
+        : undefined,
+      valorTotal: !abastecidoNaFazenda && form.valorLitro && form.litros
+        ? (
+            parseFloat(form.litros.replace(",", ".")) *
+            parseFloat(parseCurrencyBrl(form.valorLitro) || "0")
+          ).toFixed(2)
+        : undefined,
       responsavel: form.responsavel.trim() || undefined,
       observacoes: form.observacoes.trim() || undefined,
     };
@@ -267,7 +299,7 @@ export default function AbastecimentoFormPage() {
             </div>
           </div>
 
-          {/* Linha 2: Odômetro | Abastecido na fazenda | Estoque | Estoque atual */}
+          {/* Linha 2: muda conforme Abastecido na fazenda */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <FormLabel>Leitura atual do odômetro</FormLabel>
@@ -281,7 +313,7 @@ export default function AbastecimentoFormPage() {
               <FormLabel required>Abastecido na fazenda</FormLabel>
               <RadioGroup
                 value={form.abastecidoNaFazenda}
-                onValueChange={v => set("abastecidoNaFazenda", v as "sim" | "nao")}
+                onValueChange={v => handleAbastecidoChange(v as "sim" | "nao")}
                 className="flex items-center gap-6 h-[42px] px-1"
               >
                 <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700">
@@ -294,29 +326,56 @@ export default function AbastecimentoFormPage() {
                 </label>
               </RadioGroup>
             </div>
-            <div>
-              <FormLabel required={form.abastecidoNaFazenda === "sim"}>Estoque</FormLabel>
-              <FormNativeSelect
-                value={form.fazendaId}
-                onChange={v => set("fazendaId", v)}
-                placeholder="Selecione uma Fazenda"
-                required={form.abastecidoNaFazenda === "sim"}
-                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-              />
-            </div>
-            <div>
-              <FormLabel>Estoque atual (em litros)</FormLabel>
-              <FormInput
-                value={
-                  estoqueAtualLitros != null
-                    ? estoqueAtualLitros.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
-                    : "0,00"
-                }
-                onChange={() => {}}
-                placeholder="0,00"
-                className="cursor-default bg-gray-50"
-              />
-            </div>
+
+            {abastecidoNaFazenda ? (
+              <>
+                {/* SIM → debita do estoque da fazenda */}
+                <div>
+                  <FormLabel required>Estoque</FormLabel>
+                  <FormNativeSelect
+                    value={form.fazendaId}
+                    onChange={v => set("fazendaId", v)}
+                    placeholder="Selecione uma Fazenda"
+                    required
+                    options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                  />
+                </div>
+                <div>
+                  <FormLabel>Estoque atual (em litros)</FormLabel>
+                  <FormInput
+                    value={
+                      estoqueAtualLitros != null
+                        ? estoqueAtualLitros.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+                        : form.fazendaId ? "0,00" : ""
+                    }
+                    onChange={() => {}}
+                    placeholder="0,00"
+                    className="cursor-default bg-gray-50"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* NÃO → abastecimento externo, informa valores */}
+                <div>
+                  <FormLabel>Valor por litro (R$)</FormLabel>
+                  <FormInput
+                    value={form.valorLitro}
+                    onChange={v => set("valorLitro", formatCurrencyBrl(v))}
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+                <div>
+                  <FormLabel>Valor total (R$)</FormLabel>
+                  <FormInput
+                    value={valorTotalPreview ? `R$ ${valorTotalPreview}` : ""}
+                    onChange={() => {}}
+                    placeholder="Calculado automaticamente"
+                    className="cursor-default bg-gray-50"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Linha 3: Responsável | Observações */}
