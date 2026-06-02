@@ -178,6 +178,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         {!collapsed && (
           <div className="px-3 py-3 border-t border-white/10 text-[9px] text-white/30 text-center leading-tight">
             Desenvolvido por Fazenda Digital<br />© Copyright 2026
+            <br />
+            <span className="text-white/40">build 2026-06-02-15h00</span>
           </div>
         )}
       </aside>
