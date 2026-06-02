@@ -47,20 +47,19 @@ export default function MaquinasListPage() {
     filtered.map(m => ({
       apelido: m.nome,
       tipo: m.tipo ?? "",
-      fazenda: m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "",
       marca: m.marca ?? "",
       modelo: m.modelo ?? "",
-      anoFab: m.ano ?? "",
-      anoAquis: m.anoAquisicao ?? "",
-      placa: m.placa ?? "",
-      estado: m.estado ?? "",
+      ano: m.ano ?? "",
       valor: m.valor ? parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+      placa: m.placa ?? "",
+      fazenda: m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "",
+      observacoes: m.observacoes ?? "",
     })),
   [filtered, fazendaMap]);
 
-  const exportHeaders = ["Apelido", "Tipo", "Fazenda", "Marca", "Modelo", "Ano Fab.", "Ano Aquis.", "Placa", "Estado", "Valor(R$)"];
+  const exportHeaders = ["Máquina", "Tipo", "Marca", "Modelo", "Ano", "Valor(R$)", "Placa", "Fazenda", "Observações"];
   const exportData = exportRows.map(r => [
-    r.apelido, r.tipo, r.fazenda, r.marca, r.modelo, r.anoFab, r.anoAquis, r.placa, r.estado, r.valor,
+    r.apelido, r.tipo, r.marca, r.modelo, r.ano, r.valor, r.placa, r.fazenda, r.observacoes,
   ]);
 
   return (
@@ -101,32 +100,50 @@ export default function MaquinasListPage() {
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {["Apelido", "Tipo", "Fazenda", "Marca", "Ano Fab.", "Estado"].map(col => (
-                  <th key={col} className={cn(
-                    "px-4 py-2.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide text-left"
-                  )}>
-                    {col}
+                {[
+                  { label: "Máquina", key: "nome" },
+                  { label: "Tipo", key: "tipo" },
+                  { label: "Marca", key: "marca" },
+                  { label: "Modelo", key: "modelo" },
+                  { label: "Ano", key: "ano" },
+                  { label: "Valor(R$)", key: "valor" },
+                  { label: "Placa", key: "placa" },
+                  { label: "Fazenda", key: "fazenda" },
+                  { label: "Observações", key: "obs" },
+                ].map(col => (
+                  <th key={col.key} className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide text-left whitespace-nowrap">
+                    <span className="inline-flex items-center gap-0.5">
+                      {col.label}
+                      <span className="material-icons text-[11px] text-gray-300">unfold_more</span>
+                    </span>
                   </th>
                 ))}
-                <th className="px-4 py-2.5 w-20" />
+                <th className="px-3 py-2.5 w-16" />
               </tr>
             </thead>
             <tbody>
-              {isLoading && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>}
+              {isLoading && <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">Carregando...</td></tr>}
               {!isLoading && pageItems.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Sem dados</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">Sem dados</td></tr>
               )}
-              {pageItems.map(m => (
-                <tr key={m.id} className="border-t border-gray-50 hover:bg-gray-50/60">
-                  <td className="px-4 py-2.5 font-medium text-gray-800">{m.nome}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{m.tipo ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-gray-600">
+              {pageItems.map((m, i) => (
+                <tr key={m.id} className={cn("border-t border-gray-100 hover:bg-gray-50/60", i % 2 === 1 && "bg-gray-50/40")}>
+                  <td className="px-3 py-2.5 font-medium text-gray-800 whitespace-nowrap">{m.nome}</td>
+                  <td className="px-3 py-2.5 text-gray-600 capitalize">{m.tipo ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{m.marca ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{m.modelo ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-gray-600">{m.ano ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-gray-700 text-right whitespace-nowrap">
+                    {m.valor ? parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "-"}
+                  </td>
+                  <td className="px-3 py-2.5 text-gray-600 uppercase">{m.placa ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-gray-600">
                     {m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "-" : "-"}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-600">{m.marca ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-gray-700">{m.ano ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-gray-600 capitalize">{m.estado ?? "-"}</td>
-                  <td className="px-4 py-2.5 text-center">
+                  <td className="px-3 py-2.5 text-gray-500 max-w-[140px] truncate" title={m.observacoes ?? ""}>
+                    {m.observacoes ? m.observacoes : "-"}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button
                         type="button"
