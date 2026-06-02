@@ -291,6 +291,7 @@ export default function BenfeitoriaRegistrationPage() {
                 value={form.fazendaId}
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
+                displayValue={fazendas.find(f => String(f.id) === form.fazendaId)?.nome}
                 required
               >
                 {fazendas.map(f => (
