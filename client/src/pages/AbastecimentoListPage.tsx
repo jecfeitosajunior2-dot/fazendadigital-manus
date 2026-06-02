@@ -7,6 +7,7 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
+const FD_PRIMARY_DARK = "#0f3d3a";
 
 const COMBUSTIVEL_LABEL: Record<string, string> = {
   diesel: "Diesel",
@@ -15,32 +16,11 @@ const COMBUSTIVEL_LABEL: Record<string, string> = {
   arla: "Arla",
 };
 
-type ColAlign = "left" | "right" | "center";
-
-const TABLE_COLUMNS: {
-  key: string;
-  label: string;
-  align: ColAlign;
-  width: string;
-}[] = [
-  { key: "maquina", label: "Máquina", align: "left", width: "11%" },
-  { key: "tipo", label: "Tipo de Máquina", align: "left", width: "9%" },
-  { key: "combustivel", label: "Combustível", align: "left", width: "8%" },
-  { key: "data", label: "Data", align: "left", width: "8%" },
-  { key: "qtd", label: "Qtd (L)", align: "right", width: "7%" },
-  { key: "valorL", label: "Valor (L)", align: "right", width: "7%" },
-  { key: "valorTotal", label: "Valor Total", align: "right", width: "8%" },
-  { key: "odometro", label: "Leitura Odômetro", align: "right", width: "9%" },
-  { key: "estoque", label: "Estoque de Origem", align: "left", width: "10%" },
-  { key: "naFazenda", label: "Abastecido na Fazenda", align: "center", width: "8%" },
-  { key: "responsavel", label: "Responsável", align: "left", width: "9%" },
-  { key: "obs", label: "Observações", align: "left", width: "8%" },
-];
-
-const alignClass: Record<ColAlign, string> = {
-  left: "text-left",
-  right: "text-right",
-  center: "text-center",
+const COMBUSTIVEL_COLOR: Record<string, { bg: string; text: string }> = {
+  diesel: { bg: "#FEF3C7", text: "#92400E" },
+  gasolina: { bg: "#DBEAFE", text: "#1E40AF" },
+  etanol: { bg: "#D1FAE5", text: "#065F46" },
+  arla: { bg: "#EDE9FE", text: "#5B21B6" },
 };
 
 function formatDate(value: unknown): string {
@@ -57,16 +37,72 @@ function formatNum(value: unknown, decimals = 2): string {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+function formatCurrency(value: unknown): string {
+  if (value == null || value === "") return "—";
+  const n = parseFloat(String(value));
+  if (Number.isNaN(n)) return "—";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+type Registro = {
+  id: number;
+  maquinaId: number;
+  combustivel?: string | null;
+  data?: Date | string | null;
+  litros?: string | number | null;
+  valorLitro?: string | number | null;
+  valorTotal?: string | number | null;
+  horimetro?: string | number | null;
+  fazendaId?: number | null;
+  abastecidoNaFazenda?: boolean | null;
+  responsavel?: string | null;
+  observacoes?: string | null;
+};
+
+function ExpandedRow({
+  r,
+  maquina,
+  fazendaNome,
+}: {
+  r: Registro;
+  maquina?: { nome?: string; tipo?: string } | null;
+  fazendaNome: string;
+}) {
+  const items = [
+    { label: "Tipo de Máquina", value: maquina?.tipo ?? "—" },
+    { label: "Leitura Odômetro", value: r.horimetro ? `${formatNum(r.horimetro)} h` : "—" },
+    { label: "Estoque de Origem", value: fazendaNome || "—" },
+    { label: "Abastecido na Fazenda", value: r.abastecidoNaFazenda ? "Sim" : "Não" },
+    { label: "Responsável", value: r.responsavel || "—" },
+    { label: "Observações", value: r.observacoes || "—" },
+  ];
+  return (
+    <tr>
+      <td colSpan={7} className="px-0 pb-0">
+        <div className="mx-4 mb-3 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
+          {items.map(({ label, value }) => (
+            <div key={label}>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
+              <p className="text-[12px] text-gray-700 truncate" title={String(value)}>{value}</p>
+            </div>
+          ))}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function AbastecimentoListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(5);
+  const [pageSize] = useState(10);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [filtroMaquina, setFiltroMaquina] = useState("");
   const [filtroCombustivel, setFiltroCombustivel] = useState("");
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
   const [filtroDataFim, setFiltroDataFim] = useState("");
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const { data: registros = [], isLoading } = trpc.abastecimentos.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
@@ -122,7 +158,15 @@ export default function AbastecimentoListPage() {
 
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const exportHeaders = TABLE_COLUMNS.map(c => c.label);
+  const toggleRow = (id: number) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exportHeaders = ["Máquina", "Tipo", "Combustível", "Data", "Qtd (L)", "Valor/L", "Valor Total", "Odômetro", "Estoque Origem", "Na Fazenda", "Responsável", "Observações"];
   const exportData = filtered.map(r => {
     const maquina = maquinaMap.get(r.maquinaId);
     return [
@@ -144,8 +188,13 @@ export default function AbastecimentoListPage() {
   return (
     <AppLayout>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[15px] font-semibold text-gray-800">Abastecimentos</h1>
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-[15px] font-semibold text-gray-900">Abastecimentos</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">Registro e histórico de abastecimentos de combustível</p>
+          </div>
           <ListExportButtons
             title="Abastecimentos"
             filename="abastecimentos"
@@ -155,17 +204,18 @@ export default function AbastecimentoListPage() {
           />
         </div>
 
-        <div className="px-5 py-3 flex items-center justify-between gap-4 border-b border-gray-100 bg-gray-50/40 min-h-[56px]">
+        {/* Toolbar */}
+        <div className="px-6 py-3 flex items-center justify-between gap-4 border-b border-gray-100 bg-gray-50/40">
           <button
             type="button"
             onClick={() => setLocation("/maquinas/abastecimento/cadastro")}
-            className="inline-flex items-center gap-1.5 h-9 pl-3 pr-4 rounded-lg text-[11px] font-semibold uppercase tracking-wide text-white shrink-0 shadow-sm hover:brightness-95 transition"
+            className="inline-flex items-center gap-1.5 h-9 pl-3 pr-4 rounded-lg text-[12px] font-semibold text-white shadow-sm hover:brightness-95 active:scale-[0.97] transition"
             style={{ backgroundColor: FD_PRIMARY }}
           >
             <span className="material-icons text-[16px] leading-none">add</span>
             Novo Abastecimento
           </button>
-          <div className="relative shrink-0">
+          <div className="relative">
             <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[17px] text-gray-400 pointer-events-none">search</span>
             <input
               value={search}
@@ -176,213 +226,264 @@ export default function AbastecimentoListPage() {
           </div>
         </div>
 
+        {/* Filtros */}
         <div className="border-b border-gray-100">
           <button
             type="button"
             onClick={() => setFiltrosAbertos(o => !o)}
-            className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-gray-50/60 transition"
+            className="w-full px-6 py-2.5 flex items-center justify-between text-left hover:bg-gray-50/60 transition"
           >
-            <span className="text-[13px] font-semibold text-gray-800">Filtros</span>
-            <span className="material-icons text-[20px] text-gray-400">
-              {filtrosAbertos ? "expand_less" : "chevron_right"}
+            <span className="text-[12px] font-semibold text-gray-600">Filtros</span>
+            <span className="material-icons text-[18px] text-gray-400 transition-transform duration-200" style={{ transform: filtrosAbertos ? "rotate(90deg)" : "rotate(0deg)" }}>
+              chevron_right
             </span>
           </button>
           {filtrosAbertos && (
-            <div className="px-5 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Máquina</label>
-                <select
-                  value={filtroMaquina}
-                  onChange={e => { setFiltroMaquina(e.target.value); setPage(1); }}
-                  className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white"
-                >
-                  <option value="">Todas</option>
-                  {maquinas.map(m => (
-                    <option key={m.id} value={String(m.id)}>{m.nome}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Combustível</label>
-                <select
-                  value={filtroCombustivel}
-                  onChange={e => { setFiltroCombustivel(e.target.value); setPage(1); }}
-                  className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white"
-                >
-                  <option value="">Todos</option>
-                  {Object.entries(COMBUSTIVEL_LABEL).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Data início</label>
-                <input
-                  type="date"
-                  value={filtroDataInicio}
-                  onChange={e => { setFiltroDataInicio(e.target.value); setPage(1); }}
-                  className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Data fim</label>
-                <input
-                  type="date"
-                  value={filtroDataFim}
-                  onChange={e => { setFiltroDataFim(e.target.value); setPage(1); }}
-                  className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white"
-                />
-              </div>
+            <div className="px-6 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 border-t border-gray-100 pt-3">
+              {[
+                {
+                  label: "Máquina",
+                  content: (
+                    <select value={filtroMaquina} onChange={e => { setFiltroMaquina(e.target.value); setPage(1); }}
+                      className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]/30 focus:border-[#4ECDC4]">
+                      <option value="">Todas</option>
+                      {maquinas.map(m => <option key={m.id} value={String(m.id)}>{m.nome}</option>)}
+                    </select>
+                  ),
+                },
+                {
+                  label: "Combustível",
+                  content: (
+                    <select value={filtroCombustivel} onChange={e => { setFiltroCombustivel(e.target.value); setPage(1); }}
+                      className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]/30 focus:border-[#4ECDC4]">
+                      <option value="">Todos</option>
+                      {Object.entries(COMBUSTIVEL_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  ),
+                },
+                {
+                  label: "Data início",
+                  content: (
+                    <input type="date" value={filtroDataInicio} onChange={e => { setFiltroDataInicio(e.target.value); setPage(1); }}
+                      className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]/30 focus:border-[#4ECDC4]" />
+                  ),
+                },
+                {
+                  label: "Data fim",
+                  content: (
+                    <input type="date" value={filtroDataFim} onChange={e => { setFiltroDataFim(e.target.value); setPage(1); }}
+                      className="w-full h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]/30 focus:border-[#4ECDC4]" />
+                  ),
+                },
+              ].map(({ label, content }) => (
+                <div key={label}>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+                  {content}
+                </div>
+              ))}
             </div>
           )}
         </div>
 
+        {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1200px] table-fixed border-collapse">
-            <colgroup>
-              {TABLE_COLUMNS.map(col => (
-                <col key={col.key} style={{ width: col.width }} />
-              ))}
-              <col style={{ width: "72px" }} />
-            </colgroup>
+          <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-50/80 border-y border-gray-200">
-                {TABLE_COLUMNS.map(col => (
+              <tr className="border-b border-gray-200 bg-gray-50/80">
+                {/* expand toggle col */}
+                <th className="w-10 pl-4 pr-2 py-3" />
+                {[
+                  { label: "Máquina / Tipo", align: "left" },
+                  { label: "Combustível", align: "left" },
+                  { label: "Data", align: "left" },
+                  { label: "Quantidade", align: "right" },
+                  { label: "Valor / L", align: "right" },
+                  { label: "Valor Total", align: "right" },
+                ].map(col => (
                   <th
-                    key={col.key}
+                    key={col.label}
                     className={cn(
-                      "px-3 py-3 align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-[0.04em] whitespace-nowrap",
-                      alignClass[col.align]
+                      "px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase tracking-[0.05em] whitespace-nowrap",
+                      col.align === "right" ? "text-right" : "text-left"
                     )}
                   >
-                    <span className={cn("inline-flex items-center gap-0.5", col.align === "right" && "justify-end w-full")}>
-                      {col.label}
-                      <span className="material-icons text-[13px] text-gray-300 leading-none">unfold_more</span>
-                    </span>
+                    {col.label}
                   </th>
                 ))}
-                <th className="px-2 py-3 align-middle w-[72px]" />
+                {/* actions col */}
+                <th className="w-20 px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-16 text-center text-[12px] text-gray-400">
+                  <td colSpan={8} className="px-4 py-16 text-center text-[12px] text-gray-400">
+                    <span className="material-icons animate-spin text-[20px] text-gray-300 block mx-auto mb-2">refresh</span>
                     Carregando...
                   </td>
                 </tr>
               )}
               {!isLoading && pageItems.length === 0 && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-16 text-center text-[12px] text-gray-400">
-                    Nenhum abastecimento registrado.
+                  <td colSpan={8} className="px-4 py-16 text-center">
+                    <span className="material-icons text-[36px] text-gray-200 block mb-2">local_gas_station</span>
+                    <p className="text-[13px] text-gray-400">Nenhum abastecimento registrado.</p>
+                    <button
+                      type="button"
+                      onClick={() => setLocation("/maquinas/abastecimento/cadastro")}
+                      className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold px-4 py-2 rounded-lg text-white transition hover:brightness-95"
+                      style={{ backgroundColor: FD_PRIMARY }}
+                    >
+                      <span className="material-icons text-[15px]">add</span>
+                      Registrar primeiro abastecimento
+                    </button>
                   </td>
                 </tr>
               )}
               {pageItems.map(r => {
                 const maquina = maquinaMap.get(r.maquinaId);
+                const fazendaNome = r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "";
+                const isExpanded = expandedRows.has(r.id);
+                const combColor = r.combustivel ? COMBUSTIVEL_COLOR[r.combustivel] : null;
+
                 return (
-                  <tr key={r.id} className="group h-[52px] hover:bg-[#4ECDC4]/[0.06] transition-colors">
-                    <td className="px-3 align-middle text-[12px] font-medium text-gray-800 truncate" title={maquina?.nome}>
-                      {maquina?.nome ?? `#${r.maquinaId}`}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 capitalize truncate">
-                      {maquina?.tipo ?? "—"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600">
-                      {r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "—"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 tabular-nums whitespace-nowrap">
-                      {formatDate(r.data)}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-700 text-right tabular-nums">
-                      {formatNum(r.litros)}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-700 text-right tabular-nums">
-                      {formatNum(r.valorLitro, 3)}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] font-semibold text-gray-800 text-right tabular-nums">
-                      {formatNum(r.valorTotal)}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 text-right tabular-nums">
-                      {r.horimetro ? formatNum(r.horimetro) : "—"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 truncate" title={r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : ""}>
-                      {r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "—" : "—"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 text-center">
-                      {r.abastecidoNaFazenda ? "Sim" : "Não"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-600 truncate" title={r.responsavel ?? ""}>
-                      {r.responsavel || "—"}
-                    </td>
-                    <td className="px-3 align-middle text-[12px] text-gray-500 truncate" title={r.observacoes ?? ""}>
-                      {r.observacoes || "—"}
-                    </td>
-                    <td className="px-2 align-middle">
-                      <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <button
-                          type="button"
-                          onClick={() => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)}
-                          className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-white hover:text-[#0f766e] hover:shadow-sm border border-transparent hover:border-gray-200 transition"
-                          aria-label="Editar"
-                          title="Editar"
+                  <>
+                    <tr
+                      key={r.id}
+                      className={cn(
+                        "group border-b border-gray-100 transition-colors cursor-pointer",
+                        isExpanded ? "bg-[#4ECDC4]/[0.04]" : "hover:bg-gray-50/60"
+                      )}
+                      onClick={() => toggleRow(r.id)}
+                    >
+                      {/* expand icon */}
+                      <td className="pl-4 pr-2 py-3.5 align-middle w-10">
+                        <span
+                          className="material-icons text-[16px] text-gray-400 transition-transform duration-200 block"
+                          style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
                         >
-                          <span className="material-icons text-[16px] leading-none">edit</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id });
-                          }}
-                          className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 transition"
-                          aria-label="Excluir"
-                          title="Excluir"
-                        >
-                          <span className="material-icons text-[16px] leading-none">delete</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          chevron_right
+                        </span>
+                      </td>
+
+                      {/* Máquina / Tipo */}
+                      <td className="px-4 py-3.5 align-middle min-w-[160px]">
+                        <p className="text-[13px] font-semibold text-gray-800 truncate leading-tight">
+                          {maquina?.nome ?? `#${r.maquinaId}`}
+                        </p>
+                        <p className="text-[11px] text-gray-400 capitalize mt-0.5 truncate">
+                          {maquina?.tipo ?? "—"}
+                        </p>
+                      </td>
+
+                      {/* Combustível */}
+                      <td className="px-4 py-3.5 align-middle">
+                        {r.combustivel ? (
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                            style={combColor ? { backgroundColor: combColor.bg, color: combColor.text } : {}}
+                          >
+                            {COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-gray-400">—</span>
+                        )}
+                      </td>
+
+                      {/* Data */}
+                      <td className="px-4 py-3.5 align-middle whitespace-nowrap">
+                        <span className="text-[12px] text-gray-700 tabular-nums">{formatDate(r.data)}</span>
+                      </td>
+
+                      {/* Quantidade */}
+                      <td className="px-4 py-3.5 align-middle text-right whitespace-nowrap">
+                        <span className="text-[12px] text-gray-700 tabular-nums">{formatNum(r.litros)} L</span>
+                      </td>
+
+                      {/* Valor / L */}
+                      <td className="px-4 py-3.5 align-middle text-right whitespace-nowrap">
+                        <span className="text-[12px] text-gray-600 tabular-nums">
+                          {r.valorLitro ? `R$ ${formatNum(r.valorLitro, 3)}` : "—"}
+                        </span>
+                      </td>
+
+                      {/* Valor Total */}
+                      <td className="px-4 py-3.5 align-middle text-right whitespace-nowrap">
+                        <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
+                          {formatCurrency(r.valorTotal)}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3.5 align-middle" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)}
+                            className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-white hover:text-[#4ECDC4] border border-transparent hover:border-gray-200 transition"
+                            title="Editar"
+                          >
+                            <span className="material-icons text-[15px] leading-none">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id });
+                            }}
+                            className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 transition"
+                            title="Excluir"
+                          >
+                            <span className="material-icons text-[15px] leading-none">delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded details row */}
+                    {isExpanded && (
+                      <ExpandedRow key={`exp-${r.id}`} r={r} maquina={maquina} fazendaNome={fazendaNome} />
+                    )}
+                  </>
                 );
               })}
             </tbody>
           </table>
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-500">
-          <span>{pageSize} itens por página</span>
-          <div className="flex items-center gap-4">
-            <span className="tabular-nums">
-              Mostrando {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} de {filtered.length} itens
+        {/* Pagination */}
+        <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[11px] text-gray-400">
+            {filtered.length === 0
+              ? "Nenhum resultado"
+              : `Mostrando ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, filtered.length)} de ${filtered.length} registros`}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage(p => p - 1)}
+              className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
+            >
+              <span className="material-icons text-[16px] leading-none">chevron_left</span>
+            </button>
+            <span
+              className="grid place-items-center min-w-7 h-7 px-2 rounded-md text-[12px] font-semibold tabular-nums"
+              style={{ backgroundColor: FD_PRIMARY, color: FD_PRIMARY_DARK }}
+            >
+              {page}
             </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage(p => p - 1)}
-                className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
-              >
-                <span className="material-icons text-[16px] leading-none">chevron_left</span>
-              </button>
-              <span
-                className="grid place-items-center min-w-7 h-7 px-2 rounded-md font-semibold tabular-nums"
-                style={{ backgroundColor: FD_PRIMARY, color: "#0f3d3a" }}
-              >
-                {page}
-              </span>
-              <span className="text-gray-400">de {totalPages}</span>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
-              >
-                <span className="material-icons text-[16px] leading-none">chevron_right</span>
-              </button>
-            </div>
+            <span className="text-[11px] text-gray-400">de {totalPages}</span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => p + 1)}
+              className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
+            >
+              <span className="material-icons text-[16px] leading-none">chevron_right</span>
+            </button>
           </div>
         </div>
+
       </div>
     </AppLayout>
   );
