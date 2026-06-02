@@ -46,3 +46,6 @@
 - [x] Testes unitários para compras e vendas (5 testes passando)
 - [x] TypeScript sem erros (0 erros)
 - [x] Servidor rodando sem erros
+
+## Bug Fixes
+- [x] Corrigir: dropdowns Tipo/Fazenda/Marca não carregam valor salvo ao editar maquinário (substituir FormSelect Radix por FormNativeSelect)

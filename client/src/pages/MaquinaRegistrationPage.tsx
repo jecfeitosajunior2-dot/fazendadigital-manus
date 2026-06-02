@@ -1,16 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { SelectItem } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
   FormInput,
-  FormSelect,
+  FormNativeSelect,
   FormTextarea,
   FormYearPicker,
   FormDatePicker,
@@ -174,12 +173,6 @@ export default function MaquinaRegistrationPage() {
   const { data: maquina, isLoading: loadingMaquina } = trpc.maquinas.get.useQuery(
     { id: maquinaId! },
     { enabled: isEdit }
-  );
-
-  // Mapa id → nome para exibir o nome da fazenda no Select (não o ID bruto)
-  const fazendaMap = useMemo(
-    () => new Map(fazendas.map(f => [f.id, f.nome])),
-    [fazendas]
   );
 
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -394,42 +387,23 @@ export default function MaquinaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Tipo</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.tipo}
                 onChange={v => set("tipo", v)}
                 placeholder="Selecione um tipo de máquina"
                 required
-              >
-                {TIPOS_MAQUINA.map(t => (
-                  <SelectItem key={t} value={t} className="text-[12px]">{t}</SelectItem>
-                ))}
-              </FormSelect>
+                options={TIPOS_MAQUINA.map(t => ({ value: t, label: t }))}
+              />
             </div>
             <div>
               <FormLabel required>Fazenda</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.fazendaId}
-                displayValue={
-                  form.fazendaId
-                    ? fazendaMap.get(parseInt(form.fazendaId)) ?? form.fazendaId
-                    : undefined
-                }
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
                 required
-              >
-                {fazendas.length === 0 ? (
-                  <SelectItem value="__none__" disabled className="text-[12px] text-gray-400">
-                    Nenhuma fazenda cadastrada
-                  </SelectItem>
-                ) : (
-                  fazendas.map(f => (
-                    <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                      {f.nome}
-                    </SelectItem>
-                  ))
-                )}
-              </FormSelect>
+                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+              />
             </div>
             <div>
               <FormLabel>Apelido</FormLabel>
@@ -457,16 +431,13 @@ export default function MaquinaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Marca</FormLabel>
-              <FormSelect
+              <FormNativeSelect
                 value={form.marca}
                 onChange={v => set("marca", v)}
                 placeholder="Selecione a marca da máquina"
                 required
-              >
-                {MARCAS_MAQUINA.map(m => (
-                  <SelectItem key={m} value={m} className="text-[12px]">{m}</SelectItem>
-                ))}
-              </FormSelect>
+                options={MARCAS_MAQUINA.map(m => ({ value: m, label: m }))}
+              />
             </div>
             <div>
               <FormLabel>Modelo</FormLabel>
