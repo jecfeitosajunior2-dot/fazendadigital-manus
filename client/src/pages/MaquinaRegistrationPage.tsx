@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -176,6 +176,12 @@ export default function MaquinaRegistrationPage() {
     { enabled: isEdit }
   );
 
+  // Mapa id → nome para exibir o nome da fazenda no Select (não o ID bruto)
+  const fazendaMap = useMemo(
+    () => new Map(fazendas.map(f => [f.id, f.nome])),
+    [fazendas]
+  );
+
   const [form, setForm] = useState<FormState>(emptyForm);
   const [imageSlots, setImageSlots] = useState<ImageSlot[]>([
     { kind: "empty" },
@@ -186,13 +192,16 @@ export default function MaquinaRegistrationPage() {
 
   useEffect(() => {
     if (isEdit && maquina && !initialized) {
+      // Converte valor decimal do banco → string de centavos para formatCurrencyBrl
+      const valorCents = maquina.valor
+        ? Math.round(parseFloat(parseFloat(String(maquina.valor)).toFixed(2)) * 100)
+        : 0;
+
       setForm({
         tipo: maquina.tipo || "",
-        fazendaId: maquina.fazendaId ? String(maquina.fazendaId) : "",
+        fazendaId: maquina.fazendaId != null ? String(maquina.fazendaId) : "",
         apelido: maquina.nome || "",
-        valor: maquina.valor
-          ? formatCurrencyBrl(String(Math.round(parseFloat(String(maquina.valor)) * 100)))
-          : "",
+        valor: valorCents > 0 ? formatCurrencyBrl(String(valorCents)) : "",
         marca: maquina.marca || "",
         modelo: maquina.modelo || "",
         placa: maquina.placa || "",
@@ -286,15 +295,16 @@ export default function MaquinaRegistrationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.tipo) { toast.error("Selecione o tipo de máquina"); return; }
-    if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
-    if (!form.marca) { toast.error("Selecione a marca"); return; }
+    if (!form.tipo.trim()) { toast.error("Selecione o tipo de máquina"); return; }
+    const fazendaIdNum = form.fazendaId ? parseInt(form.fazendaId, 10) : NaN;
+    if (!form.fazendaId || isNaN(fazendaIdNum)) { toast.error("Selecione uma fazenda"); return; }
+    if (!form.marca.trim()) { toast.error("Selecione a marca"); return; }
 
     const payload = {
-      fazendaId: parseInt(form.fazendaId),
+      fazendaId: fazendaIdNum,
       nome: form.apelido.trim() || undefined,
-      tipo: form.tipo,
-      marca: form.marca,
+      tipo: form.tipo.trim(),
+      marca: form.marca.trim(),
       modelo: form.modelo.trim() || undefined,
       placa: form.placa.trim() || undefined,
       ano: form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : undefined,
@@ -365,15 +375,26 @@ export default function MaquinaRegistrationPage() {
               <FormLabel required>Fazenda</FormLabel>
               <FormSelect
                 value={form.fazendaId}
+                displayValue={
+                  form.fazendaId
+                    ? fazendaMap.get(parseInt(form.fazendaId)) ?? form.fazendaId
+                    : undefined
+                }
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
                 required
               >
-                {fazendas.map(f => (
-                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                    {f.nome}
+                {fazendas.length === 0 ? (
+                  <SelectItem value="__none__" disabled className="text-[12px] text-gray-400">
+                    Nenhuma fazenda cadastrada
                   </SelectItem>
-                ))}
+                ) : (
+                  fazendas.map(f => (
+                    <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
+                      {f.nome}
+                    </SelectItem>
+                  ))
+                )}
               </FormSelect>
             </div>
             <div>

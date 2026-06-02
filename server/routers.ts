@@ -426,10 +426,10 @@ const reproducaoRouter = router({
 
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
 const maquinasInputFields = {
-  fazendaId: z.number(),
+  fazendaId: z.number().int().positive(),
   nome: z.string().optional(),
-  tipo: z.string(),
-  marca: z.string(),
+  tipo: z.string().min(1),
+  marca: z.string().min(1),
   ano: z.number().optional(),
   anoAquisicao: z.number().optional(),
   modelo: z.string().optional(),
