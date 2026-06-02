@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Trash2, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { FormLabel, FieldBox } from "@/components/FormFields";
+import { formatDateBR } from "@/lib/date-utils";
 
 export default function SuppliesManagementPage() {
   const [open, setOpen] = useState(false);
@@ -96,7 +97,7 @@ export default function SuppliesManagementPage() {
             <TableBody>
               {batidas.map(b => (
                 <TableRow key={b.id}>
-                  <TableCell>{b.data ? new Date(b.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
+                  <TableCell>{b.data ? formatDateBR(b.data) : "-"}</TableCell>
                   <TableCell>{b.quantidade ? `${b.quantidade} kg` : "-"}</TableCell>
                   <TableCell>{b.responsavel || "-"}</TableCell>
                   <TableCell className="max-w-xs truncate">{b.observacoes || "-"}</TableCell>

@@ -4,6 +4,7 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
+import { formatDateBR } from '@/lib/date-utils';
 
 export function FinancialManagementPage() {
   const [activeTab, setActiveTab] = useState('movimentacoes');
@@ -71,7 +72,7 @@ export function FinancialManagementPage() {
                   m.tipo,
                   m.descricao,
                   m.categoriaId ?? "",
-                  m.data ? new Date(m.data).toLocaleDateString("pt-BR") : "",
+                  m.data ? formatDateBR(m.data) : "",
                   Number(m.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
                 ])}
                 alignRightFrom={4}
@@ -158,7 +159,7 @@ export function FinancialManagementPage() {
                       </td>
                       <td className="px-3 py-2 font-medium">{m.descricao}</td>
                       <td className="px-3 py-2 text-gray-500">{m.categoriaId || "-"}</td>
-                      <td className="px-3 py-2">{m.data ? new Date(m.data).toLocaleDateString('pt-BR') : "-"}</td>
+                      <td className="px-3 py-2">{m.data ? formatDateBR(m.data) : "-"}</td>
                       <td className={`px-3 py-2 font-medium ${m.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}`}>
                         {m.tipo === 'receita' ? '+' : '-'} R$ {Number(m.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </td>

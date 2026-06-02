@@ -7,6 +7,7 @@ import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, TrendingUp, Zap, Plus, Trash2 } from 'lucide-react';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
+import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const CattleDetailPageExpanded: React.FC = () => {
@@ -106,11 +107,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
   });
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-  const formatDate = (date: Date | string | null | undefined) => {
-    if (!date) return '—';
-    const d = new Date(date);
-    return d.toLocaleDateString('pt-BR');
-  };
+  const formatDate = (date: Date | string | null | undefined) => formatDateBR(date);
 
   const calculateAge = (birthDate: Date | string | null | undefined) => {
     if (!birthDate) return '—';
@@ -125,7 +122,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const calculateWeightGain = () => {
     if (!pesagens || pesagens.length < 2) return 0;
-    const sorted = [...pesagens].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+    const sorted = [...pesagens].sort((a, b) => (parseLocalDate(b.data)?.getTime() ?? 0) - (parseLocalDate(a.data)?.getTime() ?? 0));
     const latest = parseFloat(sorted[0].peso || '0');
     const oldest = parseFloat(sorted[sorted.length - 1].peso || '0');
     return latest - oldest;
@@ -175,7 +172,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
     );
   }
 
-  const sortedPesagens = pesagens ? [...pesagens].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()) : [];
+  const sortedPesagens = pesagens ? [...pesagens].sort((a, b) => (parseLocalDate(b.data)?.getTime() ?? 0) - (parseLocalDate(a.data)?.getTime() ?? 0)) : [];
   const latestWeight = sortedPesagens[0]?.peso || animal.pesoAtual || '—';
 
   return (

@@ -4,6 +4,7 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
+import { formatDateBR } from '@/lib/date-utils';
 
 // Saúde Page
 export function SaudePage() {
@@ -31,7 +32,7 @@ export function SaudePage() {
             rows={(registros ?? []).map(r => [
               r.animalId,
               r.tipo,
-              r.dataRegistro ? new Date(r.dataRegistro).toLocaleDateString("pt-BR") : "",
+              r.dataRegistro ? formatDateBR(r.dataRegistro) : "",
               r.descricao,
               r.medicamento || "",
               r.custo ? Number(r.custo).toFixed(2) : "",
@@ -113,7 +114,7 @@ export function SaudePage() {
               <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-3 py-2 text-gray-700">#{r.animalId}</td>
                 <td className="px-3 py-2"><span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] capitalize">{r.tipo}</span></td>
-                <td className="px-3 py-2 text-gray-600">{r.dataRegistro ? new Date(r.dataRegistro).toLocaleDateString('pt-BR') : "-"}</td>
+                <td className="px-3 py-2 text-gray-600">{r.dataRegistro ? formatDateBR(r.dataRegistro) : "-"}</td>
                 <td className="px-3 py-2 text-gray-700">{r.descricao}</td>
                 <td className="px-3 py-2 text-gray-600">{r.medicamento || "-"}</td>
                 <td className="px-3 py-2 text-right text-gray-700">{r.custo ? `R$ ${Number(r.custo).toFixed(2)}` : "-"}</td>
@@ -155,7 +156,7 @@ export function ReproductionManagementPage() {
             rows={(registros ?? []).map(r => [
               r.femeaId,
               r.tipo?.replace(/_/g, " ") ?? "",
-              r.dataCobertura ? new Date(r.dataCobertura).toLocaleDateString("pt-BR") : "",
+              r.dataCobertura ? formatDateBR(r.dataCobertura) : "",
               r.resultado || "pendente",
               r.machoId ?? "",
             ])}
@@ -223,7 +224,7 @@ export function ReproductionManagementPage() {
               <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-3 py-2 text-gray-700">#{r.femeaId}</td>
                 <td className="px-3 py-2"><span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] capitalize">{r.tipo?.replace(/_/g, ' ')}</span></td>
-                <td className="px-3 py-2 text-gray-600">{r.dataCobertura ? new Date(r.dataCobertura).toLocaleDateString('pt-BR') : "-"}</td>
+                <td className="px-3 py-2 text-gray-600">{r.dataCobertura ? formatDateBR(r.dataCobertura) : "-"}</td>
                 <td className="px-3 py-2">
                   <span className={`px-1.5 py-0.5 rounded text-[10px] capitalize ${r.resultado === 'prenha' ? 'bg-green-100 text-green-700' : r.resultado === 'vazia' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
                     {r.resultado || "pendente"}

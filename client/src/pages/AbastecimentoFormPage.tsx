@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import { getSaldoLitros, getValorLitroEstoque } from "@/lib/combustivel-estoque";
+import { formatDateBR, parseLocalDate } from "@/lib/date-utils";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -57,12 +58,7 @@ function toDateInput(value: unknown): string {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDateBR(value: unknown): string {
-  if (!value) return "—";
-  const d = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("pt-BR");
-}
+// formatDateBR importada de @/lib/date-utils
 
 function getSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -149,8 +145,8 @@ export default function AbastecimentoFormPage() {
     const registros = historicoMaquina
       .filter(r => !isEdit || r.id !== editId)
       .sort((a, b) => {
-        const da = a.data ? new Date(String(a.data)).getTime() : 0;
-        const db = b.data ? new Date(String(b.data)).getTime() : 0;
+        const da = a.data ? (parseLocalDate(a.data)?.getTime() ?? 0) : 0;
+        const db = b.data ? (parseLocalDate(b.data)?.getTime() ?? 0) : 0;
         return db - da;
       });
 
