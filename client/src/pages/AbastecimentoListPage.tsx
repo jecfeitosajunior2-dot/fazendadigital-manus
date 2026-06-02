@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import { cn } from "@/lib/utils";
+import { resolveValoresAbastecimento } from "@/lib/combustivel-estoque";
 
 const FD_PRIMARY = "#4ECDC4";
 const FD_PRIMARY_DARK = "#0f3d3a";
@@ -107,6 +108,7 @@ export default function AbastecimentoListPage() {
   const { data: registros = [], isLoading } = trpc.abastecimentos.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: estoque = [] } = trpc.estoque.list.useQuery();
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.abastecimentos.delete.useMutation({
@@ -169,14 +171,15 @@ export default function AbastecimentoListPage() {
   const exportHeaders = ["Máquina", "Tipo", "Combustível", "Data", "Qtd (L)", "Valor/L", "Valor Total", "Odômetro", "Estoque Origem", "Na Fazenda", "Responsável", "Observações"];
   const exportData = filtered.map(r => {
     const maquina = maquinaMap.get(r.maquinaId);
+    const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque);
     return [
       maquina?.nome ?? "",
       maquina?.tipo ?? "",
       r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "",
       formatDate(r.data),
       formatNum(r.litros),
-      formatNum(r.valorLitro, 3),
-      formatNum(r.valorTotal),
+      valorLitro != null ? formatNum(valorLitro, 3) : "",
+      valorTotal != null ? formatNum(valorTotal) : "",
       r.horimetro ?? "",
       r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "",
       r.abastecidoNaFazenda ? "Sim" : "Não",
@@ -345,6 +348,7 @@ export default function AbastecimentoListPage() {
                 const fazendaNome = r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "";
                 const isExpanded = expandedRows.has(r.id);
                 const combColor = r.combustivel ? COMBUSTIVEL_COLOR[r.combustivel] : null;
+                const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque);
 
                 return (
                   <>
@@ -403,14 +407,14 @@ export default function AbastecimentoListPage() {
                       {/* Valor / L */}
                       <td className="px-4 py-3.5 align-middle text-right whitespace-nowrap">
                         <span className="text-[12px] text-gray-600 tabular-nums">
-                          {r.valorLitro ? `R$ ${formatNum(r.valorLitro, 3)}` : "—"}
+                          {valorLitro != null ? `R$ ${formatNum(valorLitro, 3)}` : "—"}
                         </span>
                       </td>
 
                       {/* Valor Total */}
                       <td className="px-4 py-3.5 align-middle text-right whitespace-nowrap">
                         <span className="text-[13px] font-semibold text-gray-800 tabular-nums">
-                          {formatCurrency(r.valorTotal)}
+                          {valorTotal != null ? formatCurrency(valorTotal) : "—"}
                         </span>
                       </td>
 

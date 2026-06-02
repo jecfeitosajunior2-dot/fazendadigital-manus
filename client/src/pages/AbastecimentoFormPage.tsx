@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { getSaldoLitros, getValorLitroEstoque } from "@/lib/combustivel-estoque";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -171,25 +172,28 @@ export default function AbastecimentoFormPage() {
   }, [historicoMaquina, isEdit, editId]);
 
   const estoqueAtualLitros = useMemo(() => {
-    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId) return null;
-    const fazendaIdNum = Number(form.fazendaId);
-    const total = estoque
-      .filter(item => {
-        if (item.fazendaId !== fazendaIdNum) return false;
-        const nome = (item.nome ?? "").toLowerCase();
-        const cat = (item.categoria ?? "").toLowerCase();
-        return cat.includes("combust") || nome.includes("diesel") || nome.includes("gasolina") || nome.includes("etanol");
-      })
-      .reduce((sum, item) => sum + parseFloat(String(item.quantidade ?? 0)), 0);
-    return total;
-  }, [estoque, form.abastecidoNaFazenda, form.fazendaId]);
+    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId || !form.combustivel) return null;
+    return getSaldoLitros(estoque, Number(form.fazendaId), form.combustivel);
+  }, [estoque, form.abastecidoNaFazenda, form.fazendaId, form.combustivel]);
+
+  const valorLitroEstoque = useMemo(() => {
+    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId || !form.combustivel) return null;
+    return getValorLitroEstoque(estoque, Number(form.fazendaId), form.combustivel);
+  }, [estoque, form.abastecidoNaFazenda, form.fazendaId, form.combustivel]);
 
   const valorTotalPreview = useMemo(() => {
     const litros = parseFloat(form.litros.replace(",", "."));
+    if (Number.isNaN(litros) || litros <= 0) return "";
+
+    if (form.abastecidoNaFazenda === "sim") {
+      if (!valorLitroEstoque) return "";
+      return (litros * valorLitroEstoque).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+    }
+
     const valor = parseFloat(parseCurrencyBrl(form.valorLitro) || "0");
-    if (Number.isNaN(litros) || Number.isNaN(valor) || !form.valorLitro) return "";
+    if (Number.isNaN(valor) || !form.valorLitro) return "";
     return (litros * valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  }, [form.litros, form.valorLitro]);
+  }, [form.litros, form.valorLitro, form.abastecidoNaFazenda, valorLitroEstoque]);
 
   const handleAbastecidoChange = (v: "sim" | "nao") => {
     setForm(f => ({
@@ -211,6 +215,23 @@ export default function AbastecimentoFormPage() {
       return toast.error("Selecione o estoque (fazenda).");
     }
 
+    const litrosNum = parseFloat(form.litros.replace(",", "."));
+
+    // Sim → valor vem do preço unitário do combustível no estoque da fazenda
+    const valorLitroSim = abastecidoNaFazenda && form.fazendaId && form.combustivel
+      ? getValorLitroEstoque(estoque, Number(form.fazendaId), form.combustivel)
+      : null;
+
+    const valorLitroFinal = !abastecidoNaFazenda && form.valorLitro
+      ? parseCurrencyBrl(form.valorLitro)
+      : valorLitroSim != null
+        ? valorLitroSim.toFixed(3)
+        : undefined;
+
+    const valorTotalFinal = valorLitroFinal && !Number.isNaN(litrosNum)
+      ? (litrosNum * parseFloat(valorLitroFinal)).toFixed(2)
+      : undefined;
+
     const payload = {
       maquinaId: Number(form.maquinaId),
       data: form.data,
@@ -219,15 +240,8 @@ export default function AbastecimentoFormPage() {
       horimetro: form.horimetro.trim() || undefined,
       abastecidoNaFazenda,
       fazendaId: abastecidoNaFazenda && form.fazendaId ? Number(form.fazendaId) : null,
-      valorLitro: !abastecidoNaFazenda && form.valorLitro
-        ? parseCurrencyBrl(form.valorLitro)
-        : undefined,
-      valorTotal: !abastecidoNaFazenda && form.valorLitro && form.litros
-        ? (
-            parseFloat(form.litros.replace(",", ".")) *
-            parseFloat(parseCurrencyBrl(form.valorLitro) || "0")
-          ).toFixed(2)
-        : undefined,
+      valorLitro: valorLitroFinal,
+      valorTotal: valorTotalFinal,
       responsavel: form.responsavel.trim() || undefined,
       observacoes: form.observacoes.trim() || undefined,
     };
