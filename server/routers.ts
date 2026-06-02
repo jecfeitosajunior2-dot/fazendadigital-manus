@@ -577,7 +577,7 @@ const abastecimentosRouter = router({
         litros,
         valorLitro,
         valorTotal: total,
-        data: new Date(data).toISOString().slice(0, 10) as unknown as Date,
+        data: new Date(data).toISOString().slice(0, 10),
       });
       return { success: true, id: (result as any).insertId };
     }),
@@ -592,7 +592,7 @@ const abastecimentosRouter = router({
           : undefined);
       await db.update(abastecimentos).set({
         ...rest,
-        ...(data ? { data: new Date(data).toISOString().slice(0, 10) as unknown as Date } : {}),
+        ...(data ? { data: new Date(data).toISOString().slice(0, 10) } : {}),
         ...(litros !== undefined ? { litros } : {}),
         ...(valorLitro !== undefined ? { valorLitro } : {}),
         ...(total !== undefined ? { valorTotal: total } : {}),

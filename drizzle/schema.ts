@@ -183,7 +183,7 @@ export const abastecimentos = mysqlTable("abastecimentos", {
   id: int("id").primaryKey().autoincrement(),
   userId: int("userId").notNull(),
   maquinaId: int("maquinaId").notNull(),
-  data: date("data").notNull(),
+  data: date("data", { mode: "string" }).notNull(),
   combustivel: mysqlEnum("combustivel", ["diesel", "gasolina", "etanol", "arla"]).notNull(),
   litros: decimal("litros", { precision: 8, scale: 2 }).notNull(),
   valorLitro: decimal("valorLitro", { precision: 8, scale: 3 }),
