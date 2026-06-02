@@ -224,7 +224,7 @@ export default function MaquinaRegistrationPage() {
     onSuccess: () => {
       utils.maquinas.list.invalidate();
       toast.success("Maquinário cadastrado!");
-      setLocation("/maquinas/lista-maquinas");
+      setLocation("/maquinas/visao-geral");
     },
     onError: e => toast.error(e.message),
   });
@@ -233,7 +233,7 @@ export default function MaquinaRegistrationPage() {
     onSuccess: () => {
       utils.maquinas.list.invalidate();
       toast.success("Maquinário atualizado!");
-      setLocation("/maquinas/lista-maquinas");
+      setLocation("/maquinas/visao-geral");
     },
     onError: e => toast.error(e.message),
   });
@@ -521,7 +521,7 @@ export default function MaquinaRegistrationPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => setLocation("/maquinas/lista-maquinas")}
+              onClick={() => setLocation("/maquinas/visao-geral")}
               className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
             >
               Cancelar

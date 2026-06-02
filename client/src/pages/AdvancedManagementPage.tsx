@@ -25,7 +25,7 @@ function MaquinasPage() {
       </div>
       <p className="text-[12px] text-gray-500">
         Use o{" "}
-        <button type="button" onClick={() => setLocation("/maquinas/lista-maquinas")} className="text-[#4ECDC4] underline">
+        <button type="button" onClick={() => setLocation("/maquinas/visao-geral")} className="text-[#4ECDC4] underline">
           cadastro de maquinário
         </button>{" "}
         para gerenciar máquinas e equipamentos.

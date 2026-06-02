@@ -1769,7 +1769,7 @@ export function QuickAccessPage() {
           { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/cadastro" },
           { label: "Cadastrar Rebanho", icon: "pets", path: "/rebanho/lista-animais" },
           { label: "Cadastrar Insumo", icon: "inventory_2", path: "/insumos/cadastro" },
-          { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/lista-maquinas" },
+          { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/visao-geral" },
           { label: "Lançar Manejo", icon: "playlist_add_check", path: "/manejos/criar" },
           { label: "Lançar Financeiro", icon: "account_balance", path: "/financeiro/movimentacao" },
         ].map((item, i) => (

@@ -100,7 +100,7 @@ function ProtectedRoutes() {
       {/* Machinery */}
       <Route path="/maquinas/visao-geral" component={MaquinasListPage} />
       <Route path="/maquinas/cadastro" component={MaquinaRegistrationPage} />
-      <Route path="/maquinas/lista-maquinas" component={MaquinasListPage} />
+      <Route path="/maquinas/lista-maquinas" component={() => <RedirectTo to="/maquinas/visao-geral" />} />
       <Route path="/maquinas/abastecimento" component={AdvancedManagementPage} />
       <Route path="/maquinas/manutencao" component={AdvancedManagementPage} />
 
