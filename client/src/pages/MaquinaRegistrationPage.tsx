@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -188,40 +188,44 @@ export default function MaquinaRegistrationPage() {
     { kind: "empty" },
     { kind: "empty" },
   ]);
-  const [initialized, setInitialized] = useState(false);
+
+  // Ref que rastreia qual maquina.id foi inicializado por último — corrige o caso
+  // em que Wouter reutiliza o componente ao navegar entre ?id= diferentes.
+  const initializedForId = useRef<number | null>(null);
 
   useEffect(() => {
-    if (isEdit && maquina && !initialized) {
-      // Converte valor decimal do banco → string de centavos para formatCurrencyBrl
-      const valorCents = maquina.valor
-        ? Math.round(parseFloat(parseFloat(String(maquina.valor)).toFixed(2)) * 100)
-        : 0;
+    if (!isEdit || !maquina) return;
+    if (initializedForId.current === maquina.id) return;
 
-      setForm({
-        tipo: maquina.tipo || "",
-        fazendaId: maquina.fazendaId != null ? String(maquina.fazendaId) : "",
-        apelido: maquina.nome || "",
-        valor: valorCents > 0 ? formatCurrencyBrl(String(valorCents)) : "",
-        marca: maquina.marca || "",
-        modelo: maquina.modelo || "",
-        placa: maquina.placa || "",
-        anoFabricacao: maquina.ano ? String(maquina.ano) : "",
-        anoAquisicao: maquina.anoAquisicao ? String(maquina.anoAquisicao) : "",
-        vidaUtil: maquina.vidaUtil || "",
-        dataDesativacao: toDateInput(maquina.dataDesativacao),
-        estado: maquina.estado === "usado" ? "usado" : "novo",
-        observacoes: maquina.observacoes || "",
-      });
-      setImageSlots(
-        [maquina.imagem1, maquina.imagem2, maquina.imagem3].map(path =>
-          path
-            ? { kind: "preview" as const, url: path, existingPath: path }
-            : { kind: "empty" as const }
-        )
-      );
-      setInitialized(true);
-    }
-  }, [isEdit, maquina, initialized]);
+    // Converte valor decimal do banco → string de centavos para formatCurrencyBrl
+    const valorCents = maquina.valor
+      ? Math.round(parseFloat(parseFloat(String(maquina.valor)).toFixed(2)) * 100)
+      : 0;
+
+    setForm({
+      tipo: maquina.tipo || "",
+      fazendaId: maquina.fazendaId != null ? String(maquina.fazendaId) : "",
+      apelido: maquina.nome || "",
+      valor: valorCents > 0 ? formatCurrencyBrl(String(valorCents)) : "",
+      marca: maquina.marca || "",
+      modelo: maquina.modelo || "",
+      placa: maquina.placa || "",
+      anoFabricacao: maquina.ano ? String(maquina.ano) : "",
+      anoAquisicao: maquina.anoAquisicao ? String(maquina.anoAquisicao) : "",
+      vidaUtil: maquina.vidaUtil || "",
+      dataDesativacao: toDateInput(maquina.dataDesativacao),
+      estado: maquina.estado === "usado" ? "usado" : "novo",
+      observacoes: maquina.observacoes || "",
+    });
+    setImageSlots(
+      [maquina.imagem1, maquina.imagem2, maquina.imagem3].map(path =>
+        path
+          ? { kind: "preview" as const, url: path, existingPath: path }
+          : { kind: "empty" as const }
+      )
+    );
+    initializedForId.current = maquina.id;
+  }, [isEdit, maquina]);
 
   const createMutation = trpc.maquinas.create.useMutation({
     onSuccess: () => {
@@ -295,16 +299,18 @@ export default function MaquinaRegistrationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.tipo.trim()) { toast.error("Selecione o tipo de máquina"); return; }
-    const fazendaIdNum = form.fazendaId ? parseInt(form.fazendaId, 10) : NaN;
-    if (!form.fazendaId || isNaN(fazendaIdNum)) { toast.error("Selecione uma fazenda"); return; }
-    if (!form.marca.trim()) { toast.error("Selecione a marca"); return; }
 
-    const payload = {
-      fazendaId: fazendaIdNum,
+    const fazendaIdNum = form.fazendaId ? parseInt(form.fazendaId, 10) : NaN;
+
+    // Para cadastro (novo), tipo/fazenda/marca são obrigatórios
+    if (!isEdit) {
+      if (!form.tipo.trim()) { toast.error("Selecione o tipo de máquina"); return; }
+      if (!form.fazendaId || isNaN(fazendaIdNum)) { toast.error("Selecione uma fazenda"); return; }
+      if (!form.marca.trim()) { toast.error("Selecione a marca"); return; }
+    }
+
+    const basePayload = {
       nome: form.apelido.trim() || undefined,
-      tipo: form.tipo.trim(),
-      marca: form.marca.trim(),
       modelo: form.modelo.trim() || undefined,
       placa: form.placa.trim() || undefined,
       ano: form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : undefined,
@@ -315,11 +321,29 @@ export default function MaquinaRegistrationPage() {
       estado: form.estado,
       observacoes: form.observacoes.trim() || undefined,
       imageSlots: await buildImageSlotsPayload(),
+      // tipo/fazendaId/marca: apenas envia se preenchidos (evita sobrescrever existentes com vazio)
+      ...(form.tipo.trim() ? { tipo: form.tipo.trim() } : {}),
+      ...(form.marca.trim() ? { marca: form.marca.trim() } : {}),
+      ...(!isNaN(fazendaIdNum) && fazendaIdNum > 0 ? { fazendaId: fazendaIdNum } : {}),
     };
 
-    if (isEdit && maquinaId) updateMutation.mutate({ id: maquinaId, ...payload });
-    else createMutation.mutate(payload);
+    if (isEdit && maquinaId) {
+      updateMutation.mutate({ id: maquinaId, ...basePayload });
+    } else {
+      // Para criar: tipo/fazendaId/marca já foram validados acima
+      createMutation.mutate({
+        ...basePayload,
+        fazendaId: fazendaIdNum,
+        tipo: form.tipo.trim(),
+        marca: form.marca.trim(),
+      });
+    }
   };
+
+  // Campos obrigatórios que estão vazios neste maquinário (edit mode)
+  const camposVazios = isEdit && maquina
+    ? [!form.tipo && "Tipo", !form.fazendaId && "Fazenda", !form.marca && "Marca"].filter(Boolean)
+    : [];
 
   if (isEdit && loadingMaquina) {
     return (
@@ -339,6 +363,16 @@ export default function MaquinaRegistrationPage() {
           >
             {isEdit ? "Editar maquinário" : "Cadastro de maquinário"}
           </h1>
+
+          {camposVazios.length > 0 && (
+            <div className="mb-5 flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded text-[12px] text-amber-800">
+              <span className="material-icons text-[16px] text-amber-500 mt-0.5 shrink-0">info</span>
+              <span>
+                Este maquinário não possui <strong>{camposVazios.join(", ")}</strong> registrado{camposVazios.length > 1 ? "s" : ""}.
+                Selecione os campos destacados com <span style={{ color: "#4ECDC4" }}>■</span> e salve para completar o cadastro.
+              </span>
+            </div>
+          )}
 
           <div className="mb-6">
             <p className="text-[11px] text-gray-600 mb-3">

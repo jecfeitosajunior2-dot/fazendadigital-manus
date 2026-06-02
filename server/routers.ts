@@ -425,11 +425,12 @@ const reproducaoRouter = router({
 });
 
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
-const maquinasInputFields = {
-  fazendaId: z.number().int().positive(),
+// Campos comuns a create e update (todos opcionais — create valida no client)
+const maquinasBaseFields = {
   nome: z.string().optional(),
-  tipo: z.string().min(1),
-  marca: z.string().min(1),
+  tipo: z.string().min(1).optional(),
+  marca: z.string().min(1).optional(),
+  fazendaId: z.number().int().positive().optional(),
   ano: z.number().optional(),
   anoAquisicao: z.number().optional(),
   modelo: z.string().optional(),
@@ -442,6 +443,14 @@ const maquinasInputFields = {
   status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
   observacoes: z.string().optional(),
   imageSlots: z.array(imageSlotInput).length(3).optional(),
+};
+
+// Create exige tipo, marca e fazendaId
+const maquinasInputFields = {
+  ...maquinasBaseFields,
+  fazendaId: z.number().int().positive(),
+  tipo: z.string().min(1),
+  marca: z.string().min(1),
 };
 
 const maquinasRouter = router({
@@ -482,13 +491,17 @@ const maquinasRouter = router({
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), ...maquinasInputFields }))
+    .input(z.object({ id: z.number(), ...maquinasBaseFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataDesativacao, imageSlots, nome, ...rest } = input;
+      const { id, dataDesativacao, imageSlots, nome, tipo, marca, fazendaId, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       await db.update(maquinas).set({
         ...rest,
         ...(nome !== undefined ? { nome: nome.trim() || "Sem apelido" } : {}),
+        // Só atualiza tipo/marca/fazendaId se enviados (não sobrescreve existentes com null)
+        ...(tipo ? { tipo } : {}),
+        ...(marca ? { marca } : {}),
+        ...(fazendaId ? { fazendaId } : {}),
         dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null,
         imagem1: img1,
         imagem2: img2,
