@@ -260,7 +260,7 @@ export default function InsumosMovimentacaoPanel() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
               <div>
                 <label className={labelClass}>Nota Fiscal</label>
                 <input value={fNotaFiscal} onChange={e => { setFNotaFiscal(e.target.value); setPage(1); }} placeholder="nº nota fiscal" className={inputClass} />
@@ -273,6 +273,9 @@ export default function InsumosMovimentacaoPanel() {
                 <label className={labelClass}>ID Único</label>
                 <input value={fIdUnico} onChange={e => { setFIdUnico(e.target.value); setPage(1); }} placeholder="id único" className={inputClass} />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <div>
                 <label className={labelClass}>Período</label>
                 <div className="flex items-center gap-1">
@@ -281,7 +284,7 @@ export default function InsumosMovimentacaoPanel() {
                   <input type="date" value={fPeriodoFim} onChange={e => { setFPeriodoFim(e.target.value); setPage(1); }} className={inputClass} />
                 </div>
               </div>
-              <div className="lg:pl-6">
+              <div>
                 <label className={labelClass}>Data Validade</label>
                 <div className="flex items-center gap-1">
                   <input type="date" value={fValidadeIni} onChange={e => { setFValidadeIni(e.target.value); setPage(1); }} className={inputClass} />
