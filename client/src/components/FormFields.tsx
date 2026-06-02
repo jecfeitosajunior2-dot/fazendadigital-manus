@@ -145,9 +145,12 @@ export function FormSelect({
   displayValue?: string;
   children: React.ReactNode;
 }) {
-  /** Texto exibido no trigger — usa displayValue, senão value, senão placeholder. */
+  // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
+  // troca descontrolado→controlado do Radix que impede a atualização visual.
+  const selectValue = value ?? "";
+
+  // Texto a exibir no trigger: displayValue > value > placeholder
   const labelExibido = (displayValue ?? value)?.trim() || null;
-  const selectValue = value?.trim() ? value : undefined;
 
   return (
     <FieldBox required={required}>
