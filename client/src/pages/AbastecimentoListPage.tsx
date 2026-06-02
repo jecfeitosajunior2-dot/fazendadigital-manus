@@ -109,6 +109,7 @@ export default function AbastecimentoListPage() {
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
+  const { data: movimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery();
   const utils = trpc.useUtils();
 
   const deleteMutation = trpc.abastecimentos.delete.useMutation({
@@ -171,7 +172,7 @@ export default function AbastecimentoListPage() {
   const exportHeaders = ["Máquina", "Tipo", "Combustível", "Data", "Qtd (L)", "Valor/L", "Valor Total", "Odômetro", "Estoque Origem", "Na Fazenda", "Responsável", "Observações"];
   const exportData = filtered.map(r => {
     const maquina = maquinaMap.get(r.maquinaId);
-    const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque);
+    const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
     return [
       maquina?.nome ?? "",
       maquina?.tipo ?? "",
@@ -348,7 +349,7 @@ export default function AbastecimentoListPage() {
                 const fazendaNome = r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "";
                 const isExpanded = expandedRows.has(r.id);
                 const combColor = r.combustivel ? COMBUSTIVEL_COLOR[r.combustivel] : null;
-                const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque);
+                const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
 
                 return (
                   <>
