@@ -190,6 +190,8 @@ export const abastecimentos = mysqlTable("abastecimentos", {
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }),
   horimetro: varchar("horimetro", { length: 50 }),
   responsavel: varchar("responsavel", { length: 200 }),
+  abastecidoNaFazenda: boolean("abastecidoNaFazenda").default(false),
+  fazendaId: int("fazendaId"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });

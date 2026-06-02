@@ -519,13 +519,36 @@ const maquinasRouter = router({
 });
 
 // ─── ABASTECIMENTOS ROUTER ────────────────────────────────────────────────────
+const abastecimentosBaseFields = {
+  maquinaId: z.number().optional(),
+  data: z.string().optional(),
+  combustivel: z.enum(["diesel", "gasolina", "etanol", "arla"]).optional(),
+  litros: z.string().optional(),
+  valorLitro: z.string().optional(),
+  valorTotal: z.string().optional(),
+  horimetro: z.string().optional(),
+  responsavel: z.string().optional(),
+  abastecidoNaFazenda: z.boolean().optional(),
+  fazendaId: z.number().int().positive().optional().nullable(),
+  observacoes: z.string().optional(),
+};
+
 const abastecimentosRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const conditions = [eq(abastecimentos.userId, ctx.user.id)];
       if (input?.maquinaId) conditions.push(eq(abastecimentos.maquinaId, input.maquinaId));
-      return db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.createdAt));
+      return db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.data), desc(abastecimentos.createdAt));
+    }),
+
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await db.select().from(abastecimentos).where(
+        and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id))
+      );
+      return row ?? null;
     }),
 
   create: protectedProcedure
@@ -538,16 +561,44 @@ const abastecimentosRouter = router({
       valorTotal: z.string().optional(),
       horimetro: z.string().optional(),
       responsavel: z.string().optional(),
+      abastecidoNaFazenda: z.boolean().optional(),
+      fazendaId: z.number().int().positive().optional().nullable(),
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { data, ...rest } = input;
+      const { data, valorLitro, litros, ...rest } = input;
+      const total = input.valorTotal
+        ?? (valorLitro && litros
+          ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
+          : undefined);
       const result = await db.insert(abastecimentos).values({
         userId: ctx.user.id,
         ...rest,
+        litros,
+        valorLitro,
+        valorTotal: total,
         data: new Date(data),
       });
       return { success: true, id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({ id: z.number(), ...abastecimentosBaseFields }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, data, valorLitro, litros, fazendaId, ...rest } = input;
+      const total = input.valorTotal
+        ?? (valorLitro && litros
+          ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
+          : undefined);
+      await db.update(abastecimentos).set({
+        ...rest,
+        ...(data ? { data: new Date(data) } : {}),
+        ...(litros !== undefined ? { litros } : {}),
+        ...(valorLitro !== undefined ? { valorLitro } : {}),
+        ...(total !== undefined ? { valorTotal: total } : {}),
+        ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
+      }).where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+      return { success: true };
     }),
 
   delete: protectedProcedure

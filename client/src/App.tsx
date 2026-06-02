@@ -40,6 +40,8 @@ import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
 import ProductRegistrationPage from "./pages/ProductRegistrationPage";
 import MaquinaRegistrationPage from "./pages/MaquinaRegistrationPage";
 import MaquinasListPage from "./pages/MaquinasListPage";
+import AbastecimentoListPage from "./pages/AbastecimentoListPage";
+import AbastecimentoFormPage from "./pages/AbastecimentoFormPage";
 import InsumosVisaoGeralPage from "./pages/InsumosVisaoGeralPage";
 import InsumosNovaMovimentacaoPage from "./pages/InsumosNovaMovimentacaoPage";
 import InsumosHistoricoMovimentacaoPage from "./pages/InsumosHistoricoMovimentacaoPage";
@@ -101,7 +103,8 @@ function ProtectedRoutes() {
       <Route path="/maquinas/visao-geral" component={MaquinasListPage} />
       <Route path="/maquinas/cadastro" component={MaquinaRegistrationPage} />
       <Route path="/maquinas/lista-maquinas" component={() => <RedirectTo to="/maquinas/visao-geral" />} />
-      <Route path="/maquinas/abastecimento" component={AdvancedManagementPage} />
+      <Route path="/maquinas/abastecimento/cadastro" component={AbastecimentoFormPage} />
+      <Route path="/maquinas/abastecimento" component={AbastecimentoListPage} />
       <Route path="/maquinas/manutencao" component={AdvancedManagementPage} />
 
       {/* Reproduction & Saude */}
