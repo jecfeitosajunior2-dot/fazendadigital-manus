@@ -99,6 +99,8 @@ export default function AbastecimentoFormPage() {
   const createMutation = trpc.abastecimentos.create.useMutation({
     onSuccess: () => {
       utils.abastecimentos.list.invalidate();
+      utils.estoque.list.invalidate();
+      utils.estoque.listMovimentacoes.invalidate();
       toast.success("Abastecimento registrado!");
       setLocation("/maquinas/abastecimento");
     },
@@ -108,6 +110,8 @@ export default function AbastecimentoFormPage() {
   const updateMutation = trpc.abastecimentos.update.useMutation({
     onSuccess: () => {
       utils.abastecimentos.list.invalidate();
+      utils.estoque.list.invalidate();
+      utils.estoque.listMovimentacoes.invalidate();
       toast.success("Abastecimento atualizado!");
       setLocation("/maquinas/abastecimento");
     },
