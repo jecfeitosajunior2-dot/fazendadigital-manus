@@ -63,18 +63,45 @@ export default function InsumosVisaoGeralDashboard() {
     return m;
   }, [produtos]);
 
+  // Preço médio por unidade calculado a partir das entradas (fallback quando valorUnitario não está cadastrado).
+  const precoMedioImplicit = useMemo(() => {
+    const totalQtd = new Map<number, number>();
+    const totalVal = new Map<number, number>();
+    for (const mv of movs) {
+      const sinal = mv.tipo ? sinalDoTipo(mv.tipo) : numVal(mv.quantidade) < 0 ? "saida" : "entrada";
+      if (sinal === "saida") continue;
+      const qtd = Math.abs(numVal(mv.quantidade));
+      const val = numVal(mv.valor);
+      if (qtd > 0 && val > 0) {
+        totalQtd.set(mv.estoqueId, (totalQtd.get(mv.estoqueId) ?? 0) + qtd);
+        totalVal.set(mv.estoqueId, (totalVal.get(mv.estoqueId) ?? 0) + val);
+      }
+    }
+    const m = new Map<number, number>();
+    for (const [id, qtd] of totalQtd.entries()) {
+      const val = totalVal.get(id) ?? 0;
+      m.set(id, qtd > 0 ? val / qtd : 0);
+    }
+    return m;
+  }, [movs]);
+
   const isSaida = (mv: { tipo: string | null; quantidade: string | number }) =>
     mv.tipo ? sinalDoTipo(mv.tipo) === "saida" : numVal(mv.quantidade) < 0;
 
   // ── Estoque atual: valor imobilizado, categorias, top produtos ───────────────
   const estoque = useMemo(() => {
     const ativos = produtos.filter(p => p.situacao !== "inativo");
-    const valorTotal = ativos.reduce((s, p) => s + numVal(p.quantidade) * numVal(p.valorUnitario), 0);
+
+    // Usa valorUnitario cadastrado; se zero/nulo, cai no preço médio das compras
+    const precoEfetivo = (p: typeof ativos[0]) =>
+      numVal(p.valorUnitario) || (precoMedioImplicit.get(p.id) ?? 0);
+
+    const valorTotal = ativos.reduce((s, p) => s + numVal(p.quantidade) * precoEfetivo(p), 0);
 
     const categorias = new Map<string, number>();
     ativos.forEach(p => {
       const cat = p.categoria?.trim() || "Sem categoria";
-      categorias.set(cat, (categorias.get(cat) ?? 0) + numVal(p.quantidade) * numVal(p.valorUnitario));
+      categorias.set(cat, (categorias.get(cat) ?? 0) + numVal(p.quantidade) * precoEfetivo(p));
     });
     const porCategoria = [...categorias.entries()]
       .map(([name, value]) => ({ name, value }))
@@ -82,7 +109,7 @@ export default function InsumosVisaoGeralDashboard() {
       .sort((a, b) => b.value - a.value);
 
     const topProdutos = ativos
-      .map(p => ({ nome: p.nome, valor: numVal(p.quantidade) * numVal(p.valorUnitario) }))
+      .map(p => ({ nome: p.nome, valor: numVal(p.quantidade) * precoEfetivo(p) }))
       .filter(p => p.valor > 0)
       .sort((a, b) => b.valor - a.valor)
       .slice(0, 6);
@@ -99,7 +126,7 @@ export default function InsumosVisaoGeralDashboard() {
       acimaMax,
       totalCategorias: porCategoria.length,
     };
-  }, [produtos]);
+  }, [produtos, precoMedioImplicit]);
 
   // ── Fluxo de movimentação (R$) por mês: entradas x saídas estimadas ──────────
   const fluxo = useMemo(() => {
