@@ -26,7 +26,18 @@ const COMBUSTIVEL_COLOR: Record<string, { bg: string; text: string }> = {
 
 function formatDate(value: unknown): string {
   if (!value) return "—";
-  const d = value instanceof Date ? value : new Date(String(value));
+  // Datas vindas do banco chegam como string "YYYY-MM-DD".
+  // new Date("YYYY-MM-DD") interpreta como UTC meia-noite, o que causa
+  // regressão de 1 dia em fusos negativos (ex: UTC-3 do Brasil).
+  // Solução: parsear manualmente para evitar qualquer conversão de timezone.
+  const str = value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${d}/${m}/${y}`;
+  }
+  // Fallback para Date objects sem string ISO
+  const d = new Date(str);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR");
 }
@@ -446,7 +457,7 @@ export default function AbastecimentoListPage() {
 
                     {/* Expanded details row */}
                     {isExpanded && (
-                      <ExpandedRow key={`exp-${r.id}`} r={r} maquina={maquina} fazendaNome={fazendaNome} />
+                      <ExpandedRow key={`exp-${r.id}`} r={r} maquina={maquina ? { nome: maquina.nome ?? undefined, tipo: maquina.tipo ?? undefined } : null} fazendaNome={fazendaNome} />
                     )}
                   </>
                 );
