@@ -4,7 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -31,7 +31,6 @@ type FormState = {
   horimetro: string;
   abastecidoNaFazenda: "sim" | "nao";
   fazendaId: string;
-  valorLitro: string;
   responsavel: string;
   observacoes: string;
 };
@@ -44,7 +43,6 @@ const emptyForm = (): FormState => ({
   horimetro: "",
   abastecidoNaFazenda: "sim",
   fazendaId: "",
-  valorLitro: "",
   responsavel: "",
   observacoes: "",
 });
@@ -54,6 +52,13 @@ function toDateInput(value: unknown): string {
   const d = value instanceof Date ? value : new Date(String(value));
   if (Number.isNaN(d.getTime())) return "";
   return d.toISOString().slice(0, 10);
+}
+
+function formatDateBR(value: unknown): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR");
 }
 
 function getSearchParam(name: string): string | null {
@@ -75,10 +80,17 @@ export default function AbastecimentoFormPage() {
     { id: editId },
     { enabled: isEdit }
   );
+
+  const maquinaIdNum = Number(form.maquinaId) || undefined;
+
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
   const { data: user } = trpc.auth.me.useQuery();
+  const { data: historicoMaquina = [] } = trpc.abastecimentos.list.useQuery(
+    { maquinaId: maquinaIdNum },
+    { enabled: !!maquinaIdNum }
+  );
   const utils = trpc.useUtils();
 
   const createMutation = trpc.abastecimentos.create.useMutation({
@@ -110,9 +122,6 @@ export default function AbastecimentoFormPage() {
       horimetro: registro.horimetro ?? "",
       abastecidoNaFazenda: registro.abastecidoNaFazenda ? "sim" : "nao",
       fazendaId: registro.fazendaId ? String(registro.fazendaId) : "",
-      valorLitro: registro.valorLitro
-        ? formatCurrencyBrl(String(Math.round(parseFloat(String(registro.valorLitro)) * 100)))
-        : "",
       responsavel: registro.responsavel ?? "",
       observacoes: registro.observacoes ?? "",
     });
@@ -124,8 +133,40 @@ export default function AbastecimentoFormPage() {
     set("responsavel", user.name);
   }, [isEdit, user?.name, form.responsavel]);
 
+  // ── Dados calculados do histórico da máquina (igual iRancho) ──────────────
+  const statsHistorico = useMemo(() => {
+    // Filtra pelo registro atual (no edit, exclui o próprio)
+    const registros = historicoMaquina
+      .filter(r => !isEdit || r.id !== editId)
+      .sort((a, b) => {
+        const da = a.data ? new Date(String(a.data)).getTime() : 0;
+        const db = b.data ? new Date(String(b.data)).getTime() : 0;
+        return db - da;
+      });
+
+    const ultimo = registros[0] ?? null;
+
+    const leituraAnterior = ultimo?.horimetro
+      ? parseFloat(String(ultimo.horimetro)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " hora"
+      : "—";
+
+    const dataUltimo = ultimo?.data ? formatDateBR(ultimo.data) : "—";
+
+    let consumoMedio = "—";
+    const comHorimetro = registros.filter(r => r.horimetro && r.litros);
+    if (comHorimetro.length >= 1) {
+      const totalLitros = comHorimetro.reduce((s, r) => s + parseFloat(String(r.litros || 0)), 0);
+      const totalHoras = comHorimetro.reduce((s, r) => s + parseFloat(String(r.horimetro || 0)), 0);
+      if (totalHoras > 0) {
+        consumoMedio = (totalLitros / totalHoras).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " L/hora";
+      }
+    }
+
+    return { leituraAnterior, dataUltimo, consumoMedio };
+  }, [historicoMaquina, isEdit, editId]);
+
   const estoqueAtualLitros = useMemo(() => {
-    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId) return null;
+    if (!form.fazendaId) return null;
     const fazendaIdNum = Number(form.fazendaId);
     const total = estoque
       .filter(item => {
@@ -136,14 +177,7 @@ export default function AbastecimentoFormPage() {
       })
       .reduce((sum, item) => sum + parseFloat(String(item.quantidade ?? 0)), 0);
     return total;
-  }, [estoque, form.abastecidoNaFazenda, form.fazendaId]);
-
-  const valorTotalPreview = useMemo(() => {
-    const litros = parseFloat(form.litros);
-    const valor = parseCurrencyBrl(form.valorLitro);
-    if (Number.isNaN(litros) || Number.isNaN(valor)) return "";
-    return (litros * valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  }, [form.litros, form.valorLitro]);
+  }, [estoque, form.fazendaId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +193,6 @@ export default function AbastecimentoFormPage() {
       data: form.data,
       combustivel: form.combustivel as Combustivel,
       litros: form.litros,
-      valorLitro: form.valorLitro ? String(parseCurrencyBrl(form.valorLitro)) : undefined,
       horimetro: form.horimetro.trim() || undefined,
       abastecidoNaFazenda: form.abastecidoNaFazenda === "sim",
       fazendaId: form.abastecidoNaFazenda === "sim" && form.fazendaId ? Number(form.fazendaId) : null,
@@ -192,7 +225,8 @@ export default function AbastecimentoFormPage() {
             {isEdit ? "Editar abastecimento" : "Lançamento de Abastecimento"}
           </h1>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          {/* Linha 1: Data | Máquina | Combustível | Quantidade */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <FormLabel required>Data do abastecimento</FormLabel>
               <FormDatePicker
@@ -222,9 +256,6 @@ export default function AbastecimentoFormPage() {
                 options={COMBUSTIVEIS.map(c => ({ value: c.value, label: c.label }))}
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Quantidade abastecida (L)</FormLabel>
               <FormInput
@@ -234,6 +265,10 @@ export default function AbastecimentoFormPage() {
                 required
               />
             </div>
+          </div>
+
+          {/* Linha 2: Odômetro | Abastecido na fazenda | Estoque | Estoque atual */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <FormLabel>Leitura atual do odômetro</FormLabel>
               <FormInput
@@ -259,50 +294,33 @@ export default function AbastecimentoFormPage() {
                 </label>
               </RadioGroup>
             </div>
+            <div>
+              <FormLabel required={form.abastecidoNaFazenda === "sim"}>Estoque</FormLabel>
+              <FormNativeSelect
+                value={form.fazendaId}
+                onChange={v => set("fazendaId", v)}
+                placeholder="Selecione uma Fazenda"
+                required={form.abastecidoNaFazenda === "sim"}
+                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+              />
+            </div>
+            <div>
+              <FormLabel>Estoque atual (em litros)</FormLabel>
+              <FormInput
+                value={
+                  estoqueAtualLitros != null
+                    ? estoqueAtualLitros.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+                    : "0,00"
+                }
+                onChange={() => {}}
+                placeholder="0,00"
+                className="cursor-default bg-gray-50"
+              />
+            </div>
           </div>
 
-          {form.abastecidoNaFazenda === "sim" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-              <div>
-                <FormLabel required>Estoque</FormLabel>
-                <FormNativeSelect
-                  value={form.fazendaId}
-                  onChange={v => set("fazendaId", v)}
-                  placeholder="Selecione uma Fazenda"
-                  required
-                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-                />
-              </div>
-              <div>
-                <FormLabel>Estoque atual (em litros)</FormLabel>
-                <FormInput
-                  value={estoqueAtualLitros != null ? estoqueAtualLitros.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}
-                  onChange={() => {}}
-                  placeholder="Estoque atual (em litros)"
-                  className="cursor-default"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <FormLabel>Valor por litro (R$)</FormLabel>
-              <FormInput
-                value={form.valorLitro}
-                onChange={v => set("valorLitro", formatCurrencyBrl(v))}
-                placeholder="R$ 0,00"
-              />
-            </div>
-            <div>
-              <FormLabel>Valor total (R$)</FormLabel>
-              <FormInput
-                value={valorTotalPreview ? `R$ ${valorTotalPreview}` : ""}
-                onChange={() => {}}
-                placeholder="Calculado automaticamente"
-                className="cursor-default"
-              />
-            </div>
+          {/* Linha 3: Responsável | Observações */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <div>
               <FormLabel>Responsável pelo abastecimento</FormLabel>
               <FormNativeSelect
@@ -314,22 +332,45 @@ export default function AbastecimentoFormPage() {
                   ...fazendas
                     .map(f => f.responsavel)
                     .filter((n): n is string => !!n?.trim())
-                    .filter((n, i, arr) => arr.indexOf(n) === i)
+                    .filter((n, i, arr) => arr.indexOf(n) === i && n !== user?.name)
                     .map(n => ({ value: n, label: n })),
                 ]}
               />
             </div>
+            <div>
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                value={form.observacoes}
+                onChange={v => set("observacoes", v)}
+                placeholder="Descreva seu ultimo abastecimento"
+                rows={1}
+              />
+            </div>
           </div>
 
-          <div className="mb-6">
-            <FormLabel>Observações</FormLabel>
-            <FormTextarea
-              value={form.observacoes}
-              onChange={v => set("observacoes", v)}
-              placeholder="Descreva seu ultimo abastecimento"
-              rows={4}
-            />
-          </div>
+          {/* Cards informativos do histórico da máquina (igual iRancho) */}
+          {maquinaIdNum && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 mb-6 border border-gray-200 rounded-md overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-r border-gray-200">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                  Leitura anterior do odômetro
+                </p>
+                <p className="text-[13px] font-medium text-gray-800">{statsHistorico.leituraAnterior}</p>
+              </div>
+              <div className="px-4 py-3 bg-gray-50 border-r border-gray-200">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                  Data do último abastecimento
+                </p>
+                <p className="text-[13px] font-medium text-gray-800">{statsHistorico.dataUltimo}</p>
+              </div>
+              <div className="px-4 py-3 bg-gray-50">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                  Consumo médio de combustível
+                </p>
+                <p className="text-[13px] font-medium text-gray-800">{statsHistorico.consumoMedio}</p>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
