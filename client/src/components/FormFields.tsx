@@ -149,9 +149,6 @@ export function FormSelect({
   // troca descontrolado→controlado do Radix que impede a atualização visual.
   const selectValue = value ?? "";
 
-  // Texto a exibir no trigger: displayValue > value > placeholder
-  const labelExibido = (displayValue ?? value)?.trim() || null;
-
   return (
     <FieldBox required={required}>
       <Select value={selectValue} onValueChange={onChange} disabled={disabled}>
@@ -161,8 +158,8 @@ export function FormSelect({
             "w-full shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
           )}
         >
-          {labelExibido ? (
-            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{labelExibido}</span>
+          {displayValue?.trim() ? (
+            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{displayValue.trim()}</span>
           ) : (
             <SelectValue placeholder={placeholder} />
           )}
