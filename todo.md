@@ -96,5 +96,6 @@
 - [x] Implementar autocomplete de peças no formulário de manutenção com busca em tempo real
 - [x] Auto-preenchimento de preço unitário ao selecionar peça do estoque
 - [x] Teste Vitest para procedure listByCategories (4 testes passando)
-- [ ] Integrar categorias no formulário de produtos (Farmácia, Nutricionais, Combustíveis, Lubrificantes, Ferramentas, Peças, Agrícolas, Epis, Outros Insumos)
-- [ ] Filtros por categoria no formulário de manutenção
+- [x] Integrar categorias no formulário de produtos (Farmácia, Nutricionais, Combustíveis, Lubrificantes, Ferramentas, Peças, Agrícolas, Epis, Outros Insumos) — categorias já presentes em CATEGORIAS_PRODUTO
+- [x] Implementar controle visível de filtro por categoria no formulário de manutenção (select/chips) para refetch dinâmico
+- [x] Teste Vitest para filtro de categoria na manutenção — valida query com múltiplas categorias e refetch (5 testes passando)

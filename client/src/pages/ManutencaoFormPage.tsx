@@ -99,6 +99,9 @@ export default function ManutencaoFormPage() {
   const [pecaOpen, setPecaOpen] = useState(false);
   const [pecaSearch, setPecaSearch] = useState("");
   const [pecaEscolhida, setPecaEscolhida] = useState<{ id: number; nome: string; valorUnitario?: string | number | null } | null>(null);
+  const [categoriasFiltro, setCategoriasFiltro] = useState<string[]>(["Peças", "Lubrificantes"]);
+  const [categoriasDisponiveis] = useState(["Peças", "Lubrificantes", "Ferramentas", "Agrícolas", "Outros Insumos"]);
+  const [mostrarFiltroCategoria, setMostrarFiltroCategoria] = useState(false);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -109,7 +112,7 @@ export default function ManutencaoFormPage() {
     { enabled: isEdit }
   );
   const { data: estoqueItems = [] } = trpc.estoque.listByCategories.useQuery({
-    categorias: ["Peças", "Lubrificantes"],
+    categorias: categoriasFiltro,
   });
   const utils = trpc.useUtils();
 
@@ -374,6 +377,43 @@ export default function ManutencaoFormPage() {
           {/* Conteúdo Peças */}
           {aba === "pecas" && (
             <div className="p-5 sm:p-6">
+              {/* Filtro de Categorias */}
+              <div className="mb-4 pb-4 border-b border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setMostrarFiltroCategoria(!mostrarFiltroCategoria)}
+                  className="flex items-center gap-2 text-[12px] font-semibold text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  <span className="material-icons text-[16px]">filter_list</span>
+                  Filtrar por Categoria
+                  <span className="material-icons text-[14px]" style={{ transform: mostrarFiltroCategoria ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>expand_more</span>
+                </button>
+                {mostrarFiltroCategoria && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {categoriasDisponiveis.map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setCategoriasFiltro(prev =>
+                            prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                          );
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all active:scale-95",
+                          categoriasFiltro.includes(cat)
+                            ? "text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        )}
+                        style={categoriasFiltro.includes(cat) ? { backgroundColor: FD_PRIMARY } : {}}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end mb-4">
                 <div className="sm:col-span-5">
                   <FormLabel>Peça</FormLabel>
