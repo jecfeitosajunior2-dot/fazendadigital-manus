@@ -142,6 +142,31 @@ export async function ensureSchema() {
         /* coluna já compatível */
       }
     }
+
+    // ── Manutencoes: novas colunas (prestador, valores) ──────────────────────
+    const [manutencoesTable] = await pool.query(`SHOW TABLES LIKE 'manutencoes'`);
+    if ((manutencoesTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "manutencoes", "prestadorNome", "varchar(200)");
+      await ensureColumn(pool, "manutencoes", "prestadorContato", "varchar(100)");
+      await ensureColumn(pool, "manutencoes", "valorMaoObra", "decimal(10,2) DEFAULT 0");
+      await ensureColumn(pool, "manutencoes", "valorPecas", "decimal(10,2) DEFAULT 0");
+      await ensureColumn(pool, "manutencoes", "valorTotal", "decimal(10,2) DEFAULT 0");
+      await ensureColumn(pool, "manutencoes", "updatedAt", "timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    }
+
+    // ── Manutencao pecas: tabela de itens de peças ───────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`manutencao_pecas\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`manutencaoId\` int NOT NULL,
+        \`nome\` varchar(200) NOT NULL,
+        \`quantidade\` decimal(10,2) NOT NULL DEFAULT 1,
+        \`valorUnitario\` decimal(10,2) NOT NULL DEFAULT 0,
+        \`valorTotal\` decimal(10,2) NOT NULL DEFAULT 0,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`)
+      )
+    `);
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

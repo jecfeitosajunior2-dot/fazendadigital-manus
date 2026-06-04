@@ -203,13 +203,32 @@ export const manutencoes = mysqlTable("manutencoes", {
   maquinaId: int("maquinaId").notNull(),
   tipo: varchar("tipo", { length: 50 }).notNull(),
   descricao: text("descricao"),
-  data: date("data").notNull(),
+  data: date("data", { mode: "string" }).notNull(),
   custo: decimal("custo", { precision: 10, scale: 2 }),
   oficina: varchar("oficina", { length: 200 }),
   horimetro: varchar("horimetro", { length: 50 }),
-  proximaManutencao: date("proximaManutencao"),
+  proximaManutencao: date("proximaManutencao", { mode: "string" }),
   status: mysqlEnum("status", ["agendada", "em_andamento", "concluida"]).default("agendada"),
+  // Prestador de serviço (mão de obra externa)
+  prestadorNome: varchar("prestadorNome", { length: 200 }),
+  prestadorContato: varchar("prestadorContato", { length: 100 }),
+  valorMaoObra: decimal("valorMaoObra", { precision: 10, scale: 2 }).default("0"),
+  // Totais consolidados
+  valorPecas: decimal("valorPecas", { precision: 10, scale: 2 }).default("0"),
+  valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).default("0"),
   observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+// Manutencao pecas table (itens de peças de uma manutenção)
+export const manutencaoPecas = mysqlTable("manutencao_pecas", {
+  id: int("id").primaryKey().autoincrement(),
+  manutencaoId: int("manutencaoId").notNull(),
+  nome: varchar("nome", { length: 200 }).notNull(),
+  quantidade: decimal("quantidade", { precision: 10, scale: 2 }).notNull().default("1"),
+  valorUnitario: decimal("valorUnitario", { precision: 10, scale: 2 }).notNull().default("0"),
+  valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

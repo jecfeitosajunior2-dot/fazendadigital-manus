@@ -49,3 +49,14 @@
 
 ## Bug Fixes
 - [x] Corrigir: dropdowns Tipo/Fazenda/Marca não carregam valor salvo ao editar maquinário (substituir FormSelect Radix por FormNativeSelect)
+
+## Módulo de Manutenção (Máquinas)
+- [x] Expandir tabela `manutencoes` (prestador, valorMaoObra, valorPecas, valorTotal, updatedAt)
+- [x] Criar tabela `manutencao_pecas` (itens de peças por manutenção)
+- [x] Backfill via ensureSchema.ts + aplicação no banco remoto
+- [x] Router tRPC: get, list, listPecas, create, update, delete com cálculo de totais
+- [x] Função `calcularTotaisManutencao` (peças + mão de obra = total geral)
+- [x] Página de Registro de Manutenção (abas Peças/Prestador, totais ao vivo) no padrão FD
+- [x] Página de Listagem de Manutenções (filtros, paginação, exportação) no padrão FD
+- [x] Rotas: /maquinas/manutencao (lista) e /maquinas/manutencao/cadastro (form)
+- [x] Testes Vitest da lógica de totais (8 testes passando)

@@ -4,7 +4,7 @@ import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
-  maquinas, abastecimentos, manutencoes, pesagens, batidas,
+  maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes
 } from "../drizzle/schema";
@@ -766,6 +766,44 @@ const abastecimentosRouter = router({
 });
 
 // ─── MANUTENCOES ROUTER ───────────────────────────────────────────────────────
+const pecaInput = z.object({
+  nome: z.string().min(1),
+  quantidade: z.number().positive(),
+  valorUnitario: z.number().min(0),
+});
+
+const manutencaoBaseInput = z.object({
+  maquinaId: z.number(),
+  tipo: z.string(),
+  descricao: z.string().optional(),
+  data: z.string(),
+  horimetro: z.string().optional(),
+  proximaManutencao: z.string().optional(),
+  status: z.enum(["agendada", "em_andamento", "concluida"]).optional(),
+  prestadorNome: z.string().optional(),
+  prestadorContato: z.string().optional(),
+  valorMaoObra: z.number().min(0).optional(),
+  observacoes: z.string().optional(),
+  pecas: z.array(pecaInput).optional(),
+});
+
+/** Calcula valor de peças, mão de obra e total geral. */
+export function calcularTotaisManutencao(
+  pecas: { quantidade: number; valorUnitario: number }[] | undefined,
+  valorMaoObra: number | undefined
+) {
+  const valorPecas = (pecas ?? []).reduce(
+    (s, p) => s + p.quantidade * p.valorUnitario,
+    0
+  );
+  const maoObra = valorMaoObra ?? 0;
+  return {
+    valorPecas,
+    valorMaoObra: maoObra,
+    valorTotal: valorPecas + maoObra,
+  };
+}
+
 const manutencoesRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
@@ -775,33 +813,99 @@ const manutencoesRouter = router({
       return db.select().from(manutencoes).where(and(...conditions)).orderBy(desc(manutencoes.createdAt));
     }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [registro] = await db
+        .select()
+        .from(manutencoes)
+        .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
+      if (!registro) return null;
+      const pecas = await db
+        .select()
+        .from(manutencaoPecas)
+        .where(eq(manutencaoPecas.manutencaoId, input.id))
+        .orderBy(manutencaoPecas.id);
+      return { ...registro, pecas };
+    }),
+
+  listPecas: protectedProcedure
+    .input(z.object({ manutencaoId: z.number() }))
+    .query(async ({ input }) => {
+      return db
+        .select()
+        .from(manutencaoPecas)
+        .where(eq(manutencaoPecas.manutencaoId, input.manutencaoId))
+        .orderBy(manutencaoPecas.id);
+    }),
+
   create: protectedProcedure
-    .input(z.object({
-      maquinaId: z.number(),
-      tipo: z.string(),
-      descricao: z.string().optional(),
-      data: z.string(),
-      custo: z.string().optional(),
-      oficina: z.string().optional(),
-      horimetro: z.string().optional(),
-      proximaManutencao: z.string().optional(),
-      status: z.enum(["agendada", "em_andamento", "concluida"]).optional(),
-      observacoes: z.string().optional(),
-    }))
+    .input(manutencaoBaseInput)
     .mutation(async ({ ctx, input }) => {
-      const { data, proximaManutencao, ...rest } = input;
+      const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      const totais = calcularTotaisManutencao(pecas, valorMaoObra);
       const result = await db.insert(manutencoes).values({
         userId: ctx.user.id,
         ...rest,
-        data: new Date(data),
-        proximaManutencao: proximaManutencao ? new Date(proximaManutencao) : undefined,
+        data,
+        proximaManutencao: proximaManutencao || undefined,
+        valorMaoObra: totais.valorMaoObra.toFixed(2),
+        valorPecas: totais.valorPecas.toFixed(2),
+        valorTotal: totais.valorTotal.toFixed(2),
+        custo: totais.valorTotal.toFixed(2),
       });
-      return { success: true, id: (result as any).insertId };
+      const manutencaoId = Number((result as any).insertId);
+      if (pecas && pecas.length > 0) {
+        await db.insert(manutencaoPecas).values(
+          pecas.map(p => ({
+            manutencaoId,
+            nome: p.nome,
+            quantidade: p.quantidade.toFixed(2),
+            valorUnitario: p.valorUnitario.toFixed(2),
+            valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+          }))
+        );
+      }
+      return { success: true, id: manutencaoId };
+    }),
+
+  update: protectedProcedure
+    .input(manutencaoBaseInput.extend({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      const totais = calcularTotaisManutencao(pecas, valorMaoObra);
+      await db
+        .update(manutencoes)
+        .set({
+          ...rest,
+          data,
+          proximaManutencao: proximaManutencao || null,
+          valorMaoObra: totais.valorMaoObra.toFixed(2),
+          valorPecas: totais.valorPecas.toFixed(2),
+          valorTotal: totais.valorTotal.toFixed(2),
+          custo: totais.valorTotal.toFixed(2),
+        })
+        .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
+      // Substitui as peças: remove as antigas e insere as novas
+      await db.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, id));
+      if (pecas && pecas.length > 0) {
+        await db.insert(manutencaoPecas).values(
+          pecas.map(p => ({
+            manutencaoId: id,
+            nome: p.nome,
+            quantidade: p.quantidade.toFixed(2),
+            valorUnitario: p.valorUnitario.toFixed(2),
+            valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+          }))
+        );
+      }
+      return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      await db.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
       await db.delete(manutencoes).where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
       return { success: true };
     }),
