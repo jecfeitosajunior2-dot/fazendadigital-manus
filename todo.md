@@ -84,3 +84,8 @@
 - [x] Componente MobileCard reutilizável criado
 - [x] Header mobile (Topbar) com z-index e área de toque corrigidos
 - [x] Teste final em viewport iPhone (390px) — nenhuma tabela espremida, 71 testes passando
+
+## Pull-to-Refresh Mobile
+- [ ] Criar hook/componente PullToRefresh reutilizável (gesto de puxar para baixo)
+- [ ] Aplicar nas listas principais (Maquinário, Manutenção, Abastecimento, Animais, Estoque, Financeiro)
+- [ ] Indicador visual de carregamento durante o refetch
