@@ -22,18 +22,18 @@ const COMBUSTIVEL_LABEL: Record<string, string> = {
 type ColAlign = "left" | "right" | "center";
 
 const TABLE_COLUMNS: { key: string; label: string; align: ColAlign; width: string }[] = [
-  { key: "maquina", label: "Máquina", align: "left", width: "10%" },
-  { key: "tipo", label: "Tipo de Máquina", align: "left", width: "9%" },
-  { key: "combustivel", label: "Combustível", align: "left", width: "8%" },
-  { key: "data", label: "Data", align: "left", width: "7%" },
-  { key: "qtd", label: "Qtd (L)", align: "right", width: "7%" },
-  { key: "valorL", label: "Valor (L)", align: "right", width: "7%" },
-  { key: "valorTotal", label: "Valor Total", align: "right", width: "8%" },
-  { key: "odometro", label: "Leitura Odômetro", align: "right", width: "8%" },
-  { key: "estoque", label: "Estoque de Origem", align: "left", width: "10%" },
-  { key: "naFazenda", label: "Abastecido na Fazenda", align: "center", width: "8%" },
-  { key: "responsavel", label: "Responsável", align: "left", width: "9%" },
-  { key: "obs", label: "Observações", align: "left", width: "8%" },
+  { key: "maquina",     label: "Máquina",      align: "left",   width: "140px" },
+  { key: "tipo",        label: "Tipo",          align: "left",   width: "90px"  },
+  { key: "combustivel", label: "Combust.",      align: "left",   width: "80px"  },
+  { key: "data",        label: "Data",          align: "left",   width: "90px"  },
+  { key: "qtd",         label: "Qtd (L)",       align: "right",  width: "70px"  },
+  { key: "valorL",      label: "R$/L",          align: "right",  width: "70px"  },
+  { key: "valorTotal",  label: "Total (R$)",    align: "right",  width: "90px"  },
+  { key: "odometro",    label: "Odômetro",      align: "right",  width: "80px"  },
+  { key: "estoque",     label: "Estoque",       align: "left",   width: "100px" },
+  { key: "naFazenda",   label: "Na Fazenda",    align: "center", width: "80px"  },
+  { key: "responsavel", label: "Responsável",   align: "left",   width: "110px" },
+  { key: "obs",         label: "Obs.",          align: "left",   width: "80px"  },
 ];
 
 const alignClass: Record<ColAlign, string> = {
@@ -343,7 +343,7 @@ export default function AbastecimentoListPage() {
 
         {/* Tabela no desktop */}
         <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full min-w-[1200px] table-fixed border-collapse text-[11px]">
+          <table className="w-full min-w-[1080px] border-collapse text-[11px]">
             <colgroup>
               {TABLE_COLUMNS.map(col => (
                 <col key={col.key} style={{ width: col.width }} />
