@@ -770,6 +770,7 @@ const pecaInput = z.object({
   nome: z.string().min(1),
   quantidade: z.number().positive(),
   valorUnitario: z.number().min(0),
+  estoqueId: z.number().int().positive().optional().nullable(),
 });
 
 const manutencaoBaseInput = z.object({
@@ -859,6 +860,7 @@ const manutencoesRouter = router({
         await db.insert(manutencaoPecas).values(
           pecas.map(p => ({
             manutencaoId,
+            estoqueId: p.estoqueId ?? undefined,
             nome: p.nome,
             quantidade: p.quantidade.toFixed(2),
             valorUnitario: p.valorUnitario.toFixed(2),
@@ -892,6 +894,7 @@ const manutencoesRouter = router({
         await db.insert(manutencaoPecas).values(
           pecas.map(p => ({
             manutencaoId: id,
+            estoqueId: p.estoqueId ?? undefined,
             nome: p.nome,
             quantidade: p.quantidade.toFixed(2),
             valorUnitario: p.valorUnitario.toFixed(2),
