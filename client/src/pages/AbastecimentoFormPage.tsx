@@ -153,8 +153,13 @@ export default function AbastecimentoFormPage() {
     const ultimo = registros[0] ?? null;
 
     const leituraAnterior = ultimo?.horimetro
-      ? parseFloat(String(ultimo.horimetro)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " hora"
+      ? parseFloat(String(ultimo.horimetro)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " h"
       : "—";
+
+    // Validação de leitura crescente
+    const leituraAtual = form.horimetro ? parseFloat(form.horimetro.replace(",", ".")) : null;
+    const leituraAnteriorNum = ultimo?.horimetro ? parseFloat(String(ultimo.horimetro)) : null;
+    const leituraInvalida = leituraAtual !== null && leituraAnteriorNum !== null && leituraAtual < leituraAnteriorNum;
 
     const dataUltimo = ultimo?.data ? formatDateBR(ultimo.data) : "—";
 
@@ -168,8 +173,10 @@ export default function AbastecimentoFormPage() {
       }
     }
 
-    return { leituraAnterior, dataUltimo, consumoMedio };
-  }, [historicoMaquina, isEdit, editId]);
+    return { leituraAnterior, dataUltimo, consumoMedio, leituraInvalida, ultimo };
+  }, [historicoMaquina, isEdit, editId, form.horimetro]);
+
+  const { leituraInvalida, ultimo } = statsHistorico;
 
   const estoqueAtualLitros = useMemo(() => {
     if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId || !form.combustivel) return null;
@@ -321,7 +328,18 @@ export default function AbastecimentoFormPage() {
                 value={form.horimetro}
                 onChange={v => set("horimetro", v.replace(/[^\d.,]/g, ""))}
                 placeholder="Ex. 10000"
+                className={leituraInvalida ? "border-red-500" : ""}
               />
+              {leituraInvalida && (
+                <p className="text-red-500 text-[12px] mt-1">
+                  ⚠️ Leitura menor que anterior ({statsHistorico.leituraAnterior})
+                </p>
+              )}
+              {ultimo && (
+                <p className="text-gray-500 text-[12px] mt-1">
+                  Última leitura: {statsHistorico.leituraAnterior}
+                </p>
+              )}
             </div>
             <div>
               <FormLabel required>Abastecido na fazenda</FormLabel>

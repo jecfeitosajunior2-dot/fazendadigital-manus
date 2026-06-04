@@ -114,3 +114,12 @@
 - [x] Formulário de cadastro com dropdown em cascata (categoria -> subcategoria) já implementado
 - [x] Corrigir fallback SUBCATEGORIAS.Outros (chave inexistente) para array vazio seguro
 - [x] Teste Vitest validando mapeamento de subcategorias por categoria — 10 testes passando (101 total)
+
+
+## Leitura de Odômetro/Horímetro no Abastecimento
+- [x] Campo de horímetro já existe no schema e procedure
+- [x] Validação de leitura crescente (não permitir valores menores que anterior)
+- [x] Exibição de última leitura com feedback visual
+- [x] Indicador de erro quando leitura é inválida (border vermelha + aviso)
+- [x] Cálculo de consumo médio (L/hora) com base no histórico
+- [x] Testes Vitest para validação de horímetro (8 testes passando — 109 total)
