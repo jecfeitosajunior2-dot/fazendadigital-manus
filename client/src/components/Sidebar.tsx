@@ -26,6 +26,7 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
       <div className="relative group">
         <button
           onClick={handleClick}
+          style={{ minHeight: 48 }}
           className={`w-full flex items-center justify-center py-3 transition-colors ${
             isActive || isChildActive ? "text-white bg-[#1BC5BD]/20" : "text-white/70 hover:text-white hover:bg-white/5"
           }`}
@@ -43,6 +44,7 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
     <div>
       <button
         onClick={handleClick}
+        style={{ minHeight: depth === 0 ? 48 : 44 }}
         className={`w-full flex items-center text-[13px] transition-colors ${
           depth === 0 ? "px-4 py-2.5" : "pl-10 pr-4 py-[7px]"
         } ${

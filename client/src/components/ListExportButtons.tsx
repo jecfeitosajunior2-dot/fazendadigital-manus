@@ -18,22 +18,26 @@ export default function ListExportButtons({
   className,
 }: Props) {
   return (
-    <div className={`flex items-center gap-4 text-[10px] text-gray-600 shrink-0 ${className ?? ""}`}>
+    <div className={`flex items-center gap-2 sm:gap-4 text-[10px] text-gray-600 shrink-0 ${className ?? ""}`}>
       <button
         type="button"
         onClick={() => exportListSpreadsheet(headers, rows, filename)}
-        className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium"
+        className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium rounded-md px-2"
+        style={{ minHeight: 40 }}
+        title="Exportar Planilha"
       >
-        <span className="material-icons text-[16px]">table_chart</span>
-        Exportar Planilha
+        <span className="material-icons text-[18px] sm:text-[16px]">table_chart</span>
+        <span className="export-btn-label">Exportar Planilha</span>
       </button>
       <button
         type="button"
         onClick={() => exportListPdf(title, headers, rows, { alignRightFrom })}
-        className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium"
+        className="flex items-center gap-1.5 hover:text-[#4ECDC4] transition-colors font-medium rounded-md px-2"
+        style={{ minHeight: 40 }}
+        title="Exportar PDF"
       >
-        <span className="material-icons text-[16px]">picture_as_pdf</span>
-        PDF
+        <span className="material-icons text-[18px] sm:text-[16px]">picture_as_pdf</span>
+        <span className="export-btn-label">PDF</span>
       </button>
     </div>
   );

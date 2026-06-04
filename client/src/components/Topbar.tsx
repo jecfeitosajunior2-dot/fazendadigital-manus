@@ -31,7 +31,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
   return (
     <header
-      className="h-[48px] flex items-center justify-between px-4 border-b"
+      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b"
       style={{
         background: "linear-gradient(135deg, #0F172A 0%, #164E63 60%, #0891B2 100%)",
         borderBottomColor: "rgba(27,197,189,0.15)",
@@ -42,9 +42,11 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
-            className="lg:hidden text-white/70 hover:text-white p-1 rounded transition-colors"
+            className="lg:hidden text-white/70 hover:text-white rounded transition-colors flex items-center justify-center"
+            style={{ minWidth: 44, minHeight: 44 }}
+            aria-label="Abrir menu"
           >
-            <span className="material-icons text-[22px]">menu</span>
+            <span className="material-icons text-[24px]">menu</span>
           </button>
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
@@ -73,7 +75,8 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         <div className="relative">
           <button
             onClick={() => setShowUser(!showUser)}
-            className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-white/10 transition-all duration-150"
+            className="flex items-center gap-2 px-2 rounded-lg hover:bg-white/10 transition-all duration-150"
+            style={{ minHeight: 44 }}
           >
             {/* Avatar circle */}
             <div
@@ -82,13 +85,13 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
             >
               {initials}
             </div>
-            <span className="text-[13px] text-white font-medium hidden sm:inline">{displayName}</span>
+            <span className="text-[13px] text-white font-medium hidden md:inline">{displayName}</span>
             <span className="material-icons text-[14px] text-white/50">expand_more</span>
           </button>
 
           {showUser && (
             <div
-              className="absolute right-0 top-12 w-56 rounded-xl shadow-2xl border py-1 z-50"
+              className="absolute right-0 top-[52px] sm:top-12 w-64 sm:w-56 rounded-xl shadow-2xl border py-1 z-50"
               style={{
                 background: "#0F172A",
                 borderColor: "rgba(27,197,189,0.2)",
@@ -117,17 +120,17 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
                   </span>
                 )}
               </div>
-              <button className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors">
-                <span className="material-icons text-[16px] text-white/40">person</span> Perfil
+              <button className="w-full text-left px-4 py-3 sm:py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors" style={{ minHeight: 48 }}>
+                <span className="material-icons text-[18px] text-white/40">person</span> Perfil
               </button>
-              <button className="w-full text-left px-4 py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors">
-                <span className="material-icons text-[16px] text-white/40">settings</span> Configurações
+              <button className="w-full text-left px-4 py-3 sm:py-2.5 text-sm text-white/70 hover:text-white hover:bg-white/5 flex items-center gap-2.5 transition-colors" style={{ minHeight: 48 }}>
+                <span className="material-icons text-[18px] text-white/40">settings</span> Configurações
               </button>
               <hr className="my-1" style={{ borderColor: "rgba(255,255,255,0.07)" }} />
               <button
                 onClick={handleLogout}
-                className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2.5 transition-colors"
-                style={{ color: "#F87171" }}
+                className="w-full text-left px-4 py-3 sm:py-2.5 text-sm flex items-center gap-2.5 transition-colors"
+                style={{ minHeight: 48, color: "#F87171" }}
                 onMouseEnter={e => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >

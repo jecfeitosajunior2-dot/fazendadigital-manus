@@ -518,21 +518,26 @@ export default function MaquinaRegistrationPage() {
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={() => setLocation("/maquinas/visao-geral")}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 active:scale-[0.97] transition-colors flex items-center justify-center"
+              style={{ minHeight: 48 }}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isBusy}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY }}
+              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 active:scale-[0.97] transition-all hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
             >
-              {isBusy ? "Salvando..." : "Salvar maquinário"}
+              {isBusy ? (
+                <><span className="material-icons text-[16px] animate-spin">refresh</span> Salvando...</>
+              ) : (
+                <><span className="material-icons text-[16px]">save</span> Salvar maquinário</>
+              )}
             </button>
           </div>
         </div>

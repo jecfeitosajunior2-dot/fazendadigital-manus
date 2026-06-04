@@ -101,22 +101,24 @@ export default function MaquinasListPage() {
           />
         </div>
 
-        <div className="px-4 py-3 flex items-center justify-between gap-4 border-b border-gray-100 min-h-[52px]">
+        <div className="px-4 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100">
           <button
             type="button"
             onClick={() => setLocation("/maquinas/cadastro")}
-            className="h-8 px-4 rounded text-[10px] font-semibold uppercase text-white shrink-0"
-            style={{ backgroundColor: FD_PRIMARY }}
+            className="inline-flex items-center gap-2 px-4 rounded text-[12px] font-semibold uppercase text-white shrink-0 hover:brightness-95 active:scale-[0.97] transition"
+            style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
           >
+            <span className="material-icons text-[18px]">add</span>
             Cadastrar Maquinário
           </button>
-          <div className="relative shrink-0">
-            <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">search</span>
+          <div className="relative flex-1 min-w-[160px]">
+            <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">search</span>
             <input
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Buscar"
-              className="h-8 pl-8 pr-3 text-[11px] border border-gray-200 rounded w-48 bg-white"
+              className="w-full pl-10 pr-3 text-[13px] border border-gray-200 rounded bg-white"
+              style={{ minHeight: 48 }}
             />
           </div>
         </div>
@@ -192,25 +194,27 @@ export default function MaquinasListPage() {
                   <td className="px-4 py-2.5 align-middle text-gray-500 truncate" title={m.observacoes ?? ""}>
                     {m.observacoes ? m.observacoes : "-"}
                   </td>
-                  <td className="px-2 py-2.5 align-middle text-center w-[72px]">
+                  <td className="px-2 py-2.5 align-middle text-center w-[80px]">
                     <div className="inline-flex items-center justify-center gap-0.5">
                       <button
                         type="button"
                         onClick={() => setLocation(`/maquinas/cadastro?id=${m.id}`)}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                        className="action-btn-inline grid place-items-center rounded hover:bg-gray-100 text-gray-400 active:scale-95 transition"
+                        style={{ minWidth: 40, minHeight: 40 }}
                         aria-label="Editar"
                       >
-                        <span className="material-icons text-[15px] leading-none">edit</span>
+                        <span className="material-icons text-[18px] leading-none">edit</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => {
                           if (confirm("Excluir este maquinário?")) deleteMutation.mutate({ id: m.id });
                         }}
-                        className="p-1 rounded hover:bg-red-50 text-red-400"
+                        className="action-btn-inline grid place-items-center rounded hover:bg-red-50 text-red-400 active:scale-95 transition"
+                        style={{ minWidth: 40, minHeight: 40 }}
                         aria-label="Excluir"
                       >
-                        <span className="material-icons text-[15px] leading-none">delete</span>
+                        <span className="material-icons text-[18px] leading-none">delete</span>
                       </button>
                     </div>
                   </td>
@@ -220,19 +224,36 @@ export default function MaquinasListPage() {
           </table>
         </div>
 
-        <div className="px-4 py-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
-          <span>{pageSize} itens por página</span>
-          <div className="flex items-center gap-3">
-            <span>
-              Mostrando {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} itens
+        <div className="px-4 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+          <span className="hidden sm:inline">{pageSize} itens por página</span>
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <span className="tabular-nums">
+              {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} de {filtered.length}
             </span>
             <div className="flex items-center gap-1">
-              <button type="button" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-0.5 rounded disabled:opacity-30 hover:bg-gray-100">
-                <span className="material-icons text-[16px]">chevron_left</span>
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+                className="grid place-items-center rounded border border-gray-200 bg-white text-gray-500 disabled:opacity-30 enabled:hover:bg-gray-50 active:scale-95 transition"
+                style={{ minWidth: 40, minHeight: 40 }}
+              >
+                <span className="material-icons text-[18px]">chevron_left</span>
               </button>
-              <span className="px-2 py-0.5 rounded font-medium text-gray-800" style={{ backgroundColor: FD_PRIMARY, color: "#1a1a1a" }}>{page}</span>
-              <button type="button" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-0.5 rounded disabled:opacity-30 hover:bg-gray-100">
-                <span className="material-icons text-[16px]">chevron_right</span>
+              <span
+                className="grid place-items-center rounded font-semibold text-[13px] text-gray-800 tabular-nums"
+                style={{ backgroundColor: FD_PRIMARY, minWidth: 40, minHeight: 40 }}
+              >
+                {page}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="grid place-items-center rounded border border-gray-200 bg-white text-gray-500 disabled:opacity-30 enabled:hover:bg-gray-50 active:scale-95 transition"
+                style={{ minWidth: 40, minHeight: 40 }}
+              >
+                <span className="material-icons text-[18px]">chevron_right</span>
               </button>
             </div>
           </div>

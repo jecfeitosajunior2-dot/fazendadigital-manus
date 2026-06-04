@@ -193,9 +193,10 @@ export default function AbastecimentoListPage() {
           <button
             type="button"
             onClick={() => setLocation("/maquinas/abastecimento/cadastro")}
-            className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm hover:brightness-95 transition"
-            style={{ backgroundColor: FD_PRIMARY }}
+            className="inline-flex items-center gap-2 px-5 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-white shadow-sm hover:brightness-95 active:scale-[0.97] transition"
+            style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
           >
+            <span className="material-icons text-[18px]">add</span>
             Novo Abastecimento
           </button>
         </div>
@@ -205,9 +206,13 @@ export default function AbastecimentoListPage() {
           <button
             type="button"
             onClick={() => setFiltrosAbertos(o => !o)}
-            className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-gray-50/60 transition"
+            className="w-full px-5 flex items-center justify-between text-left hover:bg-gray-50/60 active:bg-gray-100 transition"
+            style={{ minHeight: 52 }}
           >
-            <span className="text-[13px] font-semibold text-gray-800">Filtros</span>
+            <span className="text-[13px] font-semibold text-gray-800 flex items-center gap-2">
+              <span className="material-icons text-[18px] text-gray-400">tune</span>
+              Filtros
+            </span>
             <span className="material-icons text-[20px] text-gray-400">
               {filtrosAbertos ? "expand_less" : "chevron_right"}
             </span>
@@ -261,19 +266,20 @@ export default function AbastecimentoListPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={aplicarFiltros}
-                  className="h-9 px-6 rounded-lg text-[11px] font-semibold uppercase tracking-wide text-white transition hover:brightness-95"
-                  style={{ backgroundColor: FD_PRIMARY }}
+                  className="flex-1 sm:flex-none px-6 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-white transition hover:brightness-95 active:scale-[0.97]"
+                  style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
                 >
                   Filtrar
                 </button>
                 <button
                   type="button"
                   onClick={limparFiltros}
-                  className="h-9 px-6 rounded-lg text-[11px] font-semibold uppercase tracking-wide text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 transition"
+                  className="flex-1 sm:flex-none px-6 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 active:scale-[0.97] transition"
+                  style={{ minHeight: 48 }}
                 >
                   Limpar Filtros
                 </button>
@@ -369,26 +375,28 @@ export default function AbastecimentoListPage() {
                       {r.observacoes || "—"}
                     </td>
                     <td className="px-2 align-middle">
-                      <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)}
-                          className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-white hover:text-[#0f766e] hover:shadow-sm border border-transparent hover:border-gray-200 transition"
+                          className="grid place-items-center rounded-md text-gray-500 hover:bg-white hover:text-[#0f766e] hover:shadow-sm border border-transparent hover:border-gray-200 active:scale-95 transition"
+                          style={{ minWidth: 40, minHeight: 40 }}
                           aria-label="Editar"
                           title="Editar"
                         >
-                          <span className="material-icons text-[16px] leading-none">edit</span>
+                          <span className="material-icons text-[18px] leading-none">edit</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => {
                             if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id });
                           }}
-                          className="grid place-items-center w-7 h-7 rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 transition"
+                          className="grid place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 active:scale-95 transition"
+                          style={{ minWidth: 40, minHeight: 40 }}
                           aria-label="Excluir"
                           title="Excluir"
                         >
-                          <span className="material-icons text-[16px] leading-none">delete</span>
+                          <span className="material-icons text-[18px] leading-none">delete</span>
                         </button>
                       </div>
                     </td>
@@ -399,21 +407,22 @@ export default function AbastecimentoListPage() {
           </table>
         </div>
 
-        {/* Paginação — 5 itens por página (iRancho) */}
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-500">
-          <span>{pageSize} itens por página</span>
-          <div className="flex items-center gap-4">
-            <span className="tabular-nums">
-              Mostrando {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} de {filtered.length} itens
+        {/* Paginação */}
+        <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+          <span className="hidden sm:inline">{pageSize} itens por página</span>
+          <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
+            <span className="tabular-nums text-[11px]">
+              {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} de {filtered.length}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage(p => p - 1)}
-                className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
+                className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
+                style={{ minWidth: 40, minHeight: 40 }}
               >
-                <span className="material-icons text-[16px] leading-none">chevron_left</span>
+                <span className="material-icons text-[18px] leading-none">chevron_left</span>
               </button>
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(p => (
                 <button
@@ -421,10 +430,10 @@ export default function AbastecimentoListPage() {
                   type="button"
                   onClick={() => setPage(p)}
                   className={cn(
-                    "grid place-items-center min-w-7 h-7 px-2 rounded-md text-[12px] font-semibold tabular-nums transition",
+                    "grid place-items-center px-2 rounded-md text-[13px] font-semibold tabular-nums active:scale-95 transition",
                     p === page ? "text-[#0f3d3a]" : "text-gray-500 hover:bg-gray-100"
                   )}
-                  style={p === page ? { backgroundColor: FD_PRIMARY } : undefined}
+                  style={p === page ? { backgroundColor: FD_PRIMARY, minWidth: 40, minHeight: 40 } : { minWidth: 40, minHeight: 40 }}
                 >
                   {p}
                 </button>
@@ -433,9 +442,10 @@ export default function AbastecimentoListPage() {
                 type="button"
                 disabled={page >= totalPages}
                 onClick={() => setPage(p => p + 1)}
-                className="grid place-items-center w-7 h-7 rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 transition"
+                className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
+                style={{ minWidth: 40, minHeight: 40 }}
               >
-                <span className="material-icons text-[16px] leading-none">chevron_right</span>
+                <span className="material-icons text-[18px] leading-none">chevron_right</span>
               </button>
             </div>
           </div>

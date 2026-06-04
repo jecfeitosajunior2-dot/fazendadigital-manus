@@ -177,15 +177,89 @@
 }
 .btn-fd-primary:active { transform: scale(0.97); }
 
-/* Mobile-specific styles */
+/* ============================================================
+   MOBILE TOUCH & USABILITY — Global Rules
+   Target: iOS/Android (≤ 767px)
+   ============================================================ */
+
+/* 1. Tap-target mínimo de 44px (Apple HIG / WCAG 2.5.5) */
 @media (max-width: 767px) {
-  /* Ensure tables scroll horizontally on mobile */
-  table {
-    font-size: 11px;
+  button,
+  [role="button"],
+  a[href],
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
   }
-  /* Compact padding on mobile */
+
+  /* Inputs e selects com altura confortável */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="date"]),
+  select,
+  textarea {
+    min-height: 48px;
+    font-size: 16px !important; /* Evita zoom automático no iOS */
+  }
+
+  /* Date inputs também */
+  input[type="date"] {
+    min-height: 48px;
+    font-size: 16px !important;
+  }
+
+  /* 2. Feedback tátil: escala ao toque */
+  button:active,
+  [role="button"]:active,
+  a[href]:active {
+    transform: scale(0.97);
+    transition: transform 0.1s ease-out;
+  }
+
+  /* 3. Tabelas: scroll horizontal e fonte legível */
+  table {
+    font-size: 12px;
+  }
+
+  /* 4. Padding de página mais generoso no mobile */
+  main {
+    padding: 0.75rem !important;
+  }
+
+  /* 5. Compact helper */
   .mobile-compact {
     padding: 0.5rem;
+  }
+
+  /* 6. Botões de ação inline (editar/excluir) — área de toque expandida */
+  .action-btn-inline {
+    min-width: 40px !important;
+    min-height: 40px !important;
+    display: grid;
+    place-items: center;
+  }
+
+  /* 7. Paginação: botões maiores */
+  .pagination-btn {
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+
+  /* 8. Cabeçalho da listagem: empilhar em coluna */
+  .list-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  /* 9. Botões de exportação: texto oculto, só ícone */
+  .export-btn-label {
+    display: none;
+  }
+
+  /* 10. Filtros: grid de 1 coluna */
+  .filter-grid {
+    grid-template-columns: 1fr !important;
   }
 }
 

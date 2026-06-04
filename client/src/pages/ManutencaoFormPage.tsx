@@ -317,28 +317,28 @@ export default function ManutencaoFormPage() {
               type="button"
               onClick={() => setAba("pecas")}
               className={cn(
-                "flex items-center justify-center gap-2 py-3.5 text-[13px] font-semibold transition-colors",
+                "flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors active:scale-[0.98]",
                 aba === "pecas"
                   ? "text-gray-800 border-b-2"
                   : "text-gray-400 border-b-2 border-transparent hover:text-gray-600"
               )}
-              style={aba === "pecas" ? { borderColor: FD_PRIMARY } : undefined}
+              style={aba === "pecas" ? { borderColor: FD_PRIMARY, minHeight: 52 } : { minHeight: 52 }}
             >
-              <span className="material-icons text-[18px]">build</span>
+              <span className="material-icons text-[20px]">build</span>
               Peças
             </button>
             <button
               type="button"
               onClick={() => setAba("prestador")}
               className={cn(
-                "flex items-center justify-center gap-2 py-3.5 text-[13px] font-semibold transition-colors",
+                "flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors active:scale-[0.98]",
                 aba === "prestador"
                   ? "text-gray-800 border-b-2"
                   : "text-gray-400 border-b-2 border-transparent hover:text-gray-600"
               )}
-              style={aba === "prestador" ? { borderColor: FD_PRIMARY } : undefined}
+              style={aba === "prestador" ? { borderColor: FD_PRIMARY, minHeight: 52 } : { minHeight: 52 }}
             >
-              <span className="material-icons text-[18px]">engineering</span>
+              <span className="material-icons text-[20px]">engineering</span>
               Prestador
             </button>
           </div>
@@ -375,9 +375,10 @@ export default function ManutencaoFormPage() {
                   <button
                     type="button"
                     onClick={adicionarPeca}
-                    className="w-full h-[42px] rounded-md text-[12px] font-semibold uppercase tracking-wide text-white transition hover:brightness-95"
-                    style={{ backgroundColor: FD_PRIMARY }}
+                    className="w-full rounded-md text-[12px] font-semibold uppercase tracking-wide text-white transition hover:brightness-95 active:scale-[0.97] flex items-center justify-center gap-1.5"
+                    style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
                   >
+                    <span className="material-icons text-[16px]">add</span>
                     Adicionar
                   </button>
                 </div>
@@ -419,10 +420,11 @@ export default function ManutencaoFormPage() {
                           <button
                             type="button"
                             onClick={() => removerPeca(i)}
-                            className="p-1 rounded hover:bg-red-50 text-red-400"
+                            className="grid place-items-center rounded hover:bg-red-50 text-red-400 active:scale-95 transition"
+                            style={{ minWidth: 40, minHeight: 40 }}
                             aria-label="Remover peça"
                           >
-                            <span className="material-icons text-[15px] leading-none">delete</span>
+                            <span className="material-icons text-[18px] leading-none">delete</span>
                           </button>
                         </td>
                       </tr>
@@ -498,11 +500,12 @@ export default function ManutencaoFormPage() {
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={() => setLocation("/maquinas/manutencao")}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 active:scale-[0.97] transition-colors flex items-center justify-center"
+              style={{ minHeight: 48 }}
             >
               Cancelar
             </button>
@@ -510,12 +513,16 @@ export default function ManutencaoFormPage() {
               type="submit"
               disabled={pending}
               className={cn(
-                "px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-white transition-colors",
+                "w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide text-white active:scale-[0.97] transition-colors flex items-center justify-center gap-2",
                 pending && "opacity-60 cursor-not-allowed"
               )}
-              style={{ backgroundColor: FD_PRIMARY }}
+              style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
             >
-              {pending ? "Salvando..." : "Salvar"}
+              {pending ? (
+                <><span className="material-icons text-[16px] animate-spin">refresh</span> Salvando...</>
+              ) : (
+                <><span className="material-icons text-[16px]">save</span> Salvar</>
+              )}
             </button>
           </div>
         </div>

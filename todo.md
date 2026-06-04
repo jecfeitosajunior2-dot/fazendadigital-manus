@@ -60,3 +60,17 @@
 - [x] Página de Listagem de Manutenções (filtros, paginação, exportação) no padrão FD
 - [x] Rotas: /maquinas/manutencao (lista) e /maquinas/manutencao/cadastro (form)
 - [x] Testes Vitest da lógica de totais (8 testes passando)
+
+## Melhorias Mobile (UX/Toque)
+- [x] CSS global: regras touch-action, tap-highlight, scroll-behavior e min-height para inputs/selects
+- [x] Topbar: botão hamburger e sino com minHeight/minWidth 44px
+- [x] Sidebar: itens de menu com minHeight 48px e overlay de fechamento
+- [x] ListExportButtons: botões com minHeight 44px e labels ocultos no mobile
+- [x] NotificationCenter: botão sino com área de toque 44x44px
+- [x] ManutencaoListPage: botão Nova Manutenção 48px, filtros full-width, ações 40x40px, paginação 40x40px
+- [x] ManutencaoFormPage: abas 52px, botão Adicionar 48px, remover peça 40x40px, salvar/cancelar full-width 48px
+- [x] MaquinasListPage: botão Cadastrar 48px, busca full-width, ações 40x40px, paginação 40x40px
+- [x] AbastecimentoListPage: botão Novo 48px, filtros full-width, ações 40x40px, paginação 40x40px
+- [x] AbastecimentoFormPage: botões salvar/cancelar full-width 48px com ícones
+- [x] MaquinaRegistrationPage: botões salvar/cancelar full-width 48px com ícones
+- [x] Botão Filtros accordion: minHeight 52px com ícone "tune" em todas as listas
