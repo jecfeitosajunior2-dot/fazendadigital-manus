@@ -88,17 +88,22 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [location] = useLocation();
 
-  // Fecha o menu mobile apenas após navegação (não no mount inicial)
-  const isFirstRender = useRef(true);
+  // Fecha o menu mobile APENAS quando a rota muda (navegação).
+  // IMPORTANTE: depender somente de `location`. Incluir `mobileOpen` aqui
+  // fazia o menu fechar no mesmo instante em que era aberto.
+  const prevLocation = useRef(location);
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    if (prevLocation.current !== location) {
+      prevLocation.current = location;
+      onMobileCloseRef.current?.();
     }
-    if (mobileOpen && onMobileClose) {
-      onMobileClose();
-    }
-  }, [location, mobileOpen, onMobileClose]);
+  }, [location]);
+
+  // Mantém a referência mais recente de onMobileClose sem retrigar o effect acima
+  const onMobileCloseRef = useRef(onMobileClose);
+  useEffect(() => {
+    onMobileCloseRef.current = onMobileClose;
+  }, [onMobileClose]);
 
   return (
     <>
