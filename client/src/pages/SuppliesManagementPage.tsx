@@ -12,9 +12,11 @@ import { toast } from "sonner";
 import { FormLabel, FieldBox } from "@/components/FormFields";
 import { formatDateBR } from "@/lib/date-utils";
 
+type FormState = { data: string; quantidade: string; responsavel: string; observacoes: string };
+
 export default function SuppliesManagementPage() {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ data: "", quantidade: "", responsavel: "", observacoes: "" });
+  const [form, setForm] = useState<FormState>({ data: "", quantidade: "", responsavel: "", observacoes: "" });
 
   const { data: batidas, isLoading, refetch } = trpc.nutricao.listBatidas.useQuery();
   const createMutation = trpc.nutricao.createBatida.useMutation({
@@ -25,7 +27,7 @@ export default function SuppliesManagementPage() {
 
   const handleSubmit = () => {
     if (!form.data) { toast.error("Data é obrigatória"); return; }
-    createMutation.mutate({ data: form.data, quantidade: form.quantidade || undefined, responsavel: form.responsavel || undefined, observacoes: form.observacoes || undefined });
+    createMutation.mutate({ data: form.data, quantidade: form.quantidade || undefined, responsavel: form.responsavel.trim() || undefined, observacoes: form.observacoes.trim() || undefined });
   };
 
   return (
@@ -41,10 +43,10 @@ export default function SuppliesManagementPage() {
             filename="batidas"
             headers={["Data", "Quantidade (kg)", "Responsável", "Observações"]}
             rows={(batidas ?? []).map(b => [
-              b.data,
-              b.quantidade ?? "",
-              b.responsavel ?? "",
-              b.observacoes ?? "",
+              String(b.data ?? ""),
+              String(b.quantidade ?? ""),
+              String(b.responsavel ?? ""),
+              String(b.observacoes ?? ""),
             ])}
             alignRightFrom={1}
           />

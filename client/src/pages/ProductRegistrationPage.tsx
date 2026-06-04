@@ -160,7 +160,7 @@ export default function ProductRegistrationPage() {
       label: rotuloUnidade(u.sigla),
     }));
     if (form.unidade && !opts.some(o => o.value === form.unidade)) {
-      opts.push({ value: form.unidade, label: rotuloUnidade(form.unidade) });
+      opts.push({ value: form.unidade as any, label: rotuloUnidade(form.unidade) });
     }
     return opts;
   }, [form.unidade]);
@@ -168,7 +168,7 @@ export default function ProductRegistrationPage() {
   const categoriasOpcoes = useMemo(() => {
     const opts = CATEGORIAS_PRODUTO.map(c => ({ value: c, label: c }));
     if (form.categoria && !opts.some(o => o.value === form.categoria)) {
-      opts.push({ value: form.categoria, label: form.categoria });
+      opts.push({ value: form.categoria as any, label: form.categoria as any });
     }
     return opts;
   }, [form.categoria]);
@@ -277,8 +277,9 @@ export default function ProductRegistrationPage() {
     carenciaAbateDias: form.carenciaAbate.trim()
       ? parseInt(form.carenciaAbate, 10)
       : null,
-    carenciaAbateUnidade: form.carenciaAbate.trim() ? "d" : null,
+    carenciaAbateUnidade: (form.carenciaAbate.trim() ? "d" : null) as "d" | "h" | null,
     carenciaLeiteDias: null,
+    carenciaLeiteUnidade: null,
     observacoesCarencia: null,
   });
 
@@ -518,7 +519,6 @@ export default function ProductRegistrationPage() {
                 <FormLabel>Carência de abate (dias)</FormLabel>
                 <FormInput
                   type="number"
-                  min={0}
                   value={form.carenciaAbate}
                   onChange={v => set("carenciaAbate", v.replace(/\D/g, ""))}
                   placeholder="0"

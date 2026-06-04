@@ -91,7 +91,7 @@ function ProtectedRoutes() {
       <Route path="/manejos/basicos" component={AdvancedManagementPage} />
 
       {/* Insumos */}
-      <Route path="/insumos/visao-geral" component={InsumosVisaoGeralPage} />
+      <Route path="/insumos/visao-geral" component={() => <InsumosVisaoGeralPage />} />
       <Route path="/insumos/lista-produtos" component={EstoquePage} />
       <Route path="/insumos/estoque" component={() => <RedirectTo to="/insumos/lista-produtos" />} />
       <Route path="/insumos/movimentacao" component={() => <InsumosVisaoGeralPage variant="movimentacao" />} />

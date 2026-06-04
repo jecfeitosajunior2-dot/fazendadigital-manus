@@ -1,23 +1,25 @@
 export const CATEGORIAS_PRODUTO = [
-  "Medicamentos",
-  "Vacinas",
-  "Reprodução",
+  "Farmácia",
+  "Nutricionais",
   "Combustíveis",
-  "Rações e Suplementos",
-  "Defensivos",
-  "Material de Manejo",
-  "Outros",
+  "Lubrificantes",
+  "Ferramentas",
+  "Peças",
+  "Agrícolas",
+  "Epis",
+  "Outros Insumos",
 ] as const;
 
 export const SUBCATEGORIAS: Record<string, string[]> = {
-  Medicamentos: ["Antibiótico", "Anti-inflamatório", "Vermífugo", "Hormônio", "Outro"],
-  Vacinas: ["Clostridioses", "Reprodutiva", "Sanitária", "Outra"],
-  Reprodução: ["Sêmen", "Embrião", "Implante", "Hormônio", "Outro"],
+  Farmácia: ["Antibiótico", "Anti-inflamatório", "Vermífugo", "Hormônio", "Outro"],
+  Nutricionais: ["Mineral", "Proteico", "Energético", "Suplemento", "Outro"],
   Combustíveis: ["Diesel", "Gasolina", "Etanol", "Arla", "Outro"],
-  "Rações e Suplementos": ["Mineral", "Proteico", "Energético", "Outro"],
-  Defensivos: ["Herbicida", "Carrapaticida", "Outro"],
-  "Material de Manejo": ["Identificação", "Equipamento", "Outro"],
-  Outros: ["Geral"],
+  Lubrificantes: ["Óleo Motor", "Óleo Hidráulico", "Graxa", "Fluido", "Outro"],
+  Ferramentas: ["Manual", "Elétrica", "Pneumática", "Acessório", "Outro"],
+  Peças: ["Motor", "Hidráulica", "Elétrica", "Estrutura", "Outro"],
+  Agrícolas: ["Sementes", "Fertilizante", "Defensivo", "Implemento", "Outro"],
+  Epis: ["Proteção Pessoal", "Segurança", "Vestuário", "Equipamento", "Outro"],
+  "Outros Insumos": ["Geral", "Diversos"],
 };
 
 /** Unidades base — siglas exibidas no cadastro (reconhecimento rápido). */

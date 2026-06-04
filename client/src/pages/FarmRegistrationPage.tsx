@@ -105,7 +105,7 @@ export function FarmRegistrationPage() {
 
   useEffect(() => {
     if (!isEdit && user?.name && !initialized) {
-      setForm(f => ({ ...f, responsavel: user.name }));
+      setForm(f => ({ ...f, responsavel: user.name || "" }));
       setInitialized(true);
     }
   }, [user, isEdit, initialized]);

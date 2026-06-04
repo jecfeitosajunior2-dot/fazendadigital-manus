@@ -225,6 +225,7 @@ export const manutencoes = mysqlTable("manutencoes", {
 export const manutencaoPecas = mysqlTable("manutencao_pecas", {
   id: int("id").primaryKey().autoincrement(),
   manutencaoId: int("manutencaoId").notNull(),
+  estoqueId: int("estoqueId"),
   nome: varchar("nome", { length: 200 }).notNull(),
   quantidade: decimal("quantidade", { precision: 10, scale: 2 }).notNull().default("1"),
   valorUnitario: decimal("valorUnitario", { precision: 10, scale: 2 }).notNull().default("0"),

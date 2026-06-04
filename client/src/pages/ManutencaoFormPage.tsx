@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -12,6 +12,9 @@ import {
   FormTextarea,
   FormDatePicker,
 } from "@/components/FormFields";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
+import { Button } from "@/components/ui/button";
 
 const TIPOS_MANUTENCAO = [
   { value: "Preventiva", label: "Preventiva" },
@@ -30,6 +33,7 @@ type PecaItem = {
   nome: string;
   quantidade: number;
   valorUnitario: number;
+  estoqueId?: number | null;
 };
 
 type FormState = {
@@ -92,6 +96,9 @@ export default function ManutencaoFormPage() {
   const [pecaNome, setPecaNome] = useState("");
   const [pecaQtd, setPecaQtd] = useState("1");
   const [pecaValor, setPecaValor] = useState("");
+  const [pecaOpen, setPecaOpen] = useState(false);
+  const [pecaSearch, setPecaSearch] = useState("");
+  const [pecaEscolhida, setPecaEscolhida] = useState<{ id: number; nome: string; valorUnitario?: string | number | null } | null>(null);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -101,6 +108,9 @@ export default function ManutencaoFormPage() {
     { id: editId },
     { enabled: isEdit }
   );
+  const { data: estoqueItems = [] } = trpc.estoque.listByCategories.useQuery({
+    categorias: ["Peças", "Lubrificantes"],
+  });
   const utils = trpc.useUtils();
 
   const createMutation = trpc.manutencoes.create.useMutation({
@@ -144,6 +154,7 @@ export default function ManutencaoFormPage() {
         nome: p.nome,
         quantidade: parseFloat(String(p.quantidade)) || 0,
         valorUnitario: parseFloat(String(p.valorUnitario)) || 0,
+        estoqueId: p.estoqueId,
       }))
     );
     initializedForId.current = registro.id;
@@ -162,16 +173,33 @@ export default function ManutencaoFormPage() {
 
   const totalGeral = totalPecas + valorMaoObraNum;
 
+  const handleSelectEstoque = (item: typeof estoqueItems[0]) => {
+    setPecaNome(item.nome);
+    setPecaValor(item.valorUnitario ? formatCurrencyBrl(String(Math.round(parseFloat(String(item.valorUnitario)) * 100))) : "");
+    setPecaEscolhida({ id: item.id, nome: item.nome, valorUnitario: item.valorUnitario ?? undefined });
+    setPecaOpen(false);
+    setPecaSearch("");
+  };
+
+  const filteredEstoque = useMemo(() => {
+    if (!pecaSearch.trim()) return estoqueItems;
+    const search = pecaSearch.toLowerCase();
+    return estoqueItems.filter(item => item.nome.toLowerCase().includes(search));
+  }, [estoqueItems, pecaSearch]);
+
   const adicionarPeca = () => {
     const nome = pecaNome.trim();
     const qtd = parseFloat(pecaQtd.replace(",", "."));
     const valor = pecaValor ? parseFloat(parseCurrencyBrl(pecaValor) || "0") : 0;
     if (!nome) return toast.error("Informe o nome da peça.");
     if (Number.isNaN(qtd) || qtd <= 0) return toast.error("Informe uma quantidade válida.");
-    setPecas(prev => [...prev, { nome, quantidade: qtd, valorUnitario: valor }]);
+    setPecas(prev => [...prev, { nome, quantidade: qtd, valorUnitario: valor, estoqueId: pecaEscolhida?.id }]);
     setPecaNome("");
     setPecaQtd("1");
     setPecaValor("");
+    setPecaEscolhida(null);
+    setPecaSearch("");
+    setPecaOpen(false);
   };
 
   const removerPeca = (index: number) => {
@@ -200,6 +228,7 @@ export default function ManutencaoFormPage() {
         nome: p.nome,
         quantidade: p.quantidade,
         valorUnitario: p.valorUnitario,
+        estoqueId: p.estoqueId,
       })),
     };
 
@@ -348,11 +377,55 @@ export default function ManutencaoFormPage() {
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end mb-4">
                 <div className="sm:col-span-5">
                   <FormLabel>Peça</FormLabel>
-                  <FormInput
-                    value={pecaNome}
-                    onChange={setPecaNome}
-                    placeholder="Nome da peça"
-                  />
+                  <Popover open={pecaOpen} onOpenChange={setPecaOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal"
+                        style={{ minHeight: 40 }}
+                      >
+                        {pecaNome || "Selecione uma peça..."}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0" align="start">
+                      <Command>
+                        <CommandInput
+                          placeholder="Buscar peça..."
+                          value={pecaSearch}
+                          onValueChange={setPecaSearch}
+                        />
+                        <CommandList>
+                          <CommandGroup>
+                            {filteredEstoque.length === 0 ? (
+                              <div className="px-2 py-6 text-center text-sm text-gray-500">
+                                Nenhuma peça encontrada.
+                              </div>
+                            ) : (
+                              filteredEstoque.map(item => (
+                                <CommandItem
+                                  key={item.id}
+                                  value={String(item.id)}
+                                  onSelect={() => handleSelectEstoque(item)}
+                                >
+                                  <div className="flex-1">
+                                    <div className="font-medium">{item.nome}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {item.categoria} {item.subcategoria ? `• ${item.subcategoria}` : ""}
+                                    </div>
+                                  </div>
+                                  {item.valorUnitario && (
+                                    <div className="text-xs font-semibold text-gray-600">
+                                      R$ {parseFloat(String(item.valorUnitario)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                    </div>
+                                  )}
+                                </CommandItem>
+                              ))
+                            )}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="sm:col-span-2">
                   <FormLabel>Qtd</FormLabel>

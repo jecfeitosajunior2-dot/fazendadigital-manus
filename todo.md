@@ -89,3 +89,12 @@
 - [ ] Criar hook/componente PullToRefresh reutilizável (gesto de puxar para baixo)
 - [ ] Aplicar nas listas principais (Maquinário, Manutenção, Abastecimento, Animais, Estoque, Financeiro)
 - [ ] Indicador visual de carregamento durante o refetch
+
+## Categorias de Estoque
+- [x] Adicionar procedure listByCategories ao estoqueRouter para buscar itens por categoria
+- [x] Adicionar coluna estoqueId à tabela manutencao_pecas para rastreabilidade
+- [x] Implementar autocomplete de peças no formulário de manutenção com busca em tempo real
+- [x] Auto-preenchimento de preço unitário ao selecionar peça do estoque
+- [x] Teste Vitest para procedure listByCategories (4 testes passando)
+- [ ] Integrar categorias no formulário de produtos (Farmácia, Nutricionais, Combustíveis, Lubrificantes, Ferramentas, Peças, Agrícolas, Epis, Outros Insumos)
+- [ ] Filtros por categoria no formulário de manutenção

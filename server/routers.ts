@@ -1428,6 +1428,25 @@ const estoqueRouter = router({
         .where(eq(estoque.id, input.estoqueId));
       return { success: true };
     }),
+
+  listByCategories: protectedProcedure
+    .input(z.object({ categorias: z.array(z.string()).min(1) }))
+    .query(async ({ input }) => {
+      return db
+        .select({
+          id: estoque.id,
+          nome: estoque.nome,
+          categoria: estoque.categoria,
+          subcategoria: estoque.subcategoria,
+          unidade: estoque.unidade,
+          quantidade: estoque.quantidade,
+          valorUnitario: estoque.valorUnitario,
+          fabricante: estoque.fabricante,
+        })
+        .from(estoque)
+        .where(inArray(estoque.categoria, input.categorias))
+        .orderBy(estoque.nome);
+    }),
 });
 
 // ─── FINANCEIRO ROUTER ────────────────────────────────────────────────────────
