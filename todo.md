@@ -74,3 +74,13 @@
 - [x] AbastecimentoFormPage: botões salvar/cancelar full-width 48px com ícones
 - [x] MaquinaRegistrationPage: botões salvar/cancelar full-width 48px com ícones
 - [x] Botão Filtros accordion: minHeight 52px com ícone "tune" em todas as listas
+
+## Polimento Mobile Completo (versão profissional)
+- [ ] Auditoria mobile real (iPhone 390px) página por página
+- [ ] Bottom navigation bar com módulos principais
+- [ ] Tabelas viram cards no mobile (todas as listagens)
+- [ ] Dashboard: cards de resumo, gráficos e central de alertas otimizados para mobile
+- [ ] Formulários: campos, abas, botões e teclado otimizados
+- [ ] Modais e dropdowns adaptados para mobile
+- [ ] Header mobile refinado
+- [ ] Teste final em viewport iPhone e validação

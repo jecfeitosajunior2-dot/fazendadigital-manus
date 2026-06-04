@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import MobileCard from "@/components/MobileCard";
 import { cn } from "@/lib/utils";
 import { resolveValoresAbastecimento } from "@/lib/combustivel-estoque";
 
@@ -289,7 +290,42 @@ export default function AbastecimentoListPage() {
         </div>
 
         {/* Tabela plana — todas as colunas visíveis */}
-        <div className="overflow-x-auto">
+        {/* Cards no mobile */}
+        <div className="lg:hidden px-3 py-3 space-y-3">
+          {isLoading && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+          )}
+          {!isLoading && pageItems.length === 0 && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Nenhum abastecimento registrado.</div>
+          )}
+          {!isLoading && pageItems.map(r => {
+            const maquina = maquinaMap.get(r.maquinaId);
+            const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
+            return (
+              <MobileCard
+                key={r.id}
+                title={maquina?.nome ?? `#${r.maquinaId}`}
+                subtitle={[r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "", formatDate(r.data)].filter(Boolean).join(" · ") || undefined}
+                badge={valorTotal != null ? (
+                  <span className="text-[13px] font-semibold text-gray-900 tabular-nums">R$ {formatNum(valorTotal)}</span>
+                ) : undefined}
+                fields={[
+                  { label: "Qtd (L)", value: formatNum(r.litros) },
+                  { label: "Valor (L)", value: valorLitro != null ? `R$ ${formatNum(valorLitro, 3)}` : "" },
+                  { label: "Odômetro", value: r.horimetro ? formatNum(r.horimetro) : "" },
+                  { label: "Responsável", value: r.responsavel || "" },
+                ]}
+                actions={[
+                  { icon: "edit", label: "Editar", onClick: () => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`) },
+                  { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id }); } },
+                ]}
+              />
+            );
+          })}
+        </div>
+
+        {/* Tabela no desktop */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full min-w-[1200px] table-fixed border-collapse text-[11px]">
             <colgroup>
               {TABLE_COLUMNS.map(col => (

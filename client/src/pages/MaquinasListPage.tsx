@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import MobileCard from "@/components/MobileCard";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -123,7 +124,39 @@ export default function MaquinasListPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Cards no mobile */}
+        <div className="lg:hidden px-3 py-3 space-y-3">
+          {isLoading && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+          )}
+          {!isLoading && pageItems.length === 0 && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Sem dados</div>
+          )}
+          {!isLoading && pageItems.map(m => (
+            <MobileCard
+              key={m.id}
+              title={m.nome}
+              subtitle={[m.tipo, m.marca, m.modelo].filter(Boolean).join(" · ") || undefined}
+              badge={m.valor ? (
+                <span className="text-[13px] font-semibold text-gray-900 tabular-nums">
+                  R$ {parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              ) : undefined}
+              fields={[
+                { label: "Ano", value: m.ano ?? "" },
+                { label: "Placa", value: m.placa ? String(m.placa).toUpperCase() : "" },
+                { label: "Fazenda", value: m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "" },
+              ]}
+              actions={[
+                { icon: "edit", label: "Editar", onClick: () => setLocation(`/maquinas/cadastro?id=${m.id}`) },
+                { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Excluir este maquinário?")) deleteMutation.mutate({ id: m.id }); } },
+              ]}
+            />
+          ))}
+        </div>
+
+        {/* Tabela no desktop */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full min-w-[960px] table-fixed text-[11px] border-collapse">
             <colgroup>
               {TABLE_COLUMNS.map(col => (

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import MobileCard from "@/components/MobileCard";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
@@ -53,8 +54,8 @@ export function AnimaisPage() {
             rows={exportData}
             alignRightFrom={5}
           />
-          <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium" style={{ backgroundColor: "#2D5A5A" }}>
-            <span className="material-icons text-[14px]">add</span>
+          <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center justify-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto" style={{ backgroundColor: "#2D5A5A", minHeight: 44 }}>
+            <span className="material-icons text-[16px]">add</span>
             Novo Animal
           </button>
         </div>
@@ -82,8 +83,42 @@ export function AnimaisPage() {
         </select>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Cards no mobile */}
+      <div className="lg:hidden space-y-3">
+        {isLoading ? (
+          <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+        ) : paginated.length === 0 ? (
+          <div className="py-10 text-center text-gray-400 text-[13px]">Nenhum animal encontrado.</div>
+        ) : paginated.map(animal => (
+          <MobileCard
+            key={animal.id}
+            title={animal.brinco || animal.nome || "—"}
+            subtitle={[animal.nome && animal.brinco ? animal.nome : "", animal.raca].filter(Boolean).join(" · ") || undefined}
+            badge={
+              <div className="flex flex-col items-end gap-1">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
+                  {animal.sexo === "macho" ? "Macho" : "Fêmea"}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.status === "ativo" ? "bg-green-100 text-green-700" : animal.status === "vendido" ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
+                  {animal.status}
+                </span>
+              </div>
+            }
+            fields={[
+              { label: "Peso (kg)", value: animal.pesoAtual ? Number(animal.pesoAtual).toFixed(1) : "" },
+              { label: "Raça", value: animal.raca || "" },
+            ]}
+            actions={[
+              { icon: "visibility", label: "Detalhes", onClick: () => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`) },
+              { icon: "edit", label: "Editar", onClick: () => setLocation(`/rebanho/editar-animal?id=${animal.id}`) },
+              { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); } },
+            ]}
+          />
+        ))}
+      </div>
+
+      {/* Table no desktop */}
+      <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>

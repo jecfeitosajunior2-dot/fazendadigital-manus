@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import MobileCard from "@/components/MobileCard";
 import { cn } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
 
@@ -277,8 +278,46 @@ export default function ManutencaoListPage() {
           )}
         </div>
 
-        {/* Tabela */}
-        <div className="overflow-x-auto">
+        {/* Cards no mobile */}
+        <div className="lg:hidden px-3 py-3 space-y-3">
+          {isLoading && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+          )}
+          {!isLoading && pageItems.length === 0 && (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Nenhuma manutenção registrada.</div>
+          )}
+          {!isLoading && pageItems.map(r => {
+            const maquina = maquinaMap.get(r.maquinaId);
+            return (
+              <MobileCard
+                key={r.id}
+                title={maquina?.nome ?? `#${r.maquinaId}`}
+                subtitle={[r.tipo, formatDateBR(r.data)].filter(Boolean).join(" · ") || undefined}
+                badge={
+                  r.status ? (
+                    <span className={cn("inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold", STATUS_STYLE[r.status] ?? "bg-gray-50 text-gray-500")}>
+                      {STATUS_LABEL[r.status] ?? r.status}
+                    </span>
+                  ) : undefined
+                }
+                fields={[
+                  { label: "Peças", value: `R$ ${formatNum(r.valorPecas)}` },
+                  { label: "Mão de obra", value: `R$ ${formatNum(r.valorMaoObra)}` },
+                  { label: "Total", value: `R$ ${formatNum(r.valorTotal)}`, emphasis: true },
+                  { label: "Prestador", value: r.prestadorNome || "" },
+                  { label: "Próxima", value: r.proximaManutencao ? formatDateBR(r.proximaManutencao) : "" },
+                ]}
+                actions={[
+                  { icon: "edit", label: "Editar", onClick: () => setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`) },
+                  { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Excluir esta manutenção?")) deleteMutation.mutate({ id: r.id }); } },
+                ]}
+              />
+            );
+          })}
+        </div>
+
+        {/* Tabela no desktop */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full min-w-[1100px] table-fixed border-collapse text-[11px]">
             <colgroup>
               {TABLE_COLUMNS.map(col => (

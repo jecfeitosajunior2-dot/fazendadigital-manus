@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import BottomNav from "./BottomNav";
 
 const LayoutShellContext = createContext(false);
 
@@ -47,10 +48,11 @@ export function AppShell({ children }: AppLayoutProps) {
         <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />
-          <main className="flex-1 overflow-y-auto p-4">
+          <main className="flex-1 overflow-y-auto p-4 pb-[calc(72px+env(safe-area-inset-bottom,0px))] lg:pb-4">
             {children}
           </main>
         </div>
+        <BottomNav onOpenMenu={() => setMobileOpen(o => !o)} menuOpen={mobileOpen} />
       </div>
     </LayoutShellContext.Provider>
   );
