@@ -15,6 +15,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const TIPOS_MANUTENCAO = [
   { value: "Preventiva", label: "Preventiva" },
@@ -34,6 +35,7 @@ type PecaItem = {
   quantidade: number;
   valorUnitario: number;
   estoqueId?: number | null;
+  unidade?: string | null;
 };
 
 type FormState = {
@@ -98,7 +100,8 @@ export default function ManutencaoFormPage() {
   const [pecaValor, setPecaValor] = useState("");
   const [pecaOpen, setPecaOpen] = useState(false);
   const [pecaSearch, setPecaSearch] = useState("");
-  const [pecaEscolhida, setPecaEscolhida] = useState<{ id: number; nome: string; valorUnitario?: string | number | null } | null>(null);
+  const [pecaEscolhida, setPecaEscolhida] = useState<{ id: number; nome: string; valorUnitario?: string | number | null; quantidadeDisponivel?: number; unidade?: string | null } | null>(null);
+  const confirm = useConfirm();
   const [categoriasFiltro, setCategoriasFiltro] = useState<string[]>(["Peças", "Lubrificantes"]);
   const [categoriasDisponiveis] = useState(["Farmácia", "Nutricionais", "Combustíveis", "Lubrificantes", "Ferramentas", "Peças", "Agrícolas", "Epis", "Outros Insumos"]);
   const [mostrarFiltroCategoria, setMostrarFiltroCategoria] = useState(false);
@@ -181,7 +184,13 @@ export default function ManutencaoFormPage() {
   const handleSelectEstoque = (item: typeof estoqueItems[0]) => {
     setPecaNome(item.nome);
     setPecaValor(item.valorUnitario ? formatCurrencyBrl(String(Math.round(parseFloat(String(item.valorUnitario)) * 100))) : "");
-    setPecaEscolhida({ id: item.id, nome: item.nome, valorUnitario: item.valorUnitario ?? undefined });
+    setPecaEscolhida({
+      id: item.id,
+      nome: item.nome,
+      valorUnitario: item.valorUnitario ?? undefined,
+      quantidadeDisponivel: item.quantidade != null ? parseFloat(String(item.quantidade)) : undefined,
+      unidade: item.unidade ?? undefined,
+    });
     setPecaOpen(false);
     setPecaSearch("");
   };
@@ -198,7 +207,25 @@ export default function ManutencaoFormPage() {
     const valor = pecaValor ? parseFloat(parseCurrencyBrl(pecaValor) || "0") : 0;
     if (!nome) return toast.error("Informe o nome da peça.");
     if (Number.isNaN(qtd) || qtd <= 0) return toast.error("Informe uma quantidade válida.");
-    setPecas(prev => [...prev, { nome, quantidade: qtd, valorUnitario: valor, estoqueId: pecaEscolhida?.id }]);
+
+    // Validação de saldo de estoque (apenas para itens vinculados ao estoque)
+    if (pecaEscolhida?.id != null && pecaEscolhida.quantidadeDisponivel != null) {
+      const disponivel = pecaEscolhida.quantidadeDisponivel;
+      const jaAdicionado = pecas
+        .filter(p => p.estoqueId === pecaEscolhida.id)
+        .reduce((s, p) => s + p.quantidade, 0);
+      const unidade = pecaEscolhida.unidade ? ` ${pecaEscolhida.unidade}` : "";
+      if (jaAdicionado + qtd > disponivel) {
+        const restante = Math.max(disponivel - jaAdicionado, 0);
+        return toast.error(
+          `Estoque insuficiente para "${nome}". Disponível: ${disponivel.toLocaleString("pt-BR")}${unidade}` +
+            (jaAdicionado > 0 ? ` (já adicionado: ${jaAdicionado.toLocaleString("pt-BR")}${unidade}, resta ${restante.toLocaleString("pt-BR")}${unidade})` : "") +
+            `.`
+        );
+      }
+    }
+
+    setPecas(prev => [...prev, { nome, quantidade: qtd, valorUnitario: valor, estoqueId: pecaEscolhida?.id, unidade: pecaEscolhida?.unidade }]);
     setPecaNome("");
     setPecaQtd("1");
     setPecaValor("");
@@ -207,8 +234,16 @@ export default function ManutencaoFormPage() {
     setPecaOpen(false);
   };
 
-  const removerPeca = (index: number) => {
-    setPecas(prev => prev.filter((_, i) => i !== index));
+  const removerPeca = async (index: number) => {
+    const peca = pecas[index];
+    const ok = await confirm({
+      title: "Remover peça",
+      description: `Tem certeza que deseja remover "${peca?.nome ?? "esta peça"}" da lista?`,
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) setPecas(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -459,11 +494,21 @@ export default function ManutencaoFormPage() {
                                       {item.categoria} {item.subcategoria ? `• ${item.subcategoria}` : ""}
                                     </div>
                                   </div>
-                                  {item.valorUnitario && (
-                                    <div className="text-xs font-semibold text-gray-600">
-                                      R$ {parseFloat(String(item.valorUnitario)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                  <div className="text-right">
+                                    {item.valorUnitario && (
+                                      <div className="text-xs font-semibold text-gray-600">
+                                        R$ {parseFloat(String(item.valorUnitario)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                      </div>
+                                    )}
+                                    <div className={cn(
+                                      "text-[10px] font-medium",
+                                      item.quantidade != null && parseFloat(String(item.quantidade)) > 0 ? "text-emerald-600" : "text-red-500"
+                                    )}>
+                                      {item.quantidade != null
+                                        ? `${parseFloat(String(item.quantidade)).toLocaleString("pt-BR")}${item.unidade ? " " + item.unidade : ""} em estoque`
+                                        : "sem controle"}
                                     </div>
-                                  )}
+                                  </div>
                                 </CommandItem>
                               ))
                             )}
@@ -480,6 +525,14 @@ export default function ManutencaoFormPage() {
                     onChange={v => setPecaQtd(v.replace(/[^\d.,]/g, ""))}
                     placeholder="1"
                   />
+                  {pecaEscolhida?.quantidadeDisponivel != null && (
+                    <p className={cn(
+                      "mt-1 text-[10px] font-medium",
+                      pecaEscolhida.quantidadeDisponivel > 0 ? "text-gray-500" : "text-red-500"
+                    )}>
+                      Disp.: {pecaEscolhida.quantidadeDisponivel.toLocaleString("pt-BR")}{pecaEscolhida.unidade ? " " + pecaEscolhida.unidade : ""}
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-3">
                   <FormLabel>Valor Unit.</FormLabel>

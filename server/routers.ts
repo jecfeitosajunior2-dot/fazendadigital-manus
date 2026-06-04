@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
@@ -805,6 +806,43 @@ export function calcularTotaisManutencao(
   };
 }
 
+/**
+ * Valida se as peças vinculadas ao estoque não ultrapassam o saldo disponível.
+ * Soma as quantidades por estoqueId e compara com a quantidade em estoque.
+ * Lança TRPCError BAD_REQUEST se alguma peça exceder o saldo.
+ */
+export async function validarSaldoEstoquePecas(
+  pecas: { nome: string; quantidade: number; estoqueId?: number | null }[] | undefined
+) {
+  if (!pecas || pecas.length === 0) return;
+  // Agrupa quantidades por estoqueId (ignora itens sem vínculo de estoque)
+  const porEstoque = new Map<number, number>();
+  for (const p of pecas) {
+    if (p.estoqueId == null) continue;
+    porEstoque.set(p.estoqueId, (porEstoque.get(p.estoqueId) ?? 0) + p.quantidade);
+  }
+  if (porEstoque.size === 0) return;
+  const ids = Array.from(porEstoque.keys());
+  const itens = await db
+    .select({ id: estoque.id, nome: estoque.nome, quantidade: estoque.quantidade, unidade: estoque.unidade })
+    .from(estoque)
+    .where(inArray(estoque.id, ids));
+  const mapEstoque = new Map(itens.map(i => [i.id, i]));
+  for (const [estoqueId, qtdSolicitada] of porEstoque.entries()) {
+    const item = mapEstoque.get(estoqueId);
+    if (!item || item.quantidade == null) continue; // sem controle de estoque
+    const disponivel = parseFloat(String(item.quantidade));
+    if (Number.isNaN(disponivel)) continue;
+    if (qtdSolicitada > disponivel) {
+      const unidade = item.unidade ? ` ${item.unidade}` : "";
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Estoque insuficiente para "${item.nome}". Solicitado: ${qtdSolicitada.toLocaleString("pt-BR")}${unidade}, disponível: ${disponivel.toLocaleString("pt-BR")}${unidade}.`,
+      });
+    }
+  }
+}
+
 const manutencoesRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
@@ -844,6 +882,7 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput)
     .mutation(async ({ ctx, input }) => {
       const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      await validarSaldoEstoquePecas(pecas);
       const totais = calcularTotaisManutencao(pecas, valorMaoObra);
       const result = await db.insert(manutencoes).values({
         userId: ctx.user.id,
@@ -875,6 +914,7 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput.extend({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      await validarSaldoEstoquePecas(pecas);
       const totais = calcularTotaisManutencao(pecas, valorMaoObra);
       await db
         .update(manutencoes)

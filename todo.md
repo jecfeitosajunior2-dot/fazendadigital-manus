@@ -126,3 +126,8 @@
 
 ## Bug Fixes Críticos
 - [x] BUG CRÍTICO: `insert into manutencao_pecas` falha com `manutencaoId = NaN` — corrigido: todas as 16 ocorrências de `(result as any).insertId` em routers.ts e 1 em oauth.ts atualizadas para `(result as any)[0]?.insertId` (TiDB Cloud retorna array, não objeto direto)
+
+## Correções solicitadas (2026-06-04)
+- [x] Adicionar diálogo de confirmação "Tem certeza?" antes de excluir itens — componente ConfirmDialog/useConfirm aplicado na lista de manutenção (desktop+mobile) e na remoção de peça no formulário
+- [x] Validar quantidade de peça/insumo contra saldo em estoque — frontend bloqueia qtd > disponível com toast; backend valida em manutencoes.create/update via validarSaldoEstoquePecas (TRPCError); saldo exibido no autocomplete e abaixo do campo Qtd
+- [x] Teste Vitest para validarSaldoEstoquePecas (3 casos) — 119 testes passando, 0 erros TypeScript/LSP

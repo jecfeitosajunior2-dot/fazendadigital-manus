@@ -9,6 +9,7 @@ import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -94,6 +95,8 @@ export default function ManutencaoListPage() {
     enabled: true,
   });
 
+  const confirm = useConfirm();
+
   const deleteMutation = trpc.manutencoes.delete.useMutation({
     onSuccess: () => {
       toast.success("Manutenção excluída!");
@@ -101,6 +104,17 @@ export default function ManutencaoListPage() {
     },
     onError: e => toast.error(e.message),
   });
+
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({
+      title: "Excluir manutenção",
+      description: "Tem certeza que deseja excluir esta manutenção? Esta ação não pode ser desfeita.",
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) deleteMutation.mutate({ id });
+  };
 
   const maquinaMap = useMemo(() => {
     const m = new Map<number, (typeof maquinas)[0]>();
@@ -326,7 +340,7 @@ export default function ManutencaoListPage() {
                 ]}
                 actions={[
                   { icon: "edit", label: "Editar", onClick: () => setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`) },
-                  { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Excluir esta manutenção?")) deleteMutation.mutate({ id: r.id }); } },
+                  { icon: "delete", label: "Excluir", variant: "danger", onClick: () => handleDelete(r.id) },
                 ]}
               />
             );
@@ -426,9 +440,7 @@ export default function ManutencaoListPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            if (confirm("Excluir esta manutenção?")) deleteMutation.mutate({ id: r.id });
-                          }}
+                          onClick={() => handleDelete(r.id)}
                           className="action-btn-inline grid place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 active:scale-95 transition"
                           style={{ minWidth: 36, minHeight: 36 }}
                           aria-label="Excluir"
