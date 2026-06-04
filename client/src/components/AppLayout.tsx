@@ -43,7 +43,7 @@ export function AppShell({ children }: AppLayoutProps) {
 
   return (
     <LayoutShellContext.Provider value={true}>
-      <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "#F5F5F5" }}>
+      <div className="flex h-screen" style={{ backgroundColor: "#F5F5F5" }}>
         <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />

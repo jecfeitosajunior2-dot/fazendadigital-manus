@@ -106,6 +106,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          style={{ touchAction: 'none' }}
           onClick={onMobileClose}
         />
       )}
@@ -114,11 +115,11 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       <aside
         className={`
           h-screen flex flex-col flex-shrink-0
-          max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50
-          md:relative md:z-auto
+          max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50
+          lg:relative lg:z-auto
           transition-[width,transform] duration-200 ease-out
-          ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
-          md:translate-x-0
+          ${mobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"}
+          lg:translate-x-0
           ${collapsed ? "w-[60px]" : "w-[220px]"}
         `}
         style={{ backgroundColor: "#0F172A", backgroundImage: "linear-gradient(180deg, #0F172A 0%, #0D1B2A 100%)" }}

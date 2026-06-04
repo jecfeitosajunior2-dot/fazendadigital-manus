@@ -31,7 +31,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
   return (
     <header
-      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b"
+      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b relative z-30"
       style={{
         background: "linear-gradient(135deg, #0F172A 0%, #164E63 60%, #0891B2 100%)",
         borderBottomColor: "rgba(27,197,189,0.15)",
@@ -42,11 +42,12 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
-            className="lg:hidden text-white/70 hover:text-white rounded transition-colors flex items-center justify-center"
-            style={{ minWidth: 44, minHeight: 44 }}
+            className="lg:hidden text-white/70 hover:text-white active:text-white active:bg-white/20 rounded-lg transition-colors flex items-center justify-center select-none"
+            style={{ minWidth: 48, minHeight: 48, touchAction: 'manipulation', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
             aria-label="Abrir menu"
+            type="button"
           >
-            <span className="material-icons text-[24px]">menu</span>
+            <span className="material-icons text-[26px]" style={{ pointerEvents: 'none' }}>menu</span>
           </button>
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
