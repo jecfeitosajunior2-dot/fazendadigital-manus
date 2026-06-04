@@ -208,7 +208,7 @@ export const manutencoes = mysqlTable("manutencoes", {
   oficina: varchar("oficina", { length: 200 }),
   horimetro: varchar("horimetro", { length: 50 }),
   proximaManutencao: date("proximaManutencao", { mode: "string" }),
-  status: mysqlEnum("status", ["agendada", "em_andamento", "concluida"]).default("agendada"),
+  status: varchar("status", { length: 50 }).default("agendada"),
   // Prestador de serviço (mão de obra externa)
   prestadorNome: varchar("prestadorNome", { length: 200 }),
   prestadorContato: varchar("prestadorContato", { length: 100 }),
