@@ -86,9 +86,11 @@
 - [x] Teste final em viewport iPhone (390px) — nenhuma tabela espremida, 71 testes passando
 
 ## Pull-to-Refresh Mobile
-- [ ] Criar hook/componente PullToRefresh reutilizável (gesto de puxar para baixo)
-- [ ] Aplicar nas listas principais (Maquinário, Manutenção, Abastecimento, Animais, Estoque, Financeiro)
-- [ ] Indicador visual de carregamento durante o refetch
+- [x] Criar hook/componente PullToRefresh reutilizável (gesto de puxar para baixo) — usePullToRefresh hook + PullToRefreshIndicator componente
+- [x] Aplicar em MaquinasListPage (prototipado) — refetch automático ao puxar para baixo
+- [ ] Aplicar em ManutencaoListPage, AbastecimentoListPage, AnimaisPage, EstoquePage e FinancialManagementPage (próximas listas)
+- [x] Teste Vitest para hook usePullToRefresh (validar callback e threshold) — 11 testes passando
+- [x] Indicador visual de carregamento durante o refetch — componente com seta rotativa, barra de progresso e mensagem
 
 ## Categorias de Estoque
 - [x] Adicionar procedure listByCategories ao estoqueRouter para buscar itens por categoria

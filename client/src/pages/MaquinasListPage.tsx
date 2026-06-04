@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import MobileCard from "@/components/MobileCard";
+import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -40,9 +42,16 @@ export default function MaquinasListPage() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  const { data: list = [], isLoading } = trpc.maquinas.list.useQuery();
+  const { data: list = [], isLoading, refetch } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const utils = trpc.useUtils();
+  const { containerRef, state } = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch();
+      toast.success("Atualizado!");
+    },
+    enabled: true,
+  });
   const deleteMutation = trpc.maquinas.delete.useMutation({
     onSuccess: () => { toast.success("Maquinário excluído!"); utils.maquinas.list.invalidate(); },
     onError: e => toast.error(e.message),
@@ -90,7 +99,15 @@ export default function MaquinasListPage() {
 
   return (
     <AppLayout>
-      <div className="bg-white rounded border border-gray-200 shadow-sm">
+      <PullToRefreshIndicator
+        pullDistance={state.pullDistance}
+        isRefreshing={state.isRefreshing}
+      />
+      <div
+        ref={containerRef}
+        className="bg-white rounded border border-gray-200 shadow-sm overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 200px)" }}
+      >
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de maquinário</h1>
           <ListExportButtons
