@@ -134,7 +134,36 @@ export function FinancialManagementPage() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          {/* Cards mobile */}
+          <div className="lg:hidden space-y-2.5">
+            {movLoading ? (
+              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Carregando...</div>
+            ) : (movimentacoes || []).length === 0 ? (
+              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Nenhuma movimentação registrada.</div>
+            ) : (movimentacoes || []).map((m) => (
+              <div key={m.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${m.tipo === 'receita' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{m.tipo}</span>
+                      <span className="text-[12px] text-gray-400">{m.data ? formatDateBR(m.data) : '-'}</span>
+                    </div>
+                    <p className="text-[15px] font-semibold text-gray-800 truncate">{m.descricao}</p>
+                    <p className="text-[12px] text-gray-400 mt-0.5">{m.categoriaId || 'Sem categoria'}</p>
+                  </div>
+                  <button onClick={() => { if (confirm('Remover movimentação?')) deleteMovMutation.mutate({ id: m.id }); }} className="grid place-items-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition shrink-0" style={{ minWidth: 40, minHeight: 40 }} aria-label="Remover">
+                    <span className="material-icons text-[20px]">delete</span>
+                  </button>
+                </div>
+                <div className={`mt-2 pt-2 border-t border-gray-100 text-[17px] font-bold ${m.tipo === 'receita' ? 'text-green-600' : 'text-red-600'}`}>
+                  {m.tipo === 'receita' ? '+' : '-'} R$ {Number(m.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabela desktop */}
+          <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-[12px]">
                 <thead>

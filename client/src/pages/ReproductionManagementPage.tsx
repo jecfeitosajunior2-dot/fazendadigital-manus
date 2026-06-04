@@ -92,7 +92,33 @@ export function SaudePage() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Cards mobile */}
+      <div className="lg:hidden space-y-2.5">
+        {isLoading ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Carregando...</div>
+        ) : (registros || []).length === 0 ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Nenhum registro de saúde.</div>
+        ) : (registros || []).map((r) => (
+          <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] capitalize">{r.tipo}</span>
+                  <span className="text-[12px] text-gray-400">{r.dataRegistro ? formatDateBR(r.dataRegistro) : '-'}</span>
+                </div>
+                <p className="text-[14px] font-semibold text-gray-800">Animal #{r.animalId}</p>
+                <p className="text-[12px] text-gray-500 mt-0.5">{r.descricao}</p>
+                {r.medicamento && <p className="text-[12px] text-gray-400 mt-0.5">Medicamento: {r.medicamento}</p>}
+              </div>
+              <button onClick={() => { if (confirm('Remover registro?')) deleteMutation.mutate({ id: r.id }); }} className="grid place-items-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition shrink-0" style={{ minWidth: 40, minHeight: 40 }} aria-label="Remover"><span className="material-icons text-[20px]">delete</span></button>
+            </div>
+            {r.custo && <div className="mt-2 pt-2 border-t border-gray-100 text-[13px] font-semibold text-gray-700">Custo: R$ {Number(r.custo).toFixed(2)}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Tabela desktop */}
+      <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
         <table className="w-full text-[12px]">
           <thead className="bg-gray-50">
             <tr>
@@ -204,7 +230,31 @@ export function ReproductionManagementPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {/* Cards mobile */}
+      <div className="lg:hidden space-y-2.5">
+        {isLoading ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Carregando...</div>
+        ) : (registros || []).length === 0 ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-[13px]">Nenhum registro reprodutivo.</div>
+        ) : (registros || []).map((r) => (
+          <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] capitalize">{r.tipo?.replace(/_/g, ' ')}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] capitalize ${r.resultado === 'prenha' ? 'bg-green-100 text-green-700' : r.resultado === 'vazia' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{r.resultado || 'pendente'}</span>
+                </div>
+                <p className="text-[14px] font-semibold text-gray-800">Fêmea #{r.femeaId}</p>
+                <p className="text-[12px] text-gray-400 mt-0.5">Cobertura: {r.dataCobertura ? formatDateBR(r.dataCobertura) : '-'}</p>
+              </div>
+              <button onClick={() => { if (confirm('Remover registro?')) deleteMutation.mutate({ id: r.id }); }} className="grid place-items-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition shrink-0" style={{ minWidth: 40, minHeight: 40 }} aria-label="Remover"><span className="material-icons text-[20px]">delete</span></button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabela desktop */}
+      <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
         <table className="w-full text-[12px]">
           <thead className="bg-gray-50">
             <tr>

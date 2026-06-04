@@ -404,8 +404,43 @@ export function EstoquePage() {
           </div>
         </div>
 
-        {/* Tabela */}
-        <div className="overflow-x-auto">
+        {/* Cards mobile */}
+        <div className="lg:hidden px-4 py-3 space-y-2.5">
+          {isLoading ? (
+            <div className="py-12 text-center text-gray-400 text-[13px]">Carregando...</div>
+          ) : pageItems.length === 0 ? (
+            <div className="py-12 text-center text-gray-400 text-[13px]">Sem dados</div>
+          ) : pageItems.map(item => {
+            const isInativoM = item.situacao === "inativo";
+            return (
+              <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-semibold text-gray-900 uppercase truncate">{item.nome}</p>
+                    <p className="text-[12px] text-gray-400 mt-0.5">{item.categoria ?? "Sem categoria"}</p>
+                  </div>
+                  {isInativoM ? (
+                    <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium shrink-0">Inativa</span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium shrink-0">Ativa</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 text-[12px]">
+                  <div><span className="text-gray-400">Em estoque: </span><span className="font-semibold text-gray-800 tabular-nums">{Number(item.quantidade ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} {nomeUnidadeExibicao(item.unidade)}</span></div>
+                  <div><span className="text-gray-400">Valor: </span><span className="font-semibold text-gray-800 tabular-nums">{item.valorUnitario ? `R$ ${Number(item.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}</span></div>
+                </div>
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                  <button onClick={() => setLocation(`/insumos/historico-produto?id=${item.id}`)} className="flex-1 grid place-items-center rounded-lg bg-gray-50 text-gray-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Histórico"><span className="material-icons text-[20px]">format_list_bulleted</span></button>
+                  <button onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)} className="flex-1 grid place-items-center rounded-lg bg-blue-50 text-blue-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Editar"><span className="material-icons text-[20px]">edit</span></button>
+                  <button onClick={() => { if (confirm("Remover produto?")) deleteMutation.mutate({ id: item.id }); }} className="flex-1 grid place-items-center rounded-lg bg-red-50 text-red-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Excluir"><span className="material-icons text-[20px]">delete</span></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Tabela desktop */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>
               <tr className="border-b border-gray-200 bg-white">

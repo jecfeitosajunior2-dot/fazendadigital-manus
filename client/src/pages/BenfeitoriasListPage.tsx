@@ -90,7 +90,35 @@ export default function BenfeitoriasListPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Cards mobile */}
+        <div className="lg:hidden px-4 py-3 space-y-2.5">
+          {isLoading ? (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+          ) : pageItems.length === 0 ? (
+            <div className="py-10 text-center text-gray-400 text-[13px]">Sem dados</div>
+          ) : pageItems.map(b => (
+            <div key={b.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-gray-800 truncate">{b.nome}</p>
+                  <p className="text-[12px] text-gray-400 mt-0.5">{b.fazendaId ? fazendaMap.get(b.fazendaId) ?? '-' : '-'}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => setLocation(`/fazendas/benfeitorias/cadastro?id=${b.id}`)} className="grid place-items-center rounded-lg bg-gray-50 text-gray-500 active:scale-95 transition" style={{ minWidth: 40, minHeight: 40 }} aria-label="Editar"><span className="material-icons text-[19px]">edit</span></button>
+                  <button type="button" onClick={() => { if (confirm('Excluir esta benfeitoria?')) deleteMutation.mutate({ id: b.id }); }} className="grid place-items-center rounded-lg bg-red-50 text-red-500 active:scale-95 transition" style={{ minWidth: 40, minHeight: 40 }} aria-label="Excluir"><span className="material-icons text-[19px]">delete</span></button>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-3 text-[12px]">
+                <div><span className="text-gray-400 block text-[10px]">Ano</span><span className="font-medium text-gray-800">{b.anoConstrucao ?? '-'}</span></div>
+                <div><span className="text-gray-400 block text-[10px]">Vida Útil</span><span className="font-medium text-gray-800">{b.vidaUtil ?? '-'}</span></div>
+                <div className="text-right"><span className="text-gray-400 block text-[10px]">Valor</span><span className="font-semibold text-gray-800 tabular-nums">{b.valorEstimado ? `R$ ${parseFloat(String(b.valorEstimado)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'}</span></div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabela desktop */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>

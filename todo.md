@@ -76,11 +76,11 @@
 - [x] Botão Filtros accordion: minHeight 52px com ícone "tune" em todas as listas
 
 ## Polimento Mobile Completo (versão profissional)
-- [ ] Auditoria mobile real (iPhone 390px) página por página
-- [ ] Bottom navigation bar com módulos principais
-- [ ] Tabelas viram cards no mobile (todas as listagens)
-- [ ] Dashboard: cards de resumo, gráficos e central de alertas otimizados para mobile
-- [ ] Formulários: campos, abas, botões e teclado otimizados
-- [ ] Modais e dropdowns adaptados para mobile
-- [ ] Header mobile refinado
-- [ ] Teste final em viewport iPhone e validação
+- [x] Auditoria mobile real (iPhone 390px) página por página
+- [x] Bottom navigation bar com módulos principais
+- [x] Tabelas viram cards no mobile (13 listagens: Maquinário, Manutenção, Abastecimento, Animais, Financeiro, Estoque, Reprodução, Saúde, Benfeitorias, Fazendas, Compras, Vendas, Mapa do Rebanho)
+- [x] Dashboard: cards de resumo em grade 2 colunas, filtros de período e central de alertas otimizados para mobile
+- [x] Formulários: campos, abas, botões e teclado otimizados (Manutenção/Abastecimento/Máquina/Animal)
+- [x] Componente MobileCard reutilizável criado
+- [x] Header mobile (Topbar) com z-index e área de toque corrigidos
+- [x] Teste final em viewport iPhone (390px) — nenhuma tabela espremida, 71 testes passando

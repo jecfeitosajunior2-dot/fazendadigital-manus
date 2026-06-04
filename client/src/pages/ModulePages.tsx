@@ -289,7 +289,33 @@ export function FarmsListPage() {
           </button>
         </div>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100">
+      {/* Cards mobile */}
+      <div className="lg:hidden space-y-2.5">
+        {isLoading ? (
+          <div className="bg-white rounded-lg border border-gray-100 p-8 text-center text-gray-400 text-[13px]">Carregando...</div>
+        ) : fazendaList.length === 0 ? (
+          <div className="bg-white rounded-lg border border-gray-100 p-8 text-center text-gray-400 text-[13px]">Nenhuma fazenda cadastrada.</div>
+        ) : fazendaList.map((f: any) => (
+          <div key={f.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[15px] font-semibold text-[#2D5A5A]">{f.nome}</span>
+                  {(pastosPorFazenda[f.id] ?? 0) > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">{pastosPorFazenda[f.id]} pasto{pastosPorFazenda[f.id] > 1 ? 's' : ''}</span>
+                  )}
+                </div>
+                <p className="text-[12px] text-gray-400 mt-0.5">{[f.cidade, f.estado].filter(Boolean).join(' / ') || '-'}</p>
+              </div>
+              <FarmRowActions fazenda={f} onPastos={() => setPastosFazenda(f)} onDelete={() => { if (confirm('Excluir esta fazenda?')) deleteMutation.mutate({ id: f.id }); }} />
+            </div>
+            <div className="mt-2 pt-2 border-t border-gray-100 text-[12px]"><span className="text-gray-400">Área: </span><span className="font-semibold text-gray-800">{f.area ? `${f.area} ha` : '-'}</span></div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabela desktop */}
+      <div className="hidden lg:block bg-white rounded shadow-sm border border-gray-100">
         <table className="w-full text-[11px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -447,38 +473,62 @@ export function HerdMapPage() {
           Nova Movimentação
         </button>
       </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-[11px]">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivisão</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Machos</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Fêmeas</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Total</th>
-              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Capacidade</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              { name: "Pasto 1", m: 12, f: 20, cap: 40 },
-              { name: "Pasto 2", m: 10, f: 18, cap: 35 },
-              { name: "Pasto 3", m: 15, f: 26, cap: 50 },
-              { name: "Retiro Norte", m: 8, f: 14, cap: 30 },
-              { name: "Confinamento", m: 25, f: 15, cap: 50 },
-              { name: "Maternidade", m: 0, f: 12, cap: 20 },
-              { name: "Sede", m: 5, f: 10, cap: 25 },
-            ].map((s, i) => (
-              <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
-                <td className="px-3 py-1.5 text-gray-700 font-medium">{s.name}</td>
-                <td className="px-3 py-1.5 text-right text-gray-700">{s.m}</td>
-                <td className="px-3 py-1.5 text-right text-gray-700">{s.f}</td>
-                <td className="px-3 py-1.5 text-right font-medium text-gray-800">{s.m + s.f}</td>
-                <td className="px-3 py-1.5 text-right text-gray-500">{s.cap}</td>
-              </tr>
+      {(() => {
+        const subdivisoes = [
+          { name: "Pasto 1", m: 12, f: 20, cap: 40 },
+          { name: "Pasto 2", m: 10, f: 18, cap: 35 },
+          { name: "Pasto 3", m: 15, f: 26, cap: 50 },
+          { name: "Retiro Norte", m: 8, f: 14, cap: 30 },
+          { name: "Confinamento", m: 25, f: 15, cap: 50 },
+          { name: "Maternidade", m: 0, f: 12, cap: 20 },
+          { name: "Sede", m: 5, f: 10, cap: 25 },
+        ];
+        return (
+          <>
+          {/* Cards mobile */}
+          <div className="lg:hidden space-y-2.5">
+            {subdivisoes.map((s, i) => (
+              <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-[15px] font-semibold text-gray-800">{s.name}</p>
+                  <span className="text-[13px] font-bold text-[#2D5A5A]">{s.m + s.f} / {s.cap}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-3 text-[12px]">
+                  <div><span className="text-gray-400 block text-[10px]">Machos</span><span className="font-medium text-gray-800">{s.m}</span></div>
+                  <div><span className="text-gray-400 block text-[10px]">Fêmeas</span><span className="font-medium text-gray-800">{s.f}</span></div>
+                  <div className="text-right"><span className="text-gray-400 block text-[10px]">Capacidade</span><span className="font-medium text-gray-800">{s.cap}</span></div>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          {/* Tabela desktop */}
+          <div className="hidden lg:block bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full text-[11px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Subdivisão</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Machos</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Fêmeas</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Total</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Capacidade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subdivisoes.map((s, i) => (
+                  <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/50">
+                    <td className="px-3 py-1.5 text-gray-700 font-medium">{s.name}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{s.m}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{s.f}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-gray-800">{s.m + s.f}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-500">{s.cap}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          </>
+        );
+      })()}
     </AppLayout>
   );
 }
@@ -1164,7 +1214,7 @@ export function PurchasesPage() {
             title="Borderô de Compra"
             filename="compras"
             headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)"]}
-            rows={(compras ?? []).map((c: { data: string; fornecedor: string; quantidade: number; valorTotal: string }) => [
+            rows={(compras ?? []).map((c: any) => [
               c.data,
               c.fornecedor,
               c.quantidade,
@@ -1258,7 +1308,7 @@ export function SalesPage() {
             title="Vendas"
             filename="vendas"
             headers={["Data", "Comprador", "Quantidade", "Valor Total (R$)"]}
-            rows={(vendas ?? []).map((v: { data: string; comprador: string; quantidade: number; valorTotal: string }) => [
+            rows={(vendas ?? []).map((v: any) => [
               v.data,
               v.comprador,
               v.quantidade,
@@ -1282,7 +1332,24 @@ export function SalesPage() {
           <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de venda</p>
         </div>
       ) : (
-        <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+        <>
+        {/* Cards mobile */}
+        <div className="lg:hidden space-y-2.5">
+          {vendas.map((v: any) => (
+            <div key={v.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-gray-800 truncate">{v.comprador}</p>
+                  <p className="text-[12px] text-gray-400 mt-0.5">{v.data} · {v.quantidade} un.</p>
+                </div>
+                <button onClick={() => { if (confirm('Remover esta venda?')) deleteMutation.mutate({ id: v.id }); }} className="grid place-items-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition shrink-0" style={{ minWidth: 40, minHeight: 40 }} aria-label="Excluir"><span className="material-icons text-[20px]">delete</span></button>
+              </div>
+              <div className="mt-2 pt-2 border-t border-gray-100 text-[15px] font-bold text-green-600">R$ {Number(v.valorTotal).toFixed(2)}</div>
+            </div>
+          ))}
+        </div>
+        {/* Tabela desktop */}
+        <div className="hidden lg:block bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -1310,6 +1377,7 @@ export function SalesPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </AppLayout>
   );

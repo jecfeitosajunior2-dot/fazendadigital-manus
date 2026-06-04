@@ -406,18 +406,18 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
         <SectionCard title="Fluxo de Caixa (6 meses)" icon="bar_chart" className="lg:col-span-2">
           <div className="p-4">
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-lg p-3" style={{ backgroundColor: "#F0FDF4" }}>
-                <p className="text-[10px] uppercase tracking-wide text-green-700">Receitas</p>
-                <p className="text-[15px] font-bold text-green-600">{brl(financeiro.receita)}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
+              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#F0FDF4" }}>
+                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide text-green-700">Receitas</p>
+                <p className="text-[16px] sm:text-[15px] font-bold text-green-600">{brl(financeiro.receita)}</p>
               </div>
-              <div className="rounded-lg p-3" style={{ backgroundColor: "#FEF2F2" }}>
-                <p className="text-[10px] uppercase tracking-wide text-red-700">Despesas</p>
-                <p className="text-[15px] font-bold text-red-600">{brl(financeiro.despesa)}</p>
+              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#FEF2F2" }}>
+                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide text-red-700">Despesas</p>
+                <p className="text-[16px] sm:text-[15px] font-bold text-red-600">{brl(financeiro.despesa)}</p>
               </div>
-              <div className="rounded-lg p-3" style={{ backgroundColor: "#F0FDFA" }}>
-                <p className="text-[10px] uppercase tracking-wide" style={{ color: NAVY }}>Resultado</p>
-                <p className="text-[15px] font-bold" style={{ color: financeiro.resultado >= 0 ? GREEN : RED }}>
+              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#F0FDFA" }}>
+                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide" style={{ color: NAVY }}>Resultado</p>
+                <p className="text-[16px] sm:text-[15px] font-bold" style={{ color: financeiro.resultado >= 0 ? GREEN : RED }}>
                   {brl(financeiro.resultado)}
                 </p>
               </div>
