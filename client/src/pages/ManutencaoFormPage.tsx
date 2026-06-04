@@ -16,7 +16,6 @@ import {
 const TIPOS_MANUTENCAO = [
   { value: "Preventiva", label: "Preventiva" },
   { value: "Corretiva", label: "Corretiva" },
-  { value: "Preditiva", label: "Preditiva" },
 ] as const;
 
 const STATUS_OPTS = [
