@@ -323,7 +323,14 @@ export default function AbastecimentoFormPage() {
           {/* Linha 2: muda conforme Abastecido na fazenda */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
-              <FormLabel>Leitura atual do odômetro</FormLabel>
+              <div className="flex items-center justify-between mb-0.5">
+                <FormLabel className="mb-0">Leitura atual do odômetro</FormLabel>
+                {ultimo && (
+                  <span className="text-gray-500 text-[11px]">
+                    Últ.: {statsHistorico.leituraAnterior}
+                  </span>
+                )}
+              </div>
               <FormInput
                 value={form.horimetro}
                 onChange={v => set("horimetro", v.replace(/[^\d.,]/g, ""))}
@@ -333,11 +340,6 @@ export default function AbastecimentoFormPage() {
               {leituraInvalida && (
                 <p className="text-red-500 text-[12px] mt-1">
                   ⚠️ Leitura menor que anterior ({statsHistorico.leituraAnterior})
-                </p>
-              )}
-              {ultimo && (
-                <p className="text-gray-500 text-[12px] mt-1">
-                  Última leitura: {statsHistorico.leituraAnterior}
                 </p>
               )}
             </div>
