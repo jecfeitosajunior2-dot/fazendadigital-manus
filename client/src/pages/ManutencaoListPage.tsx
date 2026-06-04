@@ -27,16 +27,16 @@ const STATUS_STYLE: Record<string, string> = {
 type ColAlign = "left" | "right" | "center";
 
 const TABLE_COLUMNS: { key: string; label: string; align: ColAlign; width: string }[] = [
-  { key: "maquina", label: "Máquina", align: "left", width: "13%" },
-  { key: "tipo", label: "Tipo", align: "left", width: "9%" },
-  { key: "data", label: "Data", align: "left", width: "9%" },
-  { key: "odometro", label: "Odômetro", align: "right", width: "9%" },
-  { key: "pecas", label: "Peças (R$)", align: "right", width: "10%" },
-  { key: "maoObra", label: "Mão de obra (R$)", align: "right", width: "11%" },
-  { key: "total", label: "Total (R$)", align: "right", width: "10%" },
-  { key: "prestador", label: "Prestador", align: "left", width: "12%" },
-  { key: "proxima", label: "Próxima", align: "left", width: "9%" },
-  { key: "status", label: "Status", align: "center", width: "8%" },
+  { key: "maquina", label: "Máquina", align: "left", width: "12%" },
+  { key: "tipo", label: "Tipo", align: "left", width: "8%" },
+  { key: "data", label: "Data", align: "left", width: "8%" },
+  { key: "odometro", label: "Odômetro", align: "right", width: "8%" },
+  { key: "pecas", label: "Peças (R$)", align: "right", width: "9%" },
+  { key: "maoObra", label: "Mão de obra (R$)", align: "right", width: "10%" },
+  { key: "total", label: "Total (R$)", align: "right", width: "9%" },
+  { key: "prestador", label: "Prestador", align: "left", width: "11%" },
+  { key: "proxima", label: "Próxima", align: "left", width: "8%" },
+  { key: "status", label: "Status", align: "center", width: "13%" },
 ];
 
 const alignClass: Record<ColAlign, string> = {
@@ -340,7 +340,7 @@ export default function ManutencaoListPage() {
               {TABLE_COLUMNS.map(col => (
                 <col key={col.key} style={{ width: col.width }} />
               ))}
-              <col style={{ width: "72px" }} />
+              <col style={{ width: "96px" }} />
             </colgroup>
             <thead>
               <tr className="bg-gray-50/80 border-y border-gray-200">
@@ -358,7 +358,7 @@ export default function ManutencaoListPage() {
                     </span>
                   </th>
                 ))}
-                <th className="px-2 py-3 w-[72px]" />
+                <th className="px-2 py-3 w-[96px] text-[10px] font-semibold text-gray-500 uppercase tracking-[0.04em] text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -405,20 +405,20 @@ export default function ManutencaoListPage() {
                     <td className="px-3 align-middle text-gray-600 tabular-nums whitespace-nowrap">
                       {r.proximaManutencao ? formatDateBR(r.proximaManutencao) : "—"}
                     </td>
-                    <td className="px-3 align-middle text-center pr-6">
+                    <td className="px-3 align-middle text-center">
                       {r.status ? (
-                        <span className={cn("inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold", STATUS_STYLE[r.status] ?? "bg-gray-50 text-gray-500")}>
+                        <span className={cn("inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap", STATUS_STYLE[r.status] ?? "bg-gray-50 text-gray-500")}>
                           {STATUS_LABEL[r.status] ?? r.status}
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="px-2 align-middle">
-                      <div className="flex items-center justify-end gap-1 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity pl-3 border-l border-gray-200">
+                    <td className="px-2 align-middle border-l border-gray-200">
+                      <div className="flex items-center justify-center gap-1.5 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)}
                           className="action-btn-inline grid place-items-center rounded-md text-gray-500 hover:bg-white hover:text-[#0f766e] hover:shadow-sm border border-transparent hover:border-gray-200 active:scale-95 transition"
-                          style={{ minWidth: 40, minHeight: 40 }}
+                          style={{ minWidth: 36, minHeight: 36 }}
                           aria-label="Editar"
                           title="Editar"
                         >
@@ -430,7 +430,7 @@ export default function ManutencaoListPage() {
                             if (confirm("Excluir esta manutenção?")) deleteMutation.mutate({ id: r.id });
                           }}
                           className="action-btn-inline grid place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 active:scale-95 transition"
-                          style={{ minWidth: 40, minHeight: 40 }}
+                          style={{ minWidth: 36, minHeight: 36 }}
                           aria-label="Excluir"
                           title="Excluir"
                         >
