@@ -405,7 +405,7 @@ export default function ManutencaoListPage() {
                     <td className="px-3 align-middle text-gray-600 tabular-nums whitespace-nowrap">
                       {r.proximaManutencao ? formatDateBR(r.proximaManutencao) : "—"}
                     </td>
-                    <td className="px-3 align-middle text-center">
+                    <td className="px-3 align-middle text-center pr-6">
                       {r.status ? (
                         <span className={cn("inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold", STATUS_STYLE[r.status] ?? "bg-gray-50 text-gray-500")}>
                           {STATUS_LABEL[r.status] ?? r.status}
