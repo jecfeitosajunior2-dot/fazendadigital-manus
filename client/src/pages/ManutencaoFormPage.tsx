@@ -100,8 +100,10 @@ export default function ManutencaoFormPage() {
   const [pecaSearch, setPecaSearch] = useState("");
   const [pecaEscolhida, setPecaEscolhida] = useState<{ id: number; nome: string; valorUnitario?: string | number | null } | null>(null);
   const [categoriasFiltro, setCategoriasFiltro] = useState<string[]>(["Peças", "Lubrificantes"]);
-  const [categoriasDisponiveis] = useState(["Peças", "Lubrificantes", "Ferramentas", "Agrícolas", "Outros Insumos"]);
+  const [categoriasDisponiveis] = useState(["Farmácia", "Nutricionais", "Combustíveis", "Lubrificantes", "Ferramentas", "Peças", "Agrícolas", "Epis", "Outros Insumos"]);
   const [mostrarFiltroCategoria, setMostrarFiltroCategoria] = useState(false);
+  const CATEGORIAS_MANUTENACAO = ["Farmácia", "Nutricionais", "Combustíveis", "Lubrificantes", "Ferramentas", "Peças", "Agrícolas", "Epis", "Outros Insumos"];
+  const CATEGORIAS_PADRAO = ["Peças", "Lubrificantes"];
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -112,7 +114,7 @@ export default function ManutencaoFormPage() {
     { enabled: isEdit }
   );
   const { data: estoqueItems = [] } = trpc.estoque.listByCategories.useQuery({
-    categorias: categoriasFiltro,
+    categorias: categoriasFiltro.length > 0 ? categoriasFiltro : CATEGORIAS_PADRAO,
   });
   const utils = trpc.useUtils();
 
@@ -390,14 +392,18 @@ export default function ManutencaoFormPage() {
                 </button>
                 {mostrarFiltroCategoria && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {categoriasDisponiveis.map(cat => (
+                    {CATEGORIAS_MANUTENACAO.map(cat => (
                       <button
                         key={cat}
                         type="button"
-                        onClick={() => {
-                          setCategoriasFiltro(prev =>
-                            prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-                          );
+                                                onClick={() => {
+                          setCategoriasFiltro(prev => {
+                            if (prev.includes(cat)) {
+                              return prev.filter(c => c !== cat);
+                            } else {
+                              return [...prev, cat];
+                            }
+                          });
                         }}
                         className={cn(
                           "px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all active:scale-95",
