@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import MobileCard from "@/components/MobileCard";
+import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
 
@@ -81,9 +83,16 @@ export default function ManutencaoListPage() {
   const [filtrosRascunho, setFiltrosRascunho] = useState<Filtros>(FILTROS_VAZIOS);
   const [aplicados, setAplicados] = useState<Filtros>(FILTROS_VAZIOS);
 
-  const { data: registros = [], isLoading } = trpc.manutencoes.list.useQuery({});
+  const { data: registros = [], isLoading, refetch } = trpc.manutencoes.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const utils = trpc.useUtils();
+  const { containerRef, state } = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch();
+      toast.success("Atualizado!");
+    },
+    enabled: true,
+  });
 
   const deleteMutation = trpc.manutencoes.delete.useMutation({
     onSuccess: () => {
@@ -153,7 +162,15 @@ export default function ManutencaoListPage() {
 
   return (
     <AppLayout>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <PullToRefreshIndicator
+        pullDistance={state.pullDistance}
+        isRefreshing={state.isRefreshing}
+      />
+      <div
+        ref={containerRef}
+        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 200px)" }}
+      >
         {/* Cabeçalho */}
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-[15px] font-semibold text-gray-800">Manutenções</h1>

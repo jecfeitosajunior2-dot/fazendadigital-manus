@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
@@ -16,6 +18,13 @@ export function FinancialManagementPage() {
   const { data: contas, refetch: refetchContas } = trpc.financeiro.listContas.useQuery();
   const { data: movimentacoes, isLoading: movLoading, refetch: refetchMov } = trpc.financeiro.listMovimentacoes.useQuery();
   const { data: summary } = trpc.financeiro.summary.useQuery();
+  const { containerRef, state } = usePullToRefresh({
+    onRefresh: async () => {
+      await Promise.all([refetchContas(), refetchMov()]);
+      toast.success("Atualizado!");
+    },
+    enabled: true,
+  });
 
   const createContaMutation = trpc.financeiro.createConta.useMutation({ onSuccess: () => { toast.success("Conta criada!"); setShowContaForm(false); setContaForm({ nome: "", tipo: "corrente" as "corrente"|"poupanca"|"caixa"|"investimento", banco: "", saldoInicial: "" }); refetchContas(); } });
   
@@ -24,6 +33,15 @@ export function FinancialManagementPage() {
 
   return (
     <AppLayout>
+      <PullToRefreshIndicator
+        pullDistance={state.pullDistance}
+        isRefreshing={state.isRefreshing}
+      />
+      <div
+        ref={containerRef}
+        className="overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 200px)" }}
+      >
       <div className="mb-3">
         <h1 className="text-[15px] font-medium text-gray-800">Financeiro</h1>
       </div>
@@ -289,6 +307,7 @@ export function FinancialManagementPage() {
           </div>
         </div>
       )}
+      </div>
     </AppLayout>
   );
 }
