@@ -140,7 +140,7 @@ export default function ProductRegistrationPage() {
 
   const subcategorias = useMemo(() => {
     if (!form.categoria) return form.subcategoria ? [form.subcategoria] : [];
-    const base = SUBCATEGORIAS[form.categoria] ?? SUBCATEGORIAS.Outros;
+    const base = SUBCATEGORIAS[form.categoria] ?? [];
     if (form.subcategoria && !base.includes(form.subcategoria)) {
       return [...base, form.subcategoria];
     }

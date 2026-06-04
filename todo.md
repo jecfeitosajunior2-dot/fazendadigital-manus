@@ -106,3 +106,11 @@
 - [x] Integrar categorias no formulário de produtos (Farmácia, Nutricionais, Combustíveis, Lubrificantes, Ferramentas, Peças, Agrícolas, Epis, Outros Insumos) — categorias já presentes em CATEGORIAS_PRODUTO
 - [x] Implementar controle visível de filtro por categoria no formulário de manutenção (select/chips) para refetch dinâmico
 - [x] Teste Vitest para filtro de categoria na manutenção — valida query com múltiplas categorias e refetch (5 testes passando)
+
+## Subcategorias de Estoque (cascata)
+- [x] Mapear todas as subcategorias por categoria em SUBCATEGORIAS (9 categorias) — listas completas conforme fornecido
+- [x] Campo subcategoria no schema (drizzle) já existente (varchar 80)
+- [x] Procedure de criar/editar produto já aceita subcategoria (estoqueInputFields)
+- [x] Formulário de cadastro com dropdown em cascata (categoria -> subcategoria) já implementado
+- [x] Corrigir fallback SUBCATEGORIAS.Outros (chave inexistente) para array vazio seguro
+- [x] Teste Vitest validando mapeamento de subcategorias por categoria — 10 testes passando (101 total)
