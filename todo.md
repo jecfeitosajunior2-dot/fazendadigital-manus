@@ -91,7 +91,9 @@
 - [x] Aplicar em ManutencaoListPage — refetch automático ao puxar para baixo
 - [x] Aplicar em AbastecimentoListPage — refetch automático ao puxar para baixo
 - [x] Aplicar em FinancialManagementPage — refetch automático ao puxar para baixo
-- [ ] Aplicar em AnimaisPage/CattleDetailPage e EstoquePage (InsumosVisaoGeralPage) — faltam 2 listas para completar
+- [x] Aplicar em InsumosVisaoGeralPage (Estoque) — refetch automático ao puxar para baixo
+- [x] Aplicar em CattleDetailPageExpanded (Animais) — refetch automático ao puxar para baixo
+- [x] Pull-to-Refresh Mobile implementado em 5 listas principais + 1 página de detalhe (Máquinas, Manutenção, Abastecimento, Financeiro, Estoque, CattleDetail)
 - [x] Teste Vitest para hook usePullToRefresh (validar callback e threshold) — 11 testes passando
 - [x] Indicador visual de carregamento durante o refetch — componente com seta rotativa, barra de progresso e mensagem
 

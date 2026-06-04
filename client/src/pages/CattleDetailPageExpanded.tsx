@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, TrendingUp, Zap, Plus, Trash2 } from 'lucide-react';
@@ -19,6 +21,17 @@ export const CattleDetailPageExpanded: React.FC = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const cattleIdParam = urlParams.get('id');
   const animalId = cattleIdParam ? parseInt(cattleIdParam) : null;
+
+  const { containerRef, state } = usePullToRefresh({
+    onRefresh: async () => {
+      await utils.animais.getById.invalidate({ id: animalId! });
+      await utils.saude.list.invalidate({ animalId: animalId! });
+      await utils.pesagens.list.invalidate({ animalId: animalId! });
+      await utils.reproducao.list.invalidate();
+      toast.success("Atualizado!");
+    },
+    enabled: !!animalId,
+  });
 
   // ─── tRPC Queries ─────────────────────────────────────────────────────────
   const { data: animal, isLoading: loadingAnimal, error: animalError } = trpc.animais.getById.useQuery(
@@ -177,6 +190,15 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   return (
     <AppLayout>
+      <PullToRefreshIndicator
+        pullDistance={state.pullDistance}
+        isRefreshing={state.isRefreshing}
+      />
+      <div
+        ref={containerRef}
+        className="overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 200px)" }}
+      >
       <div className="max-w-7xl mx-auto">
         <Button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-6 bg-gray-400 hover:bg-gray-500 text-white">
           <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Lista de Animais
@@ -695,6 +717,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
             </Card>
           </TabsContent>
         </Tabs>
+      </div>
       </div>
     </AppLayout>
   );

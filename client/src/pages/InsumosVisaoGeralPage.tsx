@@ -1,8 +1,13 @@
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import InsumosMovimentacoesTable from "@/components/insumos/InsumosMovimentacoesTable";
 import InsumosVisaoGeralDashboard from "@/components/insumos/InsumosVisaoGeralDashboard";
 import InsumosMovimentacaoPanel from "@/components/insumos/InsumosMovimentacaoPanel";
+import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -33,6 +38,15 @@ function MovimentacaoToolbar({ onNova, onCadastrar }: { onNova: () => void; onCa
 export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
   const [, setLocation] = useLocation();
   const isOverview = variant === "overview";
+  const { refetch: refetchEstoque } = trpc.estoque.list.useQuery();
+  const { refetch: refetchMovimentacoes } = trpc.estoque.listMovimentacoes.useQuery();
+  const { containerRef, state } = usePullToRefresh({
+    onRefresh: async () => {
+      await Promise.all([refetchEstoque(), refetchMovimentacoes()]);
+      toast.success("Atualizado!");
+    },
+    enabled: true,
+  });
 
   if (variant === "movimentacao") {
     return (
@@ -51,6 +65,15 @@ export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
 
   return (
     <AppLayout>
+      <PullToRefreshIndicator
+        pullDistance={state.pullDistance}
+        isRefreshing={state.isRefreshing}
+      />
+      <div
+        ref={containerRef}
+        className="overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 200px)" }}
+      >
       {isOverview && <InsumosVisaoGeralDashboard />}
 
       <InsumosMovimentacoesTable
@@ -58,6 +81,7 @@ export default function InsumosVisaoGeralPage({ variant = "overview" }: Props) {
         exportFilename="movimentacoes-insumos"
         toolbar={toolbar}
       />
+      </div>
     </AppLayout>
   );
 }
