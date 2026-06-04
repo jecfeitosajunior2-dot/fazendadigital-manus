@@ -37,12 +37,20 @@ describe("SUBCATEGORIAS — mapeamento por categoria", () => {
     expect(lista.length).toBe(18);
   });
 
-  it("Combustíveis contém os tipos e óleos esperados", () => {
+  it("Combustíveis contém os tipos esperados", () => {
     const lista = SUBCATEGORIAS["Combustíveis"];
-    ["Diesel", "Etanol", "Gasolina", "Aviação", "Óleo de Motor", "Óleo de Freio"].forEach(item => {
+    ["Diesel", "Etanol", "Gasolina", "Aviação"].forEach(item => {
       expect(lista).toContain(item);
     });
-    expect(lista.length).toBe(8);
+    expect(lista.length).toBe(4);
+  });
+
+  it("Lubrificantes contém os tipos de óleo esperados", () => {
+    const lista = SUBCATEGORIAS["Lubrificantes"];
+    ["Mineral", "Sintético", "Semissintético"].forEach(item => {
+      expect(lista).toContain(item);
+    });
+    expect(lista.length).toBe(3);
   });
 
   it("Ferramentas contém ferramentas manuais e elétricas", () => {
