@@ -413,7 +413,7 @@ export default function ManutencaoListPage() {
                       ) : "—"}
                     </td>
                     <td className="px-2 align-middle">
-                      <div className="flex items-center justify-end gap-1 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity pl-3 border-l border-gray-200">
                         <button
                           type="button"
                           onClick={() => setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)}
