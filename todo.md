@@ -123,3 +123,6 @@
 - [x] Indicador de erro quando leitura é inválida (border vermelha + aviso)
 - [x] Cálculo de consumo médio (L/hora) com base no histórico
 - [x] Testes Vitest para validação de horímetro (8 testes passando — 109 total)
+
+## Bug Fixes Críticos
+- [x] BUG CRÍTICO: `insert into manutencao_pecas` falha com `manutencaoId = NaN` — corrigido: todas as 16 ocorrências de `(result as any).insertId` em routers.ts e 1 em oauth.ts atualizadas para `(result as any)[0]?.insertId` (TiDB Cloud retorna array, não objeto direto)

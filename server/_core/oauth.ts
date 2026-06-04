@@ -88,7 +88,7 @@ export async function handleOAuthCallback(req: Request, res: Response) {
         loginMethod: "oauth",
         lastSignedIn: new Date(),
       });
-      userId = (result as any).insertId;
+      userId = (result as any)[0]?.insertId ?? (result as any).insertId;
     }
     
     // Create session

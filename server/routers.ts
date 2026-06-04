@@ -93,7 +93,7 @@ const animaisRouter = router({
         categoria: input.categoria,
         observacoes: input.observacoes,
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -306,7 +306,7 @@ const lotesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(lotes).values({ userId: ctx.user.id, ...input });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -361,7 +361,7 @@ const saudeRouter = router({
         dataRegistro: new Date(dataRegistro),
         proximaData: proximaData ? new Date(proximaData) : undefined,
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   delete: protectedProcedure
@@ -396,7 +396,7 @@ const reproducaoRouter = router({
         dataCobertura: new Date(dataCobertura),
         dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : undefined,
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -483,7 +483,7 @@ const maquinasRouter = router({
           imagem2: img2,
           imagem3: img3,
         });
-        return { success: true, id: (result as { insertId?: number }).insertId };
+        return { success: true, id: (result as any)[0]?.insertId };
       } catch (err) {
         console.error("[maquinas.create]", err);
         throw new Error("Não foi possível salvar o maquinário. Verifique se o banco está atualizado e tente novamente.");
@@ -670,7 +670,7 @@ const abastecimentosRouter = router({
           );
         }
       }
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -855,7 +855,7 @@ const manutencoesRouter = router({
         valorTotal: totais.valorTotal.toFixed(2),
         custo: totais.valorTotal.toFixed(2),
       });
-      const manutencaoId = Number((result as any).insertId);
+      const manutencaoId = Number((result as any)[0]?.insertId);
       if (pecas && pecas.length > 0) {
         await db.insert(manutencaoPecas).values(
           pecas.map(p => ({
@@ -940,7 +940,7 @@ const pesagensRouter = router({
       });
       // Update animal's current weight
       await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   delete: protectedProcedure
@@ -971,7 +971,7 @@ const nutricaoRouter = router({
         ...rest,
         data: new Date(data),
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   deleteBatida: protectedProcedure
@@ -1026,7 +1026,7 @@ const benfeitoriasRouter = router({
         imagem2: img2,
         imagem3: img3,
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -1103,7 +1103,7 @@ const estoqueRouter = router({
         ...rest,
         embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -1286,7 +1286,7 @@ const estoqueRouter = router({
 
       await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
 
-      return { success: true, id: (result as { insertId?: number }).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   updateMovimentacao: protectedProcedure
@@ -1473,7 +1473,7 @@ const financeiroRouter = router({
         saldoInicial: input.saldoInicial || "0",
         saldoAtual: input.saldoInicial || "0",
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   listMovimentacoes: protectedProcedure.query(async () => {
@@ -1496,7 +1496,7 @@ const financeiroRouter = router({
         ...rest,
         data: new Date(data),
       });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   deleteMovimentacao: protectedProcedure
@@ -1640,7 +1640,7 @@ const fazendasRouter = router({
     .input(z.object({ nome: z.string(), ...fazendaFields }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(fazendas).values({ userId: ctx.user.id, ...input });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
@@ -1688,7 +1688,7 @@ const pastosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(pastos).values({ userId: ctx.user.id, ...input });
-      return { success: true, id: (result as any).insertId };
+      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   update: protectedProcedure
