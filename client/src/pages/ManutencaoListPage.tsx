@@ -198,7 +198,7 @@ export default function ManutencaoListPage() {
 
           {filtrosAbertos && (
             <div className="px-5 pb-4 border-t border-gray-50 pt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 filter-grid">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 filter-grid">
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">Máquina</label>
                   <select
