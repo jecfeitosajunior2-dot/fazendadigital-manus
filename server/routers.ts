@@ -310,28 +310,261 @@ const animaisRouter = router({
   // ── Gera planilha modelo para download ──────────────────────────────────────
   gerarModeloPlanilha: protectedProcedure
     .mutation(async () => {
-      const XLSX = await import('xlsx');
-      const colunas = [
-        'brinco', 'brincoEletronico', 'nome', 'sexo', 'categoria', 'raca',
-        'pelagem', 'marca', 'dataNascimento', 'dataDesmama', 'castrado',
-        'lote', 'dataEntrada', 'pesoEntrada', 'produtorOrigem', 'precoKg', 'frete',
-        'sisbov', 'dataRnd', 'rgn', 'rgd', 'rastreadoNascimento',
-        'pai', 'mae', 'status', 'observacoes',
+      const ExcelJS = await import('exceljs');
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Fazenda Digital';
+      wb.created = new Date();
+
+      // ─── CORES INSTITUCIONAIS ──────────────────────────────────────────────────
+      const COR_HEADER_BG  = '1A3C3C'; // verde petróleo escuro
+      const COR_HEADER_TXT = 'FFFFFF';
+      const COR_COL_BG     = '2D5A5A'; // verde petróleo médio
+      const COR_COL_TXT    = 'FFFFFF';
+      const COR_OBRIG_BG   = 'FFF3CD'; // amarelo suave — campos obrigatórios
+      const COR_EXEMPLO_BG = 'E8F5E9'; // verde claro — linha de exemplo
+      const COR_LINHA_ALT  = 'F7FAFA'; // cinza muito claro — linhas alternadas
+      const COR_INSTRUCAO  = 'E3F2FD'; // azul claro — bloco instruções
+
+      // ─── ABA 1: IMPORTAÇÃO DE ANIMAIS ─────────────────────────────────────────
+      const ws = wb.addWorksheet('Importação de Animais', {
+        properties: { tabColor: { argb: COR_COL_BG } },
+        views: [{ state: 'frozen', ySplit: 7 }], // congela até linha 7
+      });
+
+      // Cabeçalho institucional (linhas 1-3)
+      ws.mergeCells('A1:L1');
+      const tituloCell = ws.getCell('A1');
+      tituloCell.value = 'FAZENDA DIGITAL — IMPORTAÇÃO DE ANIMAIS';
+      tituloCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: COR_HEADER_TXT } };
+      tituloCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+      tituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(1).height = 36;
+
+      ws.mergeCells('A2:L2');
+      const subtituloCell = ws.getCell('A2');
+      subtituloCell.value = 'Preencha uma linha por animal. Não altere os nomes das colunas.';
+      subtituloCell.font = { name: 'Calibri', size: 11, italic: true, color: { argb: COR_HEADER_TXT } };
+      subtituloCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
+      subtituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(2).height = 22;
+
+      // Bloco de instruções (linhas 3-6)
+      const instrucoes = [
+        'INSTRUÇÕES:',
+        '  • Campos com fundo AMARELO são OBRIGATÓRIOS (Brinco e Sexo).',
+        '  • Datas no formato DD/MM/AAAA — Ex: 15/03/2022',
+        '  • Use os menus suspensos para Sexo, Categoria, Raça e Castrado.',
       ];
-      const exemplos = [
-        'BR-001', '', 'Mimosa', 'femea', 'Vaca', 'Nelore',
-        'Branca', 'Fogo', '2022-03-15', '2022-09-15', 'nao',
-        '', '2023-01-10', '320', 'Fazenda São João', '12.50', '350',
-        '', '', '', '', 'nao',
-        '', '', 'ativo', 'Animal de boa conformação',
+      instrucoes.forEach((txt, i) => {
+        ws.mergeCells(`A${3 + i}:L${3 + i}`);
+        const c = ws.getCell(`A${3 + i}`);
+        c.value = txt;
+        c.font = { name: 'Calibri', size: 10, bold: i === 0, color: { argb: '1A3C3C' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_INSTRUCAO } };
+        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        ws.getRow(3 + i).height = 18;
+      });
+
+      // Linha 7: cabeçalho das colunas
+      const COLUNAS = [
+        { key: 'brinco',           label: 'Brinco *',           obrig: true,  width: 14 },
+        { key: 'brincoEletronico', label: 'RFID',               obrig: false, width: 20 },
+        { key: 'nome',             label: 'Nome',               obrig: false, width: 16 },
+        { key: 'sexo',             label: 'Sexo *',             obrig: true,  width: 12 },
+        { key: 'categoria',        label: 'Categoria',          obrig: false, width: 14 },
+        { key: 'raca',             label: 'Raça',               obrig: false, width: 16 },
+        { key: 'pelagem',          label: 'Pelagem',            obrig: false, width: 14 },
+        { key: 'marca',            label: 'Marca',              obrig: false, width: 12 },
+        { key: 'dataNascimento',   label: 'Dt. Nascimento',     obrig: false, width: 16 },
+        { key: 'dataDesmama',      label: 'Dt. Desmama',        obrig: false, width: 14 },
+        { key: 'castrado',         label: 'Castrado',           obrig: false, width: 12 },
+        { key: 'lote',             label: 'Lote',               obrig: false, width: 16 },
       ];
-      const ws = XLSX.utils.aoa_to_sheet([colunas, exemplos]);
-      // Largura das colunas
-      ws['!cols'] = colunas.map(c => ({ wch: Math.max(c.length + 4, 14) }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Animais');
-      const buf = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      return { base64: buf as string, filename: 'modelo_importacao_animais.xlsx' };
+
+      const headerRow = ws.getRow(7);
+      headerRow.height = 22;
+      COLUNAS.forEach((col, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = col.label;
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: COR_COL_TXT } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrig ? 'B8860B' : COR_COL_BG } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+        cell.border = {
+          bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
+          right:  { style: 'thin',   color: { argb: 'FFFFFF' } },
+        };
+        ws.getColumn(idx + 1).width = col.width;
+      });
+
+      // Linha 8: exemplo destacado
+      const exemploData = [
+        'BR-001', '123456789012345', 'Mimosa', 'femea', 'Vaca', 'Nelore',
+        'Branca', 'Fogo', '15/03/2022', '15/09/2022', 'nao', 'Prenhas',
+      ];
+      const exemploRow = ws.getRow(8);
+      exemploRow.height = 20;
+      exemploData.forEach((val, idx) => {
+        const cell = exemploRow.getCell(idx + 1);
+        cell.value = val;
+        cell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: '2D5A5A' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_EXEMPLO_BG } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      });
+
+      // Linhas 9-508: área de preenchimento (500 linhas)
+      for (let r = 9; r <= 508; r++) {
+        const row = ws.getRow(r);
+        row.height = 18;
+        COLUNAS.forEach((col, idx) => {
+          const cell = row.getCell(idx + 1);
+          // Fundo alternado
+          const isAlt = (r % 2 === 0);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrig ? COR_OBRIG_BG : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
+          cell.font = { name: 'Calibri', size: 10 };
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+        });
+      }
+
+      // Dropdowns de validação por coluna (aplicados célula a célula nas linhas 8-108)
+      // ExcelJS aplica dataValidation por célula; para ranges grandes usamos as 100 primeiras linhas
+      const dvConfig: { colIdx: number; formulae: string[] }[] = [
+        { colIdx: 4,  formulae: ['"femea,macho"'] },
+        { colIdx: 5,  formulae: ['"Touro,Boi,Bezerro,Garrote,Vaca,Novilha,Bezerra,Vaca Prenhe"'] },
+        { colIdx: 6,  formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
+        { colIdx: 11, formulae: ['"nao,sim"'] },
+      ];
+      for (let r = 8; r <= 508; r++) {
+        dvConfig.forEach(({ colIdx, formulae }) => {
+          const cell = ws.getRow(r).getCell(colIdx);
+          cell.dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae,
+            showErrorMessage: true,
+            errorTitle: 'Valor inválido',
+            error: 'Selecione um valor da lista.',
+          };
+        });
+      }
+
+      // ─── ABA 2: DICIONÁRIO DE DADOS ─────────────────────────────────────────
+      const wsDic = wb.addWorksheet('Dicionário de Dados', {
+        properties: { tabColor: { argb: '1565C0' } },
+      });
+      wsDic.getColumn(1).width = 22;
+      wsDic.getColumn(2).width = 12;
+      wsDic.getColumn(3).width = 50;
+      wsDic.getColumn(4).width = 30;
+
+      wsDic.mergeCells('A1:D1');
+      const dicTitulo = wsDic.getCell('A1');
+      dicTitulo.value = 'DICIONÁRIO DE DADOS — IMPORTAÇÃO DE ANIMAIS';
+      dicTitulo.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      dicTitulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+      dicTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      wsDic.getRow(1).height = 30;
+
+      const dicHeaders = ['Campo', 'Obrigatório', 'Descrição', 'Exemplo'];
+      const dicHeaderRow = wsDic.getRow(2);
+      dicHeaderRow.height = 20;
+      dicHeaders.forEach((h, i) => {
+        const c = dicHeaderRow.getCell(i + 1);
+        c.value = h;
+        c.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Calibri', size: 11 };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      const dicDados = [
+        ['Brinco',           'SIM', 'Identificação visual do animal (brinco físico)',                 'BR-001'],
+        ['RFID',             'Não', 'Número eletrônico do chip RFID',                               '123456789012345'],
+        ['Nome',             'Não', 'Nome do animal',                                              'Mimosa'],
+        ['Sexo',             'SIM', 'Sexo do animal: femea ou macho',                              'femea'],
+        ['Categoria',        'Não', 'Categoria produtiva: Vaca, Novilha, Bezerro, Touro...',       'Vaca'],
+        ['Raça',             'Não', 'Raça do animal conforme lista disponível',                     'Nelore'],
+        ['Pelagem',          'Não', 'Cor/pelagem do animal',                                       'Branca'],
+        ['Marca',            'Não', 'Marca ou sinal do animal',                                    'Fogo'],
+        ['Dt. Nascimento',   'Não', 'Data de nascimento no formato DD/MM/AAAA',                    '15/03/2022'],
+        ['Dt. Desmama',      'Não', 'Data de desmama no formato DD/MM/AAAA',                       '15/09/2022'],
+        ['Castrado',         'Não', 'Se o animal é castrado: sim ou nao',                          'nao'],
+        ['Lote',             'Não', 'Nome exato do lote ativo cadastrado no sistema',              'Prenhas'],
+      ];
+      dicDados.forEach((row, i) => {
+        const r = wsDic.getRow(3 + i);
+        r.height = 20;
+        row.forEach((val, j) => {
+          const c = r.getCell(j + 1);
+          c.value = val;
+          c.font = { name: 'Calibri', size: 10 };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFF' : COR_LINHA_ALT } };
+          if (j === 1) {
+            c.font = { name: 'Calibri', size: 10, bold: val === 'SIM', color: { argb: val === 'SIM' ? 'B71C1C' : '388E3C' } };
+            c.alignment = { horizontal: 'center' };
+          }
+          c.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+        });
+      });
+
+      // ─── ABA 3: EXEMPLOS ─────────────────────────────────────────────────────
+      const wsEx = wb.addWorksheet('Exemplos', {
+        properties: { tabColor: { argb: '388E3C' } },
+      });
+      wsEx.getColumn(1).width = 14;
+      wsEx.getColumn(2).width = 20;
+      wsEx.getColumn(3).width = 16;
+      wsEx.getColumn(4).width = 12;
+      wsEx.getColumn(5).width = 14;
+      wsEx.getColumn(6).width = 16;
+      wsEx.getColumn(7).width = 14;
+      wsEx.getColumn(8).width = 12;
+      wsEx.getColumn(9).width = 16;
+      wsEx.getColumn(10).width = 14;
+      wsEx.getColumn(11).width = 12;
+      wsEx.getColumn(12).width = 16;
+
+      wsEx.mergeCells('A1:L1');
+      const exTitulo = wsEx.getCell('A1');
+      exTitulo.value = 'EXEMPLOS DE ANIMAIS — USE COMO REFERÊNCIA';
+      exTitulo.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      exTitulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E7D32' } };
+      exTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      wsEx.getRow(1).height = 30;
+
+      const exHeaders = ['Brinco', 'RFID', 'Nome', 'Sexo', 'Categoria', 'Raça', 'Pelagem', 'Marca', 'Dt. Nascimento', 'Dt. Desmama', 'Castrado', 'Lote'];
+      const exHeaderRow = wsEx.getRow(2);
+      exHeaderRow.height = 20;
+      exHeaders.forEach((h, i) => {
+        const c = exHeaderRow.getCell(i + 1);
+        c.value = h;
+        c.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Calibri', size: 11 };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '388E3C' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      const exDados = [
+        ['BR-001', '123456789012345', 'Mimosa',  'femea', 'Vaca',     'Nelore',       'Branca',  'Fogo',   '15/03/2022', '15/09/2022', 'nao', 'Prenhas'],
+        ['BR-002', '',               'Touro Z', 'macho', 'Touro',    'Angus',        'Preta',   '',       '10/06/2020', '',           'nao', 'Reprodutores'],
+        ['BR-003', '',               'Bezerra', 'femea', 'Bezerra',  'Nelore Mocho', 'Amarela', '',       '01/01/2025', '',           'nao', 'Cria'],
+        ['BR-004', '',               'Garrote', 'macho', 'Garrote',  'Senepol',      'Vermelha','',       '20/08/2023', '20/02/2024', 'sim', 'Engorda'],
+        ['BR-005', '',               'Novilha', 'femea', 'Novilha',  'Brahman',      'Cinza',   '',       '05/05/2022', '05/11/2022', 'nao', 'Recria'],
+      ];
+      exDados.forEach((row, i) => {
+        const r = wsEx.getRow(3 + i);
+        r.height = 18;
+        row.forEach((val, j) => {
+          const c = r.getCell(j + 1);
+          c.value = val;
+          c.font = { name: 'Calibri', size: 10 };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFF' : COR_LINHA_ALT } };
+          c.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+        });
+      });
+
+      // Serializa para base64
+      const buf = await wb.xlsx.writeBuffer();
+      const base64 = Buffer.from(buf).toString('base64');
+      return { base64, filename: 'modelo_importacao_animais.xlsx' };
     }),
 
   // ── Valida linhas antes de importar ─────────────────────────────────────────
