@@ -14,34 +14,54 @@ export function AnimaisPage() {
   const [search, setSearch] = useState("");
   const [sexoFilter, setSexoFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [loteFilter, setLoteFilter] = useState("");
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const perPage = 50;
 
-  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery({ status: statusFilter || undefined });
+  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery({
+    status: statusFilter || undefined,
+    loteId: loteFilter ? Number(loteFilter) : undefined,
+  });
+  const { data: lotesData } = trpc.lotes.list.useQuery();
   const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
-  const animais = animaisData || [];
+  const animaisList = animaisData || [];
   const filteredAnimais = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return animais.filter(a => {
+    return animaisList.filter(a => {
       if (sexoFilter && a.sexo !== sexoFilter) return false;
       if (!q) return true;
-      return [a.brinco, a.nome, a.raca].some(v => String(v || "").toLowerCase().includes(q));
+      return [a.brinco, a.brincoEletronico, a.nome, a.raca, a.loteNome].some(v => String(v || "").toLowerCase().includes(q));
     });
-  }, [animais, search, sexoFilter]);
+  }, [animaisList, search, sexoFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredAnimais.length / perPage));
   const paginated = filteredAnimais.slice((page - 1) * perPage, page * perPage);
 
-  const exportHeaders = ["Brinco", "Nome", "Sexo", "Raça", "Status", "Peso (kg)"];
+  // Helper: formata idade
+  const formatIdade = (meses: number | null) => {
+    if (meses === null || meses === undefined) return "-";
+    if (meses < 1) return "< 1 m";
+    if (meses < 24) return `${meses} m`;
+    const anos = Math.floor(meses / 12);
+    const resto = meses % 12;
+    return resto > 0 ? `${anos}a ${resto}m` : `${anos} anos`;
+  };
+
+  const exportHeaders = ["Nº Visual", "Nº RFID", "Lote", "Sexo", "Idade", "Dias Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência", "Status"];
   const exportData = filteredAnimais.map(a => [
     a.brinco || "",
-    a.nome || "",
+    a.brincoEletronico || "",
+    a.loteNome || "",
     a.sexo === "macho" ? "Macho" : "Fêmea",
-    a.raca || "",
+    formatIdade(a.idadeMeses ?? null),
+    a.diasNaFazenda !== null && a.diasNaFazenda !== undefined ? String(a.diasNaFazenda) : "",
+    a.ultimoPeso !== null && a.ultimoPeso !== undefined ? Number(a.ultimoPeso).toFixed(1) : "",
+    a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg).toFixed(2) : "",
+    a.gmd !== null && a.gmd !== undefined ? Number(a.gmd).toFixed(3) : "",
+    a.emCarencia ? "Sim" : "Não",
     a.status || "",
-    a.pesoAtual ? Number(a.pesoAtual).toFixed(1) : "",
   ]);
 
   return (
@@ -54,7 +74,7 @@ export function AnimaisPage() {
             filename="animais"
             headers={exportHeaders}
             rows={exportData}
-            alignRightFrom={5}
+            alignRightFrom={6}
           />
           <button
             onClick={() => setImportarOpen(true)}
@@ -75,11 +95,15 @@ export function AnimaisPage() {
       <div className="mb-3 flex flex-wrap gap-2">
         <input
           type="text"
-          placeholder="Buscar por brinco, nome ou raça..."
+          placeholder="Buscar por brinco, RFID, nome ou raça..."
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
           className="border border-gray-300 rounded px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#2D5A5A] w-full sm:w-64"
         />
+        <select value={loteFilter} onChange={e => { setLoteFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
+          <option value="">Todos os Lotes</option>
+          {(lotesData || []).map((l: any) => <option key={l.id} value={String(l.id)}>{l.nome}</option>)}
+        </select>
         <select value={sexoFilter} onChange={e => { setSexoFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
           <option value="">Sexo</option>
           <option value="macho">Macho</option>
@@ -90,6 +114,7 @@ export function AnimaisPage() {
           <option value="ativo">Ativo</option>
           <option value="vendido">Vendido</option>
           <option value="morto">Morto</option>
+          <option value="transferido">Transferido</option>
         </select>
       </div>
 
@@ -103,20 +128,22 @@ export function AnimaisPage() {
           <MobileCard
             key={animal.id}
             title={animal.brinco || animal.nome || "—"}
-            subtitle={[animal.nome && animal.brinco ? animal.nome : "", animal.raca].filter(Boolean).join(" · ") || undefined}
+            subtitle={[animal.loteNome, animal.raca].filter(Boolean).join(" · ") || undefined}
             badge={
               <div className="flex flex-col items-end gap-1">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
                   {animal.sexo === "macho" ? "Macho" : "Fêmea"}
                 </span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.status === "ativo" ? "bg-green-100 text-green-700" : animal.status === "vendido" ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
-                  {animal.status}
-                </span>
+                {animal.emCarencia && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">Carência</span>
+                )}
               </div>
             }
             fields={[
-              { label: "Peso (kg)", value: animal.pesoAtual ? Number(animal.pesoAtual).toFixed(1) : "" },
-              { label: "Raça", value: animal.raca || "" },
+              { label: "Idade", value: formatIdade(animal.idadeMeses ?? null) },
+              { label: "Dias Fazenda", value: animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? String(animal.diasNaFazenda) : "-" },
+              { label: "Últ. Peso", value: animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? `${Number(animal.ultimoPeso).toFixed(1)} kg` : "-" },
+              { label: "GMD", value: animal.gmd !== null && animal.gmd !== undefined ? `${Number(animal.gmd).toFixed(3)} kg/d` : "-" },
             ]}
             actions={[
               { icon: "visibility", label: "Detalhes", onClick: () => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`) },
@@ -133,45 +160,93 @@ export function AnimaisPage() {
           <table className="w-full text-[12px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Brinco</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Nome</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Sexo</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Raça</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Status</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Peso (kg)</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Ações</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap"># Nº Visual</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Nº RFID</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Lote</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Sexo</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Idade</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Dias Fazenda</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Últ. Peso (kg)</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ganho (kg)</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">GMD (kg/dia)</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Em Carência</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={11} className="text-center py-8 text-gray-400">Carregando...</td></tr>
               ) : paginated.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
+                <tr><td colSpan={11} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
               ) : paginated.map((animal) => (
-                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-[#2D5A5A]">{animal.brinco || "-"}</td>
-                  <td className="px-3 py-2">{animal.nome || "-"}</td>
+                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  {/* Nº Visual */}
                   <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
+                      <span className="font-semibold text-[#2D5A5A]">{animal.brinco || "-"}</span>
+                    </div>
+                  </td>
+                  {/* Nº RFID */}
+                  <td className="px-3 py-2 text-gray-500 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
+                  {/* Lote */}
+                  <td className="px-3 py-2">
+                    {animal.loteNome ? (
+                      <span className="px-2 py-0.5 rounded bg-[#2D5A5A]/10 text-[#2D5A5A] font-medium text-[11px]">{animal.loteNome}</span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* Sexo */}
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
                       {animal.sexo === "macho" ? "Macho" : "Fêmea"}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{animal.raca || "-"}</td>
-                  <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.status === "ativo" ? "bg-green-100 text-green-700" : animal.status === "vendido" ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
-                      {animal.status}
-                    </span>
+                  {/* Idade */}
+                  <td className="px-3 py-2 text-right tabular-nums">{formatIdade(animal.idadeMeses ?? null)}</td>
+                  {/* Dias Fazenda */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? animal.diasNaFazenda : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-3 py-2">{animal.pesoAtual ? Number(animal.pesoAtual).toFixed(1) : "-"}</td>
+                  {/* Último Peso */}
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">
+                    {animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? Number(animal.ultimoPeso).toFixed(1) : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* Ganho KG */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {animal.ganhoKg !== null && animal.ganhoKg !== undefined ? (
+                      <span className={Number(animal.ganhoKg) >= 0 ? "text-green-600" : "text-red-500"}>
+                        {Number(animal.ganhoKg) >= 0 ? "+" : ""}{Number(animal.ganhoKg).toFixed(2)}
+                      </span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* GMD */}
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {animal.gmd !== null && animal.gmd !== undefined ? (
+                      <span className={Number(animal.gmd) >= 0.8 ? "text-green-600" : Number(animal.gmd) >= 0.4 ? "text-amber-600" : "text-red-500"}>
+                        {Number(animal.gmd).toFixed(3)}
+                      </span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* Em Carência */}
+                  <td className="px-3 py-2 text-center">
+                    {animal.emCarencia ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-[11px] font-medium">
+                        <span className="material-icons text-[12px]">warning</span>Sim
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-[11px]">Não</span>
+                    )}
+                  </td>
+                  {/* Ações */}
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A]" title="Ver detalhes">
+                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors" title="Ver detalhes">
                         <span className="material-icons text-[16px]">visibility</span>
                       </button>
-                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600" title="Editar">
+                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors" title="Editar">
                         <span className="material-icons text-[16px]">edit</span>
                       </button>
-                      <button onClick={() => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); }} className="p-1 text-gray-400 hover:text-red-600" title="Remover">
+                      <button onClick={() => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); }} className="p-1 text-gray-400 hover:text-red-600 transition-colors" title="Remover">
                         <span className="material-icons text-[16px]">delete</span>
                       </button>
                     </div>
@@ -181,17 +256,17 @@ export function AnimaisPage() {
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
-            <span className="text-[11px] text-gray-500">{filteredAnimais.length} animais</span>
+        {/* Rodapé: contagem + paginação */}
+        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+          <span className="text-[11px] text-gray-500">{filteredAnimais.length} animais</span>
+          {totalPages > 1 && (
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Anterior</button>
               <span className="text-[11px] px-2">{page} / {totalPages}</span>
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Próxima</button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Modal de importação em massa */}

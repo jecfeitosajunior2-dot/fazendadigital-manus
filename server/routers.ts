@@ -54,12 +54,134 @@ const authRouter = router({
 // ─── ANIMAIS ROUTER ───────────────────────────────────────────────────────────
 const animaisRouter = router({
   list: protectedProcedure
-    .input(z.object({ sexo: z.string().optional(), status: z.string().optional() }).optional())
+    .input(z.object({ sexo: z.string().optional(), status: z.string().optional(), loteId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const conditions = [eq(animais.userId, ctx.user.id)];
-      if (input?.sexo && input.sexo !== "") conditions.push(eq(animais.sexo, input.sexo as any));
-      if (input?.status && input.status !== "") conditions.push(eq(animais.status, input.status as any));
-      return db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
+      if (input?.sexo && input.sexo !== '') conditions.push(eq(animais.sexo, input.sexo as any));
+      if (input?.status && input.status !== '') conditions.push(eq(animais.status, input.status as any));
+      if (input?.loteId) conditions.push(eq(animais.loteId, input.loteId));
+
+      const lista = await db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
+      if (lista.length === 0) return [];
+
+      const animalIds = lista.map(a => a.id);
+
+      // Busca lotes
+      const lotesAll = await db.select({ id: lotes.id, nome: lotes.nome })
+        .from(lotes).where(eq(lotes.userId, ctx.user.id));
+      const loteMap = new Map(lotesAll.map(l => [l.id, l.nome]));
+
+      // Busca TODAS as pesagens dos animais listados (para calcular GMD e ganho)
+      const todasPesagens = await db.select()
+        .from(pesagens)
+        .where(and(eq(pesagens.userId, ctx.user.id), inArray(pesagens.animalId, animalIds)))
+        .orderBy(pesagens.animalId, pesagens.data);
+
+      // Agrupa pesagens por animalId
+      const pesagensPorAnimal = new Map<number, typeof todasPesagens>();
+      for (const p of todasPesagens) {
+        if (!pesagensPorAnimal.has(p.animalId)) pesagensPorAnimal.set(p.animalId, []);
+        pesagensPorAnimal.get(p.animalId)!.push(p);
+      }
+
+      // Busca últimos registros de saúde com carencia para cada animal
+      // Usa o campo medicamento para cruzar com estoque
+      const saudeAll = await db.select({
+        animalId: saudeRegistros.animalId,
+        medicamento: saudeRegistros.medicamento,
+        dataRegistro: saudeRegistros.dataRegistro,
+      })
+        .from(saudeRegistros)
+        .where(and(eq(saudeRegistros.userId, ctx.user.id), inArray(saudeRegistros.animalId, animalIds)))
+        .orderBy(desc(saudeRegistros.dataRegistro));
+
+      // Busca medicamentos do estoque que possuem carencia
+      // Nota: tabela estoque não tem userId, filtra apenas por possuiCarencia
+      const medicamentosCarencia = await db.select({
+        nome: estoque.nome,
+        carenciaAbateDias: estoque.carenciaAbateDias,
+        possuiCarencia: estoque.possuiCarencia,
+      }).from(estoque).where(eq(estoque.possuiCarencia, true));
+      const medCarenciaMap = new Map(medicamentosCarencia.map(m => [m.nome.toLowerCase().trim(), m.carenciaAbateDias || 0]));
+
+      // Para cada animal, calcula "em carência" = se existe registro de saúde recente com medicamento de carencia
+      // cuja data de fim da carencia ainda não passou
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+
+      const emCarenciaPorAnimal = new Map<number, boolean>();
+      // Agrupa por animal (pega o mais recente de cada medicamento)
+      const saudeVistos = new Set<string>();
+      for (const s of saudeAll) {
+        const chave = `${s.animalId}-${s.medicamento}`;
+        if (saudeVistos.has(chave)) continue;
+        saudeVistos.add(chave);
+        const med = (s.medicamento || '').toLowerCase().trim();
+        const diasCarencia = medCarenciaMap.get(med);
+        if (diasCarencia && diasCarencia > 0 && s.dataRegistro) {
+          const dataAplicacao = new Date(s.dataRegistro);
+          const fimCarencia = new Date(dataAplicacao);
+          fimCarencia.setDate(fimCarencia.getDate() + diasCarencia);
+          if (fimCarencia >= hoje) {
+            emCarenciaPorAnimal.set(s.animalId, true);
+          }
+        }
+      }
+
+      // Monta resultado enriquecido
+      return lista.map(animal => {
+        const loteNome = animal.loteId ? (loteMap.get(animal.loteId) || null) : null;
+
+        // Idade em meses
+        let idadeMeses: number | null = null;
+        if (animal.dataNascimento) {
+          const nasc = new Date(animal.dataNascimento);
+          const diffMs = hoje.getTime() - nasc.getTime();
+          idadeMeses = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+        }
+
+        // Dias na fazenda
+        let diasNaFazenda: number | null = null;
+        if (animal.dataEntrada) {
+          const entrada = new Date(animal.dataEntrada);
+          diasNaFazenda = Math.floor((hoje.getTime() - entrada.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        // Pesagens do animal (ordenadas por data asc)
+        const pesos = pesagensPorAnimal.get(animal.id) || [];
+        const ultimoPeso = pesos.length > 0 ? Number(pesos[pesos.length - 1].peso) : (animal.pesoAtual ? Number(animal.pesoAtual) : null);
+        const primeiroPeso = pesos.length > 0 ? Number(pesos[0].peso) : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
+
+        // Ganho total (kg)
+        let ganhoKg: number | null = null;
+        if (ultimoPeso !== null && primeiroPeso !== null && ultimoPeso !== primeiroPeso) {
+          ganhoKg = Math.round((ultimoPeso - primeiroPeso) * 100) / 100;
+        }
+
+        // GMD: ganho médio diário (kg/dia)
+        let gmd: number | null = null;
+        if (pesos.length >= 2) {
+          const p1 = pesos[0];
+          const p2 = pesos[pesos.length - 1];
+          const d1 = new Date(p1.data);
+          const d2 = new Date(p2.data);
+          const dias = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+          gmd = Math.round(((Number(p2.peso) - Number(p1.peso)) / dias) * 1000) / 1000;
+        } else if (diasNaFazenda && diasNaFazenda > 0 && ganhoKg !== null) {
+          gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
+        }
+
+        return {
+          ...animal,
+          loteNome,
+          idadeMeses,
+          diasNaFazenda,
+          ultimoPeso,
+          ganhoKg,
+          gmd,
+          emCarencia: emCarenciaPorAnimal.get(animal.id) || false,
+        };
+      });
     }),
 
   getById: protectedProcedure
