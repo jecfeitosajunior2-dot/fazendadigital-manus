@@ -311,250 +311,212 @@ const animaisRouter = router({
   gerarModeloPlanilha: protectedProcedure
     .mutation(async () => {
       const ExcelJS = await import('exceljs');
+      const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoAnimais');
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Fazenda Digital';
       wb.created = new Date();
 
       // ─── CORES INSTITUCIONAIS ──────────────────────────────────────────────────
       const COR_HEADER_BG  = '1A3C3C'; // verde petróleo escuro
-      const COR_HEADER_TXT = 'FFFFFF';
-      const COR_COL_BG     = '2D5A5A'; // verde petróleo médio
-      const COR_COL_TXT    = 'FFFFFF';
-      const COR_OBRIG_BG   = 'FFF3CD'; // amarelo suave — campos obrigatórios
-      const COR_EXEMPLO_BG = 'E8F5E9'; // verde claro — linha de exemplo
-      const COR_LINHA_ALT  = 'F7FAFA'; // cinza muito claro — linhas alternadas
-      const COR_INSTRUCAO  = 'E3F2FD'; // azul claro — bloco instruções
+      const COR_OBRIG_BG   = 'B8860B'; // dourado — cabeçalho de campos obrigatórios
+      const COR_COL_BG     = '2D5A5A'; // verde petróleo médio — cabeçalho normal
+      const COR_LINHA_ALT  = 'F2F7F7'; // cinza esverdeado muito claro
+      const COR_EXEMPLO_BG = 'E8F5E9'; // verde claro
+      const COR_INSTRUCAO  = 'E3F2FD'; // azul claro
 
-      // ─── ABA 1: IMPORTAÇÃO DE ANIMAIS ─────────────────────────────────────────
-      const ws = wb.addWorksheet('Importação de Animais', {
+      const NUM_COLS = COLUNAS_IMPORTACAO.length;
+      const ultimaColLetra = (n: number): string => {
+        // converte índice 1-based para letra de coluna do Excel (A, B, ... Z, AA...)
+        let s = '';
+        while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+        return s;
+      };
+      const COL_FIM = ultimaColLetra(NUM_COLS);
+
+      // ─── ABA 1: ANIMAIS (cabeçalhos na LINHA 1 para parse correto) ─────────────
+      const ws = wb.addWorksheet('Animais', {
         properties: { tabColor: { argb: COR_COL_BG } },
-        views: [{ state: 'frozen', ySplit: 7 }], // congela até linha 7
+        views: [{ state: 'frozen', ySplit: 1 }], // congela cabeçalho
       });
 
-      // Cabeçalho institucional (linhas 1-3)
-      ws.mergeCells('A1:L1');
-      const tituloCell = ws.getCell('A1');
-      tituloCell.value = 'FAZENDA DIGITAL — IMPORTAÇÃO DE ANIMAIS';
-      tituloCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: COR_HEADER_TXT } };
-      tituloCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
-      tituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      ws.getRow(1).height = 36;
-
-      ws.mergeCells('A2:L2');
-      const subtituloCell = ws.getCell('A2');
-      subtituloCell.value = 'Preencha uma linha por animal. Não altere os nomes das colunas.';
-      subtituloCell.font = { name: 'Calibri', size: 11, italic: true, color: { argb: COR_HEADER_TXT } };
-      subtituloCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
-      subtituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      ws.getRow(2).height = 22;
-
-      // Bloco de instruções (linhas 3-6)
-      const instrucoes = [
-        'INSTRUÇÕES:',
-        '  • Campos com fundo AMARELO são OBRIGATÓRIOS (Brinco e Sexo).',
-        '  • Datas no formato DD/MM/AAAA — Ex: 15/03/2022',
-        '  • Use os menus suspensos para Sexo, Categoria, Raça e Castrado.',
-      ];
-      instrucoes.forEach((txt, i) => {
-        ws.mergeCells(`A${3 + i}:L${3 + i}`);
-        const c = ws.getCell(`A${3 + i}`);
-        c.value = txt;
-        c.font = { name: 'Calibri', size: 10, bold: i === 0, color: { argb: '1A3C3C' } };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_INSTRUCAO } };
-        c.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
-        ws.getRow(3 + i).height = 18;
-      });
-
-      // Linha 7: cabeçalho das colunas
-      const COLUNAS = [
-        { key: 'brinco',           label: 'Brinco *',           obrig: true,  width: 14 },
-        { key: 'brincoEletronico', label: 'RFID',               obrig: false, width: 20 },
-        { key: 'nome',             label: 'Nome',               obrig: false, width: 16 },
-        { key: 'sexo',             label: 'Sexo *',             obrig: true,  width: 12 },
-        { key: 'categoria',        label: 'Categoria',          obrig: false, width: 14 },
-        { key: 'raca',             label: 'Raça',               obrig: false, width: 16 },
-        { key: 'pelagem',          label: 'Pelagem',            obrig: false, width: 14 },
-        { key: 'marca',            label: 'Marca',              obrig: false, width: 12 },
-        { key: 'dataNascimento',   label: 'Dt. Nascimento',     obrig: false, width: 16 },
-        { key: 'dataDesmama',      label: 'Dt. Desmama',        obrig: false, width: 14 },
-        { key: 'castrado',         label: 'Castrado',           obrig: false, width: 12 },
-        { key: 'lote',             label: 'Lote',               obrig: false, width: 16 },
-      ];
-
-      const headerRow = ws.getRow(7);
-      headerRow.height = 22;
-      COLUNAS.forEach((col, idx) => {
+      // Linha 1: cabeçalhos das colunas (parser lê esta linha)
+      const headerRow = ws.getRow(1);
+      headerRow.height = 26;
+      COLUNAS_IMPORTACAO.forEach((col, idx) => {
         const cell = headerRow.getCell(idx + 1);
-        cell.value = col.label;
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: COR_COL_TXT } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrig ? 'B8860B' : COR_COL_BG } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+        cell.value = col.label + (col.obrigatorio ? ' *' : '');
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         cell.border = {
           bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
           right:  { style: 'thin',   color: { argb: 'FFFFFF' } },
         };
-        ws.getColumn(idx + 1).width = col.width;
+        ws.getColumn(idx + 1).width = col.largura;
       });
 
-      // Linha 8: exemplo destacado
-      const exemploData = [
-        'BR-001', '123456789012345', 'Mimosa', 'femea', 'Vaca', 'Nelore',
-        'Branca', 'Fogo', '15/03/2022', '15/09/2022', 'nao', 'Prenhas',
-      ];
-      const exemploRow = ws.getRow(8);
+      // Linha 2: exemplo destacado
+      const exemploRow = ws.getRow(2);
       exemploRow.height = 20;
-      exemploData.forEach((val, idx) => {
+      COLUNAS_IMPORTACAO.forEach((col, idx) => {
         const cell = exemploRow.getCell(idx + 1);
-        cell.value = val;
+        cell.value = col.exemplo;
         cell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: '2D5A5A' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_EXEMPLO_BG } };
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
       });
 
-      // Linhas 9-508: área de preenchimento (500 linhas)
-      for (let r = 9; r <= 508; r++) {
+      // Linhas 3-502: área de preenchimento com alternância visual
+      for (let r = 3; r <= 502; r++) {
         const row = ws.getRow(r);
         row.height = 18;
-        COLUNAS.forEach((col, idx) => {
+        COLUNAS_IMPORTACAO.forEach((col, idx) => {
           const cell = row.getCell(idx + 1);
-          // Fundo alternado
-          const isAlt = (r % 2 === 0);
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrig ? COR_OBRIG_BG : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
+          const isAlt = (r % 2 === 1);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
           cell.font = { name: 'Calibri', size: 10 };
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
           cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
         });
       }
 
-      // Dropdowns de validação por coluna (aplicados célula a célula nas linhas 8-108)
-      // ExcelJS aplica dataValidation por célula; para ranges grandes usamos as 100 primeiras linhas
+      // Dropdowns de validação — Sexo, Categoria, Raça, Castrado, Status, Rastreado
+      const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
       const dvConfig: { colIdx: number; formulae: string[] }[] = [
-        { colIdx: 4,  formulae: ['"femea,macho"'] },
-        { colIdx: 5,  formulae: ['"Touro,Boi,Bezerro,Garrote,Vaca,Novilha,Bezerra,Vaca Prenhe"'] },
-        { colIdx: 6,  formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
-        { colIdx: 11, formulae: ['"nao,sim"'] },
-      ];
-      for (let r = 8; r <= 508; r++) {
+        { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
+        { colIdx: idxDe('categoria'),           formulae: ['"Touro,Boi,Bezerro,Garrote,Vaca,Novilha,Bezerra,Vaca Prenhe"'] },
+        { colIdx: idxDe('raca'),                formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
+        { colIdx: idxDe('castrado'),            formulae: ['"Sim,Não"'] },
+        { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
+        { colIdx: idxDe('status'),              formulae: ['"Ativo,Vendido,Morto,Transferido"'] },
+      ].filter(d => d.colIdx > 0);
+      for (let r = 2; r <= 502; r++) {
         dvConfig.forEach(({ colIdx, formulae }) => {
           const cell = ws.getRow(r).getCell(colIdx);
           cell.dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae,
-            showErrorMessage: true,
-            errorTitle: 'Valor inválido',
-            error: 'Selecione um valor da lista.',
+            type: 'list', allowBlank: true, formulae,
+            showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
           };
         });
       }
 
-      // ─── ABA 2: DICIONÁRIO DE DADOS ─────────────────────────────────────────
-      const wsDic = wb.addWorksheet('Dicionário de Dados', {
-        properties: { tabColor: { argb: '1565C0' } },
-      });
-      wsDic.getColumn(1).width = 22;
-      wsDic.getColumn(2).width = 12;
-      wsDic.getColumn(3).width = 50;
-      wsDic.getColumn(4).width = 30;
+      // ─── ABA 2: INSTRUÇÕES ─────────────────────────────────────────────────────
+      const wsInstr = wb.addWorksheet('Instruções', { properties: { tabColor: { argb: '1565C0' } } });
+      wsInstr.getColumn(1).width = 4;
+      wsInstr.getColumn(2).width = 100;
+      wsInstr.mergeCells('A1:B1');
+      const instrTit = wsInstr.getCell('A1');
+      instrTit.value = 'FAZENDA DIGITAL — COMO PREENCHER A PLANILHA DE IMPORTAÇÃO';
+      instrTit.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      instrTit.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+      instrTit.alignment = { horizontal: 'center', vertical: 'middle' };
+      wsInstr.getRow(1).height = 32;
 
+      const instrucoes = [
+        '',
+        'Preencha a aba "Animais" — uma linha por animal.',
+        'NÃO altere os nomes das colunas (linha 1).',
+        'Campos com asterisco (*) e cabeçalho DOURADO são OBRIGATÓRIOS: Brinco e Sexo.',
+        'A linha 2 é apenas um EXEMPLO — você pode apagá-la ou sobrescrevê-la.',
+        '',
+        'DATAS: use sempre o formato brasileiro DD/MM/AAAA. Ex: 15/03/2022',
+        '   (o sistema também aceita DD/MM/AA, ex: 15/03/22)',
+        '',
+        'LISTAS SUSPENSAS: nas colunas Sexo, Categoria, Raça, Castrado, Rastreado no',
+        '   Nascimento e Status, clique na célula e selecione um valor da lista.',
+        '',
+        'LOTE: digite exatamente o nome de um lote ATIVO já cadastrado no sistema.',
+        'NÃO insira fórmulas nas células — apenas valores.',
+        '',
+        'Consulte a aba "Dicionário de Dados" para a descrição de cada campo.',
+        'Consulte a aba "Exemplos" para ver modelos de animais já preenchidos.',
+      ];
+      instrucoes.forEach((txt, i) => {
+        const r = wsInstr.getRow(2 + i);
+        const c = r.getCell(2);
+        c.value = txt;
+        c.font = { name: 'Calibri', size: 11, color: { argb: '1A3C3C' } };
+        c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        if (txt) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_INSTRUCAO } };
+        r.height = txt ? 20 : 8;
+      });
+
+      // ─── ABA 3: DICIONÁRIO DE DADOS ────────────────────────────────────────────
+      const wsDic = wb.addWorksheet('Dicionário de Dados', { properties: { tabColor: { argb: '6A1B9A' } } });
+      wsDic.getColumn(1).width = 26;
+      wsDic.getColumn(2).width = 13;
+      wsDic.getColumn(3).width = 55;
+      wsDic.getColumn(4).width = 24;
       wsDic.mergeCells('A1:D1');
-      const dicTitulo = wsDic.getCell('A1');
-      dicTitulo.value = 'DICIONÁRIO DE DADOS — IMPORTAÇÃO DE ANIMAIS';
-      dicTitulo.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
-      dicTitulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
-      dicTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      const dicTit = wsDic.getCell('A1');
+      dicTit.value = 'DICIONÁRIO DE DADOS';
+      dicTit.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      dicTit.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+      dicTit.alignment = { horizontal: 'center', vertical: 'middle' };
       wsDic.getRow(1).height = 30;
 
-      const dicHeaders = ['Campo', 'Obrigatório', 'Descrição', 'Exemplo'];
-      const dicHeaderRow = wsDic.getRow(2);
-      dicHeaderRow.height = 20;
-      dicHeaders.forEach((h, i) => {
-        const c = dicHeaderRow.getCell(i + 1);
+      const dicHead = ['Campo', 'Obrigatório', 'Descrição', 'Exemplo'];
+      const dicHeadRow = wsDic.getRow(2);
+      dicHeadRow.height = 20;
+      dicHead.forEach((h, i) => {
+        const c = dicHeadRow.getCell(i + 1);
         c.value = h;
         c.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Calibri', size: 11 };
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
         c.alignment = { horizontal: 'center', vertical: 'middle' };
       });
-
-      const dicDados = [
-        ['Brinco',           'SIM', 'Identificação visual do animal (brinco físico)',                 'BR-001'],
-        ['RFID',             'Não', 'Número eletrônico do chip RFID',                               '123456789012345'],
-        ['Nome',             'Não', 'Nome do animal',                                              'Mimosa'],
-        ['Sexo',             'SIM', 'Sexo do animal: femea ou macho',                              'femea'],
-        ['Categoria',        'Não', 'Categoria produtiva: Vaca, Novilha, Bezerro, Touro...',       'Vaca'],
-        ['Raça',             'Não', 'Raça do animal conforme lista disponível',                     'Nelore'],
-        ['Pelagem',          'Não', 'Cor/pelagem do animal',                                       'Branca'],
-        ['Marca',            'Não', 'Marca ou sinal do animal',                                    'Fogo'],
-        ['Dt. Nascimento',   'Não', 'Data de nascimento no formato DD/MM/AAAA',                    '15/03/2022'],
-        ['Dt. Desmama',      'Não', 'Data de desmama no formato DD/MM/AAAA',                       '15/09/2022'],
-        ['Castrado',         'Não', 'Se o animal é castrado: sim ou nao',                          'nao'],
-        ['Lote',             'Não', 'Nome exato do lote ativo cadastrado no sistema',              'Prenhas'],
-      ];
-      dicDados.forEach((row, i) => {
+      COLUNAS_IMPORTACAO.forEach((col, i) => {
         const r = wsDic.getRow(3 + i);
         r.height = 20;
-        row.forEach((val, j) => {
+        const vals = [col.label, col.obrigatorio ? 'SIM' : 'Não', col.descricao, col.exemplo];
+        vals.forEach((val, j) => {
           const c = r.getCell(j + 1);
           c.value = val;
           c.font = { name: 'Calibri', size: 10 };
           c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFF' : COR_LINHA_ALT } };
           if (j === 1) {
-            c.font = { name: 'Calibri', size: 10, bold: val === 'SIM', color: { argb: val === 'SIM' ? 'B71C1C' : '388E3C' } };
+            c.font = { name: 'Calibri', size: 10, bold: col.obrigatorio, color: { argb: col.obrigatorio ? 'B71C1C' : '388E3C' } };
             c.alignment = { horizontal: 'center' };
           }
           c.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
         });
       });
 
-      // ─── ABA 3: EXEMPLOS ─────────────────────────────────────────────────────
-      const wsEx = wb.addWorksheet('Exemplos', {
-        properties: { tabColor: { argb: '388E3C' } },
-      });
-      wsEx.getColumn(1).width = 14;
-      wsEx.getColumn(2).width = 20;
-      wsEx.getColumn(3).width = 16;
-      wsEx.getColumn(4).width = 12;
-      wsEx.getColumn(5).width = 14;
-      wsEx.getColumn(6).width = 16;
-      wsEx.getColumn(7).width = 14;
-      wsEx.getColumn(8).width = 12;
-      wsEx.getColumn(9).width = 16;
-      wsEx.getColumn(10).width = 14;
-      wsEx.getColumn(11).width = 12;
-      wsEx.getColumn(12).width = 16;
-
-      wsEx.mergeCells('A1:L1');
-      const exTitulo = wsEx.getCell('A1');
-      exTitulo.value = 'EXEMPLOS DE ANIMAIS — USE COMO REFERÊNCIA';
-      exTitulo.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
-      exTitulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E7D32' } };
-      exTitulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      // ─── ABA 4: EXEMPLOS ───────────────────────────────────────────────────────
+      const wsEx = wb.addWorksheet('Exemplos', { properties: { tabColor: { argb: '388E3C' } } });
+      COLUNAS_IMPORTACAO.forEach((col, i) => { wsEx.getColumn(i + 1).width = col.largura; });
+      wsEx.mergeCells(`A1:${COL_FIM}1`);
+      const exTit = wsEx.getCell('A1');
+      exTit.value = 'EXEMPLOS DE ANIMAIS — USE COMO REFERÊNCIA';
+      exTit.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      exTit.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E7D32' } };
+      exTit.alignment = { horizontal: 'center', vertical: 'middle' };
       wsEx.getRow(1).height = 30;
 
-      const exHeaders = ['Brinco', 'RFID', 'Nome', 'Sexo', 'Categoria', 'Raça', 'Pelagem', 'Marca', 'Dt. Nascimento', 'Dt. Desmama', 'Castrado', 'Lote'];
-      const exHeaderRow = wsEx.getRow(2);
-      exHeaderRow.height = 20;
-      exHeaders.forEach((h, i) => {
-        const c = exHeaderRow.getCell(i + 1);
-        c.value = h;
-        c.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Calibri', size: 11 };
+      const exHeadRow = wsEx.getRow(2);
+      exHeadRow.height = 24;
+      COLUNAS_IMPORTACAO.forEach((col, i) => {
+        const c = exHeadRow.getCell(i + 1);
+        c.value = col.label;
+        c.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Calibri', size: 10 };
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '388E3C' } };
-        c.alignment = { horizontal: 'center', vertical: 'middle' };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       });
 
-      const exDados = [
-        ['BR-001', '123456789012345', 'Mimosa',  'femea', 'Vaca',     'Nelore',       'Branca',  'Fogo',   '15/03/2022', '15/09/2022', 'nao', 'Prenhas'],
-        ['BR-002', '',               'Touro Z', 'macho', 'Touro',    'Angus',        'Preta',   '',       '10/06/2020', '',           'nao', 'Reprodutores'],
-        ['BR-003', '',               'Bezerra', 'femea', 'Bezerra',  'Nelore Mocho', 'Amarela', '',       '01/01/2025', '',           'nao', 'Cria'],
-        ['BR-004', '',               'Garrote', 'macho', 'Garrote',  'Senepol',      'Vermelha','',       '20/08/2023', '20/02/2024', 'sim', 'Engorda'],
-        ['BR-005', '',               'Novilha', 'femea', 'Novilha',  'Brahman',      'Cinza',   '',       '05/05/2022', '05/11/2022', 'nao', 'Recria'],
+      // Exemplos por chave (preenche apenas algumas colunas relevantes)
+      const exemplos: Record<string, string>[] = [
+        { brinco: 'BR-001', sexo: 'Fêmea', lote: 'Engorda 1', categoria: 'Vaca',    raca: 'Nelore',       pelagem: 'Branca',   marca: 'Fogo', dataNascimento: '15/03/2022', dataDesmama: '15/09/2022', castrado: 'Não', pesoEntrada: '320', status: 'Ativo' },
+        { brinco: 'BR-002', sexo: 'Macho', lote: 'Reprodutores', categoria: 'Touro', raca: 'Angus',        pelagem: 'Preta',    marca: '',     dataNascimento: '10/06/2020', dataDesmama: '',           castrado: 'Não', pesoEntrada: '650', status: 'Ativo' },
+        { brinco: 'BR-003', sexo: 'Fêmea', lote: 'Cria',         categoria: 'Bezerra', raca: 'Nelore Mocho', pelagem: 'Amarela', marca: '',    dataNascimento: '01/01/2025', dataDesmama: '',           castrado: 'Não', pesoEntrada: '90',  status: 'Ativo' },
+        { brinco: 'BR-004', sexo: 'Macho', lote: 'Engorda 2',    categoria: 'Garrote', raca: 'Senepol',     pelagem: 'Vermelha', marca: '',     dataNascimento: '20/08/2023', dataDesmama: '20/02/2024', castrado: 'Sim', pesoEntrada: '280', status: 'Ativo' },
+        { brinco: 'BR-005', sexo: 'Fêmea', lote: 'Recria',       categoria: 'Novilha', raca: 'Brahman',     pelagem: 'Cinza',    marca: '',     dataNascimento: '05/05/2022', dataDesmama: '05/11/2022', castrado: 'Não', pesoEntrada: '240', status: 'Ativo' },
       ];
-      exDados.forEach((row, i) => {
+      exemplos.forEach((ex, i) => {
         const r = wsEx.getRow(3 + i);
         r.height = 18;
-        row.forEach((val, j) => {
+        COLUNAS_IMPORTACAO.forEach((col, j) => {
           const c = r.getCell(j + 1);
-          c.value = val;
+          c.value = ex[col.key] ?? '';
           c.font = { name: 'Calibri', size: 10 };
           c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFFFF' : COR_LINHA_ALT } };
           c.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
@@ -573,6 +535,7 @@ const animaisRouter = router({
       linhas: z.array(z.record(z.string(), z.string())),
     }))
     .mutation(async ({ ctx, input }) => {
+      const { normalizarLinha, normalizarSexo, normalizarStatus } = await import('../shared/importacaoAnimais');
       const SEXOS_VALIDOS = ['macho', 'femea'];
       const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
       const RACAS_VALIDAS = [
@@ -583,6 +546,10 @@ const animaisRouter = router({
         'Touro', 'Boi', 'Bezerro', 'Garrote',
         'Vaca', 'Novilha', 'Bezerra', 'Vaca Prenhe',
       ];
+
+      // Normaliza cabeçalhos PT-BR → chaves internas para TODAS as linhas
+      // (a planilha do usuário usa rótulos em português como "Brinco", "Data de Nascimento")
+      input.linhas = input.linhas.map(l => normalizarLinha(l));
 
       // Busca apenas lotes ATIVOS do usuário
       const lotesUsuario = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
@@ -623,18 +590,24 @@ const animaisRouter = router({
           }
         }
 
-        // Sexo obrigatório
-        const sexo = (linha.sexo || '').trim().toLowerCase();
+        // Sexo obrigatório — aceita "Fêmea"/"Macho" (PT-BR) e normaliza
+        const sexoRaw = (linha.sexo || '').trim();
+        const sexo = sexoRaw ? normalizarSexo(sexoRaw) : '';
         if (!sexo) {
-          errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: 'Sexo é obrigatório' });
+          errosLinha.push({ linha: numLinha, campo: 'Sexo', mensagem: 'Sexo é obrigatório (Fêmea ou Macho)' });
         } else if (!SEXOS_VALIDOS.includes(sexo)) {
-          errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: `Sexo inválido: "${linha.sexo}". Use: macho ou femea` });
+          errosLinha.push({ linha: numLinha, campo: 'Sexo', mensagem: `Sexo inválido: "${sexoRaw}". Use: Fêmea ou Macho` });
+        } else {
+          linha.sexo = sexo; // normaliza para o banco
         }
 
-        // Status (opcional, mas se informado deve ser válido)
-        const status = (linha.status || '').trim().toLowerCase();
+        // Status (opcional, mas se informado deve ser válido) — aceita "Ativo" (PT-BR)
+        const statusRaw = (linha.status || '').trim();
+        const status = statusRaw ? normalizarStatus(statusRaw) : '';
         if (status && !STATUS_VALIDOS.includes(status)) {
-          errosLinha.push({ linha: numLinha, campo: 'status', mensagem: `Status inválido: "${linha.status}". Use: ativo, vendido, morto ou transferido` });
+          errosLinha.push({ linha: numLinha, campo: 'Status', mensagem: `Status inválido: "${statusRaw}". Use: Ativo, Vendido, Morto ou Transferido` });
+        } else if (status) {
+          linha.status = status; // normaliza para o banco
         }
 
         // Raça (opcional, mas se informada deve ser válida)
@@ -726,22 +699,41 @@ const animaisRouter = router({
       loteNomeParaId: z.record(z.string(), z.number()),
     }))
     .mutation(async ({ ctx, input }) => {
+      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano } = await import('../shared/importacaoAnimais');
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
+      // Converte datas DD/MM/AAAA, DD/MM/AA ou AAAA-MM-DD em objeto Date (ou undefined)
+      const parseData = (raw: string): Date | undefined => {
+        const s = (raw || '').trim();
+        if (!s) return undefined;
+        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (iso) return new Date(`${s}T00:00:00`);
+        const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (br) {
+          const d = br[1].padStart(2, '0');
+          const m = br[2].padStart(2, '0');
+          let y = br[3];
+          if (y.length === 2) y = parseInt(y, 10) < 50 ? `20${y}` : `19${y}`;
+          return new Date(`${y}-${m}-${d}T00:00:00`);
+        }
+        return undefined;
+      };
+
       for (let i = 0; i < input.linhas.length; i++) {
-        const linha = input.linhas[i];
+        // Normaliza cabeçalhos PT-BR → chaves internas
+        const linha = normalizarLinha(input.linhas[i]);
         const numLinha = i + 2;
         try {
           const brinco = (linha.brinco || '').trim();
-          const sexo = (linha.sexo || '').trim().toLowerCase() as 'macho' | 'femea';
+          const sexo = normalizarSexo(linha.sexo || '') as 'macho' | 'femea';
 
           // Resolve loteId
           const loteNome = (linha.lote || '').trim().toLowerCase();
           const loteId = loteNome ? input.loteNomeParaId[loteNome] : undefined;
 
-          // Converte castrado/rastreadoNascimento
-          const toBool = (v: string) => ['sim', 'yes', '1', 'true'].includes((v || '').toLowerCase().trim());
+          // Converte castrado/rastreadoNascimento (aceita Sim/Não em PT-BR)
+          const toBool = normalizarBooleano;
 
           const result = await db.insert(animais).values({
             userId: ctx.user.id,
@@ -750,29 +742,31 @@ const animaisRouter = router({
             nome: (linha.nome || '').trim() || brinco || undefined,
             raca: (linha.raca || '').trim() || undefined,
             sexo,
-            dataNascimento: linha.dataNascimento ? new Date(linha.dataNascimento) : undefined,
+            dataNascimento: parseData(linha.dataNascimento),
             pesoAtual: (linha.pesoEntrada || '').trim() || undefined,
             loteId: loteId || undefined,
             categoria: (linha.categoria || '').trim() || undefined,
             observacoes: (linha.observacoes || '').trim() || undefined,
             pelagem: (linha.pelagem || '').trim() || undefined,
             marca: (linha.marca || '').trim() || undefined,
-            dataDesmama: linha.dataDesmama ? new Date(linha.dataDesmama) : undefined,
+            dataDesmama: parseData(linha.dataDesmama),
             castrado: toBool(linha.castrado),
-            dataEntrada: linha.dataEntrada ? new Date(linha.dataEntrada) : undefined,
+            dataEntrada: parseData(linha.dataEntrada),
             pesoEntrada: (linha.pesoEntrada || '').trim() || undefined,
             produtorOrigem: (linha.produtorOrigem || '').trim() || undefined,
             precoKg: (linha.precoKg || '').trim() || undefined,
             frete: (linha.frete || '').trim() || undefined,
             sisbov: (linha.sisbov || '').trim() || undefined,
-            dataRnd: linha.dataRnd ? new Date(linha.dataRnd) : undefined,
+            dataRnd: parseData(linha.dataRnd),
             rgn: (linha.rgn || '').trim() || undefined,
             rgd: (linha.rgd || '').trim() || undefined,
             rastreadoNascimento: toBool(linha.rastreadoNascimento),
             pai: (linha.pai || '').trim() || undefined,
             mae: (linha.mae || '').trim() || undefined,
-            status: (['ativo','vendido','morto','transferido'].includes((linha.status||'').toLowerCase())
-              ? (linha.status.toLowerCase() as any) : 'ativo'),
+            status: (() => {
+              const st = normalizarStatus(linha.status || '');
+              return ['ativo','vendido','morto','transferido'].includes(st) ? (st as any) : 'ativo';
+            })(),
           });
           importados.push((result as any)[0]?.insertId);
         } catch (err: any) {

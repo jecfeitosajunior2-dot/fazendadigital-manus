@@ -206,7 +206,8 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
           <div className="flex-1">
             <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
             <p className="text-xs text-blue-700 mb-3">
-              O modelo contém todas as colunas do cadastro de animal com um exemplo preenchido.
+              Planilha profissional com as 25 colunas do cadastro, abas de Instruções e Dicionário,
+              listas suspensas e exemplos. Datas no formato <strong>DD/MM/AAAA</strong>.
             </p>
             <Button
               type="button"

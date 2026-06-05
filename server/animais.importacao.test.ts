@@ -378,3 +378,127 @@ describe('parseDateBR — conversão de formatos de data', () => {
     expect(parseDateBR('01/01/49')).toBe('2049-01-01');
   });
 });
+
+
+// ─── Testes do mapeamento de cabeçalhos PT-BR (shared/importacaoAnimais) ──────
+
+import {
+  normalizarLinha,
+  normalizarSexo,
+  normalizarStatus,
+  normalizarBooleano,
+  normalizarCabecalho,
+  COLUNAS_IMPORTACAO,
+} from '../shared/importacaoAnimais';
+
+describe('normalizarCabecalho — limpeza de rótulos', () => {
+  it('remove acentos e pontuação', () => {
+    expect(normalizarCabecalho('Raça')).toBe('raca');
+    expect(normalizarCabecalho('Observações')).toBe('observacoes');
+    expect(normalizarCabecalho('Mãe (Matriz)')).toBe('mae');
+  });
+  it('remove conteúdo entre parênteses (unidades)', () => {
+    expect(normalizarCabecalho('Peso de Entrada (kg)')).toBe('pesodeentrada');
+    expect(normalizarCabecalho('Preço (R$/kg)')).toBe('preco');
+  });
+  it('é case-insensitive', () => {
+    expect(normalizarCabecalho('BRINCO')).toBe(normalizarCabecalho('Brinco'));
+  });
+});
+
+describe('normalizarLinha — mapeia cabeçalhos PT-BR para chaves internas', () => {
+  it('mapeia a planilha oficial do usuário corretamente', () => {
+    const linha = {
+      'Brinco': 'BR-001',
+      'Brinco Eletrônico': '123',
+      'Sexo': 'Fêmea',
+      'Lote': 'Engorda 1',
+      'Categoria': 'Vaca',
+      'Raça': 'Nelore',
+      'Data de Nascimento': '01/02/2025',
+      'Data de Desmama': '12/01/25',
+      'Castrado': 'Não',
+      'Peso de Entrada (kg)': '320',
+      'Preço (R$/kg)': '12,50',
+      'Rastreado no Nascimento': 'Sim',
+      'Status': 'Ativo',
+      'Observações': 'teste',
+    };
+    const out = normalizarLinha(linha);
+    expect(out.brinco).toBe('BR-001');
+    expect(out.brincoEletronico).toBe('123');
+    expect(out.sexo).toBe('Fêmea');
+    expect(out.lote).toBe('Engorda 1');
+    expect(out.categoria).toBe('Vaca');
+    expect(out.raca).toBe('Nelore');
+    expect(out.dataNascimento).toBe('01/02/2025');
+    expect(out.dataDesmama).toBe('12/01/25');
+    expect(out.castrado).toBe('Não');
+    expect(out.pesoEntrada).toBe('320');
+    expect(out.precoKg).toBe('12,50');
+    expect(out.rastreadoNascimento).toBe('Sim');
+    expect(out.status).toBe('Ativo');
+    expect(out.observacoes).toBe('teste');
+  });
+
+  it('aceita cabeçalho "RFID" como alias de Brinco Eletrônico', () => {
+    const out = normalizarLinha({ 'Brinco': 'X', 'RFID': '999' });
+    expect(out.brincoEletronico).toBe('999');
+  });
+
+  it('aceita chaves internas em inglês/camelCase (compatibilidade retroativa)', () => {
+    const out = normalizarLinha({ brinco: 'Y', dataNascimento: '01/01/2020', pesoEntrada: '100' });
+    expect(out.brinco).toBe('Y');
+    expect(out.dataNascimento).toBe('01/01/2020');
+    expect(out.pesoEntrada).toBe('100');
+  });
+
+  it('ignora colunas desconhecidas', () => {
+    const out = normalizarLinha({ 'Brinco': 'Z', 'Coluna Inventada': 'lixo' });
+    expect(out.brinco).toBe('Z');
+    expect(Object.keys(out)).not.toContain('Coluna Inventada');
+  });
+
+  it('faz trim dos valores', () => {
+    const out = normalizarLinha({ 'Brinco': '  BR-9  ' });
+    expect(out.brinco).toBe('BR-9');
+  });
+});
+
+describe('normalizarSexo / normalizarStatus / normalizarBooleano', () => {
+  it('normaliza Fêmea → femea e Macho → macho', () => {
+    expect(normalizarSexo('Fêmea')).toBe('femea');
+    expect(normalizarSexo('FÊMEA')).toBe('femea');
+    expect(normalizarSexo('Macho')).toBe('macho');
+    expect(normalizarSexo('femea')).toBe('femea');
+  });
+  it('normaliza Status PT-BR para minúsculas válidas', () => {
+    expect(normalizarStatus('Ativo')).toBe('ativo');
+    expect(normalizarStatus('Vendido')).toBe('vendido');
+    expect(normalizarStatus('Morto')).toBe('morto');
+    expect(normalizarStatus('Transferido')).toBe('transferido');
+  });
+  it('interpreta Sim/Não como booleano', () => {
+    expect(normalizarBooleano('Sim')).toBe(true);
+    expect(normalizarBooleano('SIM')).toBe(true);
+    expect(normalizarBooleano('Não')).toBe(false);
+    expect(normalizarBooleano('')).toBe(false);
+    expect(normalizarBooleano('Não tem')).toBe(false);
+  });
+});
+
+describe('COLUNAS_IMPORTACAO — estrutura da planilha oficial', () => {
+  it('tem exatamente 25 colunas', () => {
+    expect(COLUNAS_IMPORTACAO).toHaveLength(25);
+  });
+  it('Brinco e Sexo são os únicos obrigatórios', () => {
+    const obrigatorios = COLUNAS_IMPORTACAO.filter(c => c.obrigatorio).map(c => c.key);
+    expect(obrigatorios).toEqual(['brinco', 'sexo']);
+  });
+  it('a primeira coluna é Brinco e a ordem segue a planilha do usuário', () => {
+    expect(COLUNAS_IMPORTACAO[0].key).toBe('brinco');
+    expect(COLUNAS_IMPORTACAO[1].key).toBe('brincoEletronico');
+    expect(COLUNAS_IMPORTACAO[2].key).toBe('sexo');
+    expect(COLUNAS_IMPORTACAO[3].key).toBe('lote');
+  });
+});

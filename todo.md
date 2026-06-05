@@ -167,3 +167,12 @@
 - [x] Criar componente ImportarAnimaisModal.tsx com 3 etapas: upload → pré-validação → resultado
 - [x] Adicionar botão "Importar" na AnimaisPage ao lado de Exportar Planilha / PDF / Novo Animal
 - [x] Testes Vitest para validação de importação (campos obrigatórios, duplicados, datas inválidas) — 16 testes, 141 total
+
+## Planilha modelo oficial (base do usuário) — 25 colunas PT-BR (2026-06-05)
+- [x] Criar shared/importacaoAnimais.ts com 25 colunas oficiais + mapeamento de cabeçalhos PT-BR
+- [x] Recriar gerarModeloPlanilha: cabeçalhos na linha 1, abas Instruções/Dicionário/Exemplos, sem fórmulas externas (corrige erro de abertura)
+- [x] Normalizar cabeçalhos PT-BR → chaves internas em validarImportacao e importar
+- [x] Normalizar valores: Fêmea→femea, Ativo→ativo, Sim/Não→boolean
+- [x] parseData multi-formato (DD/MM/AAAA, DD/MM/AA, AAAA-MM-DD) no importar
+- [x] Atualizar texto do modal frontend
+- [x] Testes Vitest do helper de normalização — 174 testes passando
