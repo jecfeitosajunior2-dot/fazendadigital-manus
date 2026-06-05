@@ -534,7 +534,7 @@ const animaisRouter = router({
       linhas: z.array(z.record(z.string(), z.string())),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, isLinhaExemplo } = await import('../shared/importacaoAnimais');
       const SEXOS_VALIDOS = ['macho', 'femea'];
       const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
       const RACAS_VALIDAS = [
@@ -548,7 +548,10 @@ const animaisRouter = router({
 
       // Normaliza cabeçalhos PT-BR → chaves internas para TODAS as linhas
       // (a planilha do usuário usa rótulos em português como "Brinco", "Data de Nascimento")
-      input.linhas = input.linhas.map(l => normalizarLinha(l));
+      // e DESCARTA a linha de EXEMPLO ilustrativa (defesa redundante do backend).
+      input.linhas = input.linhas
+        .map(l => normalizarLinha(l))
+        .filter(l => !isLinhaExemplo(l));
 
       // Busca apenas lotes ATIVOS do usuário
       const lotesUsuario = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
@@ -698,7 +701,7 @@ const animaisRouter = router({
       loteNomeParaId: z.record(z.string(), z.number()),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo } = await import('../shared/importacaoAnimais');
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
@@ -723,6 +726,10 @@ const animaisRouter = router({
         // Normaliza cabeçalhos PT-BR → chaves internas
         const linha = normalizarLinha(input.linhas[i]);
         const numLinha = i + 2;
+        // Defesa redundante: nunca importar a linha de EXEMPLO ilustrativa
+        if (isLinhaExemplo(linha)) {
+          continue;
+        }
         try {
           const brinco = (linha.brinco || '').trim();
           const sexo = normalizarSexo(linha.sexo || '') as 'macho' | 'femea';

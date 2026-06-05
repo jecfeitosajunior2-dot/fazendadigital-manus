@@ -155,3 +155,38 @@ export function normalizarBooleano(v: string): boolean {
   const s = normalizarCabecalho(v);
   return ['sim', 's', 'yes', '1', 'true', 'verdadeiro'].includes(s);
 }
+
+/**
+ * Valores-marcador usados na linha de EXEMPLO ilustrativa da planilha modelo.
+ * Estes valores combinados identificam a linha de demonstração que NÃO deve
+ * ser validada nem importada.
+ */
+export const EXEMPLO_BRINCO = 'BR-001';
+export const EXEMPLO_NOME = 'Mimosa';
+
+/**
+ * Detecção ESTRUTURAL e ROBUSTA de linha de exemplo.
+ *
+ * A planilha modelo histórica trazia uma linha ilustrativa
+ * (Brinco "BR-001", nome "Mimosa", produtor "Fazenda São João", etc.).
+ * Mesmo que o usuário utilize uma planilha antiga (com a linha de exemplo
+ * embutida na própria aba de dados), esta função garante que ela seja
+ * ignorada em TODAS as camadas (parser e validação).
+ *
+ * A linha recebida já deve estar NORMALIZADA (chaves internas).
+ *
+ * Critério: considera-se exemplo quando o brinco é exatamente o brinco-marcador
+ * (BR-001) — opcionalmente combinado com outros campos-marcador. Usamos o brinco
+ * como sinal primário porque é o identificador único da linha de demonstração.
+ */
+export function isLinhaExemplo(linhaNormalizada: Record<string, string>): boolean {
+  const brinco = (linhaNormalizada.brinco ?? '').toString().trim().toLowerCase();
+  if (!brinco) return false;
+
+  const brincoMarcador = EXEMPLO_BRINCO.toLowerCase();
+  // Sinal primário: brinco idêntico ao marcador da planilha modelo.
+  if (brinco === brincoMarcador) {
+    return true;
+  }
+  return false;
+}

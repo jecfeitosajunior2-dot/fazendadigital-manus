@@ -389,6 +389,7 @@ import {
   normalizarBooleano,
   normalizarCabecalho,
   COLUNAS_IMPORTACAO,
+  isLinhaExemplo,
 } from '../shared/importacaoAnimais';
 
 describe('normalizarCabecalho — limpeza de rótulos', () => {
@@ -500,5 +501,85 @@ describe('COLUNAS_IMPORTACAO — estrutura da planilha oficial', () => {
     expect(COLUNAS_IMPORTACAO[1].key).toBe('brincoEletronico');
     expect(COLUNAS_IMPORTACAO[2].key).toBe('sexo');
     expect(COLUNAS_IMPORTACAO[3].key).toBe('lote');
+  });
+});
+
+
+describe('isLinhaExemplo — detecção estrutural da linha de demonstração', () => {
+  it('identifica a linha de exemplo da planilha modelo (brinco BR-001)', () => {
+    const exemplo = normalizarLinha({
+      'Brinco': 'BR-001',
+      'Nome': 'Mimosa',
+      'Sexo': 'Fêmea',
+      'Categoria': 'Vaca',
+      'Raça': 'Nelore',
+      'Lote': 'Engorda 1',
+    });
+    expect(isLinhaExemplo(exemplo)).toBe(true);
+  });
+
+  it('é case-insensitive no brinco-marcador', () => {
+    expect(isLinhaExemplo(normalizarLinha({ 'Brinco': 'br-001' }))).toBe(true);
+    expect(isLinhaExemplo(normalizarLinha({ 'Brinco': 'Br-001' }))).toBe(true);
+  });
+
+  it('NÃO marca um animal real como exemplo', () => {
+    expect(isLinhaExemplo(normalizarLinha({ 'Brinco': '06', 'Sexo': 'Fêmea' }))).toBe(false);
+    expect(isLinhaExemplo(normalizarLinha({ 'Brinco': 'BR-002', 'Sexo': 'Macho' }))).toBe(false);
+    expect(isLinhaExemplo(normalizarLinha({ 'Brinco': '0001', 'Lote': 'Engorda 1' }))).toBe(false);
+  });
+
+  it('não considera exemplo quando o brinco está vazio', () => {
+    expect(isLinhaExemplo(normalizarLinha({ 'Sexo': 'Macho' }))).toBe(false);
+  });
+});
+
+describe('Fluxo de importação — linha de exemplo é ignorada (estrutural)', () => {
+  // Simula o filtro aplicado tanto no parser frontend quanto no backend:
+  // normaliza cada linha e descarta as marcadas como exemplo.
+  const filtrarLinhasReais = (linhasBrutas: Array<Record<string, string>>) =>
+    linhasBrutas
+      .map(l => normalizarLinha(l))
+      .filter(l => Object.values(l).some(v => v !== ''))
+      .filter(l => !isLinhaExemplo(l));
+
+  it('planilha com cabeçalho + exemplo + 2 animais válidos → processa apenas 2', () => {
+    // (cabeçalho é consumido pelo parser; aqui recebemos as linhas de dados)
+    const linhasBrutas: Array<Record<string, string>> = [
+      // Linha de exemplo (deve ser ignorada)
+      { 'Brinco': 'BR-001', 'Nome': 'Mimosa', 'Sexo': 'Fêmea', 'Lote': 'Engorda 1', 'Raça': 'Nelore' },
+      // Animal válido 1
+      { 'Brinco': '101', 'Sexo': 'Macho', 'Raça': 'Angus' },
+      // Animal válido 2
+      { 'Brinco': '102', 'Sexo': 'Fêmea', 'Raça': 'Nelore' },
+    ];
+
+    const reais = filtrarLinhasReais(linhasBrutas);
+
+    expect(reais).toHaveLength(2);
+    expect(reais.map(r => r.brinco)).toEqual(['101', '102']);
+    // A linha de exemplo não aparece em nenhuma etapa
+    expect(reais.some(r => r.brinco === 'BR-001')).toBe(false);
+  });
+
+  it('planilha sem linha de exemplo → processa todos os animais', () => {
+    const linhasBrutas: Array<Record<string, string>> = [
+      { 'Brinco': '201', 'Sexo': 'Macho' },
+      { 'Brinco': '202', 'Sexo': 'Fêmea' },
+      { 'Brinco': '203', 'Sexo': 'Macho' },
+    ];
+    const reais = filtrarLinhasReais(linhasBrutas);
+    expect(reais).toHaveLength(3);
+  });
+
+  it('descarta também linhas completamente vazias junto com o exemplo', () => {
+    const linhasBrutas: Array<Record<string, string>> = [
+      { 'Brinco': 'BR-001', 'Nome': 'Mimosa', 'Sexo': 'Fêmea' },
+      { 'Brinco': '', 'Sexo': '', 'Raça': '' },
+      { 'Brinco': '301', 'Sexo': 'Macho' },
+    ];
+    const reais = filtrarLinhasReais(linhasBrutas);
+    expect(reais).toHaveLength(1);
+    expect(reais[0].brinco).toBe('301');
   });
 });

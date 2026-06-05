@@ -178,8 +178,14 @@
 - [x] Testes Vitest do helper de normalização — 174 testes passando
 
 ## Correção importação — linha exemplo e lote dinâmico (2026-06-05)
-- [ ] gerarModeloPlanilha: remover linha exemplo da aba Animais (mover para aba Exemplos separada)
-- [ ] gerarModeloPlanilha: receber userId, buscar lotes reais do banco e gerar dropdown dinâmico na coluna Lote
-- [ ] validarImportacao: aceitar nome do lote (string) e resolver para loteId interno
-- [ ] importar: usar loteId resolvido pelo nome em vez de exigir ID numérico
-- [ ] Testes: cobrir cenário de lote por nome e linha exemplo ignorada
+- [x] gerarModeloPlanilha: remover linha exemplo da aba Animais (mover para aba Exemplos separada)
+- [x] gerarModeloPlanilha: receber userId, buscar lotes reais do banco e gerar dropdown dinâmico na coluna Lote
+- [x] validarImportacao: aceitar nome do lote (string) e resolver para loteId interno
+- [x] importar: usar loteId resolvido pelo nome em vez de exigir ID numérico
+- [x] Testes: cobrir cenário de lote por nome e linha exemplo ignorada
+
+## Correção estrutural — ignorar linha de exemplo (defesa robusta) (2026-06-05)
+- [x] Detecção estrutural de linha-exemplo por valores-marcador (brinco BR-001) no helper compartilhado (isLinhaExemplo)
+- [x] Filtrar linha de exemplo no parser frontend (ImportarAnimaisModal)
+- [x] Filtrar linha de exemplo no backend (validarImportacao e importar) como defesa redundante
+- [x] Testes: planilha cabeçalho + exemplo + 2 animais válidos → total 2, válidos 2, erros 0 — 181 testes passando

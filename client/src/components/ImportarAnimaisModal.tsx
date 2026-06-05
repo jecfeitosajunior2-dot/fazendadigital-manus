@@ -10,6 +10,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
+import { normalizarLinha, isLinhaExemplo } from '@shared/importacaoAnimais';
 import {
   Dialog,
   DialogContent,
@@ -128,14 +129,17 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
           defval: '',
           raw: false,
         });
-        // Converte todos os valores para string e filtra linhas completamente vazias
+        // Converte todos os valores para string, filtra linhas completamente
+        // vazias E remove a linha de EXEMPLO ilustrativa (defesa estrutural
+        // que funciona mesmo com planilhas antigas que traziam a linha embutida)
         const linhasStr = rows
           .map(row =>
             Object.fromEntries(
               Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()])
             )
           )
-          .filter(row => Object.values(row).some(v => v !== ''));
+          .filter(row => Object.values(row).some(v => v !== ''))
+          .filter(row => !isLinhaExemplo(normalizarLinha(row)));
         if (linhasStr.length === 0) {
           toast.error('A planilha está vazia ou não contém dados.');
           return;
