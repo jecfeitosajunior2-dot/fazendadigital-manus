@@ -176,3 +176,10 @@
 - [x] parseData multi-formato (DD/MM/AAAA, DD/MM/AA, AAAA-MM-DD) no importar
 - [x] Atualizar texto do modal frontend
 - [x] Testes Vitest do helper de normalização — 174 testes passando
+
+## Correção importação — linha exemplo e lote dinâmico (2026-06-05)
+- [ ] gerarModeloPlanilha: remover linha exemplo da aba Animais (mover para aba Exemplos separada)
+- [ ] gerarModeloPlanilha: receber userId, buscar lotes reais do banco e gerar dropdown dinâmico na coluna Lote
+- [ ] validarImportacao: aceitar nome do lote (string) e resolver para loteId interno
+- [ ] importar: usar loteId resolvido pelo nome em vez de exigir ID numérico
+- [ ] Testes: cobrir cenário de lote por nome e linha exemplo ignorada

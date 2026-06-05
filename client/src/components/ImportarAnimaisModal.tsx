@@ -121,17 +121,21 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
       try {
         const data = e.target?.result;
         const wb = XLSX.read(data, { type: 'binary', cellDates: false });
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        // Prioriza a aba 'Animais' se existir; caso contrário usa a primeira aba
+        const sheetName = wb.SheetNames.includes('Animais') ? 'Animais' : wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
           defval: '',
           raw: false,
         });
-        // Converte todos os valores para string
-        const linhasStr = rows.map(row =>
-          Object.fromEntries(
-            Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()])
+        // Converte todos os valores para string e filtra linhas completamente vazias
+        const linhasStr = rows
+          .map(row =>
+            Object.fromEntries(
+              Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()])
+            )
           )
-        );
+          .filter(row => Object.values(row).some(v => v !== ''));
         if (linhasStr.length === 0) {
           toast.error('A planilha está vazia ou não contém dados.');
           return;

@@ -309,7 +309,7 @@ const animaisRouter = router({
 
   // ── Gera planilha modelo para download ──────────────────────────────────────
   gerarModeloPlanilha: protectedProcedure
-    .mutation(async () => {
+    .mutation(async ({ ctx }) => {
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
       const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoAnimais');
@@ -356,24 +356,13 @@ const animaisRouter = router({
         ws.getColumn(idx + 1).width = col.largura;
       });
 
-      // Linha 2: exemplo destacado
-      const exemploRow = ws.getRow(2);
-      exemploRow.height = 20;
-      COLUNAS_IMPORTACAO.forEach((col, idx) => {
-        const cell = exemploRow.getCell(idx + 1);
-        cell.value = col.exemplo;
-        cell.font = { name: 'Calibri', size: 10, italic: true, color: { argb: '2D5A5A' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_EXEMPLO_BG } };
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      });
-
-      // Linhas 3-502: área de preenchimento com alternância visual
-      for (let r = 3; r <= 502; r++) {
+            // Linhas 2-501: área de preenchimento LIMPA (sem linha de exemplo — exemplos estão na aba Exemplos)
+      for (let r = 2; r <= 501; r++) {
         const row = ws.getRow(r);
         row.height = 18;
         COLUNAS_IMPORTACAO.forEach((col, idx) => {
           const cell = row.getCell(idx + 1);
-          const isAlt = (r % 2 === 1);
+          const isAlt = (r % 2 === 0);
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
           cell.font = { name: 'Calibri', size: 10 };
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -381,7 +370,15 @@ const animaisRouter = router({
         });
       }
 
-      // Dropdowns de validação — Sexo, Categoria, Raça, Castrado, Status, Rastreado
+      // Busca lotes ativos do usuário para dropdown dinâmico
+      const lotesAtivos = await db.select({ nome: lotes.nome })
+        .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
+      const nomesLotes = lotesAtivos.map(l => l.nome);
+      const lotesFormulae = nomesLotes.length > 0
+        ? [`"${nomesLotes.join(',')}"`]
+        : ['"(Nenhum lote cadastrado)"'];
+
+      // Dropdowns de validação — Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
       const dvConfig: { colIdx: number; formulae: string[] }[] = [
         { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
@@ -390,8 +387,9 @@ const animaisRouter = router({
         { colIdx: idxDe('castrado'),            formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('status'),              formulae: ['"Ativo,Vendido,Morto,Transferido"'] },
+        { colIdx: idxDe('lote'),                formulae: lotesFormulae },
       ].filter(d => d.colIdx > 0);
-      for (let r = 2; r <= 502; r++) {
+      for (let r = 2; r <= 501; r++) {
         dvConfig.forEach(({ colIdx, formulae }) => {
           const cell = ws.getRow(r).getCell(colIdx);
           cell.dataValidation = {
