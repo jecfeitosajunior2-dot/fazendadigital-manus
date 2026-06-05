@@ -131,3 +131,12 @@
 - [x] Adicionar diálogo de confirmação "Tem certeza?" antes de excluir itens — componente ConfirmDialog/useConfirm aplicado na lista de manutenção (desktop+mobile) e na remoção de peça no formulário
 - [x] Validar quantidade de peça/insumo contra saldo em estoque — frontend bloqueia qtd > disponível com toast; backend valida em manutencoes.create/update via validarSaldoEstoquePecas (TRPCError); saldo exibido no autocomplete e abaixo do campo Qtd
 - [x] Teste Vitest para validarSaldoEstoquePecas (3 casos) — 119 testes passando, 0 erros TypeScript/LSP
+
+## Reformulação Cadastro de Animal (2026-06-05)
+- [x] Adicionar 16 novos campos à tabela animais (pelagem, marca, dataDesmama, castrado, dataEntrada, pesoEntrada, produtorOrigem, precoKg, frete, sisbov, dataRnd, rgn, rgd, rastreadoNascimento, pai, mae) via ALTER TABLE
+- [x] Atualizar schema.ts e router animais.create/update com os novos campos
+- [x] Reconstruir NewAnimalPage em 6 cards (Identificação Principal, Dados Zootécnicos, Entrada/Aquisição, Rastreabilidade, Genealogia, Observações) no padrão Fazenda Digital
+- [x] Categoria dinâmica conforme sexo (Macho/Fêmea)
+- [x] Validação de obrigatórios (Brinco, Sexo) com destaque visual turquesa
+- [x] Botões Cancelar / Salvar e Novo / Salvar
+- [x] Teste funcional end-to-end validado no preview (cadastro persistido na lista) e 119 testes Vitest passando

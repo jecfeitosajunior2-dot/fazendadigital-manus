@@ -64,6 +64,26 @@ export const animais = mysqlTable("animais", {
   status: mysqlEnum("status", ["ativo", "vendido", "morto", "transferido"]).default("ativo"),
   loteId: int("loteId"),
   categoria: varchar("categoria", { length: 50 }),
+  // Dados zootécnicos
+  pelagem: varchar("pelagem", { length: 80 }),
+  marca: varchar("marca", { length: 80 }),
+  dataDesmama: date("dataDesmama"),
+  castrado: boolean("castrado").default(false),
+  // Entrada / aquisição
+  dataEntrada: date("dataEntrada"),
+  pesoEntrada: decimal("pesoEntrada", { precision: 8, scale: 2 }),
+  produtorOrigem: varchar("produtorOrigem", { length: 200 }),
+  precoKg: decimal("precoKg", { precision: 10, scale: 2 }),
+  frete: decimal("frete", { precision: 10, scale: 2 }),
+  // Rastreabilidade e registros oficiais
+  sisbov: varchar("sisbov", { length: 50 }),
+  dataRnd: date("dataRnd"),
+  rgn: varchar("rgn", { length: 50 }),
+  rgd: varchar("rgd", { length: 50 }),
+  rastreadoNascimento: boolean("rastreadoNascimento").default(false),
+  // Genealogia
+  pai: varchar("pai", { length: 200 }),
+  mae: varchar("mae", { length: 200 }),
   observacoes: text("observacoes"),
   fotoUrl: text("fotoUrl"),
   createdAt: timestamp("createdAt").defaultNow(),

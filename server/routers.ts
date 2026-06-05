@@ -80,6 +80,26 @@ const animaisRouter = router({
       loteId: z.number().optional(),
       categoria: z.string().optional(),
       observacoes: z.string().optional(),
+      // Zootécnicos
+      pelagem: z.string().optional(),
+      marca: z.string().optional(),
+      dataDesmama: z.string().optional(),
+      castrado: z.boolean().optional(),
+      // Entrada / aquisição
+      dataEntrada: z.string().optional(),
+      pesoEntrada: z.string().optional(),
+      produtorOrigem: z.string().optional(),
+      precoKg: z.string().optional(),
+      frete: z.string().optional(),
+      // Rastreabilidade
+      sisbov: z.string().optional(),
+      dataRnd: z.string().optional(),
+      rgn: z.string().optional(),
+      rgd: z.string().optional(),
+      rastreadoNascimento: z.boolean().optional(),
+      // Genealogia
+      pai: z.string().optional(),
+      mae: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(animais).values({
@@ -93,6 +113,22 @@ const animaisRouter = router({
         loteId: input.loteId,
         categoria: input.categoria,
         observacoes: input.observacoes,
+        pelagem: input.pelagem,
+        marca: input.marca,
+        dataDesmama: input.dataDesmama ? new Date(input.dataDesmama) : undefined,
+        castrado: input.castrado,
+        dataEntrada: input.dataEntrada ? new Date(input.dataEntrada) : undefined,
+        pesoEntrada: input.pesoEntrada,
+        produtorOrigem: input.produtorOrigem,
+        precoKg: input.precoKg,
+        frete: input.frete,
+        sisbov: input.sisbov,
+        dataRnd: input.dataRnd ? new Date(input.dataRnd) : undefined,
+        rgn: input.rgn,
+        rgd: input.rgd,
+        rastreadoNascimento: input.rastreadoNascimento,
+        pai: input.pai,
+        mae: input.mae,
       });
       return { success: true, id: (result as any)[0]?.insertId };
     }),
@@ -110,12 +146,31 @@ const animaisRouter = router({
       categoria: z.string().optional(),
       status: z.enum(["ativo", "vendido", "morto", "transferido"]).optional(),
       observacoes: z.string().optional(),
+      pelagem: z.string().optional(),
+      marca: z.string().optional(),
+      dataDesmama: z.string().optional(),
+      castrado: z.boolean().optional(),
+      dataEntrada: z.string().optional(),
+      pesoEntrada: z.string().optional(),
+      produtorOrigem: z.string().optional(),
+      precoKg: z.string().optional(),
+      frete: z.string().optional(),
+      sisbov: z.string().optional(),
+      dataRnd: z.string().optional(),
+      rgn: z.string().optional(),
+      rgd: z.string().optional(),
+      rastreadoNascimento: z.boolean().optional(),
+      pai: z.string().optional(),
+      mae: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataNascimento, ...rest } = input;
+      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, ...rest } = input;
       await db.update(animais).set({
         ...rest,
         dataNascimento: dataNascimento ? new Date(dataNascimento) : undefined,
+        dataDesmama: dataDesmama ? new Date(dataDesmama) : undefined,
+        dataEntrada: dataEntrada ? new Date(dataEntrada) : undefined,
+        dataRnd: dataRnd ? new Date(dataRnd) : undefined,
       }).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
