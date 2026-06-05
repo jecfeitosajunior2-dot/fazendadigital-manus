@@ -189,3 +189,10 @@
 - [x] Filtrar linha de exemplo no parser frontend (ImportarAnimaisModal)
 - [x] Filtrar linha de exemplo no backend (validarImportacao e importar) como defesa redundante
 - [x] Testes: planilha cabeçalho + exemplo + 2 animais válidos → total 2, válidos 2, erros 0 — 181 testes passando
+
+## Exclusão segura de lotes (2026-06-05)
+- [x] Backend: procedure lotes.excluir — contar animais vinculados, bloquear se > 0, excluir se = 0
+- [x] Backend: testes Vitest — lote sem animais (OK), lote com 1 animal (bloqueado), lote com vários (bloqueado), tentativa via API (bloqueada)
+- [x] Frontend: botão excluir na lista de Lotes com ícone de lixeira
+- [x] Frontend: modal de confirmação com nome do lote
+- [x] Frontend: modal de bloqueio com nome do lote e contagem de animais vinculados

@@ -864,11 +864,37 @@ const lotesRouter = router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  excluir: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      // Verifica se o lote pertence ao usuário
+      const [lote] = await db
+        .select({ id: lotes.id, nome: lotes.nome })
+        .from(lotes)
+        .where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+
+      if (!lote) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      }
+
+      // Conta animais vinculados (independente de status)
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(animais)
+        .where(and(eq(animais.loteId, input.id), eq(animais.userId, ctx.user.id)));
+
+      const qtdAnimais = Number(countRow?.count ?? 0);
+
+      if (qtdAnimais > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Não é possível excluir o lote "${lote.nome}". Existem ${qtdAnimais} animal(is) vinculado(s) a este lote. Mova ou remova os animais primeiro.`,
+        });
+      }
+
       await db.delete(lotes).where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)));
-      return { success: true };
+      return { success: true, nomeLote: lote.nome };
     }),
 });
 const saudeRouter = router({
