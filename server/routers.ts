@@ -184,6 +184,229 @@ const animaisRouter = router({
       await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
+
+  // ── Gera planilha modelo para download ──────────────────────────────────────
+  gerarModeloPlanilha: protectedProcedure
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      const colunas = [
+        'brinco', 'brincoEletronico', 'nome', 'sexo', 'categoria', 'raca',
+        'pelagem', 'marca', 'dataNascimento', 'dataDesmama', 'castrado',
+        'lote', 'dataEntrada', 'pesoEntrada', 'produtorOrigem', 'precoKg', 'frete',
+        'sisbov', 'dataRnd', 'rgn', 'rgd', 'rastreadoNascimento',
+        'pai', 'mae', 'status', 'observacoes',
+      ];
+      const exemplos = [
+        'BR-001', '', 'Mimosa', 'femea', 'Vaca', 'Nelore',
+        'Branca', 'Fogo', '2022-03-15', '2022-09-15', 'nao',
+        '', '2023-01-10', '320', 'Fazenda São João', '12.50', '350',
+        '', '', '', '', 'nao',
+        '', '', 'ativo', 'Animal de boa conformação',
+      ];
+      const ws = XLSX.utils.aoa_to_sheet([colunas, exemplos]);
+      // Largura das colunas
+      ws['!cols'] = colunas.map(c => ({ wch: Math.max(c.length + 4, 14) }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Animais');
+      const buf = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      return { base64: buf as string, filename: 'modelo_importacao_animais.xlsx' };
+    }),
+
+  // ── Valida linhas antes de importar ─────────────────────────────────────────
+  validarImportacao: protectedProcedure
+    .input(z.object({
+      linhas: z.array(z.record(z.string(), z.string())),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const SEXOS_VALIDOS = ['macho', 'femea'];
+      const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
+      const RACAS_VALIDAS = [
+        'Nelore', 'Nelore Mocho', 'Angus', 'Senepol', 'Brahman',
+        'Girolando', 'Gir', 'Holandês', 'Mestiço', 'Outro',
+      ];
+      const CATEGORIAS_VALIDAS = [
+        'Touro', 'Boi', 'Bezerro', 'Garrote',
+        'Vaca', 'Novilha', 'Bezerra', 'Vaca Prenhe',
+      ];
+
+      // Busca apenas lotes ATIVOS do usuário
+      const lotesUsuario = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
+        .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
+      const loteNomeParaId = new Map(lotesUsuario.map(l => [l.nome.toLowerCase().trim(), l.id]));
+      // Mapa de todos os lotes (ativos + inativos) para detectar lotes inativos
+      const todosLotes = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
+        .from(lotes).where(eq(lotes.userId, ctx.user.id));
+      const loteInativoSet = new Set(
+        todosLotes.filter(l => !l.ativo).map(l => l.nome.toLowerCase().trim())
+      );
+
+      // Busca brincos já existentes no banco
+      const brincosBanco = await db.select({ brinco: animais.brinco })
+        .from(animais).where(eq(animais.userId, ctx.user.id));
+      const brincosBancoSet = new Set(brincosBanco.map(a => (a.brinco || '').toLowerCase().trim()));
+
+      const erros: { linha: number; campo: string; mensagem: string }[] = [];
+      const validos: typeof input.linhas = [];
+      const brincosNaPlanilha = new Set<string>();
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = input.linhas[i];
+        const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
+        const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
+
+        // Brinco obrigatório
+        const brinco = (linha.brinco || '').trim();
+        if (!brinco) {
+          errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: 'Brinco é obrigatório' });
+        } else {
+          if (brincosNaPlanilha.has(brinco.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" duplicado na planilha` });
+          } else if (brincosBancoSet.has(brinco.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" já existe no banco de dados` });
+          } else {
+            brincosNaPlanilha.add(brinco.toLowerCase());
+          }
+        }
+
+        // Sexo obrigatório
+        const sexo = (linha.sexo || '').trim().toLowerCase();
+        if (!sexo) {
+          errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: 'Sexo é obrigatório' });
+        } else if (!SEXOS_VALIDOS.includes(sexo)) {
+          errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: `Sexo inválido: "${linha.sexo}". Use: macho ou femea` });
+        }
+
+        // Status (opcional, mas se informado deve ser válido)
+        const status = (linha.status || '').trim().toLowerCase();
+        if (status && !STATUS_VALIDOS.includes(status)) {
+          errosLinha.push({ linha: numLinha, campo: 'status', mensagem: `Status inválido: "${linha.status}". Use: ativo, vendido, morto ou transferido` });
+        }
+
+        // Raça (opcional, mas se informada deve ser válida)
+        const raca = (linha.raca || '').trim();
+        if (raca && !RACAS_VALIDAS.includes(raca)) {
+          errosLinha.push({ linha: numLinha, campo: 'raca', mensagem: `Raça não cadastrada: "${raca}"` });
+        }
+
+        // Categoria (opcional, mas se informada deve ser válida)
+        const categoria = (linha.categoria || '').trim();
+        if (categoria && !CATEGORIAS_VALIDAS.includes(categoria)) {
+          errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `Categoria inválida: "${categoria}"` });
+        }
+
+        // Datas (formato YYYY-MM-DD com validação robusta)
+        const camposDatas = ['dataNascimento', 'dataDesmama', 'dataEntrada', 'dataRnd'];
+        const reData = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+        for (const campo of camposDatas) {
+          const val = (linha[campo] || '').trim();
+          if (val) {
+            if (!reData.test(val)) {
+              errosLinha.push({ linha: numLinha, campo, mensagem: `Data inválida em "${campo}": "${val}". Use formato YYYY-MM-DD` });
+            } else {
+              // Valida datas inexistentes (ex: 2022-02-30)
+              const [y, m, d] = val.split('-').map(Number);
+              const dt = new Date(y, m - 1, d);
+              if (dt.getFullYear() !== y || dt.getMonth() + 1 !== m || dt.getDate() !== d) {
+                errosLinha.push({ linha: numLinha, campo, mensagem: `Data inexistente em "${campo}": "${val}"` });
+              }
+            }
+          }
+        }
+
+        // Lote (opcional, mas se informado deve ser ativo e existir)
+        const loteNome = (linha.lote || '').trim();
+        if (loteNome) {
+          if (loteInativoSet.has(loteNome.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'lote', mensagem: `Lote "${loteNome}" está inativo` });
+          } else if (!loteNomeParaId.has(loteNome.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'lote', mensagem: `Lote não encontrado: "${loteNome}"` });
+          }
+        }
+
+        if (errosLinha.length > 0) {
+          erros.push(...errosLinha);
+        } else {
+          validos.push(linha);
+        }
+      }
+
+      return {
+        total: input.linhas.length,
+        validos: validos.length,
+        invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
+        erros,
+        loteNomeParaId: Object.fromEntries(loteNomeParaId),
+      };
+    }),
+
+  // ── Importa animais em lote ──────────────────────────────────────────────────
+  importar: protectedProcedure
+    .input(z.object({
+      linhas: z.array(z.record(z.string(), z.string())),
+      loteNomeParaId: z.record(z.string(), z.number()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const importados: number[] = [];
+      const rejeitados: { linha: number; mensagem: string }[] = [];
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = input.linhas[i];
+        const numLinha = i + 2;
+        try {
+          const brinco = (linha.brinco || '').trim();
+          const sexo = (linha.sexo || '').trim().toLowerCase() as 'macho' | 'femea';
+
+          // Resolve loteId
+          const loteNome = (linha.lote || '').trim().toLowerCase();
+          const loteId = loteNome ? input.loteNomeParaId[loteNome] : undefined;
+
+          // Converte castrado/rastreadoNascimento
+          const toBool = (v: string) => ['sim', 'yes', '1', 'true'].includes((v || '').toLowerCase().trim());
+
+          const result = await db.insert(animais).values({
+            userId: ctx.user.id,
+            brinco: brinco || undefined,
+            brincoEletronico: (linha.brincoEletronico || '').trim() || undefined,
+            nome: (linha.nome || '').trim() || brinco || undefined,
+            raca: (linha.raca || '').trim() || undefined,
+            sexo,
+            dataNascimento: linha.dataNascimento ? new Date(linha.dataNascimento) : undefined,
+            pesoAtual: (linha.pesoEntrada || '').trim() || undefined,
+            loteId: loteId || undefined,
+            categoria: (linha.categoria || '').trim() || undefined,
+            observacoes: (linha.observacoes || '').trim() || undefined,
+            pelagem: (linha.pelagem || '').trim() || undefined,
+            marca: (linha.marca || '').trim() || undefined,
+            dataDesmama: linha.dataDesmama ? new Date(linha.dataDesmama) : undefined,
+            castrado: toBool(linha.castrado),
+            dataEntrada: linha.dataEntrada ? new Date(linha.dataEntrada) : undefined,
+            pesoEntrada: (linha.pesoEntrada || '').trim() || undefined,
+            produtorOrigem: (linha.produtorOrigem || '').trim() || undefined,
+            precoKg: (linha.precoKg || '').trim() || undefined,
+            frete: (linha.frete || '').trim() || undefined,
+            sisbov: (linha.sisbov || '').trim() || undefined,
+            dataRnd: linha.dataRnd ? new Date(linha.dataRnd) : undefined,
+            rgn: (linha.rgn || '').trim() || undefined,
+            rgd: (linha.rgd || '').trim() || undefined,
+            rastreadoNascimento: toBool(linha.rastreadoNascimento),
+            pai: (linha.pai || '').trim() || undefined,
+            mae: (linha.mae || '').trim() || undefined,
+            status: (['ativo','vendido','morto','transferido'].includes((linha.status||'').toLowerCase())
+              ? (linha.status.toLowerCase() as any) : 'ativo'),
+          });
+          importados.push((result as any)[0]?.insertId);
+        } catch (err: any) {
+          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+        }
+      }
+
+      return {
+        total: input.linhas.length,
+        importados: importados.length,
+        rejeitados: rejeitados.length,
+        detalhesRejeitados: rejeitados,
+      };
+    }),
 });
 
 // ─── LOTES / PASTOS HELPERS ───────────────────────────────────────────────────

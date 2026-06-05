@@ -158,3 +158,12 @@
 - [x] Campo Status visível em ambos os modos
 - [x] Atualizar App.tsx para importar EditAnimalPage de NewAnimalPage.tsx (não de EditAnimalPage.tsx)
 - [x] 125 testes Vitest passando, 0 erros TypeScript/LSP
+
+## Importação em Massa de Animais (2026-06-05)
+- [x] Instalar xlsx (SheetJS) para parse de XLSX/XLS/CSV no backend
+- [x] Criar procedure animais.gerarModeloPlanilha (retorna base64 do XLSX modelo)
+- [x] Criar procedure animais.validarImportacao (valida linhas, retorna erros por linha)
+- [x] Criar procedure animais.importar (cria animais válidos reutilizando lógica de create)
+- [x] Criar componente ImportarAnimaisModal.tsx com 3 etapas: upload → pré-validação → resultado
+- [x] Adicionar botão "Importar" na AnimaisPage ao lado de Exportar Planilha / PDF / Novo Animal
+- [x] Testes Vitest para validação de importação (campos obrigatórios, duplicados, datas inválidas) — 16 testes, 141 total
