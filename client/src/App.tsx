@@ -23,7 +23,6 @@ import {
   SimulationsFeedlotPage,
   SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
-import BulkCattleImportPage from "./pages/BulkCattleImportPage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/NewAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
@@ -78,7 +77,6 @@ function ProtectedRoutes() {
       <Route path="/rebanho/lista-animais" component={AnimaisPage} />
       <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
       <Route path="/rebanho/lotes" component={LotsManagementPage} />
-      <Route path="/rebanho/importacao-em-massa" component={BulkCattleImportPage} />
       <Route path="/rebanho/detalhes-animal" component={CattleDetailPageExpanded} />
       <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
       <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
