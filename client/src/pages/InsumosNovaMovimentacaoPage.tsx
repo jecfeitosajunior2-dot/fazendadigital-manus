@@ -401,14 +401,6 @@ export default function InsumosNovaMovimentacaoPage() {
               </div>
             </div>
 
-            {/* ── Botão Brinco SISBOV ── */}
-            <button
-              type="button"
-              className="w-full py-2.5 border border-gray-300 rounded text-[11px] font-semibold uppercase tracking-widest text-gray-500 hover:bg-gray-50 transition-colors"
-            >
-              ENTRADA DE BRINCO SISBOV
-            </button>
-
             {/* ── Dados Nota Fiscal ── */}
             <div>
               <p className={sectionTitleCls + " mb-3"}>Dados Nota Fiscal</p>
