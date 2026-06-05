@@ -140,3 +140,10 @@
 - [x] Validação de obrigatórios (Brinco, Sexo) com destaque visual turquesa
 - [x] Botões Cancelar / Salvar e Novo / Salvar
 - [x] Teste funcional end-to-end validado no preview (cadastro persistido na lista) e 119 testes Vitest passando
+
+## Criar lote no formulário de animal (2026-06-05)
+- [x] Adicionar opção "+ Criar novo lote…" no select de Lote do cadastro de animal
+- [x] Diálogo de criação rápida (nome obrigatório + descrição opcional) que cria via lotes.create
+- [x] Após criar, recarregar lista de lotes e selecionar o novo lote automaticamente
+- [x] Teste Vitest lotes.create.test.ts (6 casos) — 125 testes passando, 0 erros TS/LSP
+- [x] Validado no navegador: toast de sucesso, diálogo fecha, lote selecionado

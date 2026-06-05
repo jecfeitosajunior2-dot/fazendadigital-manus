@@ -4,7 +4,16 @@ import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   FormLabel,
   FieldBox,
@@ -140,9 +149,47 @@ export const NewAnimalPage: React.FC = () => {
 
   const { data: lotes } = trpc.lotes.list.useQuery();
 
+  // ── Criação rápida de lote ──
+  const [loteDialogOpen, setLoteDialogOpen] = useState(false);
+  const [novoLoteNome, setNovoLoteNome] = useState('');
+  const [novoLoteDescricao, setNovoLoteDescricao] = useState('');
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }));
+  };
+
+  const createLoteMutation = trpc.lotes.create.useMutation({
+    onError: (err) => toast.error(`Erro ao criar lote: ${err.message}`),
+  });
+
+  const handleLoteSelectChange = (v: string) => {
+    if (v === '__new__') {
+      setLoteDialogOpen(true);
+      return;
+    }
+    set('loteId', v);
+  };
+
+  const handleCriarLote = () => {
+    const nome = novoLoteNome.trim();
+    if (!nome) {
+      toast.error('Informe o nome do lote.');
+      return;
+    }
+    createLoteMutation.mutate(
+      { nome, descricao: novoLoteDescricao.trim() || undefined },
+      {
+        onSuccess: async (res) => {
+          toast.success('Lote criado com sucesso!');
+          await utils.lotes.list.invalidate();
+          if (res?.id != null) set('loteId', String(res.id));
+          setNovoLoteNome('');
+          setNovoLoteDescricao('');
+          setLoteDialogOpen(false);
+        },
+      },
+    );
   };
 
   const validate = () => {
@@ -263,12 +310,21 @@ export const NewAnimalPage: React.FC = () => {
               </div>
               <div>
                 <FormLabel>Lote</FormLabel>
-                <FieldSelect value={form.loteId} onChange={v => set('loteId', v)}>
+                <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
                   <option value="">Sem lote</option>
                   {lotes?.map(l => (
                     <option key={l.id} value={l.id}>{l.nome}</option>
                   ))}
+                  <option value="__new__">+ Criar novo lote…</option>
                 </FieldSelect>
+                <button
+                  type="button"
+                  onClick={() => setLoteDialogOpen(true)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#4ECDC4] hover:text-[#3bb5ad] transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Criar novo lote
+                </button>
               </div>
               <div>
                 <FormLabel>Categoria</FormLabel>
@@ -488,6 +544,58 @@ export const NewAnimalPage: React.FC = () => {
           </div>
         </form>
       </div>
+
+      {/* ── Diálogo: criar novo lote ── */}
+      <Dialog open={loteDialogOpen} onOpenChange={setLoteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Criar novo lote</DialogTitle>
+            <DialogDescription>
+              O lote criado ficará disponível e será selecionado automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <FormLabel required>Nome do lote</FormLabel>
+              <Input
+                value={novoLoteNome}
+                onChange={e => setNovoLoteNome(e.target.value)}
+                placeholder="ex: Lote Recria 2026"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCriarLote(); } }}
+              />
+            </div>
+            <div>
+              <FormLabel>Descrição (opcional)</FormLabel>
+              <Input
+                value={novoLoteDescricao}
+                onChange={e => setNovoLoteDescricao(e.target.value)}
+                placeholder="ex: Bezerros desmamados"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setLoteDialogOpen(false)}
+              className="bg-gray-400 hover:bg-gray-500 text-white"
+              disabled={createLoteMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCriarLote}
+              className="text-white"
+              style={{ backgroundColor: '#4ECDC4' }}
+              disabled={createLoteMutation.isPending}
+            >
+              {createLoteMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Criar lote
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
