@@ -25,7 +25,7 @@ import {
 } from "./pages/ModulePages";
 import BulkCattleImportPage from "./pages/BulkCattleImportPage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
-import { EditAnimalPage } from "./pages/EditAnimalPage";
+import { EditAnimalPage } from "./pages/NewAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
 import LotsManagementPage from "./pages/LotsManagementPage";
 import { SaudePage } from "./pages/ReproductionManagementPage";

@@ -1,10 +1,21 @@
-import React, { useState } from 'react';
+/**
+ * AnimalFormPage — componente único para Cadastro e Edição de Animal.
+ *
+ * Modo detectado automaticamente:
+ *   • Sem ?id=  → mode = "create"  → botão "Cadastrar Animal"
+ *   • Com ?id=X → mode = "edit"    → carrega dados, botão "Salvar Alterações"
+ *
+ * Exporta dois aliases para compatibilidade com rotas existentes:
+ *   NewAnimalPage   → /rebanho/novo-animal
+ *   EditAnimalPage  → /rebanho/editar-animal?id=X
+ */
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, AlertCircle, Save } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -22,10 +33,14 @@ import {
 } from '@/components/FormFields';
 import { cn } from '@/lib/utils';
 
+// ─── Constantes ──────────────────────────────────────────────────────────────
+
 const RACAS = [
   'Nelore', 'Nelore Mocho', 'Angus', 'Senepol', 'Brahman',
   'Girolando', 'Gir', 'Holandês', 'Mestiço', 'Outro',
 ];
+
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 
 type FormState = {
   // Identificação principal
@@ -56,6 +71,8 @@ type FormState = {
   // Genealogia
   pai: string;
   mae: string;
+  // Status (só em edição)
+  status: string;
   // Observações
   observacoes: string;
 };
@@ -65,10 +82,13 @@ const INITIAL: FormState = {
   raca: '', pelagem: '', marca: '', dataNascimento: '', dataDesmama: '', castrado: false,
   dataEntrada: '', pesoEntrada: '', produtorOrigem: '', precoKg: '', frete: '',
   sisbov: '', dataRnd: '', rgn: '', rgd: '', rastreadoNascimento: false,
-  pai: '', mae: '', observacoes: '',
+  pai: '', mae: '',
+  status: 'ativo',
+  observacoes: '',
 };
 
-/** Card de seção padrão Fazenda Digital. */
+// ─── Sub-componentes ─────────────────────────────────────────────────────────
+
 const SectionCard: React.FC<{
   title: string;
   hint?: string;
@@ -83,7 +103,6 @@ const SectionCard: React.FC<{
   </div>
 );
 
-/** Input nativo dentro do FieldBox no padrão visual. */
 const FieldInput: React.FC<{
   value: string;
   onChange: (v: string) => void;
@@ -141,14 +160,73 @@ const Checkbox: React.FC<{
   </label>
 );
 
-export const NewAnimalPage: React.FC = () => {
+// ─── Componente principal ─────────────────────────────────────────────────────
+
+const AnimalFormPage: React.FC = () => {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
+  // Detecta modo pelo parâmetro ?id=
+  const searchParams = new URLSearchParams(window.location.search);
+  const animalIdParam = searchParams.get('id');
+  const animalId = animalIdParam ? parseInt(animalIdParam) : null;
+  const isEditMode = !!animalId;
+
   const [form, setForm] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [populated, setPopulated] = useState(false); // evita sobrescrever após populate
 
+  // ── Dados do animal (modo edição) ──
+  const { data: animal, isLoading: loadingAnimal, error: animalError } =
+    trpc.animais.getById.useQuery(
+      { id: animalId! },
+      { enabled: isEditMode }
+    );
+
+  // ── Lotes ──
   const { data: lotes } = trpc.lotes.list.useQuery();
+
+  // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
+  useEffect(() => {
+    if (!animal || populated) return;
+
+    // Helper: converte Date ou string ISO para "YYYY-MM-DD"
+    const toDateStr = (v: unknown): string => {
+      if (!v) return '';
+      if (typeof v === 'string') return v.split('T')[0];
+      if (v instanceof Date) return v.toISOString().split('T')[0];
+      return '';
+    };
+
+    setForm({
+      brinco: animal.brinco || '',
+      brincoEletronico: (animal as any).brincoEletronico || '',
+      sexo: animal.sexo === 'macho' ? 'Macho' : animal.sexo === 'femea' ? 'Fêmea' : '',
+      loteId: animal.loteId ? String(animal.loteId) : '',
+      categoria: animal.categoria || '',
+      raca: animal.raca || '',
+      pelagem: (animal as any).pelagem || '',
+      marca: (animal as any).marca || '',
+      dataNascimento: toDateStr(animal.dataNascimento),
+      dataDesmama: toDateStr((animal as any).dataDesmama),
+      castrado: !!(animal as any).castrado,
+      dataEntrada: toDateStr((animal as any).dataEntrada),
+      pesoEntrada: (animal as any).pesoEntrada || '',
+      produtorOrigem: (animal as any).produtorOrigem || '',
+      precoKg: (animal as any).precoKg || '',
+      frete: (animal as any).frete || '',
+      sisbov: (animal as any).sisbov || '',
+      dataRnd: toDateStr((animal as any).dataRnd),
+      rgn: (animal as any).rgn || '',
+      rgd: (animal as any).rgd || '',
+      rastreadoNascimento: !!(animal as any).rastreadoNascimento,
+      pai: (animal as any).pai || '',
+      mae: (animal as any).mae || '',
+      status: animal.status || 'ativo',
+      observacoes: animal.observacoes || '',
+    });
+    setPopulated(true);
+  }, [animal, populated]);
 
   // ── Criação rápida de lote ──
   const [loteDialogOpen, setLoteDialogOpen] = useState(false);
@@ -165,19 +243,13 @@ export const NewAnimalPage: React.FC = () => {
   });
 
   const handleLoteSelectChange = (v: string) => {
-    if (v === '__new__') {
-      setLoteDialogOpen(true);
-      return;
-    }
+    if (v === '__new__') { setLoteDialogOpen(true); return; }
     set('loteId', v);
   };
 
   const handleCriarLote = () => {
     const nome = novoLoteNome.trim();
-    if (!nome) {
-      toast.error('Informe o nome do lote.');
-      return;
-    }
+    if (!nome) { toast.error('Informe o nome do lote.'); return; }
     createLoteMutation.mutate(
       { nome, descricao: novoLoteDescricao.trim() || undefined },
       {
@@ -193,6 +265,7 @@ export const NewAnimalPage: React.FC = () => {
     );
   };
 
+  // ── Validação ──
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.brinco.trim()) e.brinco = 'Número do brinco é obrigatório';
@@ -201,10 +274,11 @@ export const NewAnimalPage: React.FC = () => {
     return Object.keys(e).length === 0;
   };
 
+  // ── Payload comum ──
   const buildPayload = () => {
     const sexoMapped = form.sexo === 'Macho' ? 'macho' : 'femea';
     return {
-      nome: form.brinco.trim(), // mantém nome = brinco para compatibilidade com lista
+      nome: form.brinco.trim(),
       brinco: form.brinco.trim() || undefined,
       brincoEletronico: form.brincoEletronico.trim() || undefined,
       sexo: sexoMapped as 'macho' | 'femea',
@@ -228,35 +302,100 @@ export const NewAnimalPage: React.FC = () => {
       rastreadoNascimento: form.rastreadoNascimento,
       pai: form.pai.trim() || undefined,
       mae: form.mae.trim() || undefined,
+      status: form.status as 'ativo' | 'vendido' | 'morto' | 'transferido',
       observacoes: form.observacoes.trim() || undefined,
     };
   };
 
+  // ── Mutations ──
   const createMutation = trpc.animais.create.useMutation({
     onError: (err) => toast.error(`Erro ao cadastrar animal: ${err.message}`),
   });
 
-  const handleSave = (novo: boolean) => {
+  const updateMutation = trpc.animais.update.useMutation({
+    onSuccess: () => {
+      toast.success('Animal atualizado com sucesso!');
+      utils.animais.list.invalidate();
+      utils.animais.getById.invalidate({ id: animalId! });
+      setLocation('/rebanho/lista-animais');
+    },
+    onError: (err) => toast.error(`Erro ao atualizar animal: ${err.message}`),
+  });
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  const handleSave = (novo = false) => {
     if (!validate()) {
       toast.error('Preencha os campos obrigatórios em destaque.');
       return;
     }
-    createMutation.mutate(buildPayload(), {
-      onSuccess: () => {
-        toast.success('Animal cadastrado com sucesso!');
-        utils.animais.list.invalidate();
-        if (novo) {
-          setForm(INITIAL);
-          setErrors({});
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          setLocation('/rebanho/lista-animais');
-        }
-      },
-    });
+    if (isEditMode) {
+      updateMutation.mutate({ id: animalId!, ...buildPayload() });
+    } else {
+      createMutation.mutate(buildPayload(), {
+        onSuccess: () => {
+          toast.success('Animal cadastrado com sucesso!');
+          utils.animais.list.invalidate();
+          if (novo) {
+            setForm(INITIAL);
+            setErrors({});
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            setLocation('/rebanho/lista-animais');
+          }
+        },
+      });
+    }
   };
 
-  const isSubmitting = createMutation.isPending;
+  // ── Estados de carregamento / erro (modo edição) ──
+  if (isEditMode && !animalId) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-800 mb-4">ID de animal inválido</h2>
+            <Button onClick={() => setLocation('/rebanho/lista-animais')}>Voltar para Lista de Animais</Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isEditMode && loadingAnimal) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4ECDC4]" />
+          <span className="ml-3 text-gray-600">Carregando dados do animal...</span>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isEditMode && (animalError || !animal)) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Animal não encontrado</h2>
+            <p className="text-gray-500 mb-4">O animal com ID {animalId} não foi encontrado.</p>
+            <Button onClick={() => setLocation('/rebanho/lista-animais')}>Voltar para Lista de Animais</Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // ── Título dinâmico ──
+  const pageTitle = isEditMode
+    ? `Editar Animal — ${animal?.brinco || animal?.nome || `#${animalId}`}`
+    : 'Cadastro de Animal';
+  const pageSubtitle = isEditMode
+    ? 'Atualize as informações do animal'
+    : 'Preencha as informações completas para registro no sistema';
 
   return (
     <AppLayout>
@@ -272,10 +411,8 @@ export const NewAnimalPage: React.FC = () => {
         </Button>
 
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Cadastro de Animal</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Preencha as informações completas para registro no sistema
-          </p>
+          <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
+          <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
         </div>
 
         <form
@@ -356,6 +493,8 @@ export const NewAnimalPage: React.FC = () => {
                       <option value="Novilha">Novilha</option>
                       <option value="Bezerro">Bezerro</option>
                       <option value="Bezerra">Bezerra</option>
+                      <option value="Vaca Prenhe">Vaca Prenhe</option>
+                      <option value="Garrote">Garrote</option>
                     </>
                   )}
                 </FieldSelect>
@@ -373,7 +512,9 @@ export const NewAnimalPage: React.FC = () => {
                   onChange={v => set('brincoEletronico', v)}
                   placeholder="ex: 076000000000001 ou código RFID"
                 />
-                <p className="mt-1 text-xs text-gray-500">Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
+                </p>
               </div>
             </div>
           </SectionCard>
@@ -512,6 +653,21 @@ export const NewAnimalPage: React.FC = () => {
             </div>
           </SectionCard>
 
+          {/* ── Status (exibido em ambos os modos) ── */}
+          <SectionCard title="Status do Animal">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel>Status</FormLabel>
+                <FieldSelect value={form.status} onChange={v => set('status', v)}>
+                  <option value="ativo">Ativo</option>
+                  <option value="vendido">Vendido</option>
+                  <option value="morto">Morto</option>
+                  <option value="transferido">Transferido</option>
+                </FieldSelect>
+              </div>
+            </div>
+          </SectionCard>
+
           {/* ── Observações Gerais ── */}
           <SectionCard title="Observações Gerais">
             <FieldBox>
@@ -539,23 +695,28 @@ export const NewAnimalPage: React.FC = () => {
               >
                 Cancelar
               </Button>
-              <Button
-                type="button"
-                onClick={() => handleSave(true)}
-                className="bg-green-700 hover:bg-green-800 text-white"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Salvar e Novo
-              </Button>
+
+              {/* Botão "Salvar e Novo" — apenas no modo criação */}
+              {!isEditMode && (
+                <Button
+                  type="button"
+                  onClick={() => handleSave(true)}
+                  className="bg-green-700 hover:bg-green-800 text-white"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Salvar e Novo
+                </Button>
+              )}
+
               <Button
                 type="submit"
                 className="text-white"
                 style={{ backgroundColor: '#4ECDC4' }}
                 disabled={isSubmitting}
               >
-                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Salvar
+                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                {isEditMode ? 'Salvar Alterações' : 'Cadastrar Animal'}
               </Button>
             </div>
           </div>
@@ -616,3 +777,11 @@ export const NewAnimalPage: React.FC = () => {
     </AppLayout>
   );
 };
+
+// ─── Aliases de exportação ────────────────────────────────────────────────────
+// Ambas as rotas (/rebanho/novo-animal e /rebanho/editar-animal?id=X)
+// usam exatamente o mesmo componente.
+
+export const NewAnimalPage = AnimalFormPage;
+export const EditAnimalPage = AnimalFormPage;
+export default AnimalFormPage;

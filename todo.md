@@ -147,3 +147,14 @@
 - [x] Após criar, recarregar lista de lotes e selecionar o novo lote automaticamente
 - [x] Teste Vitest lotes.create.test.ts (6 casos) — 125 testes passando, 0 erros TS/LSP
 - [x] Validado no navegador: toast de sucesso, diálogo fecha, lote selecionado
+
+## Unificação AnimalFormPage (2026-06-05)
+- [x] Brinco Eletrônico / RFID card adicionado ao formulário de animal (campo brincoEletronico)
+- [x] Unificar NewAnimalPage e EditAnimalPage em um único componente AnimalFormPage
+- [x] Detectar modo create/edit pelo parâmetro ?id= na URL
+- [x] Carregar dados do animal via animais.getById em modo edição
+- [x] Pré-preencher todos os 25+ campos no modo edição
+- [x] Botão "Salvar Alterações" em modo edição, "Cadastrar Animal" + "Salvar e Novo" em modo criação
+- [x] Campo Status visível em ambos os modos
+- [x] Atualizar App.tsx para importar EditAnimalPage de NewAnimalPage.tsx (não de EditAnimalPage.tsx)
+- [x] 125 testes Vitest passando, 0 erros TypeScript/LSP
