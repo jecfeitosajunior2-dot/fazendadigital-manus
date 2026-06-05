@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import MobileCard from "@/components/MobileCard";
+import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
@@ -15,6 +16,7 @@ export function AnimaisPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [loteFilter, setLoteFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [importarOpen, setImportarOpen] = useState(false);
   const perPage = 50;
 
   const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery({
@@ -74,6 +76,14 @@ export function AnimaisPage() {
             rows={exportData}
             alignRightFrom={6}
           />
+          <button
+            onClick={() => setImportarOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto"
+            style={{ backgroundColor: "#0ea5e9", minHeight: 44 }}
+          >
+            <span className="material-icons text-[16px]">upload_file</span>
+            Importar
+          </button>
           <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center justify-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto" style={{ backgroundColor: "#2D5A5A", minHeight: 44 }}>
             <span className="material-icons text-[16px]">add</span>
             Novo Animal
@@ -259,6 +269,12 @@ export function AnimaisPage() {
         </div>
       </div>
 
+      {/* Modal de importação em massa */}
+      <ImportarAnimaisModal
+        open={importarOpen}
+        onClose={() => setImportarOpen(false)}
+        onImportado={() => { refetch(); setImportarOpen(false); }}
+      />
     </AppLayout>
   );
 }
