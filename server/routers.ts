@@ -310,7 +310,8 @@ const animaisRouter = router({
   // ── Gera planilha modelo para download ──────────────────────────────────────
   gerarModeloPlanilha: protectedProcedure
     .mutation(async () => {
-      const ExcelJS = await import('exceljs');
+      const ExcelJSModule = await import('exceljs');
+      const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
       const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoAnimais');
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Fazenda Digital';
