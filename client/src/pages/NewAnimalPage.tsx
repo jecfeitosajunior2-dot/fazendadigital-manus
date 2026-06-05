@@ -30,6 +30,7 @@ const RACAS = [
 type FormState = {
   // Identificação principal
   brinco: string;
+  brincoEletronico: string;
   sexo: string;
   loteId: string;
   categoria: string;
@@ -60,7 +61,7 @@ type FormState = {
 };
 
 const INITIAL: FormState = {
-  brinco: '', sexo: '', loteId: '', categoria: '',
+  brinco: '', brincoEletronico: '', sexo: '', loteId: '', categoria: '',
   raca: '', pelagem: '', marca: '', dataNascimento: '', dataDesmama: '', castrado: false,
   dataEntrada: '', pesoEntrada: '', produtorOrigem: '', precoKg: '', frete: '',
   sisbov: '', dataRnd: '', rgn: '', rgd: '', rastreadoNascimento: false,
@@ -205,6 +206,7 @@ export const NewAnimalPage: React.FC = () => {
     return {
       nome: form.brinco.trim(), // mantém nome = brinco para compatibilidade com lista
       brinco: form.brinco.trim() || undefined,
+      brincoEletronico: form.brincoEletronico.trim() || undefined,
       sexo: sexoMapped as 'macho' | 'femea',
       loteId: form.loteId ? parseInt(form.loteId) : undefined,
       categoria: form.categoria.trim() || undefined,
@@ -357,6 +359,21 @@ export const NewAnimalPage: React.FC = () => {
                     </>
                   )}
                 </FieldSelect>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* ── Brinco Eletrônico ── */}
+          <SectionCard title="Brinco Eletrônico / RFID">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel>Código do Brinco Eletrônico</FormLabel>
+                <FieldInput
+                  value={form.brincoEletronico}
+                  onChange={v => set('brincoEletronico', v)}
+                  placeholder="ex: 076000000000001 ou código RFID"
+                />
+                <p className="mt-1 text-xs text-gray-500">Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.</p>
               </div>
             </div>
           </SectionCard>

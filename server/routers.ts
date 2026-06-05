@@ -72,6 +72,7 @@ const animaisRouter = router({
   create: protectedProcedure
     .input(z.object({
       brinco: z.string().optional(),
+      brincoEletronico: z.string().optional(),
       nome: z.string().optional(),
       raca: z.string().optional(),
       sexo: z.enum(["macho", "femea"]),
@@ -105,6 +106,7 @@ const animaisRouter = router({
       const result = await db.insert(animais).values({
         userId: ctx.user.id,
         brinco: input.brinco,
+        brincoEletronico: input.brincoEletronico,
         nome: input.nome,
         raca: input.raca,
         sexo: input.sexo,
@@ -137,6 +139,7 @@ const animaisRouter = router({
     .input(z.object({
       id: z.number(),
       brinco: z.string().optional(),
+      brincoEletronico: z.string().optional(),
       nome: z.string().optional(),
       raca: z.string().optional(),
       sexo: z.enum(["macho", "femea"]).optional(),

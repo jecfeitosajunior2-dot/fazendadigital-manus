@@ -56,6 +56,7 @@ export const animais = mysqlTable("animais", {
   id: int("id").primaryKey().autoincrement(),
   userId: int("userId").notNull(),
   brinco: varchar("brinco", { length: 50 }),
+  brincoEletronico: varchar("brincoEletronico", { length: 80 }),
   nome: varchar("nome", { length: 100 }),
   raca: varchar("raca", { length: 100 }),
   sexo: mysqlEnum("sexo", ["macho", "femea"]).notNull(),
