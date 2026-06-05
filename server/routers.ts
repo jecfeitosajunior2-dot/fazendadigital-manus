@@ -416,20 +416,45 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `Categoria inválida: "${categoria}"` });
         }
 
-        // Datas (formato YYYY-MM-DD com validação robusta)
+        // Datas — aceita DD/MM/AAAA, DD/MM/AA e AAAA-MM-DD
+        // Converte automaticamente para YYYY-MM-DD antes de validar
+        const parseDateBR = (raw: string): string | null => {
+          const s = raw.trim();
+          if (!s) return null;
+          // Formato ISO: YYYY-MM-DD
+          const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (isoMatch) return s; // já está no formato correto
+          // Formato brasileiro: DD/MM/YYYY ou DD/MM/YY
+          const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+          if (brMatch) {
+            const d = brMatch[1].padStart(2, '0');
+            const m = brMatch[2].padStart(2, '0');
+            let y = brMatch[3];
+            if (y.length === 2) {
+              // Ano com 2 dígitos: 00-49 → 2000-2049, 50-99 → 1950-1999
+              y = parseInt(y, 10) < 50 ? `20${y}` : `19${y}`;
+            }
+            return `${y}-${m}-${d}`;
+          }
+          return null; // formato não reconhecido
+        };
+
         const camposDatas = ['dataNascimento', 'dataDesmama', 'dataEntrada', 'dataRnd'];
-        const reData = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
         for (const campo of camposDatas) {
-          const val = (linha[campo] || '').trim();
-          if (val) {
-            if (!reData.test(val)) {
-              errosLinha.push({ linha: numLinha, campo, mensagem: `Data inválida em "${campo}": "${val}". Use formato YYYY-MM-DD` });
+          const rawVal = (linha[campo] || '').trim();
+          if (rawVal) {
+            const converted = parseDateBR(rawVal);
+            if (!converted) {
+              errosLinha.push({ linha: numLinha, campo, mensagem: `Data inválida em "${campo}": "${rawVal}". Use DD/MM/AAAA ou AAAA-MM-DD` });
             } else {
-              // Valida datas inexistentes (ex: 2022-02-30)
-              const [y, m, d] = val.split('-').map(Number);
-              const dt = new Date(y, m - 1, d);
-              if (dt.getFullYear() !== y || dt.getMonth() + 1 !== m || dt.getDate() !== d) {
-                errosLinha.push({ linha: numLinha, campo, mensagem: `Data inexistente em "${campo}": "${val}"` });
+              // Valida datas inexistentes (ex: 30/02/2025)
+              const [y, mo, d] = converted.split('-').map(Number);
+              const dt = new Date(y, mo - 1, d);
+              if (dt.getFullYear() !== y || dt.getMonth() + 1 !== mo || dt.getDate() !== d) {
+                errosLinha.push({ linha: numLinha, campo, mensagem: `Data inexistente em "${campo}": "${rawVal}"` });
+              } else {
+                // Normaliza o valor na linha para YYYY-MM-DD antes de salvar
+                linha[campo] = converted;
               }
             }
           }
