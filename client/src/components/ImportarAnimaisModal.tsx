@@ -121,21 +121,38 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
     reader.onload = (e) => {
       try {
         const data = e.target?.result;
-        const wb = XLSX.read(data, { type: 'binary', cellDates: false });
+        // cellDates:true → SheetJS retorna objetos Date para células de data,
+        // evitando que o formato da célula (MM/DD vs DD/MM) inverta dia/mês.
+        const wb = XLSX.read(data, { type: 'binary', cellDates: true });
         // Prioriza a aba 'Animais' se existir; caso contrário usa a primeira aba
         const sheetName = wb.SheetNames.includes('Animais') ? 'Animais' : wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
           defval: '',
-          raw: false,
+          raw: true, // mantém objetos Date para células de data
         });
+
+        // Converte um valor de célula para string segura.
+        // Objetos Date são convertidos para DD/MM/AAAA (formato BR) de forma
+        // determinística, sem depender do locale do sistema operacional.
+        const celulaPraString = (v: unknown): string => {
+          if (v instanceof Date) {
+            // Usa UTC para evitar que o fuso horário do cliente altere o dia
+            const d = String(v.getUTCDate()).padStart(2, '0');
+            const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+            const y = v.getUTCFullYear();
+            return `${d}/${m}/${y}`;
+          }
+          return String(v ?? '').trim();
+        };
+
         // Converte todos os valores para string, filtra linhas completamente
         // vazias E remove a linha de EXEMPLO ilustrativa (defesa estrutural
         // que funciona mesmo com planilhas antigas que traziam a linha embutida)
         const linhasStr = rows
           .map(row =>
             Object.fromEntries(
-              Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()])
+              Object.entries(row).map(([k, v]) => [k.trim(), celulaPraString(v)])
             )
           )
           .filter(row => Object.values(row).some(v => v !== ''))

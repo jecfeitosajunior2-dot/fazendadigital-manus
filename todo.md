@@ -241,3 +241,10 @@
 - [x] Validar combinações Sexo+Categoria no backend (validarImportacao de animais)
 - [x] Importar isCategoriaValidaParaSexo e todasAsCategorias em validarImportacao
 - [x] 191 testes Vitest passando, 0 erros TypeScript
+
+## Correção: Inversão de dia/mês na importação de animais (2026-06-06)
+- [x] Diagnosticar causa raiz: XLSX.read com cellDates:false + raw:false usava formato da célula Excel (MM/DD) em vez de DD/MM
+- [x] Corrigir ImportarAnimaisModal: cellDates:true + raw:true para obter objetos Date JavaScript
+- [x] Converter Date para DD/MM/AAAA via getUTCDate/getUTCMonth/getUTCFullYear (determinístico, sem dependência de locale)
+- [x] Validar todas as colunas de data: Data de Nascimento, Data de Desmama, Data de Entrada, Data RND
+- [x] 191 testes Vitest passando, 0 erros TypeScript
