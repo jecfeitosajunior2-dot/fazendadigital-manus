@@ -14,6 +14,7 @@ export const TIPOS_MAQUINA = [
   "Pulverizador",
   "Caminhão",
   "Carreta",
+  "Carro",
   "Moto",
   "Implemento",
   "Outro",
