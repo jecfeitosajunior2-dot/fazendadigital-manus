@@ -1025,7 +1025,7 @@ const maquinasRouter = router({
     .mutation(async ({ ctx }) => {
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
-      const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoMaquinarios');
+      const { COLUNAS_IMPORTACAO, TIPOS_MAQUINA: TIPOS_MAQUINA_LIST } = await import('../shared/importacaoMaquinarios');
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Fazenda Digital';
       wb.created = new Date();
@@ -1116,7 +1116,7 @@ const maquinasRouter = router({
 
       // Dropdowns com lista inline (curta)
       const dvInline: { colIdx: number; formulae: string[] }[] = [
-        { colIdx: idxDe('tipo'),   formulae: ['"Trator,Colheitadeira,Pulverizador,Plantadeira,Caminhão,Veículo,Implemento,Outro"'] },
+        { colIdx: idxDe('tipo'),   formulae: [`"${TIPOS_MAQUINA_LIST.join(',')}"`.replace(/,/g, ',')] },
         { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
         { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
       ].filter(d => d.colIdx > 0);
@@ -1243,7 +1243,9 @@ const maquinasRouter = router({
 
       const ESTADOS_VALIDOS = ['novo', 'usado'];
       const STATUS_VALIDOS  = ['ativo', 'manutencao', 'inativo'];
-      const TIPOS_VALIDOS   = ['Trator', 'Colheitadeira', 'Pulverizador', 'Plantadeira', 'Caminhão', 'Veículo', 'Implemento', 'Outro'];
+      // Usa a fonte única de verdade — mesma lista do cadastro e da planilha
+      const { TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS } = await import('../shared/importacaoMaquinarios');
+      const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS];
 
       // Normaliza cabeçalhos PT-BR → chaves internas e descarta linha de exemplo
       input.linhas = input.linhas

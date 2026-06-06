@@ -1,23 +1,6 @@
-export const TIPOS_MAQUINA = [
-  "Trator",
-  "Colheitadeira",
-  "Plantadeira",
-  "Pulverizador",
-  "Caminhão",
-  "Carreta",
-  "Moto",
-  "Implemento",
-  "Outro",
-] as const;
-
-export const MARCAS_MAQUINA = [
-  "John Deere",
-  "Case IH",
-  "New Holland",
-  "Massey Ferguson",
-  "Valtra",
-  "Ford",
-  "Volkswagen",
-  "Mercedes-Benz",
-  "Outra",
-] as const;
+/**
+ * Re-exporta de shared/maquina-types.ts — fonte única de verdade.
+ * NÃO duplicar listas aqui. Alterar apenas em shared/maquina-types.ts.
+ */
+export { TIPOS_MAQUINA, MARCAS_MAQUINA } from "@shared/maquina-types";
+export type { TipoMaquina, MarcaMaquina } from "@shared/maquina-types";

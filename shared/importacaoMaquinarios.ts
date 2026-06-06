@@ -7,6 +7,9 @@
  * Segue exatamente o mesmo padrão de importacaoAnimais.ts.
  */
 
+// ─── Fonte única de verdade para tipos ─────────────────────────────────────
+export { TIPOS_MAQUINA } from './maquina-types';
+
 // ─── Colunas da planilha modelo ──────────────────────────────────────────────
 
 export interface ColunaImportacao {
