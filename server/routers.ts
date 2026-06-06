@@ -1053,15 +1053,16 @@ const maquinasRouter = router({
         views: [{ state: 'frozen', ySplit: 1 }],
       });
 
-      // Linha 1: cabeçalhos
+      // Linha 1: cabeçalhos com alinhamento uniforme
       const headerRow = ws.getRow(1);
-      headerRow.height = 26;
+      headerRow.height = 20; // altura uniforme, sem wrap text
       COLUNAS_IMPORTACAO.forEach((col, idx) => {
         const cell = headerRow.getCell(idx + 1);
         cell.value = col.label + (col.obrigatorio ? ' *' : '');
         cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        // Desativar wrap text no cabeçalho para manter alinhamento uniforme
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
         cell.border = {
           bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
           right:  { style: 'thin',   color: { argb: 'FFFFFF' } },

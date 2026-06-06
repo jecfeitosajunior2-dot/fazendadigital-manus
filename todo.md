@@ -226,3 +226,9 @@
 - [x] Validar recálculo real no LibreOffice headless — fórmula preservada
 - [x] 191 testes Vitest passando, 0 erros TypeScript
 - [x] Limpar scripts de teste temporários
+
+## Alinhamento visual do cabeçalho da planilha (2026-06-06)
+- [x] Desativar wrap text no cabeçalho (estava quebrando "Placa ou Nº de Série")
+- [x] Ajustar altura da linha do cabeçalho para 20px (uniforme)
+- [x] Garantir alinhamento vertical middle em todas as colunas
+- [x] 191 testes Vitest passando, 0 erros TypeScript
