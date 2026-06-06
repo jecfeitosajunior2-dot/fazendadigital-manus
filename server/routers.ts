@@ -384,9 +384,13 @@ const animaisRouter = router({
       // Importar mapeamento Sexo → Categoria
       const { CATEGORIAS_POR_SEXO } = await import('../shared/animal-types');
       
+      // Coluna Sexo: índice 1-based na planilha (para montar referência na fórmula)
+      const colSexoIdx = idxDe('sexo'); // ex: 3 → coluna C
+      const colSexoLetra = String.fromCharCode(64 + colSexoIdx); // 3 → 'C'
+      
       const dvConfig: { colIdx: number; formulae: string[] }[] = [
         { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
-        { colIdx: idxDe('categoria'),           formulae: ['OFFSET(_ListasAnimais!$D$1,MATCH($B{r},_ListasAnimais!$C:$C,0)-1,0,COUNTIF(_ListasAnimais!$C:$C,$B{r}),1)'] },
+        { colIdx: idxDe('categoria'),           formulae: [`OFFSET(_ListasAnimais!$D$1,MATCH($${colSexoLetra}{r},_ListasAnimais!$C:$C,0)-1,0,COUNTIF(_ListasAnimais!$C:$C,$${colSexoLetra}{r}),1)`] },
         { colIdx: idxDe('raca'),                formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
         { colIdx: idxDe('castrado'),            formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
