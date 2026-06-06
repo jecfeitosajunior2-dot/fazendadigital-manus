@@ -205,3 +205,12 @@
 - [x] Formulário: ao trocar o tipo, limpa a marca se não for válida para o novo tipo
 - [x] Formulário: placeholder do campo Marca indica o tipo selecionado
 - [x] Backend validarImportacao: valida combinação Tipo+Marca — erro descritivo "Marca X não é válida para o tipo Y"
+
+## Correção: Planilha de Importação com Mapeamento Tipo → Marca (2026-06-06)
+- [x] Corrigir gerarModeloPlanilha para usar MARCAS_POR_TIPO centralizado em vez de lista hardcoded
+- [x] Remover lista hardcoded de marcas de Máquinas (John Deere, Case IH, New Holland, etc.)
+- [x] Importar MARCAS_POR_TIPO de shared/maquina-types em gerarModeloPlanilha
+- [x] Coletar todas as marcas de todas as categorias (sem duplicatas) para dropdown de Marca
+- [x] Adicionar colunas ocultas na aba _Listas com marcas por tipo (para validação cascata futura)
+- [x] Documentar que validação cascata (Tipo → Marca) requer VBA/macros no Excel
+- [x] Backend já valida combinação Tipo+Marca em validarImportacao (rejeita com mensagem descritiva)

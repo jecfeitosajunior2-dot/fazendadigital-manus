@@ -1044,22 +1044,15 @@ const maquinasRouter = router({
         .orderBy(fazendas.nome);
       const nomesFazendas = fazendasUsuario.map(f => f.nome);
 
-      // Marcas já cadastradas no banco para este usuário (distinct)
-      const marcasBanco = await db
-        .selectDistinct({ marca: maquinas.marca })
-        .from(maquinas)
-        .where(and(eq(maquinas.userId, ctx.user.id), isNotNull(maquinas.marca)))
-        .orderBy(maquinas.marca);
-      const MARCAS_PADRAO = [
-        'John Deere','Case IH','New Holland','Valtra','Massey Ferguson',
-        'JCB','Caterpillar','Komatsu','Fendt','Deutz-Fahr','Jacto','Stara',
-      ];
-      // Mescla marcas do banco com marcas padrão (sem duplicatas)
-      const marcasBancoSet = new Set(marcasBanco.map(m => m.marca!));
-      const todasMarcas = [
-        ...marcasBanco.map(m => m.marca!),
-        ...MARCAS_PADRAO.filter(m => !marcasBancoSet.has(m)),
-      ];
+      // Importa mapeamento centralizado Tipo → Marca
+      const { MARCAS_POR_TIPO } = await import('../shared/maquina-types');
+      
+      // Coleta todas as marcas de todas as categorias (sem duplicatas)
+      const todasMarcasSet = new Set<string>();
+      Object.values(MARCAS_POR_TIPO).forEach(marcas => {
+        marcas.forEach(m => todasMarcasSet.add(m));
+      });
+      const todasMarcas = Array.from(todasMarcasSet).sort();
 
       const ws = wb.addWorksheet('Maquinários', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -1105,8 +1098,15 @@ const maquinasRouter = router({
 
       // Coluna A: fazendas
       nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
-      // Coluna B: marcas
+      // Coluna B: marcas (TODAS as marcas de todas as categorias)
       todasMarcas.forEach((marca, i) => { wsListas.getCell(i + 1, 2).value = marca; });
+      
+      // Colunas C+: Marcas por tipo (para validação cascata futura)
+      let colIdx = 3;
+      Object.entries(MARCAS_POR_TIPO).forEach(([tipo, marcas]) => {
+        marcas.forEach((marca, i) => { wsListas.getCell(i + 1, colIdx).value = marca; });
+        colIdx++;
+      });
 
       const numFazendas = nomesFazendas.length;
       const numMarcas   = todasMarcas.length;
@@ -1120,6 +1120,10 @@ const maquinasRouter = router({
         { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
         { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
       ].filter(d => d.colIdx > 0);
+      
+      // NOTA: Validação cascata (Tipo → Marca) requer VBA/macros no Excel.
+      // Por enquanto, mantemos lista completa de marcas.
+      // Backend validará combinação Tipo+Marca na importação.
 
       // Dropdowns com referência a aba _Listas (dinâmicos)
       const colIdxFazenda = idxDe('fazendaNome');
@@ -1130,7 +1134,7 @@ const maquinasRouter = router({
         : ['"(Nenhuma fazenda cadastrada)"'];
       const marcaFormulae = numMarcas > 0
         ? [`_Listas!$B$1:$B$${numMarcas}`]
-        : ['"John Deere,Case IH,New Holland,Valtra,Massey Ferguson"'];
+        : ['"(Nenhuma marca cadastrada)"'];
 
       for (let r = 2; r <= 501; r++) {
         // Dropdowns inline
@@ -1148,12 +1152,14 @@ const maquinasRouter = router({
             error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
           };
         }
-        // Dropdown Marca (dinâmico)
+        // Dropdown Marca (dinâmico com todas as marcas)
+        // NOTA: Validação cascata (Tipo → Marca) requer VBA/macros.
+        // Backend validará a combinação Tipo+Marca durante a importação.
         if (colIdxMarca > 0) {
           ws.getRow(r).getCell(colIdxMarca).dataValidation = {
             type: 'list', allowBlank: true, formulae: marcaFormulae,
             showErrorMessage: true, errorTitle: 'Marca inválida',
-            error: 'Selecione uma marca da lista ou adicione a marca desejada ao sistema.',
+            error: 'Selecione uma marca válida. O backend validará se a marca pertence ao tipo selecionado.',
           };
         }
       }
