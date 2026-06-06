@@ -232,3 +232,12 @@
 - [x] Ajustar altura da linha do cabeçalho para 20px (uniforme)
 - [x] Garantir alinhamento vertical middle em todas as colunas
 - [x] 191 testes Vitest passando, 0 erros TypeScript
+
+## Lista dependente Sexo → Categoria na planilha de animais (2026-06-06)
+- [x] Criar shared/animal-types.ts com mapeamento CATEGORIAS_POR_SEXO
+- [x] Remover Touro, Garrote, Vaca Prenha das listas de seleção (apenas Boi, Novilho, Bezerro para Macho; Vaca, Novilha, Bezerra para Fêmea)
+- [x] Implementar lista dependente Sexo → Categoria na planilha de importação de animais com OFFSET+MATCH+COUNTIF
+- [x] Aba auxiliar _ListasAnimais com colunas C (sexo) e D (categoria) em formato longo
+- [x] Validar combinações Sexo+Categoria no backend (validarImportacao de animais)
+- [x] Importar isCategoriaValidaParaSexo e todasAsCategorias em validarImportacao
+- [x] 191 testes Vitest passando, 0 erros TypeScript

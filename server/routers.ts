@@ -380,9 +380,13 @@ const animaisRouter = router({
 
       // Dropdowns de validação — Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
+      
+      // Importar mapeamento Sexo → Categoria
+      const { CATEGORIAS_POR_SEXO } = await import('../shared/animal-types');
+      
       const dvConfig: { colIdx: number; formulae: string[] }[] = [
         { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
-        { colIdx: idxDe('categoria'),           formulae: ['"Touro,Boi,Bezerro,Garrote,Vaca,Novilha,Bezerra,Vaca Prenhe"'] },
+        { colIdx: idxDe('categoria'),           formulae: ['OFFSET(_ListasAnimais!$D$1,MATCH($B{r},_ListasAnimais!$C:$C,0)-1,0,COUNTIF(_ListasAnimais!$C:$C,$B{r}),1)'] },
         { colIdx: idxDe('raca'),                formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
         { colIdx: idxDe('castrado'),            formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
@@ -392,12 +396,45 @@ const animaisRouter = router({
       for (let r = 2; r <= 501; r++) {
         dvConfig.forEach(({ colIdx, formulae }) => {
           const cell = ws.getRow(r).getCell(colIdx);
+          // Substituir {r} pela linha atual na fórmula de categoria
+          const formulaeFinal = formulae.map(f => f.replace(/{r}/g, String(r)));
           cell.dataValidation = {
-            type: 'list', allowBlank: true, formulae,
+            type: 'list', allowBlank: true, formulae: formulaeFinal,
             showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
           };
         });
       }
+      
+      // ─── ABA AUXILIAR: _ListasAnimais (oculta) ──────────────────────────────────
+      const wsListasAnimais = wb.addWorksheet('_ListasAnimais', {
+        state: 'veryHidden',
+        properties: { tabColor: { argb: '888888' } },
+      });
+      
+      // Coluna A: Sexos únicos
+      const sexosUnicos = Object.keys(CATEGORIAS_POR_SEXO);
+      wsListasAnimais.getColumn(1).width = 12;
+      sexosUnicos.forEach((sexo, idx) => {
+        const cell = wsListasAnimais.getCell(idx + 1, 1);
+        cell.value = sexo;
+      });
+      
+      // Coluna B: (vazio, apenas para espaçamento)
+      wsListasAnimais.getColumn(2).width = 2;
+      
+      // Coluna C: Sexo (chave para MATCH)
+      // Coluna D: Categoria (valores para OFFSET)
+      wsListasAnimais.getColumn(3).width = 12;
+      wsListasAnimais.getColumn(4).width = 20;
+      
+      let rowIdx = 1;
+      Object.entries(CATEGORIAS_POR_SEXO).forEach(([sexo, categorias]) => {
+        categorias.forEach(categoria => {
+          wsListasAnimais.getCell(rowIdx, 3).value = sexo;
+          wsListasAnimais.getCell(rowIdx, 4).value = categoria;
+          rowIdx++;
+        });
+      });
 
 
       // Serializa para base64
@@ -413,16 +450,14 @@ const animaisRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { normalizarLinha, normalizarSexo, normalizarStatus, isLinhaExemplo } = await import('../shared/importacaoAnimais');
+      const { CATEGORIAS_POR_SEXO, isCategoriaValidaParaSexo, todasAsCategorias } = await import('../shared/animal-types');
       const SEXOS_VALIDOS = ['macho', 'femea'];
       const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
       const RACAS_VALIDAS = [
         'Nelore', 'Nelore Mocho', 'Angus', 'Senepol', 'Brahman',
         'Girolando', 'Gir', 'Holandês', 'Mestiço', 'Outro',
       ];
-      const CATEGORIAS_VALIDAS = [
-        'Touro', 'Boi', 'Bezerro', 'Garrote',
-        'Vaca', 'Novilha', 'Bezerra', 'Vaca Prenhe',
-      ];
+      const CATEGORIAS_VALIDAS = todasAsCategorias(); // Boi, Novilho, Bezerro, Vaca, Novilha, Bezerra
 
       // Normaliza cabeçalhos PT-BR → chaves internas para TODAS as linhas
       // (a planilha do usuário usa rótulos em português como "Brinco", "Data de Nascimento")
@@ -496,10 +531,14 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'raca', mensagem: `Raça não cadastrada: "${raca}"` });
         }
 
-        // Categoria (opcional, mas se informada deve ser válida)
+        // Categoria (opcional, mas se informada deve ser válida E compatível com Sexo)
         const categoria = (linha.categoria || '').trim();
-        if (categoria && !CATEGORIAS_VALIDAS.includes(categoria)) {
-          errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `Categoria inválida: "${categoria}"` });
+        if (categoria) {
+          if (!CATEGORIAS_VALIDAS.includes(categoria)) {
+            errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `Categoria inválida: "${categoria}"` });
+          } else if (sexo && !isCategoriaValidaParaSexo(sexo === 'macho' ? 'Macho' : 'Fêmea', categoria)) {
+            errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `A categoria selecionada não é compatível com o sexo informado.` });
+          }
         }
 
         // Datas — aceita DD/MM/AAAA, DD/MM/AA e AAAA-MM-DD
