@@ -8,6 +8,7 @@ import MobileCard from "@/components/MobileCard";
 import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn } from "@/lib/utils";
+import { ImportarMaquinariosModal } from '@/components/ImportarMaquinariosModal';
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -40,6 +41,7 @@ export default function MaquinasListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [importarOpen, setImportarOpen] = useState(false);
   const pageSize = 10;
 
   const { data: list = [], isLoading, refetch } = trpc.maquinas.list.useQuery();
@@ -120,6 +122,15 @@ export default function MaquinasListPage() {
         </div>
 
         <div className="px-4 py-3 flex flex-wrap items-center gap-3 border-b border-gray-100">
+          <button
+            type="button"
+            onClick={() => setImportarOpen(true)}
+            className="inline-flex items-center gap-2 px-4 rounded text-[12px] font-semibold uppercase text-white shrink-0 hover:brightness-95 active:scale-[0.97] transition"
+            style={{ backgroundColor: '#1565C0', minHeight: 48 }}
+          >
+            <span className="material-icons text-[18px]">upload_file</span>
+            Importar
+          </button>
           <button
             type="button"
             onClick={() => setLocation("/maquinas/cadastro")}
@@ -309,6 +320,12 @@ export default function MaquinasListPage() {
           </div>
         </div>
       </div>
+
+      <ImportarMaquinariosModal
+        open={importarOpen}
+        onClose={() => setImportarOpen(false)}
+        onImportado={() => refetch()}
+      />
     </AppLayout>
   );
 }

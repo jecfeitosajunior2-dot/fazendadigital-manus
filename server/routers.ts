@@ -1020,6 +1020,118 @@ const maquinasInputFields = {
 };
 
 const maquinasRouter = router({
+  // ── Gera planilha-modelo para importação de maquinários ──────────────────────────
+  gerarModeloPlanilha: protectedProcedure
+    .mutation(async () => {
+      const ExcelJSModule = await import('exceljs');
+      const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
+      const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoMaquinarios');
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Fazenda Digital';
+      wb.created = new Date();
+
+      const COR_HEADER_BG  = '1A3C3C';
+      const COR_OBRIG_BG   = 'B8860B';
+      const COR_COL_BG     = '2D5A5A';
+      const COR_LINHA_ALT  = 'F2F7F7';
+
+      const NUM_COLS = COLUNAS_IMPORTACAO.length;
+      const ultimaColLetra = (n: number): string => {
+        let s = '';
+        while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+        return s;
+      };
+
+      const ws = wb.addWorksheet('Maquinários', {
+        properties: { tabColor: { argb: COR_COL_BG } },
+        views: [{ state: 'frozen', ySplit: 1 }],
+      });
+
+      // Linha 1: cabeçalhos
+      const headerRow = ws.getRow(1);
+      headerRow.height = 26;
+      COLUNAS_IMPORTACAO.forEach((col, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = col.label + (col.obrigatorio ? ' *' : '');
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = {
+          bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
+          right:  { style: 'thin',   color: { argb: 'FFFFFF' } },
+        };
+        ws.getColumn(idx + 1).width = col.largura;
+      });
+
+      // Linhas 2-501: área de preenchimento
+      for (let r = 2; r <= 501; r++) {
+        const row = ws.getRow(r);
+        row.height = 18;
+        COLUNAS_IMPORTACAO.forEach((col, idx) => {
+          const cell = row.getCell(idx + 1);
+          const isAlt = (r % 2 === 0);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
+          cell.font = { name: 'Calibri', size: 10 };
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+        });
+      }
+
+      // Dropdowns de validação
+      const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
+      const dvConfig: { colIdx: number; formulae: string[] }[] = [
+        { colIdx: idxDe('tipo'),   formulae: ['"Trator,Colheitadeira,Pulverizador,Plantadeira,Caminhão,Veículo,Implemento,Outro"'] },
+        { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
+        { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
+      ].filter(d => d.colIdx > 0);
+      for (let r = 2; r <= 501; r++) {
+        dvConfig.forEach(({ colIdx, formulae }) => {
+          const cell = ws.getRow(r).getCell(colIdx);
+          cell.dataValidation = {
+            type: 'list', allowBlank: true, formulae,
+            showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
+          };
+        });
+      }
+
+      // Aba de instruções
+      const wsInfo = wb.addWorksheet('Instruções', {
+        properties: { tabColor: { argb: '1565C0' } },
+      });
+      wsInfo.getColumn(1).width = 80;
+      const instrucoes = [
+        ['INSTRUÇÕES DE PREENCHIMENTO — IMPORTAÇÃO DE MAQUINÁRIOS'],
+        [''],
+        ['Campos obrigatórios (fundo dourado): Tipo, Marca, Fazenda'],
+        ['Campos opcionais: todos os demais'],
+        [''],
+        ['CAMPOS COM LISTA SUSPENSA:'],
+        ['Tipo: Trator | Colheitadeira | Pulverizador | Plantadeira | Caminhão | Veículo | Implemento | Outro'],
+        ['Estado: Novo | Usado'],
+        ['Status: Ativo | Manutenção | Inativo'],
+        [''],
+        ['FAZENDA: deve corresponder exatamente ao nome cadastrado no sistema'],
+        ['PLACA/Nº Série: deve ser único — não pode repetir na planilha nem no banco de dados'],
+        ['ANO: 4 dígitos (ex: 2022)'],
+        ['VALOR: use ponto ou vírgula como separador decimal (ex: 150000.00 ou 150000,00)'],
+        [''],
+        ['Não altere os cabeçalhos da aba Maquinários.'],
+      ];
+      instrucoes.forEach((row, i) => {
+        const r = wsInfo.getRow(i + 1);
+        r.getCell(1).value = row[0];
+        if (i === 0) {
+          r.getCell(1).font = { bold: true, size: 13, color: { argb: 'FFFFFF' } };
+          r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
+          r.height = 28;
+        }
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const base64 = Buffer.from(buf).toString('base64');
+      return { base64, filename: 'modelo_importacao_maquinarios.xlsx' };
+    }),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(maquinas).where(eq(maquinas.userId, ctx.user.id)).orderBy(desc(maquinas.createdAt));
   }),
@@ -1081,6 +1193,241 @@ const maquinasRouter = router({
     .mutation(async ({ ctx, input }) => {
       await db.delete(maquinas).where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
       return { success: true };
+    }),
+
+  // ── Valida linhas antes de importar maquinários ──────────────────────────────
+  validarImportacao: protectedProcedure
+    .input(z.object({
+      linhas: z.array(z.record(z.string(), z.string())),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const {
+        normalizarLinha,
+        normalizarEstado,
+        normalizarStatus: normalizarStatusMaq,
+        isLinhaExemplo,
+      } = await import('../shared/importacaoMaquinarios');
+
+      const ESTADOS_VALIDOS = ['novo', 'usado'];
+      const STATUS_VALIDOS  = ['ativo', 'manutencao', 'inativo'];
+      const TIPOS_VALIDOS   = ['Trator', 'Colheitadeira', 'Pulverizador', 'Plantadeira', 'Caminhão', 'Veículo', 'Implemento', 'Outro'];
+
+      // Normaliza cabeçalhos PT-BR → chaves internas e descarta linha de exemplo
+      input.linhas = input.linhas
+        .map(l => normalizarLinha(l))
+        .filter(l => !isLinhaExemplo(l));
+
+      // Busca fazendas do usuário
+      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
+
+      // Busca placas já existentes no banco (para detectar duplicidade)
+      const placasBanco = await db.select({ placa: maquinas.placa })
+        .from(maquinas).where(eq(maquinas.userId, ctx.user.id));
+      const placasBancoSet = new Set(
+        placasBanco.map(m => (m.placa || '').toLowerCase().trim()).filter(Boolean)
+      );
+
+      const erros: { linha: number; campo: string; mensagem: string }[] = [];
+      const validos: typeof input.linhas = [];
+      const placasNaPlanilha = new Set<string>();
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = input.linhas[i];
+        const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
+        const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
+
+        // Tipo obrigatório
+        const tipo = (linha.tipo || '').trim();
+        if (!tipo) {
+          errosLinha.push({ linha: numLinha, campo: 'Tipo', mensagem: 'Tipo (Máquina) é obrigatório' });
+        }
+
+        // Marca obrigatória
+        const marca = (linha.marca || '').trim();
+        if (!marca) {
+          errosLinha.push({ linha: numLinha, campo: 'Marca', mensagem: 'Marca é obrigatória' });
+        }
+
+        // Fazenda obrigatória e deve existir no banco
+        const fazendaNome = (linha.fazendaNome || '').trim();
+        if (!fazendaNome) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
+        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
+        }
+
+        // Placa (opcional, mas sem duplicidade)
+        const placa = (linha.placa || '').trim();
+        if (placa) {
+          if (placasNaPlanilha.has(placa.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'Placa', mensagem: `Placa/Nº Série "${placa}" duplicada na planilha` });
+          } else if (placasBancoSet.has(placa.toLowerCase())) {
+            errosLinha.push({ linha: numLinha, campo: 'Placa', mensagem: `Placa/Nº Série "${placa}" já existe no banco de dados` });
+          } else {
+            placasNaPlanilha.add(placa.toLowerCase());
+          }
+        }
+
+        // Ano de fabricação (opcional, mas deve ser 4 dígitos entre 1900 e ano atual)
+        const anoRaw = (linha.ano || '').trim();
+        if (anoRaw) {
+          const ano = parseInt(anoRaw, 10);
+          const anoAtual = new Date().getFullYear();
+          if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
+            errosLinha.push({ linha: numLinha, campo: 'Ano de Fabricação', mensagem: `Ano inválido: "${anoRaw}"` });
+          } else {
+            linha.ano = String(ano);
+          }
+        }
+
+        // Ano de aquisição (opcional)
+        const anoAqRaw = (linha.anoAquisicao || '').trim();
+        if (anoAqRaw) {
+          const anoAq = parseInt(anoAqRaw, 10);
+          const anoAtual = new Date().getFullYear();
+          if (isNaN(anoAq) || anoAq < 1900 || anoAq > anoAtual + 1) {
+            errosLinha.push({ linha: numLinha, campo: 'Ano de Aquisição', mensagem: `Ano de aquisição inválido: "${anoAqRaw}"` });
+          } else {
+            linha.anoAquisicao = String(anoAq);
+          }
+        }
+
+        // Valor (opcional, deve ser numérico)
+        const valorRaw = (linha.valor || '').trim();
+        if (valorRaw) {
+          const valorNum = parseFloat(valorRaw.replace(',', '.'));
+          if (isNaN(valorNum) || valorNum < 0) {
+            errosLinha.push({ linha: numLinha, campo: 'Valor', mensagem: `Valor inválido: "${valorRaw}"` });
+          } else {
+            linha.valor = String(valorNum.toFixed(2));
+          }
+        }
+
+        // Estado (opcional, mas se informado deve ser válido)
+        const estadoRaw = (linha.estado || '').trim();
+        if (estadoRaw) {
+          const estado = normalizarEstado(estadoRaw);
+          if (!ESTADOS_VALIDOS.includes(estado)) {
+            errosLinha.push({ linha: numLinha, campo: 'Estado', mensagem: `Estado inválido: "${estadoRaw}". Use: Novo ou Usado` });
+          } else {
+            linha.estado = estado;
+          }
+        }
+
+        // Status (opcional, mas se informado deve ser válido)
+        const statusRaw = (linha.status || '').trim();
+        if (statusRaw) {
+          const status = normalizarStatusMaq(statusRaw);
+          if (!STATUS_VALIDOS.includes(status)) {
+            errosLinha.push({ linha: numLinha, campo: 'Status', mensagem: `Status inválido: "${statusRaw}". Use: Ativo, Manutenção ou Inativo` });
+          } else {
+            linha.status = status;
+          }
+        }
+
+        // Data de desativação (opcional, formato DD/MM/AAAA ou AAAA-MM-DD)
+        const dataRaw = (linha.dataDesativacao || '').trim();
+        if (dataRaw) {
+          const parseDateBR = (raw: string): string | null => {
+            const s = raw.trim();
+            const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (isoMatch) return s;
+            const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+            if (brMatch) {
+              const d = brMatch[1].padStart(2, '0');
+              const m = brMatch[2].padStart(2, '0');
+              let y = brMatch[3];
+              if (y.length === 2) y = parseInt(y, 10) < 50 ? `20${y}` : `19${y}`;
+              return `${y}-${m}-${d}`;
+            }
+            return null;
+          };
+          const converted = parseDateBR(dataRaw);
+          if (!converted) {
+            errosLinha.push({ linha: numLinha, campo: 'Data de Desativação', mensagem: `Data inválida: "${dataRaw}". Use DD/MM/AAAA` });
+          } else {
+            linha.dataDesativacao = converted;
+          }
+        }
+
+        if (errosLinha.length > 0) {
+          erros.push(...errosLinha);
+        } else {
+          validos.push(linha);
+        }
+      }
+
+      return {
+        total: input.linhas.length,
+        validos: validos.length,
+        invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
+        erros,
+        fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
+      };
+    }),
+
+  // ── Importa maquinários em lote ──────────────────────────────────────────────
+  importar: protectedProcedure
+    .input(z.object({
+      linhas: z.array(z.record(z.string(), z.string())),
+      fazendaNomeParaId: z.record(z.string(), z.number()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const {
+        normalizarLinha,
+        normalizarEstado,
+        normalizarStatus: normalizarStatusMaq,
+        isLinhaExemplo,
+      } = await import('../shared/importacaoMaquinarios');
+
+      const importados: number[] = [];
+      const rejeitados: { linha: number; mensagem: string }[] = [];
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = normalizarLinha(input.linhas[i]);
+        const numLinha = i + 2;
+        if (isLinhaExemplo(linha)) continue;
+        try {
+          const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
+          const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
+
+          const anoNum = linha.ano ? parseInt(linha.ano, 10) : undefined;
+          const anoAqNum = linha.anoAquisicao ? parseInt(linha.anoAquisicao, 10) : undefined;
+
+          const estadoNorm = normalizarEstado(linha.estado || '');
+          const statusNorm = normalizarStatusMaq(linha.status || '');
+
+          const result = await db.insert(maquinas).values({
+            userId: ctx.user.id,
+            fazendaId: fazendaId || undefined,
+            nome: (linha.nome || '').trim() || 'Sem apelido',
+            tipo: (linha.tipo || '').trim() || undefined,
+            marca: (linha.marca || '').trim() || undefined,
+            modelo: (linha.modelo || '').trim() || undefined,
+            placa: (linha.placa || '').trim() || undefined,
+            ano: anoNum && !isNaN(anoNum) ? anoNum : undefined,
+            anoAquisicao: anoAqNum && !isNaN(anoAqNum) ? anoAqNum : undefined,
+            valor: (linha.valor || '').trim() || undefined,
+            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
+            dataDesativacao: linha.dataDesativacao ? new Date(linha.dataDesativacao) : undefined,
+            estado: (['novo','usado'].includes(estadoNorm) ? estadoNorm : undefined) as any,
+            status: (['ativo','manutencao','inativo'].includes(statusNorm) ? statusNorm : 'ativo') as any,
+            observacoes: (linha.observacoes || '').trim() || undefined,
+          });
+          importados.push((result as any)[0]?.insertId);
+        } catch (err: any) {
+          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+        }
+      }
+
+      return {
+        total: input.linhas.length,
+        importados: importados.length,
+        rejeitados: rejeitados.length,
+        detalhesRejeitados: rejeitados,
+      };
     }),
 });
 
