@@ -17,6 +17,13 @@ import {
 } from "@/components/FormFields";
 import { TIPOS_MAQUINA, MARCAS_MAQUINA } from "@/lib/maquina-types";
 
+// Lista de marcas sugeridas (usada no datalist — não restringe o valor)
+const MARCAS_SUGERIDAS = [
+  ...MARCAS_MAQUINA.filter(m => m !== 'Outra'),
+  'JCB', 'Caterpillar', 'Komatsu', 'Fendt', 'Deutz-Fahr', 'Jacto', 'Stara',
+  'Agrale', 'Santal', 'Lely', 'CLAAS', 'Challenger', 'CNH', 'Outra',
+];
+
 type ImageSlot =
   | { kind: "empty" }
   | { kind: "preview"; url: string; existingPath?: string }
@@ -431,13 +438,22 @@ export default function MaquinaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Marca</FormLabel>
-              <FormNativeSelect
-                value={form.marca}
-                onChange={v => set("marca", v)}
-                placeholder="Selecione a marca da máquina"
-                required
-                options={MARCAS_MAQUINA.map(m => ({ value: m, label: m }))}
-              />
+              {/* Input livre com sugestões via datalist — aceita qualquer valor (JCB, Case etc.) */}
+              <FieldBox required>
+                <input
+                  list="marcas-sugeridas-list"
+                  value={form.marca}
+                  onChange={e => set("marca", e.target.value)}
+                  placeholder="Digite ou selecione a marca"
+                  required
+                  className="w-full min-h-[42px] px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <datalist id="marcas-sugeridas-list">
+                  {MARCAS_SUGERIDAS.map(m => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </FieldBox>
             </div>
             <div>
               <FormLabel>Modelo</FormLabel>
