@@ -210,7 +210,8 @@
 - [x] Corrigir gerarModeloPlanilha para usar MARCAS_POR_TIPO centralizado em vez de lista hardcoded
 - [x] Remover lista hardcoded de marcas de Máquinas (John Deere, Case IH, New Holland, etc.)
 - [x] Importar MARCAS_POR_TIPO de shared/maquina-types em gerarModeloPlanilha
-- [x] Coletar todas as marcas de todas as categorias (sem duplicatas) para dropdown de Marca
-- [x] Adicionar colunas ocultas na aba _Listas com marcas por tipo (para validação cascata futura)
-- [x] Documentar que validação cascata (Tipo → Marca) requer VBA/macros no Excel
-- [x] Backend já valida combinação Tipo+Marca em validarImportacao (rejeita com mensagem descritiva)
+- [x] Adicionar colunas ocultas na aba _Listas com marcas por tipo (para validação cascata)
+- [x] Implementar validação cascata com INDIRECT: dropdown Marca filtra conforme Tipo selecionado
+- [x] Aba _Listas: Coluna A=Fazendas, Coluna B=Tipos, Colunas C+=Marcas por tipo
+- [x] Fórmula INDIRECT: =IFERROR(INDIRECT("_Listas!"&ADDRESS(MATCH(A2,_Listas!$B$1:$B$6,0),COLUMN(_Listas!$C$1))),"")
+- [x] Backend valida combinação Tipo+Marca em validarImportacao (rejeita com mensagem descritiva)

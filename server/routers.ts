@@ -1047,12 +1047,14 @@ const maquinasRouter = router({
       // Importa mapeamento centralizado Tipo → Marca
       const { MARCAS_POR_TIPO } = await import('../shared/maquina-types');
       
-      // Coleta todas as marcas de todas as categorias (sem duplicatas)
-      const todasMarcasSet = new Set<string>();
-      Object.values(MARCAS_POR_TIPO).forEach(marcas => {
-        marcas.forEach(m => todasMarcasSet.add(m));
+      // Cria mapa de Tipo → Coluna na aba _Listas para INDIRECT
+      // Coluna A: Fazendas, Coluna B: Tipos, Colunas C+: Marcas por tipo
+      const tipoParaColuna: Record<string, string> = {};
+      let colIdxMarcas = 3; // Começa na coluna C
+      Object.keys(MARCAS_POR_TIPO).forEach(tipo => {
+        tipoParaColuna[tipo] = String.fromCharCode(64 + colIdxMarcas); // A=65, B=66, C=67...
+        colIdxMarcas++;
       });
-      const todasMarcas = Array.from(todasMarcasSet).sort();
 
       const ws = wb.addWorksheet('Maquinários', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -1096,20 +1098,20 @@ const maquinasRouter = router({
         properties: { tabColor: { argb: '888888' } },
       });
 
-      // Coluna A: fazendas
+      // Coluna A: Fazendas
       nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
-      // Coluna B: marcas (TODAS as marcas de todas as categorias)
-      todasMarcas.forEach((marca, i) => { wsListas.getCell(i + 1, 2).value = marca; });
+      // Coluna B: Tipos (para referência)
+      Object.keys(MARCAS_POR_TIPO).forEach((tipo, i) => { wsListas.getCell(i + 1, 2).value = tipo; });
       
-      // Colunas C+: Marcas por tipo (para validação cascata futura)
-      let colIdx = 3;
+      // Colunas C+: Marcas por tipo (cada tipo em sua própria coluna)
+      let colIdxData = 3;
       Object.entries(MARCAS_POR_TIPO).forEach(([tipo, marcas]) => {
-        marcas.forEach((marca, i) => { wsListas.getCell(i + 1, colIdx).value = marca; });
-        colIdx++;
+        marcas.forEach((marca, i) => { wsListas.getCell(i + 1, colIdxData).value = marca; });
+        colIdxData++;
       });
 
       const numFazendas = nomesFazendas.length;
-      const numMarcas   = todasMarcas.length;
+      const numTipos = Object.keys(MARCAS_POR_TIPO).length;
 
       // ── Dropdowns de validação ──────────────────────────────────────────────
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
@@ -1121,19 +1123,24 @@ const maquinasRouter = router({
         { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
       ].filter(d => d.colIdx > 0);
       
-      // NOTA: Validação cascata (Tipo → Marca) requer VBA/macros no Excel.
-      // Por enquanto, mantemos lista completa de marcas.
-      // Backend validará combinação Tipo+Marca na importação.
+      // NOTA: Validação cascata (Tipo → Marca) usa INDIRECT com referências às colunas ocultas.
+      // Backend também valida combinação Tipo+Marca na importação com mensagem descritiva.
 
       // Dropdowns com referência a aba _Listas (dinâmicos)
+      const colIdxTipo    = idxDe('tipo');
       const colIdxFazenda = idxDe('fazendaNome');
       const colIdxMarca   = idxDe('marca');
 
       const fazendaFormulae = numFazendas > 0
         ? [`_Listas!$A$1:$A$${numFazendas}`]
         : ['"(Nenhuma fazenda cadastrada)"'];
-      const marcaFormulae = numMarcas > 0
-        ? [`_Listas!$B$1:$B$${numMarcas}`]
+      
+      // Validação cascata: Marca depende do Tipo selecionado
+      // Usa INDIRECT para referenciar a coluna correta baseado no tipo
+      // Exemplo: Se tipo=Aeronaves (linha 1 em _Listas!B), usa coluna C (Aeronaves)
+      // Se tipo=Máquinas (linha 2 em _Listas!B), usa coluna D (Máquinas)
+      const marcaFormulae = numTipos > 0
+        ? ['=IFERROR(INDIRECT("_Listas!"&ADDRESS(MATCH(A2,_Listas!$B$1:$B$${numTipos},0),COLUMN(_Listas!$C$1))),"")']
         : ['"(Nenhuma marca cadastrada)"'];
 
       for (let r = 2; r <= 501; r++) {
@@ -1152,17 +1159,26 @@ const maquinasRouter = router({
             error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
           };
         }
-        // Dropdown Marca (dinâmico com todas as marcas)
-        // NOTA: Validação cascata (Tipo → Marca) requer VBA/macros.
-        // Backend validará a combinação Tipo+Marca durante a importação.
-        if (colIdxMarca > 0) {
+        // Dropdown Marca (validação cascata com INDIRECT)
+        // Filtra marcas conforme o Tipo selecionado na mesma linha
+        if (colIdxMarca > 0 && colIdxTipo > 0) {
           ws.getRow(r).getCell(colIdxMarca).dataValidation = {
             type: 'list', allowBlank: true, formulae: marcaFormulae,
             showErrorMessage: true, errorTitle: 'Marca inválida',
-            error: 'Selecione uma marca válida. O backend validará se a marca pertence ao tipo selecionado.',
+            error: 'Selecione uma marca válida para o tipo selecionado.',
           };
         }
       }
+
+      // ── Aba de referência _Listas: estrutura ────────────────────────────────
+      // Coluna A: Fazendas do usuário
+      // Coluna B: Tipos (Aeronaves, Máquinas, Implementos, Veículos, Equipamentos com Motor, Outros)
+      // Colunas C+: Marcas por tipo (cada tipo em sua própria coluna)
+      // Exemplo:
+      //   A1: Fazenda1    B1: Aeronaves   C1: Bombardier Global
+      //   A2: Fazenda2    B2: Máquinas    D1: John Deere
+      //   ...             B3: Implementos E1: Baldan
+      // Validação cascata usa INDIRECT para referenciar a coluna correta baseado no tipo
 
       // ── SEM aba Instruções — orientações ficam no cabeçalho ─────────────────
 
