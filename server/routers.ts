@@ -1393,8 +1393,48 @@ const maquinasRouter = router({
           const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
           const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
 
-          const anoNum = linha.ano ? parseInt(linha.ano, 10) : undefined;
-          const anoAqNum = linha.anoAquisicao ? parseInt(linha.anoAquisicao, 10) : undefined;
+          // ── Conversão de ano ──────────────────────────────────────────────
+          const anoNum = linha.ano ? parseInt(String(linha.ano).replace(/[^0-9]/g, ''), 10) : undefined;
+          const anoAqNum = linha.anoAquisicao ? parseInt(String(linha.anoAquisicao).replace(/[^0-9]/g, ''), 10) : undefined;
+
+          // ── Conversão de valor monetário ─────────────────────────────────
+          // Aceita: "100,000.00" | "100.000,00" | "100000" | "100000.00"
+          const valorRaw = (linha.valor || '').trim();
+          let valorNum: string | undefined = undefined;
+          if (valorRaw) {
+            // Detecta se usa vírgula como decimal (ex: "100.000,00")
+            const usaVirgulaCentavos = /,\d{1,2}$/.test(valorRaw);
+            let valorClean: string;
+            if (usaVirgulaCentavos) {
+              // Formato BR: remove pontos de milhar, troca vírgula por ponto
+              valorClean = valorRaw.replace(/\./g, '').replace(',', '.');
+            } else {
+              // Formato US: remove vírgulas de milhar
+              valorClean = valorRaw.replace(/,/g, '');
+            }
+            const parsed = parseFloat(valorClean);
+            valorNum = !isNaN(parsed) ? parsed.toFixed(2) : undefined;
+          }
+
+          // ── Conversão de data ────────────────────────────────────────────
+          // Aceita: "DD/MM/AAAA" | "AAAA-MM-DD" | "MM/DD/AAAA"
+          let dataDesativacaoStr: string | undefined = undefined;
+          if (linha.dataDesativacao && linha.dataDesativacao.trim()) {
+            const raw = linha.dataDesativacao.trim();
+            // Tenta formato DD/MM/AAAA
+            const matchBR = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (matchBR) {
+              dataDesativacaoStr = `${matchBR[3]}-${matchBR[2].padStart(2,'0')}-${matchBR[1].padStart(2,'0')}`;
+            } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+              // Já está no formato ISO
+              dataDesativacaoStr = raw;
+            }
+            // Valida a data resultante
+            if (dataDesativacaoStr) {
+              const d = new Date(dataDesativacaoStr);
+              if (isNaN(d.getTime())) dataDesativacaoStr = undefined;
+            }
+          }
 
           const estadoNorm = normalizarEstado(linha.estado || '');
           const statusNorm = normalizarStatusMaq(linha.status || '');
@@ -1402,16 +1442,16 @@ const maquinasRouter = router({
           const result = await db.insert(maquinas).values({
             userId: ctx.user.id,
             fazendaId: fazendaId || undefined,
-            nome: (linha.nome || '').trim() || 'Sem apelido',
+            nome: (linha.nome || '').trim() || (linha.marca ? `${linha.marca} ${linha.modelo || ''}`.trim() : 'Sem apelido'),
             tipo: (linha.tipo || '').trim() || undefined,
             marca: (linha.marca || '').trim() || undefined,
             modelo: (linha.modelo || '').trim() || undefined,
             placa: (linha.placa || '').trim() || undefined,
             ano: anoNum && !isNaN(anoNum) ? anoNum : undefined,
             anoAquisicao: anoAqNum && !isNaN(anoAqNum) ? anoAqNum : undefined,
-            valor: (linha.valor || '').trim() || undefined,
+            valor: valorNum,
             vidaUtil: (linha.vidaUtil || '').trim() || undefined,
-            dataDesativacao: linha.dataDesativacao ? new Date(linha.dataDesativacao) : undefined,
+            dataDesativacao: dataDesativacaoStr as any,
             estado: (['novo','usado'].includes(estadoNorm) ? estadoNorm : undefined) as any,
             status: (['ativo','manutencao','inativo'].includes(statusNorm) ? statusNorm : 'ativo') as any,
             observacoes: (linha.observacoes || '').trim() || undefined,
