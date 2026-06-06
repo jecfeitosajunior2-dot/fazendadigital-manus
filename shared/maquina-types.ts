@@ -244,11 +244,14 @@ export const MARCAS_POR_TIPO: Record<TipoMaquina, readonly string[]> = {
     "ZONGSHEN",
   ],
   "Equipamentos com Motor": [
-    "Honda",
+    "BRANCO",
+    "DJI SmartFarm",
+    "KUHN",
+    "ROAF Ordenhadeiras e Tanques",
+    "STIHL",
+    "Buffalo",
     "Husqvarna",
-    "Stihl",
-    "Briggs & Stratton",
-    "Outra",
+    "Toyama",
   ],
   Outros: ["Outra"],
 };
