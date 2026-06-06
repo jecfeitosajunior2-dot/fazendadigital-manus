@@ -83,7 +83,6 @@ export const MARCAS_POR_TIPO: Record<TipoMaquina, readonly string[]> = {
     "Iseki",
     "Jacto",
     "JCB",
-    "JF",
     "JF Máquinas",
     "John Deere",
     "KO Máquinas Agrícolas",
