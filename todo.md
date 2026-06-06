@@ -215,3 +215,14 @@
 - [x] Aba _Listas: Coluna A=Fazendas, Coluna B=Tipos, Colunas C+=Marcas por tipo
 - [x] Fórmula INDIRECT: =IFERROR(INDIRECT("_Listas!"&ADDRESS(MATCH(A2,_Listas!$B$1:$B$6,0),COLUMN(_Listas!$C$1))),"")
 - [x] Backend valida combinação Tipo+Marca em validarImportacao (rejeita com mensagem descritiva)
+
+## Correção definitiva: Lista dependente Tipo → Marca na planilha (2026-06-06)
+- [x] Diagnosticar bug: INDIRECT com referência A2 fixa + template literal não interpolado + '=' inicial
+- [x] Substituir INDIRECT por OFFSET+MATCH+COUNTIF (técnica padrão de listas dependentes)
+- [x] Aba _Listas em formato longo: Coluna B=tipos únicos, Coluna C=tipo(chave), Coluna D=marca (agrupado)
+- [x] Fórmula com referência RELATIVA à linha ($A{r}) e SEM '=' inicial (padrão OOXML)
+- [x] Validar lógica em Python contra dados reais (6 categorias, 200 marcas) — todas corretas
+- [x] Validar integridade XML das dataValidations
+- [x] Validar recálculo real no LibreOffice headless — fórmula preservada
+- [x] 191 testes Vitest passando, 0 erros TypeScript
+- [x] Limpar scripts de teste temporários

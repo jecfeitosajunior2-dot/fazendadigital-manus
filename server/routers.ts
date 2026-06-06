@@ -1044,17 +1044,9 @@ const maquinasRouter = router({
         .orderBy(fazendas.nome);
       const nomesFazendas = fazendasUsuario.map(f => f.nome);
 
-      // Importa mapeamento centralizado Tipo → Marca
+      // Importa mapeamento centralizado Tipo → Marca (fonte única de verdade)
       const { MARCAS_POR_TIPO } = await import('../shared/maquina-types');
-      
-      // Cria mapa de Tipo → Coluna na aba _Listas para INDIRECT
-      // Coluna A: Fazendas, Coluna B: Tipos, Colunas C+: Marcas por tipo
-      const tipoParaColuna: Record<string, string> = {};
-      let colIdxMarcas = 3; // Começa na coluna C
-      Object.keys(MARCAS_POR_TIPO).forEach(tipo => {
-        tipoParaColuna[tipo] = String.fromCharCode(64 + colIdxMarcas); // A=65, B=66, C=67...
-        colIdxMarcas++;
-      });
+      const tiposMaquina = Object.keys(MARCAS_POR_TIPO);
 
       const ws = wb.addWorksheet('Maquinários', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -1098,53 +1090,53 @@ const maquinasRouter = router({
         properties: { tabColor: { argb: '888888' } },
       });
 
+      // Estrutura da aba _Listas:
+      //   Coluna A: Fazendas do usuário (dropdown Fazenda)
+      //   Coluna B: Tipos únicos (dropdown Tipo)
+      //   Coluna C: Tipo (chave, repetido) | Coluna D: Marca  — FORMATO LONGO agrupado
+      //   Usado por OFFSET+MATCH+COUNTIF para listas dependentes Tipo → Marca
+
       // Coluna A: Fazendas
       nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
-      // Coluna B: Tipos (para referência)
-      Object.keys(MARCAS_POR_TIPO).forEach((tipo, i) => { wsListas.getCell(i + 1, 2).value = tipo; });
-      
-      // Colunas C+: Marcas por tipo (cada tipo em sua própria coluna)
-      let colIdxData = 3;
+      // Coluna B: Tipos únicos
+      tiposMaquina.forEach((tipo, i) => { wsListas.getCell(i + 1, 2).value = tipo; });
+      // Colunas C (tipo) e D (marca) em formato longo, AGRUPADO por tipo
+      let linhaLista = 1;
       Object.entries(MARCAS_POR_TIPO).forEach(([tipo, marcas]) => {
-        marcas.forEach((marca, i) => { wsListas.getCell(i + 1, colIdxData).value = marca; });
-        colIdxData++;
+        marcas.forEach((marca) => {
+          wsListas.getCell(linhaLista, 3).value = tipo;   // Coluna C: chave do tipo
+          wsListas.getCell(linhaLista, 4).value = marca;  // Coluna D: marca
+          linhaLista++;
+        });
       });
 
       const numFazendas = nomesFazendas.length;
-      const numTipos = Object.keys(MARCAS_POR_TIPO).length;
+      const numTipos = tiposMaquina.length;
 
       // ── Dropdowns de validação ──────────────────────────────────────────────
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
 
-      // Dropdowns com lista inline (curta)
+      // Índices de coluna (1-based) na planilha visível
+      const colIdxTipo    = idxDe('tipo');        // coluna A (1)
+      const colIdxFazenda = idxDe('fazendaNome');
+      const colIdxMarca   = idxDe('marca');
+
+      // Letra da coluna do Tipo na planilha (para referência relativa na fórmula)
+      const letraColTipo = String.fromCharCode(64 + colIdxTipo); // 1→A, 5→E...
+
+      // Dropdowns com lista inline (curta) — Tipo, Estado, Status
       const dvInline: { colIdx: number; formulae: string[] }[] = [
-        { colIdx: idxDe('tipo'),   formulae: [`"${TIPOS_MAQUINA_LIST.join(',')}"`.replace(/,/g, ',')] },
+        { colIdx: colIdxTipo,      formulae: [`"${TIPOS_MAQUINA_LIST.join(',')}"`] },
         { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
         { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
       ].filter(d => d.colIdx > 0);
-      
-      // NOTA: Validação cascata (Tipo → Marca) usa INDIRECT com referências às colunas ocultas.
-      // Backend também valida combinação Tipo+Marca na importação com mensagem descritiva.
-
-      // Dropdowns com referência a aba _Listas (dinâmicos)
-      const colIdxTipo    = idxDe('tipo');
-      const colIdxFazenda = idxDe('fazendaNome');
-      const colIdxMarca   = idxDe('marca');
 
       const fazendaFormulae = numFazendas > 0
         ? [`_Listas!$A$1:$A$${numFazendas}`]
         : ['"(Nenhuma fazenda cadastrada)"'];
-      
-      // Validação cascata: Marca depende do Tipo selecionado
-      // Usa INDIRECT para referenciar a coluna correta baseado no tipo
-      // Exemplo: Se tipo=Aeronaves (linha 1 em _Listas!B), usa coluna C (Aeronaves)
-      // Se tipo=Máquinas (linha 2 em _Listas!B), usa coluna D (Máquinas)
-      const marcaFormulae = numTipos > 0
-        ? ['=IFERROR(INDIRECT("_Listas!"&ADDRESS(MATCH(A2,_Listas!$B$1:$B$${numTipos},0),COLUMN(_Listas!$C$1))),"")']
-        : ['"(Nenhuma marca cadastrada)"'];
 
       for (let r = 2; r <= 501; r++) {
-        // Dropdowns inline
+        // Dropdowns inline (Tipo, Estado, Status)
         dvInline.forEach(({ colIdx, formulae }) => {
           ws.getRow(r).getCell(colIdx).dataValidation = {
             type: 'list', allowBlank: true, formulae,
@@ -1159,26 +1151,18 @@ const maquinasRouter = router({
             error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
           };
         }
-        // Dropdown Marca (validação cascata com INDIRECT)
-        // Filtra marcas conforme o Tipo selecionado na mesma linha
-        if (colIdxMarca > 0 && colIdxTipo > 0) {
+        // Dropdown Marca DEPENDENTE do Tipo (OFFSET+MATCH+COUNTIF)
+        // Referência ao Tipo (coluna A) é RELATIVA à linha r. Fórmula SEM '=' inicial (padrão OOXML).
+        // OFFSET(_Listas!$D$1, MATCH(tipo, _Listas!$C:$C, 0)-1, 0, COUNTIF(_Listas!$C:$C, tipo), 1)
+        if (colIdxMarca > 0 && colIdxTipo > 0 && numTipos > 0) {
+          const marcaFormula = `OFFSET(_Listas!$D$1,MATCH($${letraColTipo}${r},_Listas!$C:$C,0)-1,0,COUNTIF(_Listas!$C:$C,$${letraColTipo}${r}),1)`;
           ws.getRow(r).getCell(colIdxMarca).dataValidation = {
-            type: 'list', allowBlank: true, formulae: marcaFormulae,
+            type: 'list', allowBlank: true, formulae: [marcaFormula],
             showErrorMessage: true, errorTitle: 'Marca inválida',
-            error: 'Selecione uma marca válida para o tipo selecionado.',
+            error: 'Selecione primeiro o Tipo. A lista de Marcas é filtrada conforme o Tipo escolhido.',
           };
         }
       }
-
-      // ── Aba de referência _Listas: estrutura ────────────────────────────────
-      // Coluna A: Fazendas do usuário
-      // Coluna B: Tipos (Aeronaves, Máquinas, Implementos, Veículos, Equipamentos com Motor, Outros)
-      // Colunas C+: Marcas por tipo (cada tipo em sua própria coluna)
-      // Exemplo:
-      //   A1: Fazenda1    B1: Aeronaves   C1: Bombardier Global
-      //   A2: Fazenda2    B2: Máquinas    D1: John Deere
-      //   ...             B3: Implementos E1: Baldan
-      // Validação cascata usa INDIRECT para referenciar a coluna correta baseado no tipo
 
       // ── SEM aba Instruções — orientações ficam no cabeçalho ─────────────────
 
