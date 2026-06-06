@@ -9,7 +9,7 @@ import {
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes
 } from "../drizzle/schema";
-import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
 
@@ -1022,7 +1022,7 @@ const maquinasInputFields = {
 const maquinasRouter = router({
   // ── Gera planilha-modelo para importação de maquinários ──────────────────────────
   gerarModeloPlanilha: protectedProcedure
-    .mutation(async () => {
+    .mutation(async ({ ctx }) => {
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
       const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoMaquinarios');
@@ -1035,12 +1035,31 @@ const maquinasRouter = router({
       const COR_COL_BG     = '2D5A5A';
       const COR_LINHA_ALT  = 'F2F7F7';
 
-      const NUM_COLS = COLUNAS_IMPORTACAO.length;
-      const ultimaColLetra = (n: number): string => {
-        let s = '';
-        while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
-        return s;
-      };
+      // ── Busca dados dinâmicos do banco ──────────────────────────────────────
+      // Fazendas do usuário logado
+      const fazendasUsuario = await db
+        .select({ nome: fazendas.nome })
+        .from(fazendas)
+        .where(eq(fazendas.userId, ctx.user.id))
+        .orderBy(fazendas.nome);
+      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+
+      // Marcas já cadastradas no banco para este usuário (distinct)
+      const marcasBanco = await db
+        .selectDistinct({ marca: maquinas.marca })
+        .from(maquinas)
+        .where(and(eq(maquinas.userId, ctx.user.id), isNotNull(maquinas.marca)))
+        .orderBy(maquinas.marca);
+      const MARCAS_PADRAO = [
+        'John Deere','Case IH','New Holland','Valtra','Massey Ferguson',
+        'JCB','Caterpillar','Komatsu','Fendt','Deutz-Fahr','Jacto','Stara',
+      ];
+      // Mescla marcas do banco com marcas padrão (sem duplicatas)
+      const marcasBancoSet = new Set(marcasBanco.map(m => m.marca!));
+      const todasMarcas = [
+        ...marcasBanco.map(m => m.marca!),
+        ...MARCAS_PADRAO.filter(m => !marcasBancoSet.has(m)),
+      ];
 
       const ws = wb.addWorksheet('Maquinários', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -1077,55 +1096,69 @@ const maquinasRouter = router({
         });
       }
 
-      // Dropdowns de validação
+      // ── Aba oculta com listas longas (Fazenda e Marca) ──────────────────────
+      // Excel limita formulae inline a 255 chars; listas longas precisam de aba de referência
+      const wsListas = wb.addWorksheet('_Listas', {
+        state: 'veryHidden', // oculta para o usuário
+        properties: { tabColor: { argb: '888888' } },
+      });
+
+      // Coluna A: fazendas
+      nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
+      // Coluna B: marcas
+      todasMarcas.forEach((marca, i) => { wsListas.getCell(i + 1, 2).value = marca; });
+
+      const numFazendas = nomesFazendas.length;
+      const numMarcas   = todasMarcas.length;
+
+      // ── Dropdowns de validação ──────────────────────────────────────────────
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
-      const dvConfig: { colIdx: number; formulae: string[] }[] = [
+
+      // Dropdowns com lista inline (curta)
+      const dvInline: { colIdx: number; formulae: string[] }[] = [
         { colIdx: idxDe('tipo'),   formulae: ['"Trator,Colheitadeira,Pulverizador,Plantadeira,Caminhão,Veículo,Implemento,Outro"'] },
         { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
         { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
       ].filter(d => d.colIdx > 0);
+
+      // Dropdowns com referência a aba _Listas (dinâmicos)
+      const colIdxFazenda = idxDe('fazendaNome');
+      const colIdxMarca   = idxDe('marca');
+
+      const fazendaFormulae = numFazendas > 0
+        ? [`_Listas!$A$1:$A$${numFazendas}`]
+        : ['"(Nenhuma fazenda cadastrada)"'];
+      const marcaFormulae = numMarcas > 0
+        ? [`_Listas!$B$1:$B$${numMarcas}`]
+        : ['"John Deere,Case IH,New Holland,Valtra,Massey Ferguson"'];
+
       for (let r = 2; r <= 501; r++) {
-        dvConfig.forEach(({ colIdx, formulae }) => {
-          const cell = ws.getRow(r).getCell(colIdx);
-          cell.dataValidation = {
+        // Dropdowns inline
+        dvInline.forEach(({ colIdx, formulae }) => {
+          ws.getRow(r).getCell(colIdx).dataValidation = {
             type: 'list', allowBlank: true, formulae,
             showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
           };
         });
+        // Dropdown Fazenda (dinâmico)
+        if (colIdxFazenda > 0) {
+          ws.getRow(r).getCell(colIdxFazenda).dataValidation = {
+            type: 'list', allowBlank: true, formulae: fazendaFormulae,
+            showErrorMessage: true, errorTitle: 'Fazenda inválida',
+            error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
+          };
+        }
+        // Dropdown Marca (dinâmico)
+        if (colIdxMarca > 0) {
+          ws.getRow(r).getCell(colIdxMarca).dataValidation = {
+            type: 'list', allowBlank: true, formulae: marcaFormulae,
+            showErrorMessage: true, errorTitle: 'Marca inválida',
+            error: 'Selecione uma marca da lista ou adicione a marca desejada ao sistema.',
+          };
+        }
       }
 
-      // Aba de instruções
-      const wsInfo = wb.addWorksheet('Instruções', {
-        properties: { tabColor: { argb: '1565C0' } },
-      });
-      wsInfo.getColumn(1).width = 80;
-      const instrucoes = [
-        ['INSTRUÇÕES DE PREENCHIMENTO — IMPORTAÇÃO DE MAQUINÁRIOS'],
-        [''],
-        ['Campos obrigatórios (fundo dourado): Tipo, Marca, Fazenda'],
-        ['Campos opcionais: todos os demais'],
-        [''],
-        ['CAMPOS COM LISTA SUSPENSA:'],
-        ['Tipo: Trator | Colheitadeira | Pulverizador | Plantadeira | Caminhão | Veículo | Implemento | Outro'],
-        ['Estado: Novo | Usado'],
-        ['Status: Ativo | Manutenção | Inativo'],
-        [''],
-        ['FAZENDA: deve corresponder exatamente ao nome cadastrado no sistema'],
-        ['PLACA/Nº Série: deve ser único — não pode repetir na planilha nem no banco de dados'],
-        ['ANO: 4 dígitos (ex: 2022)'],
-        ['VALOR: use ponto ou vírgula como separador decimal (ex: 150000.00 ou 150000,00)'],
-        [''],
-        ['Não altere os cabeçalhos da aba Maquinários.'],
-      ];
-      instrucoes.forEach((row, i) => {
-        const r = wsInfo.getRow(i + 1);
-        r.getCell(1).value = row[0];
-        if (i === 0) {
-          r.getCell(1).font = { bold: true, size: 13, color: { argb: 'FFFFFF' } };
-          r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
-          r.height = 28;
-        }
-      });
+      // ── SEM aba Instruções — orientações ficam no cabeçalho ─────────────────
 
       const buf = await wb.xlsx.writeBuffer();
       const base64 = Buffer.from(buf).toString('base64');
