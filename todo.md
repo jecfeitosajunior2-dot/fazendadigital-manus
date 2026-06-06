@@ -196,3 +196,12 @@
 - [x] Frontend: botão excluir na lista de Lotes com ícone de lixeira
 - [x] Frontend: modal de confirmação com nome do lote
 - [x] Frontend: modal de bloqueio com nome do lote e contagem de animais vinculados
+
+## Mapeamento dinâmico Tipo → Marcas (2026-06-06)
+- [x] Adicionar MARCAS_POR_TIPO em shared/maquina-types.ts (6 categorias: Aeronaves, Máquinas, Implementos, Veículos, Equipamentos com Motor, Outros)
+- [x] Exportar getMarcasPorTipo e isMarcaValidaParaTipo de shared/maquina-types.ts
+- [x] Re-exportar getMarcasPorTipo, isMarcaValidaParaTipo e MARCAS_POR_TIPO em client/src/lib/maquina-types.ts
+- [x] Formulário de cadastro/edição: campo Marca carrega marcas exclusivas do tipo selecionado via datalist
+- [x] Formulário: ao trocar o tipo, limpa a marca se não for válida para o novo tipo
+- [x] Formulário: placeholder do campo Marca indica o tipo selecionado
+- [x] Backend validarImportacao: valida combinação Tipo+Marca — erro descritivo "Marca X não é válida para o tipo Y"

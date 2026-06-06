@@ -1246,6 +1246,8 @@ const maquinasRouter = router({
       // Usa a fonte única de verdade — mesma lista do cadastro e da planilha
       const { TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS } = await import('../shared/importacaoMaquinarios');
       const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS];
+      // Mapeamento Tipo → Marcas para validação de combinações
+      const { isMarcaValidaParaTipo } = await import('../shared/maquina-types');
 
       // Normaliza cabeçalhos PT-BR → chaves internas e descarta linha de exemplo
       input.linhas = input.linhas
@@ -1283,6 +1285,13 @@ const maquinasRouter = router({
         const marca = (linha.marca || '').trim();
         if (!marca) {
           errosLinha.push({ linha: numLinha, campo: 'Marca', mensagem: 'Marca é obrigatória' });
+        } else if (tipo && !isMarcaValidaParaTipo(tipo, marca)) {
+          // Valida combinação Tipo+Marca — só verifica se ambos estão preenchidos
+          errosLinha.push({
+            linha: numLinha,
+            campo: 'Marca',
+            mensagem: `Marca "${marca}" não é válida para o tipo "${tipo}"`,
+          });
         }
 
         // Fazenda obrigatória e deve existir no banco

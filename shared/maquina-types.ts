@@ -1,5 +1,5 @@
 /**
- * Fonte única de verdade para Tipos e Marcas de Máquinas.
+ * Fonte única de verdade para Tipos, Marcas e mapeamento Tipo→Marcas de Máquinas.
  * Importar daqui em TODOS os pontos da aplicação:
  *   - Formulário de cadastro/edição (frontend)
  *   - Planilha de importação (backend gerarModeloPlanilha)
@@ -38,6 +38,79 @@ export const MAPEAMENTO_TIPO_LEGADO: Record<string, TipoMaquina> = {
   Outro: "Outros",
 };
 
+/**
+ * Mapeamento Tipo → Marcas específicas.
+ * Ao selecionar um tipo, o campo Marca deve exibir EXCLUSIVAMENTE
+ * as marcas desta lista. Nenhuma marca de outra categoria deve aparecer.
+ */
+export const MARCAS_POR_TIPO: Record<TipoMaquina, readonly string[]> = {
+  Aeronaves: [
+    "Bombardier Global",
+    "Cessna Citation",
+    "Cirrus",
+    "Dassault Falcon",
+    "Embraer",
+    "Gulfstream",
+    "King Air",
+    "Piaggio",
+  ],
+  Máquinas: [
+    "John Deere",
+    "Case IH",
+    "New Holland",
+    "Massey Ferguson",
+    "Valtra",
+    "Fendt",
+    "Deutz-Fahr",
+    "Outra",
+  ],
+  Implementos: [
+    "John Deere",
+    "Case IH",
+    "New Holland",
+    "Baldan",
+    "Tatu Marchesan",
+    "Outra",
+  ],
+  Veículos: [
+    "Ford",
+    "Volkswagen",
+    "Mercedes-Benz",
+    "Fiat",
+    "Chevrolet",
+    "Toyota",
+    "Iveco",
+    "Outra",
+  ],
+  "Equipamentos com Motor": [
+    "Honda",
+    "Husqvarna",
+    "Stihl",
+    "Briggs & Stratton",
+    "Outra",
+  ],
+  Outros: ["Outra"],
+};
+
+/**
+ * Retorna a lista de marcas válidas para um tipo.
+ * Se o tipo não for reconhecido, retorna lista vazia.
+ */
+export function getMarcasPorTipo(tipo: string): readonly string[] {
+  return MARCAS_POR_TIPO[tipo as TipoMaquina] ?? [];
+}
+
+/**
+ * Verifica se uma marca é válida para o tipo informado.
+ * Retorna true se o tipo não for reconhecido (permissivo para tipos legados).
+ */
+export function isMarcaValidaParaTipo(tipo: string, marca: string): boolean {
+  const marcas = MARCAS_POR_TIPO[tipo as TipoMaquina];
+  if (!marcas) return true; // tipo desconhecido → permissivo
+  return marcas.includes(marca);
+}
+
+/** Lista de todas as marcas do sistema (para compatibilidade retroativa) */
 export const MARCAS_MAQUINA = [
   "John Deere",
   "Case IH",

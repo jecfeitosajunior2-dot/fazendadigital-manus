@@ -15,13 +15,12 @@ import {
   FormDatePicker,
   FieldBox,
 } from "@/components/FormFields";
-import { TIPOS_MAQUINA, MARCAS_MAQUINA } from "@/lib/maquina-types";
+import { TIPOS_MAQUINA, getMarcasPorTipo } from "@/lib/maquina-types";
 
-// Lista de marcas sugeridas (usada no datalist — não restringe o valor)
-const MARCAS_SUGERIDAS = [
-  ...MARCAS_MAQUINA.filter(m => m !== 'Outra'),
-  'JCB', 'Caterpillar', 'Komatsu', 'Fendt', 'Deutz-Fahr', 'Jacto', 'Stara',
-  'Agrale', 'Santal', 'Lely', 'CLAAS', 'Challenger', 'CNH', 'Outra',
+// Marcas extras aceitas livremente (para tipos sem mapeamento ou marcas não listadas)
+const MARCAS_EXTRAS_LIVRES = [
+  'JCB', 'Caterpillar', 'Komatsu', 'Jacto', 'Stara',
+  'Agrale', 'Santal', 'Lely', 'CLAAS', 'Challenger', 'CNH',
 ];
 
 type ImageSlot =
@@ -250,6 +249,24 @@ export default function MaquinaRegistrationPage() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
 
+  // Marcas disponíveis para o tipo atualmente selecionado.
+  // Se o tipo tiver mapeamento, usa EXCLUSIVAMENTE as marcas daquele tipo.
+  // Se não tiver mapeamento (tipo vazio ou legado), exibe marcas extras livres.
+  const marcasDoTipo = form.tipo
+    ? getMarcasPorTipo(form.tipo)
+    : MARCAS_EXTRAS_LIVRES;
+
+  // Ao trocar o tipo, limpa a marca se o valor atual não for válido para o novo tipo
+  const handleTipoChange = (novoTipo: string) => {
+    const marcasNovoTipo = getMarcasPorTipo(novoTipo);
+    setForm(f => ({
+      ...f,
+      tipo: novoTipo,
+      // Limpa a marca apenas se o tipo tiver marcas mapeadas E a marca atual não estiver na lista
+      marca: marcasNovoTipo.length > 0 && !marcasNovoTipo.includes(f.marca) ? "" : f.marca,
+    }));
+  };
+
   const setImageAt = (index: number, file: File) => {
     const previewUrl = URL.createObjectURL(file);
     setImageSlots(slots => {
@@ -396,7 +413,7 @@ export default function MaquinaRegistrationPage() {
               <FormLabel required>Tipo</FormLabel>
               <FormNativeSelect
                 value={form.tipo}
-                onChange={v => set("tipo", v)}
+                onChange={handleTipoChange}
                 placeholder="Selecione um tipo de máquina"
                 required
                 options={TIPOS_MAQUINA.map(t => ({ value: t, label: t }))}
@@ -438,18 +455,18 @@ export default function MaquinaRegistrationPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <FormLabel required>Marca</FormLabel>
-              {/* Input livre com sugestões via datalist — aceita qualquer valor (JCB, Case etc.) */}
+              {/* Marcas filtradas pelo tipo selecionado via datalist */}
               <FieldBox required>
                 <input
-                  list="marcas-sugeridas-list"
+                  list="marcas-por-tipo-list"
                   value={form.marca}
                   onChange={e => set("marca", e.target.value)}
-                  placeholder="Digite ou selecione a marca"
+                  placeholder={form.tipo ? `Selecione a marca para ${form.tipo}` : "Selecione primeiro o tipo"}
                   required
                   className="w-full min-h-[42px] px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 />
-                <datalist id="marcas-sugeridas-list">
-                  {MARCAS_SUGERIDAS.map(m => (
+                <datalist id="marcas-por-tipo-list">
+                  {(marcasDoTipo as readonly string[]).map((m: string) => (
                     <option key={m} value={m} />
                   ))}
                 </datalist>
