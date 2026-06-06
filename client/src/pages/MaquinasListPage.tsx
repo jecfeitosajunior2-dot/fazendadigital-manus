@@ -9,6 +9,7 @@ import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn } from "@/lib/utils";
 import { ImportarMaquinariosModal } from '@/components/ImportarMaquinariosModal';
+import { TIPOS_MAQUINA } from '@/lib/maquina-types';
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -40,6 +41,7 @@ const alignClass: Record<ColAlign, string> = {
 export default function MaquinasListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const pageSize = 10;
@@ -67,13 +69,14 @@ export default function MaquinasListPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(m =>
-      [m.nome, m.tipo, m.marca, m.modelo, m.fazendaId ? fazendaMap.get(m.fazendaId) : ""].some(v =>
+    return list.filter(m => {
+      const matchSearch = !q || [m.nome, m.tipo, m.marca, m.modelo, m.fazendaId ? fazendaMap.get(m.fazendaId) : ""].some(v =>
         String(v || "").toLowerCase().includes(q)
-      )
-    );
-  }, [list, search, fazendaMap]);
+      );
+      const matchTipo = !filtroTipo || m.tipo === filtroTipo;
+      return matchSearch && matchTipo;
+    });
+  }, [list, search, filtroTipo, fazendaMap]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -140,6 +143,17 @@ export default function MaquinasListPage() {
             <span className="material-icons text-[18px]">add</span>
             Cadastrar Maquinário
           </button>
+          <select
+            value={filtroTipo}
+            onChange={e => { setFiltroTipo(e.target.value); setPage(1); }}
+            className="text-[13px] border border-gray-200 rounded bg-white px-3 text-gray-700 shrink-0"
+            style={{ minHeight: 48 }}
+          >
+            <option value="">Todos os Tipos</option>
+            {TIPOS_MAQUINA.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
           <div className="relative flex-1 min-w-[160px]">
             <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">search</span>
             <input
