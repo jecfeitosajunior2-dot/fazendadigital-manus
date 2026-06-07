@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save, AlertCircle } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { FormLabel, FieldBox, inputClassCompact } from "@/components/FormFields";
+import { getCategoriasPorSexo, todasAsCategorias } from "@shared/animal-types";
 
 export function EditAnimalPage() {
   const [, setLocation] = useLocation();
@@ -297,14 +298,9 @@ export function EditAnimalPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                   >
                     <option value="">Selecione</option>
-                    <option value="Touro">Touro</option>
-                    <option value="Boi">Boi</option>
-                    <option value="Vaca">Vaca</option>
-                    <option value="Novilha">Novilha</option>
-                    <option value="Bezerro">Bezerro</option>
-                    <option value="Bezerra">Bezerra</option>
-                    <option value="Vaca Prenhe">Vaca Prenhe</option>
-                    <option value="Garrote">Garrote</option>
+                    {(formData.sex ? getCategoriasPorSexo(formData.sex) : todasAsCategorias()).map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                   </select>
                 </div>
               </div>

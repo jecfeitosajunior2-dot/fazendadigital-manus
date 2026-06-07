@@ -32,6 +32,7 @@ import {
   inputClass,
 } from '@/components/FormFields';
 import { cn } from '@/lib/utils';
+import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -469,34 +470,9 @@ const AnimalFormPage: React.FC = () => {
                 <FormLabel>Categoria</FormLabel>
                 <FieldSelect value={form.categoria} onChange={v => set('categoria', v)}>
                   <option value="">Selecione</option>
-                  {form.sexo === 'Macho' && (
-                    <>
-                      <option value="Touro">Touro</option>
-                      <option value="Boi">Boi</option>
-                      <option value="Bezerro">Bezerro</option>
-                      <option value="Garrote">Garrote</option>
-                    </>
-                  )}
-                  {form.sexo === 'Fêmea' && (
-                    <>
-                      <option value="Vaca">Vaca</option>
-                      <option value="Novilha">Novilha</option>
-                      <option value="Bezerra">Bezerra</option>
-                      <option value="Vaca Prenhe">Vaca Prenhe</option>
-                    </>
-                  )}
-                  {!form.sexo && (
-                    <>
-                      <option value="Touro">Touro</option>
-                      <option value="Boi">Boi</option>
-                      <option value="Vaca">Vaca</option>
-                      <option value="Novilha">Novilha</option>
-                      <option value="Bezerro">Bezerro</option>
-                      <option value="Bezerra">Bezerra</option>
-                      <option value="Vaca Prenhe">Vaca Prenhe</option>
-                      <option value="Garrote">Garrote</option>
-                    </>
-                  )}
+                  {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                 </FieldSelect>
               </div>
             </div>

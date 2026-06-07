@@ -12,9 +12,11 @@ const RACAS_VALIDAS = [
   'Nelore', 'Nelore Mocho', 'Angus', 'Senepol', 'Brahman',
   'Girolando', 'Gir', 'Holandês', 'Mestiço', 'Outro',
 ];
+// Categorias válidas: regra centralizada em shared/animal-types.ts
+// Macho: Boi, Novilho, Bezerro | Fêmea: Vaca, Novilha, Bezerra
 const CATEGORIAS_VALIDAS = [
-  'Touro', 'Boi', 'Bezerro', 'Garrote',
-  'Vaca', 'Novilha', 'Bezerra', 'Vaca Prenhe',
+  'Boi', 'Novilho', 'Bezerro',
+  'Vaca', 'Novilha', 'Bezerra',
 ];
 
 type LinhaAnimal = Record<string, string>;

@@ -33,7 +33,7 @@ export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
   { key: 'brincoEletronico',    label: 'Brinco Eletrônico',       obrigatorio: false, largura: 20, descricao: 'Número eletrônico do chip RFID',               exemplo: '123456789012345' },
   { key: 'sexo',                label: 'Sexo',                    obrigatorio: true,  largura: 12, descricao: 'Sexo do animal: Macho ou Fêmea',               exemplo: 'Fêmea' },
   { key: 'lote',                label: 'Lote',                    obrigatorio: false, largura: 18, descricao: 'Nome exato do lote ativo cadastrado',          exemplo: 'Engorda 1' },
-  { key: 'categoria',           label: 'Categoria',               obrigatorio: false, largura: 14, descricao: 'Categoria produtiva (Vaca, Novilha, Touro...)', exemplo: 'Vaca' },
+  { key: 'categoria',           label: 'Categoria',               obrigatorio: false, largura: 14, descricao: 'Macho: Boi, Novilho, Bezerro | Fêmea: Vaca, Novilha, Bezerra', exemplo: 'Vaca' },
   { key: 'raca',                label: 'Raça',                    obrigatorio: false, largura: 16, descricao: 'Raça do animal conforme lista disponível',      exemplo: 'Nelore' },
   { key: 'pelagem',             label: 'Pelagem',                 obrigatorio: false, largura: 14, descricao: 'Cor/pelagem do animal',                        exemplo: 'Branca' },
   { key: 'marca',               label: 'Marca',                   obrigatorio: false, largura: 12, descricao: 'Marca ou sinal do animal',                     exemplo: 'Fogo' },
