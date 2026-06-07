@@ -232,22 +232,22 @@ const animaisRouter = router({
         nome: input.nome,
         raca: input.raca,
         sexo: input.sexo,
-        dataNascimento: input.dataNascimento ? new Date(input.dataNascimento) : undefined,
+        dataNascimento: input.dataNascimento || undefined,
         pesoAtual: input.pesoAtual,
         loteId: input.loteId,
         categoria: input.categoria,
         observacoes: input.observacoes,
         pelagem: input.pelagem,
         marca: input.marca,
-        dataDesmama: input.dataDesmama ? new Date(input.dataDesmama) : undefined,
+        dataDesmama: input.dataDesmama || undefined,
         castrado: input.castrado,
-        dataEntrada: input.dataEntrada ? new Date(input.dataEntrada) : undefined,
+        dataEntrada: input.dataEntrada || undefined,
         pesoEntrada: input.pesoEntrada,
         produtorOrigem: input.produtorOrigem,
         precoKg: input.precoKg,
         frete: input.frete,
         sisbov: input.sisbov,
-        dataRnd: input.dataRnd ? new Date(input.dataRnd) : undefined,
+        dataRnd: input.dataRnd || undefined,
         rgn: input.rgn,
         rgd: input.rgd,
         rastreadoNascimento: input.rastreadoNascimento,
@@ -292,10 +292,10 @@ const animaisRouter = router({
       const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, ...rest } = input;
       await db.update(animais).set({
         ...rest,
-        dataNascimento: dataNascimento ? new Date(dataNascimento) : undefined,
-        dataDesmama: dataDesmama ? new Date(dataDesmama) : undefined,
-        dataEntrada: dataEntrada ? new Date(dataEntrada) : undefined,
-        dataRnd: dataRnd ? new Date(dataRnd) : undefined,
+        dataNascimento: dataNascimento || undefined,
+        dataDesmama: dataDesmama || undefined,
+        dataEntrada: dataEntrada || undefined,
+        dataRnd: dataRnd || undefined,
       }).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
@@ -626,19 +626,20 @@ const animaisRouter = router({
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
-      // Converte datas DD/MM/AAAA, DD/MM/AA ou AAAA-MM-DD em objeto Date (ou undefined)
-      const parseData = (raw: string): Date | undefined => {
+      // Converte datas DD/MM/AAAA, DD/MM/AA ou AAAA-MM-DD para string YYYY-MM-DD (ou undefined)
+      // Usa strings diretamente para evitar qualquer problema de timezone com objetos Date
+      const parseData = (raw: string): string | undefined => {
         const s = (raw || '').trim();
         if (!s) return undefined;
         const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (iso) return new Date(`${s}T00:00:00`);
+        if (iso) return s; // já está no formato correto
         const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
         if (br) {
           const d = br[1].padStart(2, '0');
           const m = br[2].padStart(2, '0');
           let y = br[3];
           if (y.length === 2) y = parseInt(y, 10) < 50 ? `20${y}` : `19${y}`;
-          return new Date(`${y}-${m}-${d}T00:00:00`);
+          return `${y}-${m}-${d}`;
         }
         return undefined;
       };
