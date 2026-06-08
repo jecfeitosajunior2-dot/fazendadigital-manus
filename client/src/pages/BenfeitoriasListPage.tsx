@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import { ImportarBenfeitoriasModal } from "@/components/ImportarBenfeitoriasModal";
 import { EXPORT_HEADERS } from "@shared/importacaoBenfeitorias";
-import { formatValorDecimalBancoParaPlanilha } from "@shared/parseMoedaBr";
+import { parseValorDecimalBanco } from "@shared/parseMoedaBr";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -52,7 +52,7 @@ export default function BenfeitoriasListPage() {
       b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "" : "",
       b.nome,
       b.anoConstrucao ?? "",
-      formatValorDecimalBancoParaPlanilha(b.valorEstimado),
+      parseValorDecimalBanco(b.valorEstimado) ?? "",
       b.vidaUtil ?? "",
       b.observacoes ?? "",
     ]),

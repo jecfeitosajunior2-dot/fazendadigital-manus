@@ -20,6 +20,34 @@ describe('parseMoedaBr — importação benfeitorias', () => {
   });
 });
 
+describe('parseValorDecimalBanco — exportação como número puro', () => {
+  // A exportação CSV agora usa número puro (sem formatação PT-BR)
+  // para que o Excel interprete corretamente em qualquer locale
+  const casos: [string | number | null | undefined, number | null][] = [
+    ['150.00', 150],
+    [150, 150],
+    ['150', 150],
+    ['150000.00', 150000],
+    ['1500.50', 1500.5],
+    [null, null],
+    [undefined, null],
+    ['', null],
+  ];
+
+  it.each(casos)('banco %s → número %s', (entrada, esperado) => {
+    expect(parseValorDecimalBanco(entrada)).toBe(esperado);
+  });
+
+  it('não multiplica por 1000 (banco "150.00" → número 150, não 150000)', () => {
+    expect(parseValorDecimalBanco('150.00')).toBe(150);
+    expect(parseValorDecimalBanco('150.00')).not.toBe(150000);
+  });
+
+  it('banco "150000.00" → número 150000 (cento e cinquenta mil)', () => {
+    expect(parseValorDecimalBanco('150000.00')).toBe(150000);
+  });
+});
+
 describe('formatValorDecimalBancoParaPlanilha — exportação benfeitorias', () => {
   const casos: [string | number, string][] = [
     ['150.00', '150,00'],

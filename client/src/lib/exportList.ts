@@ -3,6 +3,11 @@ import { toast } from "sonner";
 export type ExportRow = (string | number | null | undefined)[];
 
 function escapeCell(value: unknown): string {
+  // Numbers are exported without quotes so Excel treats them as numeric values
+  // regardless of the system locale (avoids "150,00" being read as 150000 in US locale)
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
