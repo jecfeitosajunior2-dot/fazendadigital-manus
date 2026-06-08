@@ -1,40 +1,52 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import MobileCard from "@/components/MobileCard";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
+import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { normalizarUnidade, nomeUnidadeExibicao } from '@/lib/produto-types';
+import { useDebounce } from '@/hooks/useDebounce';
+import { usePersistedState } from '@/hooks/usePersistedState';
+import {
+  ANIMAIS_LIST_FILTERS_STORAGE_KEY,
+  INITIAL_ANIMAIS_LIST_FILTERS,
+  animaisFiltersToApiParams,
+} from '@shared/animal-filter-types';
 
 // --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
-  const [search, setSearch] = useState("");
-  const [sexoFilter, setSexoFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [loteFilter, setLoteFilter] = useState("");
+  const [filters, setFilters] = usePersistedState(ANIMAIS_LIST_FILTERS_STORAGE_KEY, INITIAL_ANIMAIS_LIST_FILTERS);
+  const debouncedPesquisa = useDebounce(filters.pesquisa, 500);
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const perPage = 50;
 
-  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery({
-    status: statusFilter || undefined,
-    loteId: loteFilter ? Number(loteFilter) : undefined,
-  });
+  const apiParams = useMemo(
+    () => animaisFiltersToApiParams(filters, debouncedPesquisa),
+    [filters, debouncedPesquisa],
+  );
+
+  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery(apiParams);
   const { data: lotesData } = trpc.lotes.list.useQuery();
+  const { data: fazendasData } = trpc.fazendas.list.useQuery();
+  const { data: marcasDistintas = [] } = trpc.animais.marcasDistintas.useQuery();
   const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
-  const animaisList = animaisData || [];
-  const filteredAnimais = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return animaisList.filter(a => {
-      if (sexoFilter && a.sexo !== sexoFilter) return false;
-      if (!q) return true;
-      return [a.brinco, a.brincoEletronico, a.nome, a.raca, a.loteNome].some(v => String(v || "").toLowerCase().includes(q));
-    });
-  }, [animaisList, search, sexoFilter]);
+  const filtrosKey = JSON.stringify(apiParams);
+  useEffect(() => {
+    setPage(1);
+  }, [filtrosKey]);
+
+  const filteredAnimais = animaisData || [];
+
+  const limparFiltros = () => {
+    setFilters({ ...INITIAL_ANIMAIS_LIST_FILTERS, maisFiltrosAbertos: filters.maisFiltrosAbertos });
+    setPage(1);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredAnimais.length / perPage));
   const paginated = filteredAnimais.slice((page - 1) * perPage, page * perPage);
@@ -91,32 +103,18 @@ export function AnimaisPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="mb-3 flex flex-wrap gap-2">
-        <input
-          type="text"
-          placeholder="Buscar por brinco, RFID, nome ou raça..."
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }}
-          className="border border-gray-300 rounded px-3 py-1.5 text-[12px] focus:outline-none focus:border-[#2D5A5A] w-full sm:w-64"
-        />
-        <select value={loteFilter} onChange={e => { setLoteFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
-          <option value="">Todos os Lotes</option>
-          {(lotesData || []).map((l: any) => <option key={l.id} value={String(l.id)}>{l.nome}</option>)}
-        </select>
-        <select value={sexoFilter} onChange={e => { setSexoFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
-          <option value="">Sexo</option>
-          <option value="macho">Macho</option>
-          <option value="femea">Fêmea</option>
-        </select>
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="border border-gray-300 rounded px-2 py-1.5 text-[12px] focus:outline-none">
-          <option value="">Status</option>
-          <option value="ativo">Ativo</option>
-          <option value="vendido">Vendido</option>
-          <option value="morto">Morto</option>
-          <option value="transferido">Transferido</option>
-        </select>
-      </div>
+      <ListaAnimaisFiltros
+        value={filters}
+        onChange={setFilters}
+        onClear={limparFiltros}
+        fazendas={(fazendasData || []).map((f: { id: number; nome: string }) => ({ id: f.id, nome: f.nome }))}
+        lotes={(lotesData || []).map((l: { id: number; nome: string; fazendaId?: number | null }) => ({
+          id: l.id,
+          nome: l.nome,
+          fazendaId: l.fazendaId,
+        }))}
+        marcadoresDisponiveis={marcasDistintas}
+      />
 
       {/* Cards no mobile */}
       <div className="lg:hidden space-y-3">

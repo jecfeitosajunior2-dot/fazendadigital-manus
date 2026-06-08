@@ -3,6 +3,11 @@
  * Mapeamento de Sexo → Categoria (lista dependente)
  */
 
+export const RACAS = [
+  'Nelore', 'Nelore Mocho', 'Angus', 'Senepol', 'Brahman',
+  'Girolando', 'Gir', 'Holandês', 'Mestiço', 'Outro',
+] as const;
+
 export const SEXOS = ['Macho', 'Fêmea'] as const;
 export type Sexo = (typeof SEXOS)[number];
 

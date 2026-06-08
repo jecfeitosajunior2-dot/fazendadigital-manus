@@ -9,7 +9,7 @@ import {
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes
 } from "../drizzle/schema";
-import { eq, desc, and, sql, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
@@ -53,14 +53,66 @@ const authRouter = router({
 });
 
 // ─── ANIMAIS ROUTER ───────────────────────────────────────────────────────────
+const animaisListInput = z.object({
+  fazendaId: z.number().optional(),
+  raca: z.string().optional(),
+  search: z.string().optional(),
+  sexo: z.string().optional(),
+  categoria: z.string().optional(),
+  loteId: z.number().optional(),
+  pesoMin: z.number().optional(),
+  pesoMax: z.number().optional(),
+  dataNascimentoInicio: z.string().optional(),
+  dataNascimentoFim: z.string().optional(),
+  somenteSisbov: z.boolean().optional(),
+  marcadores: z.array(z.string()).optional(),
+  status: z.string().optional(),
+}).optional();
+
 const animaisRouter = router({
+  marcasDistintas: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await db.select({ marca: animais.marca })
+      .from(animais)
+      .where(eq(animais.userId, ctx.user.id));
+    const marcas = [...new Set(rows.map(r => (r.marca || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    return marcas;
+  }),
+
   list: protectedProcedure
-    .input(z.object({ sexo: z.string().optional(), status: z.string().optional(), loteId: z.number().optional() }).optional())
+    .input(animaisListInput)
     .query(async ({ ctx, input }) => {
       const conditions = [eq(animais.userId, ctx.user.id)];
       if (input?.sexo && input.sexo !== '') conditions.push(eq(animais.sexo, input.sexo as any));
       if (input?.status && input.status !== '') conditions.push(eq(animais.status, input.status as any));
       if (input?.loteId) conditions.push(eq(animais.loteId, input.loteId));
+      if (input?.raca && input.raca !== '') conditions.push(eq(animais.raca, input.raca));
+      if (input?.categoria && input.categoria !== '') conditions.push(eq(animais.categoria, input.categoria));
+      if (input?.dataNascimentoInicio) conditions.push(gte(animais.dataNascimento, input.dataNascimentoInicio));
+      if (input?.dataNascimentoFim) conditions.push(lte(animais.dataNascimento, input.dataNascimentoFim));
+      if (input?.somenteSisbov) {
+        conditions.push(and(isNotNull(animais.sisbov), sql`${animais.sisbov} != ''`)!);
+      }
+      if (input?.marcadores && input.marcadores.length > 0) {
+        conditions.push(inArray(animais.marca, input.marcadores));
+      }
+      if (input?.search?.trim()) {
+        const q = `%${input.search.trim()}%`;
+        conditions.push(or(
+          like(animais.brinco, q),
+          like(animais.brincoEletronico, q),
+          like(animais.nome, q),
+          like(animais.raca, q),
+          like(animais.sisbov, q),
+        )!);
+      }
+      if (input?.fazendaId) {
+        const lotesFazenda = await db.select({ id: lotes.id })
+          .from(lotes)
+          .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
+        const loteIds = lotesFazenda.map(l => l.id);
+        if (loteIds.length === 0) return [];
+        conditions.push(inArray(animais.loteId, loteIds));
+      }
 
       const lista = await db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
       if (lista.length === 0) return [];
@@ -130,7 +182,7 @@ const animaisRouter = router({
       }
 
       // Monta resultado enriquecido
-      return lista.map(animal => {
+      const resultado = lista.map(animal => {
         const loteNome = animal.loteId ? (loteMap.get(animal.loteId) || null) : null;
 
         // Idade em meses
@@ -183,6 +235,18 @@ const animaisRouter = router({
           emCarencia: emCarenciaPorAnimal.get(animal.id) || false,
         };
       });
+
+      if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
+        return resultado.filter(animal => {
+          const peso = animal.ultimoPeso;
+          if (peso === null || peso === undefined) return false;
+          if (input.pesoMin !== undefined && peso < input.pesoMin) return false;
+          if (input.pesoMax !== undefined && peso > input.pesoMax) return false;
+          return true;
+        });
+      }
+
+      return resultado;
     }),
 
   getById: protectedProcedure
