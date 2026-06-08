@@ -71,13 +71,29 @@ export async function ensureSchema() {
 
     const [benfTable] = await pool.query(`SHOW TABLES LIKE 'benfeitorias'`);
     if ((benfTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "benfeitorias", "userId", "int");
       await ensureColumn(pool, "benfeitorias", "anoConstrucao", "int");
       await ensureColumn(pool, "benfeitorias", "vidaUtil", "varchar(50)");
       await ensureColumn(pool, "benfeitorias", "fazendaId", "int");
       await ensureColumn(pool, "benfeitorias", "percentualAtividade", "decimal(5,2)");
+      await ensureColumn(pool, "benfeitorias", "valorEstimado", "decimal(12,2)");
+      await ensureColumn(pool, "benfeitorias", "dataInstalacao", "date");
       await ensureColumn(pool, "benfeitorias", "imagem1", "text");
       await ensureColumn(pool, "benfeitorias", "imagem2", "text");
       await ensureColumn(pool, "benfeitorias", "imagem3", "text");
+      await ensureColumn(pool, "benfeitorias", "createdAt", "timestamp DEFAULT CURRENT_TIMESTAMP");
+      await ensureColumn(pool, "benfeitorias", "updatedAt", "timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+      // Migra dados de colunas legadas (snake_case) se existirem
+      try {
+        await pool.query(
+          "UPDATE `benfeitorias` SET `valorEstimado` = `valor_estimado` WHERE `valorEstimado` IS NULL AND `valor_estimado` IS NOT NULL"
+        );
+      } catch { /* coluna legada ausente */ }
+      try {
+        await pool.query(
+          "UPDATE `benfeitorias` SET `createdAt` = `created_at` WHERE `createdAt` IS NULL AND `created_at` IS NOT NULL"
+        );
+      } catch { /* coluna legada ausente */ }
     }
 
     const [estoqueTable] = await pool.query(`SHOW TABLES LIKE 'estoque'`);

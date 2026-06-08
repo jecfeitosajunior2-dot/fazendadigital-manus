@@ -12,6 +12,7 @@ import {
 import { eq, desc, and, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
+import { formatImportDbError } from "./importacaoErrors";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -698,7 +699,7 @@ const animaisRouter = router({
           });
           importados.push((result as any)[0]?.insertId);
         } catch (err: any) {
-          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+          rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
         }
       }
 
@@ -1553,7 +1554,7 @@ const maquinasRouter = router({
           });
           importados.push((result as any)[0]?.insertId);
         } catch (err: any) {
-          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+          rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
         }
       }
 
@@ -2070,6 +2071,34 @@ const nutricaoRouter = router({
 });
 
 // ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
+
+/** Mesma estrutura do cadastro manual (create), sem imagens. */
+async function inserirBenfeitoriaImportada(
+  userId: number,
+  data: {
+    fazendaId: number;
+    nome: string;
+    anoConstrucao: number;
+    vidaUtil?: string;
+    valorEstimado?: string;
+    observacoes?: string;
+  }
+): Promise<number | undefined> {
+  const result = await db.insert(benfeitorias).values({
+    userId,
+    fazendaId: data.fazendaId,
+    nome: data.nome,
+    anoConstrucao: data.anoConstrucao,
+    vidaUtil: data.vidaUtil,
+    valorEstimado: data.valorEstimado,
+    observacoes: data.observacoes,
+    imagem1: null,
+    imagem2: null,
+    imagem3: null,
+  });
+  return (result as any)[0]?.insertId;
+}
+
 const benfeitoriasInputFields = {
   fazendaId: z.number(),
   nome: z.string(),
@@ -2325,27 +2354,48 @@ const benfeitoriasRouter = router({
           const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
           const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
           if (!fazendaId) {
-            rejeitados.push({ linha: numLinha, mensagem: 'Fazenda não encontrada' });
+            rejeitados.push({ linha: numLinha, mensagem: 'A Fazenda informada não foi encontrada.' });
+            continue;
+          }
+
+          const [fazendaRow] = await db.select({ id: fazendas.id }).from(fazendas).where(
+            and(eq(fazendas.id, fazendaId), eq(fazendas.userId, ctx.user.id))
+          );
+          if (!fazendaRow) {
+            rejeitados.push({ linha: numLinha, mensagem: 'A Fazenda informada não foi encontrada.' });
+            continue;
+          }
+
+          const nome = (linha.nome || '').trim();
+          if (!nome) {
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Nome (Benfeitoria) é obrigatório.' });
             continue;
           }
 
           const anoNum = parseInt(String(linha.anoConstrucao || '').replace(/[^0-9]/g, ''), 10);
+          if (isNaN(anoNum)) {
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Ano deve conter um número válido.' });
+            continue;
+          }
+
           const valorRaw = (linha.valor || '').trim();
           const valorNum = valorRaw ? parseValorImport(valorRaw) : undefined;
+          if (valorRaw && !valorNum) {
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Valor (R$) possui um formato inválido.' });
+            continue;
+          }
 
-          const result = await db.insert(benfeitorias).values({
-            userId: ctx.user.id,
+          const insertId = await inserirBenfeitoriaImportada(ctx.user.id, {
             fazendaId,
-            nome: (linha.nome || '').trim(),
-            anoConstrucao: !isNaN(anoNum) ? anoNum : undefined,
-            valorEstimado: valorNum || undefined,
+            nome,
+            anoConstrucao: anoNum,
+            valorEstimado: valorNum,
             vidaUtil: (linha.vidaUtil || '').trim() || undefined,
             observacoes: (linha.observacoes || '').trim() || undefined,
-            status: 'ativo',
           });
-          importados.push((result as any)[0]?.insertId);
-        } catch (err: any) {
-          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+          if (insertId) importados.push(insertId);
+        } catch (err: unknown) {
+          rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
         }
       }
 
