@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -14,13 +15,18 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Edit, MapPin, Users, ArrowRightLeft, History, AlertTriangle, AlertCircle } from "lucide-react";
+import { Trash2, Edit, ArrowRightLeft, History, AlertTriangle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { FormLabel, FieldBox } from "@/components/FormFields";
-import { MoveLotePastoDialog, OccupancyBar } from "@/components/MoveLotePastoDialog";
+import { MoveLotePastoDialog } from "@/components/MoveLotePastoDialog";
+import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
+import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
 
-// ─── Tipos auxiliares ─────────────────────────────────────────────────────────
+const FD_PRIMARY = "#4ECDC4";
+const IRANCHO_BTN_GREEN = "#8ab83d";
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
 interface LoteItem {
   id: number;
   nome: string;
@@ -35,15 +41,24 @@ interface LoteItem {
   fazendaNome?: string | null;
 }
 
-// ─── Estado dos modais de exclusão ───────────────────────────────────────────
-interface DeleteConfirmState {
-  lote: LoteItem;
+type LoteGerenciamento = {
+  id: number;
+  nome: string;
+  fazendaId: number | null;
+  fazendaNome: string | null;
+  ativo: boolean | null;
+  machos: ContagemPorFaixa;
+  femeas: ContagemPorFaixa;
+};
+
+interface DeleteConfirmState { lote: LoteItem }
+interface DeleteBlockedState { nomeLote: string; qtdAnimais: number }
+
+function celulaValor(v: number) {
+  return v > 0 ? String(v) : "";
 }
 
-interface DeleteBlockedState {
-  nomeLote: string;
-  qtdAnimais: number;
-}
+// ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function LotsManagementPage() {
   const [open, setOpen] = useState(false);
@@ -51,16 +66,46 @@ export default function LotsManagementPage() {
   const [moveLote, setMoveLote] = useState<LoteItem | null>(null);
   const [historyLote, setHistoryLote] = useState<LoteItem | null>(null);
   const [form, setForm] = useState({ nome: "", descricao: "", localizacao: "", capacidade: "" });
-
-  // Modais de exclusão
+  const [fazendaFilter, setFazendaFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
+  const [sortAsc, setSortAsc] = useState(true);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
   const [deleteBlocked, setDeleteBlocked] = useState<DeleteBlockedState | null>(null);
 
-  const { data: lotes, isLoading, refetch } = trpc.lotes.list.useQuery();
+  const queryInput = useMemo(() => ({
+    fazendaId: fazendaFilter ? Number(fazendaFilter) : undefined,
+    search: search.trim() || undefined,
+  }), [fazendaFilter, search]);
+
+  const { data: gerenciamento = [], isLoading, refetch } = trpc.lotes.gerenciamento.useQuery(queryInput);
+  const { data: lotesFull = [] } = trpc.lotes.list.useQuery();
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: movimentacoes = [] } = trpc.lotes.listMovimentacoes.useQuery(
     { loteId: historyLote?.id ?? 0 },
-    { enabled: !!historyLote }
+    { enabled: !!historyLote },
   );
+
+  const loteById = useMemo(
+    () => new Map((lotesFull as LoteItem[]).map(l => [l.id, l])),
+    [lotesFull],
+  );
+
+  const sorted = useMemo(() => {
+    const lista = [...(gerenciamento as LoteGerenciamento[])];
+    lista.sort((a, b) => {
+      const cmp = a.nome.localeCompare(b.nome, "pt-BR");
+      return sortAsc ? cmp : -cmp;
+    });
+    return lista;
+  }, [gerenciamento, sortAsc]);
+
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage);
 
   const createMutation = trpc.lotes.create.useMutation({
     onSuccess: () => { toast.success("Lote criado!"); setOpen(false); resetForm(); refetch(); },
@@ -68,8 +113,6 @@ export default function LotsManagementPage() {
   const updateMutation = trpc.lotes.update.useMutation({
     onSuccess: () => { toast.success("Lote atualizado!"); setOpen(false); resetForm(); refetch(); },
   });
-
-  // Mutation segura: usa lotes.excluir que valida animais vinculados
   const excluirMutation = trpc.lotes.excluir.useMutation({
     onSuccess: (data) => {
       toast.success(`Lote "${data.nomeLote}" excluído com sucesso.`);
@@ -77,18 +120,14 @@ export default function LotsManagementPage() {
       refetch();
     },
     onError: (err) => {
-      // Captura o lote antes de fechar o modal de confirmação
       const loteAtual = deleteConfirm?.lote;
       setDeleteConfirm(null);
-
-      // Apenas PRECONDITION_FAILED indica animais vinculados — outros erros mostram toast
       if (err.data?.code === "PRECONDITION_FAILED") {
         const match = err.message.match(/Existem (\d+) animal/);
         const qtd = match ? parseInt(match[1], 10) : (loteAtual?.qtdAnimais ?? 1);
-        const nome = loteAtual?.nome ?? "—";
-        setDeleteBlocked({ nomeLote: nome, qtdAnimais: qtd });
+        setDeleteBlocked({ nomeLote: loteAtual?.nome ?? "—", qtdAnimais: qtd });
       } else {
-        toast.error(err.message || "Erro ao excluir o lote. Tente novamente.");
+        toast.error(err.message || "Erro ao excluir o lote.");
       }
     },
   });
@@ -118,7 +157,9 @@ export default function LotsManagementPage() {
     }
   };
 
-  const handleEdit = (lote: LoteItem) => {
+  const openEdit = (row: LoteGerenciamento) => {
+    const lote = loteById.get(row.id);
+    if (!lote) return;
     setEditId(lote.id);
     setForm({
       nome: lote.nome || "",
@@ -129,10 +170,9 @@ export default function LotsManagementPage() {
     setOpen(true);
   };
 
-  // Abre o modal de confirmação antes de excluir.
-  // Se o lote já tem animais vinculados (qtdAnimais > 0), bloqueia imediatamente
-  // no frontend sem precisar chamar a API (feedback instantâneo).
-  const handleDeleteRequest = (lote: LoteItem) => {
+  const handleDeleteRequest = (row: LoteGerenciamento) => {
+    const lote = loteById.get(row.id);
+    if (!lote) return;
     if ((lote.qtdAnimais ?? 0) > 0) {
       setDeleteBlocked({ nomeLote: lote.nome, qtdAnimais: lote.qtdAnimais ?? 1 });
       return;
@@ -140,28 +180,43 @@ export default function LotsManagementPage() {
     setDeleteConfirm({ lote });
   };
 
-  // Confirma a exclusão — chama o procedure seguro
-  const handleDeleteConfirm = () => {
-    if (!deleteConfirm) return;
-    excluirMutation.mutate({ id: deleteConfirm.lote.id });
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
+  const toggleSelectAll = () => {
+    if (selected.size === paginated.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(paginated.map(l => l.id)));
+    }
+  };
+
+  const exportHeaders = [
+    "Nome do Lote",
+    ...FAIXAS_IDADE_LOTE.map(f => `Machos ${f}`),
+    ...FAIXAS_IDADE_LOTE.map(f => `Fêmeas ${f}`),
+  ];
+
   const exportData = useMemo(
-    () => (lotes ?? []).map((l: LoteItem) => [
+    () => sorted.map(l => [
       l.nome,
-      l.pastoNome || l.localizacao || "",
-      l.fazendaNome || "",
-      l.qtdAnimais ?? 0,
-      l.diasNoPasto ?? "",
-      l.capacidade ?? "",
-      l.ativo ? "Ativo" : "Inativo",
+      ...FAIXAS_IDADE_LOTE.map(f => l.machos[f] || 0),
+      ...FAIXAS_IDADE_LOTE.map(f => l.femeas[f] || 0),
     ]),
-    [lotes]
+    [sorted],
   );
 
+  const inicio = total === 0 ? 0 : (pageSafe - 1) * perPage + 1;
+  const fim = Math.min(pageSafe * perPage, total);
+
   return (
-    <div className="p-6">
-      {/* ── Diálogo de mover lote para pasto ─────────────────────────────── */}
+    <div className="p-4 sm:p-6">
       <MoveLotePastoDialog
         lote={moveLote}
         open={!!moveLote}
@@ -169,7 +224,7 @@ export default function LotsManagementPage() {
         onSuccess={() => refetch()}
       />
 
-      {/* ── Diálogo de histórico de movimentações ─────────────────────────── */}
+      {/* Histórico */}
       <Dialog open={!!historyLote} onOpenChange={v => !v && setHistoryLote(null)}>
         <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -197,7 +252,7 @@ export default function LotsManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Modal de CONFIRMAÇÃO de exclusão ─────────────────────────────── */}
+      {/* Confirmação exclusão */}
       <Dialog open={!!deleteConfirm} onOpenChange={v => !v && setDeleteConfirm(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -209,31 +264,23 @@ export default function LotsManagementPage() {
             </div>
             <DialogDescription className="text-gray-600 leading-relaxed">
               Tem certeza que deseja excluir o lote{" "}
-              <span className="font-semibold text-gray-900">"{deleteConfirm?.lote.nome}"</span>?
+              <span className="font-semibold text-gray-900">&quot;{deleteConfirm?.lote.nome}&quot;</span>?
               <br />
               <span className="text-red-600 font-medium">Esta ação não poderá ser desfeita.</span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirm(null)}
-              disabled={excluirMutation.isPending}
-            >
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={excluirMutation.isPending}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={excluirMutation.isPending}
-            >
+            <Button variant="destructive" onClick={() => deleteConfirm && excluirMutation.mutate({ id: deleteConfirm.lote.id })} disabled={excluirMutation.isPending}>
               {excluirMutation.isPending ? "Excluindo…" : "Excluir Lote"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Modal de BLOQUEIO (lote com animais vinculados) ───────────────── */}
+      {/* Bloqueio exclusão */}
       <Dialog open={!!deleteBlocked} onOpenChange={v => !v && setDeleteBlocked(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -244,211 +291,260 @@ export default function LotsManagementPage() {
               <DialogTitle className="text-gray-900">Não é possível excluir</DialogTitle>
             </div>
             <DialogDescription className="text-gray-600 leading-relaxed">
-              O lote{" "}
-              <span className="font-semibold text-gray-900">"{deleteBlocked?.nomeLote}"</span>{" "}
-              possui{" "}
+              O lote <span className="font-semibold text-gray-900">&quot;{deleteBlocked?.nomeLote}&quot;</span> possui{" "}
               <span className="font-semibold text-amber-700">
-                {deleteBlocked?.qtdAnimais}{" "}
-                {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
-              </span>
-              .
-              <br />
-              <br />
-              Mova ou remova os animais deste lote antes de excluí-lo.
+                {deleteBlocked?.qtdAnimais} {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
+              </span>.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button onClick={() => setDeleteBlocked(null)} className="w-full">
-              Entendi
-            </Button>
+            <Button onClick={() => setDeleteBlocked(null)} className="w-full">Entendi</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Cabeçalho da página ───────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestão de Lotes</h1>
-          <p className="text-gray-500 text-sm mt-1">Alocie lotes nos pastos e acompanhe dias de pastejo</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <ListExportButtons
-            title="Lotes"
-            filename="lotes"
-            headers={["Nome", "Pasto/Local", "Fazenda", "Cabeças", "Dias no Pasto", "Capacidade", "Status"]}
-            rows={exportData}
-            alignRightFrom={3}
-          />
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button style={{ backgroundColor: "#4ECDC4" }} className="hover:opacity-90 text-gray-800">
-                <Plus className="w-4 h-4 mr-2" />Novo Lote
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editId ? "Editar Lote" : "Novo Lote"}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <FormLabel required>Nome</FormLabel>
-                  <FieldBox required>
-                    <Input
-                      value={form.nome}
-                      onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
-                      placeholder="Nome do lote"
-                      className="border-0 shadow-none bg-transparent h-auto px-2 py-1.5 text-[12px]"
-                    />
-                  </FieldBox>
-                </div>
-                <div>
-                  <Label>Descrição</Label>
-                  <Textarea
-                    value={form.descricao}
-                    onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
-                    placeholder="Descrição"
-                  />
-                </div>
-                <div>
-                  <Label>Localização</Label>
-                  <Input
-                    value={form.localizacao}
-                    onChange={e => setForm(p => ({ ...p, localizacao: e.target.value }))}
-                    placeholder="Ex: Setor Norte"
-                  />
-                </div>
-                <div>
-                  <Label>Capacidade (animais)</Label>
-                  <Input
-                    type="number"
-                    value={form.capacidade}
-                    onChange={e => setForm(p => ({ ...p, capacidade: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                    style={{ backgroundColor: "#4ECDC4" }}
-                    className="text-gray-800"
-                  >
-                    {editId ? "Salvar" : "Criar Lote"}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+      {/* Cabeçalho — iRancho */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 className="text-[15px] font-semibold text-gray-800">Gerenciamento de Lotes</h1>
+        <ListExportButtons
+          title="Gerenciamento de Lotes"
+          filename="gerenciamento-lotes"
+          headers={exportHeaders}
+          rows={exportData}
+          alignRightFrom={1}
+        />
       </div>
 
-      {/* ── Lista de lotes ────────────────────────────────────────────────── */}
-      {isLoading ? (
-        <div className="flex items-center justify-center h-40">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: "#4ECDC4" }} />
-        </div>
-      ) : !lotes?.length ? (
-        <div className="text-center py-16 text-gray-400">
-          <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p>Nenhum lote cadastrado</p>
-          <p className="text-sm">Clique em &quot;Novo Lote&quot; para começar</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(lotes as LoteItem[]).map(lote => (
-            <div
-              key={lote.id}
-              className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow"
+      {/* Barra de controles */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) resetForm(); }}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
+              style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{lote.nome}</h3>
-                  {lote.pastoNome ? (
-                    <p className="text-sm flex items-center gap-1 mt-1" style={{ color: "#4ECDC4" }}>
-                      <MapPin className="w-3 h-3" />{lote.pastoNome}
-                      {lote.fazendaNome && <span className="text-gray-400"> · {lote.fazendaNome}</span>}
-                    </p>
-                  ) : lote.localizacao ? (
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                      <MapPin className="w-3 h-3" />{lote.localizacao}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-400 mt-1">Sem pasto alocado</p>
-                  )}
-                </div>
-                <Badge
-                  variant={lote.ativo ? "default" : "secondary"}
-                  className={lote.ativo ? "bg-green-100 text-green-700" : ""}
-                >
-                  {lote.ativo ? "Ativo" : "Inativo"}
-                </Badge>
+              Novo Lote
+            </button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editId ? "Editar Lote" : "Novo Lote"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <FormLabel required>Nome</FormLabel>
+                <FieldBox required>
+                  <Input
+                    value={form.nome}
+                    onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
+                    placeholder="Nome do lote"
+                    className="border-0 shadow-none bg-transparent h-auto px-2 py-1.5 text-[12px]"
+                  />
+                </FieldBox>
               </div>
-
-              <div className="flex flex-wrap gap-2 mb-2 text-xs">
-                <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
-                  {lote.qtdAnimais ?? 0} cabeças
-                </span>
-                {lote.diasNoPasto != null && (
-                  <span
-                    className="px-2 py-0.5 rounded"
-                    style={{ backgroundColor: "#E8FAF8", color: "#2D5A5A" }}
-                  >
-                    {lote.diasNoPasto} dias no pasto
-                  </span>
-                )}
+              <div>
+                <Label>Descrição</Label>
+                <Textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" />
               </div>
-
-              {lote.pastoCapacidade && (
-                <OccupancyBar
-                  pct={lote.pastoCapacidade
-                    ? Math.min(100, Math.round(((lote.qtdAnimais ?? 0) / lote.pastoCapacidade) * 100))
-                    : null}
-                  qtd={lote.qtdAnimais ?? 0}
-                  capacidade={lote.pastoCapacidade}
-                />
-              )}
-
-              {lote.descricao && <p className="text-sm text-gray-600 mb-2">{lote.descricao}</p>}
-              {lote.capacidade && (
-                <p className="text-sm text-gray-500">
-                  Capacidade lote: <span className="font-medium">{lote.capacidade} animais</span>
-                </p>
-              )}
-
-              <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100 flex-wrap">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setMoveLote(lote)}
-                  className="flex-1 min-w-[80px]"
-                >
-                  <ArrowRightLeft className="w-3 h-3 mr-1" />Mover
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setHistoryLote(lote)}>
-                  <History className="w-3 h-3" />
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handleEdit(lote)}>
-                  <Edit className="w-3 h-3" />
-                </Button>
-                {/* Botão de exclusão — abre modal de confirmação (não exclui diretamente) */}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleDeleteRequest(lote)}
-                  disabled={excluirMutation.isPending}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  title="Excluir lote"
-                >
-                  <Trash2 className="w-3 h-3" />
+              <div>
+                <Label>Localização</Label>
+                <Input value={form.localizacao} onChange={e => setForm(p => ({ ...p, localizacao: e.target.value }))} placeholder="Ex: Setor Norte" />
+              </div>
+              <div>
+                <Label>Capacidade (animais)</Label>
+                <Input type="number" value={form.capacidade} onChange={e => setForm(p => ({ ...p, capacidade: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancelar</Button>
+                <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} style={{ backgroundColor: FD_PRIMARY }} className="text-gray-800">
+                  {editId ? "Salvar" : "Criar Lote"}
                 </Button>
               </div>
             </div>
-          ))}
+          </DialogContent>
+        </Dialog>
+
+        <div className="w-full sm:w-auto sm:min-w-[200px]">
+          <select
+            value={fazendaFilter}
+            onChange={e => { setFazendaFilter(e.target.value); setPage(1); }}
+            className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#7CB342]"
+          >
+            <option value="">Selecione uma fazenda</option>
+            {fazendas.map((f: { id: number; nome: string }) => (
+              <option key={f.id} value={String(f.id)}>{f.nome}</option>
+            ))}
+          </select>
         </div>
-      )}
+
+        <div className="flex-1 min-w-[180px] sm:max-w-xs ml-auto">
+          <div className="relative">
+            <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
+            <input
+              type="text"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Buscar"
+              className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#7CB342]"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela — iRancho */}
+      <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px] min-w-[900px]">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th rowSpan={2} className="w-10 px-2 py-2 border-r border-gray-200">
+                  <Checkbox
+                    checked={paginated.length > 0 && selected.size === paginated.length}
+                    onCheckedChange={toggleSelectAll}
+                    className="data-[state=checked]:bg-[#7CB342] data-[state=checked]:border-[#7CB342]"
+                  />
+                </th>
+                <th rowSpan={2} className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200 min-w-[180px]">
+                  <button
+                    type="button"
+                    onClick={() => setSortAsc(v => !v)}
+                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                  >
+                    Nome do Lote
+                    <span className="material-icons text-[14px] text-gray-400">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  </button>
+                </th>
+                <th colSpan={5} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200">
+                  Machos
+                </th>
+                <th colSpan={5} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200">
+                  Fêmeas
+                </th>
+                <th rowSpan={2} className="w-24 px-2 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase border-l border-gray-200">
+                  Ações
+                </th>
+              </tr>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {FAIXAS_IDADE_LOTE.map(f => (
+                  <th key={`m-${f}`} className="px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-12">
+                    {f}
+                  </th>
+                ))}
+                {FAIXAS_IDADE_LOTE.map(f => (
+                  <th key={`f-${f}`} className="px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-12">
+                    {f}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr><td colSpan={13} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
+              )}
+              {!isLoading && paginated.length === 0 && (
+                <tr><td colSpan={13} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
+              )}
+              {paginated.map(lote => (
+                <tr key={lote.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                  <td className="px-2 py-2 text-center border-r border-gray-50">
+                    <Checkbox
+                      checked={selected.has(lote.id)}
+                      onCheckedChange={() => toggleSelect(lote.id)}
+                      className="data-[state=checked]:bg-[#7CB342] data-[state=checked]:border-[#7CB342]"
+                    />
+                  </td>
+                  <td className="px-3 py-2 border-r border-gray-50">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(lote)}
+                      className="text-left font-medium text-[#2D5A5A] hover:underline"
+                    >
+                      {lote.nome}
+                    </button>
+                  </td>
+                  {FAIXAS_IDADE_LOTE.map(f => (
+                    <td key={`m-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
+                      {celulaValor(lote.machos[f])}
+                    </td>
+                  ))}
+                  {FAIXAS_IDADE_LOTE.map(f => (
+                    <td key={`f-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
+                      {celulaValor(lote.femeas[f])}
+                    </td>
+                  ))}
+                  <td className="px-2 py-2 border-l border-gray-50">
+                    <div className="flex items-center justify-center gap-0.5">
+                      <button
+                        type="button"
+                        title="Mover"
+                        onClick={() => { const l = loteById.get(lote.id); if (l) setMoveLote(l); }}
+                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Histórico"
+                        onClick={() => { const l = loteById.get(lote.id); if (l) setHistoryLote(l); }}
+                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" title="Editar" onClick={() => openEdit(lote)} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" title="Excluir" onClick={() => handleDeleteRequest(lote)} className="p-1 rounded hover:bg-red-50 text-red-400">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Rodapé paginação — iRancho */}
+        <div className="px-4 py-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-600">
+          <div className="flex items-center gap-2">
+            <select
+              value={perPage}
+              onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+              className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px]"
+            >
+              <option value={10}>10 itens por página</option>
+              <option value={25}>25 itens por página</option>
+              <option value={50}>50 itens por página</option>
+              <option value={100}>100 itens por página</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span>Mostrando {inicio}-{fim} de {total} itens</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={pageSafe <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+              >
+                <span className="material-icons text-[16px]">chevron_left</span>
+              </button>
+              <span className="px-2 min-w-[24px] text-center">{pageSafe}</span>
+              <button
+                type="button"
+                disabled={pageSafe >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+              >
+                <span className="material-icons text-[16px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -866,6 +866,96 @@ async function enrichLote(lote: typeof lotes.$inferSelect) {
 
 // ─── LOTES ROUTER ─────────────────────────────────────────────────────────────
 const lotesRouter = router({
+  gerenciamento: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number().optional(),
+      search: z.string().optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const {
+        calcularIdadeMeses,
+        adicionarAnimalAoResumo,
+        criarResumoSexoFaixa,
+      } = await import('../shared/lote-faixas-idade');
+
+      const lotesList = await db.select().from(lotes)
+        .where(eq(lotes.userId, ctx.user.id))
+        .orderBy(desc(lotes.createdAt));
+
+      const pastoIds = [...new Set(lotesList.map(l => l.pastoAtualId).filter(Boolean) as number[])];
+      const pastoFazendaMap = new Map<number, number>();
+      if (pastoIds.length) {
+        const pastosRows = await db.select({ id: pastos.id, fazendaId: pastos.fazendaId })
+          .from(pastos)
+          .where(inArray(pastos.id, pastoIds));
+        pastosRows.forEach(p => {
+          if (p.fazendaId) pastoFazendaMap.set(p.id, p.fazendaId);
+        });
+      }
+
+      const fazendaIds = [...new Set([
+        ...lotesList.map(l => l.fazendaId).filter(Boolean) as number[],
+        ...pastoFazendaMap.values(),
+      ])];
+      const fazendaNomeMap = new Map<number, string>();
+      if (fazendaIds.length) {
+        const fazRows = await db.select({ id: fazendas.id, nome: fazendas.nome })
+          .from(fazendas)
+          .where(inArray(fazendas.id, fazendaIds));
+        fazRows.forEach(f => fazendaNomeMap.set(f.id, f.nome));
+      }
+
+      const resolveFazendaId = (lote: typeof lotesList[0]) => {
+        if (lote.fazendaId) return lote.fazendaId;
+        if (lote.pastoAtualId) return pastoFazendaMap.get(lote.pastoAtualId) ?? null;
+        return null;
+      };
+
+      const animaisAtivos = await db.select({
+        loteId: animais.loteId,
+        sexo: animais.sexo,
+        dataNascimento: animais.dataNascimento,
+      }).from(animais).where(and(
+        eq(animais.userId, ctx.user.id),
+        eq(animais.status, 'ativo'),
+        isNotNull(animais.loteId),
+      ));
+
+      const resumoPorLote = new Map<number, ReturnType<typeof criarResumoSexoFaixa>>();
+      const hoje = new Date();
+      for (const animal of animaisAtivos) {
+        if (!animal.loteId) continue;
+        const idade = calcularIdadeMeses(animal.dataNascimento, hoje);
+        const atual = resumoPorLote.get(animal.loteId) ?? criarResumoSexoFaixa();
+        resumoPorLote.set(animal.loteId, adicionarAnimalAoResumo(atual, animal.sexo, idade));
+      }
+
+      let resultado = lotesList.map(lote => {
+        const fazendaId = resolveFazendaId(lote);
+        const resumo = resumoPorLote.get(lote.id) ?? criarResumoSexoFaixa();
+        return {
+          id: lote.id,
+          nome: lote.nome,
+          fazendaId,
+          fazendaNome: fazendaId ? (fazendaNomeMap.get(fazendaId) ?? null) : null,
+          ativo: lote.ativo,
+          machos: resumo.machos,
+          femeas: resumo.femeas,
+        };
+      });
+
+      if (input?.fazendaId) {
+        resultado = resultado.filter(l => l.fazendaId === input.fazendaId);
+      }
+
+      if (input?.search?.trim()) {
+        const q = input.search.trim().toLowerCase();
+        resultado = resultado.filter(l => l.nome.toLowerCase().includes(q));
+      }
+
+      return resultado;
+    }),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
     return Promise.all(lotesList.map(enrichLote));
