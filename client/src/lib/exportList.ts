@@ -76,7 +76,11 @@ export function exportListSpreadsheet(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Dados");
 
-  const safeName = `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  // Nome único com data E hora-minuto-segundo: evita colisão/confusão com
+  // arquivos antigos em cache (ex.: "Modelo Importação (Benfeitorias) (11).xlsx").
+  const agora = new Date();
+  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
+  const safeName = `${filename}_${carimbo}.xlsx`;
   XLSX.writeFile(wb, safeName);
   toast.success("Planilha exportada!");
 }
