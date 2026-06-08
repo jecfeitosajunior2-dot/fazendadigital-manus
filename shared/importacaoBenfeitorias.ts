@@ -1,6 +1,6 @@
 /**
  * Definições compartilhadas para importação em massa de benfeitorias via planilha.
- * Mesmo padrão de importacaoAnimais.ts e importacaoMaquinarios.ts.
+ * Sequência do modelo FD: Fazenda → Nome (Benfeitoria) → Ano → Valor (R$) → Vida útil → Observações
  */
 
 export interface ColunaImportacao {
@@ -13,11 +13,12 @@ export interface ColunaImportacao {
 }
 
 export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
-  { key: 'nome', label: 'Benfeitoria', obrigatorio: true, largura: 28, descricao: 'Nome da benfeitoria', exemplo: 'Galpão de Máquinas' },
   { key: 'fazendaNome', label: 'Fazenda', obrigatorio: true, largura: 24, descricao: 'Nome exato da fazenda cadastrada no sistema', exemplo: 'Fazenda Volta Grande' },
-  { key: 'anoConstrucao', label: 'Ano de Construção', obrigatorio: true, largura: 18, descricao: 'Ano de construção (4 dígitos)', exemplo: '2020' },
-  { key: 'vidaUtil', label: 'Vida Útil', obrigatorio: false, largura: 14, descricao: 'Vida útil estimada em anos', exemplo: '15' },
-  { key: 'valor', label: 'Valor(R$)', obrigatorio: false, largura: 16, descricao: 'Valor estimado em reais', exemplo: '150000.00' },
+  { key: 'nome', label: 'Nome (Benfeitoria)', obrigatorio: true, largura: 28, descricao: 'Nome da benfeitoria', exemplo: 'Galpão de Máquinas' },
+  { key: 'anoConstrucao', label: 'Ano', obrigatorio: true, largura: 12, descricao: 'Ano de construção (4 dígitos)', exemplo: '2020' },
+  { key: 'valor', label: 'Valor (R$)', obrigatorio: false, largura: 16, descricao: 'Valor estimado em reais', exemplo: '150000.00' },
+  { key: 'vidaUtil', label: 'Vida útil', obrigatorio: false, largura: 14, descricao: 'Vida útil estimada em anos', exemplo: '15' },
+  { key: 'observacoes', label: 'Observações', obrigatorio: false, largura: 32, descricao: 'Observações adicionais', exemplo: '' },
 ];
 
 export function normalizarCabecalho(texto: string): string {
@@ -40,6 +41,7 @@ export const CABECALHO_PARA_CHAVE: Record<string, string> = (() => {
   const aliases: Record<string, string> = {
     benfeitoria: 'nome',
     nome: 'nome',
+    nomebenfeitoria: 'nome',
     fazenda: 'fazendaNome',
     fazendanome: 'fazendaNome',
     anoconstrucao: 'anoConstrucao',
@@ -93,3 +95,6 @@ export function parseValorImport(val: string): string {
   const n = parseFloat(v);
   return Number.isNaN(n) ? '' : n.toFixed(2);
 }
+
+/** Cabeçalhos na ordem do modelo FD para exportação. */
+export const EXPORT_HEADERS = COLUNAS_IMPORTACAO.map(c => c.label);

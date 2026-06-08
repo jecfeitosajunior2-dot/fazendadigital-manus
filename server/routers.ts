@@ -2165,7 +2165,7 @@ const benfeitoriasRouter = router({
 
       const buf = await wb.xlsx.writeBuffer();
       const base64 = Buffer.from(buf).toString('base64');
-      return { base64, filename: 'modelo_importacao_benfeitorias.xlsx' };
+      return { base64, filename: 'Modelo Importação (Benfeitorias).xlsx' };
     }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -2246,11 +2246,6 @@ const benfeitoriasRouter = router({
         const numLinha = i + 2;
         const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
 
-        const nome = (linha.nome || '').trim();
-        if (!nome) {
-          errosLinha.push({ linha: numLinha, campo: 'Benfeitoria', mensagem: 'Nome da benfeitoria é obrigatório' });
-        }
-
         const fazendaNome = (linha.fazendaNome || '').trim();
         if (!fazendaNome) {
           errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
@@ -2258,25 +2253,20 @@ const benfeitoriasRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
         }
 
+        const nome = (linha.nome || '').trim();
+        if (!nome) {
+          errosLinha.push({ linha: numLinha, campo: 'Nome (Benfeitoria)', mensagem: 'Nome da benfeitoria é obrigatório' });
+        }
+
         const anoRaw = (linha.anoConstrucao || '').trim();
         if (!anoRaw) {
-          errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: 'Ano de Construção é obrigatório' });
+          errosLinha.push({ linha: numLinha, campo: 'Ano', mensagem: 'Ano é obrigatório' });
         } else {
           const ano = parseInt(anoRaw.replace(/[^0-9]/g, ''), 10);
           if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
-            errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: `Ano inválido: "${anoRaw}"` });
+            errosLinha.push({ linha: numLinha, campo: 'Ano', mensagem: `Ano inválido: "${anoRaw}"` });
           } else {
             linha.anoConstrucao = String(ano);
-          }
-        }
-
-        const vidaUtilRaw = (linha.vidaUtil || '').trim();
-        if (vidaUtilRaw) {
-          const vidaUtilNum = parseInt(vidaUtilRaw.replace(/[^0-9]/g, ''), 10);
-          if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) {
-            errosLinha.push({ linha: numLinha, campo: 'Vida Útil', mensagem: `Vida útil inválida: "${vidaUtilRaw}"` });
-          } else {
-            linha.vidaUtil = String(vidaUtilNum);
           }
         }
 
@@ -2284,9 +2274,19 @@ const benfeitoriasRouter = router({
         if (valorRaw) {
           const valorParsed = parseValorImport(valorRaw);
           if (!valorParsed) {
-            errosLinha.push({ linha: numLinha, campo: 'Valor(R$)', mensagem: `Valor inválido: "${valorRaw}"` });
+            errosLinha.push({ linha: numLinha, campo: 'Valor (R$)', mensagem: `Valor inválido: "${valorRaw}"` });
           } else {
             linha.valor = valorParsed;
+          }
+        }
+
+        const vidaUtilRaw = (linha.vidaUtil || '').trim();
+        if (vidaUtilRaw) {
+          const vidaUtilNum = parseInt(vidaUtilRaw.replace(/[^0-9]/g, ''), 10);
+          if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) {
+            errosLinha.push({ linha: numLinha, campo: 'Vida útil', mensagem: `Vida útil inválida: "${vidaUtilRaw}"` });
+          } else {
+            linha.vidaUtil = String(vidaUtilNum);
           }
         }
 
@@ -2338,8 +2338,9 @@ const benfeitoriasRouter = router({
             fazendaId,
             nome: (linha.nome || '').trim(),
             anoConstrucao: !isNaN(anoNum) ? anoNum : undefined,
-            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
             valorEstimado: valorNum || undefined,
+            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
+            observacoes: (linha.observacoes || '').trim() || undefined,
             status: 'ativo',
           });
           importados.push((result as any)[0]?.insertId);

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import { ImportarBenfeitoriasModal } from "@/components/ImportarBenfeitoriasModal";
+import { EXPORT_HEADERS } from "@shared/importacaoBenfeitorias";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -45,18 +46,16 @@ export default function BenfeitoriasListPage() {
 
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const exportRows = useMemo(() =>
-    filtered.map(b => ({
-      benfeitoria: b.nome,
-      fazenda: b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "" : "",
-      ano: b.anoConstrucao ?? "",
-      vidaUtil: b.vidaUtil ?? "",
-      valor: b.valorEstimado ? parseFloat(String(b.valorEstimado)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
-    })),
+  const exportData = useMemo(() =>
+    filtered.map(b => [
+      b.fazendaId ? fazendaMap.get(b.fazendaId) ?? "" : "",
+      b.nome,
+      b.anoConstrucao ?? "",
+      b.valorEstimado ? parseFloat(String(b.valorEstimado)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+      b.vidaUtil ?? "",
+      b.observacoes ?? "",
+    ]),
   [filtered, fazendaMap]);
-
-  const exportHeaders = ["Benfeitoria", "Fazenda", "Ano de Construção", "Vida Útil", "Valor(R$)"];
-  const exportData = exportRows.map(r => [r.benfeitoria, r.fazenda, r.ano, r.vidaUtil, r.valor]);
 
   return (
     <AppLayout>
@@ -67,7 +66,7 @@ export default function BenfeitoriasListPage() {
             <ListExportButtons
               title="Lista de Benfeitorias"
               filename="benfeitorias"
-              headers={exportHeaders}
+              headers={EXPORT_HEADERS}
               rows={exportData}
               alignRightFrom={2}
             />
