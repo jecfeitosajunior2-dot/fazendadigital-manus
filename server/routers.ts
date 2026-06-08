@@ -3177,6 +3177,73 @@ const pastosRouter = router({
       return { success: true };
     }),
 
+  importarCoordenadas: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      kmlContent: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { extrairCoordenadasKml, mapaCoordenadasPorNome, normalizarNomeSubdivisao } =
+        await import('../shared/parseKmlCoordenadas');
+
+      const placemarks = extrairCoordenadasKml(input.kmlContent);
+      if (placemarks.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Nenhuma coordenada encontrada no arquivo KML/KMZ',
+        });
+      }
+
+      const coordenadasPorNome = mapaCoordenadasPorNome(placemarks);
+
+      const subdivisoes = await db.select().from(pastos).where(
+        and(eq(pastos.fazendaId, input.fazendaId), eq(pastos.userId, ctx.user.id)),
+      );
+
+      if (subdivisoes.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cadastre subdivisões antes de importar coordenadas',
+        });
+      }
+
+      const lookup = new Map<string, number>();
+      for (const s of subdivisoes) {
+        lookup.set(normalizarNomeSubdivisao(s.nome), s.id);
+        if (s.sigla?.trim()) {
+          lookup.set(normalizarNomeSubdivisao(s.sigla), s.id);
+        }
+      }
+
+      const atualizados = new Set<number>();
+      const ignorados: string[] = [];
+
+      for (const [nomeNorm, coordinates] of coordenadasPorNome) {
+        const pastoId = lookup.get(nomeNorm);
+        if (!pastoId) {
+          const original = placemarks.find(p => normalizarNomeSubdivisao(p.nome) === nomeNorm);
+          ignorados.push(original?.nome ?? nomeNorm);
+          continue;
+        }
+
+        const payload = JSON.stringify({
+          coordinates,
+          importadoEm: new Date().toISOString(),
+        });
+
+        await db.update(pastos).set({ coordenadas: payload }).where(
+          and(eq(pastos.id, pastoId), eq(pastos.userId, ctx.user.id)),
+        );
+        atualizados.add(pastoId);
+      }
+
+      return {
+        importados: atualizados.size,
+        ignorados: [...new Set(ignorados)],
+        totalNoArquivo: coordenadasPorNome.size,
+      };
+    }),
+
   listWithDetails: protectedProcedure
     .input(z.object({ fazendaId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {

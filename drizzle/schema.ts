@@ -104,6 +104,7 @@ export const pastos = mysqlTable("pastos", {
   incluirArea: boolean("incluirArea").default(true),
   capacidade: int("capacidade"),
   status: mysqlEnum("status", ["ativo", "descanso", "vazio"]).default("vazio"),
+  coordenadas: text("coordenadas"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),

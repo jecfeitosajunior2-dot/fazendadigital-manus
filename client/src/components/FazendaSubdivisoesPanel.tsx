@@ -5,6 +5,7 @@ import { TIPOS_DIVISAO, TIPOS_PASTAGEM } from "@/lib/subdivisao-types";
 import { SelectItem } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormLabel, FormInput, FormSelect } from "@/components/FormFields";
+import { ImportarCoordenadasModal } from "@/components/ImportarCoordenadasModal";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -30,6 +31,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm());
+  const [importarCoordenadasOpen, setImportarCoordenadasOpen] = useState(false);
 
   const { data: subdivisoes = [], isLoading } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId },
@@ -124,7 +126,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => toast.info("Importação de coordenadas em desenvolvimento")}
+            onClick={() => setImportarCoordenadasOpen(true)}
             className="px-3 py-1.5 rounded border border-gray-300 bg-white text-[10px] font-semibold uppercase text-gray-700 hover:bg-gray-50"
           >
             Importar Coordenadas
@@ -278,6 +280,26 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                     >
                       <span className="material-icons text-[15px]">delete</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!s.coordenadas) {
+                          toast.info("Esta subdivisão ainda não possui coordenadas importadas");
+                          return;
+                        }
+                        try {
+                          const dados = JSON.parse(s.coordenadas);
+                          const pts = (dados.coordinates as string)?.split(/\s+/).filter(Boolean).length ?? 0;
+                          toast.success(`Coordenadas importadas (${pts} ponto(s))`);
+                        } catch {
+                          toast.success("Coordenadas importadas");
+                        }
+                      }}
+                      className={`p-1 rounded ${s.coordenadas ? 'hover:bg-green-50 text-[#7CB342]' : 'text-gray-300 cursor-default'}`}
+                      title={s.coordenadas ? "Ver coordenadas" : "Sem coordenadas"}
+                    >
+                      <span className="material-icons text-[15px]">map</span>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -285,6 +307,13 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
           </tbody>
         </table>
       </div>
+
+      <ImportarCoordenadasModal
+        open={importarCoordenadasOpen}
+        onClose={() => setImportarCoordenadasOpen(false)}
+        fazendaId={fazendaId}
+        onImportado={invalidate}
+      />
     </div>
   );
 }

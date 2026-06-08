@@ -66,6 +66,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "pastos", "sigla", "varchar(20)");
       await ensureColumn(pool, "pastos", "tipoPastagem", "varchar(80)");
       await ensureColumn(pool, "pastos", "incluirArea", "boolean DEFAULT true");
+      await ensureColumn(pool, "pastos", "coordenadas", "text");
     }
     console.log("[schema] Tabelas de pastos verificadas");
 
