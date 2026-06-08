@@ -2138,6 +2138,33 @@ const benfeitoriasRouter = router({
       await db.delete(benfeitorias).where(and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id)));
       return { success: true };
     }),
+
+  bulkImport: protectedProcedure
+    .input(z.object({
+      items: z.array(z.object({
+        fazendaId: z.number(),
+        nome: z.string(),
+        anoConstrucao: z.number(),
+        vidaUtil: z.string().optional(),
+        valorEstimado: z.string().optional(),
+        observacoes: z.string().optional(),
+      })).min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      for (const item of input.items) {
+        await db.insert(benfeitorias).values({
+          userId: ctx.user.id,
+          fazendaId: item.fazendaId,
+          nome: item.nome,
+          anoConstrucao: item.anoConstrucao,
+          vidaUtil: item.vidaUtil,
+          valorEstimado: item.valorEstimado,
+          observacoes: item.observacoes,
+          status: "ativo",
+        });
+      }
+      return { success: true, count: input.items.length };
+    }),
 });
 
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────

@@ -71,14 +71,24 @@ export default function BenfeitoriasListPage() {
         </div>
 
         <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-50">
-          <button
-            type="button"
-            onClick={() => setLocation("/fazendas/benfeitorias/cadastro")}
-            className="px-4 py-2 rounded text-[10px] font-semibold uppercase text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            Cadastrar Benfeitoria
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLocation("/fazendas/benfeitorias/cadastro")}
+              className="px-4 py-2 rounded text-[10px] font-semibold uppercase text-white"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Cadastrar Benfeitoria
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocation("/fazendas/benfeitorias/importacao")}
+              className="px-4 py-2 rounded text-[10px] font-semibold uppercase border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center gap-1"
+            >
+              <span className="material-icons text-[14px]">upload_file</span>
+              Importar Planilha
+            </button>
+          </div>
           <div className="relative">
             <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
             <input

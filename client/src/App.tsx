@@ -36,6 +36,7 @@ import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
+import BenfeitoriasImportPage from "./pages/BenfeitoriasImportPage";
 import ProductRegistrationPage from "./pages/ProductRegistrationPage";
 import MaquinaRegistrationPage from "./pages/MaquinaRegistrationPage";
 import MaquinasListPage from "./pages/MaquinasListPage";
@@ -63,6 +64,7 @@ function ProtectedRoutes() {
       <Route path="/fazendas/visao-geral" component={FarmsOverviewPage} />
       <Route path="/fazendas/benfeitorias" component={BenfeitoriasListPage} />
       <Route path="/fazendas/benfeitorias/cadastro" component={BenfeitoriaRegistrationPage} />
+      <Route path="/fazendas/benfeitorias/importacao" component={BenfeitoriasImportPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
       <Route path="/fazendas/cadastro" component={FarmRegistrationPage} />
       <Route path="/fazendas/subdivisoes" component={SubdivisionsPage} />
