@@ -14,7 +14,6 @@ export const menuItems: MenuItem[] = [
     icon: "home_work",
     children: [
       { label: "Visão Geral", icon: "", path: "/fazendas/visao-geral" },
-      { label: "Subdivisões", icon: "", path: "/fazendas/subdivisoes" },
       { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
     ],
   },
