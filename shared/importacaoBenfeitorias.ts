@@ -16,7 +16,7 @@ export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
   { key: 'fazendaNome', label: 'Fazenda', obrigatorio: true, largura: 24, descricao: 'Nome exato da fazenda cadastrada no sistema', exemplo: 'Fazenda Volta Grande' },
   { key: 'nome', label: 'Nome (Benfeitoria)', obrigatorio: true, largura: 28, descricao: 'Nome da benfeitoria', exemplo: 'Galpão de Máquinas' },
   { key: 'anoConstrucao', label: 'Ano', obrigatorio: true, largura: 12, descricao: 'Ano de construção (4 dígitos)', exemplo: '2020' },
-  { key: 'valor', label: 'Valor (R$)', obrigatorio: false, largura: 16, descricao: 'Valor estimado em reais', exemplo: '150000.00' },
+  { key: 'valor', label: 'Valor (R$)', obrigatorio: false, largura: 16, descricao: 'Valor estimado em reais', exemplo: '150.000,00' },
   { key: 'vidaUtil', label: 'Vida útil', obrigatorio: false, largura: 14, descricao: 'Vida útil estimada em anos', exemplo: '15' },
   { key: 'observacoes', label: 'Observações', obrigatorio: false, largura: 32, descricao: 'Observações adicionais', exemplo: '' },
 ];
@@ -85,16 +85,7 @@ export function isLinhaExemplo(linha: Record<string, string>): boolean {
   );
 }
 
-export function parseValorImport(val: string): string {
-  const v = val.trim();
-  if (!v) return '';
-  if (v.includes(',')) {
-    const n = parseFloat(v.replace(/\./g, '').replace(',', '.'));
-    return Number.isNaN(n) ? '' : n.toFixed(2);
-  }
-  const n = parseFloat(v);
-  return Number.isNaN(n) ? '' : n.toFixed(2);
-}
+export { parseMoedaBr as parseValorImport } from './parseMoedaBr';
 
 /** Cabeçalhos na ordem do modelo FD para exportação. */
 export const EXPORT_HEADERS = COLUNAS_IMPORTACAO.map(c => c.label);
