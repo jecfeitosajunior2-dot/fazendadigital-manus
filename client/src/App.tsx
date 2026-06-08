@@ -10,10 +10,10 @@ import { AuthGuard, AppShell } from "./components/AppLayout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import { AnimaisPage, EstoquePage } from "./pages/GenericPage";
+import SubdivisoesPage from "./pages/SubdivisoesPage";
 import {
   FarmsOverviewPage,
   FarmsListPage,
-  SubdivisionsPage,
   HerdOverviewPage,
   HerdMapPage,
   QuickAccessPage,
@@ -65,7 +65,7 @@ function ProtectedRoutes() {
       <Route path="/fazendas/benfeitorias/cadastro" component={BenfeitoriaRegistrationPage} />
       <Route path="/fazendas/lista-fazendas" component={FarmsListPage} />
       <Route path="/fazendas/cadastro" component={FarmRegistrationPage} />
-      <Route path="/fazendas/subdivisoes" component={SubdivisionsPage} />
+      <Route path="/fazendas/subdivisoes" component={SubdivisoesPage} />
 
       {/* Administrativo */}
       <Route path="/administrativo/visao-geral" component={AdministrativeOverviewPage} />

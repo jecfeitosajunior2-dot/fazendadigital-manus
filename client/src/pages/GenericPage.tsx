@@ -34,6 +34,7 @@ export function AnimaisPage() {
   const { data: lotesData } = trpc.lotes.list.useQuery();
   const { data: fazendasData } = trpc.fazendas.list.useQuery();
   const { data: marcasDistintas = [] } = trpc.animais.marcasDistintas.useQuery();
+  const { data: pastosData } = trpc.pastos.list.useQuery();
   const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
   const filtrosKey = JSON.stringify(apiParams);
@@ -112,6 +113,11 @@ export function AnimaisPage() {
           id: l.id,
           nome: l.nome,
           fazendaId: l.fazendaId,
+        }))}
+        pastos={(pastosData || []).map((p: { id: number; nome: string; fazendaId?: number | null }) => ({
+          id: p.id,
+          nome: p.nome,
+          fazendaId: p.fazendaId,
         }))}
         marcadoresDisponiveis={marcasDistintas}
       />

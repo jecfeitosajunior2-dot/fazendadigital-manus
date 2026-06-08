@@ -16,6 +16,7 @@ export type AnimaisListFiltersState = {
   somenteSisbov: boolean;
   marcadores: string[];
   maisFiltrosAbertos: boolean;
+  pastoId: string;
 };
 
 export const ANIMAIS_LIST_FILTERS_STORAGE_KEY = 'fd:lista-animais-filtros';
@@ -34,6 +35,7 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   somenteSisbov: false,
   marcadores: [],
   maisFiltrosAbertos: false,
+  pastoId: '',
 };
 
 /** Converte estado do filtro para parâmetros da API animais.list */
@@ -54,6 +56,7 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     dataNascimentoFim: filters.dataNascimentoFinal || undefined,
     somenteSisbov: filters.somenteSisbov || undefined,
     marcadores: filters.marcadores.length > 0 ? filters.marcadores : undefined,
+    pastoId: filters.pastoId ? Number(filters.pastoId) : undefined,
   };
 }
 
@@ -70,6 +73,7 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.dataNascimentoInicial ||
     !!filters.dataNascimentoFinal ||
     filters.somenteSisbov ||
-    filters.marcadores.length > 0
+    filters.marcadores.length > 0 ||
+    !!filters.pastoId
   );
 }

@@ -49,6 +49,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
     { enabled: !!animalId }
   );
 
+  const { data: historicoPastos = [], isLoading: loadingPastos } = trpc.animais.historicoPastos.useQuery(
+    { animalId: animalId! },
+    { enabled: !!animalId }
+  );
+
   const { data: reproducaoRegistros, isLoading: loadingRepro } = trpc.reproducao.list.useQuery(
     undefined,
     { enabled: !!animalId }
@@ -254,11 +259,12 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-6">
+          <TabsList className="grid w-full grid-cols-6 mb-6">
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="saude">Saúde</TabsTrigger>
             <TabsTrigger value="reproducao">Reprodução</TabsTrigger>
             <TabsTrigger value="pesagens">Pesagens</TabsTrigger>
+            <TabsTrigger value="pastos">Pastos</TabsTrigger>
             <TabsTrigger value="observacoes">Observações</TabsTrigger>
           </TabsList>
 
@@ -712,6 +718,48 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   >
                     Editar Animal para Adicionar Observações
                   </Button>
+                </div>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* ─── Pastos Tab ────────────────────────────────────────────────────────────────────────────────────── */}
+          <TabsContent value="pastos">
+            <Card className="p-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#7CB342' }} />
+                Histórico de Pastos
+              </h2>
+              {loadingPastos ? (
+                <div className="flex justify-center py-8"><Loader2 className="animate-spin w-6 h-6 text-gray-400" /></div>
+              ) : historicoPastos.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Nenhuma movimentação de pasto registrada para este animal.</p>
+                  <p className="text-xs text-gray-400 mt-1">Mova o lote do animal em <strong>Rebanho &gt; Lotes</strong> para registrar.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(historicoPastos as any[]).map((m: any, idx: number) => (
+                    <div key={m.id} className="border rounded-lg p-4 text-sm flex items-start gap-3">
+                      <div className="mt-0.5 w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: idx === 0 ? '#7CB342' : '#9E9E9E', marginTop: 6 }} />
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-800">
+                          {m.pastoOrigemNome ? (
+                            <span>{m.pastoOrigemNome} <span className="text-gray-400 font-normal">→</span> {m.pastoDestinoNome || '—'}</span>
+                          ) : (
+                            <span>Entrada em {m.pastoDestinoNome || '—'}</span>
+                          )}
+                          {idx === 0 && <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: '#7CB342' }}>Atual</span>}
+                        </div>
+                        <div className="text-gray-500 text-xs mt-1 flex flex-wrap gap-3">
+                          <span>Entrada: {m.dataEntrada ? new Date(m.dataEntrada).toLocaleDateString('pt-BR') : '—'}</span>
+                          {m.dataSaida && <span>Saída: {new Date(m.dataSaida).toLocaleDateString('pt-BR')}</span>}
+                          {m.diasNoPasto != null && <span>{m.diasNoPasto} dias</span>}
+                          {m.qtdAnimais > 0 && <span>{m.qtdAnimais} cabeças no lote</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </Card>

@@ -67,9 +67,42 @@ const animaisListInput = z.object({
   somenteSisbov: z.boolean().optional(),
   marcadores: z.array(z.string()).optional(),
   status: z.string().optional(),
+  pastoId: z.number().optional(),
 }).optional();
 
 const animaisRouter = router({
+  historicoPastos: protectedProcedure
+    .input(z.object({ animalId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      // Busca o lote atual do animal
+      const [animal] = await db.select({ loteId: animais.loteId })
+        .from(animais)
+        .where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)))
+        .limit(1);
+      if (!animal?.loteId) return [];
+
+      // Busca o histórico de movimentações do lote
+      const rows = await db.select().from(lotePastoMovimentacoes)
+        .where(and(
+          eq(lotePastoMovimentacoes.loteId, animal.loteId),
+          eq(lotePastoMovimentacoes.userId, ctx.user.id)
+        ))
+        .orderBy(desc(lotePastoMovimentacoes.dataEntrada));
+
+      const pastoIds = [...new Set(rows.flatMap(r => [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]))];
+      const pastoMap: Record<number, string> = {};
+      if (pastoIds.length) {
+        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome }).from(pastos).where(inArray(pastos.id, pastoIds));
+        pastosRows.forEach(p => { pastoMap[p.id] = p.nome; });
+      }
+
+      return rows.map(r => ({
+        ...r,
+        pastoOrigemNome: r.pastoOrigemId ? pastoMap[r.pastoOrigemId] ?? null : null,
+        pastoDestinoNome: r.pastoDestinoId ? pastoMap[r.pastoDestinoId] ?? null : null,
+      }));
+    }),
+
   marcasDistintas: protectedProcedure.query(async ({ ctx }) => {
     const rows = await db.select({ marca: animais.marca })
       .from(animais)
@@ -110,6 +143,14 @@ const animaisRouter = router({
           .from(lotes)
           .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
         const loteIds = lotesFazenda.map(l => l.id);
+        if (loteIds.length === 0) return [];
+        conditions.push(inArray(animais.loteId, loteIds));
+      }
+      if (input?.pastoId) {
+        const lotesPasto = await db.select({ id: lotes.id })
+          .from(lotes)
+          .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.pastoAtualId, input.pastoId)));
+        const loteIds = lotesPasto.map(l => l.id);
         if (loteIds.length === 0) return [];
         conditions.push(inArray(animais.loteId, loteIds));
       }

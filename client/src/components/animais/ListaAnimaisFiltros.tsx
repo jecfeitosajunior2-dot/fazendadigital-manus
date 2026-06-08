@@ -15,6 +15,7 @@ const accentSelectClass =
 
 type FazendaOption = { id: number; nome: string };
 type LoteOption = { id: number; nome: string; fazendaId?: number | null };
+type PastoOption = { id: number; nome: string; fazendaId?: number | null };
 
 type Props = {
   value: AnimaisListFiltersState;
@@ -22,6 +23,7 @@ type Props = {
   onClear: () => void;
   fazendas: FazendaOption[];
   lotes: LoteOption[];
+  pastos: PastoOption[];
   marcadoresDisponiveis: string[];
 };
 
@@ -103,6 +105,7 @@ export default function ListaAnimaisFiltros({
   onClear,
   fazendas,
   lotes,
+  pastos,
   marcadoresDisponiveis,
 }: Props) {
   const categorias = value.sexo
@@ -112,6 +115,10 @@ export default function ListaAnimaisFiltros({
   const lotesFiltrados = value.fazendaId
     ? lotes.filter(l => l.fazendaId === Number(value.fazendaId))
     : lotes;
+
+  const pastosFiltrados = value.fazendaId
+    ? pastos.filter(p => p.fazendaId === Number(value.fazendaId))
+    : pastos;
 
   return (
     <div className="mb-3 bg-white border border-gray-200 rounded-sm overflow-hidden">
@@ -128,6 +135,20 @@ export default function ListaAnimaisFiltros({
               <option value="">Selecione uma fazenda</option>
               {fazendas.map(f => (
                 <option key={f.id} value={String(f.id)}>{f.nome}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="lg:col-span-2">
+            <label className={labelClass}>Subdivisão (Pasto)</label>
+            <select
+              value={value.pastoId}
+              onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
+              className={selectClass}
+            >
+              <option value="">Todos os pastos</option>
+              {pastosFiltrados.map(p => (
+                <option key={p.id} value={String(p.id)}>{p.nome}</option>
               ))}
             </select>
           </div>

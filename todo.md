@@ -248,3 +248,12 @@
 - [x] Converter Date para DD/MM/AAAA via getUTCDate/getUTCMonth/getUTCFullYear (determinístico, sem dependência de locale)
 - [x] Validar todas as colunas de data: Data de Nascimento, Data de Desmama, Data de Entrada, Data RND
 - [x] 191 testes Vitest passando, 0 erros TypeScript
+
+## Módulo Subdivisões (Pastos)
+- [x] Página dedicada SubdivisoesPage com listagem de fazendas e FazendaSubdivisoesPanel
+- [x] Rota /fazendas/subdivisoes no App.tsx (substituiu SubdivisionsPage legacy)
+- [x] Item "Subdivisões" no menu de Fazendas (data.ts) — já existia
+- [x] Procedure animais.historicoPastos (histórico de pastos por animal via lote)
+- [x] Aba "Histórico de Pastos" na ficha do animal (CattleDetailPageExpanded — 6 abas)
+- [x] Filtro por subdivisão na Lista de Animais (ListaAnimaisFiltros + GenericPage + animais.list)
+- [x] Testes Vitest subdivisoes.pastos.test.ts (11 testes) — 298 total passando
