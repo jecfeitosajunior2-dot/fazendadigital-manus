@@ -115,6 +115,8 @@ export const lotes = mysqlTable("lotes", {
   id: int("id").primaryKey().autoincrement(),
   userId: int("userId").notNull(),
   nome: varchar("nome", { length: 100 }).notNull(),
+  sigla: varchar("sigla", { length: 20 }),
+  dataCriacao: date("dataCriacao", { mode: "string" }),
   descricao: text("descricao"),
   localizacao: varchar("localizacao", { length: 200 }),
   capacidade: int("capacidade"),

@@ -1,28 +1,23 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import ListExportButtons from "@/components/ListExportButtons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Trash2, Edit, ArrowRightLeft, History, AlertTriangle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { FormLabel, FieldBox } from "@/components/FormFields";
 import { MoveLotePastoDialog } from "@/components/MoveLotePastoDialog";
 import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
 import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
 
-const FD_PRIMARY = "#4ECDC4";
 const IRANCHO_BTN_GREEN = "#8ab83d";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -61,11 +56,9 @@ function celulaValor(v: number) {
 // ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function LotsManagementPage() {
-  const [open, setOpen] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
+  const [, setLocation] = useLocation();
   const [moveLote, setMoveLote] = useState<LoteItem | null>(null);
   const [historyLote, setHistoryLote] = useState<LoteItem | null>(null);
-  const [form, setForm] = useState({ nome: "", descricao: "", localizacao: "", capacidade: "" });
   const [fazendaFilter, setFazendaFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -107,12 +100,6 @@ export default function LotsManagementPage() {
   const pageSafe = Math.min(page, totalPages);
   const paginated = sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage);
 
-  const createMutation = trpc.lotes.create.useMutation({
-    onSuccess: () => { toast.success("Lote criado!"); setOpen(false); resetForm(); refetch(); },
-  });
-  const updateMutation = trpc.lotes.update.useMutation({
-    onSuccess: () => { toast.success("Lote atualizado!"); setOpen(false); resetForm(); refetch(); },
-  });
   const excluirMutation = trpc.lotes.excluir.useMutation({
     onSuccess: (data) => {
       toast.success(`Lote "${data.nomeLote}" excluído com sucesso.`);
@@ -131,44 +118,6 @@ export default function LotsManagementPage() {
       }
     },
   });
-
-  const resetForm = () => {
-    setForm({ nome: "", descricao: "", localizacao: "", capacidade: "" });
-    setEditId(null);
-  };
-
-  const handleSubmit = () => {
-    if (!form.nome) { toast.error("Nome é obrigatório"); return; }
-    if (editId) {
-      updateMutation.mutate({
-        id: editId,
-        nome: form.nome,
-        descricao: form.descricao,
-        localizacao: form.localizacao,
-        capacidade: form.capacidade ? parseInt(form.capacidade) : undefined,
-      });
-    } else {
-      createMutation.mutate({
-        nome: form.nome,
-        descricao: form.descricao,
-        localizacao: form.localizacao,
-        capacidade: form.capacidade ? parseInt(form.capacidade) : undefined,
-      });
-    }
-  };
-
-  const openEdit = (row: LoteGerenciamento) => {
-    const lote = loteById.get(row.id);
-    if (!lote) return;
-    setEditId(lote.id);
-    setForm({
-      nome: lote.nome || "",
-      descricao: lote.descricao || "",
-      localizacao: lote.localizacao || "",
-      capacidade: lote.capacidade?.toString() || "",
-    });
-    setOpen(true);
-  };
 
   const handleDeleteRequest = (row: LoteGerenciamento) => {
     const lote = loteById.get(row.id);
@@ -317,53 +266,14 @@ export default function LotsManagementPage() {
 
       {/* Barra de controles */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) resetForm(); }}>
-          <DialogTrigger asChild>
-            <button
-              type="button"
-              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
-              style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
-            >
-              Novo Lote
-            </button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editId ? "Editar Lote" : "Novo Lote"}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <FormLabel required>Nome</FormLabel>
-                <FieldBox required>
-                  <Input
-                    value={form.nome}
-                    onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
-                    placeholder="Nome do lote"
-                    className="border-0 shadow-none bg-transparent h-auto px-2 py-1.5 text-[12px]"
-                  />
-                </FieldBox>
-              </div>
-              <div>
-                <Label>Descrição</Label>
-                <Textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" />
-              </div>
-              <div>
-                <Label>Localização</Label>
-                <Input value={form.localizacao} onChange={e => setForm(p => ({ ...p, localizacao: e.target.value }))} placeholder="Ex: Setor Norte" />
-              </div>
-              <div>
-                <Label>Capacidade (animais)</Label>
-                <Input type="number" value={form.capacidade} onChange={e => setForm(p => ({ ...p, capacidade: e.target.value }))} placeholder="0" />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancelar</Button>
-                <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} style={{ backgroundColor: FD_PRIMARY }} className="text-gray-800">
-                  {editId ? "Salvar" : "Criar Lote"}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <button
+          type="button"
+          onClick={() => setLocation("/rebanho/novo-lote")}
+          className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
+          style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
+        >
+          Novo Lote
+        </button>
 
         <div className="w-full sm:w-auto sm:min-w-[200px]">
           <select
@@ -459,7 +369,7 @@ export default function LotsManagementPage() {
                   <td className="px-3 py-2 border-r border-gray-50">
                     <button
                       type="button"
-                      onClick={() => openEdit(lote)}
+                      onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)}
                       className="text-left font-medium text-[#2D5A5A] hover:underline"
                     >
                       {lote.nome}
@@ -493,7 +403,7 @@ export default function LotsManagementPage() {
                       >
                         <History className="w-3.5 h-3.5" />
                       </button>
-                      <button type="button" title="Editar" onClick={() => openEdit(lote)} className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                      <button type="button" title="Editar" onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)} className="p-1 rounded hover:bg-gray-100 text-gray-400">
                         <Edit className="w-3.5 h-3.5" />
                       </button>
                       <button type="button" title="Excluir" onClick={() => handleDeleteRequest(lote)} className="p-1 rounded hover:bg-red-50 text-red-400">

@@ -1077,15 +1077,33 @@ const lotesRouter = router({
       return { success: true };
     }),
 
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [lote] = await db.select().from(lotes)
+        .where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+      if (!lote) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      }
+      return lote;
+    }),
+
   create: protectedProcedure
     .input(z.object({
       nome: z.string(),
+      sigla: z.string().optional(),
+      dataCriacao: z.string().optional(),
       descricao: z.string().optional(),
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(lotes).values({ userId: ctx.user.id, ...input });
+      const result = await db.insert(lotes).values({
+        userId: ctx.user.id,
+        ...input,
+        dataCriacao: input.dataCriacao || hojeISO(),
+      });
       return { success: true, id: (result as any)[0]?.insertId };
     }),
 
@@ -1093,6 +1111,8 @@ const lotesRouter = router({
     .input(z.object({
       id: z.number(),
       nome: z.string().optional(),
+      sigla: z.string().optional(),
+      dataCriacao: z.string().optional(),
       descricao: z.string().optional(),
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),

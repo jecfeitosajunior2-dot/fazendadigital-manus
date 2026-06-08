@@ -59,6 +59,8 @@ export async function ensureSchema() {
       await ensureColumn(pool, "lotes", "fazendaId", "int");
       await ensureColumn(pool, "lotes", "pastoAtualId", "int");
       await ensureColumn(pool, "lotes", "dataEntradaPasto", "date");
+      await ensureColumn(pool, "lotes", "sigla", "varchar(20)");
+      await ensureColumn(pool, "lotes", "dataCriacao", "date");
     }
 
     const [pastosTable] = await pool.query(`SHOW TABLES LIKE 'pastos'`);
