@@ -125,9 +125,12 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
         // Prioriza a aba 'Maquinários' se existir; caso contrário usa a primeira aba
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('benfeit')) ?? wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
+        // raw: true preserva os valores numéricos do Excel sem formatação de locale.
+        // Com raw: false, o SheetJS converte 100000 (formato #,##0.00) para a string
+        // "100,000.00" (locale US), que parseMoedaBr interpreta como 100.00 (bug ×1000).
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
           defval: '',
-          raw: false,
+          raw: true,
         });
         // Converte todos os valores para string, filtra linhas completamente vazias
         // e remove a linha de EXEMPLO ilustrativa
