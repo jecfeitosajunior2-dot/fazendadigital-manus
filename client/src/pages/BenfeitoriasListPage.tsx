@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
+import { ImportarBenfeitoriasModal } from "@/components/ImportarBenfeitoriasModal";
 import { cn } from "@/lib/utils";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -12,9 +13,10 @@ export default function BenfeitoriasListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [importarOpen, setImportarOpen] = useState(false);
   const pageSize = 10;
 
-  const { data: list = [], isLoading } = trpc.benfeitorias.list.useQuery();
+  const { data: list = [], isLoading, refetch } = trpc.benfeitorias.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const utils = trpc.useUtils();
   const deleteMutation = trpc.benfeitorias.delete.useMutation({
@@ -61,34 +63,37 @@ export default function BenfeitoriasListPage() {
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de benfeitorias</h1>
-          <ListExportButtons
-            title="Lista de Benfeitorias"
-            filename="benfeitorias"
-            headers={exportHeaders}
-            rows={exportData}
-            alignRightFrom={2}
-          />
-        </div>
-
-        <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-50">
           <div className="flex flex-wrap items-center gap-2">
+            <ListExportButtons
+              title="Lista de Benfeitorias"
+              filename="benfeitorias"
+              headers={exportHeaders}
+              rows={exportData}
+              alignRightFrom={2}
+            />
+            <button
+              type="button"
+              onClick={() => setImportarOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition shrink-0"
+              style={{ backgroundColor: "#0ea5e9", minHeight: 44 }}
+            >
+              <span className="material-icons text-[16px]">upload_file</span>
+              Importar
+            </button>
             <button
               type="button"
               onClick={() => setLocation("/fazendas/benfeitorias/cadastro")}
-              className="px-4 py-2 rounded text-[10px] font-semibold uppercase text-white"
-              style={{ backgroundColor: FD_PRIMARY }}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition shrink-0"
+              style={{ backgroundColor: "#2D5A5A", minHeight: 44 }}
             >
+              <span className="material-icons text-[16px]">add</span>
               Cadastrar Benfeitoria
             </button>
-            <button
-              type="button"
-              onClick={() => setLocation("/fazendas/benfeitorias/importacao")}
-              className="px-4 py-2 rounded text-[10px] font-semibold uppercase border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center gap-1"
-            >
-              <span className="material-icons text-[14px]">upload_file</span>
-              Importar Planilha
-            </button>
           </div>
+        </div>
+
+        <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-50">
+          <div />
           <div className="relative">
             <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
             <input
@@ -206,6 +211,12 @@ export default function BenfeitoriasListPage() {
           </div>
         </div>
       </div>
+
+      <ImportarBenfeitoriasModal
+        open={importarOpen}
+        onClose={() => setImportarOpen(false)}
+        onImportado={() => refetch()}
+      />
     </AppLayout>
   );
 }

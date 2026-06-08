@@ -2086,6 +2086,88 @@ const benfeitoriasInputFields = {
 };
 
 const benfeitoriasRouter = router({
+  gerarModeloPlanilha: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const ExcelJSModule = await import('exceljs');
+      const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
+      const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoBenfeitorias');
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Fazenda Digital';
+      wb.created = new Date();
+
+      const COR_HEADER_BG = '1A3C3C';
+      const COR_OBRIG_BG = 'B8860B';
+      const COR_COL_BG = '2D5A5A';
+      const COR_LINHA_ALT = 'F2F7F7';
+
+      const fazendasUsuario = await db
+        .select({ nome: fazendas.nome })
+        .from(fazendas)
+        .where(eq(fazendas.userId, ctx.user.id))
+        .orderBy(fazendas.nome);
+      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+
+      const ws = wb.addWorksheet('Benfeitorias', {
+        properties: { tabColor: { argb: COR_COL_BG } },
+        views: [{ state: 'frozen', ySplit: 1 }],
+      });
+
+      const headerRow = ws.getRow(1);
+      headerRow.height = 20;
+      COLUNAS_IMPORTACAO.forEach((col, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = col.label + (col.obrigatorio ? ' *' : '');
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+        cell.border = {
+          bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
+          right: { style: 'thin', color: { argb: 'FFFFFF' } },
+        };
+        ws.getColumn(idx + 1).width = col.largura;
+      });
+
+      for (let r = 2; r <= 501; r++) {
+        const row = ws.getRow(r);
+        row.height = 18;
+        COLUNAS_IMPORTACAO.forEach((col, idx) => {
+          const cell = row.getCell(idx + 1);
+          const isAlt = (r % 2 === 0);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
+          cell.font = { name: 'Calibri', size: 10 };
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+        });
+      }
+
+      const wsListas = wb.addWorksheet('_Listas', {
+        state: 'veryHidden',
+        properties: { tabColor: { argb: '888888' } },
+      });
+      nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
+
+      const numFazendas = nomesFazendas.length;
+      const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
+      const colIdxFazenda = idxDe('fazendaNome');
+      const fazendaFormulae = numFazendas > 0
+        ? [`_Listas!$A$1:$A$${numFazendas}`]
+        : ['"(Nenhuma fazenda cadastrada)"'];
+
+      if (colIdxFazenda > 0) {
+        for (let r = 2; r <= 501; r++) {
+          ws.getRow(r).getCell(colIdxFazenda).dataValidation = {
+            type: 'list', allowBlank: true, formulae: fazendaFormulae,
+            showErrorMessage: true, errorTitle: 'Fazenda inválida',
+            error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
+          };
+        }
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const base64 = Buffer.from(buf).toString('base64');
+      return { base64, filename: 'modelo_importacao_benfeitorias.xlsx' };
+    }),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
   }),
@@ -2139,31 +2221,139 @@ const benfeitoriasRouter = router({
       return { success: true };
     }),
 
-  bulkImport: protectedProcedure
+  validarImportacao: protectedProcedure
     .input(z.object({
-      items: z.array(z.object({
-        fazendaId: z.number(),
-        nome: z.string(),
-        anoConstrucao: z.number(),
-        vidaUtil: z.string().optional(),
-        valorEstimado: z.string().optional(),
-        observacoes: z.string().optional(),
-      })).min(1).max(500),
+      linhas: z.array(z.record(z.string(), z.string())),
     }))
     .mutation(async ({ ctx, input }) => {
-      for (const item of input.items) {
-        await db.insert(benfeitorias).values({
-          userId: ctx.user.id,
-          fazendaId: item.fazendaId,
-          nome: item.nome,
-          anoConstrucao: item.anoConstrucao,
-          vidaUtil: item.vidaUtil,
-          valorEstimado: item.valorEstimado,
-          observacoes: item.observacoes,
-          status: "ativo",
-        });
+      const { normalizarLinha, isLinhaExemplo, parseValorImport } = await import('../shared/importacaoBenfeitorias');
+
+      input.linhas = input.linhas
+        .map(l => normalizarLinha(l))
+        .filter(l => !isLinhaExemplo(l))
+        .filter(l => Object.values(l).some(v => (v || '').trim() !== ''));
+
+      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
+
+      const erros: { linha: number; campo: string; mensagem: string }[] = [];
+      const validos: typeof input.linhas = [];
+      const anoAtual = new Date().getFullYear();
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = input.linhas[i];
+        const numLinha = i + 2;
+        const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
+
+        const nome = (linha.nome || '').trim();
+        if (!nome) {
+          errosLinha.push({ linha: numLinha, campo: 'Benfeitoria', mensagem: 'Nome da benfeitoria é obrigatório' });
+        }
+
+        const fazendaNome = (linha.fazendaNome || '').trim();
+        if (!fazendaNome) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
+        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
+        }
+
+        const anoRaw = (linha.anoConstrucao || '').trim();
+        if (!anoRaw) {
+          errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: 'Ano de Construção é obrigatório' });
+        } else {
+          const ano = parseInt(anoRaw.replace(/[^0-9]/g, ''), 10);
+          if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
+            errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: `Ano inválido: "${anoRaw}"` });
+          } else {
+            linha.anoConstrucao = String(ano);
+          }
+        }
+
+        const vidaUtilRaw = (linha.vidaUtil || '').trim();
+        if (vidaUtilRaw) {
+          const vidaUtilNum = parseInt(vidaUtilRaw.replace(/[^0-9]/g, ''), 10);
+          if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) {
+            errosLinha.push({ linha: numLinha, campo: 'Vida Útil', mensagem: `Vida útil inválida: "${vidaUtilRaw}"` });
+          } else {
+            linha.vidaUtil = String(vidaUtilNum);
+          }
+        }
+
+        const valorRaw = (linha.valor || '').trim();
+        if (valorRaw) {
+          const valorParsed = parseValorImport(valorRaw);
+          if (!valorParsed) {
+            errosLinha.push({ linha: numLinha, campo: 'Valor(R$)', mensagem: `Valor inválido: "${valorRaw}"` });
+          } else {
+            linha.valor = valorParsed;
+          }
+        }
+
+        if (errosLinha.length > 0) {
+          erros.push(...errosLinha);
+        } else {
+          validos.push(linha);
+        }
       }
-      return { success: true, count: input.items.length };
+
+      return {
+        total: input.linhas.length,
+        validos: validos.length,
+        invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
+        erros,
+        fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
+      };
+    }),
+
+  importar: protectedProcedure
+    .input(z.object({
+      linhas: z.array(z.record(z.string(), z.string())),
+      fazendaNomeParaId: z.record(z.string(), z.number()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { normalizarLinha, isLinhaExemplo, parseValorImport } = await import('../shared/importacaoBenfeitorias');
+
+      const importados: number[] = [];
+      const rejeitados: { linha: number; mensagem: string }[] = [];
+
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = normalizarLinha(input.linhas[i]);
+        const numLinha = i + 2;
+        if (isLinhaExemplo(linha)) continue;
+        try {
+          const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
+          const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
+          if (!fazendaId) {
+            rejeitados.push({ linha: numLinha, mensagem: 'Fazenda não encontrada' });
+            continue;
+          }
+
+          const anoNum = parseInt(String(linha.anoConstrucao || '').replace(/[^0-9]/g, ''), 10);
+          const valorRaw = (linha.valor || '').trim();
+          const valorNum = valorRaw ? parseValorImport(valorRaw) : undefined;
+
+          const result = await db.insert(benfeitorias).values({
+            userId: ctx.user.id,
+            fazendaId,
+            nome: (linha.nome || '').trim(),
+            anoConstrucao: !isNaN(anoNum) ? anoNum : undefined,
+            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
+            valorEstimado: valorNum || undefined,
+            status: 'ativo',
+          });
+          importados.push((result as any)[0]?.insertId);
+        } catch (err: any) {
+          rejeitados.push({ linha: numLinha, mensagem: err?.message || 'Erro desconhecido' });
+        }
+      }
+
+      return {
+        total: input.linhas.length,
+        importados: importados.length,
+        rejeitados: rejeitados.length,
+        detalhesRejeitados: rejeitados,
+      };
     }),
 });
 
