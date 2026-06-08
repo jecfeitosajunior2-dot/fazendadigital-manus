@@ -46,3 +46,25 @@ export function parseMoedaBr(val: string | number): string {
   const n = parseFloat(v.replace(/,/g, ''));
   return Number.isFinite(n) ? n.toFixed(2) : '';
 }
+
+/**
+ * Interpreta valor DECIMAL do banco (sempre em reais, ex: "150.00").
+ * Nunca extrai só dígitos — "150.00" viraria 15000 e exportaria "15.000,00".
+ */
+export function parseValorDecimalBanco(val: string | number | null | undefined): number | null {
+  if (val == null || val === '') return null;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : null;
+  const n = parseFloat(String(val).trim().replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Formata valor do banco para célula de planilha PT-BR ("150,00").
+ * Usar na exportação CSV — nunca retornar "150.00" (ponto), pois o Excel BR
+ * interpreta como cento e cinquenta mil.
+ */
+export function formatValorDecimalBancoParaPlanilha(val: string | number | null | undefined): string {
+  const n = parseValorDecimalBanco(val);
+  if (n == null) return '';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
