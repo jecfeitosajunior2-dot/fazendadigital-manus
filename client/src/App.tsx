@@ -15,7 +15,6 @@ import {
   FarmsOverviewPage,
   FarmsListPage,
   HerdOverviewPage,
-  HerdMapPage,
   QuickAccessPage,
   AdministrativeOverviewPage,
   PurchasesPage,
@@ -27,6 +26,7 @@ import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/NewAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
 import LotsManagementPage from "./pages/LotsManagementPage";
+import MapaRebanhoPage from "./pages/MapaRebanhoPage";
 import { NewLotePage } from "./pages/LoteFormPage";
 import EditLotePage from "./pages/EditLotePage";
 import { SaudePage } from "./pages/ReproductionManagementPage";
@@ -77,7 +77,7 @@ function ProtectedRoutes() {
       {/* Herd */}
       <Route path="/rebanho/visao-geral" component={HerdOverviewPage} />
       <Route path="/rebanho/lista-animais" component={AnimaisPage} />
-      <Route path="/rebanho/mapa-rebanho" component={HerdMapPage} />
+      <Route path="/rebanho/mapa-rebanho" component={MapaRebanhoPage} />
       <Route path="/rebanho/lotes" component={LotsManagementPage} />
       <Route path="/rebanho/novo-lote" component={NewLotePage} />
       <Route path="/rebanho/editar-lote" component={EditLotePage} />

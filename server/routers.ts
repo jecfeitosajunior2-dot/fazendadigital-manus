@@ -956,6 +956,125 @@ const lotesRouter = router({
       return resultado;
     }),
 
+  mapaRebanho: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      pastoId: z.number().optional(),
+      search: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const {
+        calcularIdadeMeses,
+        adicionarAnimalAoResumo,
+        criarResumoSexoFaixa,
+      } = await import('../shared/lote-faixas-idade');
+
+      const [fazenda] = await db.select({ nome: fazendas.nome })
+        .from(fazendas)
+        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)))
+        .limit(1);
+      if (!fazenda) {
+        return { rows: [], totalAnimaisSubdivisao: 0 };
+      }
+
+      const pastosConditions = [
+        eq(pastos.userId, ctx.user.id),
+        eq(pastos.fazendaId, input.fazendaId),
+      ];
+      if (input.pastoId) pastosConditions.push(eq(pastos.id, input.pastoId));
+
+      const pastosList = await db.select().from(pastos).where(and(...pastosConditions));
+      if (pastosList.length === 0) {
+        return { rows: [], totalAnimaisSubdivisao: 0 };
+      }
+
+      const pastoMap = new Map(pastosList.map(p => [p.id, p]));
+      const pastoIds = pastosList.map(p => p.id);
+
+      const lotesList = await db.select().from(lotes).where(and(
+        eq(lotes.userId, ctx.user.id),
+        inArray(lotes.pastoAtualId, pastoIds),
+      ));
+
+      if (lotesList.length === 0) {
+        return { rows: [], totalAnimaisSubdivisao: 0 };
+      }
+
+      const loteIds = lotesList.map(l => l.id);
+      const animaisAtivos = await db.select({
+        loteId: animais.loteId,
+        sexo: animais.sexo,
+        dataNascimento: animais.dataNascimento,
+      }).from(animais).where(and(
+        eq(animais.userId, ctx.user.id),
+        eq(animais.status, 'ativo'),
+        inArray(animais.loteId, loteIds),
+      ));
+
+      const resumoPorLote = new Map<number, ReturnType<typeof criarResumoSexoFaixa>>();
+      const totalPorLote = new Map<number, number>();
+      const hoje = new Date();
+
+      for (const animal of animaisAtivos) {
+        if (!animal.loteId) continue;
+        const idade = calcularIdadeMeses(animal.dataNascimento, hoje);
+        const atual = resumoPorLote.get(animal.loteId) ?? criarResumoSexoFaixa();
+        resumoPorLote.set(animal.loteId, adicionarAnimalAoResumo(atual, animal.sexo, idade));
+        totalPorLote.set(animal.loteId, (totalPorLote.get(animal.loteId) ?? 0) + 1);
+      }
+
+      const totalPorPasto = new Map<number, number>();
+      for (const lote of lotesList) {
+        if (!lote.pastoAtualId) continue;
+        const qtd = totalPorLote.get(lote.id) ?? 0;
+        totalPorPasto.set(lote.pastoAtualId, (totalPorPasto.get(lote.pastoAtualId) ?? 0) + qtd);
+      }
+
+      let rows = lotesList.map(lote => {
+        const pasto = lote.pastoAtualId ? pastoMap.get(lote.pastoAtualId) : null;
+        const resumo = resumoPorLote.get(lote.id) ?? criarResumoSexoFaixa();
+        const totalSubdivisao = pasto ? (totalPorPasto.get(pasto.id) ?? 0) : 0;
+        const areaNum = pasto?.area != null && pasto.area !== '' ? Number(pasto.area) : null;
+        const taxaLotacao = areaNum && areaNum > 0
+          ? Math.round((totalSubdivisao / areaNum) * 100) / 100
+          : null;
+
+        return {
+          loteId: lote.id,
+          fazendaNome: fazenda.nome,
+          subdivisaoNome: pasto?.nome ?? '—',
+          pastoId: pasto?.id ?? null,
+          loteNome: lote.nome,
+          machos: resumo.machos,
+          femeas: resumo.femeas,
+          totalAnimaisSubdivisao: totalSubdivisao,
+          areaHa: pasto?.area != null ? String(pasto.area) : null,
+          taxaLotacao,
+        };
+      });
+
+      if (input.search?.trim()) {
+        const q = input.search.trim().toLowerCase();
+        rows = rows.filter(r =>
+          r.fazendaNome.toLowerCase().includes(q)
+          || r.subdivisaoNome.toLowerCase().includes(q)
+          || r.loteNome.toLowerCase().includes(q),
+        );
+      }
+
+      rows.sort((a, b) => {
+        const cmpSub = a.subdivisaoNome.localeCompare(b.subdivisaoNome, 'pt-BR');
+        if (cmpSub !== 0) return cmpSub;
+        return a.loteNome.localeCompare(b.loteNome, 'pt-BR');
+      });
+
+      const totalAnimaisSubdivisao = input.pastoId
+        ? (totalPorPasto.get(input.pastoId) ?? 0)
+        : [...totalPorPasto.values()].reduce((s, v) => s + v, 0);
+
+      return { rows, totalAnimaisSubdivisao };
+    }),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
     return Promise.all(lotesList.map(enrichLote));
