@@ -11,7 +11,9 @@ import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
 import LoteAnimaisTable, { type LoteAnimaisSortKey } from "@/components/lotes/LoteAnimaisTable";
 import IncluirAnimaisLoteDialog from "@/components/lotes/IncluirAnimaisLoteDialog";
 import MovimentarAnimaisLoteDialog from "@/components/lotes/MovimentarAnimaisLoteDialog";
+import ListExportButtons from "@/components/ListExportButtons";
 import { usePersistedState } from "@/hooks/usePersistedState";
+import { formatDateBR } from "@/lib/date-utils";
 import {
   Dialog,
   DialogContent,
@@ -129,6 +131,20 @@ export default function EditLotePage() {
   );
 
   const selectedIds = useMemo(() => [...selected], [selected]);
+
+  const exportHeaders = ["ID", "Nome", "Sexo", "Raça", "Nascimento"];
+  const exportRows = useMemo(
+    () => animalRows.map(a => [
+      String(a.id),
+      a.nome?.trim() || a.brinco?.trim() || "—",
+      a.sexo === "macho" ? "macho" : "fêmea",
+      a.raca || "—",
+      formatDateBR(a.dataNascimento),
+    ]),
+    [animalRows],
+  );
+  const exportTitle = `Editar Lote — ${form.nome || "Lote"}`;
+  const exportFilename = `editar-lote-${(form.nome || "lote").toLowerCase().replace(/\s+/g, "-")}`;
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -311,7 +327,15 @@ export default function EditLotePage() {
       </Dialog>
 
       <div className="w-full">
-        <h1 className="text-[15px] font-semibold text-gray-900 mb-4">Editar lote</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h1 className="text-[15px] font-semibold text-gray-900">Editar lote</h1>
+          <ListExportButtons
+            title={exportTitle}
+            filename={exportFilename}
+            headers={exportHeaders}
+            rows={exportRows}
+          />
+        </div>
 
         {/* Cabeçalho horizontal — iRancho */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
