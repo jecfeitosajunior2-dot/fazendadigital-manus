@@ -42,7 +42,6 @@ type MapaRow = {
 };
 
 type SortKey =
-  | "fazenda"
   | "subdivisao"
   | "lote"
   | "totalAnimais"
@@ -113,10 +112,7 @@ export default function MapaRebanhoPage() {
     lista.sort((a, b) => {
       let va: string | number = "";
       let vb: string | number = "";
-      if (sortKey === "fazenda") {
-        va = a.fazendaNome;
-        vb = b.fazendaNome;
-      } else if (sortKey === "subdivisao") {
+      if (sortKey === "subdivisao") {
         va = a.subdivisaoNome;
         vb = b.subdivisaoNome;
       } else if (sortKey === "lote") {
@@ -169,7 +165,6 @@ export default function MapaRebanhoPage() {
   );
 
   const exportHeaders = [
-    "Fazenda",
     "Subdivisão",
     "Lote",
     ...FAIXAS_IDADE_LOTE.map(f => `Machos ${f}`),
@@ -181,7 +176,6 @@ export default function MapaRebanhoPage() {
 
   const exportRows = useMemo(
     () => sorted.map(r => [
-      r.fazendaNome,
       r.subdivisaoNome,
       r.loteNome,
       ...FAIXAS_IDADE_LOTE.map(f => r.machos[f] || 0),
@@ -222,7 +216,7 @@ export default function MapaRebanhoPage() {
             filename="mapa-rebanho"
             headers={exportHeaders}
             rows={exportRows}
-            alignRightFrom={18}
+            alignRightFrom={17}
           />
         </div>
 
@@ -290,12 +284,9 @@ export default function MapaRebanhoPage() {
         {/* Tabela */}
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-[12px] min-w-[1200px]">
+            <table className="w-full text-[12px] min-w-[1060px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th rowSpan={2} className={`${thSimple} min-w-[140px]`} onClick={() => toggleSort("fazenda")}>
-                    Fazenda <SortIcon col="fazenda" />
-                  </th>
                   <th rowSpan={2} className={`${thSimple} min-w-[140px]`} onClick={() => toggleSort("subdivisao")}>
                     Subdivisão <SortIcon col="subdivisao" />
                   </th>
@@ -330,20 +321,19 @@ export default function MapaRebanhoPage() {
               <tbody>
                 {fazendaNum <= 0 && (
                   <tr>
-                    <td colSpan={18} className="px-4 py-10 text-center text-gray-400">
+                    <td colSpan={17} className="px-4 py-10 text-center text-gray-400">
                       Selecione uma fazenda para visualizar o mapa do rebanho.
                     </td>
                   </tr>
                 )}
                 {fazendaNum > 0 && isLoading && (
-                  <tr><td colSpan={18} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
+                  <tr><td colSpan={17} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
                 )}
                 {fazendaNum > 0 && !isLoading && paginated.length === 0 && (
-                  <tr><td colSpan={18} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
+                  <tr><td colSpan={17} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
                 )}
                 {paginated.map(row => (
                   <tr key={row.loteId} className="border-t border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-2 py-2 text-gray-700 border-r border-gray-50">{row.fazendaNome}</td>
                     <td className="px-2 py-2 text-gray-700 border-r border-gray-50">{row.subdivisaoNome}</td>
                     <td className="px-2 py-2 text-gray-800 font-medium border-r border-gray-50">{row.loteNome}</td>
                     {FAIXAS_IDADE_LOTE.map(f => (
