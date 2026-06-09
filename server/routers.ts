@@ -7,7 +7,7 @@ import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
-  compras, vendas, fazendas, pastos, lotePastoMovimentacoes
+  compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
@@ -1157,6 +1157,108 @@ const lotesRouter = router({
         ));
 
       return { success: true, count: input.animalIds.length };
+    }),
+
+  movimentarAnimais: protectedProcedure
+    .input(z.object({
+      loteOrigemId: z.number(),
+      loteDestinoId: z.number(),
+      animalIds: z.array(z.number()).min(1),
+      dataMovimentacao: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.loteOrigemId === input.loteDestinoId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino deve ser diferente do lote de origem." });
+      }
+
+      const [loteOrigem] = await db.select().from(lotes)
+        .where(and(eq(lotes.id, input.loteOrigemId), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+      if (!loteOrigem) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de origem não encontrado." });
+      }
+
+      const [loteDestino] = await db.select().from(lotes)
+        .where(and(eq(lotes.id, input.loteDestinoId), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+      if (!loteDestino) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
+      }
+      if (loteDestino.ativo === false) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
+      }
+
+      const animaisRows = await db.select({ id: animais.id })
+        .from(animais)
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.loteId, input.loteOrigemId),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      if (animaisRows.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence ao lote de origem." });
+      }
+
+      const animalIds = animaisRows.map(a => a.id);
+      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
+
+      await db.update(animais)
+        .set({ loteId: input.loteDestinoId })
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.loteId, input.loteOrigemId),
+          inArray(animais.id, animalIds),
+        ));
+
+      await db.insert(animalLoteMovimentacoes).values(
+        animalIds.map(animalId => ({
+          userId: ctx.user.id,
+          animalId,
+          loteOrigemId: input.loteOrigemId,
+          loteDestinoId: input.loteDestinoId,
+          dataMovimentacao: input.dataMovimentacao,
+          usuarioNome,
+        })),
+      );
+
+      return {
+        success: true,
+        count: animalIds.length,
+        loteDestinoNome: loteDestino.nome,
+      };
+    }),
+
+  listHistoricoMovimentacoesAnimais: protectedProcedure
+    .input(z.object({ animalId: z.number().optional(), loteId: z.number().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(animalLoteMovimentacoes.userId, ctx.user.id)];
+      if (input?.animalId) conditions.push(eq(animalLoteMovimentacoes.animalId, input.animalId));
+      if (input?.loteId) {
+        conditions.push(or(
+          eq(animalLoteMovimentacoes.loteOrigemId, input.loteId),
+          eq(animalLoteMovimentacoes.loteDestinoId, input.loteId),
+        )!);
+      }
+
+      const rows = await db.select().from(animalLoteMovimentacoes)
+        .where(and(...conditions))
+        .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao), desc(animalLoteMovimentacoes.createdAt));
+
+      const loteIds = [...new Set(rows.flatMap(r => [r.loteOrigemId, r.loteDestinoId]))];
+      const loteMap = new Map<number, string>();
+      if (loteIds.length) {
+        const lotesRows = await db.select({ id: lotes.id, nome: lotes.nome })
+          .from(lotes)
+          .where(inArray(lotes.id, loteIds));
+        lotesRows.forEach(l => loteMap.set(l.id, l.nome));
+      }
+
+      return rows.map(r => ({
+        ...r,
+        loteOrigemNome: loteMap.get(r.loteOrigemId) ?? null,
+        loteDestinoNome: loteMap.get(r.loteDestinoId) ?? null,
+      }));
     }),
 
   removerAnimais: protectedProcedure

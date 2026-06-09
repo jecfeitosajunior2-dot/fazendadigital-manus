@@ -128,6 +128,18 @@ export const lotes = mysqlTable("lotes", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
 
+// Histórico de movimentação animal entre lotes
+export const animalLoteMovimentacoes = mysqlTable("animal_lote_movimentacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  animalId: int("animalId").notNull(),
+  loteOrigemId: int("loteOrigemId").notNull(),
+  loteDestinoId: int("loteDestinoId").notNull(),
+  dataMovimentacao: date("dataMovimentacao", { mode: "string" }).notNull(),
+  usuarioNome: varchar("usuarioNome", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow(),
+});
+
 // Histórico de movimentação lote ↔ pasto
 export const lotePastoMovimentacoes = mysqlTable("lote_pasto_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),

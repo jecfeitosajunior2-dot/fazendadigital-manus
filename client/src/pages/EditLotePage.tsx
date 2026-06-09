@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
 import LoteAnimaisTable, { type LoteAnimaisSortKey } from "@/components/lotes/LoteAnimaisTable";
 import IncluirAnimaisLoteDialog from "@/components/lotes/IncluirAnimaisLoteDialog";
+import MovimentarAnimaisLoteDialog from "@/components/lotes/MovimentarAnimaisLoteDialog";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   Dialog,
@@ -24,8 +25,6 @@ import { AlertTriangle } from "lucide-react";
 const IRANCHO_BTN_GREEN = "#8ab83d";
 const IRANCHO_BTN_GREY = "#C0C0C0";
 const IRANCHO_BTN_DANGER = "#F89688";
-const IRANCHO_BTN_RETIRAR_BG = "#FEE2E2";
-const IRANCHO_BTN_RETIRAR_TEXT = "#991B1B";
 
 type FormState = {
   nome: string;
@@ -58,8 +57,8 @@ export default function EditLotePage() {
   const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISO() });
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [incluirOpen, setIncluirOpen] = useState(false);
+  const [movimentarOpen, setMovimentarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [removeOpen, setRemoveOpen] = useState(false);
   const [deleteBlocked, setDeleteBlocked] = useState<{ qtdAnimais: number } | null>(null);
 
   const tableStorageKey = loteId > 0 ? `fd:editar-lote-tabela:${loteId}` : "fd:editar-lote-tabela";
@@ -83,18 +82,6 @@ export default function EditLotePage() {
       utils.lotes.getById.invalidate({ id: loteId });
       utils.lotes.list.invalidate();
       utils.lotes.gerenciamento.invalidate();
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const removerMutation = trpc.lotes.removerAnimais.useMutation({
-    onSuccess: data => {
-      toast.success(`${data.count} animal(is) retirado(s) do lote.`);
-      setSelected(new Set());
-      setRemoveOpen(false);
-      refetchAnimais();
-      utils.lotes.gerenciamento.invalidate();
-      utils.lotes.list.invalidate();
     },
     onError: e => toast.error(e.message),
   });
@@ -141,6 +128,8 @@ export default function EditLotePage() {
     [animais],
   );
 
+  const selectedIds = useMemo(() => [...selected], [selected]);
+
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
@@ -170,12 +159,17 @@ export default function EditLotePage() {
     setDeleteOpen(true);
   };
 
-  const handleRetirarAnimais = () => {
+  const handleMovimentarAnimais = () => {
     if (selected.size === 0) {
       toast.info("Selecione animais abaixo.");
       return;
     }
-    setRemoveOpen(true);
+    setMovimentarOpen(true);
+  };
+
+  const handleMovimentacaoSuccess = () => {
+    setSelected(new Set());
+    refetchAnimais();
   };
 
   const toggleSelect = (id: number) => {
@@ -209,7 +203,7 @@ export default function EditLotePage() {
     }));
   };
 
-  const isBusy = updateMutation.isPending || removerMutation.isPending || excluirMutation.isPending;
+  const isBusy = updateMutation.isPending || excluirMutation.isPending;
 
   if (!loteId || loteId <= 0) {
     return (
@@ -242,6 +236,15 @@ export default function EditLotePage() {
         open={incluirOpen}
         onClose={() => setIncluirOpen(false)}
         onSuccess={() => refetchAnimais()}
+      />
+
+      <MovimentarAnimaisLoteDialog
+        loteOrigemId={loteId}
+        fazendaId={lote.fazendaId}
+        animalIds={selectedIds}
+        open={movimentarOpen}
+        onClose={() => setMovimentarOpen(false)}
+        onSuccess={handleMovimentacaoSuccess}
       />
 
       {/* Confirmação exclusão */}
@@ -292,7 +295,7 @@ export default function EditLotePage() {
               <span className="font-semibold text-amber-700">
                 {deleteBlocked?.qtdAnimais} {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
               </span>.
-              Remova os animais do lote antes de excluí-lo.
+              Movimente os animais para outro lote antes de excluí-lo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -302,39 +305,6 @@ export default function EditLotePage() {
               className="w-full px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#8ab83d] text-white"
             >
               Entendi
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Confirmação remover selecionados */}
-      <Dialog open={removeOpen} onOpenChange={v => !v && setRemoveOpen(false)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-gray-900">Retirar animais do lote</DialogTitle>
-            <DialogDescription className="text-gray-600 leading-relaxed">
-              Retirar {selected.size} animal(is) selecionado(s) deste lote?
-              <br />
-              Os animais não serão excluídos do sistema.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <button
-              type="button"
-              onClick={() => setRemoveOpen(false)}
-              disabled={removerMutation.isPending}
-              className="px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#F0F0F0] text-gray-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => removerMutation.mutate({ loteId, animalIds: [...selected] })}
-              disabled={removerMutation.isPending}
-              className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-white"
-              style={{ backgroundColor: IRANCHO_BTN_DANGER }}
-            >
-              {removerMutation.isPending ? "Retirando…" : "Retirar Animais do Lote"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -396,12 +366,12 @@ export default function EditLotePage() {
           </button>
           <button
             type="button"
-            onClick={handleRetirarAnimais}
+            onClick={handleMovimentarAnimais}
             disabled={isBusy}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: IRANCHO_BTN_RETIRAR_BG, color: IRANCHO_BTN_RETIRAR_TEXT, minHeight: 40 }}
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
+            style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
           >
-            Retirar Animais do Lote
+            Movimentar Animais
           </button>
           <button
             type="button"

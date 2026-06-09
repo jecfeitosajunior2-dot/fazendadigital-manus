@@ -54,6 +54,20 @@ export async function ensureSchema() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`animal_lote_movimentacoes\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`animalId\` int NOT NULL,
+        \`loteOrigemId\` int NOT NULL,
+        \`loteDestinoId\` int NOT NULL,
+        \`dataMovimentacao\` date NOT NULL,
+        \`usuarioNome\` varchar(200),
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`)
+      )
+    `);
+
     const [lotesTable] = await pool.query(`SHOW TABLES LIKE 'lotes'`);
     if ((lotesTable as unknown[]).length > 0) {
       await ensureColumn(pool, "lotes", "fazendaId", "int");
