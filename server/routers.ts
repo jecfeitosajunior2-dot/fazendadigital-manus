@@ -1239,6 +1239,7 @@ const lotesRouter = router({
       descricao: z.string().optional(),
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),
+      fazendaId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(lotes).values({

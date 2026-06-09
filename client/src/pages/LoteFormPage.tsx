@@ -2,7 +2,7 @@
  * Formulário de Novo Lote — padrão iRancho
  * Rota: /rebanho/novo-lote
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -27,9 +27,20 @@ const INITIAL: FormState = {
   dataCriacao: hojeISO(),
 };
 
+function lotesListUrl(fazendaId?: string) {
+  return fazendaId ? `/rebanho/lotes?fazendaId=${fazendaId}` : "/rebanho/lotes";
+}
+
 export function NewLotePage() {
   const [, setLocation] = useLocation();
+  const fazendaId = new URLSearchParams(window.location.search).get("fazendaId") || "";
   const [form, setForm] = useState<FormState>(INITIAL);
+
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const fazendaSelecionada = useMemo(
+    () => fazendas.find(f => String(f.id) === fazendaId),
+    [fazendas, fazendaId],
+  );
 
   const utils = trpc.useUtils();
   const createMutation = trpc.lotes.create.useMutation({
@@ -37,7 +48,7 @@ export function NewLotePage() {
       toast.success("Lote criado com sucesso!");
       utils.lotes.list.invalidate();
       utils.lotes.gerenciamento.invalidate();
-      setLocation("/rebanho/lotes");
+      setLocation(lotesListUrl(fazendaId));
     },
     onError: e => toast.error(e.message),
   });
@@ -60,6 +71,7 @@ export function NewLotePage() {
       nome: form.nome.trim(),
       sigla: form.sigla.trim() || undefined,
       dataCriacao: form.dataCriacao,
+      fazendaId: fazendaId ? Number(fazendaId) : undefined,
     });
   };
 
@@ -71,6 +83,11 @@ export function NewLotePage() {
         <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h1 className="text-[15px] font-semibold text-gray-900">Novo lote</h1>
+            {fazendaSelecionada && (
+              <p className="text-[11px] text-gray-500 mt-1">
+                Fazenda: <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>
+              </p>
+            )}
           </div>
 
           <div className="px-6 py-5 space-y-4">
@@ -106,7 +123,7 @@ export function NewLotePage() {
           <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={() => setLocation("/rebanho/lotes")}
+              onClick={() => setLocation(lotesListUrl(fazendaId))}
               disabled={isBusy}
               className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50 transition"
             >

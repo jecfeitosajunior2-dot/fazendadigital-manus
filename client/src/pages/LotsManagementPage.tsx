@@ -52,11 +52,20 @@ function celulaValor(v: number) {
   return v > 0 ? String(v) : "";
 }
 
+function lotesListUrl(fazendaId?: string) {
+  return fazendaId ? `/rebanho/lotes?fazendaId=${fazendaId}` : "/rebanho/lotes";
+}
+
+function novoLoteUrl(fazendaId?: string) {
+  return fazendaId ? `/rebanho/novo-lote?fazendaId=${fazendaId}` : "/rebanho/novo-lote";
+}
+
 // ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function LotsManagementPage() {
   const [, setLocation] = useLocation();
-  const [fazendaFilter, setFazendaFilter] = useState("");
+  const fazendaInicial = new URLSearchParams(window.location.search).get("fazendaId") || "";
+  const [fazendaFilter, setFazendaFilter] = useState(fazendaInicial);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
@@ -225,7 +234,7 @@ export default function LotsManagementPage() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <button
           type="button"
-          onClick={() => setLocation("/rebanho/novo-lote")}
+          onClick={() => setLocation(novoLoteUrl(fazendaFilter))}
           className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
           style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
         >
@@ -235,7 +244,12 @@ export default function LotsManagementPage() {
         <div className="w-full sm:w-auto sm:min-w-[200px]">
           <select
             value={fazendaFilter}
-            onChange={e => { setFazendaFilter(e.target.value); setPage(1); }}
+            onChange={e => {
+              const v = e.target.value;
+              setFazendaFilter(v);
+              setPage(1);
+              setLocation(lotesListUrl(v), { replace: true });
+            }}
             className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#7CB342]"
           >
             <option value="">Selecione uma fazenda</option>
