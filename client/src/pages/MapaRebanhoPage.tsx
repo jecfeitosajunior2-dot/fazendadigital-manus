@@ -3,10 +3,10 @@
  * Rota: /rebanho/mapa-rebanho
  */
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import ListExportButtons from "@/components/ListExportButtons";
-import NovaMovimentacaoMapaDialog from "@/components/rebanho/NovaMovimentacaoMapaDialog";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
@@ -67,13 +67,13 @@ function formatTaxa(taxa: number | null) {
 }
 
 export default function MapaRebanhoPage() {
+  const [, setLocation] = useLocation();
   const [filters, setFilters] = usePersistedState(FILTERS_KEY, INITIAL_FILTERS);
   const debouncedSearch = useDebounce(filters.search, 400);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
   const [sortKey, setSortKey] = useState<SortKey>("subdivisao");
   const [sortAsc, setSortAsc] = useState(true);
-  const [movimentacaoOpen, setMovimentacaoOpen] = useState(false);
 
   const fazendaNum = filters.fazendaId ? Number(filters.fazendaId) : 0;
   const pastoNum = filters.pastoId ? Number(filters.pastoId) : undefined;
@@ -195,18 +195,16 @@ export default function MapaRebanhoPage() {
   const thGroup = "px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200";
   const thFaixa = "px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-12 cursor-pointer select-none";
 
+  const irParaAlocacao = () => {
+    const params = new URLSearchParams();
+    if (filters.fazendaId) params.set("fazendaId", filters.fazendaId);
+    if (filters.pastoId) params.set("pastoId", filters.pastoId);
+    const qs = params.toString();
+    setLocation(`/rebanho/alocacao-animais${qs ? `?${qs}` : ""}`);
+  };
+
   return (
     <AppLayout>
-      <NovaMovimentacaoMapaDialog
-        open={movimentacaoOpen}
-        onClose={() => setMovimentacaoOpen(false)}
-        lotes={rows.map(r => ({
-          loteId: r.loteId,
-          loteNome: r.loteNome,
-          subdivisaoNome: r.subdivisaoNome,
-        }))}
-      />
-
       <div className="p-4 sm:p-6">
         {/* Cabeçalho */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -224,7 +222,7 @@ export default function MapaRebanhoPage() {
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <button
             type="button"
-            onClick={() => setMovimentacaoOpen(true)}
+            onClick={irParaAlocacao}
             disabled={fazendaNum <= 0}
             className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50 transition"
             style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}

@@ -1348,6 +1348,104 @@ const lotesRouter = router({
       };
     }),
 
+  ultimaMovimentacaoPorAnimais: protectedProcedure
+    .input(z.object({ animalIds: z.array(z.number()) }))
+    .query(async ({ ctx, input }) => {
+      if (input.animalIds.length === 0) return {} as Record<number, string>;
+      const rows = await db.select({
+        animalId: animalLoteMovimentacoes.animalId,
+        dataMovimentacao: animalLoteMovimentacoes.dataMovimentacao,
+      })
+        .from(animalLoteMovimentacoes)
+        .where(and(
+          eq(animalLoteMovimentacoes.userId, ctx.user.id),
+          inArray(animalLoteMovimentacoes.animalId, input.animalIds),
+        ))
+        .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao), desc(animalLoteMovimentacoes.createdAt));
+
+      const map: Record<number, string> = {};
+      for (const r of rows) {
+        if (!map[r.animalId]) map[r.animalId] = r.dataMovimentacao;
+      }
+      return map;
+    }),
+
+  transferirAnimaisAlocacao: protectedProcedure
+    .input(z.object({
+      animalIds: z.array(z.number()).min(1),
+      loteDestinoId: z.number(),
+      pastoDestinoId: z.number(),
+      fazendaDestinoId: z.number(),
+      dataMovimentacao: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [pasto] = await db.select().from(pastos)
+        .where(and(
+          eq(pastos.id, input.pastoDestinoId),
+          eq(pastos.userId, ctx.user.id),
+          eq(pastos.fazendaId, input.fazendaDestinoId),
+        ))
+        .limit(1);
+      if (!pasto) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Subdivisão de destino não encontrada." });
+      }
+
+      const [loteDestino] = await db.select().from(lotes)
+        .where(and(
+          eq(lotes.id, input.loteDestinoId),
+          eq(lotes.userId, ctx.user.id),
+        ))
+        .limit(1);
+      if (!loteDestino) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
+      }
+      if (loteDestino.ativo === false) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
+      }
+      if (loteDestino.pastoAtualId !== input.pastoDestinoId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não pertence à subdivisão selecionada." });
+      }
+
+      const animaisRows = await db.select({ id: animais.id, loteId: animais.loteId })
+        .from(animais)
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      const toMove = animaisRows.filter(a => a.loteId && a.loteId !== input.loteDestinoId);
+      if (toMove.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal válido para transferência." });
+      }
+
+      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
+      const animalIds = toMove.map(a => a.id);
+
+      await db.update(animais)
+        .set({ loteId: input.loteDestinoId })
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          inArray(animais.id, animalIds),
+        ));
+
+      await db.insert(animalLoteMovimentacoes).values(
+        toMove.map(a => ({
+          userId: ctx.user.id,
+          animalId: a.id,
+          loteOrigemId: a.loteId!,
+          loteDestinoId: input.loteDestinoId,
+          dataMovimentacao: input.dataMovimentacao,
+          usuarioNome,
+        })),
+      );
+
+      return {
+        success: true,
+        count: animalIds.length,
+        loteDestinoNome: loteDestino.nome,
+      };
+    }),
+
   listHistoricoMovimentacoesAnimais: protectedProcedure
     .input(z.object({ animalId: z.number().optional(), loteId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {

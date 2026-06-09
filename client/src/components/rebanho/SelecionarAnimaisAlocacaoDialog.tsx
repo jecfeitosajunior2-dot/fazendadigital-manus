@@ -1,0 +1,351 @@
+import { useEffect, useMemo, useState } from "react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useDebounce } from "@/hooks/useDebounce";
+import { usePersistedState } from "@/hooks/usePersistedState";
+import { RACAS, getCategoriasPorSexo, todasAsCategorias } from "@shared/animal-types";
+import { animaisFiltersToApiParams } from "@shared/animal-filter-types";
+import type { AnimaisListFiltersState } from "@shared/animal-filter-types";
+import type { AnimalAlocacaoRow } from "@/components/rebanho/alocacao-types";
+
+const IRANCHO_BTN_GREEN = "#8ab83d";
+const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
+const inputClass =
+  "w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#8ab83d]";
+const selectClass =
+  "w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none";
+
+const INITIAL_FILTERS: AnimaisListFiltersState = {
+  fazendaId: "",
+  raca: "",
+  pesquisa: "",
+  sexo: "",
+  categoria: "",
+  loteId: "",
+  pesoInicial: "",
+  pesoFinal: "",
+  dataNascimentoInicial: "",
+  dataNascimentoFinal: "",
+  somenteSisbov: false,
+  marcadores: [],
+  maisFiltrosAbertos: false,
+  pastoId: "",
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  jaSelecionados: Set<number>;
+  onConfirm: (animais: AnimalAlocacaoRow[]) => void;
+};
+
+function displayId(animal: {
+  id: number;
+  brincoEletronico: string | null;
+  brinco: string | null;
+  nome: string | null;
+}) {
+  return animal.brincoEletronico?.trim() || animal.brinco?.trim() || animal.nome?.trim() || String(animal.id);
+}
+
+function displayNome(animal: { nome: string | null; brinco: string | null }) {
+  return animal.nome?.trim() || animal.brinco?.trim() || "—";
+}
+
+function fazendaSubdivisao(lote?: {
+  fazendaNome?: string | null;
+  pastoNome?: string | null;
+}) {
+  if (!lote?.fazendaNome && !lote?.pastoNome) return "—";
+  if (lote.fazendaNome && lote.pastoNome) return `${lote.fazendaNome} - ${lote.pastoNome}`;
+  return lote.fazendaNome || lote.pastoNome || "—";
+}
+
+export default function SelecionarAnimaisAlocacaoDialog({
+  open,
+  onClose,
+  jaSelecionados,
+  onConfirm,
+}: Props) {
+  const [filters, setFilters] = usePersistedState("fd:selecionar-animais-alocacao-filtros", INITIAL_FILTERS);
+  const debouncedPesquisa = useDebounce(filters.pesquisa, 400);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(1);
+  const perPage = 50;
+
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
+  const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
+
+  const apiParams = useMemo(
+    () => ({ ...animaisFiltersToApiParams(filters, debouncedPesquisa), status: "ativo" }),
+    [filters, debouncedPesquisa],
+  );
+
+  const { data: animaisData = [], isLoading } = trpc.animais.list.useQuery(apiParams, { enabled: open });
+
+  const lotesMap = useMemo(() => new Map(lotes.map(l => [l.id, l])), [lotes]);
+
+  const disponiveis = useMemo(
+    () => animaisData.filter(a => !jaSelecionados.has(a.id)),
+    [animaisData, jaSelecionados],
+  );
+
+  const filtrosKey = JSON.stringify(apiParams);
+  useEffect(() => {
+    setPage(1);
+  }, [filtrosKey]);
+
+  useEffect(() => {
+    if (!open) setSelected(new Set());
+  }, [open]);
+
+  const totalPages = Math.max(1, Math.ceil(disponiveis.length / perPage));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = disponiveis.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+  const paginatedIds = paginated.map(a => a.id);
+  const allPageSelected = paginated.length > 0 && paginated.every(a => selected.has(a.id));
+
+  const categorias = filters.sexo
+    ? getCategoriasPorSexo(filters.sexo === "macho" ? "Macho" : "Fêmea")
+    : todasAsCategorias();
+
+  const lotesFiltrados = filters.fazendaId
+    ? lotes.filter(l => l.fazendaId === Number(filters.fazendaId))
+    : lotes;
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelected(prev => {
+        const next = new Set(prev);
+        paginatedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelected(prev => new Set([...prev, ...paginatedIds]));
+    }
+  };
+
+  const handleConfirm = () => {
+    if (selected.size === 0) {
+      toast.error("Selecione ao menos um animal.");
+      return;
+    }
+    const rows: AnimalAlocacaoRow[] = animaisData
+      .filter(a => selected.has(a.id))
+      .map(a => {
+        const lote = a.loteId ? lotesMap.get(a.loteId) : undefined;
+        return {
+          id: a.id,
+          displayId: displayId(a),
+          sexo: a.sexo,
+          loteNome: lote?.nome ?? a.loteNome ?? "—",
+          fazendaSubdivisao: fazendaSubdivisao(lote),
+          ultimaMovimentacao: null,
+        };
+      });
+    onConfirm(rows);
+    onClose();
+  };
+
+  const inicio = disponiveis.length === 0 ? 0 : (pageSafe - 1) * perPage + 1;
+  const fim = Math.min(pageSafe * perPage, disponiveis.length);
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+        <DialogHeader className="px-5 py-4 border-b border-gray-100">
+          <DialogTitle className="text-[15px] font-semibold text-gray-900">Selecionar Animais</DialogTitle>
+        </DialogHeader>
+
+        <div className="px-5 py-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className={labelClass}>Fazenda</label>
+              <select
+                value={filters.fazendaId}
+                onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "" }))}
+                className={selectClass}
+              >
+                <option value="">Todas as fazendas</option>
+                {fazendas.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Categoria</label>
+              <select
+                value={filters.categoria}
+                onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Todas as categorias</option>
+                {categorias.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Sexo</label>
+              <select
+                value={filters.sexo}
+                onChange={e => setFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
+                className={selectClass}
+              >
+                <option value="">Todos</option>
+                <option value="macho">Macho</option>
+                <option value="femea">Fêmea</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Raça</label>
+              <select
+                value={filters.raca}
+                onChange={e => setFilters(f => ({ ...f, raca: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Todas as raças</option>
+                {RACAS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Lote Atual</label>
+              <select
+                value={filters.loteId}
+                onChange={e => setFilters(f => ({ ...f, loteId: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Todos os lotes</option>
+                {lotesFiltrados.map(l => (
+                  <option key={l.id} value={String(l.id)}>{l.nome}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Pesquisa por identificação</label>
+              <input
+                type="text"
+                value={filters.pesquisa}
+                onChange={e => setFilters(f => ({ ...f, pesquisa: e.target.value }))}
+                placeholder="Buscar"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px] min-w-[560px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="w-10 px-2 py-2">
+                      <Checkbox
+                        checked={allPageSelected}
+                        onCheckedChange={toggleSelectAll}
+                        className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">ID</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Nome</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Sexo</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Lote</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase">Fazenda - Subdivisão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr><td colSpan={6} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+                  ) : paginated.length === 0 ? (
+                    <tr><td colSpan={6} className="text-center py-8 text-gray-400">Nenhum animal disponível.</td></tr>
+                  ) : (
+                    paginated.map((animal, idx) => {
+                      const lote = animal.loteId ? lotesMap.get(animal.loteId) : undefined;
+                      return (
+                        <tr key={animal.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}`}>
+                          <td className="px-2 py-2">
+                            <Checkbox
+                              checked={selected.has(animal.id)}
+                              onCheckedChange={() => toggleSelect(animal.id)}
+                              className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">{displayId(animal)}</td>
+                          <td className="px-3 py-2 text-gray-800 font-medium">{displayNome(animal)}</td>
+                          <td className="px-3 py-2 text-gray-600">{animal.sexo === "macho" ? "Macho" : "Fêmea"}</td>
+                          <td className="px-3 py-2 text-gray-600">{lote?.nome || animal.loteNome || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600">{fazendaSubdivisao(lote)}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {disponiveis.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
+                <span>Exibindo {inicio}–{fim} de {disponiveis.length}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={pageSafe <= 1}
+                    onClick={() => setPage(p => p - 1)}
+                    className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="px-2">{pageSafe} / {totalPages}</span>
+                  <button
+                    type="button"
+                    disabled={pageSafe >= totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                    className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="px-5 py-4 border-t border-gray-100 gap-2 sm:gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={selected.size === 0}
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50"
+            style={{ backgroundColor: IRANCHO_BTN_GREEN }}
+          >
+            {`Adicionar Selecionados${selected.size > 0 ? ` (${selected.size})` : ""}`}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
