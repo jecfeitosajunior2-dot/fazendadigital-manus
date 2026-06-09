@@ -24,6 +24,8 @@ import { AlertTriangle } from "lucide-react";
 const IRANCHO_BTN_GREEN = "#8ab83d";
 const IRANCHO_BTN_GREY = "#C0C0C0";
 const IRANCHO_BTN_DANGER = "#F89688";
+const IRANCHO_BTN_RETIRAR_BG = "#FEE2E2";
+const IRANCHO_BTN_RETIRAR_TEXT = "#991B1B";
 
 type FormState = {
   nome: string;
@@ -87,7 +89,7 @@ export default function EditLotePage() {
 
   const removerMutation = trpc.lotes.removerAnimais.useMutation({
     onSuccess: data => {
-      toast.success(`${data.count} animal(is) removido(s) do lote.`);
+      toast.success(`${data.count} animal(is) retirado(s) do lote.`);
       setSelected(new Set());
       setRemoveOpen(false);
       refetchAnimais();
@@ -166,6 +168,14 @@ export default function EditLotePage() {
       return;
     }
     setDeleteOpen(true);
+  };
+
+  const handleRetirarAnimais = () => {
+    if (selected.size === 0) {
+      toast.info("Selecione animais abaixo.");
+      return;
+    }
+    setRemoveOpen(true);
   };
 
   const toggleSelect = (id: number) => {
@@ -301,9 +311,9 @@ export default function EditLotePage() {
       <Dialog open={removeOpen} onOpenChange={v => !v && setRemoveOpen(false)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-gray-900">Remover animais do lote</DialogTitle>
+            <DialogTitle className="text-gray-900">Retirar animais do lote</DialogTitle>
             <DialogDescription className="text-gray-600 leading-relaxed">
-              Remover {selected.size} animal(is) selecionado(s) deste lote?
+              Retirar {selected.size} animal(is) selecionado(s) deste lote?
               <br />
               Os animais não serão excluídos do sistema.
             </DialogDescription>
@@ -324,7 +334,7 @@ export default function EditLotePage() {
               className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-white"
               style={{ backgroundColor: IRANCHO_BTN_DANGER }}
             >
-              {removerMutation.isPending ? "Removendo…" : "Remover Selecionados"}
+              {removerMutation.isPending ? "Retirando…" : "Retirar Animais do Lote"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -364,7 +374,7 @@ export default function EditLotePage() {
           </div>
         </div>
 
-        {/* Ações principais */}
+        {/* Ações principais — iRancho */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <button
             type="button"
@@ -386,6 +396,15 @@ export default function EditLotePage() {
           </button>
           <button
             type="button"
+            onClick={handleRetirarAnimais}
+            disabled={isBusy}
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide hover:brightness-95 disabled:opacity-50 transition"
+            style={{ backgroundColor: IRANCHO_BTN_RETIRAR_BG, color: IRANCHO_BTN_RETIRAR_TEXT, minHeight: 40 }}
+          >
+            Retirar Animais do Lote
+          </button>
+          <button
+            type="button"
             onClick={handleExcluirRequest}
             disabled={isBusy}
             className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
@@ -394,22 +413,7 @@ export default function EditLotePage() {
             Excluir Lote
           </button>
 
-          {selected.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setRemoveOpen(true)}
-              disabled={isBusy}
-              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50 transition ml-auto"
-              style={{ backgroundColor: IRANCHO_BTN_DANGER, minHeight: 40 }}
-            >
-              Remover Selecionados ({selected.size})
-            </button>
-          )}
-        </div>
-
-        {/* Busca — canto superior direito da tabela */}
-        <div className="flex justify-end mb-3">
-          <div className="relative w-full sm:max-w-xs">
+          <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:max-w-xs ml-auto">
             <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
             <input
               type="text"
