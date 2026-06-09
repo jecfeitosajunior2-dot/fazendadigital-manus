@@ -12,9 +12,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Trash2, Edit, ArrowRightLeft, History, AlertTriangle, AlertCircle } from "lucide-react";
+import { Trash2, Edit, AlertTriangle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { MoveLotePastoDialog } from "@/components/MoveLotePastoDialog";
 import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
 import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
 
@@ -57,8 +56,6 @@ function celulaValor(v: number) {
 
 export default function LotsManagementPage() {
   const [, setLocation] = useLocation();
-  const [moveLote, setMoveLote] = useState<LoteItem | null>(null);
-  const [historyLote, setHistoryLote] = useState<LoteItem | null>(null);
   const [fazendaFilter, setFazendaFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -76,11 +73,6 @@ export default function LotsManagementPage() {
   const { data: gerenciamento = [], isLoading, refetch } = trpc.lotes.gerenciamento.useQuery(queryInput);
   const { data: lotesFull = [] } = trpc.lotes.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: movimentacoes = [] } = trpc.lotes.listMovimentacoes.useQuery(
-    { loteId: historyLote?.id ?? 0 },
-    { enabled: !!historyLote },
-  );
-
   const loteById = useMemo(
     () => new Map((lotesFull as LoteItem[]).map(l => [l.id, l])),
     [lotesFull],
@@ -166,41 +158,6 @@ export default function LotsManagementPage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <MoveLotePastoDialog
-        lote={moveLote}
-        open={!!moveLote}
-        onClose={() => setMoveLote(null)}
-        onSuccess={() => refetch()}
-      />
-
-      {/* Histórico */}
-      <Dialog open={!!historyLote} onOpenChange={v => !v && setHistoryLote(null)}>
-        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Histórico — {historyLote?.nome}</DialogTitle>
-          </DialogHeader>
-          {movimentacoes.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Nenhuma movimentação registrada</p>
-          ) : (
-            <div className="space-y-2">
-              {(movimentacoes as any[]).map((m: any) => (
-                <div key={m.id} className="border rounded p-3 text-sm">
-                  <div className="font-medium text-gray-800">
-                    {m.pastoOrigemNome ? `${m.pastoOrigemNome} → ` : ""}{m.pastoDestinoNome || "—"}
-                  </div>
-                  <div className="text-gray-500 text-xs mt-1">
-                    Entrada: {m.dataEntrada}
-                    {m.dataSaida && ` · Saída: ${m.dataSaida}`}
-                    {m.diasNoPasto != null && ` · ${m.diasNoPasto} dias`}
-                    {m.qtdAnimais > 0 && ` · ${m.qtdAnimais} cabeças`}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
       {/* Confirmação exclusão */}
       <Dialog open={!!deleteConfirm} onOpenChange={v => !v && setDeleteConfirm(null)}>
         <DialogContent className="sm:max-w-sm">
@@ -387,22 +344,6 @@ export default function LotsManagementPage() {
                   ))}
                   <td className="px-2 py-2 border-l border-gray-50">
                     <div className="flex items-center justify-center gap-0.5">
-                      <button
-                        type="button"
-                        title="Mover"
-                        onClick={() => { const l = loteById.get(lote.id); if (l) setMoveLote(l); }}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
-                      >
-                        <ArrowRightLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Histórico"
-                        onClick={() => { const l = loteById.get(lote.id); if (l) setHistoryLote(l); }}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
                       <button type="button" title="Editar" onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)} className="p-1 rounded hover:bg-gray-100 text-gray-400">
                         <Edit className="w-3.5 h-3.5" />
                       </button>
