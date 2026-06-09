@@ -2,13 +2,12 @@
  * Formulário de Novo Lote — padrão iRancho
  * Rota: /rebanho/novo-lote
  */
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
-import SelecaoFazendaCard from "@/components/rebanho/SelecaoFazendaCard";
 
 const IRANCHO_BTN_GREEN = "#C5D97E";
 
@@ -30,24 +29,7 @@ const INITIAL: FormState = {
 
 export function NewLotePage() {
   const [, setLocation] = useLocation();
-  const fazendaInicial = new URLSearchParams(window.location.search).get("fazendaId") || "";
-
-  const [fazendaId, setFazendaId] = useState(fazendaInicial);
-  const [fazendaConfirmada, setFazendaConfirmada] = useState(!!fazendaInicial);
   const [form, setForm] = useState<FormState>(INITIAL);
-
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const fazendaSelecionada = useMemo(
-    () => fazendas.find(f => String(f.id) === fazendaId),
-    [fazendas, fazendaId],
-  );
-
-  useEffect(() => {
-    if (fazendaInicial || fazendaConfirmada) return;
-    if (fazendas.length === 1) {
-      setFazendaId(String(fazendas[0].id));
-    }
-  }, [fazendas, fazendaInicial, fazendaConfirmada]);
 
   const utils = trpc.useUtils();
   const createMutation = trpc.lotes.create.useMutation({
@@ -65,10 +47,6 @@ export function NewLotePage() {
   };
 
   const handleSubmit = () => {
-    if (!fazendaId) {
-      toast.error("Selecione a fazenda.");
-      return;
-    }
     if (!form.nome.trim()) {
       toast.error("Nome do lote é obrigatório");
       return;
@@ -82,30 +60,10 @@ export function NewLotePage() {
       nome: form.nome.trim(),
       sigla: form.sigla.trim() || undefined,
       dataCriacao: form.dataCriacao,
-      fazendaId: Number(fazendaId),
     });
   };
 
   const isBusy = createMutation.isPending;
-
-  if (!fazendaConfirmada) {
-    return (
-      <AppLayout>
-        <SelecaoFazendaCard
-          value={fazendaId}
-          onChange={setFazendaId}
-          onConfirm={() => {
-            if (!fazendaId) {
-              toast.error("Selecione a fazenda.");
-              return;
-            }
-            setFazendaConfirmada(true);
-          }}
-          onCancel={() => setLocation("/rebanho/lotes")}
-        />
-      </AppLayout>
-    );
-  }
 
   return (
     <AppLayout>
@@ -113,11 +71,6 @@ export function NewLotePage() {
         <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h1 className="text-[15px] font-semibold text-gray-900">Novo lote</h1>
-            {fazendaSelecionada && (
-              <p className="text-[11px] text-gray-500 mt-1">
-                Fazenda: <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>
-              </p>
-            )}
           </div>
 
           <div className="px-6 py-5 space-y-4">
