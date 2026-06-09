@@ -1,6 +1,7 @@
 export type AnimalAlocacaoRow = {
   id: number;
-  displayId: string;
+  numeroVisual: string;
+  numeroRfid: string;
   sexo: "macho" | "femea";
   loteNome: string;
   fazendaSubdivisao: string;

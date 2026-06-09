@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
+import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateBR } from "@/lib/date-utils";
 import { RACAS, getCategoriasPorSexo, todasAsCategorias } from "@shared/animal-types";
 import { animaisFiltersToApiParams } from "@shared/animal-filter-types";
@@ -46,13 +47,12 @@ const inputClass =
 const selectClass =
   "w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none";
 
-function displayId(animal: {
-  id: number;
-  brincoEletronico: string | null;
-  brinco: string | null;
-  nome: string | null;
-}) {
+function numeroVisual(animal: { brinco: string | null; id: number }) {
   return animal.brinco?.trim() || String(animal.id);
+}
+
+function numeroRfid(animal: { brincoEletronico: string | null }) {
+  return animal.brincoEletronico?.trim() || "—";
 }
 
 function displayNome(animal: { nome: string | null; brinco: string | null }) {
@@ -82,7 +82,8 @@ function toAlocacaoRow(
 ): AnimalAlocacaoRow {
   return {
     id: animal.id,
-    displayId: displayId(animal),
+    numeroVisual: numeroVisual(animal),
+    numeroRfid: numeroRfid(animal),
     sexo: animal.sexo,
     loteNome: lote?.nome ?? animal.loteNome ?? "—",
     fazendaSubdivisao: fazendaSubdivisao(lote),
@@ -96,23 +97,20 @@ export default function SelecionarAnimaisAlocacaoDialog({
   jaSelecionados,
   onConfirm,
 }: Props) {
-  const [draftFilters, setDraftFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
+  const [filters, setFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
+  const debouncedPesquisa = useDebounce(filters.pesquisa, 400);
   const [filtrosAbertos, setFiltrosAbertos] = useState(true);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
-  const [buscou, setBuscou] = useState(false);
 
   const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
 
   const apiParams = useMemo(
-    () => ({ ...animaisFiltersToApiParams(appliedFilters, appliedFilters.pesquisa), status: "ativo" }),
-    [appliedFilters],
+    () => ({ ...animaisFiltersToApiParams(filters, debouncedPesquisa), status: "ativo" }),
+    [filters, debouncedPesquisa],
   );
 
-  const { data: animaisData = [], isLoading } = trpc.animais.list.useQuery(apiParams, {
-    enabled: open && buscou,
-  });
+  const { data: animaisData = [], isLoading } = trpc.animais.list.useQuery(apiParams, { enabled: open });
 
   const lotesMap = useMemo(() => new Map(lotes.map(l => [l.id, l])), [lotes]);
 
@@ -125,19 +123,14 @@ export default function SelecionarAnimaisAlocacaoDialog({
     if (!open) {
       setSelected(new Set());
       setPage(1);
-      setBuscou(false);
-      setDraftFilters(INITIAL_FILTERS);
-      setAppliedFilters(INITIAL_FILTERS);
+      setFilters(INITIAL_FILTERS);
       return;
     }
-    setBuscou(true);
-    setAppliedFilters(INITIAL_FILTERS);
-    setDraftFilters(INITIAL_FILTERS);
   }, [open]);
 
   useEffect(() => {
     setPage(1);
-  }, [appliedFilters, jaSelecionados]);
+  }, [apiParams, jaSelecionados]);
 
   const totalPages = Math.max(1, Math.ceil(disponiveis.length / PER_PAGE));
   const pageSafe = Math.min(page, totalPages);
@@ -146,8 +139,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
   const allPageSelected = paginated.length > 0 && paginated.every(a => selected.has(a.id));
   const allResultSelected = disponiveis.length > 0 && disponiveis.every(a => selected.has(a.id));
 
-  const categorias = draftFilters.sexo
-    ? getCategoriasPorSexo(draftFilters.sexo === "macho" ? "Macho" : "Fêmea")
+  const categorias = filters.sexo
+    ? getCategoriasPorSexo(filters.sexo === "macho" ? "Macho" : "Fêmea")
     : todasAsCategorias();
 
   const toggleSelect = (id: number) => {
@@ -179,17 +172,9 @@ export default function SelecionarAnimaisAlocacaoDialog({
     setSelected(new Set(disponiveis.map(a => a.id)));
   };
 
-  const handleBuscar = () => {
-    setAppliedFilters({ ...draftFilters });
-    setBuscou(true);
-    setPage(1);
-  };
-
   const limparFiltros = () => {
-    setDraftFilters(INITIAL_FILTERS);
-    setAppliedFilters(INITIAL_FILTERS);
+    setFilters(INITIAL_FILTERS);
     setPage(1);
-    setBuscou(true);
   };
 
   const handleConfirm = () => {
@@ -241,8 +226,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
               <label className={labelClass}>ID do Animal</label>
               <input
                 type="text"
-                value={draftFilters.pesquisa}
-                onChange={e => setDraftFilters(f => ({ ...f, pesquisa: e.target.value }))}
+                value={filters.pesquisa}
+                onChange={e => setFilters(f => ({ ...f, pesquisa: e.target.value }))}
                 placeholder="Digite um ID"
                 className={inputClass}
               />
@@ -250,8 +235,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
             <div>
               <label className={labelClass}>Lote</label>
               <select
-                value={draftFilters.loteId}
-                onChange={e => setDraftFilters(f => ({ ...f, loteId: e.target.value }))}
+                value={filters.loteId}
+                onChange={e => setFilters(f => ({ ...f, loteId: e.target.value }))}
                 className={selectClass}
               >
                 <option value="">Selecione o lote</option>
@@ -277,8 +262,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
               <div>
                 <label className={labelClass}>Sexo</label>
                 <select
-                  value={draftFilters.sexo}
-                  onChange={e => setDraftFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
+                  value={filters.sexo}
+                  onChange={e => setFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
                   className={selectClass}
                 >
                   <option value="">Todos</option>
@@ -289,8 +274,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
               <div>
                 <label className={labelClass}>Categoria</label>
                 <select
-                  value={draftFilters.categoria}
-                  onChange={e => setDraftFilters(f => ({ ...f, categoria: e.target.value }))}
+                  value={filters.categoria}
+                  onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
                   className={selectClass}
                 >
                   <option value="">Todas as categorias</option>
@@ -302,8 +287,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
               <div>
                 <label className={labelClass}>Raça</label>
                 <select
-                  value={draftFilters.raca}
-                  onChange={e => setDraftFilters(f => ({ ...f, raca: e.target.value }))}
+                  value={filters.raca}
+                  onChange={e => setFilters(f => ({ ...f, raca: e.target.value }))}
                   className={selectClass}
                 >
                   <option value="">Todas as raças</option>
@@ -315,24 +300,16 @@ export default function SelecionarAnimaisAlocacaoDialog({
             </div>
           )}
 
-          {/* Ações de busca */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={handleBuscar}
-              className="px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
-            >
-              Buscar Animais
-            </button>
+          {/* Ações de filtro */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="flex items-center justify-center px-3 py-2 border border-gray-200 rounded-sm bg-[#EEEEEE] text-[11px] text-gray-600">
               Filtros Adicionais
-              {draftFilters.loteId && (
+              {filters.loteId && (
                 <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-gray-200 text-[10px]">
                   Lote
                   <button
                     type="button"
-                    onClick={() => setDraftFilters(f => ({ ...f, loteId: "" }))}
+                    onClick={() => setFilters(f => ({ ...f, loteId: "" }))}
                     className="text-gray-400 hover:text-gray-600"
                   >
                     ×
@@ -355,7 +332,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
             <button
               type="button"
               onClick={selecionarTodos}
-              disabled={!buscou || disponiveis.length === 0}
+              disabled={disponiveis.length === 0}
               className="px-6 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50"
               style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
             >
@@ -404,7 +381,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
           {/* Badges */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#555] text-white text-[11px] font-medium">
-              Qtd. Animais: {buscou ? disponiveis.length : 0}
+              Qtd. Animais: {disponiveis.length}
             </span>
             <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#555] text-white text-[11px] font-medium">
               Qtd. Animais Selecionados: {selected.size}
@@ -414,7 +391,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
           {/* Tabela */}
           <div className="border border-gray-200 rounded-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px] min-w-[1200px]">
+              <table className="w-full text-[11px] min-w-[1000px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="w-10 px-2 py-2 border-r border-gray-200">
@@ -434,21 +411,17 @@ export default function SelecionarAnimaisAlocacaoDialog({
                     <th className={thClass}>Data da Pesagem</th>
                     <th className={thClass}>Lote</th>
                     <th className={thClass}>Raça</th>
-                    <th className={thClass}>Fazenda</th>
-                    <th className={thClass}>Setor</th>
-                    <th className={`${thClass} border-r-0`}>Retiro</th>
+                    <th className={`${thClass} border-r-0`}>Fazenda</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {!buscou || isLoading ? (
+                  {isLoading ? (
                     <tr>
-                      <td colSpan={14} className="text-center py-10 text-gray-400">
-                        {isLoading ? "Carregando..." : "Sem dados"}
-                      </td>
+                      <td colSpan={12} className="text-center py-10 text-gray-400">Carregando...</td>
                     </tr>
                   ) : paginated.length === 0 ? (
                     <tr>
-                      <td colSpan={14} className="text-center py-10 text-gray-400">Sem dados</td>
+                      <td colSpan={12} className="text-center py-10 text-gray-400">Sem dados</td>
                     </tr>
                   ) : (
                     paginated.map((animal, idx) => {
@@ -465,7 +438,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
                               className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
                             />
                           </td>
-                          <td className="px-2 py-2 text-gray-700 border-r border-gray-100">{displayId(animal)}</td>
+                          <td className="px-2 py-2 text-gray-700 border-r border-gray-100">{numeroVisual(animal)}</td>
                           <td className="px-2 py-2 text-gray-800 border-r border-gray-100">{displayNome(animal)}</td>
                           <td className="px-2 py-2 text-gray-600 border-r border-gray-100">
                             {animal.sexo === "macho" ? "Macho" : "Fêmea"}
@@ -485,9 +458,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
                             {lote?.nome || animal.loteNome || "—"}
                           </td>
                           <td className="px-2 py-2 text-gray-600 border-r border-gray-100">{animal.raca || "—"}</td>
-                          <td className="px-2 py-2 text-gray-600 border-r border-gray-100">{lote?.fazendaNome || "—"}</td>
-                          <td className="px-2 py-2 text-gray-600 border-r border-gray-100">—</td>
-                          <td className="px-2 py-2 text-gray-600">—</td>
+                          <td className="px-2 py-2 text-gray-600">{lote?.fazendaNome || "—"}</td>
                         </tr>
                       );
                     })

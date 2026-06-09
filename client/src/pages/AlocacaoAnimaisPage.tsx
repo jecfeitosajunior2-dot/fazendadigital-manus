@@ -263,12 +263,13 @@ export default function AlocacaoAnimaisPage() {
             {/* Tabela */}
             <div className="border border-gray-200 rounded-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-[12px] min-w-[720px]">
+                <table className="w-full text-[12px] min-w-[780px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className={thClass}>ID</th>
-                      <th className={thClass}>Sexo</th>
+                      <th className={thClass}>Nº Visual</th>
+                      <th className={thClass}>Nº RFID</th>
                       <th className={thClass}>Lote</th>
+                      <th className={thClass}>Sexo</th>
                       <th className={thClass}>Fazenda - Subdivisão</th>
                       <th className={`${thClass} border-r-0`}>Última Movimentação</th>
                     </tr>
@@ -276,7 +277,7 @@ export default function AlocacaoAnimaisPage() {
                   <tbody>
                     {paginated.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-10 text-gray-400">
+                        <td colSpan={6} className="text-center py-10 text-gray-400">
                           Sem dados
                         </td>
                       </tr>
@@ -286,9 +287,10 @@ export default function AlocacaoAnimaisPage() {
                           key={animal.id}
                           className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}`}
                         >
-                          <td className="px-3 py-2 text-gray-700 border-r border-gray-100">{animal.displayId}</td>
-                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
+                          <td className="px-3 py-2 text-gray-700 border-r border-gray-100">{animal.numeroVisual}</td>
+                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.numeroRfid}</td>
                           <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.loteNome}</td>
+                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
                           <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.fazendaSubdivisao}</td>
                           <td className="px-3 py-2 text-gray-600">
                             {animal.ultimaMovimentacao ? formatDateBR(animal.ultimaMovimentacao) : "—"}
