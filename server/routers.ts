@@ -68,11 +68,6 @@ const animaisListInput = z.object({
   marcadores: z.array(z.string()).optional(),
   status: z.string().optional(),
   pastoId: z.number().optional(),
-  brincoEletronico: z.string().optional(),
-  rgn: z.string().optional(),
-  rgd: z.string().optional(),
-  idadeMesesMin: z.number().optional(),
-  idadeMesesMax: z.number().optional(),
 }).optional();
 
 const animaisRouter = router({
@@ -142,15 +137,6 @@ const animaisRouter = router({
           like(animais.raca, q),
           like(animais.sisbov, q),
         )!);
-      }
-      if (input?.brincoEletronico?.trim()) {
-        conditions.push(like(animais.brincoEletronico, `%${input.brincoEletronico.trim()}%`));
-      }
-      if (input?.rgn?.trim()) {
-        conditions.push(like(animais.rgn, `%${input.rgn.trim()}%`));
-      }
-      if (input?.rgd?.trim()) {
-        conditions.push(like(animais.rgd, `%${input.rgd.trim()}%`));
       }
       if (input?.fazendaId) {
         const lotesFazenda = await db.select({ id: lotes.id })
@@ -291,26 +277,17 @@ const animaisRouter = router({
         };
       });
 
-      let filtered = resultado;
       if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
-        filtered = filtered.filter(animal => {
+        return resultado.filter(animal => {
           const peso = animal.ultimoPeso;
           if (peso === null || peso === undefined) return false;
-          if (input!.pesoMin !== undefined && peso < input!.pesoMin) return false;
-          if (input!.pesoMax !== undefined && peso > input!.pesoMax) return false;
-          return true;
-        });
-      }
-      if (input?.idadeMesesMin !== undefined || input?.idadeMesesMax !== undefined) {
-        filtered = filtered.filter(animal => {
-          if (animal.idadeMeses === null || animal.idadeMeses === undefined) return false;
-          if (input!.idadeMesesMin !== undefined && animal.idadeMeses < input!.idadeMesesMin) return false;
-          if (input!.idadeMesesMax !== undefined && animal.idadeMeses > input!.idadeMesesMax) return false;
+          if (input.pesoMin !== undefined && peso < input.pesoMin) return false;
+          if (input.pesoMax !== undefined && peso > input.pesoMax) return false;
           return true;
         });
       }
 
-      return filtered;
+      return resultado;
     }),
 
   getById: protectedProcedure
