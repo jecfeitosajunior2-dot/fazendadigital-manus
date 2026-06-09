@@ -1,17 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 import type { AnimaisListFiltersState } from '@shared/animal-filter-types';
 import { hasActiveAnimaisFilters } from '@shared/animal-filter-types';
 
-const labelClass = 'block text-[11px] font-medium text-gray-600 mb-1';
+const labelClass = 'block text-[11px] font-medium text-gray-600 mb-1.5';
 const inputClass =
-  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#7CB342]';
+  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#8ab83d]';
 const selectClass =
-  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#7CB342] appearance-none';
+  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none';
 const accentSelectClass =
-  'w-full h-[36px] pl-4 pr-3 text-[12px] border border-gray-200 border-l-[3px] border-l-[#7CB342] rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#7CB342] appearance-none';
+  'w-full h-[36px] pl-4 pr-3 text-[12px] border border-gray-200 border-l-[3px] border-l-[#8ab83d] rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none';
+
+function FilterCard({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-sm p-3 flex flex-col h-full">
+      <label className={labelClass}>{label}</label>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+}
 
 type FazendaOption = { id: number; nome: string };
 type LoteOption = { id: number; nome: string; fazendaId?: number | null };
@@ -87,7 +96,7 @@ function MarcadoresMultiSelect({
                   type="checkbox"
                   checked={value.includes(marca)}
                   onChange={() => toggle(marca)}
-                  className="rounded border-gray-300 text-[#7CB342] focus:ring-[#7CB342]"
+                  className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d]"
                 />
                 <span className="truncate">{marca}</span>
               </label>
@@ -122,100 +131,126 @@ export default function ListaAnimaisFiltros({
 
   return (
     <div className="mb-3 bg-white border border-gray-200 rounded-sm overflow-hidden">
-      {/* Linha 1 — filtros principais */}
-      <div className="px-4 py-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
-          <div className="lg:col-span-2">
-            <label className={labelClass}>Fazenda</label>
+      <div className="px-4 py-3 space-y-3">
+        {/* Filtros principais */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <FilterCard label="Fazenda">
             <select
               value={value.fazendaId}
-              onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '' }))}
+              onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
               className={selectClass}
             >
-              <option value="">Selecione uma fazenda</option>
+              <option value="">Selecione a fazenda</option>
               {fazendas.map(f => (
                 <option key={f.id} value={String(f.id)}>{f.nome}</option>
               ))}
             </select>
-          </div>
+          </FilterCard>
 
-          <div className="lg:col-span-2">
-            <label className={labelClass}>Subdivisão (Pasto)</label>
+          <FilterCard label="Nº Visual">
+            <input
+              type="text"
+              value={value.pesquisa}
+              onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
+              placeholder="Digite o nº visual"
+              className={inputClass}
+            />
+          </FilterCard>
+
+          <FilterCard label="Lote">
             <select
-              value={value.pastoId}
-              onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
+              value={value.loteId}
+              onChange={e => onChange(patch(value, { loteId: e.target.value }))}
               className={selectClass}
             >
-              <option value="">Todos os pastos</option>
-              {pastosFiltrados.map(p => (
-                <option key={p.id} value={String(p.id)}>{p.nome}</option>
+              <option value="">Selecione o lote</option>
+              {lotesFiltrados.map(l => (
+                <option key={l.id} value={String(l.id)}>{l.nome}</option>
               ))}
             </select>
-          </div>
+          </FilterCard>
 
-          <div className="lg:col-span-2">
-            <label className={labelClass}>Raça</label>
+          <FilterCard label="Sexo">
             <select
-              value={value.raca}
-              onChange={e => onChange(patch(value, { raca: e.target.value }))}
+              value={value.sexo}
+              onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
               className={selectClass}
             >
-              <option value="">Selecione uma raça</option>
-              {RACAS.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
+              <option value="">Selecione o sexo</option>
+              <option value="macho">Macho</option>
+              <option value="femea">Fêmea</option>
             </select>
-          </div>
+          </FilterCard>
+        </div>
 
-          <div className="lg:col-span-6">
-            <label className={labelClass}>Pesquisar</label>
+        {/* Barra de pesquisa */}
+        <div>
+          <label className={labelClass}>Pesquisar</label>
+          <div className="relative">
+            <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
             <input
               type="text"
               value={value.pesquisa}
               onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
               placeholder="Digite algo que deseja filtrar"
-              className={inputClass}
+              className={`${inputClass} pl-9`}
             />
           </div>
+        </div>
 
-          <div className="lg:col-span-2 flex gap-2 items-end">
-            {hasActiveAnimaisFilters(value) && (
-              <button
-                type="button"
-                onClick={onClear}
-                className="h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border border-gray-300 rounded-sm bg-white hover:bg-gray-50 transition-colors whitespace-nowrap"
-              >
-                Limpar
-              </button>
-            )}
+        <div className="flex flex-wrap gap-2 justify-end">
+          {hasActiveAnimaisFilters(value) && (
             <button
               type="button"
-              onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
-              className="flex-1 h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
+              onClick={onClear}
+              className="h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border border-gray-300 rounded-sm bg-white hover:bg-gray-50 transition-colors whitespace-nowrap"
             >
-              Mais Filtros
+              Limpar
             </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
+            className="h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
+          >
+            Mais Filtros
+          </button>
         </div>
       </div>
 
-      {/* Área expandida */}
+      {/* Filtros adicionais */}
       {value.maisFiltrosAbertos && (
         <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-[#F5F5F5]">
-          {/* Linha 2: Sexo, Categoria */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
             <div>
-              <label className={labelClass}>Sexo</label>
+              <label className={labelClass}>Subdivisão (Pasto)</label>
               <select
-                value={value.sexo}
-                onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
+                value={value.pastoId}
+                onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
                 className={selectClass}
+                disabled={!value.fazendaId}
               >
-                <option value="">Selecione o sexo</option>
-                <option value="macho">Macho</option>
-                <option value="femea">Fêmea</option>
+                <option value="">Todos os pastos</option>
+                {pastosFiltrados.map(p => (
+                  <option key={p.id} value={String(p.id)}>{p.nome}</option>
+                ))}
               </select>
             </div>
+
+            <div>
+              <label className={labelClass}>Raça</label>
+              <select
+                value={value.raca}
+                onChange={e => onChange(patch(value, { raca: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Selecione uma raça</option>
+                {RACAS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className={labelClass}>Categoria</label>
               <select
@@ -231,22 +266,7 @@ export default function ListaAnimaisFiltros({
             </div>
           </div>
 
-          {/* Linha 3: Lote, Peso, Período de nascimento */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-            <div>
-              <label className={labelClass}>Lote</label>
-              <select
-                value={value.loteId}
-                onChange={e => onChange(patch(value, { loteId: e.target.value }))}
-                className={selectClass}
-              >
-                <option value="">Selecione o lote</option>
-                {lotesFiltrados.map(l => (
-                  <option key={l.id} value={String(l.id)}>{l.nome}</option>
-                ))}
-              </select>
-            </div>
-
             <div>
               <label className={labelClass}>Peso</label>
               <div className="flex items-center gap-1">
@@ -295,13 +315,12 @@ export default function ListaAnimaisFiltros({
             </div>
           </div>
 
-          {/* Linha 4: Somente SISBOV, Marcadores */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3 items-end">
             <div className="flex items-center gap-3 h-[36px]">
               <Switch
                 checked={value.somenteSisbov}
                 onCheckedChange={checked => onChange(patch(value, { somenteSisbov: checked }))}
-                className="data-[state=checked]:bg-[#7CB342]"
+                className="data-[state=checked]:bg-[#8ab83d]"
               />
               <span className="text-[12px] text-gray-700">Somente SISBOV</span>
             </div>
