@@ -1,8 +1,8 @@
 /**
- * Formulário de Lote — padrão iRancho (Novo / Editar)
- * Rotas: /rebanho/novo-lote | /rebanho/editar-lote?id=X
+ * Formulário de Novo Lote — padrão iRancho
+ * Rota: /rebanho/novo-lote
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -27,19 +27,11 @@ const INITIAL: FormState = {
   dataCriacao: hojeISO(),
 };
 
-function LoteFormPage({ mode }: { mode: "create" | "edit" }) {
+export function NewLotePage() {
   const [, setLocation] = useLocation();
-  const isEdit = mode === "edit";
-  const loteId = isEdit ? Number(new URLSearchParams(window.location.search).get("id")) : 0;
-
   const [form, setForm] = useState<FormState>(INITIAL);
 
   const utils = trpc.useUtils();
-  const { data: lote, isLoading } = trpc.lotes.getById.useQuery(
-    { id: loteId },
-    { enabled: isEdit && loteId > 0 },
-  );
-
   const createMutation = trpc.lotes.create.useMutation({
     onSuccess: () => {
       toast.success("Lote criado com sucesso!");
@@ -49,27 +41,6 @@ function LoteFormPage({ mode }: { mode: "create" | "edit" }) {
     },
     onError: e => toast.error(e.message),
   });
-
-  const updateMutation = trpc.lotes.update.useMutation({
-    onSuccess: () => {
-      toast.success("Lote atualizado com sucesso!");
-      utils.lotes.list.invalidate();
-      utils.lotes.gerenciamento.invalidate();
-      setLocation("/rebanho/lotes");
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  useEffect(() => {
-    if (!isEdit || !lote) return;
-    const dataCriacao = lote.dataCriacao
-      || (lote.createdAt ? String(lote.createdAt).slice(0, 10) : hojeISO());
-    setForm({
-      nome: lote.nome || "",
-      sigla: lote.sigla || "",
-      dataCriacao,
-    });
-  }, [isEdit, lote]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -85,46 +56,21 @@ function LoteFormPage({ mode }: { mode: "create" | "edit" }) {
       return;
     }
 
-    const payload = {
+    createMutation.mutate({
       nome: form.nome.trim(),
       sigla: form.sigla.trim() || undefined,
       dataCriacao: form.dataCriacao,
-    };
-
-    if (isEdit && loteId > 0) {
-      updateMutation.mutate({ id: loteId, ...payload });
-    } else {
-      createMutation.mutate(payload);
-    }
+    });
   };
 
-  const isBusy = createMutation.isPending || updateMutation.isPending;
-
-  if (isEdit && isLoading) {
-    return (
-      <AppLayout>
-        <div className="py-16 text-center text-gray-400 text-[13px]">Carregando...</div>
-      </AppLayout>
-    );
-  }
-
-  if (isEdit && !isLoading && !lote) {
-    return (
-      <AppLayout>
-        <div className="py-16 text-center text-gray-400 text-[13px]">Lote não encontrado.</div>
-      </AppLayout>
-    );
-  }
+  const isBusy = createMutation.isPending;
 
   return (
     <AppLayout>
       <div className="max-w-lg mx-auto">
-        {/* Card — espelho iRancho */}
         <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-900">
-              {isEdit ? "Editar lote" : "Novo lote"}
-            </h1>
+            <h1 className="text-[15px] font-semibold text-gray-900">Novo lote</h1>
           </div>
 
           <div className="px-6 py-5 space-y-4">
@@ -173,7 +119,7 @@ function LoteFormPage({ mode }: { mode: "create" | "edit" }) {
               className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
               style={{ backgroundColor: IRANCHO_BTN_GREEN }}
             >
-              {isBusy ? "Salvando..." : isEdit ? "Salvar Lote" : "Criar Lote"}
+              {isBusy ? "Salvando..." : "Criar Lote"}
             </button>
           </div>
         </div>
@@ -182,12 +128,4 @@ function LoteFormPage({ mode }: { mode: "create" | "edit" }) {
   );
 }
 
-export function NewLotePage() {
-  return <LoteFormPage mode="create" />;
-}
-
-export function EditLotePage() {
-  return <LoteFormPage mode="edit" />;
-}
-
-export default LoteFormPage;
+export default NewLotePage;

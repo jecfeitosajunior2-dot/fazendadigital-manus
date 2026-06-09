@@ -1124,6 +1124,78 @@ const lotesRouter = router({
       return { success: true };
     }),
 
+  incluirAnimais: protectedProcedure
+    .input(z.object({
+      loteId: z.number(),
+      animalIds: z.array(z.number()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [lote] = await db.select({ id: lotes.id })
+        .from(lotes)
+        .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+      if (!lote) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      }
+
+      const animaisRows = await db.select({ id: animais.id })
+        .from(animais)
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      if (animaisRows.length !== input.animalIds.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Um ou mais animais não foram encontrados." });
+      }
+
+      await db.update(animais)
+        .set({ loteId: input.loteId })
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      return { success: true, count: input.animalIds.length };
+    }),
+
+  removerAnimais: protectedProcedure
+    .input(z.object({
+      loteId: z.number(),
+      animalIds: z.array(z.number()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [lote] = await db.select({ id: lotes.id })
+        .from(lotes)
+        .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
+        .limit(1);
+      if (!lote) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      }
+
+      const animaisRows = await db.select({ id: animais.id })
+        .from(animais)
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.loteId, input.loteId),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      if (animaisRows.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence a este lote." });
+      }
+
+      await db.update(animais)
+        .set({ loteId: null })
+        .where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.loteId, input.loteId),
+          inArray(animais.id, input.animalIds),
+        ));
+
+      return { success: true, count: animaisRows.length };
+    }),
+
   excluir: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
