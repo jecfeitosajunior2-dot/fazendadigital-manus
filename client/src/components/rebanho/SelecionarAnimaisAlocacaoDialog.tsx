@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
-import { useDebounce } from "@/hooks/useDebounce";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { formatDateBR } from "@/lib/date-utils";
 import { RACAS, getCategoriasPorSexo, todasAsCategorias } from "@shared/animal-types";
 import { animaisFiltersToApiParams } from "@shared/animal-filter-types";
@@ -15,7 +12,6 @@ import type { AnimalAlocacaoRow } from "@/components/rebanho/alocacao-types";
 
 const IRANCHO_BTN_GREEN = "#8ab83d";
 const IRANCHO_BTN_GREY = "#C0C0C0";
-const PER_PAGE = 50;
 
 const INITIAL_FILTERS: AnimaisListFiltersState = {
   fazendaId: "",
@@ -34,6 +30,146 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   pastoId: "",
 };
 
+type AlocacaoAnimaisFiltersState = AnimaisListFiltersState & {
+  brincoEletronico: string;
+  idadeMesesInicial: string;
+  idadeMesesFinal: string;
+  rgn: string;
+  rgd: string;
+  somenteInativos: boolean;
+};
+
+const INITIAL_ALOCACAO_FILTERS: AlocacaoAnimaisFiltersState = {
+  ...INITIAL_FILTERS,
+  brincoEletronico: "",
+  idadeMesesInicial: "",
+  idadeMesesFinal: "",
+  rgn: "",
+  rgd: "",
+  somenteInativos: false,
+};
+
+type FiltroAdicionalKey =
+  | "dataNascimento"
+  | "peso"
+  | "rfid"
+  | "subdivisao"
+  | "raca"
+  | "categoria"
+  | "inativos"
+  | "marcadores"
+  | "idadeMeses"
+  | "rgn"
+  | "rgd"
+  | "sisbov";
+
+const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string }[] = [
+  { key: "dataNascimento", label: "Data de Nascimento" },
+  { key: "peso", label: "Peso" },
+  { key: "rfid", label: "Nº RFID" },
+  { key: "subdivisao", label: "Subdivisão" },
+  { key: "raca", label: "Raça" },
+  { key: "categoria", label: "Categoria" },
+  { key: "inativos", label: "Filtrar apenas animais inativos" },
+  { key: "marcadores", label: "Marcadores" },
+  { key: "idadeMeses", label: "Idade em Meses" },
+  { key: "rgn", label: "Registro de Nascimento (RGN)" },
+  { key: "rgd", label: "Registro Definitivo (RGD)" },
+  { key: "sisbov", label: "Animal com SISBOV" },
+];
+
+function clearFiltroAdicionalValues(key: FiltroAdicionalKey): Partial<AlocacaoAnimaisFiltersState> {
+  switch (key) {
+    case "dataNascimento":
+      return { dataNascimentoInicial: "", dataNascimentoFinal: "" };
+    case "peso":
+      return { pesoInicial: "", pesoFinal: "" };
+    case "rfid":
+      return { brincoEletronico: "" };
+    case "subdivisao":
+      return { pastoId: "" };
+    case "raca":
+      return { raca: "" };
+    case "categoria":
+      return { categoria: "" };
+    case "inativos":
+      return { somenteInativos: false };
+    case "marcadores":
+      return { marcadores: [] };
+    case "idadeMeses":
+      return { idadeMesesInicial: "", idadeMesesFinal: "" };
+    case "rgn":
+      return { rgn: "" };
+    case "rgd":
+      return { rgd: "" };
+    case "sisbov":
+      return { somenteSisbov: false };
+  }
+}
+
+function alocacaoFiltersToApiParams(
+  filters: AlocacaoAnimaisFiltersState,
+  filtrosAtivos: Set<FiltroAdicionalKey>,
+) {
+  const mainOnly: AnimaisListFiltersState = {
+    ...filters,
+    raca: "",
+    categoria: "",
+    pesoInicial: "",
+    pesoFinal: "",
+    dataNascimentoInicial: "",
+    dataNascimentoFinal: "",
+    somenteSisbov: false,
+    marcadores: [],
+    pastoId: "",
+  };
+  const base = animaisFiltersToApiParams(mainOnly, filters.pesquisa);
+  const result: Record<string, unknown> = { ...base, status: "ativo" };
+
+  if (filtrosAtivos.has("raca") && filters.raca) result.raca = filters.raca;
+  if (filtrosAtivos.has("categoria") && filters.categoria) result.categoria = filters.categoria;
+  if (filtrosAtivos.has("subdivisao") && filters.pastoId) result.pastoId = Number(filters.pastoId);
+  if (filtrosAtivos.has("inativos") && filters.somenteInativos) result.status = "inativo";
+  if (filtrosAtivos.has("sisbov") && filters.somenteSisbov) result.somenteSisbov = true;
+
+  if (filtrosAtivos.has("peso")) {
+    const pesoMin = filters.pesoInicial.trim() ? Number(filters.pesoInicial.replace(",", ".")) : undefined;
+    const pesoMax = filters.pesoFinal.trim() ? Number(filters.pesoFinal.replace(",", ".")) : undefined;
+    if (pesoMin !== undefined && !Number.isNaN(pesoMin)) result.pesoMin = pesoMin;
+    if (pesoMax !== undefined && !Number.isNaN(pesoMax)) result.pesoMax = pesoMax;
+  }
+
+  if (filtrosAtivos.has("dataNascimento")) {
+    if (filters.dataNascimentoInicial) result.dataNascimentoInicio = filters.dataNascimentoInicial;
+    if (filters.dataNascimentoFinal) result.dataNascimentoFim = filters.dataNascimentoFinal;
+  }
+
+  if (filtrosAtivos.has("marcadores") && filters.marcadores.length > 0) {
+    result.marcadores = filters.marcadores;
+  }
+
+  if (filtrosAtivos.has("rfid") && filters.brincoEletronico.trim()) {
+    result.brincoEletronico = filters.brincoEletronico.trim();
+  }
+  if (filtrosAtivos.has("rgn") && filters.rgn.trim()) result.rgn = filters.rgn.trim();
+  if (filtrosAtivos.has("rgd") && filters.rgd.trim()) result.rgd = filters.rgd.trim();
+
+  if (filtrosAtivos.has("idadeMeses")) {
+    const idadeMin = filters.idadeMesesInicial.trim() ? Number(filters.idadeMesesInicial) : undefined;
+    const idadeMax = filters.idadeMesesFinal.trim() ? Number(filters.idadeMesesFinal) : undefined;
+    if (idadeMin !== undefined && !Number.isNaN(idadeMin)) result.idadeMesesMin = idadeMin;
+    if (idadeMax !== undefined && !Number.isNaN(idadeMax)) result.idadeMesesMax = idadeMax;
+  }
+
+  return result;
+}
+
+const btnActionClass =
+  "w-full px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95";
+
+const badgeClass =
+  "inline-flex items-center px-3 py-1 rounded-full bg-[#555] text-white text-[11px] font-medium";
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -41,11 +177,148 @@ type Props = {
   onConfirm: (animais: AnimalAlocacaoRow[]) => void;
 };
 
-const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
+const labelClass = "block text-[11px] font-medium text-gray-600 mb-1.5";
 const inputClass =
   "w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#8ab83d]";
 const selectClass =
   "w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none";
+
+function FilterCard({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-sm p-3 flex flex-col h-full">
+      <label className={labelClass}>{label}</label>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+}
+
+function AdicionarFiltrosSelect({
+  value,
+  onChange,
+}: {
+  value: Set<FiltroAdicionalKey>;
+  onChange: (next: Set<FiltroAdicionalKey>, toggled: FiltroAdicionalKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const toggle = (key: FiltroAdicionalKey) => {
+    const next = new Set(value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onChange(next, key);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`${selectClass} text-left flex items-center justify-between gap-2`}
+      >
+        <span className="text-gray-400">Adicionar Filtros</span>
+        <span className="material-icons text-[16px] text-gray-400 shrink-0">
+          {open ? "expand_less" : "expand_more"}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-md py-1">
+          {FILTROS_ADICIONAIS_OPCOES.map(opcao => (
+            <label
+              key={opcao.key}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
+            >
+              <input
+                type="checkbox"
+                checked={value.has(opcao.key)}
+                onChange={() => toggle(opcao.key)}
+                className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d]"
+              />
+              <span>{opcao.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarcadoresMultiSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string[];
+  options: string[];
+  onChange: (marcadores: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const toggle = (marca: string) => {
+    onChange(value.includes(marca) ? value.filter(m => m !== marca) : [...value, marca]);
+  };
+
+  const label =
+    value.length === 0
+      ? "Selecione marcadores"
+      : value.length === 1
+        ? value[0]
+        : `${value.length} marcadores`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`${selectClass} text-left flex items-center justify-between gap-2`}
+      >
+        <span className={value.length === 0 ? "text-gray-400 truncate" : "truncate"}>{label}</span>
+        <span className="material-icons text-[16px] text-gray-400 shrink-0">expand_more</span>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-md py-1">
+          {options.length === 0 ? (
+            <p className="px-3 py-2 text-[11px] text-gray-400">Nenhum marcador cadastrado</p>
+          ) : (
+            options.map(marca => (
+              <label
+                key={marca}
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={value.includes(marca)}
+                  onChange={() => toggle(marca)}
+                  className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d]"
+                />
+                <span className="truncate">{marca}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function numeroVisual(animal: { brinco: string | null; id: number }) {
   return animal.brinco?.trim() || String(animal.id);
@@ -97,51 +370,62 @@ export default function SelecionarAnimaisAlocacaoDialog({
   jaSelecionados,
   onConfirm,
 }: Props) {
-  const [filters, setFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
-  const debouncedPesquisa = useDebounce(filters.pesquisa, 400);
-  const [filtrosAbertos, setFiltrosAbertos] = useState(true);
+  const [draftFilters, setDraftFilters] = useState<AlocacaoAnimaisFiltersState>(INITIAL_ALOCACAO_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<AlocacaoAnimaisFiltersState>(INITIAL_ALOCACAO_FILTERS);
+  const [draftFiltrosAtivos, setDraftFiltrosAtivos] = useState<Set<FiltroAdicionalKey>>(new Set());
+  const [appliedFiltrosAtivos, setAppliedFiltrosAtivos] = useState<Set<FiltroAdicionalKey>>(new Set());
+  const [buscou, setBuscou] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [page, setPage] = useState(1);
 
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
   const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
-
-  const apiParams = useMemo(
-    () => ({ ...animaisFiltersToApiParams(filters, debouncedPesquisa), status: "ativo" }),
-    [filters, debouncedPesquisa],
+  const { data: marcadoresDisponiveis = [] } = trpc.animais.marcasDistintas.useQuery(undefined, { enabled: open });
+  const fazendaDraftNum = draftFilters.fazendaId ? Number(draftFilters.fazendaId) : 0;
+  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: fazendaDraftNum },
+    { enabled: open && fazendaDraftNum > 0 },
   );
 
-  const { data: animaisData = [], isLoading } = trpc.animais.list.useQuery(apiParams, { enabled: open });
+  const apiParams = useMemo(
+    () => alocacaoFiltersToApiParams(appliedFilters, appliedFiltrosAtivos),
+    [appliedFilters, appliedFiltrosAtivos],
+  );
+
+  const { data: animaisData = [], isLoading } = trpc.animais.list.useQuery(apiParams, {
+    enabled: open && buscou,
+  });
 
   const lotesMap = useMemo(() => new Map(lotes.map(l => [l.id, l])), [lotes]);
 
+  const lotesFiltrados = draftFilters.fazendaId
+    ? lotes.filter(l => l.fazendaId === Number(draftFilters.fazendaId))
+    : lotes;
+
   const disponiveis = useMemo(
-    () => animaisData.filter(a => !jaSelecionados.has(a.id)),
-    [animaisData, jaSelecionados],
+    () => (buscou ? animaisData.filter(a => !jaSelecionados.has(a.id)) : []),
+    [animaisData, jaSelecionados, buscou],
   );
+
+  const categorias = draftFilters.sexo
+    ? getCategoriasPorSexo(draftFilters.sexo === "macho" ? "Macho" : "Fêmea")
+    : todasAsCategorias();
 
   useEffect(() => {
     if (!open) {
       setSelected(new Set());
-      setPage(1);
-      setFilters(INITIAL_FILTERS);
+      setDraftFilters(INITIAL_ALOCACAO_FILTERS);
+      setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
+      setDraftFiltrosAtivos(new Set());
+      setAppliedFiltrosAtivos(new Set());
+      setBuscou(false);
       return;
     }
+    setBuscou(true);
+    setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
+    setDraftFilters(INITIAL_ALOCACAO_FILTERS);
+    setAppliedFiltrosAtivos(new Set());
+    setDraftFiltrosAtivos(new Set());
   }, [open]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [apiParams, jaSelecionados]);
-
-  const totalPages = Math.max(1, Math.ceil(disponiveis.length / PER_PAGE));
-  const pageSafe = Math.min(page, totalPages);
-  const paginated = disponiveis.slice((pageSafe - 1) * PER_PAGE, pageSafe * PER_PAGE);
-  const paginatedIds = paginated.map(a => a.id);
-  const allPageSelected = paginated.length > 0 && paginated.every(a => selected.has(a.id));
-  const allResultSelected = disponiveis.length > 0 && disponiveis.every(a => selected.has(a.id));
-
-  const categorias = filters.sexo
-    ? getCategoriasPorSexo(filters.sexo === "macho" ? "Macho" : "Fêmea")
-    : todasAsCategorias();
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -152,30 +436,221 @@ export default function SelecionarAnimaisAlocacaoDialog({
     });
   };
 
-  const toggleSelectPage = () => {
-    if (allPageSelected) {
-      setSelected(prev => {
-        const next = new Set(prev);
-        paginatedIds.forEach(id => next.delete(id));
-        return next;
-      });
-    } else {
-      setSelected(prev => new Set([...prev, ...paginatedIds]));
-    }
-  };
-
-  const selecionarTodos = () => {
-    if (allResultSelected) {
-      setSelected(new Set());
-      return;
-    }
-    setSelected(new Set(disponiveis.map(a => a.id)));
+  const handleBuscar = () => {
+    setAppliedFilters({ ...draftFilters });
+    setAppliedFiltrosAtivos(new Set(draftFiltrosAtivos));
+    setBuscou(true);
   };
 
   const limparFiltros = () => {
-    setFilters(INITIAL_FILTERS);
-    setPage(1);
+    setDraftFilters(INITIAL_ALOCACAO_FILTERS);
+    setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
+    setDraftFiltrosAtivos(new Set());
+    setAppliedFiltrosAtivos(new Set());
+    setBuscou(true);
   };
+
+  const handleFiltrosAdicionaisChange = (next: Set<FiltroAdicionalKey>, toggled: FiltroAdicionalKey) => {
+    setDraftFiltrosAtivos(next);
+    if (!next.has(toggled)) {
+      setDraftFilters(f => ({ ...f, ...clearFiltroAdicionalValues(toggled) }));
+    }
+  };
+
+  const renderCampoFiltroAdicional = (key: FiltroAdicionalKey) => {
+    switch (key) {
+      case "dataNascimento":
+        return (
+          <FilterCard key={key} label="Data de Nascimento">
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={draftFilters.dataNascimentoInicial}
+                onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoInicial: e.target.value }))}
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+              <span className="text-gray-400 text-[11px] shrink-0">–</span>
+              <input
+                type="date"
+                value={draftFilters.dataNascimentoFinal}
+                onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoFinal: e.target.value }))}
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+            </div>
+          </FilterCard>
+        );
+      case "peso":
+        return (
+          <FilterCard key={key} label="Peso">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={draftFilters.pesoInicial}
+                onChange={e => setDraftFilters(f => ({ ...f, pesoInicial: e.target.value }))}
+                placeholder="Inicial"
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+              <span className="text-gray-400 text-[11px] shrink-0">–</span>
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={draftFilters.pesoFinal}
+                onChange={e => setDraftFilters(f => ({ ...f, pesoFinal: e.target.value }))}
+                placeholder="Final"
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+            </div>
+          </FilterCard>
+        );
+      case "rfid":
+        return (
+          <FilterCard key={key} label="Nº RFID">
+            <input
+              type="text"
+              value={draftFilters.brincoEletronico}
+              onChange={e => setDraftFilters(f => ({ ...f, brincoEletronico: e.target.value }))}
+              placeholder="Digite o nº RFID"
+              className={inputClass}
+            />
+          </FilterCard>
+        );
+      case "subdivisao":
+        return (
+          <FilterCard key={key} label="Subdivisão">
+            <select
+              value={draftFilters.pastoId}
+              onChange={e => setDraftFilters(f => ({ ...f, pastoId: e.target.value }))}
+              disabled={!draftFilters.fazendaId}
+              className={selectClass}
+            >
+              <option value="">Selecione a subdivisão</option>
+              {pastos.map(p => (
+                <option key={p.id} value={String(p.id)}>{p.nome}</option>
+              ))}
+            </select>
+          </FilterCard>
+        );
+      case "raca":
+        return (
+          <FilterCard key={key} label="Raça">
+            <select
+              value={draftFilters.raca}
+              onChange={e => setDraftFilters(f => ({ ...f, raca: e.target.value }))}
+              className={selectClass}
+            >
+              <option value="">Todas as raças</option>
+              {RACAS.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </FilterCard>
+        );
+      case "categoria":
+        return (
+          <FilterCard key={key} label="Categoria">
+            <select
+              value={draftFilters.categoria}
+              onChange={e => setDraftFilters(f => ({ ...f, categoria: e.target.value }))}
+              className={selectClass}
+            >
+              <option value="">Todas as categorias</option>
+              {categorias.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </FilterCard>
+        );
+      case "inativos":
+        return (
+          <FilterCard key={key} label="Filtrar apenas animais inativos">
+            <div className="flex items-center gap-3 h-[36px]">
+              <Switch
+                checked={draftFilters.somenteInativos}
+                onCheckedChange={checked => setDraftFilters(f => ({ ...f, somenteInativos: checked }))}
+                className="data-[state=checked]:bg-[#8ab83d]"
+              />
+              <span className="text-[12px] text-gray-700">Apenas animais inativos</span>
+            </div>
+          </FilterCard>
+        );
+      case "marcadores":
+        return (
+          <FilterCard key={key} label="Marcadores">
+            <MarcadoresMultiSelect
+              value={draftFilters.marcadores}
+              options={marcadoresDisponiveis}
+              onChange={marcadores => setDraftFilters(f => ({ ...f, marcadores }))}
+            />
+          </FilterCard>
+        );
+      case "idadeMeses":
+        return (
+          <FilterCard key={key} label="Idade em Meses">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={0}
+                value={draftFilters.idadeMesesInicial}
+                onChange={e => setDraftFilters(f => ({ ...f, idadeMesesInicial: e.target.value }))}
+                placeholder="Inicial"
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+              <span className="text-gray-400 text-[11px] shrink-0">–</span>
+              <input
+                type="number"
+                min={0}
+                value={draftFilters.idadeMesesFinal}
+                onChange={e => setDraftFilters(f => ({ ...f, idadeMesesFinal: e.target.value }))}
+                placeholder="Final"
+                className={`${inputClass} flex-1 min-w-0`}
+              />
+            </div>
+          </FilterCard>
+        );
+      case "rgn":
+        return (
+          <FilterCard key={key} label="Registro de Nascimento (RGN)">
+            <input
+              type="text"
+              value={draftFilters.rgn}
+              onChange={e => setDraftFilters(f => ({ ...f, rgn: e.target.value }))}
+              placeholder="Digite o RGN"
+              className={inputClass}
+            />
+          </FilterCard>
+        );
+      case "rgd":
+        return (
+          <FilterCard key={key} label="Registro Definitivo (RGD)">
+            <input
+              type="text"
+              value={draftFilters.rgd}
+              onChange={e => setDraftFilters(f => ({ ...f, rgd: e.target.value }))}
+              placeholder="Digite o RGD"
+              className={inputClass}
+            />
+          </FilterCard>
+        );
+      case "sisbov":
+        return (
+          <FilterCard key={key} label="Animal com SISBOV">
+            <div className="flex items-center gap-3 h-[36px]">
+              <Switch
+                checked={draftFilters.somenteSisbov}
+                onCheckedChange={checked => setDraftFilters(f => ({ ...f, somenteSisbov: checked }))}
+                className="data-[state=checked]:bg-[#8ab83d]"
+              />
+              <span className="text-[12px] text-gray-700">Somente animais SISBOV</span>
+            </div>
+          </FilterCard>
+        );
+    }
+  };
+
+  const camposFiltrosAtivos = FILTROS_ADICIONAIS_OPCOES.filter(o => draftFiltrosAtivos.has(o.key));
 
   const handleConfirm = () => {
     if (selected.size === 0) {
@@ -189,24 +664,12 @@ export default function SelecionarAnimaisAlocacaoDialog({
     onClose();
   };
 
-  const inicio = disponiveis.length === 0 ? 0 : (pageSafe - 1) * PER_PAGE + 1;
-  const fim = Math.min(pageSafe * PER_PAGE, disponiveis.length);
-
   const thClass =
     "px-2 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-left whitespace-nowrap border-r border-gray-200";
-
-  const pageNumbers = useMemo(() => {
-    const max = 5;
-    let start = Math.max(1, pageSafe - 2);
-    const end = Math.min(totalPages, start + max - 1);
-    start = Math.max(1, end - max + 1);
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-  }, [pageSafe, totalPages]);
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-[96vw] lg:max-w-6xl max-h-[92vh] overflow-y-auto p-0 gap-0">
-        {/* Cabeçalho */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-[15px] font-semibold text-gray-900">Buscar animais</h2>
           <button
@@ -219,212 +682,129 @@ export default function SelecionarAnimaisAlocacaoDialog({
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-4 space-y-4">
           {/* Filtros principais */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>ID do Animal</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <FilterCard label="Fazenda">
+              <select
+                value={draftFilters.fazendaId}
+                onChange={e => setDraftFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "", pastoId: "" }))}
+                className={selectClass}
+              >
+                <option value="">Selecione a fazenda</option>
+                {fazendas.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                ))}
+              </select>
+            </FilterCard>
+
+            <FilterCard label="Nº Visual">
               <input
                 type="text"
-                value={filters.pesquisa}
-                onChange={e => setFilters(f => ({ ...f, pesquisa: e.target.value }))}
-                placeholder="Digite um ID"
+                value={draftFilters.pesquisa}
+                onChange={e => setDraftFilters(f => ({ ...f, pesquisa: e.target.value }))}
+                placeholder="Digite o nº visual"
                 className={inputClass}
               />
-            </div>
-            <div>
-              <label className={labelClass}>Lote</label>
+            </FilterCard>
+
+            <FilterCard label="Lote">
               <select
-                value={filters.loteId}
-                onChange={e => setFilters(f => ({ ...f, loteId: e.target.value }))}
+                value={draftFilters.loteId}
+                onChange={e => setDraftFilters(f => ({ ...f, loteId: e.target.value }))}
                 className={selectClass}
               >
                 <option value="">Selecione o lote</option>
-                {lotes.map(l => (
+                {lotesFiltrados.map(l => (
                   <option key={l.id} value={String(l.id)}>{l.nome}</option>
                 ))}
               </select>
-            </div>
+            </FilterCard>
+
+            <FilterCard label="Sexo">
+              <select
+                value={draftFilters.sexo}
+                onChange={e => setDraftFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
+                className={selectClass}
+              >
+                <option value="">Todos</option>
+                <option value="macho">Macho</option>
+                <option value="femea">Fêmea</option>
+              </select>
+            </FilterCard>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setFiltrosAbertos(v => !v)}
-            className="flex items-center justify-center w-full py-1 text-gray-400 hover:text-gray-600"
-          >
-            <span className="material-icons text-[20px]">
-              {filtrosAbertos ? "expand_less" : "expand_more"}
-            </span>
-          </button>
+          {/* Buscar / Filtros adicionais / Limpar */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-3 items-start">
+            <button
+              type="button"
+              onClick={handleBuscar}
+              className={btnActionClass}
+              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+            >
+              Buscar Animais
+            </button>
 
-          {filtrosAbertos && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pb-1">
-              <div>
-                <label className={labelClass}>Sexo</label>
-                <select
-                  value={filters.sexo}
-                  onChange={e => setFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
-                  className={selectClass}
-                >
-                  <option value="">Todos</option>
-                  <option value="macho">Macho</option>
-                  <option value="femea">Fêmea</option>
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Categoria</label>
-                <select
-                  value={filters.categoria}
-                  onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
-                  className={selectClass}
-                >
-                  <option value="">Todas as categorias</option>
-                  {categorias.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Raça</label>
-                <select
-                  value={filters.raca}
-                  onChange={e => setFilters(f => ({ ...f, raca: e.target.value }))}
-                  className={selectClass}
-                >
-                  <option value="">Todas as raças</option>
-                  {RACAS.map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="border border-gray-200 rounded-sm bg-[#F5F5F5] p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Filtros Adicionais</p>
+              <AdicionarFiltrosSelect
+                value={draftFiltrosAtivos}
+                onChange={handleFiltrosAdicionaisChange}
+              />
             </div>
-          )}
 
-          {/* Ações de filtro */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div className="flex items-center justify-center px-3 py-2 border border-gray-200 rounded-sm bg-[#EEEEEE] text-[11px] text-gray-600">
-              Filtros Adicionais
-              {filters.loteId && (
-                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-gray-200 text-[10px]">
-                  Lote
-                  <button
-                    type="button"
-                    onClick={() => setFilters(f => ({ ...f, loteId: "" }))}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    ×
-                  </button>
-                </span>
-              )}
-            </div>
             <button
               type="button"
               onClick={limparFiltros}
-              className="px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95"
+              className={btnActionClass}
               style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
             >
               Limpar Filtros
             </button>
           </div>
 
-          {/* Selecionar todos + paginação superior */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={selecionarTodos}
-              disabled={disponiveis.length === 0}
-              className="px-6 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
-            >
-              Selecionar Todos
-            </button>
-            <div className="flex-1 flex flex-wrap items-center justify-end gap-2 text-[11px] text-gray-500">
-              <span>
-                {disponiveis.length === 0
-                  ? "Mostrando de 0 a 0 de um total de 0 animais."
-                  : `Mostrando de ${inicio} a ${fim} de um total de ${disponiveis.length} animais.`}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={pageSafe <= 1}
-                  onClick={() => setPage(p => p - 1)}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40"
-                >
-                  <span className="material-icons text-[16px]">chevron_left</span>
-                </button>
-                {pageNumbers.map(n => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setPage(n)}
-                    className={`w-7 h-7 flex items-center justify-center rounded-full text-[11px] font-semibold ${
-                      n === pageSafe ? "text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
-                    style={n === pageSafe ? { backgroundColor: IRANCHO_BTN_GREEN } : undefined}
-                  >
-                    {n}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  disabled={pageSafe >= totalPages}
-                  onClick={() => setPage(p => p + 1)}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40"
-                >
-                  <span className="material-icons text-[16px]">chevron_right</span>
-                </button>
+          {/* Campos dinâmicos dos filtros selecionados */}
+          {camposFiltrosAtivos.length > 0 && (
+            <div className="border border-gray-200 rounded-sm bg-[#F5F5F5] p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {camposFiltrosAtivos.map(opcao => renderCampoFiltroAdicional(opcao.key))}
               </div>
             </div>
-          </div>
-
-          {/* Badges */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#555] text-white text-[11px] font-medium">
-              Qtd. Animais: {disponiveis.length}
-            </span>
-            <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#555] text-white text-[11px] font-medium">
-              Qtd. Animais Selecionados: {selected.size}
-            </span>
-          </div>
+          )}
 
           {/* Tabela */}
           <div className="border border-gray-200 rounded-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[340px]">
               <table className="w-full text-[11px] min-w-[1000px]">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="w-10 px-2 py-2 border-r border-gray-200">
-                      <Checkbox
-                        checked={allPageSelected}
-                        onCheckedChange={toggleSelectPage}
-                        className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
-                      />
-                    </th>
-                    <th className={thClass}>ID</th>
-                    <th className={thClass}>Nome</th>
-                    <th className={thClass}>Sexo</th>
-                    <th className={thClass}>Data Nascimento</th>
-                    <th className={thClass}>ID Brinco Eletrônico</th>
-                    <th className={thClass}>ID SISBOV</th>
-                    <th className={thClass}>Peso</th>
-                    <th className={thClass}>Data da Pesagem</th>
-                    <th className={thClass}>Lote</th>
-                    <th className={thClass}>Raça</th>
-                    <th className={`${thClass} border-r-0`}>Fazenda</th>
+                    <th className="w-10 px-2 py-2 border-r border-gray-200 bg-gray-50" />
+                    <th className={`${thClass} bg-gray-50`}>ID</th>
+                    <th className={`${thClass} bg-gray-50`}>Nome</th>
+                    <th className={`${thClass} bg-gray-50`}>Sexo</th>
+                    <th className={`${thClass} bg-gray-50`}>Data Nascimento</th>
+                    <th className={`${thClass} bg-gray-50`}>ID Brinco Eletrônico</th>
+                    <th className={`${thClass} bg-gray-50`}>ID SISBOV</th>
+                    <th className={`${thClass} bg-gray-50`}>Peso</th>
+                    <th className={`${thClass} bg-gray-50`}>Data da Pesagem</th>
+                    <th className={`${thClass} bg-gray-50`}>Lote</th>
+                    <th className={`${thClass} bg-gray-50`}>Raça</th>
+                    <th className={`${thClass} border-r-0 bg-gray-50`}>Fazenda</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {isLoading ? (
+                  {!buscou || isLoading ? (
                     <tr>
-                      <td colSpan={12} className="text-center py-10 text-gray-400">Carregando...</td>
+                      <td colSpan={12} className="text-center py-10 text-gray-400">
+                        {isLoading ? "Carregando..." : "Sem dados"}
+                      </td>
                     </tr>
-                  ) : paginated.length === 0 ? (
+                  ) : disponiveis.length === 0 ? (
                     <tr>
                       <td colSpan={12} className="text-center py-10 text-gray-400">Sem dados</td>
                     </tr>
                   ) : (
-                    paginated.map((animal, idx) => {
+                    disponiveis.map((animal, idx) => {
                       const lote = animal.loteId ? lotesMap.get(animal.loteId) : undefined;
                       return (
                         <tr
@@ -467,9 +847,16 @@ export default function SelecionarAnimaisAlocacaoDialog({
               </table>
             </div>
           </div>
+
+          {/* Contadores */}
+          {buscou && !isLoading && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={badgeClass}>Qtd. Animais: {disponiveis.length}</span>
+              <span className={badgeClass}>Qtd. Animais Selecionados: {selected.size}</span>
+            </div>
+          )}
         </div>
 
-        {/* Rodapé confirmar */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
           <button
             type="button"
