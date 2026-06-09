@@ -30,6 +30,43 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   pastoId: "",
 };
 
+type AlocacaoAnimaisFiltersState = AnimaisListFiltersState & {
+  brincoEletronico: string;
+  idadeMesesInicial: string;
+  idadeMesesFinal: string;
+  rgn: string;
+  rgd: string;
+  somenteInativos: boolean;
+};
+
+const INITIAL_ALOCACAO_FILTERS: AlocacaoAnimaisFiltersState = {
+  ...INITIAL_FILTERS,
+  brincoEletronico: "",
+  idadeMesesInicial: "",
+  idadeMesesFinal: "",
+  rgn: "",
+  rgd: "",
+  somenteInativos: false,
+};
+
+function alocacaoFiltersToApiParams(filters: AlocacaoAnimaisFiltersState) {
+  const base = animaisFiltersToApiParams(filters, filters.pesquisa);
+  const idadeMin = filters.idadeMesesInicial.trim() ? Number(filters.idadeMesesInicial) : undefined;
+  const idadeMax = filters.idadeMesesFinal.trim() ? Number(filters.idadeMesesFinal) : undefined;
+  return {
+    ...base,
+    status: filters.somenteInativos ? "inativo" : "ativo",
+    brincoEletronico: filters.brincoEletronico.trim() || undefined,
+    rgn: filters.rgn.trim() || undefined,
+    rgd: filters.rgd.trim() || undefined,
+    idadeMesesMin: idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
+    idadeMesesMax: idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
+  };
+}
+
+const btnActionClass =
+  "w-full px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95";
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -170,8 +207,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
   jaSelecionados,
   onConfirm,
 }: Props) {
-  const [draftFilters, setDraftFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<AnimaisListFiltersState>(INITIAL_FILTERS);
+  const [draftFilters, setDraftFilters] = useState<AlocacaoAnimaisFiltersState>(INITIAL_ALOCACAO_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<AlocacaoAnimaisFiltersState>(INITIAL_ALOCACAO_FILTERS);
   const [filtrosAdicionaisAbertos, setFiltrosAdicionaisAbertos] = useState(false);
   const [buscou, setBuscou] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -179,9 +216,14 @@ export default function SelecionarAnimaisAlocacaoDialog({
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
   const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
   const { data: marcadoresDisponiveis = [] } = trpc.animais.marcasDistintas.useQuery(undefined, { enabled: open });
+  const fazendaDraftNum = draftFilters.fazendaId ? Number(draftFilters.fazendaId) : 0;
+  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: fazendaDraftNum },
+    { enabled: open && fazendaDraftNum > 0 },
+  );
 
   const apiParams = useMemo(
-    () => ({ ...animaisFiltersToApiParams(appliedFilters, appliedFilters.pesquisa), status: "ativo" }),
+    () => alocacaoFiltersToApiParams(appliedFilters),
     [appliedFilters],
   );
 
@@ -207,15 +249,15 @@ export default function SelecionarAnimaisAlocacaoDialog({
   useEffect(() => {
     if (!open) {
       setSelected(new Set());
-      setDraftFilters(INITIAL_FILTERS);
-      setAppliedFilters(INITIAL_FILTERS);
+      setDraftFilters(INITIAL_ALOCACAO_FILTERS);
+      setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
       setFiltrosAdicionaisAbertos(false);
       setBuscou(false);
       return;
     }
     setBuscou(true);
-    setAppliedFilters(INITIAL_FILTERS);
-    setDraftFilters(INITIAL_FILTERS);
+    setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
+    setDraftFilters(INITIAL_ALOCACAO_FILTERS);
   }, [open]);
 
   const toggleSelect = (id: number) => {
@@ -233,8 +275,8 @@ export default function SelecionarAnimaisAlocacaoDialog({
   };
 
   const limparFiltros = () => {
-    setDraftFilters(INITIAL_FILTERS);
-    setAppliedFilters(INITIAL_FILTERS);
+    setDraftFilters(INITIAL_ALOCACAO_FILTERS);
+    setAppliedFilters(INITIAL_ALOCACAO_FILTERS);
     setFiltrosAdicionaisAbertos(false);
     setBuscou(true);
   };
@@ -275,7 +317,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
             <FilterCard label="Fazenda">
               <select
                 value={draftFilters.fazendaId}
-                onChange={e => setDraftFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "" }))}
+                onChange={e => setDraftFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "", pastoId: "" }))}
                 className={selectClass}
               >
                 <option value="">Selecione a fazenda</option>
@@ -335,96 +377,217 @@ export default function SelecionarAnimaisAlocacaoDialog({
             </button>
           </div>
 
-          {/* Filtros adicionais */}
-          {filtrosAdicionaisAbertos && (
-            <div className="border border-gray-200 rounded-sm bg-[#F5F5F5] p-4 space-y-3">
-              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Filtros adicionais</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <FilterCard label="Categoria">
-                  <select
-                    value={draftFilters.categoria}
-                    onChange={e => setDraftFilters(f => ({ ...f, categoria: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todas as categorias</option>
-                    {categorias.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </FilterCard>
+          {/* Filtros adicionais + ações */}
+          {filtrosAdicionaisAbertos ? (
+            <div className="flex flex-col lg:flex-row gap-3 items-stretch">
+              <div className="flex-1 border border-gray-200 rounded-sm bg-[#F5F5F5] p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Filtros adicionais</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <FilterCard label="Data de Nascimento">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={draftFilters.dataNascimentoInicial}
+                        onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoInicial: e.target.value }))}
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                      <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                      <input
+                        type="date"
+                        value={draftFilters.dataNascimentoFinal}
+                        onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoFinal: e.target.value }))}
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                    </div>
+                  </FilterCard>
 
-                <FilterCard label="Raça">
-                  <select
-                    value={draftFilters.raca}
-                    onChange={e => setDraftFilters(f => ({ ...f, raca: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todas as raças</option>
-                    {RACAS.map(r => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </FilterCard>
+                  <FilterCard label="Peso">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={draftFilters.pesoInicial}
+                        onChange={e => setDraftFilters(f => ({ ...f, pesoInicial: e.target.value }))}
+                        placeholder="Inicial"
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                      <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        value={draftFilters.pesoFinal}
+                        onChange={e => setDraftFilters(f => ({ ...f, pesoFinal: e.target.value }))}
+                        placeholder="Final"
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                    </div>
+                  </FilterCard>
 
-                <FilterCard label="Data de Nascimento">
-                  <div className="flex items-center gap-1">
+                  <FilterCard label="N° RFID">
                     <input
-                      type="date"
-                      value={draftFilters.dataNascimentoInicial}
-                      onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoInicial: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
+                      type="text"
+                      value={draftFilters.brincoEletronico}
+                      onChange={e => setDraftFilters(f => ({ ...f, brincoEletronico: e.target.value }))}
+                      placeholder="Digite o n° RFID"
+                      className={inputClass}
                     />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                  </FilterCard>
+
+                  <FilterCard label="Subdivisão">
+                    <select
+                      value={draftFilters.pastoId}
+                      onChange={e => setDraftFilters(f => ({ ...f, pastoId: e.target.value }))}
+                      disabled={!draftFilters.fazendaId}
+                      className={selectClass}
+                    >
+                      <option value="">Selecione a subdivisão</option>
+                      {pastos.map(p => (
+                        <option key={p.id} value={String(p.id)}>{p.nome}</option>
+                      ))}
+                    </select>
+                  </FilterCard>
+
+                  <FilterCard label="Raça">
+                    <select
+                      value={draftFilters.raca}
+                      onChange={e => setDraftFilters(f => ({ ...f, raca: e.target.value }))}
+                      className={selectClass}
+                    >
+                      <option value="">Todas as raças</option>
+                      {RACAS.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </FilterCard>
+
+                  <FilterCard label="Categoria">
+                    <select
+                      value={draftFilters.categoria}
+                      onChange={e => setDraftFilters(f => ({ ...f, categoria: e.target.value }))}
+                      className={selectClass}
+                    >
+                      <option value="">Todas as categorias</option>
+                      {categorias.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </FilterCard>
+
+                  <FilterCard label="Filtrar apenas animais inativos">
+                    <div className="flex items-center gap-3 h-[36px]">
+                      <Switch
+                        checked={draftFilters.somenteInativos}
+                        onCheckedChange={checked => setDraftFilters(f => ({ ...f, somenteInativos: checked }))}
+                        className="data-[state=checked]:bg-[#8ab83d]"
+                      />
+                      <span className="text-[12px] text-gray-700">Somente inativos</span>
+                    </div>
+                  </FilterCard>
+
+                  <FilterCard label="Marcadores">
+                    <MarcadoresMultiSelect
+                      value={draftFilters.marcadores}
+                      options={marcadoresDisponiveis}
+                      onChange={marcadores => setDraftFilters(f => ({ ...f, marcadores }))}
+                    />
+                  </FilterCard>
+
+                  <FilterCard label="Idade em Meses">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={draftFilters.idadeMesesInicial}
+                        onChange={e => setDraftFilters(f => ({ ...f, idadeMesesInicial: e.target.value }))}
+                        placeholder="Inicial"
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                      <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={draftFilters.idadeMesesFinal}
+                        onChange={e => setDraftFilters(f => ({ ...f, idadeMesesFinal: e.target.value }))}
+                        placeholder="Final"
+                        className={`${inputClass} flex-1 min-w-0`}
+                      />
+                    </div>
+                  </FilterCard>
+
+                  <FilterCard label="Registro de Nascimento (RGN)">
                     <input
-                      type="date"
-                      value={draftFilters.dataNascimentoFinal}
-                      onChange={e => setDraftFilters(f => ({ ...f, dataNascimentoFinal: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
+                      type="text"
+                      value={draftFilters.rgn}
+                      onChange={e => setDraftFilters(f => ({ ...f, rgn: e.target.value }))}
+                      placeholder="Digite o RGN"
+                      className={inputClass}
                     />
-                  </div>
-                </FilterCard>
+                  </FilterCard>
 
-                <FilterCard label="Marcadores">
-                  <MarcadoresMultiSelect
-                    value={draftFilters.marcadores}
-                    options={marcadoresDisponiveis}
-                    onChange={marcadores => setDraftFilters(f => ({ ...f, marcadores }))}
-                  />
-                </FilterCard>
-
-                <FilterCard label="SISBOV">
-                  <div className="flex items-center gap-3 h-[36px]">
-                    <Switch
-                      checked={draftFilters.somenteSisbov}
-                      onCheckedChange={checked => setDraftFilters(f => ({ ...f, somenteSisbov: checked }))}
-                      className="data-[state=checked]:bg-[#8ab83d]"
+                  <FilterCard label="Registro Definitivo (RGD)">
+                    <input
+                      type="text"
+                      value={draftFilters.rgd}
+                      onChange={e => setDraftFilters(f => ({ ...f, rgd: e.target.value }))}
+                      placeholder="Digite o RGD"
+                      className={inputClass}
                     />
-                    <span className="text-[12px] text-gray-700">Somente SISBOV</span>
-                  </div>
-                </FilterCard>
+                  </FilterCard>
+
+                  <FilterCard label="Animal com SISBOV">
+                    <div className="flex items-center gap-3 h-[36px]">
+                      <Switch
+                        checked={draftFilters.somenteSisbov}
+                        onCheckedChange={checked => setDraftFilters(f => ({ ...f, somenteSisbov: checked }))}
+                        className="data-[state=checked]:bg-[#8ab83d]"
+                      />
+                      <span className="text-[12px] text-gray-700">Somente SISBOV</span>
+                    </div>
+                  </FilterCard>
+                </div>
+              </div>
+
+              <div className="flex flex-row lg:flex-col gap-2 lg:w-44 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleBuscar}
+                  className={`${btnActionClass} lg:flex-1`}
+                  style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+                >
+                  Buscar Animais
+                </button>
+                <button
+                  type="button"
+                  onClick={limparFiltros}
+                  className={`${btnActionClass} lg:flex-1`}
+                  style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+                >
+                  Limpar Filtros
+                </button>
               </div>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+              <button
+                type="button"
+                onClick={handleBuscar}
+                className={btnActionClass}
+                style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+              >
+                Buscar Animais
+              </button>
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className={btnActionClass}
+                style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+              >
+                Limpar Filtros
+              </button>
+            </div>
           )}
-
-          {/* Ações */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={handleBuscar}
-              className="px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
-            >
-              Buscar Animais
-            </button>
-            <button
-              type="button"
-              onClick={limparFiltros}
-              className="px-4 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
-            >
-              Limpar Filtros
-            </button>
-          </div>
 
           {/* Tabela */}
           <div className="border border-gray-200 rounded-sm overflow-hidden">
