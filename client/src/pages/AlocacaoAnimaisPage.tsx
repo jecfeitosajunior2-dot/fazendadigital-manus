@@ -73,17 +73,19 @@ export default function AlocacaoAnimaisPage() {
   }, [lotesAtivosPasto, loteDestinoId]);
 
   useEffect(() => {
-    setAnimais(prev =>
-      prev.map(a => ({
+    setPage(1);
+  }, [animais.length, perPage]);
+
+  const animaisExibidos = useMemo(
+    () =>
+      animais.map(a => ({
         ...a,
         ultimaMovimentacao: ultimasMov[a.id] ?? a.ultimaMovimentacao,
       })),
-    );
-  }, [ultimasMov]);
+    [animais, ultimasMov],
+  );
 
-  useEffect(() => {
-    setPage(1);
-  }, [animais.length, perPage]);
+  const jaSelecionadosIds = useMemo(() => new Set(animais.map(a => a.id)), [animais]);
 
   const transferirMutation = trpc.lotes.transferirAnimaisAlocacao.useMutation({
     onSuccess: data => {
@@ -99,12 +101,12 @@ export default function AlocacaoAnimaisPage() {
     onError: e => toast.error(e.message),
   });
 
-  const totalPages = Math.max(1, Math.ceil(animais.length / perPage));
+  const totalPages = Math.max(1, Math.ceil(animaisExibidos.length / perPage));
   const pageSafe = Math.min(page, totalPages);
-  const paginated = animais.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+  const paginated = animaisExibidos.slice((pageSafe - 1) * perPage, pageSafe * perPage);
 
-  const inicio = animais.length === 0 ? 0 : (pageSafe - 1) * perPage + 1;
-  const fim = Math.min(pageSafe * perPage, animais.length);
+  const inicio = animaisExibidos.length === 0 ? 0 : (pageSafe - 1) * perPage + 1;
+  const fim = Math.min(pageSafe * perPage, animaisExibidos.length);
 
   const handleAdicionarAnimais = (novos: AnimalAlocacaoRow[]) => {
     setAnimais(prev => {
@@ -173,7 +175,7 @@ export default function AlocacaoAnimaisPage() {
       <SelecionarAnimaisAlocacaoDialog
         open={selecionarOpen}
         onClose={() => setSelecionarOpen(false)}
-        jaSelecionados={new Set(animais.map(a => a.id))}
+        jaSelecionados={jaSelecionadosIds}
         onConfirm={handleAdicionarAnimais}
       />
 
@@ -311,9 +313,9 @@ export default function AlocacaoAnimaisPage() {
                 </select>
                 <div className="flex items-center gap-3">
                   <span>
-                    {animais.length === 0
+                    {animaisExibidos.length === 0
                       ? "Não há dados a serem exibidos"
-                      : `Mostrando ${inicio}–${fim} de ${animais.length} itens`}
+                      : `Mostrando ${inicio}–${fim} de ${animaisExibidos.length} itens`}
                   </span>
                   <div className="flex items-center gap-1">
                     <button
