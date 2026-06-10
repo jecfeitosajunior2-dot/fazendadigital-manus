@@ -293,6 +293,55 @@ export default function ListaAnimaisFiltros({
           {sel.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
+              {/* Data de Nascimento */}
+              {has('dataNascimento') && (
+                <FilterCard label="Período de nascimento">
+                  <div className="flex items-center gap-1">
+                    <span className="material-icons text-[18px] text-gray-400 shrink-0">calendar_today</span>
+                    <input
+                      type="date"
+                      value={value.dataNascimentoInicial}
+                      onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                    <input
+                      type="date"
+                      value={value.dataNascimentoFinal}
+                      onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                  </div>
+                </FilterCard>
+              )}
+
+              {/* Peso */}
+              {has('peso') && (
+                <FilterCard label="Peso">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={value.pesoInicial}
+                      onChange={e => onChange(patch(value, { pesoInicial: e.target.value }))}
+                      placeholder="Peso inicial"
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={value.pesoFinal}
+                      onChange={e => onChange(patch(value, { pesoFinal: e.target.value }))}
+                      placeholder="Peso final"
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                  </div>
+                </FilterCard>
+              )}
+
               {/* Nº RFID */}
               {has('rfid') && (
                 <FilterCard label="Nº RFID">

@@ -4,6 +4,8 @@
 
 /** Chaves dos filtros adicionais disponíveis no dropdown */
 export type FiltroAdicionalKey =
+  | 'dataNascimento'
+  | 'peso'
   | 'rfid'
   | 'subdivisao'
   | 'raca'
@@ -16,6 +18,8 @@ export type FiltroAdicionalKey =
   | 'animalComSisbov';
 
 export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string }[] = [
+  { key: 'dataNascimento', label: 'Data de Nascimento' },
+  { key: 'peso', label: 'Peso' },
   { key: 'rfid', label: 'Nº RFID' },
   { key: 'subdivisao', label: 'Subdivisão' },
   { key: 'raca', label: 'Raça' },
