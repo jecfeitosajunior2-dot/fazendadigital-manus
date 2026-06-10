@@ -148,7 +148,7 @@ function FiltrosAdicionaisDropdown({
         </span>
       </button>
       {open && (
-        <div className="absolute z-40 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-lg py-1">
+        <div className="absolute z-[9999] mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-lg py-1">
           {FILTROS_ADICIONAIS_OPCOES.map(opcao => (
             <label
               key={opcao.key}
@@ -272,7 +272,7 @@ export default function ListaAnimaisFiltros({
             </button>
 
             {/* Filtros Adicionais (card com dropdown) */}
-            <div className="bg-white border border-gray-200 rounded-sm p-3">
+            <div className="bg-white border border-gray-200 rounded-sm p-3 overflow-visible relative">
               <FiltrosAdicionaisDropdown
                 selecionados={sel}
                 onChange={keys => onChange(patch(value, { filtrosAdicionaisSelecionados: keys }))}
