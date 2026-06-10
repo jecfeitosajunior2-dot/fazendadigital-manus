@@ -278,8 +278,12 @@ const AnimalFormPage: React.FC = () => {
   };
 
   // ── Validação ──
+  // Campos mínimos obrigatórios para habilitar o cadastro
+  const canSubmit = !!fazendaId && !!form.brinco.trim() && !!form.sexo;
+
   const validate = () => {
     const e: Record<string, string> = {};
+    if (!fazendaId) e.fazenda = 'Selecione uma fazenda';
     if (!form.brinco.trim()) e.brinco = 'Número do brinco é obrigatório';
     if (!form.sexo) e.sexo = 'Sexo é obrigatório';
     setErrors(e);
@@ -694,8 +698,11 @@ const AnimalFormPage: React.FC = () => {
 
           {/* ── Ações ── */}
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-            <p className="text-[11px] text-gray-400">
-              * Campos obrigatórios devem ser preenchidos antes de salvar.
+            <p className={`text-[11px] ${!canSubmit ? 'text-amber-500 font-medium' : 'text-gray-400'}`}>
+              {!canSubmit
+                ? '* Preencha Fazenda, Número do Brinco e Sexo para habilitar o cadastro.'
+                : '* Campos obrigatórios preenchidos. Pronto para salvar.'
+              }
             </p>
             <div className="flex gap-3 justify-end">
               <Button
@@ -713,7 +720,8 @@ const AnimalFormPage: React.FC = () => {
                   type="button"
                   onClick={() => handleSave(true)}
                   className="bg-green-700 hover:bg-green-800 text-white"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !canSubmit}
+                  title={!canSubmit ? 'Preencha Fazenda, Número do Brinco e Sexo para salvar' : undefined}
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   Salvar e Novo
@@ -723,8 +731,9 @@ const AnimalFormPage: React.FC = () => {
               <Button
                 type="submit"
                 className="text-white"
-                style={{ backgroundColor: '#4ECDC4' }}
-                disabled={isSubmitting}
+                style={{ backgroundColor: canSubmit ? '#4ECDC4' : undefined }}
+                disabled={isSubmitting || !canSubmit}
+                title={!canSubmit ? 'Preencha Fazenda, Número do Brinco e Sexo para salvar' : undefined}
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {isEditMode ? 'Salvar Alterações' : 'Cadastrar Animal'}
