@@ -80,7 +80,9 @@ function MarcadoresMultiSelect({
         className={`${selectClass} text-left flex items-center justify-between gap-2`}
       >
         <span className={value.length === 0 ? 'text-gray-400 truncate' : 'truncate'}>{label}</span>
-        <span className="material-icons text-[16px] text-gray-400 shrink-0">expand_more</span>
+        <span className="material-icons text-[16px] text-gray-400 shrink-0">
+          {open ? 'expand_less' : 'expand_more'}
+        </span>
       </button>
       {open && (
         <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-md py-1">
@@ -132,7 +134,7 @@ export default function ListaAnimaisFiltros({
   return (
     <div className="mb-3 bg-white border border-gray-200 rounded-sm overflow-hidden">
       <div className="px-4 py-3 space-y-3">
-        {/* Filtros principais */}
+        {/* Filtros principais — 4 cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <FilterCard label="Fazenda">
             <select
@@ -198,32 +200,25 @@ export default function ListaAnimaisFiltros({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 justify-end">
-          {hasActiveAnimaisFilters(value) && (
-            <button
-              type="button"
-              onClick={onClear}
-              className="h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-500 border border-gray-300 rounded-sm bg-white hover:bg-gray-50 transition-colors whitespace-nowrap"
-            >
-              Limpar
-            </button>
-          )}
+        {/* Botão Mais Filtros alinhado à direita */}
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
-            className="h-[36px] px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
+            className="h-[36px] px-4 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
           >
-            Mais Filtros
+            {value.maisFiltrosAbertos ? 'Menos Filtros' : 'Mais Filtros'}
           </button>
         </div>
       </div>
 
-      {/* Filtros adicionais */}
+      {/* ── Painel de filtros adicionais (mesmo padrão do modal Buscar Animais) ── */}
       {value.maisFiltrosAbertos && (
-        <div className="px-4 pb-4 pt-1 border-t border-gray-100 bg-[#F5F5F5]">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-            <div>
-              <label className={labelClass}>Subdivisão (Pasto)</label>
+        <div className="border-t border-gray-200 bg-[#F7F7F7] px-4 py-4 space-y-3">
+
+          {/* Linha 1: Subdivisão | Raça | Categoria */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <FilterCard label="Subdivisão (Pasto)">
               <select
                 value={value.pastoId}
                 onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
@@ -235,10 +230,9 @@ export default function ListaAnimaisFiltros({
                   <option key={p.id} value={String(p.id)}>{p.nome}</option>
                 ))}
               </select>
-            </div>
+            </FilterCard>
 
-            <div>
-              <label className={labelClass}>Raça</label>
+            <FilterCard label="Raça">
               <select
                 value={value.raca}
                 onChange={e => onChange(patch(value, { raca: e.target.value }))}
@@ -249,10 +243,9 @@ export default function ListaAnimaisFiltros({
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
-            </div>
+            </FilterCard>
 
-            <div>
-              <label className={labelClass}>Categoria</label>
+            <FilterCard label="Categoria">
               <select
                 value={value.categoria}
                 onChange={e => onChange(patch(value, { categoria: e.target.value }))}
@@ -263,12 +256,12 @@ export default function ListaAnimaisFiltros({
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-            </div>
+            </FilterCard>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-            <div>
-              <label className={labelClass}>Peso</label>
+          {/* Linha 2: Peso | Período de nascimento */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FilterCard label="Peso">
               <div className="flex items-center gap-1">
                 <input
                   type="number"
@@ -290,17 +283,15 @@ export default function ListaAnimaisFiltros({
                   className={`${inputClass} flex-1 min-w-0`}
                 />
               </div>
-            </div>
+            </FilterCard>
 
-            <div>
-              <label className={labelClass}>Período de nascimento</label>
+            <FilterCard label="Período de nascimento">
               <div className="flex items-center gap-1">
                 <span className="material-icons text-[18px] text-gray-400 shrink-0">calendar_today</span>
                 <input
                   type="date"
                   value={value.dataNascimentoInicial}
                   onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
-                  placeholder="Data inicial"
                   className={`${inputClass} flex-1 min-w-0`}
                 />
                 <span className="text-gray-400 text-[11px] shrink-0">–</span>
@@ -308,15 +299,15 @@ export default function ListaAnimaisFiltros({
                   type="date"
                   value={value.dataNascimentoFinal}
                   onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
-                  placeholder="Data final"
                   className={`${inputClass} flex-1 min-w-0`}
                 />
               </div>
-            </div>
+            </FilterCard>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3 items-end">
-            <div className="flex items-center gap-3 h-[36px]">
+          {/* Linha 3: Somente SISBOV | Filtrar por marcadores */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="bg-white border border-gray-200 rounded-sm p-3 flex items-center gap-3 h-full">
               <Switch
                 checked={value.somenteSisbov}
                 onCheckedChange={checked => onChange(patch(value, { somenteSisbov: checked }))}
@@ -325,21 +316,36 @@ export default function ListaAnimaisFiltros({
               <span className="text-[12px] text-gray-700">Somente SISBOV</span>
             </div>
 
-            <div className="lg:col-span-2">
-              <label className={labelClass}>Filtrar por marcadores</label>
-              <MarcadoresMultiSelect
-                value={value.marcadores}
-                options={marcadoresDisponiveis}
-                onChange={marcadores => onChange(patch(value, { marcadores }))}
-              />
+            <div className="sm:col-span-2">
+              <FilterCard label="Filtrar por marcadores">
+                <MarcadoresMultiSelect
+                  value={value.marcadores}
+                  options={marcadoresDisponiveis}
+                  onChange={marcadores => onChange(patch(value, { marcadores }))}
+                />
+              </FilterCard>
             </div>
           </div>
 
-          <div className="flex justify-end mt-4">
+          {/* Botões de ação: Buscar Animais + Limpar Filtros */}
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
+            {/* Buscar Animais — ocupa toda a largura disponível à esquerda */}
+            <button
+              type="button"
+              onClick={() => {
+                /* filtros já são reativos; este botão fecha o painel e confirma */
+                onChange(patch(value, { maisFiltrosAbertos: false }));
+              }}
+              className="flex-1 h-[40px] text-[12px] font-semibold uppercase tracking-wide text-white bg-[#8ab83d] hover:bg-[#7aa332] border border-[#8ab83d] rounded-sm transition-colors"
+            >
+              Buscar Animais
+            </button>
+
+            {/* Limpar Filtros — alinhado à direita */}
             <button
               type="button"
               onClick={onClear}
-              className="px-4 h-[32px] text-[10px] font-semibold uppercase tracking-wide text-gray-600 border border-gray-300 rounded-sm bg-white hover:bg-gray-50 transition-colors"
+              className="sm:w-auto w-full h-[40px] px-6 text-[12px] font-semibold uppercase tracking-wide text-gray-600 bg-white border border-gray-300 rounded-sm hover:bg-gray-50 transition-colors"
             >
               Limpar Filtros
             </button>
