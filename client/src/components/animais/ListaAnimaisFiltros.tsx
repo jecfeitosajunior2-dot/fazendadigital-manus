@@ -260,44 +260,38 @@ export default function ListaAnimaisFiltros({
       {value.maisFiltrosAbertos && (
         <div className="border-t border-gray-200 bg-[#F7F7F7] px-4 py-4 space-y-4">
 
-          {/* Card de seleção de filtros adicionais */}
-          <div className="bg-white border border-gray-200 rounded-sm p-3">
-            <FiltrosAdicionaisDropdown
-              selecionados={sel}
-              onChange={keys => onChange(patch(value, { filtrosAdicionaisSelecionados: keys }))}
-            />
+          {/* ── Linha de ações: Buscar Animais | Filtros Adicionais | Limpar Filtros ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr_1fr] gap-3 items-start">
+            {/* Buscar Animais */}
+            <button
+              type="button"
+              onClick={() => onChange(patch(value, { maisFiltrosAbertos: false }))}
+              className="h-[40px] w-full text-[12px] font-semibold uppercase tracking-wide text-gray-700 bg-[#EEEEEE] border border-gray-200 hover:bg-gray-200 rounded-sm transition-colors"
+            >
+              Buscar Animais
+            </button>
+
+            {/* Filtros Adicionais (card com dropdown) */}
+            <div className="bg-white border border-gray-200 rounded-sm p-3">
+              <FiltrosAdicionaisDropdown
+                selecionados={sel}
+                onChange={keys => onChange(patch(value, { filtrosAdicionaisSelecionados: keys }))}
+              />
+            </div>
+
+            {/* Limpar Filtros */}
+            <button
+              type="button"
+              onClick={onClear}
+              className="h-[40px] w-full text-[12px] font-semibold uppercase tracking-wide text-gray-600 bg-white border border-gray-300 hover:bg-gray-50 rounded-sm transition-colors"
+            >
+              Limpar Filtros
+            </button>
           </div>
 
           {/* ── Campos dinâmicos conforme seleção ── */}
           {sel.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-
-              {/* Peso */}
-              {has('peso') && (
-                <FilterCard label="Peso">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={value.pesoInicial}
-                      onChange={e => onChange(patch(value, { pesoInicial: e.target.value }))}
-                      placeholder="Peso inicial"
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={value.pesoFinal}
-                      onChange={e => onChange(patch(value, { pesoFinal: e.target.value }))}
-                      placeholder="Peso final"
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
 
               {/* Nº RFID */}
               {has('rfid') && (
@@ -449,23 +443,6 @@ export default function ListaAnimaisFiltros({
             </div>
           )}
 
-          {/* ── Botões de ação ── */}
-          <div className="flex flex-col sm:flex-row gap-3 pt-1">
-            <button
-              type="button"
-              onClick={() => onChange(patch(value, { maisFiltrosAbertos: false }))}
-              className="flex-1 h-[40px] text-[12px] font-semibold uppercase tracking-wide text-white bg-[#8ab83d] hover:bg-[#7aa332] rounded-sm transition-colors"
-            >
-              Buscar Animais
-            </button>
-            <button
-              type="button"
-              onClick={onClear}
-              className="sm:w-auto w-full h-[40px] px-6 text-[12px] font-semibold uppercase tracking-wide text-gray-600 bg-white border border-gray-300 rounded-sm hover:bg-gray-50 transition-colors"
-            >
-              Limpar Filtros
-            </button>
-          </div>
         </div>
       )}
     </div>

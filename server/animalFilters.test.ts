@@ -70,10 +70,9 @@ describe('animaisFiltersToApiParams', () => {
 });
 
 describe('FILTROS_ADICIONAIS_OPCOES', () => {
-  it('contém exatamente os 11 filtros especificados (sem Data de Nascimento)', () => {
+  it('contém exatamente os 10 filtros especificados (sem Peso nem Data de Nascimento)', () => {
     const keys = FILTROS_ADICIONAIS_OPCOES.map(o => o.key);
     expect(keys).toEqual([
-      'peso',
       'rfid',
       'subdivisao',
       'raca',
@@ -87,8 +86,9 @@ describe('FILTROS_ADICIONAIS_OPCOES', () => {
     ]);
   });
 
-  it('não inclui Data de Nascimento', () => {
+  it('não inclui Data de Nascimento nem Peso', () => {
     const keys = FILTROS_ADICIONAIS_OPCOES.map(o => o.key);
     expect(keys).not.toContain('dataNascimento');
+    expect(keys).not.toContain('peso');
   });
 });
