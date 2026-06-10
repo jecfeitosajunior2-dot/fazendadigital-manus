@@ -184,7 +184,11 @@ const AnimalFormPage: React.FC = () => {
       { enabled: isEditMode }
     );
 
-  // ── Lotes ──
+  // ── Fazendas ──
+  const [fazendaId, setFazendaId] = useState('');
+  const { data: fazendas } = trpc.fazendas.list.useQuery();
+
+  // ── Lotes (filtrados por fazenda se selecionada) ──
   const { data: lotes } = trpc.lotes.list.useQuery();
 
   // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
@@ -411,9 +415,26 @@ const AnimalFormPage: React.FC = () => {
           Voltar para Lista de Animais
         </Button>
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
-          <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
+            <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
+          </div>
+          <div className="min-w-[220px]">
+            <FormLabel>Fazenda</FormLabel>
+            <FieldBox>
+              <select
+                value={fazendaId}
+                onChange={e => { setFazendaId(e.target.value); set('loteId', ''); }}
+                className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]')}
+              >
+                <option value="">Selecione uma Fazenda</option>
+                {fazendas?.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                ))}
+              </select>
+            </FieldBox>
+          </div>
         </div>
 
         <form
