@@ -28,6 +28,14 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   marcadores: [],
   maisFiltrosAbertos: false,
   pastoId: "",
+  rfid: "",
+  apenasInativos: false,
+  idadeMesesMin: "",
+  idadeMesesMax: "",
+  rgn: "",
+  rgd: "",
+  animalComSisbov: false,
+  filtrosAdicionaisSelecionados: [],
 };
 
 type AlocacaoAnimaisFiltersState = AnimaisListFiltersState & {
