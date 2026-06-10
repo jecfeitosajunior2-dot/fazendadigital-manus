@@ -242,22 +242,7 @@ export default function ListaAnimaisFiltros({
           </FilterCard>
         </div>
 
-        {/* ── Barra de pesquisa ── */}
-        <div>
-          <label className={labelClass}>Pesquisar</label>
-          <div className="relative">
-            <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
-            <input
-              type="text"
-              value={value.pesquisa}
-              onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
-              placeholder="Digite algo que deseja filtrar"
-              className={`${inputClass} pl-9`}
-            />
-          </div>
-        </div>
-
-        {/* ── Botão Mais Filtros ── */}
+        {/* ── Botão Mais/Menos Filtros ── */}
         <div className="flex justify-end">
           <button
             type="button"
@@ -286,28 +271,6 @@ export default function ListaAnimaisFiltros({
           {/* ── Campos dinâmicos conforme seleção ── */}
           {sel.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-
-              {/* Data de Nascimento */}
-              {has('dataNascimento') && (
-                <FilterCard label="Período de nascimento">
-                  <div className="flex items-center gap-1">
-                    <span className="material-icons text-[18px] text-gray-400 shrink-0">calendar_today</span>
-                    <input
-                      type="date"
-                      value={value.dataNascimentoInicial}
-                      onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="date"
-                      value={value.dataNascimentoFinal}
-                      onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
 
               {/* Peso */}
               {has('peso') && (

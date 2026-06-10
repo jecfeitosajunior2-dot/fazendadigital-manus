@@ -4,7 +4,6 @@
 
 /** Chaves dos filtros adicionais disponíveis no dropdown */
 export type FiltroAdicionalKey =
-  | 'dataNascimento'
   | 'peso'
   | 'rfid'
   | 'subdivisao'
@@ -18,7 +17,6 @@ export type FiltroAdicionalKey =
   | 'animalComSisbov';
 
 export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string }[] = [
-  { key: 'dataNascimento', label: 'Data de Nascimento' },
   { key: 'peso', label: 'Peso' },
   { key: 'rfid', label: 'Nº RFID' },
   { key: 'subdivisao', label: 'Subdivisão' },
@@ -104,16 +102,15 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     pesoMax: pesoMax !== undefined && !Number.isNaN(pesoMax) ? pesoMax : undefined,
     dataNascimentoInicio: filters.dataNascimentoInicial || undefined,
     dataNascimentoFim: filters.dataNascimentoFinal || undefined,
-    somenteSisbov: filters.somenteSisbov || undefined,
+    somenteSisbov: (filters.somenteSisbov || filters.animalComSisbov) || undefined,
     marcadores: filters.marcadores.length > 0 ? filters.marcadores : undefined,
     pastoId: filters.pastoId ? Number(filters.pastoId) : undefined,
-    rfid: filters.rfid || undefined,
-    apenasInativos: filters.apenasInativos || undefined,
+    brincoEletronico: filters.rfid || undefined,
+    status: filters.apenasInativos ? 'inativo' : undefined,
     idadeMesesMin: idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
     idadeMesesMax: idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
     rgn: filters.rgn || undefined,
     rgd: filters.rgd || undefined,
-    animalComSisbov: filters.animalComSisbov || undefined,
   };
 }
 
