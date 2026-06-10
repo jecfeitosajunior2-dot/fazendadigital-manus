@@ -449,6 +449,15 @@ const AnimalFormPage: React.FC = () => {
                 {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
               </div>
               <div>
+                <FormLabel>Categoria</FormLabel>
+                <FieldSelect value={form.categoria} onChange={v => set('categoria', v)}>
+                  <option value="">Selecione</option>
+                  {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </FieldSelect>
+              </div>
+              <div>
                 <FormLabel>Lote</FormLabel>
                 <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
                   <option value="">Sem lote</option>
@@ -465,15 +474,6 @@ const AnimalFormPage: React.FC = () => {
                   <Plus className="w-3.5 h-3.5" />
                   Criar novo lote
                 </button>
-              </div>
-              <div>
-                <FormLabel>Categoria</FormLabel>
-                <FieldSelect value={form.categoria} onChange={v => set('categoria', v)}>
-                  <option value="">Selecione</option>
-                  {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </FieldSelect>
               </div>
             </div>
           </SectionCard>
