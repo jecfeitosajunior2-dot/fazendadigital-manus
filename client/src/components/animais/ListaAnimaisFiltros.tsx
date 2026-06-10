@@ -224,66 +224,94 @@ export default function ListaAnimaisFiltros({
   return (
     <div className="mb-3 bg-white border border-gray-200 rounded-sm overflow-hidden">
       <div className="px-4 py-3 space-y-3">
-        {/* ── Filtros principais — 4 cards ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <FilterCard label="Fazenda">
-            <select
-              value={value.fazendaId}
-              onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
-              className={selectClass}
+        {/* ── Filtros principais — 5 cards + botão Mais Filtros ── */}
+        <div className="flex flex-wrap gap-3 items-end">
+          {/* Fazenda */}
+          <div className="flex-1 min-w-[140px] max-w-[200px]">
+            <FilterCard label="Fazenda">
+              <select
+                value={value.fazendaId}
+                onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
+                className={selectClass}
+              >
+                <option value="">Selecione a fazenda</option>
+                {fazendas.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                ))}
+              </select>
+            </FilterCard>
+          </div>
+
+          {/* Número do Brinco */}
+          <div className="flex-1 min-w-[140px] max-w-[200px]">
+            <FilterCard label="Número do Brinco">
+              <input
+                type="text"
+                value={value.pesquisa}
+                onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
+                placeholder="Digite o nº do brinco"
+                className={inputClass}
+              />
+            </FilterCard>
+          </div>
+
+          {/* Sexo */}
+          <div className="flex-1 min-w-[120px] max-w-[160px]">
+            <FilterCard label="Sexo">
+              <select
+                value={value.sexo}
+                onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
+                className={selectClass}
+              >
+                <option value="">Selecione</option>
+                <option value="macho">Macho</option>
+                <option value="femea">Fêmea</option>
+              </select>
+            </FilterCard>
+          </div>
+
+          {/* Categoria */}
+          <div className="flex-1 min-w-[140px] max-w-[180px]">
+            <FilterCard label="Categoria">
+              <select
+                value={value.categoria}
+                onChange={e => onChange(patch(value, { categoria: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Selecione</option>
+                {categorias.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </FilterCard>
+          </div>
+
+          {/* Lote */}
+          <div className="flex-1 min-w-[140px] max-w-[180px]">
+            <FilterCard label="Lote">
+              <select
+                value={value.loteId}
+                onChange={e => onChange(patch(value, { loteId: e.target.value }))}
+                className={selectClass}
+              >
+                <option value="">Selecione o lote</option>
+                {lotesFiltrados.map(l => (
+                  <option key={l.id} value={String(l.id)}>{l.nome}</option>
+                ))}
+              </select>
+            </FilterCard>
+          </div>
+
+          {/* Botão Mais/Menos Filtros — alinhado à base dos cards */}
+          <div className="flex items-end pb-0">
+            <button
+              type="button"
+              onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
+              className="h-[36px] px-4 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
             >
-              <option value="">Selecione a fazenda</option>
-              {fazendas.map(f => (
-                <option key={f.id} value={String(f.id)}>{f.nome}</option>
-              ))}
-            </select>
-          </FilterCard>
-
-          <FilterCard label="Nº Visual">
-            <input
-              type="text"
-              value={value.pesquisa}
-              onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
-              placeholder="Digite o nº visual"
-              className={inputClass}
-            />
-          </FilterCard>
-
-          <FilterCard label="Lote">
-            <select
-              value={value.loteId}
-              onChange={e => onChange(patch(value, { loteId: e.target.value }))}
-              className={selectClass}
-            >
-              <option value="">Selecione o lote</option>
-              {lotesFiltrados.map(l => (
-                <option key={l.id} value={String(l.id)}>{l.nome}</option>
-              ))}
-            </select>
-          </FilterCard>
-
-          <FilterCard label="Sexo">
-            <select
-              value={value.sexo}
-              onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
-              className={selectClass}
-            >
-              <option value="">Selecione o sexo</option>
-              <option value="macho">Macho</option>
-              <option value="femea">Fêmea</option>
-            </select>
-          </FilterCard>
-        </div>
-
-        {/* ── Botão Mais/Menos Filtros ── */}
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
-            className="h-[36px] px-4 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
-          >
-            {value.maisFiltrosAbertos ? 'Menos Filtros' : 'Mais Filtros'}
-          </button>
+              {value.maisFiltrosAbertos ? 'Menos Filtros' : 'Mais Filtros'}
+            </button>
+          </div>
         </div>
       </div>
 
