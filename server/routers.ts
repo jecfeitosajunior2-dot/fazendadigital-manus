@@ -515,13 +515,27 @@ const animaisRouter = router({
         ? [`"${nomesLotes.join(',')}"`]
         : ['"(Nenhum lote cadastrado)"'];
 
-      // Busca pastos (subdivisões) do usuário para dropdown dinâmico
-      const pastosUsuario = await db.select({ nome: pastos.nome })
+      // Busca pastos (subdivisões) do usuário agrupados por fazenda para dropdown dinâmico
+      const pastosUsuario = await db.select({ nome: pastos.nome, fazendaId: pastos.fazendaId })
         .from(pastos).where(eq(pastos.userId, ctx.user.id));
-      const nomesPastos = pastosUsuario.map(p => p.nome);
-      const pastosFormulae = nomesPastos.length > 0
-        ? [`"${nomesPastos.join(',')}"`]
-        : ['"(Nenhum pasto cadastrado)"'];
+      // Mapeia fazendaId → nomes dos pastos
+      const pastosPorFazendaId = new Map<number, string[]>();
+      pastosUsuario.forEach(p => {
+        if (!p.fazendaId) return;
+        const lista = pastosPorFazendaId.get(p.fazendaId) ?? [];
+        lista.push(p.nome);
+        pastosPorFazendaId.set(p.fazendaId, lista);
+      });
+      // Busca nomes das fazendas para montar os Named Ranges
+      const fazendasComPastos = await db.select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas)
+        .where(and(eq(fazendas.userId, ctx.user.id)));
+      // Mapa fazendaNome → pastos (para Named Ranges)
+      const pastosPorFazendaNome = new Map<string, string[]>();
+      fazendasComPastos.forEach(f => {
+        const pastosDaFazenda = pastosPorFazendaId.get(f.id) ?? [];
+        pastosPorFazendaNome.set(f.nome, pastosDaFazenda);
+      });
 
       // Dropdowns de validação — Fazenda, Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote, Subdivisão
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
@@ -542,8 +556,12 @@ const animaisRouter = router({
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('status'),              formulae: ['"Ativo,Vendido,Morto,Transferido"'] },
         { colIdx: idxDe('lote'),                formulae: lotesFormulae },
-        { colIdx: idxDe('subdivisao'),          formulae: pastosFormulae },
+        // Subdivisao: usa INDIRECT para filtrar por fazenda — o Named Range é montado abaixo
+        // A fórmula é adicionada por linha separadamente após este bloco
       ].filter(d => d.colIdx > 0);
+      const colIdxSubdivisao = idxDe('subdivisao');
+      const colFazendaLetra = ultimaColLetra(idxDe('fazendaNome'));
+
       for (let r = 2; r <= 501; r++) {
         dvConfig.forEach(({ colIdx, formulae }) => {
           const cell = ws.getRow(r).getCell(colIdx);
@@ -554,6 +572,20 @@ const animaisRouter = router({
             showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
           };
         });
+
+        // Dropdown de Subdivisão dinâmico por fazenda via INDIRECT
+        if (colIdxSubdivisao > 0) {
+          const cellSub = ws.getRow(r).getCell(colIdxSubdivisao);
+          // Faz referência ao Named Range com o nome da fazenda selecionada na coluna Fazenda desta linha
+          // Ex: se A2 = "Fazenda Junior", INDIRECT("Pasto_Fazenda_Junior") retorna os pastos dessa fazenda
+          // SUBSTITUTE remove espaços e caracteres especiais do nome para formar um identificador válido
+          cellSub.dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [`INDIRECT("Pasto_"&SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($${colFazendaLetra}${r}," ","_"),"/","_"),"-","_"))`],
+            showErrorMessage: false, // não bloqueia se a fazenda não tiver pastos
+          };
+        }
       }
       
       // ─── ABA AUXILIAR: _ListasAnimais (oculta) ──────────────────────────────────
@@ -587,6 +619,28 @@ const animaisRouter = router({
         });
       });
 
+      // ─── Named Ranges por fazenda para dropdown dinâmico de Subdivisão ─────────
+      // Cada fazenda recebe uma coluna na aba oculta com seus pastos.
+      // O Named Range é nomeado "Pasto_" + nome_da_fazenda (espaços → _)
+      // A fórmula INDIRECT na coluna Subdivisão referencia este Named Range.
+      const sanitizarNomeRange = (nome: string) =>
+        'Pasto_' + nome.replace(/[^A-Za-z0-9À-ÿ]/g, '_');
+
+      let colPastosStart = 6; // Colunas E+ na aba _ListasAnimais (1=A, 2=B, 3=C, 4=D, 5=E, 6=F)
+      pastosPorFazendaNome.forEach((nomesPastos, nomeFazenda) => {
+        if (nomesPastos.length === 0) return;
+        const colIdx = colPastosStart++;
+        wsListasAnimais.getColumn(colIdx).width = 25;
+        // Escreve os nomes dos pastos nesta coluna
+        nomesPastos.forEach((nomePasto, i) => {
+          wsListasAnimais.getCell(i + 1, colIdx).value = nomePasto;
+        });
+        // Cria o Named Range referenciando esta coluna
+        const rangeName = sanitizarNomeRange(nomeFazenda);
+        const colLetra = ultimaColLetra(colIdx);
+        const rangeRef = `_ListasAnimais!$${colLetra}$1:$${colLetra}$${nomesPastos.length}`;
+        wb.definedNames.add(rangeRef, rangeName);
+      });
 
       // Serializa para base64
       const buf = await wb.xlsx.writeBuffer();
