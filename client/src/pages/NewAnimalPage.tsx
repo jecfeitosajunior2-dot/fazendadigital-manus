@@ -421,8 +421,8 @@ const AnimalFormPage: React.FC = () => {
             <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
           </div>
           <div className="min-w-[220px]">
-            <FormLabel>Fazenda</FormLabel>
-            <FieldBox>
+            <FormLabel required>Fazenda</FormLabel>
+            <FieldBox required>
               <select
                 value={fazendaId}
                 onChange={e => { setFazendaId(e.target.value); set('loteId', ''); }}
