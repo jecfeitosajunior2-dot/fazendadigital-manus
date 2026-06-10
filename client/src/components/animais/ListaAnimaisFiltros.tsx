@@ -354,6 +354,33 @@ export default function ListaAnimaisFiltros({
           {sel.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
+              {/* Peso */}
+              {has('peso') && (
+                <FilterCard label="Peso (kg)">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={value.pesoInicial}
+                      onChange={e => onChange(patch(value, { pesoInicial: e.target.value }))}
+                      placeholder="Mín"
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={value.pesoFinal}
+                      onChange={e => onChange(patch(value, { pesoFinal: e.target.value }))}
+                      placeholder="Máx"
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                  </div>
+                </FilterCard>
+              )}
+
               {/* Nº RFID */}
               {has('rfid') && (
                 <FilterCard label="Nº RFID">

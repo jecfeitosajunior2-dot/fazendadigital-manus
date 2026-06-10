@@ -27,6 +27,7 @@ export type FiltroAdicionalKey =
   | 'idadeMeses';
 
 export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string }[] = [
+  { key: 'peso', label: 'Peso (kg)' },
   { key: 'rfid', label: 'Nº RFID' },
   { key: 'raca', label: 'Raça' },
   { key: 'pelagem', label: 'Pelagem' },
