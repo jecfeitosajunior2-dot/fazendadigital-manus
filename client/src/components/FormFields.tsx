@@ -232,11 +232,11 @@ export function FormYearPicker({
   );
 }
 
-/** Campo de data com ícone de calendário — estilo iRancho. */
+/** Campo de data com digitação manual (DD/MM/AAAA) e ícone de calendário — estilo iRancho. */
 export function FormDatePicker({
   value,
   onChange,
-  placeholder = "Selecione a data",
+  placeholder = "DD/MM/AAAA",
   required,
 }: {
   value: string;
@@ -245,6 +245,15 @@ export function FormDatePicker({
   required?: boolean;
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
+  const [inputText, setInputText] = React.useState("");
+  const [focused, setFocused] = React.useState(false);
+
+  // Sincroniza inputText com value externo (ex: ao carregar modo edição)
+  React.useEffect(() => {
+    if (!focused) {
+      setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : "");
+    }
+  }, [value, focused]);
 
   const openPicker = () => {
     const el = dateRef.current;
@@ -253,9 +262,42 @@ export function FormDatePicker({
     else el.click();
   };
 
-  const displayValue = value
-    ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR")
-    : "";
+  // Formata automaticamente enquanto o usuário digita: 01/01/2024
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value.replace(/\D/g, "").slice(0, 8);
+    let formatted = raw;
+    if (raw.length > 4) formatted = raw.slice(0, 2) + "/" + raw.slice(2, 4) + "/" + raw.slice(4);
+    else if (raw.length > 2) formatted = raw.slice(0, 2) + "/" + raw.slice(2);
+    setInputText(formatted);
+
+    // Quando tiver 8 dígitos (ddmmaaaa), converte para YYYY-MM-DD
+    if (raw.length === 8) {
+      const dd = raw.slice(0, 2);
+      const mm = raw.slice(2, 4);
+      const yyyy = raw.slice(4, 8);
+      const iso = `${yyyy}-${mm}-${dd}`;
+      const d = new Date(`${iso}T12:00:00`);
+      if (!isNaN(d.getTime())) {
+        onChange(iso);
+      }
+    } else if (raw.length === 0) {
+      onChange("");
+    }
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    // Se o texto não está completo, limpa
+    const raw = inputText.replace(/\D/g, "");
+    if (raw.length > 0 && raw.length < 8) {
+      setInputText("");
+      onChange("");
+    } else if (raw.length === 0) {
+      setInputText("");
+    }
+  };
+
+  const displayValue = focused ? inputText : (value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : inputText);
 
   return (
     <FieldBox required={required} variant="light">
@@ -271,12 +313,13 @@ export function FormDatePicker({
         </button>
         <input
           type="text"
+          inputMode="numeric"
           value={displayValue}
-          onClick={openPicker}
-          onFocus={openPicker}
+          onChange={handleTextChange}
+          onFocus={() => { setFocused(true); setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : ""); }}
+          onBlur={handleBlur}
           placeholder={placeholder}
-          readOnly
-          className={cn(inputClass, "pl-10 bg-white min-h-[42px] cursor-pointer")}
+          className={cn(inputClass, "pl-10 bg-white min-h-[42px]")}
         />
         <input
           ref={dateRef}
@@ -285,7 +328,7 @@ export function FormDatePicker({
           tabIndex={-1}
           aria-hidden
           value={value}
-          onChange={e => onChange(e.target.value)}
+          onChange={e => { onChange(e.target.value); setFocused(false); }}
         />
       </div>
     </FieldBox>
