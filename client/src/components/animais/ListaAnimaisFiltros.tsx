@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Switch } from '@/components/ui/switch';
 import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
@@ -117,11 +118,36 @@ function FiltrosAdicionaisDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+
+  // Calcula a posição do menu com base no botão gatilho (posição fixa na viewport)
+  const updateCoords = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateCoords();
+    window.addEventListener('scroll', updateCoords, true);
+    window.addEventListener('resize', updateCoords);
+    return () => {
+      window.removeEventListener('scroll', updateCoords, true);
+      window.removeEventListener('resize', updateCoords);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (ref.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -138,6 +164,7 @@ function FiltrosAdicionaisDropdown({
         Filtros Adicionais
       </div>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] text-left flex items-center justify-between gap-2"
@@ -147,24 +174,30 @@ function FiltrosAdicionaisDropdown({
           {open ? 'expand_less' : 'expand_more'}
         </span>
       </button>
-      {open && (
-        <div className="absolute z-[9999] mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-lg py-1">
-          {FILTROS_ADICIONAIS_OPCOES.map(opcao => (
-            <label
-              key={opcao.key}
-              className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
-            >
-              <input
-                type="checkbox"
-                checked={selecionados.includes(opcao.key)}
-                onChange={() => toggle(opcao.key)}
-                className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d] shrink-0"
-              />
-              <span>{opcao.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 99999 }}
+            className="max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-xl py-1"
+          >
+            {FILTROS_ADICIONAIS_OPCOES.map(opcao => (
+              <label
+                key={opcao.key}
+                className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={selecionados.includes(opcao.key)}
+                  onChange={() => toggle(opcao.key)}
+                  className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d] shrink-0"
+                />
+                <span>{opcao.label}</span>
+              </label>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
