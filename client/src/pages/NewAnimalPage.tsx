@@ -279,13 +279,14 @@ const AnimalFormPage: React.FC = () => {
 
   // ── Validação ──
   // Campos mínimos obrigatórios para habilitar o cadastro
-  const canSubmit = !!fazendaId && !!form.brinco.trim() && !!form.sexo;
+  const canSubmit = !!fazendaId && !!form.brinco.trim() && !!form.sexo && !!form.categoria;
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!fazendaId) e.fazenda = 'Selecione uma fazenda';
     if (!form.brinco.trim()) e.brinco = 'Número do brinco é obrigatório';
     if (!form.sexo) e.sexo = 'Sexo é obrigatório';
+    if (!form.categoria) e.categoria = 'Categoria é obrigatória';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -481,8 +482,8 @@ const AnimalFormPage: React.FC = () => {
                 {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
               </div>
               <div>
-                <FormLabel>Categoria</FormLabel>
-                <FieldSelect value={form.categoria} onChange={v => set('categoria', v)}>
+                <FormLabel required>Categoria</FormLabel>
+                <FieldSelect value={form.categoria} onChange={v => set('categoria', v)} required>
                   <option value="">Selecione</option>
                   {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -700,7 +701,7 @@ const AnimalFormPage: React.FC = () => {
           <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
             <p className={`text-[11px] ${!canSubmit ? 'text-amber-500 font-medium' : 'text-gray-400'}`}>
               {!canSubmit
-                ? '* Preencha Fazenda, Número do Brinco e Sexo para habilitar o cadastro.'
+                ? '* Preencha Fazenda, Número do Brinco, Sexo e Categoria para habilitar o cadastro.'
                 : '* Campos obrigatórios preenchidos. Pronto para salvar.'
               }
             </p>
