@@ -200,6 +200,12 @@ export async function ensureSchema() {
         PRIMARY KEY(\`id\`)
       )
     `);
+    // ── Animais: novas colunas fazendaId e pastoId ──────────────────────────────────────
+    const [animaisTable] = await pool.query(`SHOW TABLES LIKE 'animais'`);
+    if ((animaisTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "animais", "fazendaId", "int");
+      await ensureColumn(pool, "animais", "pastoId", "int");
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

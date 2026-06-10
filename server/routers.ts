@@ -499,6 +499,14 @@ const animaisRouter = router({
         });
       }
 
+      // Busca fazendas do usuário para dropdown dinâmico
+      const fazendasUsuario = await db.select({ nome: fazendas.nome })
+        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+      const fazendasFormulae = nomesFazendas.length > 0
+        ? [`"${nomesFazendas.join(',')}"`]
+        : ['"(Nenhuma fazenda cadastrada)"'];
+
       // Busca lotes ativos do usuário para dropdown dinâmico
       const lotesAtivos = await db.select({ nome: lotes.nome })
         .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
@@ -507,17 +515,26 @@ const animaisRouter = router({
         ? [`"${nomesLotes.join(',')}"`]
         : ['"(Nenhum lote cadastrado)"'];
 
-      // Dropdowns de validação — Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote
+      // Busca pastos (subdivisões) do usuário para dropdown dinâmico
+      const pastosUsuario = await db.select({ nome: pastos.nome })
+        .from(pastos).where(eq(pastos.userId, ctx.user.id));
+      const nomesPastos = pastosUsuario.map(p => p.nome);
+      const pastosFormulae = nomesPastos.length > 0
+        ? [`"${nomesPastos.join(',')}"`]
+        : ['"(Nenhum pasto cadastrado)"'];
+
+      // Dropdowns de validação — Fazenda, Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote, Subdivisão
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
       
       // Importar mapeamento Sexo → Categoria
       const { CATEGORIAS_POR_SEXO } = await import('../shared/animal-types');
       
       // Coluna Sexo: índice 1-based na planilha (para montar referência na fórmula)
-      const colSexoIdx = idxDe('sexo'); // ex: 3 → coluna C
-      const colSexoLetra = String.fromCharCode(64 + colSexoIdx); // 3 → 'C'
+      const colSexoIdx = idxDe('sexo'); // ex: 4 → coluna D
+      const colSexoLetra = String.fromCharCode(64 + colSexoIdx);
       
       const dvConfig: { colIdx: number; formulae: string[] }[] = [
+        { colIdx: idxDe('fazendaNome'),         formulae: fazendasFormulae },
         { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
         { colIdx: idxDe('categoria'),           formulae: [`OFFSET(_ListasAnimais!$D$1,MATCH($${colSexoLetra}{r},_ListasAnimais!$C:$C,0)-1,0,COUNTIF(_ListasAnimais!$C:$C,$${colSexoLetra}{r}),1)`] },
         { colIdx: idxDe('raca'),                formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
@@ -525,6 +542,7 @@ const animaisRouter = router({
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('status'),              formulae: ['"Ativo,Vendido,Morto,Transferido"'] },
         { colIdx: idxDe('lote'),                formulae: lotesFormulae },
+        { colIdx: idxDe('subdivisao'),          formulae: pastosFormulae },
       ].filter(d => d.colIdx > 0);
       for (let r = 2; r <= 501; r++) {
         dvConfig.forEach(({ colIdx, formulae }) => {
@@ -599,6 +617,16 @@ const animaisRouter = router({
         .map(l => normalizarLinha(l))
         .filter(l => !isLinhaExemplo(l));
 
+      // Busca fazendas do usuário para validação
+      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
+
+      // Busca pastos do usuário para validação
+      const pastosUsuario = await db.select({ id: pastos.id, nome: pastos.nome })
+        .from(pastos).where(eq(pastos.userId, ctx.user.id));
+      const pastoNomeParaId = new Map(pastosUsuario.map(p => [p.nome.toLowerCase().trim(), p.id]));
+
       // Busca apenas lotes ATIVOS do usuário
       const lotesUsuario = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
         .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
@@ -623,6 +651,14 @@ const animaisRouter = router({
         const linha = input.linhas[i];
         const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
         const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
+
+        // Fazenda obrigatória
+        const fazendaNome = (linha.fazendaNome || '').trim();
+        if (!fazendaNome) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
+        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
+          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
+        }
 
         // Brinco obrigatório
         const brinco = (linha.brinco || '').trim();
@@ -649,6 +685,16 @@ const animaisRouter = router({
           linha.sexo = sexo; // normaliza para o banco
         }
 
+        // Categoria obrigatória E compatível com Sexo
+        const categoria = (linha.categoria || '').trim();
+        if (!categoria) {
+          errosLinha.push({ linha: numLinha, campo: 'Categoria', mensagem: 'Categoria é obrigatória' });
+        } else if (!CATEGORIAS_VALIDAS.includes(categoria)) {
+          errosLinha.push({ linha: numLinha, campo: 'Categoria', mensagem: `Categoria inválida: "${categoria}"` });
+        } else if (sexo && !isCategoriaValidaParaSexo(sexo === 'macho' ? 'Macho' : 'Fêmea', categoria)) {
+          errosLinha.push({ linha: numLinha, campo: 'Categoria', mensagem: `A categoria selecionada não é compatível com o sexo informado.` });
+        }
+
         // Status (opcional, mas se informado deve ser válido) — aceita "Ativo" (PT-BR)
         const statusRaw = (linha.status || '').trim();
         const status = statusRaw ? normalizarStatus(statusRaw) : '';
@@ -664,14 +710,10 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'raca', mensagem: `Raça não cadastrada: "${raca}"` });
         }
 
-        // Categoria (opcional, mas se informada deve ser válida E compatível com Sexo)
-        const categoria = (linha.categoria || '').trim();
-        if (categoria) {
-          if (!CATEGORIAS_VALIDAS.includes(categoria)) {
-            errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `Categoria inválida: "${categoria}"` });
-          } else if (sexo && !isCategoriaValidaParaSexo(sexo === 'macho' ? 'Macho' : 'Fêmea', categoria)) {
-            errosLinha.push({ linha: numLinha, campo: 'categoria', mensagem: `A categoria selecionada não é compatível com o sexo informado.` });
-          }
+        // Subdivisão/Pasto (opcional, mas se informado deve existir)
+        const subdivisaoNome = (linha.subdivisao || '').trim();
+        if (subdivisaoNome && !pastoNomeParaId.has(subdivisaoNome.toLowerCase())) {
+          errosLinha.push({ linha: numLinha, campo: 'Subdivisão', mensagem: `Pasto/Subdivisão não encontrado: "${subdivisaoNome}"` });
         }
 
         // Datas — aceita DD/MM/AAAA, DD/MM/AA e AAAA-MM-DD
@@ -741,6 +783,8 @@ const animaisRouter = router({
         invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
         erros,
         loteNomeParaId: Object.fromEntries(loteNomeParaId),
+        fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
+        pastoNomeParaId: Object.fromEntries(pastoNomeParaId),
       };
     }),
 
@@ -749,6 +793,8 @@ const animaisRouter = router({
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
       loteNomeParaId: z.record(z.string(), z.number()),
+      fazendaNomeParaId: z.record(z.string(), z.number()).optional(),
+      pastoNomeParaId: z.record(z.string(), z.number()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo } = await import('../shared/importacaoAnimais');
@@ -789,6 +835,18 @@ const animaisRouter = router({
           const loteNome = (linha.lote || '').trim().toLowerCase();
           const loteId = loteNome ? input.loteNomeParaId[loteNome] : undefined;
 
+          // Resolve fazendaId (opcional, mas se informado deve existir)
+          const fazendaNomeLinha = (linha.fazendaNome || '').trim().toLowerCase();
+          const fazendaId = fazendaNomeLinha && input.fazendaNomeParaId
+            ? input.fazendaNomeParaId[fazendaNomeLinha]
+            : undefined;
+
+          // Resolve pastoId (subdivisão)
+          const subdivisaoNomeLinha = (linha.subdivisao || '').trim().toLowerCase();
+          const pastoId = subdivisaoNomeLinha && input.pastoNomeParaId
+            ? input.pastoNomeParaId[subdivisaoNomeLinha]
+            : undefined;
+
           // Converte castrado/rastreadoNascimento (aceita Sim/Não em PT-BR)
           const toBool = normalizarBooleano;
 
@@ -802,6 +860,8 @@ const animaisRouter = router({
             dataNascimento: parseData(linha.dataNascimento),
             pesoAtual: (linha.pesoEntrada || '').trim() || undefined,
             loteId: loteId || undefined,
+            fazendaId: fazendaId || undefined,
+            pastoId: pastoId || undefined,
             categoria: (linha.categoria || '').trim() || undefined,
             observacoes: (linha.observacoes || '').trim() || undefined,
             pelagem: (linha.pelagem || '').trim() || undefined,

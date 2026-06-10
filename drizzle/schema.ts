@@ -64,6 +64,8 @@ export const animais = mysqlTable("animais", {
   pesoAtual: decimal("pesoAtual", { precision: 8, scale: 2 }),
   status: mysqlEnum("status", ["ativo", "vendido", "morto", "transferido"]).default("ativo"),
   loteId: int("loteId"),
+  fazendaId: int("fazendaId"),
+  pastoId: int("pastoId"),
   categoria: varchar("categoria", { length: 50 }),
   // Dados zootécnicos
   pelagem: varchar("pelagem", { length: 80 }),

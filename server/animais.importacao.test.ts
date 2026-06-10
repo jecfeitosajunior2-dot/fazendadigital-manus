@@ -412,28 +412,32 @@ describe('normalizarCabecalho — limpeza de rótulos', () => {
 describe('normalizarLinha — mapeia cabeçalhos PT-BR para chaves internas', () => {
   it('mapeia a planilha oficial do usuário corretamente', () => {
     const linha = {
+      'Fazenda': 'Fazenda Volta Grande',
       'Brinco': 'BR-001',
       'Brinco Eletrônico': '123',
       'Sexo': 'Fêmea',
-      'Lote': 'Engorda 1',
       'Categoria': 'Vaca',
+      'Lote': 'Engorda 1',
       'Raça': 'Nelore',
+      'Subdivisão (Pasto)': 'Pasto A',
       'Data de Nascimento': '01/02/2025',
       'Data de Desmama': '12/01/25',
       'Castrado': 'Não',
       'Peso de Entrada (kg)': '320',
       'Preço (R$/kg)': '12,50',
-      'Rastreado no Nascimento': 'Sim',
+      'Rastreado no nascimento': 'Sim',
       'Status': 'Ativo',
       'Observações': 'teste',
     };
     const out = normalizarLinha(linha);
+    expect(out.fazendaNome).toBe('Fazenda Volta Grande');
     expect(out.brinco).toBe('BR-001');
     expect(out.brincoEletronico).toBe('123');
     expect(out.sexo).toBe('Fêmea');
-    expect(out.lote).toBe('Engorda 1');
     expect(out.categoria).toBe('Vaca');
+    expect(out.lote).toBe('Engorda 1');
     expect(out.raca).toBe('Nelore');
+    expect(out.subdivisao).toBe('Pasto A');
     expect(out.dataNascimento).toBe('01/02/2025');
     expect(out.dataDesmama).toBe('12/01/25');
     expect(out.castrado).toBe('Não');
@@ -491,18 +495,21 @@ describe('normalizarSexo / normalizarStatus / normalizarBooleano', () => {
 });
 
 describe('COLUNAS_IMPORTACAO — estrutura da planilha oficial', () => {
-  it('tem exatamente 25 colunas', () => {
-    expect(COLUNAS_IMPORTACAO).toHaveLength(25);
+  it('tem exatamente 27 colunas', () => {
+    expect(COLUNAS_IMPORTACAO).toHaveLength(27);
   });
-  it('Brinco e Sexo são os únicos obrigatórios', () => {
+  it('Fazenda, Brinco, Sexo e Categoria são os únicos obrigatórios', () => {
     const obrigatorios = COLUNAS_IMPORTACAO.filter(c => c.obrigatorio).map(c => c.key);
-    expect(obrigatorios).toEqual(['brinco', 'sexo']);
+    expect(obrigatorios).toEqual(['fazendaNome', 'brinco', 'sexo', 'categoria']);
   });
-  it('a primeira coluna é Brinco e a ordem segue a planilha do usuário', () => {
-    expect(COLUNAS_IMPORTACAO[0].key).toBe('brinco');
-    expect(COLUNAS_IMPORTACAO[1].key).toBe('brincoEletronico');
-    expect(COLUNAS_IMPORTACAO[2].key).toBe('sexo');
-    expect(COLUNAS_IMPORTACAO[3].key).toBe('lote');
+  it('a primeira coluna é Fazenda e a ordem segue a planilha oficial', () => {
+    expect(COLUNAS_IMPORTACAO[0].key).toBe('fazendaNome');
+    expect(COLUNAS_IMPORTACAO[1].key).toBe('brinco');
+    expect(COLUNAS_IMPORTACAO[2].key).toBe('brincoEletronico');
+    expect(COLUNAS_IMPORTACAO[3].key).toBe('sexo');
+    expect(COLUNAS_IMPORTACAO[4].key).toBe('categoria');
+    expect(COLUNAS_IMPORTACAO[5].key).toBe('lote');
+    expect(COLUNAS_IMPORTACAO[9].key).toBe('subdivisao');
   });
 });
 

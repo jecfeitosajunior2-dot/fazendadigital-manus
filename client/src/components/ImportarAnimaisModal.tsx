@@ -49,6 +49,8 @@ type ResultadoValidacao = {
   invalidos: number;
   erros: ErroValidacao[];
   loteNomeParaId: Record<string, number>;
+  fazendaNomeParaId?: Record<string, number>;
+  pastoNomeParaId?: Record<string, number>;
 };
 
 type ResultadoImportacao = {
@@ -207,7 +209,12 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
     const linhasValidas = linhas.filter((_, i) => !linhasComErro.has(i));
 
     importarMutation.mutate(
-      { linhas: linhasValidas, loteNomeParaId: validacao.loteNomeParaId },
+      {
+        linhas: linhasValidas,
+        loteNomeParaId: validacao.loteNomeParaId,
+        fazendaNomeParaId: validacao.fazendaNomeParaId,
+        pastoNomeParaId: validacao.pastoNomeParaId,
+      },
       {
         onSuccess: (res) => {
           setResultado(res);
@@ -231,8 +238,8 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
           <div className="flex-1">
             <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
             <p className="text-xs text-blue-700 mb-3">
-              Planilha profissional com as 25 colunas do cadastro, abas de Instruções e Dicionário,
-              listas suspensas e exemplos. Datas no formato <strong>DD/MM/AAAA</strong>.
+              Planilha profissional com as 27 colunas do cadastro, abas de Instruções e Dicionário,
+              listas suspensas e exemplos. Campos obrigatórios: <strong>Fazenda</strong>, <strong>Brinco</strong>, <strong>Sexo</strong> e <strong>Categoria</strong>. Datas no formato <strong>DD/MM/AAAA</strong>.
             </p>
             <Button
               type="button"
