@@ -352,6 +352,8 @@ const animaisRouter = router({
       // Genealogia
       pai: z.string().optional(),
       mae: z.string().optional(),
+      fazendaId: z.number().optional(),
+      pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const result = await db.insert(animais).values({
@@ -382,6 +384,8 @@ const animaisRouter = router({
         rastreadoNascimento: input.rastreadoNascimento,
         pai: input.pai,
         mae: input.mae,
+        fazendaId: input.fazendaId,
+        pastoId: input.pastoId,
       });
       return { success: true, id: (result as any)[0]?.insertId };
     }),
@@ -416,6 +420,8 @@ const animaisRouter = router({
       rastreadoNascimento: z.boolean().optional(),
       pai: z.string().optional(),
       mae: z.string().optional(),
+      fazendaId: z.number().optional(),
+      pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, ...rest } = input;

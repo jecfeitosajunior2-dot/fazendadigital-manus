@@ -210,6 +210,10 @@ const AnimalFormPage: React.FC = () => {
       return '';
     };
 
+    // Preenche fazendaId e pastoId vindos do banco (importação ou cadastro anterior)
+    if ((animal as any).fazendaId) setFazendaId(String((animal as any).fazendaId));
+    if ((animal as any).pastoId) setPastoId(String((animal as any).pastoId));
+
     setForm({
       brinco: animal.brinco || '',
       brincoEletronico: (animal as any).brincoEletronico || '',
@@ -321,6 +325,8 @@ const AnimalFormPage: React.FC = () => {
       mae: form.mae.trim() || undefined,
       status: form.status as 'ativo' | 'vendido' | 'morto' | 'transferido',
       observacoes: form.observacoes.trim() || undefined,
+      fazendaId: fazendaId ? parseInt(fazendaId) : undefined,
+      pastoId: pastoId ? parseInt(pastoId) : undefined,
     };
   };
 
