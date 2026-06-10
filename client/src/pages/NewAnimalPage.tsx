@@ -188,6 +188,13 @@ const AnimalFormPage: React.FC = () => {
   const [fazendaId, setFazendaId] = useState('');
   const { data: fazendas } = trpc.fazendas.list.useQuery();
 
+  // ── Pastos (subdivisões) filtrados por fazenda ──
+  const [pastoId, setPastoId] = useState('');
+  const { data: pastos } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: Number(fazendaId) },
+    { enabled: !!fazendaId }
+  );
+
   // ── Lotes (filtrados por fazenda se selecionada) ──
   const { data: lotes } = trpc.lotes.list.useQuery();
 
@@ -524,6 +531,22 @@ const AnimalFormPage: React.FC = () => {
               <div>
                 <FormLabel>Marca</FormLabel>
                 <FieldInput value={form.marca} onChange={v => set('marca', v)} placeholder="ex: Marca a fogo" />
+              </div>
+              <div>
+                <FormLabel>Subdivisão (Pasto)</FormLabel>
+                <FieldBox>
+                  <select
+                    value={pastoId}
+                    onChange={e => setPastoId(e.target.value)}
+                    disabled={!fazendaId}
+                    className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', !fazendaId && 'opacity-50 cursor-not-allowed')}
+                  >
+                    <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
+                    {pastos?.map(p => (
+                      <option key={p.id} value={String(p.id)}>{p.nome}</option>
+                    ))}
+                  </select>
+                </FieldBox>
               </div>
               <div>
                 <FormLabel>Data de Nascimento</FormLabel>
