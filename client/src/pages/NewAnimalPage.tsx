@@ -464,16 +464,7 @@ const AnimalFormPage: React.FC = () => {
                   {lotes?.map(l => (
                     <option key={l.id} value={l.id}>{l.nome}</option>
                   ))}
-                  <option value="__new__">+ Criar novo lote…</option>
                 </FieldSelect>
-                <button
-                  type="button"
-                  onClick={() => setLoteDialogOpen(true)}
-                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#4ECDC4] hover:text-[#3bb5ad] transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Criar novo lote
-                </button>
               </div>
             </div>
           </SectionCard>
