@@ -35,6 +35,16 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   rgn: "",
   rgd: "",
   animalComSisbov: false,
+  pelagem: "",
+  marca: "",
+  dataDesmamaMes: "",
+  dataDesmamaDe: "",
+  dataDesmamAte: "",
+  castrado: "",
+  produtorOrigem: "",
+  pai: "",
+  mae: "",
+  statusFiltro: "",
   filtrosAdicionaisSelecionados: [],
 };
 

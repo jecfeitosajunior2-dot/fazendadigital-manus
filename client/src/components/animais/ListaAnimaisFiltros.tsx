@@ -354,55 +354,6 @@ export default function ListaAnimaisFiltros({
           {sel.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
-              {/* Data de Nascimento */}
-              {has('dataNascimento') && (
-                <FilterCard label="Período de nascimento">
-                  <div className="flex items-center gap-1">
-                    <span className="material-icons text-[18px] text-gray-400 shrink-0">calendar_today</span>
-                    <input
-                      type="date"
-                      value={value.dataNascimentoInicial}
-                      onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="date"
-                      value={value.dataNascimentoFinal}
-                      onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
-
-              {/* Peso */}
-              {has('peso') && (
-                <FilterCard label="Peso">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={value.pesoInicial}
-                      onChange={e => onChange(patch(value, { pesoInicial: e.target.value }))}
-                      placeholder="Peso inicial"
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={value.pesoFinal}
-                      onChange={e => onChange(patch(value, { pesoFinal: e.target.value }))}
-                      placeholder="Peso final"
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
-
               {/* Nº RFID */}
               {has('rfid') && (
                 <FilterCard label="Nº RFID">
@@ -413,23 +364,6 @@ export default function ListaAnimaisFiltros({
                     placeholder="Digite o nº RFID"
                     className={inputClass}
                   />
-                </FilterCard>
-              )}
-
-              {/* Subdivisão */}
-              {has('subdivisao') && (
-                <FilterCard label="Subdivisão (Pasto)">
-                  <select
-                    value={value.pastoId}
-                    onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
-                    className={selectClass}
-                    disabled={!value.fazendaId}
-                  >
-                    <option value="">Todos os pastos</option>
-                    {pastosFiltrados.map(p => (
-                      <option key={p.id} value={String(p.id)}>{p.nome}</option>
-                    ))}
-                  </select>
                 </FilterCard>
               )}
 
@@ -449,73 +383,134 @@ export default function ListaAnimaisFiltros({
                 </FilterCard>
               )}
 
-              {/* Categoria */}
-              {has('categoria') && (
-                <FilterCard label="Categoria">
+              {/* Pelagem */}
+              {has('pelagem') && (
+                <FilterCard label="Pelagem">
+                  <input
+                    type="text"
+                    value={value.pelagem}
+                    onChange={e => onChange(patch(value, { pelagem: e.target.value }))}
+                    placeholder="ex: Branca, Vermelha..."
+                    className={inputClass}
+                  />
+                </FilterCard>
+              )}
+
+              {/* Marca */}
+              {has('marca') && (
+                <FilterCard label="Marca">
+                  <input
+                    type="text"
+                    value={value.marca}
+                    onChange={e => onChange(patch(value, { marca: e.target.value }))}
+                    placeholder="ex: Marca a fogo"
+                    className={inputClass}
+                  />
+                </FilterCard>
+              )}
+
+              {/* Subdivisão */}
+              {has('subdivisao') && (
+                <FilterCard label="Subdivisão (Pasto)">
                   <select
-                    value={value.categoria}
-                    onChange={e => onChange(patch(value, { categoria: e.target.value }))}
-                    className={accentSelectClass}
+                    value={value.pastoId}
+                    onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
+                    className={selectClass}
+                    disabled={!value.fazendaId}
                   >
-                    <option value="">Selecione a categoria</option>
-                    {categorias.map(c => (
-                      <option key={c} value={c}>{c}</option>
+                    <option value="">{value.fazendaId ? 'Todos os pastos' : 'Selecione uma fazenda primeiro'}</option>
+                    {pastosFiltrados.map(p => (
+                      <option key={p.id} value={String(p.id)}>{p.nome}</option>
                     ))}
                   </select>
                 </FilterCard>
               )}
 
-              {/* Filtrar apenas animais inativos */}
-              {has('inativos') && (
-                <div className="bg-white border border-gray-200 rounded-sm p-3 flex items-center gap-3">
-                  <Switch
-                    checked={value.apenasInativos}
-                    onCheckedChange={checked => onChange(patch(value, { apenasInativos: checked }))}
-                    className="data-[state=checked]:bg-[#8ab83d]"
-                  />
-                  <span className="text-[12px] text-gray-700">Filtrar apenas animais inativos</span>
-                </div>
-              )}
-
-              {/* Marcadores */}
-              {has('marcadores') && (
-                <FilterCard label="Filtrar por marcadores">
-                  <MarcadoresMultiSelect
-                    value={value.marcadores}
-                    options={marcadoresDisponiveis}
-                    onChange={marcadores => onChange(patch(value, { marcadores }))}
-                  />
-                </FilterCard>
-              )}
-
-              {/* Idade em Meses */}
-              {has('idadeMeses') && (
-                <FilterCard label="Idade em Meses">
+              {/* Data de Nascimento */}
+              {has('dataNascimento') && (
+                <FilterCard label="Período de Nascimento">
                   <div className="flex items-center gap-1">
                     <input
-                      type="number"
-                      min={0}
-                      value={value.idadeMesesMin}
-                      onChange={e => onChange(patch(value, { idadeMesesMin: e.target.value }))}
-                      placeholder="Mín"
+                      type="date"
+                      value={value.dataNascimentoInicial}
+                      onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
                       className={`${inputClass} flex-1 min-w-0`}
                     />
                     <span className="text-gray-400 text-[11px] shrink-0">–</span>
                     <input
-                      type="number"
-                      min={0}
-                      value={value.idadeMesesMax}
-                      onChange={e => onChange(patch(value, { idadeMesesMax: e.target.value }))}
-                      placeholder="Máx"
+                      type="date"
+                      value={value.dataNascimentoFinal}
+                      onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
                       className={`${inputClass} flex-1 min-w-0`}
                     />
                   </div>
                 </FilterCard>
               )}
 
+              {/* Data de Desmama */}
+              {has('dataDesmama') && (
+                <FilterCard label="Período de Desmama">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={value.dataDesmamaDe}
+                      onChange={e => onChange(patch(value, { dataDesmamaDe: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                    <input
+                      type="date"
+                      value={value.dataDesmamAte}
+                      onChange={e => onChange(patch(value, { dataDesmamAte: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                  </div>
+                </FilterCard>
+              )}
+
+              {/* Castrado */}
+              {has('castrado') && (
+                <FilterCard label="Castrado">
+                  <select
+                    value={value.castrado}
+                    onChange={e => onChange(patch(value, { castrado: e.target.value }))}
+                    className={selectClass}
+                  >
+                    <option value="">Todos</option>
+                    <option value="sim">Sim</option>
+                    <option value="nao">Não</option>
+                  </select>
+                </FilterCard>
+              )}
+
+              {/* Produtor de Origem */}
+              {has('produtorOrigem') && (
+                <FilterCard label="Produtor de Origem">
+                  <input
+                    type="text"
+                    value={value.produtorOrigem}
+                    onChange={e => onChange(patch(value, { produtorOrigem: e.target.value }))}
+                    placeholder="Nome do produtor"
+                    className={inputClass}
+                  />
+                </FilterCard>
+              )}
+
+              {/* SISBOV */}
+              {has('animalComSisbov') && (
+                <div className="bg-white border border-gray-200 rounded-sm p-3 flex items-center gap-3">
+                  <Switch
+                    checked={value.animalComSisbov}
+                    onCheckedChange={checked => onChange(patch(value, { animalComSisbov: checked }))}
+                    className="data-[state=checked]:bg-[#8ab83d]"
+                  />
+                  <span className="text-[12px] text-gray-700">Animal com SISBOV</span>
+                </div>
+              )}
+
               {/* RGN */}
               {has('rgn') && (
-                <FilterCard label="Registro de Nascimento (RGN)">
+                <FilterCard label="Registro Geral de Nascimento (RGN)">
                   <input
                     type="text"
                     value={value.rgn}
@@ -528,7 +523,7 @@ export default function ListaAnimaisFiltros({
 
               {/* RGD */}
               {has('rgd') && (
-                <FilterCard label="Registro Definitivo (RGD)">
+                <FilterCard label="Registro Genealógico Definitivo (RGD)">
                   <input
                     type="text"
                     value={value.rgd}
@@ -539,16 +534,45 @@ export default function ListaAnimaisFiltros({
                 </FilterCard>
               )}
 
-              {/* Animal com SISBOV */}
-              {has('animalComSisbov') && (
-                <div className="bg-white border border-gray-200 rounded-sm p-3 flex items-center gap-3">
-                  <Switch
-                    checked={value.animalComSisbov}
-                    onCheckedChange={checked => onChange(patch(value, { animalComSisbov: checked }))}
-                    className="data-[state=checked]:bg-[#8ab83d]"
+              {/* Pai (Reprodutor) */}
+              {has('pai') && (
+                <FilterCard label="Pai (Reprodutor)">
+                  <input
+                    type="text"
+                    value={value.pai}
+                    onChange={e => onChange(patch(value, { pai: e.target.value }))}
+                    placeholder="Nº brinco do pai"
+                    className={inputClass}
                   />
-                  <span className="text-[12px] text-gray-700">Animal com SISBOV</span>
-                </div>
+                </FilterCard>
+              )}
+
+              {/* Mãe (Matriz) */}
+              {has('mae') && (
+                <FilterCard label="Mãe (Matriz)">
+                  <input
+                    type="text"
+                    value={value.mae}
+                    onChange={e => onChange(patch(value, { mae: e.target.value }))}
+                    placeholder="Nº brinco da mãe"
+                    className={inputClass}
+                  />
+                </FilterCard>
+              )}
+
+              {/* Status */}
+              {has('status') && (
+                <FilterCard label="Status">
+                  <select
+                    value={value.statusFiltro}
+                    onChange={e => onChange(patch(value, { statusFiltro: e.target.value }))}
+                    className={selectClass}
+                  >
+                    <option value="">Todos</option>
+                    <option value="ativo">Ativo</option>
+                    <option value="inativo">Inativo</option>
+                  </select>
+                </FilterCard>
               )}
             </div>
           )}

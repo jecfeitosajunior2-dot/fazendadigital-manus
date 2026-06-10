@@ -4,32 +4,44 @@
 
 /** Chaves dos filtros adicionais disponíveis no dropdown */
 export type FiltroAdicionalKey =
-  | 'dataNascimento'
-  | 'peso'
   | 'rfid'
-  | 'subdivisao'
   | 'raca'
+  | 'pelagem'
+  | 'marca'
+  | 'subdivisao'
+  | 'dataNascimento'
+  | 'dataDesmama'
+  | 'castrado'
+  | 'produtorOrigem'
+  | 'animalComSisbov'
+  | 'rgn'
+  | 'rgd'
+  | 'pai'
+  | 'mae'
+  | 'status'
+  // mantidos por compatibilidade
+  | 'peso'
   | 'categoria'
   | 'inativos'
   | 'marcadores'
-  | 'idadeMeses'
-  | 'rgn'
-  | 'rgd'
-  | 'animalComSisbov';
+  | 'idadeMeses';
 
 export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string }[] = [
-  { key: 'dataNascimento', label: 'Data de Nascimento' },
-  { key: 'peso', label: 'Peso' },
   { key: 'rfid', label: 'Nº RFID' },
-  { key: 'subdivisao', label: 'Subdivisão' },
   { key: 'raca', label: 'Raça' },
-  { key: 'categoria', label: 'Categoria' },
-  { key: 'inativos', label: 'Filtrar apenas animais inativos' },
-  { key: 'marcadores', label: 'Marcadores' },
-  { key: 'idadeMeses', label: 'Idade em Meses' },
-  { key: 'rgn', label: 'Registro de Nascimento (RGN)' },
-  { key: 'rgd', label: 'Registro Definitivo (RGD)' },
-  { key: 'animalComSisbov', label: 'Animal com SISBOV' },
+  { key: 'pelagem', label: 'Pelagem' },
+  { key: 'marca', label: 'Marca' },
+  { key: 'subdivisao', label: 'Subdivisão (Pasto)' },
+  { key: 'dataNascimento', label: 'Data de Nascimento' },
+  { key: 'dataDesmama', label: 'Data de Desmama' },
+  { key: 'castrado', label: 'Castrado' },
+  { key: 'produtorOrigem', label: 'Produtor de Origem' },
+  { key: 'animalComSisbov', label: 'SISBOV' },
+  { key: 'rgn', label: 'Registro Geral de Nascimento (RGN)' },
+  { key: 'rgd', label: 'Registro Genealógico Definitivo (RGD)' },
+  { key: 'pai', label: 'Pai (Reprodutor)' },
+  { key: 'mae', label: 'Mãe (Matriz)' },
+  { key: 'status', label: 'Status' },
 ];
 
 export type AnimaisListFiltersState = {
@@ -47,7 +59,6 @@ export type AnimaisListFiltersState = {
   marcadores: string[];
   maisFiltrosAbertos: boolean;
   pastoId: string;
-  // Novos campos adicionais
   rfid: string;
   apenasInativos: boolean;
   idadeMesesMin: string;
@@ -55,6 +66,17 @@ export type AnimaisListFiltersState = {
   rgn: string;
   rgd: string;
   animalComSisbov: boolean;
+  // Novos campos
+  pelagem: string;
+  marca: string;
+  dataDesmamaMes: string;
+  dataDesmamaDe: string;
+  dataDesmamAte: string;
+  castrado: string; // 'sim' | 'nao' | ''
+  produtorOrigem: string;
+  pai: string;
+  mae: string;
+  statusFiltro: string; // 'ativo' | 'inativo' | ''
   // Filtros adicionais selecionados no dropdown
   filtrosAdicionaisSelecionados: FiltroAdicionalKey[];
 };
@@ -83,6 +105,16 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   rgn: '',
   rgd: '',
   animalComSisbov: false,
+  pelagem: '',
+  marca: '',
+  dataDesmamaMes: '',
+  dataDesmamaDe: '',
+  dataDesmamAte: '',
+  castrado: '',
+  produtorOrigem: '',
+  pai: '',
+  mae: '',
+  statusFiltro: '',
   filtrosAdicionaisSelecionados: [],
 };
 
@@ -108,11 +140,17 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     marcadores: filters.marcadores.length > 0 ? filters.marcadores : undefined,
     pastoId: filters.pastoId ? Number(filters.pastoId) : undefined,
     brincoEletronico: filters.rfid || undefined,
-    status: filters.apenasInativos ? 'inativo' : undefined,
+    status: filters.statusFiltro || (filters.apenasInativos ? 'inativo' : undefined),
     idadeMesesMin: idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
     idadeMesesMax: idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
     rgn: filters.rgn || undefined,
     rgd: filters.rgd || undefined,
+    pelagem: filters.pelagem || undefined,
+    marca: filters.marca || undefined,
+    produtorOrigem: filters.produtorOrigem || undefined,
+    castrado: filters.castrado === 'sim' ? true : filters.castrado === 'nao' ? false : undefined,
+    pai: filters.pai || undefined,
+    mae: filters.mae || undefined,
   };
 }
 
@@ -137,6 +175,15 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.idadeMesesMax.trim() ||
     !!filters.rgn ||
     !!filters.rgd ||
-    filters.animalComSisbov
+    filters.animalComSisbov ||
+    !!filters.pelagem ||
+    !!filters.marca ||
+    !!filters.dataDesmamaDe ||
+    !!filters.dataDesmamAte ||
+    !!filters.castrado ||
+    !!filters.produtorOrigem ||
+    !!filters.pai ||
+    !!filters.mae ||
+    !!filters.statusFiltro
   );
 }
