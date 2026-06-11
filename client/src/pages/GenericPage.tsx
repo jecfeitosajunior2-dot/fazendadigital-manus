@@ -62,7 +62,7 @@ export function AnimaisPage() {
     return resto > 0 ? `${anos}a ${resto}m` : `${anos} anos`;
   };
 
-  const exportHeaders = ["Nº Visual", "Nº RFID", "Lote", "Sexo", "Idade", "Dias Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência", "Status"];
+  const exportHeaders = ["Brinco", "Nº RFID", "Lote", "Sexo", "Idade", "Dias Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência", "Status"];
   const exportData = filteredAnimais.map(a => [
     a.brinco || "",
     a.brincoEletronico || "",
@@ -164,7 +164,7 @@ export function AnimaisPage() {
           <table className="w-full text-[12px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap"># Nº Visual</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Brinco</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Nº RFID</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Lote</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Sexo</th>
