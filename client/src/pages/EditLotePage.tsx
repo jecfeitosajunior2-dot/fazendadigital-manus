@@ -65,7 +65,7 @@ export default function EditLotePage() {
 
   const tableStorageKey = loteId > 0 ? `fd:editar-lote-tabela:${loteId}` : "fd:editar-lote-tabela";
   const [tableState, setTableState] = usePersistedState(tableStorageKey, INITIAL_TABLE);
-  const perPage = 50;
+  const [perPage, setPerPage] = useState(50);
 
   const utils = trpc.useUtils();
   const { data: lote, isLoading: loteLoading, error: loteError } = trpc.lotes.getById.useQuery(
@@ -452,6 +452,7 @@ export default function EditLotePage() {
           page={tableState.page}
           perPage={perPage}
           onPageChange={page => setTableState(s => ({ ...s, page }))}
+          onPerPageChange={pp => { setPerPage(pp); setTableState(s => ({ ...s, page: 1 })); }}
         />
       </div>
     </AppLayout>

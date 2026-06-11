@@ -28,6 +28,7 @@ type Props = {
   page: number;
   perPage: number;
   onPageChange: (page: number) => void;
+  onPerPageChange?: (perPage: number) => void;
 };
 
 function displayBrinco(animal: LoteAnimalRow) {
@@ -59,6 +60,7 @@ export default function LoteAnimaisTable({
   page,
   perPage,
   onPageChange,
+  onPerPageChange,
 }: Props) {
   const filtered = useMemo(() => {
     if (!search.trim()) return animais;
@@ -184,7 +186,20 @@ export default function LoteAnimaisTable({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
-        <span>{perPage} itens por página</span>
+        {onPerPageChange ? (
+          <select
+            value={perPage}
+            onChange={e => { onPerPageChange(Number(e.target.value)); onPageChange(1); }}
+            className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
+          >
+            <option value={10}>10 itens por página</option>
+            <option value={25}>25 itens por página</option>
+            <option value={50}>50 itens por página</option>
+            <option value={100}>100 itens por página</option>
+          </select>
+        ) : (
+          <span>{perPage} itens por página</span>
+        )}
         <div className="flex items-center gap-3">
           <span>Mostrando {total === 0 ? 0 : inicio}–{fim} de {total} {total === 1 ? "item" : "itens"}</span>
           <div className="flex items-center gap-1">
