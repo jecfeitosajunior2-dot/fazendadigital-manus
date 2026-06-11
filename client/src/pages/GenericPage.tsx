@@ -143,7 +143,7 @@ export function AnimaisPage() {
   return (
     <AppLayout>
       <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Lista de animais</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Lista de Animais</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <ListExportButtons
             title="Lista de Animais"
