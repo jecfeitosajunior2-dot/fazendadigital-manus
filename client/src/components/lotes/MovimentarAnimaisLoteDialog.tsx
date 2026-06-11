@@ -58,7 +58,7 @@ export default function MovimentarAnimaisLoteDialog({
       .filter(l => {
         if (l.id === loteOrigemId) return false;
         if (l.ativo === false) return false;
-        if (fazendaId != null && l.fazendaId != null && l.fazendaId !== fazendaId) return false;
+        if (fazendaId != null && l.fazendaId !== fazendaId) return false;
         return true;
       })
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
