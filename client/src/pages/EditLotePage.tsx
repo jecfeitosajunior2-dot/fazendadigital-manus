@@ -121,6 +121,12 @@ export default function EditLotePage() {
   const { data: pastosData = [] } = trpc.pastos.list.useQuery();
   const pastoMap = useMemo(() => new Map(pastosData.map(p => [p.id, p.nome])), [pastosData]);
 
+  const { data: fazendasData = [] } = trpc.fazendas.list.useQuery();
+  const fazendaNome = useMemo(() => {
+    if (!lote?.fazendaId) return undefined;
+    return fazendasData.find(f => f.id === lote.fazendaId)?.nome;
+  }, [lote, fazendasData]);
+
   const animalRows = useMemo(
     () => animais.map(a => ({
       id: a.id,
@@ -346,6 +352,7 @@ export default function EditLotePage() {
             filename={exportFilename}
             headers={exportHeaders}
             rows={exportRows}
+            fazendaNome={fazendaNome}
           />
         </div>
 
