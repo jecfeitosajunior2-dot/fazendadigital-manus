@@ -120,7 +120,7 @@ export default function MovimentarAnimaisLoteDialog({
               <FormNativeSelect
                 value={loteDestinoId}
                 onChange={setLoteDestinoId}
-                placeholder="Selecione o lote de destino"
+                placeholder="Selecione o Lote de Destino"
                 required
                 options={destinoOptions}
               />
