@@ -151,14 +151,20 @@ export default function LotsManagementPage() {
     "Nome do Lote",
     ...FAIXAS_IDADE_LOTE.map(f => `Machos ${f}`),
     ...FAIXAS_IDADE_LOTE.map(f => `Fêmeas ${f}`),
+    "Total",
   ];
 
   const exportData = useMemo(
-    () => sorted.map(l => [
-      l.nome,
-      ...FAIXAS_IDADE_LOTE.map(f => l.machos[f] || 0),
-      ...FAIXAS_IDADE_LOTE.map(f => l.femeas[f] || 0),
-    ]),
+    () => sorted.map(l => {
+      const totalMachos = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (l.machos[f] ?? 0), 0);
+      const totalFemeas = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (l.femeas[f] ?? 0), 0);
+      return [
+        l.nome,
+        ...FAIXAS_IDADE_LOTE.map(f => l.machos[f] || 0),
+        ...FAIXAS_IDADE_LOTE.map(f => l.femeas[f] || 0),
+        totalMachos + totalFemeas,
+      ];
+    }),
     [sorted],
   );
 
