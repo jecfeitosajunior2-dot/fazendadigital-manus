@@ -244,6 +244,16 @@ const AnimalFormPage: React.FC = () => {
     setPopulated(true);
   }, [animal, populated]);
 
+  // ── Re-sincroniza fazendaId/pastoId quando as fazendas chegam depois do animal ──
+  useEffect(() => {
+    if (!animal || !fazendas || fazendas.length === 0) return;
+    if (fazendaId) return; // já está preenchido
+    const fid = (animal as any).fazendaId;
+    if (fid) setFazendaId(String(fid));
+    const pid = (animal as any).pastoId;
+    if (pid) setPastoId(String(pid));
+  }, [animal, fazendas]);
+
   // ── Criação rápida de lote ──
   const [loteDialogOpen, setLoteDialogOpen] = useState(false);
   const [novoLoteNome, setNovoLoteNome] = useState('');
