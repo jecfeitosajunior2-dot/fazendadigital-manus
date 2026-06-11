@@ -178,34 +178,44 @@ export default function LoteAnimaisTable({
         </table>
       </div>
 
-      {total > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
-          <span>
-            Exibindo {inicio}–{fim} de {total}
-          </span>
-          <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
+        <span>{perPage} itens por página</span>
+        {total > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="mr-2">Mostrando {inicio}-{fim} de {total} itens</span>
             <button
               type="button"
               disabled={pageSafe <= 1}
               onClick={() => onPageChange(pageSafe - 1)}
-              className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
             >
-              Anterior
+              <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
             </button>
-            <span className="px-2">
-              {pageSafe} / {totalPages}
-            </span>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onPageChange(p)}
+                className={`w-7 h-7 flex items-center justify-center rounded text-[11px] font-medium transition-colors ${
+                  p === pageSafe
+                    ? "bg-[#2D5A5A] text-white"
+                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
             <button
               type="button"
               disabled={pageSafe >= totalPages}
               onClick={() => onPageChange(pageSafe + 1)}
-              className="px-2 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
             >
-              Próxima
+              <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
