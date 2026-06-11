@@ -119,11 +119,14 @@ export default function LoteAnimaisTable({
         <table className="w-full text-[12px] min-w-[640px]">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="w-10 px-2 py-2 border-r border-gray-200">
-                <Checkbox
-                  checked={allPageSelected}
-                  onCheckedChange={() => onToggleSelectAll(paginatedIds)}
-                />
+              <th className="w-10 px-2 py-2 border-r border-gray-200 align-middle">
+                <div className="flex items-center justify-center">
+                  <Checkbox
+                    checked={allPageSelected}
+                    onCheckedChange={() => onToggleSelectAll(paginatedIds)}
+                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
+                  />
+                </div>
               </th>
               <th className={thClass} onClick={() => onSort("brinco")}>
                 Brinco <SortIcon col="brinco" sortKey={sortKey} sortAsc={sortAsc} />
@@ -159,12 +162,14 @@ export default function LoteAnimaisTable({
                   key={animal.id}
                   className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"} hover:bg-gray-50`}
                 >
-                  <td className="px-2 py-2 border-r border-gray-100">
-                    <Checkbox
-                      checked={selected.has(animal.id)}
-                      onCheckedChange={() => onToggleSelect(animal.id)}
-                      className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
-                    />
+                  <td className="px-2 py-2 border-r border-gray-100 align-middle">
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={selected.has(animal.id)}
+                        onCheckedChange={() => onToggleSelect(animal.id)}
+                        className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
+                      />
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100">{displayBrinco(animal)}</td>
                   <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.categoria || "—"}</td>
