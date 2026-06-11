@@ -15,13 +15,17 @@ const accentSelectClass =
   'w-full h-[38px] pl-4 pr-3 text-[13px] border-0 border-b-2 border-[#0d9488] bg-transparent text-gray-800 focus:outline-none appearance-none cursor-pointer';
 
 /** Card de filtro principal com ícone e underline style */
-function PrimaryFilterCard({ label, icon, children, active }: { label: string; icon: string; children: ReactNode; active?: boolean }) {
+function PrimaryFilterCard({ label, icon, children, active, customIcon }: { label: string; icon: string; children: ReactNode; active?: boolean; customIcon?: string }) {
   return (
     <div className={`relative bg-white rounded-lg px-4 pt-3 pb-2 flex flex-col h-full shadow-sm border transition-all duration-150 ${
       active ? 'border-[#0d9488] shadow-[0_0_0_3px_rgba(13,148,136,0.08)]' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
     }`}>
       <div className="flex items-center gap-1.5 mb-1">
-        <span className={`material-icons text-[14px] ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{icon}</span>
+        {customIcon ? (
+          <img src={customIcon} alt={label} className="w-[14px] h-[14px] object-contain" style={{ filter: active ? 'none' : 'grayscale(0.4) opacity(0.6)' }} />
+        ) : (
+          <span className={`material-icons text-[14px] ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{icon}</span>
+        )}
         <label className={`text-[10px] font-semibold uppercase tracking-wider ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{label}</label>
       </div>
       <div className="flex-1">{children}</div>
@@ -244,7 +248,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Fazenda */}
           <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId}>
+            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/manus-storage/icon-fazenda_3a7a9041.png">
               <div className="relative">
                 <select
                   value={value.fazendaId}
