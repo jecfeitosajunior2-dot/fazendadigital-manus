@@ -74,34 +74,28 @@ export default function LoteAnimaisTable({
 
   const sorted = useMemo(() => {
     const rows = [...filtered];
+    const naturalCompare = (sa: string, sb: string) =>
+      sa.localeCompare(sb, undefined, { numeric: true, sensitivity: "base" });
     rows.sort((a, b) => {
-      let va: string | number = "";
-      let vb: string | number = "";
+      let cmp = 0;
       switch (sortKey) {
         case "brinco":
-          va = displayBrinco(a).toLowerCase();
-          vb = displayBrinco(b).toLowerCase();
+          cmp = naturalCompare(displayBrinco(a), displayBrinco(b));
           break;
         case "categoria":
-          va = (a.categoria || "").toLowerCase();
-          vb = (b.categoria || "").toLowerCase();
+          cmp = naturalCompare(a.categoria || "", b.categoria || "");
           break;
         case "sexo":
-          va = a.sexo;
-          vb = b.sexo;
+          cmp = a.sexo.localeCompare(b.sexo);
           break;
         case "raca":
-          va = (a.raca || "").toLowerCase();
-          vb = (b.raca || "").toLowerCase();
+          cmp = naturalCompare(a.raca || "", b.raca || "");
           break;
         case "pasto":
-          va = (a.pastoNome || "").toLowerCase();
-          vb = (b.pastoNome || "").toLowerCase();
+          cmp = naturalCompare(a.pastoNome || "", b.pastoNome || "");
           break;
       }
-      if (va < vb) return sortAsc ? -1 : 1;
-      if (va > vb) return sortAsc ? 1 : -1;
-      return 0;
+      return sortAsc ? cmp : -cmp;
     });
     return rows;
   }, [filtered, sortKey, sortAsc]);
