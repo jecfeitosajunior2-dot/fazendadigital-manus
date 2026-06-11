@@ -16,6 +16,18 @@ import {
   animaisFiltersToApiParams,
 } from '@shared/animal-filter-types';
 
+// Tipo das colunas ordenáveis
+type AnimaisSortKey = "brinco" | "rfid" | "categoria" | "lote" | "sexo" | "idade" | "diasFazenda" | "ultimoPeso" | "ganhoKg" | "gmd" | "emCarencia";
+
+// Ícone de ordenação (igual ao padrão usado em LoteAnimaisTable)
+function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: AnimaisSortKey; sortAsc: boolean }) {
+  return (
+    <span className="material-icons text-[13px] text-gray-400 ml-0.5 align-middle leading-none">
+      {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
+    </span>
+  );
+}
+
 // --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
@@ -24,6 +36,19 @@ export function AnimaisPage() {
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const perPage = 50;
+
+  // Ordenação: padrão crescente por brinco
+  const [sortKey, setSortKey] = useState<AnimaisSortKey>("brinco");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const toggleSort = (key: AnimaisSortKey) => {
+    if (sortKey === key) {
+      setSortAsc(prev => !prev);
+    } else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  };
 
   const apiParams = useMemo(
     () => animaisFiltersToApiParams(filters, debouncedPesquisa),
@@ -44,13 +69,44 @@ export function AnimaisPage() {
 
   const filteredAnimais = animaisData || [];
 
+  // Ordenação client-side (após filtros do servidor)
+  const sortedAnimais = useMemo(() => {
+    const rows = [...filteredAnimais];
+    rows.sort((a, b) => {
+      let va: string | number = "";
+      let vb: string | number = "";
+      // Função auxiliar: converte brinco para número se possível (ex: "04" -> 4)
+      const parseBrinco = (v: string | null | undefined) => {
+        const n = Number(v);
+        return !isNaN(n) && v !== "" && v !== null && v !== undefined ? n : (v || "");
+      };
+      switch (sortKey) {
+        case "brinco":    va = parseBrinco(a.brinco);  vb = parseBrinco(b.brinco);  break;
+        case "rfid":      va = (a.brincoEletronico || "").toLowerCase();  vb = (b.brincoEletronico || "").toLowerCase();  break;
+        case "categoria": va = (a.categoria || "").toLowerCase();  vb = (b.categoria || "").toLowerCase();  break;
+        case "lote":      va = (a.loteNome || "").toLowerCase();  vb = (b.loteNome || "").toLowerCase();  break;
+        case "sexo":      va = a.sexo || "";  vb = b.sexo || "";  break;
+        case "idade":     va = a.idadeMeses ?? -1;  vb = b.idadeMeses ?? -1;  break;
+        case "diasFazenda": va = a.diasNaFazenda ?? -1;  vb = b.diasNaFazenda ?? -1;  break;
+        case "ultimoPeso":  va = a.ultimoPeso !== null && a.ultimoPeso !== undefined ? Number(a.ultimoPeso) : -1;  vb = b.ultimoPeso !== null && b.ultimoPeso !== undefined ? Number(b.ultimoPeso) : -1;  break;
+        case "ganhoKg":    va = a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg) : -Infinity;  vb = b.ganhoKg !== null && b.ganhoKg !== undefined ? Number(b.ganhoKg) : -Infinity;  break;
+        case "gmd":       va = a.gmd !== null && a.gmd !== undefined ? Number(a.gmd) : -Infinity;  vb = b.gmd !== null && b.gmd !== undefined ? Number(b.gmd) : -Infinity;  break;
+        case "emCarencia": va = a.emCarencia ? 1 : 0;  vb = b.emCarencia ? 1 : 0;  break;
+      }
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    return rows;
+  }, [filteredAnimais, sortKey, sortAsc]);
+
   const limparFiltros = () => {
     setFilters({ ...INITIAL_ANIMAIS_LIST_FILTERS, maisFiltrosAbertos: filters.maisFiltrosAbertos });
     setPage(1);
   };
 
-  const totalPages = Math.max(1, Math.ceil(filteredAnimais.length / perPage));
-  const paginated = filteredAnimais.slice((page - 1) * perPage, page * perPage);
+  const totalPages = Math.max(1, Math.ceil(sortedAnimais.length / perPage));
+  const paginated = sortedAnimais.slice((page - 1) * perPage, page * perPage);
 
   // Helper: formata idade
   const formatIdade = (meses: number | null) => {
@@ -70,7 +126,7 @@ export function AnimaisPage() {
   }, [filters.fazendaId, fazendasData]);
 
   const exportHeaders = ["Brinco", "Nº RFID", "Categoria", "Lote", "Sexo", "Idade", "Dias na Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência"];
-  const exportData = filteredAnimais.map(a => [
+  const exportData = sortedAnimais.map(a => [
     a.brinco || "",
     a.brincoEletronico || "",
     a.categoria || "",
@@ -172,17 +228,30 @@ export function AnimaisPage() {
           <table className="w-full text-[12px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Brinco</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Nº RFID</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Categoria</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Lote</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Sexo</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Idade</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Dias na Fazenda</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Últ. Peso (kg)</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ganho (kg)</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">GMD (kg/dia)</th>
-                <th className="text-center px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Em Carência</th>
+                {/* Cabeçalhos ordensáveis */}
+                {([
+                  { key: "brinco",      label: "Brinco",         align: "left" },
+                  { key: "rfid",        label: "Nº RFID",        align: "left" },
+                  { key: "categoria",   label: "Categoria",      align: "left" },
+                  { key: "lote",        label: "Lote",           align: "left" },
+                  { key: "sexo",        label: "Sexo",           align: "left" },
+                  { key: "idade",       label: "Idade",          align: "right" },
+                  { key: "diasFazenda", label: "Dias na Fazenda",align: "right" },
+                  { key: "ultimoPeso",  label: "Últ. Peso (kg)", align: "right" },
+                  { key: "ganhoKg",     label: "Ganho (kg)",     align: "right" },
+                  { key: "gmd",         label: "GMD (kg/dia)",   align: "right" },
+                  { key: "emCarencia",  label: "Em Carência",    align: "center" },
+                ] as { key: AnimaisSortKey; label: string; align: string }[]).map(col => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    className={`px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align}`}
+                  >
+                    {col.label}
+                    <SortIcon col={col.key} sortKey={sortKey} sortAsc={sortAsc} />
+                  </th>
+                ))}
+                {/* Coluna Ações: sem ordenação */}
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -277,7 +346,7 @@ export function AnimaisPage() {
         </div>
         {/* Rodapé: contagem + paginação */}
         <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
-          <span className="text-[11px] text-gray-500">{filteredAnimais.length} animais</span>
+          <span className="text-[11px] text-gray-500">{sortedAnimais.length} animais</span>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Anterior</button>
