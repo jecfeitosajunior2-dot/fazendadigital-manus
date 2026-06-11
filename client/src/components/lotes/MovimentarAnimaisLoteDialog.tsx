@@ -115,7 +115,7 @@ export default function MovimentarAnimaisLoteDialog({
             {lotesLoading ? (
               <p className="text-[12px] text-gray-400 py-2">Carregando lotes...</p>
             ) : destinoOptions.length === 0 ? (
-              <p className="text-[12px] text-amber-700 py-2">Nenhum lote de destino disponível.</p>
+              <p className="text-[12px] text-amber-700 py-2">Nenhum Lote de Destino disponível.</p>
             ) : (
               <FormNativeSelect
                 value={loteDestinoId}
