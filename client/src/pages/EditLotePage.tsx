@@ -25,7 +25,7 @@ import {
 import { AlertTriangle } from "lucide-react";
 
 const IRANCHO_BTN_GREEN = "#8ab83d";
-const IRANCHO_BTN_GREY = "#C0C0C0";
+const IRANCHO_BTN_GREY = "#F0F0F0";
 const IRANCHO_BTN_DANGER = "#F89688";
 
 type FormState = {
@@ -390,7 +390,7 @@ export default function EditLotePage() {
             type="button"
             onClick={() => setIncluirOpen(true)}
             disabled={isBusy}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-[#E8E8E8] disabled:opacity-50 transition"
             style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
           >
             Incluir Animais no Lote
@@ -399,7 +399,7 @@ export default function EditLotePage() {
             type="button"
             onClick={handleMovimentarAnimais}
             disabled={isBusy}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
+            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 hover:bg-[#E8E8E8] disabled:opacity-50 transition"
             style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
           >
             Movimentar Animais
