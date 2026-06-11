@@ -295,7 +295,7 @@ export default function IncluirAnimaisLoteDialog({ loteId, open, onClose, onSucc
                         />
                       </div>
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Nome</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Brinco</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Nº RFID</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Categoria</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Lote</th>
