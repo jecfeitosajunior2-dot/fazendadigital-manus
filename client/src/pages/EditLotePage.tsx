@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { AlertTriangle } from "lucide-react";
 
-const IRANCHO_BTN_GREEN = "#8ab83d";
+const IRANCHO_BTN_GREEN = "#2D5A5A";
 const IRANCHO_BTN_GREY = "#C0C0C0";
 const IRANCHO_BTN_DANGER = "#F89688";
 
