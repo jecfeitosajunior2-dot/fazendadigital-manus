@@ -35,7 +35,7 @@ export function AnimaisPage() {
   const debouncedPesquisa = useDebounce(filters.pesquisa, 500);
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
-  const perPage = 50;
+  const [perPage, setPerPage] = useState(50);
 
   // Ordenação: padrão crescente por brinco
   const [sortKey, setSortKey] = useState<AnimaisSortKey>("brinco");
@@ -345,15 +345,44 @@ export function AnimaisPage() {
           </table>
         </div>
         {/* Rodapé: contagem + paginação */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
-          <span className="text-[11px] text-gray-500">{sortedAnimais.length} animais</span>
-          {totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
+          <select
+            value={perPage}
+            onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+            className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
+          >
+            <option value={10}>10 itens por página</option>
+            <option value={25}>25 itens por página</option>
+            <option value={50}>50 itens por página</option>
+            <option value={100}>100 itens por página</option>
+          </select>
+          <div className="flex items-center gap-3">
+            <span>Mostrando {sortedAnimais.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, sortedAnimais.length)} de {sortedAnimais.length} {sortedAnimais.length === 1 ? "animal" : "animais"}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Anterior</button>
-              <span className="text-[11px] px-2">{page} / {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-[11px] border rounded disabled:opacity-40">Próxima</button>
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+                className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
+              </button>
+              <span
+                className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
+                style={{ backgroundColor: "#2D5A5A" }}
+              >
+                {page}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+              >
+                <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
