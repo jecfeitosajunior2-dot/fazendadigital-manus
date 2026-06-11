@@ -6,13 +6,28 @@ import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 import type { AnimaisListFiltersState, FiltroAdicionalKey } from '@shared/animal-filter-types';
 import { FILTROS_ADICIONAIS_OPCOES } from '@shared/animal-filter-types';
 
-const labelClass = 'block text-[11px] font-medium text-gray-600 mb-1.5';
+const labelClass = 'block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1';
 const inputClass =
-  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#8ab83d]';
+  'w-full h-[38px] px-3 text-[13px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 placeholder:text-gray-300 focus:outline-none focus:border-[#0d9488] transition-colors duration-150';
 const selectClass =
-  'w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none';
+  'w-full h-[38px] px-3 text-[13px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 focus:outline-none focus:border-[#0d9488] appearance-none transition-colors duration-150 cursor-pointer';
 const accentSelectClass =
-  'w-full h-[36px] pl-4 pr-3 text-[12px] border border-gray-200 border-l-[3px] border-l-[#8ab83d] rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] appearance-none';
+  'w-full h-[38px] pl-4 pr-3 text-[13px] border-0 border-b-2 border-[#0d9488] bg-transparent text-gray-800 focus:outline-none appearance-none cursor-pointer';
+
+/** Card de filtro principal com ícone e underline style */
+function PrimaryFilterCard({ label, icon, children, active }: { label: string; icon: string; children: ReactNode; active?: boolean }) {
+  return (
+    <div className={`relative bg-white rounded-lg px-4 pt-3 pb-2 flex flex-col h-full shadow-sm border transition-all duration-150 ${
+      active ? 'border-[#0d9488] shadow-[0_0_0_3px_rgba(13,148,136,0.08)]' : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+    }`}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className={`material-icons text-[14px] ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{icon}</span>
+        <label className={`text-[10px] font-semibold uppercase tracking-wider ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{label}</label>
+      </div>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+}
 
 function FilterCard({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -222,96 +237,126 @@ export default function ListaAnimaisFiltros({
   const has = (key: FiltroAdicionalKey) => sel.includes(key);
 
   return (
-    <div className="mb-3 bg-white border border-gray-200 rounded-sm overflow-hidden">
-      <div className="px-4 py-3 space-y-3">
-        {/* ── Filtros principais — 5 cards + botão Mais Filtros ── */}
-        <div className="flex flex-wrap gap-3 items-end">
+    <div className="mb-3 bg-gradient-to-b from-gray-50 to-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="px-4 py-4">
+        {/* ── Filtros principais — 5 cards profissionais + botão Mais Filtros ── */}
+        <div className="flex flex-wrap gap-3 items-stretch">
+
           {/* Fazenda */}
-          <div className="flex-1 min-w-[140px] max-w-[200px]">
-            <FilterCard label="Fazenda">
-              <select
-                value={value.fazendaId}
-                onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
-                className={selectClass}
-              >
-                <option value="">Selecione a fazenda</option>
-                {fazendas.map(f => (
-                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
-                ))}
-              </select>
-            </FilterCard>
+          <div className="flex-1 min-w-[150px]">
+            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId}>
+              <div className="relative">
+                <select
+                  value={value.fazendaId}
+                  onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
+                  className={`${selectClass} pr-7`}
+                >
+                  <option value="">Selecione a fazenda</option>
+                  {fazendas.map(f => (
+                    <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                  ))}
+                </select>
+                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
+              </div>
+            </PrimaryFilterCard>
           </div>
 
           {/* Número do Brinco */}
-          <div className="flex-1 min-w-[140px] max-w-[200px]">
-            <FilterCard label="Número do Brinco">
-              <input
-                type="text"
-                value={value.pesquisa}
-                onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
-                placeholder="Digite o nº do brinco"
-                className={inputClass}
-              />
-            </FilterCard>
+          <div className="flex-1 min-w-[150px]">
+            <PrimaryFilterCard label="Número do Brinco" icon="tag" active={!!value.pesquisa.trim()}>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={value.pesquisa}
+                  onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
+                  placeholder="Digite o nº do brinco"
+                  className={`${inputClass} pr-7`}
+                />
+                {value.pesquisa && (
+                  <button
+                    type="button"
+                    onClick={() => onChange(patch(value, { pesquisa: '' }))}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+                  >
+                    <span className="material-icons text-[16px]">close</span>
+                  </button>
+                )}
+              </div>
+            </PrimaryFilterCard>
           </div>
 
           {/* Sexo */}
-          <div className="flex-1 min-w-[120px] max-w-[160px]">
-            <FilterCard label="Sexo">
-              <select
-                value={value.sexo}
-                onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
-                className={selectClass}
-              >
-                <option value="">Selecione</option>
-                <option value="macho">Macho</option>
-                <option value="femea">Fêmea</option>
-              </select>
-            </FilterCard>
+          <div className="flex-1 min-w-[130px]">
+            <PrimaryFilterCard label="Sexo" icon="wc" active={!!value.sexo}>
+              <div className="relative">
+                <select
+                  value={value.sexo}
+                  onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
+                  className={`${selectClass} pr-7`}
+                >
+                  <option value="">Todos</option>
+                  <option value="macho">Macho</option>
+                  <option value="femea">Fêmea</option>
+                </select>
+                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
+              </div>
+            </PrimaryFilterCard>
           </div>
 
           {/* Categoria */}
-          <div className="flex-1 min-w-[140px] max-w-[180px]">
-            <FilterCard label="Categoria">
-              <select
-                value={value.categoria}
-                onChange={e => onChange(patch(value, { categoria: e.target.value }))}
-                className={selectClass}
-              >
-                <option value="">Selecione</option>
-                {categorias.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </FilterCard>
+          <div className="flex-1 min-w-[140px]">
+            <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria}>
+              <div className="relative">
+                <select
+                  value={value.categoria}
+                  onChange={e => onChange(patch(value, { categoria: e.target.value }))}
+                  className={`${selectClass} pr-7`}
+                >
+                  <option value="">Todas</option>
+                  {categorias.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
+              </div>
+            </PrimaryFilterCard>
           </div>
 
           {/* Lote */}
-          <div className="flex-1 min-w-[140px] max-w-[180px]">
-            <FilterCard label="Lote">
-              <select
-                value={value.loteId}
-                onChange={e => onChange(patch(value, { loteId: e.target.value }))}
-                className={selectClass}
-              >
-                <option value="">Selecione o lote</option>
-                {lotesFiltrados.map(l => (
-                  <option key={l.id} value={String(l.id)}>{l.nome}</option>
-                ))}
-              </select>
-            </FilterCard>
+          <div className="flex-1 min-w-[140px]">
+            <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId}>
+              <div className="relative">
+                <select
+                  value={value.loteId}
+                  onChange={e => onChange(patch(value, { loteId: e.target.value }))}
+                  className={`${selectClass} pr-7`}
+                >
+                  <option value="">Todos os lotes</option>
+                  {lotesFiltrados.map(l => (
+                    <option key={l.id} value={String(l.id)}>{l.nome}</option>
+                  ))}
+                </select>
+                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
+              </div>
+            </PrimaryFilterCard>
           </div>
 
-          {/* Botão Mais/Menos Filtros — alinhado à base dos cards */}
-          <div className="flex items-end pb-0">
+          {/* Botão Mais/Menos Filtros */}
+          <div className="flex items-center self-stretch">
             <button
               type="button"
               onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
-              className="h-[36px] px-4 text-[10px] font-semibold uppercase tracking-wide text-gray-600 bg-[#EEEEEE] border border-gray-200 rounded-sm hover:bg-gray-200 transition-colors whitespace-nowrap"
+              className={`h-full min-h-[72px] px-4 flex flex-col items-center justify-center gap-1 rounded-lg border text-[10px] font-semibold uppercase tracking-wide transition-all duration-150 whitespace-nowrap ${
+                value.maisFiltrosAbertos
+                  ? 'bg-[#0d9488] text-white border-[#0d9488] shadow-md'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#0d9488] hover:text-[#0d9488] hover:shadow-md'
+              }`}
             >
-              {value.maisFiltrosAbertos ? 'Menos Filtros' : 'Mais Filtros'}
+              <span className="material-icons text-[18px]">{value.maisFiltrosAbertos ? 'filter_list_off' : 'tune'}</span>
+              <span>{value.maisFiltrosAbertos ? 'Menos' : 'Mais Filtros'}</span>
             </button>
           </div>
+
         </div>
       </div>
 
