@@ -59,9 +59,9 @@ export default function ListExportButtons({
         >
           <button
             type="button"
-            onClick={async () => {
+            onClick={() => {
               setOpen(false);
-              await exportListSpreadsheet(headers, rows, filename);
+              exportListSpreadsheet(headers, rows, filename);
             }}
             className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors font-medium"
           >

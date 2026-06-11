@@ -1,22 +1,24 @@
 import { toast } from "sonner";
-import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 
 export type ExportRow = (string | number | null | undefined)[];
 
-// ── CORES INSTITUCIONAIS (mesmo padrão da planilha de importação) ──────────
-const COR_HEADER_BG = '1A3C3C'; // verde petróleo escuro
-const COR_COL_BG    = '2D5A5A'; // verde petróleo médio
-const COR_LINHA_ALT = 'F2F7F7'; // cinza esverdeado muito claro
-
 /**
- * Exporta uma lista para XLSX estilizado seguindo o padrão visual da
- * planilha de importação do Fazenda Digital:
- *  - Cabeçalho verde petróleo (#2D5A5A) com texto branco em negrito
- *  - Linhas alternadas (branco / cinza esverdeado)
- *  - Largura automática das colunas
- *  - Números armazenados como tipo numérico
+ * Exporta uma lista para um arquivo XLSX nativo (Excel real).
+ *
+ * Por que XLSX e não CSV:
+ *  - Em CSV, o valor "100,00" (PT-BR) ou "100" pode ser reinterpretado pelo Excel
+ *    de acordo com o locale do sistema (US lê vírgula como separador de milhar),
+ *    inflando valores monetários (ex.: 100 → 100.000).
+ *  - Em XLSX, cada célula carrega seu próprio TIPO. Números são gravados como
+ *    número nativo (t:'n') com formato de exibição explícito (#,##0.00), de forma
+ *    que o valor armazenado é EXATAMENTE o valor do banco, independente do locale.
+ *
+ * Regras de tipagem por célula:
+ *  - number finito  → célula numérica (t:'n') com formato "#,##0.00"
+ *  - demais valores → célula de texto (t:'s')
  */
-export async function exportListSpreadsheet(
+export function exportListSpreadsheet(
   headers: string[],
   rows: ExportRow[],
   filename: string
@@ -26,77 +28,61 @@ export async function exportListSpreadsheet(
     return;
   }
 
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'Fazenda Digital';
-  wb.created = new Date();
+  // Formato de número brasileiro: milhar com ponto, decimal com vírgula.
+  // O ExcelJS/SheetJS aplica o separador conforme o locale do Excel ao exibir,
+  // mas o VALOR armazenado permanece sendo o número puro (sem multiplicação).
+  const NUM_FMT = "#,##0.00";
 
-  const ws = wb.addWorksheet('Dados', {
-    properties: { tabColor: { argb: COR_COL_BG } },
-    views: [{ state: 'frozen', ySplit: 1 }], // congela cabeçalho
-  });
+  const aoa: (string | number)[][] = [
+    headers,
+    ...rows.map(r => r.map(cell => (cell ?? "") as string | number)),
+  ];
 
-  // ── Linha 1: cabeçalhos estilizados ──────────────────────────────────────
-  const headerRow = ws.getRow(1);
-  headerRow.height = 26;
-  headers.forEach((label, idx) => {
-    const cell = headerRow.getCell(idx + 1);
-    cell.value = label;
-    cell.font  = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
-    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_COL_BG } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
-    cell.border = {
-      bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
-      right:  { style: 'thin',   color: { argb: 'FFFFFF' } },
-    };
-  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // ── Linhas de dados ───────────────────────────────────────────────────────
-  rows.forEach((row, rowIdx) => {
-    const wsRow = ws.getRow(rowIdx + 2);
-    wsRow.height = 18;
-    const isAlt = (rowIdx % 2 === 1); // linhas ímpares (0-based) ficam coloridas
-    row.forEach((cell, colIdx) => {
-      const wsCell = wsRow.getCell(colIdx + 1);
-      const val = cell ?? '';
-      if (typeof val === 'number' && Number.isFinite(val)) {
-        wsCell.value = val;
-        wsCell.numFmt = '#,##0.##';
+  // Aplica o tipo correto célula a célula.
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      // Linha 0 é o cabeçalho — sempre texto.
+      if (R === 0) continue;
+      const original = rows[R - 1]?.[C];
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[addr];
+      if (!cell) continue;
+
+      if (typeof original === "number" && Number.isFinite(original)) {
+        cell.t = "n";
+        cell.v = original;
+        cell.z = NUM_FMT;
       } else {
-        wsCell.value = String(val);
+        cell.t = "s";
+        cell.v = String(original ?? "");
       }
-      wsCell.font      = { name: 'Calibri', size: 10 };
-      wsCell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? COR_LINHA_ALT : 'FFFFFF' } };
-      wsCell.alignment = { horizontal: 'left', vertical: 'middle' };
-      wsCell.border    = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
-    });
-  });
+    }
+  }
 
-  // ── Largura automática das colunas ───────────────────────────────────────
-  headers.forEach((h, c) => {
+  // Largura automática aproximada das colunas (melhora a leitura no Excel).
+  ws["!cols"] = headers.map((h, c) => {
     let max = String(h).length;
     for (const r of rows) {
       const v = r[c];
       const len = v == null ? 0 : String(v).length;
       if (len > max) max = len;
     }
-    ws.getColumn(c + 1).width = Math.min(Math.max(max + 3, 12), 50);
+    return { wch: Math.min(Math.max(max + 2, 10), 50) };
   });
 
-  // ── Gera o arquivo e dispara download ────────────────────────────────────
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Dados");
+
+  // Nome único com data E hora-minuto-segundo: evita colisão/confusão com
+  // arquivos antigos em cache (ex.: "Modelo Importação (Benfeitorias) (11).xlsx").
   const agora = new Date();
-  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, '0')}-${String(agora.getMinutes()).padStart(2, '0')}-${String(agora.getSeconds()).padStart(2, '0')}`;
+  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
   const safeName = `${filename}_${carimbo}.xlsx`;
-
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = safeName;
-  a.click();
-  URL.revokeObjectURL(url);
-
-  toast.success('Planilha exportada!');
+  XLSX.writeFile(wb, safeName);
+  toast.success("Planilha exportada!");
 }
 
 export function exportListPdf(
