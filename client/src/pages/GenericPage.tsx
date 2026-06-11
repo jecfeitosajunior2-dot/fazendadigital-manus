@@ -62,6 +62,13 @@ export function AnimaisPage() {
     return resto > 0 ? `${anos}a ${resto}m` : `${anos} anos`;
   };
 
+  // Nome da fazenda selecionada no filtro (para o cabeçalho do PDF)
+  const fazendaNomePdf = useMemo(() => {
+    if (!filters.fazendaId) return undefined;
+    const f = (fazendasData || []).find((x: { id: number }) => String(x.id) === String(filters.fazendaId));
+    return (f as { nome?: string } | undefined)?.nome;
+  }, [filters.fazendaId, fazendasData]);
+
   const exportHeaders = ["Brinco", "Nº RFID", "Categoria", "Lote", "Sexo", "Idade", "Dias na Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência"];
   const exportData = filteredAnimais.map(a => [
     a.brinco || "",
@@ -88,6 +95,7 @@ export function AnimaisPage() {
             headers={exportHeaders}
             rows={exportData}
             alignRightFrom={6}
+            fazendaNome={fazendaNomePdf}
           />
           <button
             onClick={() => setImportarOpen(true)}
