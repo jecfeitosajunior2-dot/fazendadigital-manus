@@ -82,7 +82,7 @@ export function NewLotePage() {
       <div className="max-w-lg mx-auto">
         <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-900">Novo lote</h1>
+            <h1 className="text-[15px] font-semibold text-gray-900">Novo Lote</h1>
             {fazendaSelecionada && (
               <p className="text-[11px] text-gray-500 mt-1">
                 Fazenda: <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>
