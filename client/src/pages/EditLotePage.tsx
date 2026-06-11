@@ -43,7 +43,7 @@ type TableState = {
 
 const INITIAL_TABLE: TableState = {
   search: "",
-  sortKey: "id",
+  sortKey: "brinco",
   sortAsc: true,
   page: 1,
 };
@@ -118,6 +118,9 @@ export default function EditLotePage() {
     });
   }, [lote]);
 
+  const { data: pastosData = [] } = trpc.pastos.list.useQuery();
+  const pastoMap = useMemo(() => new Map(pastosData.map(p => [p.id, p.nome])), [pastosData]);
+
   const animalRows = useMemo(
     () => animais.map(a => ({
       id: a.id,
@@ -126,20 +129,22 @@ export default function EditLotePage() {
       sexo: a.sexo,
       raca: a.raca,
       dataNascimento: a.dataNascimento,
+      categoria: a.categoria ?? null,
+      pastoNome: a.pastoId ? (pastoMap.get(a.pastoId) ?? null) : null,
     })),
-    [animais],
+    [animais, pastoMap],
   );
 
   const selectedIds = useMemo(() => [...selected], [selected]);
 
-  const exportHeaders = ["ID", "Nome", "Sexo", "Raça", "Nascimento"];
+  const exportHeaders = ["Brinco", "Categoria", "Sexo", "Raça", "Subdivisão (Pasto)"];
   const exportRows = useMemo(
     () => animalRows.map(a => [
-      String(a.id),
-      a.nome?.trim() || a.brinco?.trim() || "—",
+      a.brinco?.trim() || a.nome?.trim() || String(a.id),
+      a.categoria || "—",
       a.sexo === "macho" ? "macho" : "fêmea",
       a.raca || "—",
-      formatDateBR(a.dataNascimento),
+      a.pastoNome || "—",
     ]),
     [animalRows],
   );

@@ -9,9 +9,11 @@ export type LoteAnimalRow = {
   sexo: "macho" | "femea";
   raca: string | null;
   dataNascimento: string | null;
+  categoria: string | null;
+  pastoNome: string | null;
 };
 
-export type LoteAnimaisSortKey = "id" | "nome" | "sexo" | "raca" | "nascimento";
+export type LoteAnimaisSortKey = "brinco" | "categoria" | "sexo" | "raca" | "pasto";
 
 type Props = {
   animais: LoteAnimalRow[];
@@ -28,8 +30,8 @@ type Props = {
   onPageChange: (page: number) => void;
 };
 
-function displayNome(animal: LoteAnimalRow) {
-  return animal.nome?.trim() || animal.brinco?.trim() || "—";
+function displayBrinco(animal: LoteAnimalRow) {
+  return animal.brinco?.trim() || animal.nome?.trim() || String(animal.id);
 }
 
 function displaySexo(sexo: LoteAnimalRow["sexo"]) {
@@ -59,13 +61,15 @@ export default function LoteAnimaisTable({
   onPageChange,
 }: Props) {
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return animais;
-    return animais.filter(a => {
-      const idMatch = String(a.id).includes(q);
-      const nome = displayNome(a).toLowerCase();
-      return idMatch || nome.includes(q);
-    });
+    if (!search.trim()) return animais;
+    const q = search.toLowerCase();
+    return animais.filter(a =>
+      (a.brinco || "").toLowerCase().includes(q) ||
+      (a.nome || "").toLowerCase().includes(q) ||
+      (a.categoria || "").toLowerCase().includes(q) ||
+      (a.raca || "").toLowerCase().includes(q) ||
+      (a.pastoNome || "").toLowerCase().includes(q)
+    );
   }, [animais, search]);
 
   const sorted = useMemo(() => {
@@ -74,25 +78,25 @@ export default function LoteAnimaisTable({
       let va: string | number = "";
       let vb: string | number = "";
       switch (sortKey) {
-        case "id":
-          va = a.id;
-          vb = b.id;
+        case "brinco":
+          va = displayBrinco(a).toLowerCase();
+          vb = displayBrinco(b).toLowerCase();
           break;
-        case "nome":
-          va = displayNome(a).toLowerCase();
-          vb = displayNome(b).toLowerCase();
+        case "categoria":
+          va = (a.categoria || "").toLowerCase();
+          vb = (b.categoria || "").toLowerCase();
           break;
         case "sexo":
-          va = displaySexo(a.sexo);
-          vb = displaySexo(b.sexo);
+          va = a.sexo;
+          vb = b.sexo;
           break;
         case "raca":
           va = (a.raca || "").toLowerCase();
           vb = (b.raca || "").toLowerCase();
           break;
-        case "nascimento":
-          va = a.dataNascimento || "";
-          vb = b.dataNascimento || "";
+        case "pasto":
+          va = (a.pastoNome || "").toLowerCase();
+          vb = (b.pastoNome || "").toLowerCase();
           break;
       }
       if (va < vb) return sortAsc ? -1 : 1;
@@ -116,7 +120,7 @@ export default function LoteAnimaisTable({
   const fim = Math.min(pageSafe * perPage, total);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
+    <div className="border border-gray-200 rounded overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-[12px] min-w-[640px]">
           <thead>
@@ -125,14 +129,13 @@ export default function LoteAnimaisTable({
                 <Checkbox
                   checked={allPageSelected}
                   onCheckedChange={() => onToggleSelectAll(paginatedIds)}
-                  className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
                 />
               </th>
-              <th className={thClass} onClick={() => onSort("id")}>
-                ID <SortIcon col="id" sortKey={sortKey} sortAsc={sortAsc} />
+              <th className={thClass} onClick={() => onSort("brinco")}>
+                Brinco <SortIcon col="brinco" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
-              <th className={thClass} onClick={() => onSort("nome")}>
-                Nome <SortIcon col="nome" sortKey={sortKey} sortAsc={sortAsc} />
+              <th className={thClass} onClick={() => onSort("categoria")}>
+                Categoria <SortIcon col="categoria" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
               <th className={thClass} onClick={() => onSort("sexo")}>
                 Sexo <SortIcon col="sexo" sortKey={sortKey} sortAsc={sortAsc} />
@@ -140,8 +143,8 @@ export default function LoteAnimaisTable({
               <th className={thClass} onClick={() => onSort("raca")}>
                 Raça <SortIcon col="raca" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
-              <th className={`${thClass} border-r-0`} onClick={() => onSort("nascimento")}>
-                Nascimento <SortIcon col="nascimento" sortKey={sortKey} sortAsc={sortAsc} />
+              <th className={`${thClass} border-r-0`} onClick={() => onSort("pasto")}>
+                Subdivisão (Pasto) <SortIcon col="pasto" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
             </tr>
           </thead>
@@ -166,14 +169,14 @@ export default function LoteAnimaisTable({
                     <Checkbox
                       checked={selected.has(animal.id)}
                       onCheckedChange={() => onToggleSelect(animal.id)}
-                      className="data-[state=checked]:bg-[#8ab83d] data-[state=checked]:border-[#8ab83d]"
+                      className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
                     />
                   </td>
-                  <td className="px-3 py-2 text-gray-700 border-r border-gray-100">{animal.id}</td>
-                  <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100">{displayNome(animal)}</td>
+                  <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100">{displayBrinco(animal)}</td>
+                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.categoria || "—"}</td>
                   <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
                   <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.raca || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600">{formatDateBR(animal.dataNascimento)}</td>
+                  <td className="px-3 py-2 text-gray-600">{animal.pastoNome || "—"}</td>
                 </tr>
               ))
             )}
