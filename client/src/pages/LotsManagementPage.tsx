@@ -301,8 +301,11 @@ export default function LotsManagementPage() {
                 <th colSpan={5} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200">
                   Machos
                 </th>
-                <th colSpan={5} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200">
+                <th colSpan={5} className="px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200">
                   Fêmeas
+                </th>
+                <th rowSpan={2} className="w-16 px-2 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">
+                  Total
                 </th>
                 <th rowSpan={2} className="w-24 px-2 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase border-l border-gray-200">
                   Ações
@@ -323,10 +326,10 @@ export default function LotsManagementPage() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={13} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
               )}
               {!isLoading && paginated.length === 0 && (
-                <tr><td colSpan={13} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
+                <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
               )}
               {paginated.map(lote => (
                 <tr key={lote.id} className="border-t border-gray-100 hover:bg-gray-50/50">
@@ -356,6 +359,15 @@ export default function LotsManagementPage() {
                       {celulaValor(lote.femeas[f])}
                     </td>
                   ))}
+                  {/* Coluna Total */}
+                  <td className="px-2 py-2 text-center font-semibold text-gray-800 border-l border-r border-gray-200 tabular-nums bg-gray-50/60">
+                    {(() => {
+                      const totalMachos = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.machos[f] ?? 0), 0);
+                      const totalFemeas = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.femeas[f] ?? 0), 0);
+                      const total = totalMachos + totalFemeas;
+                      return total > 0 ? total : <span className="text-gray-300">—</span>;
+                    })()}
+                  </td>
                   <td className="px-2 py-2 border-l border-gray-50">
                     <div className="flex items-center justify-center gap-0.5">
                       <button type="button" title="Editar" onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
