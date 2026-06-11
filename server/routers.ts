@@ -1383,7 +1383,12 @@ const lotesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
-      await db.update(lotes).set(rest).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
+      // Permite salvar sigla como null quando string vazia é enviada
+      const updateData = {
+        ...rest,
+        sigla: rest.sigla !== undefined ? (rest.sigla.trim() === '' ? null : rest.sigla.trim()) : undefined,
+      };
+      await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
       return { success: true };
     }),
 

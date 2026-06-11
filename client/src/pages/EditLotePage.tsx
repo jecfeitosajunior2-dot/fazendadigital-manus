@@ -162,7 +162,7 @@ export default function EditLotePage() {
     updateMutation.mutate({
       id: loteId,
       nome: form.nome.trim(),
-      sigla: form.sigla.trim() || undefined,
+      sigla: form.sigla.trim(),
       dataCriacao: form.dataCriacao,
     });
   };
