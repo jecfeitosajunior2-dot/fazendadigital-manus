@@ -179,6 +179,15 @@ const animaisRouter = router({
         .from(lotes).where(eq(lotes.userId, ctx.user.id));
       const loteMap = new Map(lotesAll.map(l => [l.id, l.nome]));
 
+      // Busca pastos para enriquecer com pastoNome
+      const pastoIdsAnimais = [...new Set(lista.map(a => a.pastoId).filter(Boolean) as number[])];
+      const pastoMapAnimais = new Map<number, string>();
+      if (pastoIdsAnimais.length) {
+        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome })
+          .from(pastos).where(inArray(pastos.id, pastoIdsAnimais));
+        pastosRows.forEach(p => pastoMapAnimais.set(p.id, p.nome));
+      }
+
       // Busca TODAS as pesagens dos animais listados (para calcular GMD e ganho)
       const todasPesagens = await db.select()
         .from(pesagens)
@@ -279,9 +288,12 @@ const animaisRouter = router({
           gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
         }
 
+        const pastoNome = animal.pastoId ? (pastoMapAnimais.get(animal.pastoId) ?? null) : null;
+
         return {
           ...animal,
           loteNome,
+          pastoNome,
           idadeMeses,
           diasNaFazenda,
           ultimoPeso,

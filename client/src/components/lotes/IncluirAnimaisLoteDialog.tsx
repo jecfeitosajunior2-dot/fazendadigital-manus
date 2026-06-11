@@ -295,19 +295,20 @@ export default function IncluirAnimaisLoteDialog({ loteId, open, onClose, onSucc
                         />
                       </div>
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">ID</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Nome</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Nº RFID</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Categoria</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Lote</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Sexo</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Raça</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Lote Atual</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Nascimento</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Subdivisão (Pasto)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={7} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">Carregando...</td></tr>
                   ) : paginated.length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-8 text-gray-400">Nenhum animal disponível.</td></tr>
+                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">Nenhum animal disponível.</td></tr>
                   ) : (
                     paginated.map((animal, idx) => (
                       <tr
@@ -325,12 +326,13 @@ export default function IncluirAnimaisLoteDialog({ loteId, open, onClose, onSucc
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-gray-700 border-r border-gray-100">{animal.id}</td>
                         <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100">{displayNome(animal)}</td>
+                        <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.brincoEletronico || "—"}</td>
+                        <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.categoria || "—"}</td>
+                        <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.loteNome || "—"}</td>
                         <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.sexo === "macho" ? "macho" : "fêmea"}</td>
                         <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.raca || "—"}</td>
-                        <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.loteNome || "—"}</td>
-                        <td className="px-3 py-2 text-gray-600">{formatDateBR(animal.dataNascimento)}</td>
+                        <td className="px-3 py-2 text-gray-600">{(animal as any).pastoNome || "—"}</td>
                       </tr>
                     ))
                   )}
