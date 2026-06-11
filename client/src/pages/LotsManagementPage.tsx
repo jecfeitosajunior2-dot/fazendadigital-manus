@@ -358,9 +358,6 @@ export default function LotsManagementPage() {
                   ))}
                   <td className="px-2 py-2 border-l border-gray-50">
                     <div className="flex items-center justify-center gap-0.5">
-                      <button type="button" title="Ver detalhes" onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors">
-                        <span className="material-icons text-[16px]">visibility</span>
-                      </button>
                       <button type="button" title="Editar" onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
                         <span className="material-icons text-[16px]">edit</span>
                       </button>
