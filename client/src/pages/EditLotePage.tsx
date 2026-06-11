@@ -327,8 +327,15 @@ export default function EditLotePage() {
       </Dialog>
 
       <div className="w-full">
+        <button
+          onClick={() => setLocation("/rebanho/lotes")}
+          className="flex items-center gap-1 text-[12px] text-gray-500 hover:text-[#2D5A5A] transition mb-3 group"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+          <span>Voltar</span>
+        </button>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h1 className="text-[15px] font-semibold text-gray-900">Editar lote</h1>
+          <h1 className="text-[15px] font-semibold text-gray-900">Editar Lote</h1>
           <ListExportButtons
             title={exportTitle}
             filename={exportFilename}
