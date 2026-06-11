@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const IRANCHO_BTN_GREEN = "#8ab83d";
+const IRANCHO_BTN_GREEN = "#2D5A5A";
 
 function hojeISO() {
   return new Date().toISOString().slice(0, 10);
