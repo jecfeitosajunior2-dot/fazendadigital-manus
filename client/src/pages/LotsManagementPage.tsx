@@ -290,7 +290,7 @@ export default function LotsManagementPage() {
                   <Checkbox
                     checked={paginated.length > 0 && selected.size === paginated.length}
                     onCheckedChange={toggleSelectAll}
-                    className="data-[state=checked]:bg-[#7CB342] data-[state=checked]:border-[#7CB342]"
+                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
                   />
                 </th>
                 <th rowSpan={2} className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200 min-w-[180px]">
@@ -344,7 +344,7 @@ export default function LotsManagementPage() {
                     <Checkbox
                       checked={selected.has(lote.id)}
                       onCheckedChange={() => toggleSelect(lote.id)}
-                      className="data-[state=checked]:bg-[#7CB342] data-[state=checked]:border-[#7CB342]"
+                      className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
                     />
                   </td>
                   <td className="px-3 py-2 border-r border-gray-50">
@@ -397,7 +397,7 @@ export default function LotsManagementPage() {
             <select
               value={perPage}
               onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-              className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px]"
+              className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
             >
               <option value={10}>10 itens por página</option>
               <option value={25}>25 itens por página</option>
@@ -406,22 +406,27 @@ export default function LotsManagementPage() {
             </select>
           </div>
           <div className="flex items-center gap-3">
-            <span>Mostrando {inicio}-{fim} de {total} itens</span>
+            <span>Mostrando {inicio === 0 ? 0 : inicio}–{fim} de {total} {total === 1 ? "item" : "itens"}</span>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 disabled={pageSafe <= 1}
                 onClick={() => setPage(p => Math.max(1, p - 1))}
-                className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+                className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50 transition-colors"
               >
                 <span className="material-icons text-[16px]">chevron_left</span>
               </button>
-              <span className="px-2 min-w-[24px] text-center">{pageSafe}</span>
+              <span
+                className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
+                style={{ backgroundColor: "#2D5A5A" }}
+              >
+                {pageSafe}
+              </span>
               <button
                 type="button"
                 disabled={pageSafe >= totalPages}
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+                className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50 transition-colors"
               >
                 <span className="material-icons text-[16px]">chevron_right</span>
               </button>
