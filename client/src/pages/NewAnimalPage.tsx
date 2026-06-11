@@ -196,7 +196,10 @@ const AnimalFormPage: React.FC = () => {
   );
 
   // ── Lotes (filtrados por fazenda se selecionada) ──
-  const { data: lotes } = trpc.lotes.list.useQuery();
+  const { data: todosLotes } = trpc.lotes.list.useQuery();
+  const lotesFiltrados = fazendaId
+    ? (todosLotes ?? []).filter(l => l.fazendaId != null && String(l.fazendaId) === fazendaId)
+    : (todosLotes ?? []);
 
   // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
   useEffect(() => {
@@ -453,7 +456,7 @@ const AnimalFormPage: React.FC = () => {
             <FieldBox required>
               <select
                 value={fazendaId}
-                onChange={e => { setFazendaId(e.target.value); set('loteId', ''); }}
+                onChange={e => { setFazendaId(e.target.value); set('loteId', ''); setPastoId(''); }}
                 className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]')}
               >
                 <option value="">Selecione uma Fazenda</option>
@@ -510,7 +513,7 @@ const AnimalFormPage: React.FC = () => {
                 <FormLabel>Lote</FormLabel>
                 <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
                   <option value="">Sem lote</option>
-                  {lotes?.map(l => (
+                  {lotesFiltrados.map(l => (
                     <option key={l.id} value={l.id}>{l.nome}</option>
                   ))}
                 </FieldSelect>
