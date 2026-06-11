@@ -545,7 +545,7 @@ export function LotsPage() {
     <AppLayout>
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-[15px] font-medium text-gray-800">Gestão de Lotes</h1>
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
+        <button className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#0ea5e9" }}>
           <span className="material-icons text-[14px]">add</span>
           Novo Lote
         </button>
