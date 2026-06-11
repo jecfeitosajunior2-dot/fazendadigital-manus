@@ -9,7 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
 
-const IRANCHO_BTN_GREEN = "#C5D97E";
+const IRANCHO_BTN_GREEN = "#2D5A5A";
 
 function hojeISO() {
   return new Date().toISOString().slice(0, 10);
@@ -133,7 +133,7 @@ export function NewLotePage() {
               type="button"
               onClick={handleSubmit}
               disabled={isBusy}
-              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 disabled:opacity-50 transition"
+              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50 transition"
               style={{ backgroundColor: IRANCHO_BTN_GREEN }}
             >
               {isBusy ? "Salvando..." : "Criar Lote"}
