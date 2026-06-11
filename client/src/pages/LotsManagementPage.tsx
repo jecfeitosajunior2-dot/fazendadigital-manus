@@ -233,6 +233,7 @@ export default function LotsManagementPage() {
           headers={exportHeaders}
           rows={exportData}
           alignRightFrom={1}
+          fazendaNome={fazendaFilter ? (fazendas as { id: number; nome: string }[]).find(f => f.id === Number(fazendaFilter))?.nome ?? "Todas as Fazendas" : "Todas as Fazendas"}
         />
       </div>
 
