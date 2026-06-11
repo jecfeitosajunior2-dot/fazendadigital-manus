@@ -83,7 +83,7 @@ export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onCl
   const debouncedPesquisa = useDebounce(filters.pesquisa, 400);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
-  const perPage = 50;
+  const [perPage, setPerPage] = useState(50);
 
   const utils = trpc.useUtils();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
@@ -353,44 +353,45 @@ export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onCl
                 </tbody>
               </table>
             </div>
-            {disponiveis.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
-                <span>{perPage} itens por página</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="mr-2">Mostrando {inicio}–{fim} de {disponiveis.length} itens</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
+              <select
+                value={perPage}
+                onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
+              >
+                <option value={10}>10 itens por página</option>
+                <option value={25}>25 itens por página</option>
+                <option value={50}>50 itens por página</option>
+                <option value={100}>100 itens por página</option>
+              </select>
+              <div className="flex items-center gap-3">
+                <span>Mostrando {disponiveis.length === 0 ? 0 : inicio}–{fim} de {disponiveis.length} {disponiveis.length === 1 ? "item" : "itens"}</span>
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     disabled={pageSafe <= 1}
                     onClick={() => setPage(p => p - 1)}
-                    className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
+                    className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
                   >
                     <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
                   </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      className={`w-7 h-7 flex items-center justify-center rounded text-[11px] font-medium transition-colors ${
-                        p === pageSafe
-                          ? "bg-[#2D5A5A] text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  <span
+                    className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
+                    style={{ backgroundColor: "#2D5A5A" }}
+                  >
+                    {pageSafe}
+                  </span>
                   <button
                     type="button"
                     disabled={pageSafe >= totalPages}
                     onClick={() => setPage(p => p + 1)}
-                    className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
+                    className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
                   >
                     <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
                   </button>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
 
