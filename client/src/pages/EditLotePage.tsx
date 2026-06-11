@@ -260,6 +260,7 @@ export default function EditLotePage() {
     <AppLayout>
       <IncluirAnimaisLoteDialog
         loteId={loteId}
+        fazendaId={lote?.fazendaId ?? null}
         open={incluirOpen}
         onClose={() => setIncluirOpen(false)}
         onSuccess={() => refetchAnimais()}

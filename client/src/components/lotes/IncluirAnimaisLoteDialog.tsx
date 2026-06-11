@@ -62,6 +62,7 @@ const filterInputClass =
 
 type Props = {
   loteId: number;
+  fazendaId: number | null;
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
@@ -71,9 +72,14 @@ function displayNome(animal: { nome: string | null; brinco: string | null }) {
   return animal.nome?.trim() || animal.brinco?.trim() || "—";
 }
 
-export default function IncluirAnimaisLoteDialog({ loteId, open, onClose, onSuccess }: Props) {
+export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onClose, onSuccess }: Props) {
   const storageKey = `fd:incluir-animais-lote-filtros:${loteId}`;
-  const [filters, setFilters] = usePersistedState(storageKey, INITIAL_FILTERS);
+  const initialFilters = useMemo(
+    () => ({ ...INITIAL_FILTERS, fazendaId: fazendaId ? String(fazendaId) : "" }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loteId],
+  );
+  const [filters, setFilters] = usePersistedState(storageKey, initialFilters);
   const debouncedPesquisa = useDebounce(filters.pesquisa, 400);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
@@ -114,8 +120,16 @@ export default function IncluirAnimaisLoteDialog({ loteId, open, onClose, onSucc
   }, [filtrosKey]);
 
   useEffect(() => {
-    if (!open) setSelected(new Set());
-  }, [open]);
+    if (open) {
+      // Sempre que abrir, garante que a fazenda do lote está pré-selecionada
+      setFilters(prev => ({
+        ...prev,
+        fazendaId: fazendaId ? String(fazendaId) : prev.fazendaId,
+      }));
+    } else {
+      setSelected(new Set());
+    }
+  }, [open, fazendaId]);
 
   const totalPages = Math.max(1, Math.ceil(disponiveis.length / perPage));
   const pageSafe = Math.min(page, totalPages);
