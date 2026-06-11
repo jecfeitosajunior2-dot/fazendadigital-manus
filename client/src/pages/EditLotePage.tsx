@@ -152,7 +152,7 @@ export default function EditLotePage() {
 
   const handleSalvar = () => {
     if (!form.nome.trim()) {
-      toast.error("Nome do lote é obrigatório");
+      toast.error("Nome do Lote é obrigatório");
       return;
     }
     if (!form.dataCriacao) {
@@ -347,7 +347,7 @@ export default function EditLotePage() {
         {/* Cabeçalho horizontal — iRancho */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <FormLabel required>Nome do lote</FormLabel>
+            <FormLabel required>Nome do Lote</FormLabel>
             <FormInput
               value={form.nome}
               onChange={v => setField("nome", v)}
@@ -366,7 +366,7 @@ export default function EditLotePage() {
             />
           </div>
           <div>
-            <FormLabel required>Data de criação do lote</FormLabel>
+            <FormLabel required>Data de criação do Lote</FormLabel>
             <FormDatePicker
               value={form.dataCriacao}
               onChange={v => setField("dataCriacao", v)}

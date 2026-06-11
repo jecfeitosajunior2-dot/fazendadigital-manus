@@ -59,7 +59,7 @@ export function NewLotePage() {
 
   const handleSubmit = () => {
     if (!form.nome.trim()) {
-      toast.error("Nome do lote é obrigatório");
+      toast.error("Nome do Lote é obrigatório");
       return;
     }
     if (!form.dataCriacao) {
