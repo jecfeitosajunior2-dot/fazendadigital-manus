@@ -62,10 +62,11 @@ export function AnimaisPage() {
     return resto > 0 ? `${anos}a ${resto}m` : `${anos} anos`;
   };
 
-  const exportHeaders = ["Brinco", "Nº RFID", "Lote", "Sexo", "Idade", "Dias Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência", "Status"];
+  const exportHeaders = ["Brinco", "Nº RFID", "Categoria", "Lote", "Sexo", "Idade", "Dias na Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência"];
   const exportData = filteredAnimais.map(a => [
     a.brinco || "",
     a.brincoEletronico || "",
+    a.categoria || "",
     a.loteNome || "",
     a.sexo === "macho" ? "Macho" : "Fêmea",
     formatIdade(a.idadeMeses ?? null),
@@ -74,7 +75,6 @@ export function AnimaisPage() {
     a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg).toFixed(2) : "",
     a.gmd !== null && a.gmd !== undefined ? Number(a.gmd).toFixed(3) : "",
     a.emCarencia ? "Sim" : "Não",
-    a.status || "",
   ]);
 
   return (
@@ -166,10 +166,11 @@ export function AnimaisPage() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Brinco</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Nº RFID</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Categoria</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Lote</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Sexo</th>
                 <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Idade</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Dias Fazenda</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Dias na Fazenda</th>
                 <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Últ. Peso (kg)</th>
                 <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ganho (kg)</th>
                 <th className="text-right px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">GMD (kg/dia)</th>
@@ -179,12 +180,12 @@ export function AnimaisPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={11} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={12} className="text-center py-8 text-gray-400">Carregando...</td></tr>
               ) : paginated.length === 0 ? (
-                <tr><td colSpan={11} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
+                <tr><td colSpan={12} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
               ) : paginated.map((animal) => (
                 <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  {/* Nº Visual */}
+                  {/* Brinco */}
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
@@ -193,6 +194,12 @@ export function AnimaisPage() {
                   </td>
                   {/* Nº RFID */}
                   <td className="px-3 py-2 text-gray-500 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
+                  {/* Categoria */}
+                  <td className="px-3 py-2">
+                    {animal.categoria ? (
+                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium text-[11px]">{animal.categoria}</span>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
                   {/* Lote */}
                   <td className="px-3 py-2">
                     {animal.loteNome ? (
