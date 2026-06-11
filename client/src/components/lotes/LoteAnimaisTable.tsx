@@ -185,41 +185,33 @@ export default function LoteAnimaisTable({
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
         <span>{perPage} itens por página</span>
-        {total > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="mr-2">Mostrando {inicio}-{fim} de {total} itens</span>
+        <div className="flex items-center gap-3">
+          <span>Mostrando {total === 0 ? 0 : inicio}–{fim} de {total} {total === 1 ? "item" : "itens"}</span>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={pageSafe <= 1}
               onClick={() => onPageChange(pageSafe - 1)}
-              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
             >
               <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
             </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onPageChange(p)}
-                className={`w-7 h-7 flex items-center justify-center rounded text-[11px] font-medium transition-colors ${
-                  p === pageSafe
-                    ? "bg-[#2D5A5A] text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
+            <span
+              className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
+              style={{ backgroundColor: "#2D5A5A" }}
+            >
+              {pageSafe}
+            </span>
             <button
               type="button"
               disabled={pageSafe >= totalPages}
               onClick={() => onPageChange(pageSafe + 1)}
-              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
             >
               <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
             </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
