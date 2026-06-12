@@ -12,7 +12,7 @@ import { usePersistedState } from "@/hooks/usePersistedState";
 import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
 import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
 
-const IRANCHO_BTN_GREEN = "#8ab83d";
+const IRANCHO_BTN_GREEN = "#2D5A5A";
 
 const FILTERS_KEY = "fd:mapa-rebanho-filtros";
 
