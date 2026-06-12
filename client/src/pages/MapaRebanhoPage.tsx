@@ -374,22 +374,25 @@ export default function MapaRebanhoPage() {
               </select>
             </div>
             <div className="flex items-center gap-3">
-              <span>Mostrando {inicio}-{fim} de {total} itens</span>
+              <span className="text-[11px] text-gray-500">Mostrando {inicio}–{fim} de {total} itens</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={pageSafe <= 1}
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+                  className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
                 >
                   <span className="material-icons text-[16px]">chevron_left</span>
                 </button>
-                <span className="px-2 min-w-[24px] text-center">{pageSafe}</span>
+                <span
+                  className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
+                  style={{ backgroundColor: '#2D5A5A' }}
+                >{pageSafe}</span>
                 <button
                   type="button"
                   disabled={pageSafe >= totalPages}
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+                  className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
                 >
                   <span className="material-icons text-[16px]">chevron_right</span>
                 </button>
