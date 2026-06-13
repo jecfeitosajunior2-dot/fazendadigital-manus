@@ -319,7 +319,7 @@ export default function EditLotePage() {
           <DialogHeader>
             <DialogTitle className="text-gray-900">Não é possível excluir</DialogTitle>
             <DialogDescription className="text-gray-600 leading-relaxed">
-              Este lote possui{" "}
+              Este Lote possui{" "}
               <span className="font-semibold text-amber-700">
                 {deleteBlocked?.qtdAnimais} {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
               </span>.
