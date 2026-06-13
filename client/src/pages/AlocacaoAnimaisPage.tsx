@@ -307,12 +307,13 @@ export default function AlocacaoAnimaisPage() {
               <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 border-t border-gray-100 text-[11px] text-gray-500">
                 <select
                   value={perPage}
-                  onChange={e => setPerPage(Number(e.target.value))}
+                  onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
                   className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] text-gray-700"
                 >
-                  {[10, 25, 50].map(n => (
-                    <option key={n} value={n}>{n} itens por página</option>
-                  ))}
+                  <option value={10}>10 itens por página</option>
+                  <option value={25}>25 itens por página</option>
+                  <option value={50}>50 itens por página</option>
+                  <option value={100}>100 itens por página</option>
                 </select>
                 <div className="flex items-center gap-3">
                   <span>
@@ -331,7 +332,7 @@ export default function AlocacaoAnimaisPage() {
                     </button>
                     <span
                       className="w-7 h-7 flex items-center justify-center rounded-full text-white text-[11px] font-semibold"
-                      style={{ backgroundColor: IRANCHO_BTN_GREEN }}
+                      style={{ backgroundColor: IRANCHO_PETROL }}
                     >
                       {pageSafe}
                     </span>
