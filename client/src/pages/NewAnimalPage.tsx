@@ -197,9 +197,10 @@ const AnimalFormPage: React.FC = () => {
 
   // ── Lotes (filtrados por fazenda se selecionada) ──
   const { data: todosLotes } = trpc.lotes.list.useQuery();
-  const lotesFiltrados = fazendaId
+  const lotesFiltrados = (fazendaId
     ? (todosLotes ?? []).filter(l => l.fazendaId != null && String(l.fazendaId) === fazendaId)
-    : (todosLotes ?? []);
+    : (todosLotes ?? [])
+  ).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
 
   // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
   useEffect(() => {
@@ -571,7 +572,7 @@ const AnimalFormPage: React.FC = () => {
                     className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', !fazendaId && 'opacity-50 cursor-not-allowed')}
                   >
                     <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
-                    {pastos?.map(p => (
+                    {(pastos ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' })).map(p => (
                       <option key={p.id} value={String(p.id)}>{p.nome}</option>
                     ))}
                   </select>
