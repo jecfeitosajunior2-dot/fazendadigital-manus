@@ -1148,17 +1148,19 @@ const lotesRouter = router({
       if (input.pastoId) pastosConditions.push(eq(pastos.id, input.pastoId));
 
       const pastosList = await db.select().from(pastos).where(and(...pastosConditions));
-      if (pastosList.length === 0) {
-        return { rows: [], totalAnimaisSubdivisao: 0 };
-      }
-
       const pastoMap = new Map(pastosList.map(p => [p.id, p]));
       const pastoIds = pastosList.map(p => p.id);
 
-      const lotesList = await db.select().from(lotes).where(and(
+      // Busca lotes da fazenda: com ou sem subdivisão vinculada
+      const lotesConditions: Parameters<typeof and>[0][] = [
         eq(lotes.userId, ctx.user.id),
-        inArray(lotes.pastoAtualId, pastoIds),
-      ));
+        eq(lotes.fazendaId, input.fazendaId),
+      ];
+      // Se filtrou por subdivisão específica, inclui apenas lotes desse pasto
+      if (input.pastoId) {
+        lotesConditions.push(eq(lotes.pastoAtualId, input.pastoId));
+      }
+      const lotesList = await db.select().from(lotes).where(and(...lotesConditions));
 
       if (lotesList.length === 0) {
         return { rows: [], totalAnimaisSubdivisao: 0 };
