@@ -361,7 +361,7 @@ export default function MapaRebanhoPage() {
               <select
                 value={perPage}
                 onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px]"
+                className="h-8 px-2 border border-[#2D5A5A] rounded-sm bg-white text-[11px]"
               >
                 <option value={10}>10 itens por página</option>
                 <option value={25}>25 itens por página</option>
