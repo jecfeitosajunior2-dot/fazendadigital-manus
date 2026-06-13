@@ -230,16 +230,16 @@ export function AnimaisPage() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 {/* Cabeçalhos ordensáveis */}
                 {([
-                  { key: "brinco",      label: "Brinco",         align: "left" },
-                  { key: "rfid",        label: "Nº RFID",        align: "left" },
-                  { key: "categoria",   label: "Categoria",      align: "left" },
-                  { key: "lote",        label: "Lote",           align: "left" },
-                  { key: "sexo",        label: "Sexo",           align: "left" },
-                  { key: "idade",       label: "Idade",          align: "right" },
-                  { key: "diasFazenda", label: "Dias na Fazenda",align: "right" },
-                  { key: "ultimoPeso",  label: "Últ. Peso (kg)", align: "right" },
-                  { key: "ganhoKg",     label: "Ganho (kg)",     align: "right" },
-                  { key: "gmd",         label: "GMD (kg/dia)",   align: "right" },
+                  { key: "brinco",      label: "Brinco",         align: "center" },
+                  { key: "rfid",        label: "Nº RFID",        align: "center" },
+                  { key: "categoria",   label: "Categoria",      align: "center" },
+                  { key: "lote",        label: "Lote",           align: "center" },
+                  { key: "sexo",        label: "Sexo",           align: "center" },
+                  { key: "idade",       label: "Idade",          align: "center" },
+                  { key: "diasFazenda", label: "Dias na Fazenda",align: "center" },
+                  { key: "ultimoPeso",  label: "Últ. Peso (kg)", align: "center" },
+                  { key: "ganhoKg",     label: "Ganho (kg)",     align: "center" },
+                  { key: "gmd",         label: "GMD (kg/dia)",   align: "center" },
                   { key: "emCarencia",  label: "Em Carência",    align: "center" },
                 ] as { key: AnimaisSortKey; label: string; align: string }[]).map(col => (
                   <th
@@ -252,7 +252,7 @@ export function AnimaisPage() {
                   </th>
                 ))}
                 {/* Coluna Ações: sem ordenação */}
-                <th className="text-left px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ações</th>
+                <th className="text-center px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -263,44 +263,44 @@ export function AnimaisPage() {
               ) : paginated.map((animal) => (
                 <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                   {/* Brinco */}
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-1.5">
+                  <td className="px-3 py-2 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
                       <span className="font-semibold text-[#2D5A5A]">{animal.brinco || "-"}</span>
                     </div>
                   </td>
                   {/* Nº RFID */}
-                  <td className="px-3 py-2 text-gray-500 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-3 py-2 text-center text-gray-500 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
                   {/* Categoria */}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-center">
                     {animal.categoria ? (
                       <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium text-[11px]">{animal.categoria}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Lote */}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-center">
                     {animal.loteNome ? (
                       <span className="px-2 py-0.5 rounded bg-[#2D5A5A]/10 text-[#2D5A5A] font-medium text-[11px]">{animal.loteNome}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Sexo */}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 text-center">
                     <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
                       {animal.sexo === "macho" ? "Macho" : "Fêmea"}
                     </span>
                   </td>
                   {/* Idade */}
-                  <td className="px-3 py-2 text-right tabular-nums">{formatIdade(animal.idadeMeses ?? null)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{formatIdade(animal.idadeMeses ?? null)}</td>
                   {/* Dias Fazenda */}
-                  <td className="px-3 py-2 text-right tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums">
                     {animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? animal.diasNaFazenda : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Último Peso */}
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">
+                  <td className="px-3 py-2 text-center tabular-nums font-medium">
                     {animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? Number(animal.ultimoPeso).toFixed(1) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Ganho KG */}
-                  <td className="px-3 py-2 text-right tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums">
                     {animal.ganhoKg !== null && animal.ganhoKg !== undefined ? (
                       <span className={Number(animal.ganhoKg) >= 0 ? "text-green-600" : "text-red-500"}>
                         {Number(animal.ganhoKg) >= 0 ? "+" : ""}{Number(animal.ganhoKg).toFixed(2)}
@@ -308,7 +308,7 @@ export function AnimaisPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* GMD */}
-                  <td className="px-3 py-2 text-right tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums">
                     {animal.gmd !== null && animal.gmd !== undefined ? (
                       <span className={Number(animal.gmd) >= 0.8 ? "text-green-600" : Number(animal.gmd) >= 0.4 ? "text-amber-600" : "text-red-500"}>
                         {Number(animal.gmd).toFixed(3)}
@@ -327,7 +327,7 @@ export function AnimaisPage() {
                   </td>
                   {/* Ações */}
                   <td className="px-3 py-2">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors" title="Ver detalhes">
                         <span className="material-icons text-[16px]">visibility</span>
                       </button>
