@@ -257,7 +257,7 @@ export default function LotsManagementPage() {
               setPage(1);
               setLocation(lotesListUrl(v), { replace: true });
             }}
-            className="w-full h-[40px] px-3 text-[12px] rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none" style={{ border: '1px solid #2D5A5A' }}
+            className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
           >
             <option value="">Selecione uma fazenda</option>
             {fazendas.map((f: { id: number; nome: string }) => (
