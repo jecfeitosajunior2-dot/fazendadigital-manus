@@ -43,10 +43,13 @@ export function criarContagemVazia(): ContagemPorFaixa {
 export type ResumoSexoFaixa = {
   machos: ContagemPorFaixa;
   femeas: ContagemPorFaixa;
+  /** Animais sem data de nascimento (idade desconhecida) — não entram nas faixas mas contam no total */
+  machosSemIdade: number;
+  femeasSemIdade: number;
 };
 
 export function criarResumoSexoFaixa(): ResumoSexoFaixa {
-  return { machos: criarContagemVazia(), femeas: criarContagemVazia() };
+  return { machos: criarContagemVazia(), femeas: criarContagemVazia(), machosSemIdade: 0, femeasSemIdade: 0 };
 }
 
 export function adicionarAnimalAoResumo(
@@ -54,11 +57,16 @@ export function adicionarAnimalAoResumo(
   sexo: string,
   idadeMeses: number | null | undefined,
 ): ResumoSexoFaixa {
-  const faixa = faixaIdadeLote(idadeMeses);
-  if (!faixa) return resumo;
-
   const alvo = sexo === 'femea' ? 'femeas' : sexo === 'macho' ? 'machos' : null;
   if (!alvo) return resumo;
+
+  const faixa = faixaIdadeLote(idadeMeses);
+
+  // Sem data de nascimento: conta no campo semIdade (sem faixa)
+  if (!faixa) {
+    const campoSemIdade = alvo === 'femeas' ? 'femeasSemIdade' : 'machosSemIdade';
+    return { ...resumo, [campoSemIdade]: resumo[campoSemIdade] + 1 };
+  }
 
   return {
     ...resumo,

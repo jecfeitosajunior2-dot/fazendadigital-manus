@@ -1096,6 +1096,8 @@ const lotesRouter = router({
           ativo: lote.ativo,
           machos: resumo.machos,
           femeas: resumo.femeas,
+          machosSemIdade: resumo.machosSemIdade,
+          femeasSemIdade: resumo.femeasSemIdade,
         };
       });
 

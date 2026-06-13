@@ -43,6 +43,8 @@ type LoteGerenciamento = {
   ativo: boolean | null;
   machos: ContagemPorFaixa;
   femeas: ContagemPorFaixa;
+  machosSemIdade: number;
+  femeasSemIdade: number;
 };
 
 interface DeleteConfirmState { lote: LoteItem }
@@ -369,10 +371,10 @@ export default function LotsManagementPage() {
                   {/* Coluna Total */}
                   <td className="px-2 py-2 text-center font-semibold text-gray-800 border-l border-r border-gray-200 tabular-nums bg-gray-50/60">
                     {(() => {
-                      const totalMachos = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.machos[f] ?? 0), 0);
-                      const totalFemeas = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.femeas[f] ?? 0), 0);
+                      const totalMachos = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.machos[f] ?? 0), 0) + (lote.machosSemIdade ?? 0);
+                      const totalFemeas = FAIXAS_IDADE_LOTE.reduce((s, f) => s + (lote.femeas[f] ?? 0), 0) + (lote.femeasSemIdade ?? 0);
                       const total = totalMachos + totalFemeas;
-                      return total > 0 ? total : <span className="text-gray-300">—</span>;
+                      return total > 0 ? total : <span className="text-gray-300">&mdash;</span>;
                     })()}
                   </td>
                   <td className="px-2 py-2 border-l border-gray-50">
