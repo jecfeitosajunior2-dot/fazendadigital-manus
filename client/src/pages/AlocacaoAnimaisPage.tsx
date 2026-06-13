@@ -13,6 +13,7 @@ import type { AnimalAlocacaoRow } from "@/components/rebanho/alocacao-types";
 import { formatDateBR } from "@/lib/date-utils";
 
 const IRANCHO_BTN_GREEN = "#8ab83d";
+const IRANCHO_PETROL = "#2D5A5A";
 const IRANCHO_BTN_GREY = "#C0C0C0";
 
 function hojeISO() {
@@ -198,8 +199,8 @@ export default function AlocacaoAnimaisPage() {
             <button
               type="button"
               onClick={() => setSelecionarOpen(true)}
-              className="mb-4 px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 transition"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 40 }}
+              className="mb-4 px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
+              style={{ backgroundColor: IRANCHO_PETROL, minHeight: 40 }}
             >
               Selecionar Animais
             </button>
@@ -207,7 +208,7 @@ export default function AlocacaoAnimaisPage() {
             {/* Destino */}
             <div className={`grid grid-cols-1 gap-4 mb-4 ${mostrarLoteDestino ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
               <div>
-                <FormLabel required>Fazenda Destino</FormLabel>
+                <FormLabel>Fazenda Destino</FormLabel>
                 <FormNativeSelect
                   value={fazendaDestinoId}
                   onChange={v => {
@@ -221,8 +222,8 @@ export default function AlocacaoAnimaisPage() {
                 />
               </div>
               <div>
-                <FormLabel required>Subdivisão Destino</FormLabel>
-                <div className="[&>div]:border-l-[3px] [&>div]:border-l-[#8ab83d]">
+                <FormLabel>Subdivisão Destino</FormLabel>
+                <div className="[&>div]:border-l-[3px] [&>div]:border-l-[#2D5A5A]">
                   <FormNativeSelect
                     value={pastoDestinoId}
                     onChange={v => {
@@ -363,7 +364,7 @@ export default function AlocacaoAnimaisPage() {
                 onClick={handleTransferir}
                 disabled={transferirMutation.isPending}
                 className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50 transition"
-                style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
+                style={{ backgroundColor: IRANCHO_PETROL, minHeight: 40 }}
               >
                 {transferirMutation.isPending ? "Transferindo..." : "Transferir Animais"}
               </button>
