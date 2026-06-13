@@ -248,7 +248,7 @@ export default function MapaRebanhoPage() {
         {/* Filtros */}
         <div className="flex flex-wrap items-end gap-3 mb-3">
           <div className="w-full sm:w-auto sm:min-w-[220px]">
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Fazenda *</label>
+            <label className="block text-[11px] font-medium text-gray-600 mb-1">Fazenda</label>
             <select
               value={filters.fazendaId}
               onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
@@ -268,7 +268,7 @@ export default function MapaRebanhoPage() {
               disabled={!filters.fazendaId}
               className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
             >
-              <option value="">Todas as subdivisões</option>
+              <option value="">Selecione a Subdivisão</option>
               {pastos.map((p: { id: number; nome: string }) => (
                 <option key={p.id} value={String(p.id)}>{p.nome}</option>
               ))}
