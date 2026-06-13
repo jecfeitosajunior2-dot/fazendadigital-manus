@@ -317,9 +317,7 @@ export default function AlocacaoAnimaisPage() {
                 </select>
                 <div className="flex items-center gap-3">
                   <span>
-                    {animaisExibidos.length === 0
-                      ? "Não há dados a serem exibidos"
-                      : `Mostrando ${inicio}–${fim} de ${animaisExibidos.length} itens`}
+                    Mostrando {animaisExibidos.length === 0 ? 0 : inicio}–{animaisExibidos.length === 0 ? 0 : fim} de {animaisExibidos.length} itens
                   </span>
                   <div className="flex items-center gap-1">
                     <button
