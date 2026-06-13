@@ -281,10 +281,10 @@ export default function MapaRebanhoPage() {
             <table className="w-full text-[12px] min-w-[1060px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th rowSpan={2} className={`${thSimple} min-w-[140px]`} onClick={() => toggleSort("subdivisao")}>
+                  <th rowSpan={2} className={`${thSimple} text-center min-w-[140px]`} onClick={() => toggleSort("subdivisao")}>
                     Subdivisão <SortIcon col="subdivisao" />
                   </th>
-                  <th rowSpan={2} className={`${thSimple} min-w-[160px]`} onClick={() => toggleSort("lote")}>
+                  <th rowSpan={2} className={`${thSimple} text-center min-w-[160px]`} onClick={() => toggleSort("lote")}>
                     Lote <SortIcon col="lote" />
                   </th>
                   <th colSpan={5} className={thGroup}>Machos</th>
@@ -328,8 +328,8 @@ export default function MapaRebanhoPage() {
                 )}
                 {paginated.map(row => (
                   <tr key={row.loteId} className="border-t border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-2 py-2 text-gray-700 border-r border-gray-50">{row.subdivisaoNome}</td>
-                    <td className="px-2 py-2 text-gray-800 font-medium border-r border-gray-50">{row.loteNome}</td>
+                    <td className="px-2 py-2 text-center text-gray-700 border-r border-gray-50">{row.subdivisaoNome}</td>
+                    <td className="px-2 py-2 text-center text-gray-800 font-medium border-r border-gray-50">{row.loteNome}</td>
                     {FAIXAS_IDADE_LOTE.map(f => (
                       <td key={`m-${row.loteId}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
                         {celulaValor(row.machos[f])}
