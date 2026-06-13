@@ -312,6 +312,12 @@ const AnimalFormPage: React.FC = () => {
   // ── Payload comum ──
   const buildPayload = () => {
     const sexoMapped = form.sexo === 'Macho' ? 'macho' : 'femea';
+    // Em modo de edição: campo de data vazio deve enviar null para limpar o valor no banco.
+    // Em modo de criação: campo de data vazio envia undefined (omite o campo).
+    const resolveData = (v: string) => {
+      if (v) return v;                     // tem valor: envia o valor
+      return isEditMode ? null : undefined; // vazio: null (limpa) em edição, undefined (omite) em criação
+    };
     return {
       nome: form.brinco.trim(),
       brinco: form.brinco.trim() || undefined,
@@ -322,16 +328,16 @@ const AnimalFormPage: React.FC = () => {
       raca: form.raca.trim() || undefined,
       pelagem: form.pelagem.trim() || undefined,
       marca: form.marca.trim() || undefined,
-      dataNascimento: form.dataNascimento || undefined,
-      dataDesmama: form.dataDesmama || undefined,
+      dataNascimento: resolveData(form.dataNascimento),
+      dataDesmama: resolveData(form.dataDesmama),
       castrado: form.castrado,
-      dataEntrada: form.dataEntrada || undefined,
+      dataEntrada: resolveData(form.dataEntrada),
       pesoEntrada: form.pesoEntrada.trim() || undefined,
       produtorOrigem: form.produtorOrigem.trim() || undefined,
       precoKg: form.precoKg.trim() || undefined,
       frete: form.frete.trim() || undefined,
       sisbov: form.sisbov.trim() || undefined,
-      dataRnd: form.dataRnd || undefined,
+      dataRnd: resolveData(form.dataRnd),
       rgn: form.rgn.trim() || undefined,
       rgd: form.rgd.trim() || undefined,
       rastreadoNascimento: form.rastreadoNascimento,

@@ -339,25 +339,25 @@ const animaisRouter = router({
       nome: z.string().optional(),
       raca: z.string().optional(),
       sexo: z.enum(["macho", "femea"]),
-      dataNascimento: z.string().optional(),
+      dataNascimento: z.string().nullable().optional(),
       pesoAtual: z.string().optional(),
       loteId: z.number().optional(),
       categoria: z.string().optional(),
       observacoes: z.string().optional(),
-      // Zootécnicos
+      // Zotécnicos
       pelagem: z.string().optional(),
       marca: z.string().optional(),
-      dataDesmama: z.string().optional(),
+      dataDesmama: z.string().nullable().optional(),
       castrado: z.boolean().optional(),
       // Entrada / aquisição
-      dataEntrada: z.string().optional(),
+      dataEntrada: z.string().nullable().optional(),
       pesoEntrada: z.string().optional(),
       produtorOrigem: z.string().optional(),
       precoKg: z.string().optional(),
       frete: z.string().optional(),
       // Rastreabilidade
       sisbov: z.string().optional(),
-      dataRnd: z.string().optional(),
+      dataRnd: z.string().nullable().optional(),
       rgn: z.string().optional(),
       rgd: z.string().optional(),
       rastreadoNascimento: z.boolean().optional(),
@@ -410,7 +410,7 @@ const animaisRouter = router({
       nome: z.string().optional(),
       raca: z.string().optional(),
       sexo: z.enum(["macho", "femea"]).optional(),
-      dataNascimento: z.string().optional(),
+      dataNascimento: z.string().nullable().optional(),
       pesoAtual: z.string().optional(),
       loteId: z.number().optional(),
       categoria: z.string().optional(),
@@ -418,15 +418,15 @@ const animaisRouter = router({
       observacoes: z.string().optional(),
       pelagem: z.string().optional(),
       marca: z.string().optional(),
-      dataDesmama: z.string().optional(),
+      dataDesmama: z.string().nullable().optional(),
       castrado: z.boolean().optional(),
-      dataEntrada: z.string().optional(),
+      dataEntrada: z.string().nullable().optional(),
       pesoEntrada: z.string().optional(),
       produtorOrigem: z.string().optional(),
       precoKg: z.string().optional(),
       frete: z.string().optional(),
       sisbov: z.string().optional(),
-      dataRnd: z.string().optional(),
+      dataRnd: z.string().nullable().optional(),
       rgn: z.string().optional(),
       rgd: z.string().optional(),
       rastreadoNascimento: z.boolean().optional(),
@@ -437,12 +437,18 @@ const animaisRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, ...rest } = input;
+      // Para campos de data: null = limpar o campo, undefined = não alterar, string = novo valor
+      const resolveData = (v: string | null | undefined) => {
+        if (v === null) return null;          // explicitamente limpo
+        if (!v) return undefined;             // não enviado, não alterar
+        return v;                             // novo valor
+      };
       await db.update(animais).set({
         ...rest,
-        dataNascimento: dataNascimento || undefined,
-        dataDesmama: dataDesmama || undefined,
-        dataEntrada: dataEntrada || undefined,
-        dataRnd: dataRnd || undefined,
+        dataNascimento: resolveData(dataNascimento),
+        dataDesmama: resolveData(dataDesmama),
+        dataEntrada: resolveData(dataEntrada),
+        dataRnd: resolveData(dataRnd),
       }).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
