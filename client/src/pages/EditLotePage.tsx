@@ -364,8 +364,9 @@ export default function EditLotePage() {
         </div>
 
         {/* Cabeçalho horizontal — iRancho */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <div>
+        <div className="flex flex-wrap gap-3 mb-4 items-end">
+          {/* Nome do Lote — flex-grow maior */}
+          <div className="flex-1 min-w-[180px]">
             <FormLabel required>Nome do Lote</FormLabel>
             <FormInput
               value={form.nome}
@@ -375,25 +376,28 @@ export default function EditLotePage() {
               compact
             />
           </div>
-          <div>
-            <FormLabel>Sigla do Lote</FormLabel>
+          {/* Sigla — largura reduzida */}
+          <div className="w-24">
+            <FormLabel>Sigla</FormLabel>
             <FormInput
               value={form.sigla}
               onChange={v => setField("sigla", v)}
-              placeholder="Sigla"
+              placeholder="L-01"
               compact
             />
           </div>
-          <div>
-            <FormLabel required>Data de criação do Lote</FormLabel>
+          {/* Data de criação */}
+          <div className="w-44">
+            <FormLabel required>Data de criação</FormLabel>
             <FormDatePicker
               value={form.dataCriacao}
               onChange={v => setField("dataCriacao", v)}
               required
             />
           </div>
-          <div>
-            <FormLabel>Subdivisão (Pasto Atual)</FormLabel>
+          {/* Subdivisão Atual */}
+          <div className="flex-1 min-w-[160px]">
+            <FormLabel>Subdivisão Atual</FormLabel>
             <select
               value={form.pastoAtualId ?? ""}
               onChange={e => setField("pastoAtualId", e.target.value ? Number(e.target.value) : null)}
