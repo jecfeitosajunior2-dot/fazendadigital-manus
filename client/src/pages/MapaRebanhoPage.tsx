@@ -264,7 +264,7 @@ export default function MapaRebanhoPage() {
               className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
             >
               <option value="">Selecione a Subdivisão</option>
-              {pastos.map((p: { id: number; nome: string }) => (
+              {[...pastos].sort((a: { id: number; nome: string }, b: { id: number; nome: string }) => a.nome.localeCompare(b.nome, 'pt-BR')).map((p: { id: number; nome: string }) => (
                 <option key={p.id} value={String(p.id)}>{p.nome}</option>
               ))}
             </select>
