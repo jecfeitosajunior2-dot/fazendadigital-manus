@@ -208,7 +208,7 @@ export default function AlocacaoAnimaisPage() {
             {/* Destino */}
             <div className={`grid grid-cols-1 gap-4 mb-4 ${mostrarLoteDestino ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
               <div>
-                <FormLabel>Fazenda Destino</FormLabel>
+                <FormLabel required>Fazenda Destino</FormLabel>
                 <FormNativeSelect
                   value={fazendaDestinoId}
                   onChange={v => {
@@ -222,8 +222,8 @@ export default function AlocacaoAnimaisPage() {
                 />
               </div>
               <div>
-                <FormLabel>Subdivisão Destino</FormLabel>
-                <div className="[&>div]:border-l-[3px] [&>div]:border-l-[#2D5A5A]">
+                <FormLabel required>Subdivisão Destino</FormLabel>
+                <div>
                   <FormNativeSelect
                     value={pastoDestinoId}
                     onChange={v => {
