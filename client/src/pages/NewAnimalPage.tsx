@@ -757,7 +757,7 @@ const AnimalFormPage: React.FC = () => {
               <Button
                 type="submit"
                 className="text-white"
-                style={{ backgroundColor: canSubmit ? '#2D5A5A' : undefined }}
+                style={{ backgroundColor: '#2D5A5A', opacity: canSubmit ? 1 : 0.5 }}
                 disabled={isSubmitting || !canSubmit}
                 title={!canSubmit ? 'Preencha Fazenda, Número do Brinco e Sexo para salvar' : undefined}
               >
