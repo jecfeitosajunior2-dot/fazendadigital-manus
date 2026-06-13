@@ -239,7 +239,7 @@ export default function MapaRebanhoPage() {
                 onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
                 placeholder="Buscar"
                 disabled={fazendaNum <= 0}
-                className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#8ab83d] disabled:opacity-50"
+                className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
               />
             </div>
           </div>
@@ -252,7 +252,7 @@ export default function MapaRebanhoPage() {
             <select
               value={filters.fazendaId}
               onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
-              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d]"
+              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
             >
               <option value="">Selecione uma fazenda</option>
               {fazendas.map((f: { id: number; nome: string }) => (
@@ -266,7 +266,7 @@ export default function MapaRebanhoPage() {
               value={filters.pastoId}
               onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
               disabled={!filters.fazendaId}
-              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] disabled:opacity-50"
+              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
             >
               <option value="">Todas as subdivisões</option>
               {pastos.map((p: { id: number; nome: string }) => (
