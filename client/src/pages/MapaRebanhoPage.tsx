@@ -101,11 +101,6 @@ export default function MapaRebanhoPage() {
     setPage(1);
   }, [filters.fazendaId, filters.pastoId, debouncedSearch, sortKey, sortAsc]);
 
-  useEffect(() => {
-    if (!filters.fazendaId && fazendas.length > 0) {
-      setFilters(f => ({ ...f, fazendaId: String(fazendas[0].id) }));
-    }
-  }, [fazendas, filters.fazendaId, setFilters]);
 
   const sorted = useMemo(() => {
     const lista = [...rows];
