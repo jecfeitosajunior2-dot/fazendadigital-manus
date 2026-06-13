@@ -52,7 +52,7 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
 };
 
 const filterCardClass =
-  "flex flex-col gap-1 bg-white border border-gray-200 rounded px-3 py-2 min-w-0";
+  "flex flex-col gap-1 bg-white border border-gray-200 rounded px-3 py-2 min-w-0 focus-within:border-[#2D5A5A] transition-colors";
 const filterLabelClass =
   "text-[9px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1";
 const filterSelectClass =
@@ -110,7 +110,13 @@ export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onCl
   });
 
   const disponiveis = useMemo(
-    () => animaisData.filter(a => a.loteId !== loteId),
+    () => animaisData
+      .filter(a => a.loteId !== loteId)
+      .sort((a, b) => {
+        const ba = (a.brinco ?? a.nome ?? "").toString();
+        const bb = (b.brinco ?? b.nome ?? "").toString();
+        return ba.localeCompare(bb, 'pt-BR', { numeric: true });
+      }),
     [animaisData, loteId],
   );
 
