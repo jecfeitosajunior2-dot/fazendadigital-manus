@@ -300,13 +300,13 @@ export default function MapaRebanhoPage() {
                 </tr>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   {FAIXAS_IDADE_LOTE.map(f => (
-                    <th key={`m-h-${f}`} className={thFaixa} onClick={() => toggleSort(`m-${f}`)}>
-                      {f} <SortIcon col={`m-${f}`} />
+                    <th key={`m-h-${f}`} className={thFaixa}>
+                      {f}
                     </th>
                   ))}
                   {FAIXAS_IDADE_LOTE.map(f => (
-                    <th key={`f-h-${f}`} className={thFaixa} onClick={() => toggleSort(`f-${f}`)}>
-                      {f} <SortIcon col={`f-${f}`} />
+                    <th key={`f-h-${f}`} className={thFaixa}>
+                      {f}
                     </th>
                   ))}
                 </tr>
