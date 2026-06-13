@@ -40,6 +40,7 @@
 - [x] Todos os botões em ImprovementsPage com onClick
 
 ## Infraestrutura
+- [x] Corrigir 3 erros TypeScript no MapaRebanhoPage.tsx (animais.list sem page/perPage, animaisData sem .items, lotes.list sem parâmetros)
 - [x] bcryptjs instalado e funcionando
 - [x] Erros de schema corrigidos (categoriasFinanceiras removido)
 - [x] vitest.config.ts criado para testes no servidor
