@@ -373,7 +373,12 @@ const AnimalFormPage: React.FC = () => {
           toast.success('Animal cadastrado com sucesso!');
           utils.animais.list.invalidate();
           if (novo) {
-            setForm(INITIAL);
+            // Preserva fazenda, raça, pelagem e marca; limpa subdivisão e demais campos
+            const keepRaca = form.raca;
+            const keepPelagem = form.pelagem;
+            const keepMarca = form.marca;
+            setForm({ ...INITIAL, raca: keepRaca, pelagem: keepPelagem, marca: keepMarca });
+            setPastoId('');
             setErrors({});
             window.scrollTo({ top: 0, behavior: 'smooth' });
           } else {
