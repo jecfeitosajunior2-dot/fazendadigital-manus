@@ -162,7 +162,7 @@ export default function AlocacaoAnimaisPage() {
   };
 
   const thClass =
-    "px-3 py-2.5 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-left whitespace-nowrap border-r border-gray-200 last:border-r-0";
+    "px-3 py-2.5 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center whitespace-nowrap border-r border-gray-200 last:border-r-0";
 
   const loteDestinoOptions = lotesAtivosPasto.map(l => ({
     value: String(l.id),
@@ -267,7 +267,7 @@ export default function AlocacaoAnimaisPage() {
                 <table className="w-full text-[12px] min-w-[780px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className={thClass}>Nº Visual</th>
+                      <th className={thClass}>Brinco</th>
                       <th className={thClass}>Nº RFID</th>
                       <th className={thClass}>Lote</th>
                       <th className={thClass}>Sexo</th>
@@ -288,13 +288,13 @@ export default function AlocacaoAnimaisPage() {
                           key={animal.id}
                           className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}`}
                         >
-                          <td className="px-3 py-2 text-gray-700 border-r border-gray-100">{animal.numeroVisual}</td>
-                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.numeroRfid}</td>
-                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.loteNome}</td>
-                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
-                          <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.fazendaSubdivisao}</td>
+                          <td className="px-3 py-2 text-center text-gray-700 border-r border-gray-100">{animal.numeroVisual}</td>
+                          <td className="px-3 py-2 text-center text-gray-600 border-r border-gray-100">{animal.numeroRfid}</td>
+                          <td className="px-3 py-2 text-center text-gray-600 border-r border-gray-100">{animal.loteNome}</td>
+                          <td className="px-3 py-2 text-center text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
+                          <td className="px-3 py-2 text-center text-gray-600 border-r border-gray-100">{animal.fazendaSubdivisao}</td>
                           <td className="px-3 py-2 text-gray-600">
-                            {animal.ultimaMovimentacao ? formatDateBR(animal.ultimaMovimentacao) : "—"}
+                            <span className="block text-center">{animal.ultimaMovimentacao ? formatDateBR(animal.ultimaMovimentacao) : "—"}</span>
                           </td>
                         </tr>
                       ))
