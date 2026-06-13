@@ -329,7 +329,7 @@ export default function AlocacaoAnimaisPage() {
                       <span className="material-icons text-[16px]">chevron_left</span>
                     </button>
                     <span
-                      className="w-7 h-7 flex items-center justify-center rounded-full text-white text-[11px] font-semibold"
+                      className="w-7 h-7 flex items-center justify-center rounded text-white text-[11px] font-semibold"
                       style={{ backgroundColor: IRANCHO_PETROL }}
                     >
                       {pageSafe}
