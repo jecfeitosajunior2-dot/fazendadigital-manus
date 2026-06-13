@@ -258,8 +258,13 @@ const animaisRouter = router({
         }
 
         // Dias na fazenda
+        // Regra: animal com dataNascimento nasceu na fazenda → dias desde o nascimento.
+        // Animal sem dataNascimento foi comprado fora → dias desde a dataEntrada.
         let diasNaFazenda: number | null = null;
-        if (animal.dataEntrada) {
+        if (animal.dataNascimento) {
+          const nasc = new Date(animal.dataNascimento);
+          diasNaFazenda = Math.floor((hoje.getTime() - nasc.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (animal.dataEntrada) {
           const entrada = new Date(animal.dataEntrada);
           diasNaFazenda = Math.floor((hoje.getTime() - entrada.getTime()) / (1000 * 60 * 60 * 24));
         }
