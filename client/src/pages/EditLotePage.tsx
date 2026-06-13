@@ -32,6 +32,7 @@ type FormState = {
   nome: string;
   sigla: string;
   dataCriacao: string;
+  pastoAtualId: number | null;
 };
 
 type TableState = {
@@ -56,7 +57,7 @@ export default function EditLotePage() {
   const [, setLocation] = useLocation();
   const loteId = Number(new URLSearchParams(window.location.search).get("id"));
 
-  const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISO() });
+  const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISO(), pastoAtualId: null });
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [incluirOpen, setIncluirOpen] = useState(false);
   const [movimentarOpen, setMovimentarOpen] = useState(false);
@@ -115,10 +116,14 @@ export default function EditLotePage() {
       nome: lote.nome || "",
       sigla: lote.sigla || "",
       dataCriacao,
+      pastoAtualId: lote.pastoAtualId ?? null,
     });
   }, [lote]);
 
-  const { data: pastosData = [] } = trpc.pastos.list.useQuery();
+  const { data: pastosData = [] } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: lote?.fazendaId ?? 0 },
+    { enabled: !!lote?.fazendaId },
+  );
   const pastoMap = useMemo(() => new Map(pastosData.map(p => [p.id, p.nome])), [pastosData]);
 
   const { data: fazendasData = [] } = trpc.fazendas.list.useQuery();
@@ -175,6 +180,7 @@ export default function EditLotePage() {
       nome: form.nome.trim(),
       sigla: form.sigla.trim(),
       dataCriacao: form.dataCriacao,
+      pastoAtualId: form.pastoAtualId ?? null,
     });
   };
 
@@ -358,7 +364,7 @@ export default function EditLotePage() {
         </div>
 
         {/* Cabeçalho horizontal — iRancho */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
             <FormLabel required>Nome do Lote</FormLabel>
             <FormInput
@@ -385,6 +391,19 @@ export default function EditLotePage() {
               onChange={v => setField("dataCriacao", v)}
               required
             />
+          </div>
+          <div>
+            <FormLabel>Subdivisão (Pasto Atual)</FormLabel>
+            <select
+              value={form.pastoAtualId ?? ""}
+              onChange={e => setField("pastoAtualId", e.target.value ? Number(e.target.value) : null)}
+              className="w-full h-9 rounded border border-gray-300 bg-white px-3 text-[13px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D5A5A] focus:border-[#2D5A5A] transition"
+            >
+              <option value="">Sem subdivisão</option>
+              {pastosData.map(p => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
           </div>
         </div>
 

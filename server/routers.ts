@@ -1403,6 +1403,7 @@ const lotesRouter = router({
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),
       ativo: z.boolean().optional(),
+      pastoAtualId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
