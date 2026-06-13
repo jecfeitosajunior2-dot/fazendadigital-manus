@@ -1413,6 +1413,18 @@ const lotesRouter = router({
         sigla: rest.sigla !== undefined ? (rest.sigla.trim() === '' ? null : rest.sigla.trim()) : undefined,
       };
       await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
+
+      // Sincroniza pastoId de todos os animais do lote quando pastoAtualId é alterado
+      if (rest.pastoAtualId !== undefined) {
+        await db.update(animais)
+          .set({ pastoId: rest.pastoAtualId })
+          .where(and(
+            eq(animais.userId, ctx.user.id),
+            eq(animais.loteId, id),
+            eq(animais.status, 'ativo'),
+          ));
+      }
+
       return { success: true };
     }),
 

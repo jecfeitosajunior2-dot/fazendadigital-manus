@@ -85,6 +85,9 @@ export default function EditLotePage() {
       utils.lotes.getById.invalidate({ id: loteId });
       utils.lotes.list.invalidate();
       utils.lotes.gerenciamento.invalidate();
+      // Atualiza animais para refletir nova subdivisão
+      utils.animais.list.invalidate();
+      utils.animais.getById.invalidate();
     },
     onError: e => toast.error(e.message),
   });

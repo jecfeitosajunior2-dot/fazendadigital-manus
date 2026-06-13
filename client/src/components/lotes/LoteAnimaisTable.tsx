@@ -110,7 +110,7 @@ export default function LoteAnimaisTable({
   const allPageSelected = paginated.length > 0 && paginated.every(a => selected.has(a.id));
 
   const thClass =
-    "px-3 py-2.5 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-left whitespace-nowrap cursor-pointer select-none border-r border-gray-200 last:border-r-0";
+    "px-3 py-2.5 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center whitespace-nowrap cursor-pointer select-none border-r border-gray-200 last:border-r-0";
 
   const inicio = total === 0 ? 0 : (pageSafe - 1) * perPage + 1;
   const fim = Math.min(pageSafe * perPage, total);
@@ -173,11 +173,11 @@ export default function LoteAnimaisTable({
                       />
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100">{displayBrinco(animal)}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.categoria || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{displaySexo(animal.sexo)}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100">{animal.raca || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600">{animal.pastoNome || "—"}</td>
+                  <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100 text-center">{displayBrinco(animal)}</td>
+                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{animal.categoria || "—"}</td>
+                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{displaySexo(animal.sexo)}</td>
+                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{animal.raca || "—"}</td>
+                  <td className="px-3 py-2 text-gray-600 text-center">{animal.pastoNome || "—"}</td>
                 </tr>
               ))
             )}
