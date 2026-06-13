@@ -323,7 +323,7 @@ export default function EditLotePage() {
               <span className="font-semibold text-amber-700">
                 {deleteBlocked?.qtdAnimais} {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
               </span>.
-              Movimente os animais para outro lote antes de excluí-lo.
+              Movimente os animais para outro Lote antes de excluí-lo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
