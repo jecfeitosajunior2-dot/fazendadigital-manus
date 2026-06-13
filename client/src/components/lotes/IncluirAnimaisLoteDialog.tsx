@@ -315,7 +315,7 @@ export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onCl
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Lote</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Sexo</th>
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">Raça</th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Subdivisão (Pasto)</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Subdivisão</th>
                   </tr>
                 </thead>
                 <tbody>
