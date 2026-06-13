@@ -324,7 +324,7 @@ export default function MapaRebanhoPage() {
                   <tr><td colSpan={17} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
                 )}
                 {fazendaNum > 0 && !isLoading && paginated.length === 0 && (
-                  <tr><td colSpan={17} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
+                  <tr><td colSpan={17} className="px-4 py-10 text-center text-gray-400">Nenhum Lote encontrado</td></tr>
                 )}
                 {paginated.map(row => (
                   <tr key={row.loteId} className="border-t border-gray-100 hover:bg-gray-50/50">
