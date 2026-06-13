@@ -153,12 +153,8 @@ const animaisRouter = router({
         conditions.push(like(animais.rgd, `%${input.rgd.trim()}%`));
       }
       if (input?.fazendaId) {
-        const lotesFazenda = await db.select({ id: lotes.id })
-          .from(lotes)
-          .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
-        const loteIds = lotesFazenda.map(l => l.id);
-        if (loteIds.length === 0) return [];
-        conditions.push(inArray(animais.loteId, loteIds));
+        // Filtra diretamente pelo fazendaId do animal (campo salvo no cadastro)
+        conditions.push(eq(animais.fazendaId, input.fazendaId));
       }
       if (input?.pastoId) {
         const lotesPasto = await db.select({ id: lotes.id })
