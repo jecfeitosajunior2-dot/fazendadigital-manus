@@ -183,16 +183,18 @@ export default function AlocacaoAnimaisPage() {
       <div className="p-4 sm:p-6">
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
           {/* Cabeçalho */}
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-900">Alocação de Animais</h1>
+          <div className="px-5 pt-4 pb-0">
             <button
               type="button"
               onClick={() => setLocation("/rebanho/mapa-rebanho")}
-              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:brightness-95 transition"
-              style={{ backgroundColor: IRANCHO_BTN_GREY, minHeight: 36 }}
+              className="flex items-center gap-1 text-[12px] text-gray-500 hover:text-gray-800 transition mb-2"
             >
-              Voltar
+              <span className="material-icons text-[16px]">arrow_back</span>
+              <span>Voltar</span>
             </button>
+          </div>
+          <div className="flex flex-wrap items-center px-5 py-3 border-b border-gray-100">
+            <h1 className="text-[15px] font-semibold text-gray-900">Alocação de Animais</h1>
           </div>
 
           <div className="px-5 py-4">
