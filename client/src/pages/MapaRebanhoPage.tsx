@@ -188,7 +188,7 @@ export default function MapaRebanhoPage() {
 
   const thSimple = "px-2 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200 cursor-pointer select-none whitespace-nowrap";
   const thGroup = "px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200";
-  const thFaixa = "px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-12 cursor-pointer select-none";
+  const thFaixa = "px-1 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-10 whitespace-nowrap";
 
   const irParaAlocacao = () => {
     const params = new URLSearchParams();
