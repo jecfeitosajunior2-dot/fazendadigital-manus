@@ -364,7 +364,7 @@ export default function EditLotePage() {
         </div>
 
         {/* Cabeçalho horizontal — iRancho */}
-        <div className="flex flex-wrap gap-3 mb-4 items-end">
+        <div className="flex flex-wrap gap-3 mb-4 items-start">
           {/* Nome do Lote — flex-grow maior */}
           <div className="flex-1 min-w-[180px]">
             <FormLabel required>Nome do Lote</FormLabel>
@@ -373,7 +373,6 @@ export default function EditLotePage() {
               onChange={v => setField("nome", v)}
               placeholder="Ex. Lote Vacas"
               required
-              compact
             />
           </div>
           {/* Sigla — largura reduzida */}
@@ -383,7 +382,6 @@ export default function EditLotePage() {
               value={form.sigla}
               onChange={v => setField("sigla", v)}
               placeholder="L-01"
-              compact
             />
           </div>
           {/* Data de criação */}
@@ -401,7 +399,7 @@ export default function EditLotePage() {
             <select
               value={form.pastoAtualId ?? ""}
               onChange={e => setField("pastoAtualId", e.target.value ? Number(e.target.value) : null)}
-              className="w-full h-9 rounded border border-gray-300 bg-white px-3 text-[13px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D5A5A] focus:border-[#2D5A5A] transition"
+              className="w-full min-h-[42px] rounded border border-gray-200 bg-white px-3 text-[13px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D5A5A] focus:border-[#2D5A5A] transition rounded-sm"
             >
               <option value="">Sem subdivisão</option>
               {pastosData.map(p => (
