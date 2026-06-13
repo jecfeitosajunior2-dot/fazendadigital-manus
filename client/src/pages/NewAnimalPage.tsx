@@ -305,6 +305,10 @@ const AnimalFormPage: React.FC = () => {
     if (!form.brinco.trim()) e.brinco = 'Número do brinco é obrigatório';
     if (!form.sexo) e.sexo = 'Sexo é obrigatório';
     if (!form.categoria) e.categoria = 'Categoria é obrigatória';
+    // Animal sem data de nascimento = comprado fora → data de entrada obrigatória
+    if (!form.dataNascimento && !form.dataEntrada) {
+      e.dataEntrada = 'Data de entrada obrigatória para animais sem data de nascimento';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -610,12 +614,23 @@ const AnimalFormPage: React.FC = () => {
           <SectionCard title="Entrada / Aquisição">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <FormLabel>Data de Entrada</FormLabel>
-                <FormDatePicker
-                  value={form.dataEntrada}
-                  onChange={v => set('dataEntrada', v)}
-                  placeholder="dd/mm/aaaa"
-                />
+                <FormLabel required={!form.dataNascimento}>
+                  Data de Entrada
+                  {!form.dataNascimento && (
+                    <span className="ml-1 text-[11px] text-gray-400 font-normal">(obrigatória sem data de nascimento)</span>
+                  )}
+                </FormLabel>
+                <div className={cn(errors.dataEntrada && 'ring-1 ring-red-400 rounded-sm')}>
+                  <FormDatePicker
+                    value={form.dataEntrada}
+                    onChange={v => { set('dataEntrada', v); if (v) setErrors(prev => { const next = { ...prev }; delete next.dataEntrada; return next; }); }}
+                    placeholder="dd/mm/aaaa"
+                    required={!form.dataNascimento}
+                  />
+                </div>
+                {errors.dataEntrada && (
+                  <p className="mt-1 text-[11px] text-red-500">{errors.dataEntrada}</p>
+                )}
               </div>
               <div>
                 <FormLabel>Peso na Entrada (kg)</FormLabel>
