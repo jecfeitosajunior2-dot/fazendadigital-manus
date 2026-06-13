@@ -143,7 +143,7 @@ export default function LoteAnimaisTable({
                 Raça <SortIcon col="raca" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
               <th className={`${thClass} border-r-0`} onClick={() => onSort("pasto")}>
-                Subdivisão (Pasto) <SortIcon col="pasto" sortKey={sortKey} sortAsc={sortAsc} />
+                Subdivisão <SortIcon col="pasto" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
             </tr>
           </thead>
