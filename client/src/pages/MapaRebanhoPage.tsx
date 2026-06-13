@@ -210,6 +210,7 @@ export default function MapaRebanhoPage() {
             headers={exportHeaders}
             rows={exportRows}
             alignRightFrom={17}
+            fazendaNome={fazendaNum > 0 ? (fazendas as { id: number; nome: string }[]).find(f => f.id === fazendaNum)?.nome ?? "Todas as Fazendas" : "Todas as Fazendas"}
           />
         </div>
 
