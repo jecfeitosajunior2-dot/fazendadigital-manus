@@ -1881,6 +1881,122 @@ const lotesRouter = router({
         observacoes: r.observacoes ?? null,
       }));
     }),
+
+  // ─── Mapa do Rebanho Geral (todas as fazendas) ───────────────────────────
+  mapaRebanhoGeral: protectedProcedure
+    .input(z.object({ search: z.string().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      // Busca todas as fazendas do usuário
+      const fazendasList = await db.select().from(fazendas)
+        .where(eq(fazendas.userId, ctx.user.id));
+      if (fazendasList.length === 0) return [];
+
+      const fazendaIds = fazendasList.map(f => f.id);
+      const fazendaMap = new Map(fazendasList.map(f => [f.id, f]));
+
+      // Busca todos os pastos das fazendas
+      const pastosList = await db.select().from(pastos)
+        .where(and(eq(pastos.userId, ctx.user.id), inArray(pastos.fazendaId, fazendaIds)));
+      const pastoMap = new Map(pastosList.map(p => [p.id, p]));
+
+      // Busca todos os lotes das fazendas
+      const lotesList = await db.select().from(lotes)
+        .where(and(eq(lotes.userId, ctx.user.id), inArray(lotes.fazendaId, fazendaIds)));
+
+      if (lotesList.length === 0) {
+        return fazendasList.map(f => ({
+          fazendaId: f.id,
+          fazendaNome: f.nome,
+          subdivisoes: [] as { pastoId: number; pastoNome: string; pastoSigla: string | null; pastoStatus: string | null; areaHa: string | null; taxaLotacao: number | null; totalAnimais: number; lotes: { loteId: number; loteNome: string; loteSigla: string | null; dataEntradaPasto: string | null; totalAnimais: number }[] }[],
+          semSubdivisao: [] as { loteId: number; loteNome: string; loteSigla: string | null; dataEntradaPasto: string | null; totalAnimais: number }[],
+          totalAnimais: 0,
+        }));
+      }
+
+      const loteIds = lotesList.map(l => l.id);
+
+      // Contagem de animais por lote
+      const animaisRows = await db.select({ loteId: animais.loteId })
+        .from(animais).where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.status, 'ativo'),
+          inArray(animais.loteId, loteIds),
+        ));
+      const totalPorLote = new Map<number, number>();
+      for (const a of animaisRows) {
+        if (!a.loteId) continue;
+        totalPorLote.set(a.loteId, (totalPorLote.get(a.loteId) ?? 0) + 1);
+      }
+
+      const q = input?.search?.trim().toLowerCase() ?? '';
+
+      // Agrupa por fazenda
+      const resultadoPorFazenda = fazendasList.map(fazenda => {
+        const lotesF = lotesList.filter(l => l.fazendaId === fazenda.id);
+        const porPasto = new Map<number, typeof lotesList>();
+        const semSubdivisaoLotes: typeof lotesList = [];
+        for (const lote of lotesF) {
+          if (lote.pastoAtualId) {
+            const arr = porPasto.get(lote.pastoAtualId) ?? [];
+            arr.push(lote);
+            porPasto.set(lote.pastoAtualId, arr);
+          } else {
+            semSubdivisaoLotes.push(lote);
+          }
+        }
+
+        const subdivisoes = [...porPasto.entries()]
+          .map(([pastoId, lotesGrupo]) => {
+            const pasto = pastoMap.get(pastoId)!;
+            const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
+            const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
+            const taxaLotacao = areaNum && areaNum > 0 ? Math.round((totalAnimais / areaNum) * 100) / 100 : null;
+            return {
+              pastoId,
+              pastoNome: pasto.nome,
+              pastoSigla: pasto.sigla ?? null,
+              pastoStatus: pasto.status ?? null,
+              areaHa: pasto.area != null ? String(pasto.area) : null,
+              taxaLotacao,
+              totalAnimais,
+              lotes: lotesGrupo.map(l => ({
+                loteId: l.id,
+                loteNome: l.nome,
+                loteSigla: l.sigla ?? null,
+                dataEntradaPasto: l.dataEntradaPasto ?? null,
+                totalAnimais: totalPorLote.get(l.id) ?? 0,
+              })),
+            };
+          })
+          .filter(s => !q || fazenda.nome.toLowerCase().includes(q) || s.pastoNome.toLowerCase().includes(q) || s.lotes.some(l => l.loteNome.toLowerCase().includes(q)))
+          .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
+
+        const semSubdivisao = semSubdivisaoLotes
+          .filter(l => !q || fazenda.nome.toLowerCase().includes(q) || l.nome.toLowerCase().includes(q))
+          .map(l => ({
+            loteId: l.id,
+            loteNome: l.nome,
+            loteSigla: l.sigla ?? null,
+            dataEntradaPasto: l.dataEntradaPasto ?? null,
+            totalAnimais: totalPorLote.get(l.id) ?? 0,
+          }));
+
+        const totalAnimais = lotesF.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
+
+        return {
+          fazendaId: fazenda.id,
+          fazendaNome: fazenda.nome,
+          subdivisoes,
+          semSubdivisao,
+          totalAnimais,
+        };
+      });
+
+      // Filtra fazendas sem nada se houver busca
+      return q
+        ? resultadoPorFazenda.filter(f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q))
+        : resultadoPorFazenda;
+    }),
 });
 const saudeRouter = router({
   list: protectedProcedure

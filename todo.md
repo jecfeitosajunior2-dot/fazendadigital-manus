@@ -266,3 +266,9 @@
 - [x] Frontend: modal de Histórico de Movimentação por subdivisão/lote e histórico geral da fazenda
 - [x] Frontend: filtros Fazenda + Subdivisão + Busca mantidos
 - [x] Frontend: botões Mover Lote e Mover Animal mantidos
+
+## Mapa do Rebanho — Visão Geral (2026-06-14)
+- [x] Backend: procedure mapaRebanhoGeral — retorna todas as fazendas com subdivisões/lotes/totais
+- [x] Frontend: quando nenhuma fazenda selecionada, exibe tabela agrupada por fazenda (expandível)
+- [x] Frontend: filtro "Todas as fazendas" substituindo o placeholder "Selecione a fazenda"
+- [x] Frontend: campo Buscar sempre visível (não depende de fazenda selecionada)
