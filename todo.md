@@ -258,3 +258,11 @@
 - [x] Aba "Histórico de Pastos" na ficha do animal (CattleDetailPageExpanded — 6 abas)
 - [x] Filtro por subdivisão na Lista de Animais (ListaAnimaisFiltros + GenericPage + animais.list)
 - [x] Testes Vitest subdivisoes.pastos.test.ts (11 testes) — 298 total passando
+
+## Redesenho Mapa do Rebanho (2026-06-14)
+- [x] Backend: procedure mapaRebanhoV2 — agrupa por Subdivisão, retorna lotes por subdivisão, total animais, área, taxa de lotação
+- [x] Backend: procedure mapaRebanhoHistorico — retorna histórico de movimentação de lotes nas subdivisões (lote_pasto_movimentacoes) por fazenda
+- [x] Frontend: redesenhar MapaRebanhoPage com estrutura Subdivisão → Lotes (agrupado), sem colunas de faixas etárias (diferente do Gerenciamento de Lotes)
+- [x] Frontend: modal de Histórico de Movimentação por subdivisão/lote e histórico geral da fazenda
+- [x] Frontend: filtros Fazenda + Subdivisão + Busca mantidos
+- [x] Frontend: botões Mover Lote e Mover Animal mantidos

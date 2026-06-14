@@ -1,64 +1,64 @@
 /**
- * Mapa do Rebanho — com movimentação de lote e de animal integradas
+ * Mapa do Rebanho — Redesenhado
+ * Estrutura: Fazenda → Subdivisão → Lotes
+ * Foco: Total de Animais, Área (ha), Taxa de Lotação, Histórico de Movimentação
  * Rota: /rebanho/mapa-rebanho
  */
-import { useEffect, useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
-import ListExportButtons from "@/components/ListExportButtons";
-import { useDebounce } from "@/hooks/useDebounce";
 import { usePersistedState } from "@/hooks/usePersistedState";
-import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
-import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
+import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 
-const IRANCHO_BTN_GREEN = "#2D5A5A";
-const FILTERS_KEY = "fd:mapa-rebanho-filtros";
+const GREEN = "#2D5A5A";
+const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
 
 type FiltersState = { fazendaId: string; pastoId: string; search: string };
 const INITIAL_FILTERS: FiltersState = { fazendaId: "", pastoId: "", search: "" };
 
-type MapaRow = {
-  loteId: number;
-  fazendaNome: string;
-  subdivisaoNome: string;
-  pastoId: number | null;
-  loteNome: string;
-  machos: ContagemPorFaixa;
-  femeas: ContagemPorFaixa;
-  totalAnimaisSubdivisao: number;
-  areaHa: string | null;
-  taxaLotacao: number | null;
-};
-
-type SortKey = "subdivisao" | "lote" | "totalAnimais" | "area" | "taxa" | `m-${string}` | `f-${string}`;
-
-function celulaValor(v: number) { return v > 0 ? String(v) : ""; }
+function hojeStr() { return new Date().toISOString().slice(0, 10); }
 function formatArea(area: string | null) {
   if (!area) return "—";
   const n = Number(area);
-  if (Number.isNaN(n)) return area;
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return Number.isNaN(n) ? area : (Number.isInteger(n) ? String(n) : n.toFixed(2));
 }
 function formatTaxa(taxa: number | null) {
   if (taxa === null || taxa === undefined) return "—";
   return taxa.toFixed(2);
 }
-function hojeStr() {
-  return new Date().toISOString().slice(0, 10);
+function formatDate(d: string | null) {
+  if (!d) return "—";
+  const [y, m, day] = d.split("-");
+  return `${day}/${m}/${y}`;
+}
+function statusBadge(status: string | null) {
+  if (!status) return null;
+  const map: Record<string, { label: string; color: string }> = {
+    ativo: { label: "Ativo", color: "bg-green-100 text-green-700" },
+    descanso: { label: "Descanso", color: "bg-yellow-100 text-yellow-700" },
+    vazio: { label: "Vazio", color: "bg-gray-100 text-gray-500" },
+  };
+  const s = map[status] ?? { label: status, color: "bg-gray-100 text-gray-500" };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${s.color}`}>
+      {s.label}
+    </span>
+  );
 }
 
 // ─── Modal Mover Lote ─────────────────────────────────────────────────────────
+type LoteInfo = { loteId: number; loteNome: string; totalAnimais: number; dataEntradaPasto: string | null };
+type SubdivisaoInfo = {
+  pastoId: number; pastoNome: string; pastoSigla: string | null; pastoStatus: string | null;
+  areaHa: string | null; taxaLotacao: number | null; totalAnimais: number; lotes: LoteInfo[];
+};
+
 function ModalMoverLote({
-  row,
-  fazendaId,
-  onClose,
-  onSuccess,
+  lote, fazendaId, pastoAtualId, onClose, onSuccess,
 }: {
-  row: MapaRow;
-  fazendaId: number;
-  onClose: () => void;
-  onSuccess: () => void;
+  lote: LoteInfo; fazendaId: number; pastoAtualId: number | null;
+  onClose: () => void; onSuccess: () => void;
 }) {
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
@@ -66,85 +66,50 @@ function ModalMoverLote({
 
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery({ fazendaId });
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
-    onSuccess: () => {
-      toast.success(`Lote ${row.loteNome} movido com sucesso!`);
-      onSuccess();
-      onClose();
-    },
+    onSuccess: () => { toast.success(`Lote ${lote.loteNome} movido com sucesso!`); onSuccess(); onClose(); },
     onError: (e) => toast.error(e.message),
   });
 
-  const pastosDisponiveis = (pastos as { id: number; nome: string }[]).filter(
-    p => p.id !== row.pastoId
-  );
-
-  const handleConfirm = () => {
-    if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
-    moveMutation.mutate({
-      loteId: row.loteId,
-      pastoId: Number(pastoDestinoId),
-      observacoes: obs || undefined,
-    });
-  };
+  const pastosDisponiveis = (pastos as { id: number; nome: string }[]).filter(p => p.id !== pastoAtualId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-md shadow-xl w-full max-w-md mx-4 p-6">
         <h2 className="text-[14px] font-semibold text-gray-800 mb-1">Mover Lote para Subdivisão</h2>
         <p className="text-[12px] text-gray-500 mb-4">
-          Lote: <strong>{row.loteNome}</strong> — Subdivisão atual: <strong>{row.subdivisaoNome}</strong>
+          Lote: <strong>{lote.loteNome}</strong>
         </p>
-
         <div className="space-y-3">
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1">Subdivisão Destino *</label>
-            <select
-              value={pastoDestinoId}
-              onChange={e => setPastoDestinoId(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            >
+            <select value={pastoDestinoId} onChange={e => setPastoDestinoId(e.target.value)}
+              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]">
               <option value="">Selecione a subdivisão</option>
-              {pastosDisponiveis.map(p => (
-                <option key={p.id} value={String(p.id)}>{p.nome}</option>
-              ))}
+              {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Movimentação *</label>
-            <input
-              type="date"
-              value={data}
-              onChange={e => setData(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            />
+            <input type="date" value={data} onChange={e => setData(e.target.value)}
+              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]" />
           </div>
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1">Observações</label>
-            <textarea
-              value={obs}
-              onChange={e => setObs(e.target.value)}
-              rows={2}
-              placeholder="Opcional"
-              className="w-full px-3 py-2 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] resize-none"
-            />
+            <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} placeholder="Opcional"
+              className="w-full px-3 py-2 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] resize-none" />
           </div>
         </div>
-
         <div className="flex justify-end gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition"
-          >
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={moveMutation.isPending}
+          <button type="button" onClick={() => {
+            if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
+            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), observacoes: obs || undefined });
+          }} disabled={moveMutation.isPending}
             className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: IRANCHO_BTN_GREEN }}
-          >
+            style={{ backgroundColor: GREEN }}>
             {moveMutation.isPending ? "Movendo..." : "Confirmar"}
           </button>
         </div>
@@ -155,71 +120,39 @@ function ModalMoverLote({
 
 // ─── Modal Mover Animal ────────────────────────────────────────────────────────
 function ModalMoverAnimal({
-  row,
-  fazendaId,
-  onClose,
-  onSuccess,
+  lote, fazendaId, onClose, onSuccess,
 }: {
-  row: MapaRow;
-  fazendaId: number;
-  onClose: () => void;
-  onSuccess: () => void;
+  lote: LoteInfo; fazendaId: number; onClose: () => void; onSuccess: () => void;
 }) {
   const [loteDestinoId, setLoteDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
   const [selectedAnimais, setSelectedAnimais] = useState<number[]>([]);
 
-  const { data: animaisData } = trpc.animais.list.useQuery({
-    fazendaId,
-    loteId: row.loteId,
-  });
+  const { data: animaisData } = trpc.animais.list.useQuery({ fazendaId, loteId: lote.loteId });
   const animaisList = (animaisData ?? []) as { id: number; brinco: string; categoria: string; sexo: string }[];
 
   const { data: lotesData } = trpc.lotes.list.useQuery();
-  const lotesDisponiveis = ((lotesData as { id: number; nome: string; fazendaId?: number | null; ativo?: boolean | null }[] | undefined) ?? []).filter(
-    l => l.id !== row.loteId && l.fazendaId === fazendaId
-  );
+  const lotesDisponiveis = ((lotesData as { id: number; nome: string; fazendaId?: number | null }[] | undefined) ?? [])
+    .filter(l => l.id !== lote.loteId && l.fazendaId === fazendaId);
 
   const moveMutation = trpc.lotes.movimentarAnimais.useMutation({
     onSuccess: (res) => {
-      toast.success(`${(res as { count?: number }).count ?? selectedAnimais.length} animal(is) movido(s) com sucesso!`);
-      onSuccess();
-      onClose();
+      toast.success(`${(res as { count?: number }).count ?? selectedAnimais.length} animal(is) movido(s)!`);
+      onSuccess(); onClose();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const toggleAnimal = (id: number) => {
-    setSelectedAnimais(prev =>
-      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
-    );
-  };
-
-  const toggleAll = () => {
-    if (selectedAnimais.length === animaisList.length) setSelectedAnimais([]);
-    else setSelectedAnimais(animaisList.map(a => a.id));
-  };
-
-  const handleConfirm = () => {
-    if (selectedAnimais.length === 0) { toast.error("Selecione ao menos um animal."); return; }
-    if (!loteDestinoId) { toast.error("Selecione o lote destino."); return; }
-    moveMutation.mutate({
-      loteOrigemId: row.loteId,
-      loteDestinoId: Number(loteDestinoId),
-      animalIds: selectedAnimais,
-      dataMovimentacao: data,
-    });
-  };
+  const toggleAnimal = (id: number) =>
+    setSelectedAnimais(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
+  const toggleAll = () =>
+    setSelectedAnimais(selectedAnimais.length === animaisList.length ? [] : animaisList.map(a => a.id));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-md shadow-xl w-full max-w-lg mx-4 p-6">
         <h2 className="text-[14px] font-semibold text-gray-800 mb-1">Mover Animal para Outro Lote</h2>
-        <p className="text-[12px] text-gray-500 mb-4">
-          Lote origem: <strong>{row.loteNome}</strong> — Subdivisão: <strong>{row.subdivisaoNome}</strong>
-        </p>
-
-        {/* Seleção de animais */}
+        <p className="text-[12px] text-gray-500 mb-4">Lote origem: <strong>{lote.loteNome}</strong></p>
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-[11px] font-medium text-gray-600">Selecionar Animais *</label>
@@ -227,70 +160,45 @@ function ModalMoverAnimal({
               {selectedAnimais.length === animaisList.length ? "Desmarcar todos" : "Selecionar todos"}
             </button>
           </div>
-          <div className="border border-gray-200 rounded-sm max-h-[160px] overflow-y-auto bg-[#EEEEEE]">
+          <div className="border border-gray-200 rounded-sm max-h-[150px] overflow-y-auto bg-[#EEEEEE]">
             {animaisList.length === 0 ? (
               <p className="px-3 py-4 text-[12px] text-gray-400 text-center">Nenhum animal neste lote</p>
-            ) : (
-              animaisList.map(a => (
-                <label key={a.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedAnimais.includes(a.id)}
-                    onChange={() => toggleAnimal(a.id)}
-                    className="accent-[#2D5A5A]"
-                  />
-                  <span className="text-[12px] text-gray-700">
-                    Brinco <strong>{a.brinco}</strong> — {a.categoria} — {a.sexo}
-                  </span>
-                </label>
-              ))
-            )}
-          </div>
-          {selectedAnimais.length > 0 && (
-            <p className="text-[11px] text-[#2D5A5A] mt-1">{selectedAnimais.length} animal(is) selecionado(s)</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Lote Destino *</label>
-            <select
-              value={loteDestinoId}
-              onChange={e => setLoteDestinoId(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            >
-              <option value="">Selecione o lote</option>
-              {lotesDisponiveis.map(l => (
-                <option key={l.id} value={String(l.id)}>{l.nome}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Movimentação *</label>
-            <input
-              type="date"
-              value={data}
-              onChange={e => setData(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            />
+            ) : animaisList.map(a => (
+              <label key={a.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
+                <input type="checkbox" checked={selectedAnimais.includes(a.id)} onChange={() => toggleAnimal(a.id)}
+                  className="accent-[#2D5A5A]" />
+                <span className="text-[12px] text-gray-700">
+                  Brinco <strong>{a.brinco}</strong> — {a.categoria} — {a.sexo}
+                </span>
+              </label>
+            ))}
           </div>
         </div>
-
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition"
-          >
+        <div className="mb-3">
+          <label className="block text-[11px] font-medium text-gray-600 mb-1">Lote Destino *</label>
+          <select value={loteDestinoId} onChange={e => setLoteDestinoId(e.target.value)}
+            className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]">
+            <option value="">Selecione o lote destino</option>
+            {lotesDisponiveis.map(l => <option key={l.id} value={String(l.id)}>{l.nome}</option>)}
+          </select>
+        </div>
+        <div className="mb-4">
+          <label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Movimentação *</label>
+          <input type="date" value={data} onChange={e => setData(e.target.value)}
+            className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={moveMutation.isPending}
+          <button type="button" onClick={() => {
+            if (selectedAnimais.length === 0) { toast.error("Selecione ao menos um animal."); return; }
+            if (!loteDestinoId) { toast.error("Selecione o lote destino."); return; }
+            moveMutation.mutate({ loteOrigemId: lote.loteId, loteDestinoId: Number(loteDestinoId), animalIds: selectedAnimais, dataMovimentacao: data });
+          }} disabled={moveMutation.isPending}
             className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: IRANCHO_BTN_GREEN }}
-          >
+            style={{ backgroundColor: GREEN }}>
             {moveMutation.isPending ? "Movendo..." : "Confirmar"}
           </button>
         </div>
@@ -299,335 +207,454 @@ function ModalMoverAnimal({
   );
 }
 
-// ─── Página Principal ──────────────────────────────────────────────────────────
-export default function MapaRebanhoPage() {
-  const [filters, setFilters] = usePersistedState(FILTERS_KEY, INITIAL_FILTERS);
-  const debouncedSearch = useDebounce(filters.search, 400);
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(50);
-  const [sortKey, setSortKey] = useState<SortKey>("subdivisao");
-  const [sortAsc, setSortAsc] = useState(true);
+// ─── Modal Histórico ───────────────────────────────────────────────────────────
+type HistoricoRow = {
+  id: number; loteId: number; loteNome: string;
+  pastoOrigemNome: string | null; pastoDestinoNome: string | null;
+  dataEntrada: string; dataSaida: string | null;
+  diasNoPasto: number | null; qtdAnimais: number | null; observacoes: string | null;
+};
 
-  // Modais
-  const [modalMoverLote, setModalMoverLote] = useState<MapaRow | null>(null);
-  const [modalMoverAnimal, setModalMoverAnimal] = useState<MapaRow | null>(null);
-
-  const fazendaNum = filters.fazendaId ? Number(filters.fazendaId) : 0;
-  const pastoNum = filters.pastoId ? Number(filters.pastoId) : undefined;
-
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
-    { fazendaId: fazendaNum },
-    { enabled: fazendaNum > 0 },
-  );
-
-  const queryInput = useMemo(() => ({
-    fazendaId: fazendaNum,
-    pastoId: pastoNum,
-    search: debouncedSearch.trim() || undefined,
-  }), [fazendaNum, pastoNum, debouncedSearch]);
-
-  const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.lotes.mapaRebanho.useQuery(queryInput, {
-    enabled: fazendaNum > 0,
+function ModalHistorico({
+  fazendaId, loteId, pastoId, loteNome, onClose,
+}: {
+  fazendaId: number; loteId?: number; pastoId?: number; loteNome?: string; onClose: () => void;
+}) {
+  const { data: historico = [], isLoading } = trpc.lotes.mapaRebanhoHistorico.useQuery({
+    fazendaId,
+    loteId,
+    pastoId,
+    limit: 100,
   });
 
-  const rows = (data?.rows ?? []) as MapaRow[];
-  const totalAnimaisSubdivisao = data?.totalAnimaisSubdivisao ?? 0;
-
-  useEffect(() => { setPage(1); }, [filters.fazendaId, filters.pastoId, debouncedSearch, sortKey, sortAsc]);
-
-  const sorted = useMemo(() => {
-    const lista = [...rows];
-    lista.sort((a, b) => {
-      let va: string | number = "";
-      let vb: string | number = "";
-      if (sortKey === "subdivisao") { va = a.subdivisaoNome; vb = b.subdivisaoNome; }
-      else if (sortKey === "lote") { va = a.loteNome; vb = b.loteNome; }
-      else if (sortKey === "totalAnimais") { va = a.totalAnimaisSubdivisao; vb = b.totalAnimaisSubdivisao; }
-      else if (sortKey === "area") { va = a.areaHa ? Number(a.areaHa) : -1; vb = b.areaHa ? Number(b.areaHa) : -1; }
-      else if (sortKey === "taxa") { va = a.taxaLotacao ?? -1; vb = b.taxaLotacao ?? -1; }
-      else if (sortKey.startsWith("m-")) { const f = sortKey.slice(2) as keyof ContagemPorFaixa; va = a.machos[f]; vb = b.machos[f]; }
-      else if (sortKey.startsWith("f-")) { const f = sortKey.slice(2) as keyof ContagemPorFaixa; va = a.femeas[f]; vb = b.femeas[f]; }
-      if (va < vb) return sortAsc ? -1 : 1;
-      if (va > vb) return sortAsc ? 1 : -1;
-      return a.loteNome.localeCompare(b.loteNome, "pt-BR");
-    });
-    return lista;
-  }, [rows, sortKey, sortAsc]);
-
-  const total = sorted.length;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const pageSafe = Math.min(page, totalPages);
-  const paginated = sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage);
-  const inicio = total === 0 ? 0 : (pageSafe - 1) * perPage + 1;
-  const fim = Math.min(pageSafe * perPage, total);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortAsc(v => !v);
-    else { setSortKey(key); setSortAsc(true); }
-  };
-
-  const SortIcon = ({ col }: { col: SortKey }) => (
-    <span className="material-icons text-[14px] text-gray-400 ml-0.5 align-middle leading-none">
-      {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
-    </span>
-  );
-
-  const exportHeaders = [
-    "Subdivisão", "Lote",
-    ...FAIXAS_IDADE_LOTE.map(f => `Machos ${f}`),
-    ...FAIXAS_IDADE_LOTE.map(f => `Fêmeas ${f}`),
-    "Total de Animais", "Área (Ha)", "Taxa de Lotação (UA/Ha)",
-  ];
-  const exportRows = useMemo(() => sorted.map(r => [
-    r.subdivisaoNome, r.loteNome,
-    ...FAIXAS_IDADE_LOTE.map(f => r.machos[f] || 0),
-    ...FAIXAS_IDADE_LOTE.map(f => r.femeas[f] || 0),
-    r.totalAnimaisSubdivisao, formatArea(r.areaHa), formatTaxa(r.taxaLotacao),
-  ]), [sorted]);
-
-  const resumoTexto = filters.pastoId
-    ? `Total de animais nesta subdivisão: ${totalAnimaisSubdivisao}`
-    : `Total de animais em subdivisões: ${totalAnimaisSubdivisao}`;
-
-  const thSimple = "px-2 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200 cursor-pointer select-none whitespace-nowrap";
-  const thGroup = "px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-b border-gray-200";
-  const thFaixa = "px-1 py-1.5 text-center text-[10px] font-medium text-gray-500 border-r border-gray-100 w-10 whitespace-nowrap";
-
-  const handleMovimentacaoSuccess = () => {
-    utils.lotes.mapaRebanho.invalidate();
-    utils.lotes.list.invalidate();
-    utils.animais.list.invalidate();
-  };
+  const rows = historico as HistoricoRow[];
 
   return (
-    <AppLayout>
-      <div className="p-4 sm:p-6">
-        {/* Cabeçalho */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h1 className="text-[15px] font-semibold text-gray-800">Mapa do Rebanho</h1>
-          <ListExportButtons
-            title="Mapa do Rebanho"
-            filename="mapa-rebanho"
-            headers={exportHeaders}
-            rows={exportRows}
-            alignRightFrom={17}
-            fazendaNome={fazendaNum > 0 ? (fazendas as { id: number; nome: string }[]).find(f => f.id === fazendaNum)?.nome ?? "Todas as Fazendas" : "Todas as Fazendas"}
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-md shadow-xl w-full max-w-2xl mx-4 flex flex-col" style={{ maxHeight: "85vh" }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-[14px] font-semibold text-gray-800">Histórico de Movimentação</h2>
+            {loteNome && <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{loteNome}</strong></p>}
+            {!loteNome && <p className="text-[12px] text-gray-500 mt-0.5">Todos os lotes da fazenda</p>}
+          </div>
+          <button type="button" onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-[18px] leading-none font-light transition">✕</button>
         </div>
-
-        {/* Filtros e busca */}
-        <div className="flex flex-wrap items-end gap-3 mb-3">
-          <div className="w-full sm:w-auto sm:min-w-[220px]">
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Fazenda</label>
-            <select
-              value={filters.fazendaId}
-              onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
-              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            >
-              <option value="">Selecione uma fazenda</option>
-              {(fazendas as { id: number; nome: string }[]).map(f => (
-                <option key={f.id} value={String(f.id)}>{f.nome}</option>
-              ))}
-            </select>
-          </div>
-          <div className="w-full sm:w-auto sm:min-w-[220px]">
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Subdivisão</label>
-            <select
-              value={filters.pastoId}
-              onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
-              disabled={!filters.fazendaId}
-              className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
-            >
-              <option value="">Selecione a Subdivisão</option>
-              {[...(pastos as { id: number; nome: string }[])].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map(p => (
-                <option key={p.id} value={String(p.id)}>{p.nome}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1 min-w-[180px] sm:max-w-xs">
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Buscar</label>
-            <div className="relative">
-              <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
-              <input
-                type="text"
-                value={filters.search}
-                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-                placeholder="Buscar lote ou subdivisão"
-                disabled={fazendaNum <= 0}
-                className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#2D5A5A] disabled:opacity-50"
-              />
+        <div className="overflow-auto flex-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-5 h-5 border-2 border-[#2D5A5A] border-t-transparent rounded-full animate-spin" />
             </div>
-          </div>
-          {fazendaNum > 0 && (
-            <p className="text-[12px] text-gray-600 sm:ml-auto self-end pb-1">{resumoTexto}</p>
-          )}
-        </div>
-
-        {/* Tabela */}
-        <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px] min-w-[1160px]">
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <svg className="w-10 h-10 mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-[12px]">Nenhuma movimentação registrada</p>
+            </div>
+          ) : (
+            <table className="w-full text-[12px]">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th rowSpan={2} className={`${thSimple} text-center min-w-[140px]`} onClick={() => toggleSort("subdivisao")}>
-                    Subdivisão <SortIcon col="subdivisao" />
-                  </th>
-                  <th rowSpan={2} className={`${thSimple} text-center min-w-[160px]`} onClick={() => toggleSort("lote")}>
-                    Lote <SortIcon col="lote" />
-                  </th>
-                  <th colSpan={5} className={thGroup}>Machos</th>
-                  <th colSpan={5} className={`${thGroup} border-r-0`}>Fêmeas</th>
-                  <th rowSpan={2} className={`${thSimple} text-center min-w-[100px]`} onClick={() => toggleSort("totalAnimais")}>
-                    Total de Animais <SortIcon col="totalAnimais" />
-                  </th>
-                  <th rowSpan={2} className={`${thSimple} text-center min-w-[80px]`} onClick={() => toggleSort("area")}>
-                    Área (Ha) <SortIcon col="area" />
-                  </th>
-                  <th rowSpan={2} className={`${thSimple} text-center min-w-[120px]`} onClick={() => toggleSort("taxa")}>
-                    Taxa de Lotação (UA/Ha) <SortIcon col="taxa" />
-                  </th>
-                  <th rowSpan={2} className="px-2 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center min-w-[130px] border-r-0">
-                    Ações
-                  </th>
-                </tr>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  {FAIXAS_IDADE_LOTE.map(f => (
-                    <th key={`m-h-${f}`} className={thFaixa}>{f}</th>
-                  ))}
-                  {FAIXAS_IDADE_LOTE.map(f => (
-                    <th key={`f-h-${f}`} className={thFaixa}>{f}</th>
-                  ))}
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Lote</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">De</th>
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Para</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Entrada</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Saída</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Dias</th>
+                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Animais</th>
                 </tr>
               </thead>
               <tbody>
-                {fazendaNum <= 0 && (
-                  <tr>
-                    <td colSpan={18} className="px-4 py-10 text-center text-gray-400">
-                      Selecione uma fazenda para visualizar o mapa do rebanho.
-                    </td>
-                  </tr>
-                )}
-                {fazendaNum > 0 && isLoading && (
-                  <tr><td colSpan={18} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
-                )}
-                {fazendaNum > 0 && !isLoading && paginated.length === 0 && (
-                  <tr><td colSpan={18} className="px-4 py-10 text-center text-gray-400">Nenhum Lote encontrado</td></tr>
-                )}
-                {paginated.map(row => (
-                  <tr key={row.loteId} className="border-t border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-2 py-2 text-center text-gray-700 border-r border-gray-50">{row.subdivisaoNome}</td>
-                    <td className="px-2 py-2 text-center text-gray-800 font-medium border-r border-gray-50">{row.loteNome}</td>
-                    {FAIXAS_IDADE_LOTE.map(f => (
-                      <td key={`m-${row.loteId}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
-                        {celulaValor(row.machos[f])}
-                      </td>
-                    ))}
-                    {FAIXAS_IDADE_LOTE.map(f => (
-                      <td key={`f-${row.loteId}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
-                        {celulaValor(row.femeas[f])}
-                      </td>
-                    ))}
-                    <td className="px-2 py-2 text-center text-gray-800 font-medium border-r border-gray-50 tabular-nums">
-                      {row.totalAnimaisSubdivisao > 0 ? row.totalAnimaisSubdivisao : ""}
-                    </td>
-                    <td className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
-                      {formatArea(row.areaHa)}
-                    </td>
-                    <td className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
-                      {formatTaxa(row.taxaLotacao)}
-                    </td>
-                    {/* Ações */}
-                    <td className="px-2 py-2 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setModalMoverLote(row)}
-                          title="Mover lote para outra subdivisão"
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-white rounded hover:brightness-95 transition whitespace-nowrap"
-                          style={{ backgroundColor: IRANCHO_BTN_GREEN }}
-                        >
-                          <span className="material-icons text-[13px]">swap_horiz</span>
-                          Lote
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setModalMoverAnimal(row)}
-                          title="Mover animal para outro lote"
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-white rounded hover:brightness-95 transition whitespace-nowrap"
-                          style={{ backgroundColor: "#5A6A2D" }}
-                        >
-                          <span className="material-icons text-[13px]">pets</span>
-                          Animal
-                        </button>
-                      </div>
-                    </td>
+                {rows.map((r, i) => (
+                  <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                    <td className="px-4 py-2.5 text-gray-800 font-medium">{r.loteNome}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{r.pastoOrigemNome ?? <span className="text-gray-300">—</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-800">{r.pastoDestinoNome ?? <span className="text-gray-300">—</span>}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-600">{formatDate(r.dataEntrada)}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-500">{r.dataSaida ? formatDate(r.dataSaida) : <span className="text-green-600 font-medium">Atual</span>}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-600">{r.diasNoPasto ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-600">{r.qtdAnimais ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Paginação */}
-          <div className="px-4 py-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-600">
-            <div className="flex items-center gap-2">
-              <select
-                value={perPage}
-                onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
-              >
-                <option value={10}>10 itens por página</option>
-                <option value={25}>25 itens por página</option>
-                <option value={50}>50 itens por página</option>
-                <option value={100}>100 itens por página</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-gray-500">Mostrando {inicio}–{fim} de {total} itens</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={pageSafe <= 1}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
-                >
-                  <span className="material-icons text-[16px]">chevron_left</span>
-                </button>
-                <span
-                  className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
-                  style={{ backgroundColor: '#2D5A5A' }}
-                >{pageSafe}</span>
-                <button
-                  type="button"
-                  disabled={pageSafe >= totalPages}
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  className="w-7 h-7 flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
-                >
-                  <span className="material-icons text-[16px]">chevron_right</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
+        </div>
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
+            Fechar
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Modais */}
+// ─── Linha de Lote dentro da Subdivisão ───────────────────────────────────────
+function LoteRow({
+  lote, fazendaId, pastoAtualId, onRefresh,
+}: {
+  lote: LoteInfo; fazendaId: number; pastoAtualId: number | null; onRefresh: () => void;
+}) {
+  const [modalMoverLote, setModalMoverLote] = useState(false);
+  const [modalMoverAnimal, setModalMoverAnimal] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(false);
+
+  return (
+    <>
+      <tr className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors">
+        <td className="pl-10 pr-3 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-300">└</span>
+            <span className="text-[12px] font-medium text-gray-700">{lote.loteNome}</span>
+          </div>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          <span className="text-[12px] font-semibold text-gray-800">{lote.totalAnimais}</span>
+        </td>
+        <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-2.5 text-center text-[12px] text-gray-500">
+          {lote.dataEntradaPasto ? formatDate(lote.dataEntradaPasto) : "—"}
+        </td>
+        <td className="px-3 py-2.5">
+          <div className="flex items-center justify-center gap-1.5">
+            <button type="button" onClick={() => setModalHistorico(true)}
+              title="Ver histórico de movimentação"
+              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition">
+              Histórico
+            </button>
+            <button type="button" onClick={() => setModalMoverLote(true)}
+              title="Mover lote para outra subdivisão"
+              className="px-2 py-1 text-[10px] font-semibold text-white rounded hover:brightness-95 transition"
+              style={{ backgroundColor: GREEN }}>
+              Mover Lote
+            </button>
+            <button type="button" onClick={() => setModalMoverAnimal(true)}
+              title="Mover animais para outro lote"
+              className="px-2 py-1 text-[10px] font-medium border rounded hover:bg-gray-50 transition"
+              style={{ color: GREEN, borderColor: GREEN }}>
+              Mover Animal
+            </button>
+          </div>
+        </td>
+      </tr>
+
       {modalMoverLote && (
-        <ModalMoverLote
-          row={modalMoverLote}
-          fazendaId={fazendaNum}
-          onClose={() => setModalMoverLote(null)}
-          onSuccess={handleMovimentacaoSuccess}
-        />
+        <ModalMoverLote lote={lote} fazendaId={fazendaId} pastoAtualId={pastoAtualId}
+          onClose={() => setModalMoverLote(false)} onSuccess={onRefresh} />
       )}
       {modalMoverAnimal && (
-        <ModalMoverAnimal
-          row={modalMoverAnimal}
-          fazendaId={fazendaNum}
-          onClose={() => setModalMoverAnimal(null)}
-          onSuccess={handleMovimentacaoSuccess}
-        />
+        <ModalMoverAnimal lote={lote} fazendaId={fazendaId}
+          onClose={() => setModalMoverAnimal(false)} onSuccess={onRefresh} />
+      )}
+      {modalHistorico && (
+        <ModalHistorico fazendaId={fazendaId} loteId={lote.loteId} loteNome={lote.loteNome}
+          onClose={() => setModalHistorico(false)} />
+      )}
+    </>
+  );
+}
+
+// ─── Linha de Subdivisão (cabeçalho do grupo) ─────────────────────────────────
+function SubdivisaoRow({
+  sub, fazendaId, expanded, onToggle, onRefresh,
+}: {
+  sub: SubdivisaoInfo; fazendaId: number; expanded: boolean;
+  onToggle: () => void; onRefresh: () => void;
+}) {
+  const [modalHistorico, setModalHistorico] = useState(false);
+
+  return (
+    <>
+      <tr
+        className="border-b border-gray-200 cursor-pointer select-none"
+        style={{ backgroundColor: "#f0f5f5" }}
+        onClick={onToggle}
+      >
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-400 transition-transform" style={{ display: "inline-block", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+            <div>
+              <span className="text-[13px] font-semibold text-gray-800">{sub.pastoNome}</span>
+              {sub.pastoSigla && <span className="ml-1.5 text-[10px] text-gray-400">({sub.pastoSigla})</span>}
+            </div>
+            {statusBadge(sub.pastoStatus)}
+            <span className="ml-1 text-[10px] text-gray-400">{sub.lotes.length} lote{sub.lotes.length !== 1 ? "s" : ""}</span>
+          </div>
+        </td>
+        <td className="px-3 py-3 text-center">
+          <span className="text-[13px] font-bold" style={{ color: GREEN }}>{sub.totalAnimais}</span>
+        </td>
+        <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatArea(sub.areaHa)} ha</td>
+        <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatTaxa(sub.taxaLotacao)} UA/ha</td>
+        <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-3">
+          <div className="flex items-center justify-center">
+            <button type="button"
+              onClick={e => { e.stopPropagation(); setModalHistorico(true); }}
+              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
+              Histórico
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {expanded && sub.lotes.map(lote => (
+        <LoteRow key={lote.loteId} lote={lote} fazendaId={fazendaId}
+          pastoAtualId={sub.pastoId} onRefresh={onRefresh} />
+      ))}
+
+      {modalHistorico && (
+        <ModalHistorico fazendaId={fazendaId} pastoId={sub.pastoId} loteNome={sub.pastoNome}
+          onClose={() => setModalHistorico(false)} />
+      )}
+    </>
+  );
+}
+
+// ─── Página Principal ─────────────────────────────────────────────────────────
+export default function MapaRebanhoPage() {
+  const [filters, setFilters] = usePersistedState<FiltersState>(FILTERS_KEY, INITIAL_FILTERS);
+  const debouncedSearch = useDebounce(filters.search, 300);
+  const [expandedSubdivisoes, setExpandedSubdivisoes] = useState<Set<number>>(new Set());
+  const [semSubdivisaoExpanded, setSemSubdivisaoExpanded] = useState(true);
+  const [modalHistoricoGeral, setModalHistoricoGeral] = useState(false);
+
+  const fazendaId = filters.fazendaId ? Number(filters.fazendaId) : null;
+  const pastoId = filters.pastoId ? Number(filters.pastoId) : undefined;
+
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const fazendasList = fazendas as { id: number; nome: string }[];
+
+  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: fazendaId! },
+    { enabled: !!fazendaId }
+  );
+  const pastosList = pastos as { id: number; nome: string }[];
+
+  const {
+    data: mapaData,
+    isLoading,
+    refetch,
+  } = trpc.lotes.mapaRebanhoV2.useQuery(
+    { fazendaId: fazendaId!, pastoId, search: debouncedSearch || undefined },
+    { enabled: !!fazendaId }
+  );
+
+  const subdivisoes: SubdivisaoInfo[] = (mapaData?.subdivisoes ?? []) as SubdivisaoInfo[];
+  const semSubdivisao: LoteInfo[] = (mapaData?.semSubdivisao ?? []) as LoteInfo[];
+
+  const totalAnimais = useMemo(() => {
+    const s = subdivisoes.reduce((acc, s) => acc + s.totalAnimais, 0);
+    const sem = semSubdivisao.reduce((acc, l) => acc + l.totalAnimais, 0);
+    return s + sem;
+  }, [subdivisoes, semSubdivisao]);
+
+  const toggleSubdivisao = (pastoId: number) => {
+    setExpandedSubdivisoes(prev => {
+      const next = new Set(prev);
+      if (next.has(pastoId)) next.delete(pastoId);
+      else next.add(pastoId);
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    setExpandedSubdivisoes(new Set(subdivisoes.map(s => s.pastoId)));
+    setSemSubdivisaoExpanded(true);
+  };
+  const collapseAll = () => {
+    setExpandedSubdivisoes(new Set());
+    setSemSubdivisaoExpanded(false);
+  };
+
+  const handleRefresh = () => { refetch(); };
+
+  return (
+    <AppLayout>
+      <div className="px-6 py-5 max-w-[1200px] mx-auto">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-[18px] font-bold text-gray-800">Mapa do Rebanho</h1>
+            <p className="text-[12px] text-gray-400 mt-0.5">Distribuição dos lotes nas subdivisões da fazenda</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {fazendaId && (
+              <button type="button" onClick={() => setModalHistoricoGeral(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition bg-white">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Histórico Geral
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-gray-500">Fazenda</label>
+            <select
+              value={filters.fazendaId}
+              onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
+              className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]">
+              <option value="">Selecione a fazenda</option>
+              {fazendasList.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
+            </select>
+          </div>
+          {fazendaId && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-gray-500">Subdivisão</label>
+              <select
+                value={filters.pastoId}
+                onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
+                className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[180px]">
+                <option value="">Todas as subdivisões</option>
+                {pastosList.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
+              </select>
+            </div>
+          )}
+          {fazendaId && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-gray-500">Buscar</label>
+              <input
+                type="text"
+                value={filters.search}
+                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+                placeholder="Subdivisão ou lote..."
+                className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]" />
+            </div>
+          )}
+        </div>
+
+        {/* Conteúdo */}
+        {!fazendaId ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+            <svg className="w-14 h-14 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
+                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <p className="text-[14px] font-medium text-gray-400">Selecione uma fazenda para visualizar o mapa</p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="w-6 h-6 border-2 border-[#2D5A5A] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (subdivisoes.length === 0 && semSubdivisao.length === 0) ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+            <svg className="w-12 h-12 mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
+                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            </svg>
+            <p className="text-[13px] font-medium text-gray-400">Nenhum lote encontrado para esta fazenda</p>
+          </div>
+        ) : (
+          <>
+            {/* Barra de resumo + controles */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-4">
+                <span className="text-[12px] text-gray-500">
+                  <strong className="text-gray-800">{subdivisoes.length}</strong> subdivisão(ões) ·{" "}
+                  <strong className="text-gray-800">{subdivisoes.reduce((a, s) => a + s.lotes.length, 0) + semSubdivisao.length}</strong> lote(s) ·{" "}
+                  <strong style={{ color: GREEN }}>{totalAnimais}</strong> animal(is) ativo(s)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={expandAll}
+                  className="text-[11px] text-gray-500 hover:text-gray-700 underline">Expandir tudo</button>
+                <span className="text-gray-300 text-[11px]">|</span>
+                <button type="button" onClick={collapseAll}
+                  className="text-[11px] text-gray-500 hover:text-gray-700 underline">Recolher tudo</button>
+              </div>
+            </div>
+
+            {/* Tabela */}
+            <div className="border border-gray-200 rounded-md overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200" style={{ backgroundColor: GREEN }}>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wide">
+                      Subdivisão / Lote
+                    </th>
+                    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28">
+                      Total Animais
+                    </th>
+                    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28">
+                      Área (ha)
+                    </th>
+                    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">
+                      Taxa Lotação
+                    </th>
+                    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">
+                      Entrada no Pasto
+                    </th>
+                    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-48">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Subdivisões com lotes */}
+                  {subdivisoes.map(sub => (
+                    <SubdivisaoRow
+                      key={sub.pastoId}
+                      sub={sub}
+                      fazendaId={fazendaId}
+                      expanded={expandedSubdivisoes.has(sub.pastoId)}
+                      onToggle={() => toggleSubdivisao(sub.pastoId)}
+                      onRefresh={handleRefresh}
+                    />
+                  ))}
+
+                  {/* Lotes sem subdivisão */}
+                  {semSubdivisao.length > 0 && (
+                    <>
+                      <tr
+                        className="border-b border-gray-200 cursor-pointer select-none"
+                        style={{ backgroundColor: "#f7f7f7" }}
+                        onClick={() => setSemSubdivisaoExpanded(v => !v)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-gray-400 transition-transform" style={{ display: "inline-block", transform: semSubdivisaoExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                            <span className="text-[13px] font-semibold text-gray-500 italic">Sem Subdivisão</span>
+                            <span className="text-[10px] text-gray-400">{semSubdivisao.length} lote{semSubdivisao.length !== 1 ? "s" : ""}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <span className="text-[13px] font-bold text-gray-500">
+                            {semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                        <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                        <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                        <td className="px-3 py-3" />
+                      </tr>
+                      {semSubdivisaoExpanded && semSubdivisao.map(lote => (
+                        <LoteRow key={lote.loteId} lote={lote} fazendaId={fazendaId}
+                          pastoAtualId={null} onRefresh={handleRefresh} />
+                      ))}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Modal Histórico Geral */}
+      {modalHistoricoGeral && fazendaId && (
+        <ModalHistorico fazendaId={fazendaId} onClose={() => setModalHistoricoGeral(false)} />
       )}
     </AppLayout>
   );

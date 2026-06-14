@@ -1732,6 +1732,155 @@ const lotesRouter = router({
       await db.delete(lotes).where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)));
       return { success: true, nomeLote: lote.nome };
     }),
+
+  // ─── Mapa do Rebanho V2 (agrupado por Subdivisão) ──────────────────────────────
+  mapaRebanhoV2: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      pastoId: z.number().optional(),
+      search: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const [fazenda] = await db.select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas)
+        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)))
+        .limit(1);
+      if (!fazenda) return { subdivisoes: [], semSubdivisao: [] };
+
+      const pastosList = await db.select().from(pastos)
+        .where(and(eq(pastos.userId, ctx.user.id), eq(pastos.fazendaId, input.fazendaId)));
+      const pastoMap = new Map(pastosList.map(p => [p.id, p]));
+
+      const lotesConditions: Parameters<typeof and>[0][] = [
+        eq(lotes.userId, ctx.user.id),
+        eq(lotes.fazendaId, input.fazendaId),
+      ];
+      if (input.pastoId) lotesConditions.push(eq(lotes.pastoAtualId, input.pastoId));
+      const lotesList = await db.select().from(lotes).where(and(...lotesConditions));
+      if (lotesList.length === 0) return { subdivisoes: [], semSubdivisao: [] };
+
+      const loteIds = lotesList.map(l => l.id);
+      const animaisRows = await db.select({ loteId: animais.loteId })
+        .from(animais).where(and(
+          eq(animais.userId, ctx.user.id),
+          eq(animais.status, 'ativo'),
+          inArray(animais.loteId, loteIds),
+        ));
+      const totalPorLote = new Map<number, number>();
+      for (const a of animaisRows) {
+        if (!a.loteId) continue;
+        totalPorLote.set(a.loteId, (totalPorLote.get(a.loteId) ?? 0) + 1);
+      }
+
+      const porPasto = new Map<number, typeof lotesList>();
+      const semSubdivisaoLotes: typeof lotesList = [];
+      for (const lote of lotesList) {
+        if (lote.pastoAtualId) {
+          const arr = porPasto.get(lote.pastoAtualId) ?? [];
+          arr.push(lote);
+          porPasto.set(lote.pastoAtualId, arr);
+        } else {
+          semSubdivisaoLotes.push(lote);
+        }
+      }
+
+      const q = input.search?.trim().toLowerCase() ?? '';
+
+      const subdivisoes = [...porPasto.entries()]
+        .map(([pastoId, lotesGrupo]) => {
+          const pasto = pastoMap.get(pastoId)!;
+          const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
+          const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
+          const taxaLotacao = areaNum && areaNum > 0 ? Math.round((totalAnimais / areaNum) * 100) / 100 : null;
+          return {
+            pastoId,
+            pastoNome: pasto.nome,
+            pastoSigla: pasto.sigla ?? null,
+            pastoStatus: pasto.status ?? null,
+            areaHa: pasto.area != null ? String(pasto.area) : null,
+            taxaLotacao,
+            totalAnimais,
+            lotes: lotesGrupo.map(l => ({
+              loteId: l.id,
+              loteNome: l.nome,
+              loteSigla: l.sigla ?? null,
+              dataEntradaPasto: l.dataEntradaPasto ?? null,
+              totalAnimais: totalPorLote.get(l.id) ?? 0,
+            })),
+          };
+        })
+        .filter(s => !q || s.pastoNome.toLowerCase().includes(q) || s.lotes.some(l => l.loteNome.toLowerCase().includes(q)))
+        .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
+
+      const semSubdivisao = semSubdivisaoLotes
+        .filter(l => !q || l.nome.toLowerCase().includes(q))
+        .map(l => ({
+          loteId: l.id,
+          loteNome: l.nome,
+          loteSigla: l.sigla ?? null,
+          dataEntradaPasto: l.dataEntradaPasto ?? null,
+          totalAnimais: totalPorLote.get(l.id) ?? 0,
+        }));
+
+      return { subdivisoes, semSubdivisao };
+    }),
+
+  mapaRebanhoHistorico: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      loteId: z.number().optional(),
+      pastoId: z.number().optional(),
+      limit: z.number().default(50),
+    }))
+    .query(async ({ ctx, input }) => {
+      const lotesFazenda = await db.select({ id: lotes.id, nome: lotes.nome })
+        .from(lotes)
+        .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
+      if (lotesFazenda.length === 0) return [];
+      const loteIds = lotesFazenda.map(l => l.id);
+      const loteNomeMap = new Map(lotesFazenda.map(l => [l.id, l.nome]));
+
+      const conditions: Parameters<typeof and>[0][] = [
+        eq(lotePastoMovimentacoes.userId, ctx.user.id),
+        inArray(lotePastoMovimentacoes.loteId, loteIds),
+      ];
+      if (input.loteId) conditions.push(eq(lotePastoMovimentacoes.loteId, input.loteId));
+      if (input.pastoId) {
+        conditions.push(
+          sql`(${lotePastoMovimentacoes.pastoOrigemId} = ${input.pastoId} OR ${lotePastoMovimentacoes.pastoDestinoId} = ${input.pastoId})`
+        );
+      }
+
+      const rows = await db.select().from(lotePastoMovimentacoes)
+        .where(and(...conditions))
+        .orderBy(desc(lotePastoMovimentacoes.dataEntrada))
+        .limit(input.limit);
+
+      const pastoIds = [...new Set(rows.flatMap(r =>
+        [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]
+      ))];
+      const pastoNomeMap: Record<number, string> = {};
+      if (pastoIds.length) {
+        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome })
+          .from(pastos).where(inArray(pastos.id, pastoIds));
+        pastosRows.forEach(p => { pastoNomeMap[p.id] = p.nome; });
+      }
+
+      return rows.map(r => ({
+        id: r.id,
+        loteId: r.loteId,
+        loteNome: loteNomeMap.get(r.loteId) ?? '—',
+        pastoOrigemId: r.pastoOrigemId ?? null,
+        pastoOrigemNome: r.pastoOrigemId ? (pastoNomeMap[r.pastoOrigemId] ?? '—') : null,
+        pastoDestinoId: r.pastoDestinoId ?? null,
+        pastoDestinoNome: r.pastoDestinoId ? (pastoNomeMap[r.pastoDestinoId] ?? '—') : null,
+        dataEntrada: r.dataEntrada,
+        dataSaida: r.dataSaida ?? null,
+        diasNoPasto: r.diasNoPasto ?? null,
+        qtdAnimais: r.qtdAnimais ?? null,
+        observacoes: r.observacoes ?? null,
+      }));
+    }),
 });
 const saudeRouter = router({
   list: protectedProcedure
