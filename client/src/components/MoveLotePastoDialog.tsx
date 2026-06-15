@@ -116,7 +116,7 @@ export function MoveLotePastoDialog({
           <div>
             <Label className="text-[10px]">Fazenda</Label>
             <Select value={fazendaId} onValueChange={v => { setFazendaId(v); setPastoId(""); }}>
-              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione a fazenda" /></SelectTrigger>
+              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione uma fazenda" /></SelectTrigger>
               <SelectContent>
                 {fazendas.map(f => (
                   <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">{f.nome}</SelectItem>
@@ -124,57 +124,24 @@ export function MoveLotePastoDialog({
               </SelectContent>
             </Select>
           </div>
-          {/* Lista de pastos sempre visível quando há fazenda selecionada */}
-          {fazendaNum > 0 && (
-            <div>
-              <Label className="text-[10px]">Subdivisão Destino</Label>
-              {pastos.length === 0 ? (
-                <p className="text-[11px] text-gray-400 italic mt-1">Nenhum pasto cadastrado nesta fazenda.</p>
-              ) : (
-                <div
-                  className="mt-1 rounded border border-gray-200 overflow-hidden"
-                  style={{ maxHeight: 220, overflowY: "auto" }}
-                >
-                  {pastos
-                    .slice()
-                    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }))
-                    .map(p => {
-                      const isAtual = lote?.pastoAtualId === p.id;
-                      const selected = pastoId === String(p.id);
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          disabled={isAtual}
-                          onClick={() => setPastoId(selected ? "" : String(p.id))}
-                          className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition border-b border-gray-100 last:border-b-0"
-                          style={{
-                            backgroundColor: selected ? "#d1fae5" : isAtual ? "#f9fafb" : "#fff",
-                            color: isAtual ? "#9ca3af" : "#1f2937",
-                            cursor: isAtual ? "not-allowed" : "pointer",
-                            fontWeight: selected ? 700 : 400,
-                          }}
-                        >
-                          <span className="flex items-center gap-2">
-                            {selected && (
-                              <span className="material-icons" style={{ fontSize: 14, color: "#16a34a" }}>check_circle</span>
-                            )}
-                            {!selected && (
-                              <span className="material-icons" style={{ fontSize: 14, color: isAtual ? "#d1d5db" : "#9ca3af" }}>radio_button_unchecked</span>
-                            )}
-                            {p.nome}
-                          </span>
-                          <span className="flex items-center gap-2 text-[10px] text-gray-400">
-                            {p.capacidade ? `${p.capacidade} UA` : ""}
-                            {isAtual && <span className="text-[10px] text-amber-500 font-medium">atual</span>}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          )}
+          <div>
+            <Label className="text-[10px]">Subdivisão Destino</Label>
+            <Select value={pastoId} onValueChange={setPastoId} disabled={!fazendaId}>
+              <SelectTrigger className="h-8 text-[12px]">
+                <SelectValue placeholder="Selecione a subdivisão" />
+              </SelectTrigger>
+              <SelectContent>
+                {pastos
+                  .slice()
+                  .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }))
+                  .map(p => (
+                    <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
+                      {p.nome}{p.capacidade ? ` (${p.capacidade} UA)` : ""}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex gap-2 pt-1">
             {lote?.pastoAtualId && (
               <Button type="button" variant="outline" onClick={handleRemove} className="h-8 text-[11px] text-red-600">
