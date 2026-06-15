@@ -512,7 +512,7 @@ export default function MapaRebanhoPage() {
     { fazendaId: fazendaId! },
     { enabled: !!fazendaId }
   );
-  const pastosList = pastos as { id: number; nome: string }[];
+  const pastosList = (pastos as { id: number; nome: string }[]).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
   // Query para fazenda específica
   const {
