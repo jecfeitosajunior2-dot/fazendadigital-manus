@@ -400,7 +400,7 @@ export function exportMapaRebanhoPdf(
       : "";
 
     bodyHtml += `
-      <tr style="background:#2D5A5A;">
+      <tr class="sub-row" style="background:#2D5A5A;">
         ${fazColHtml}
         <td style="padding:6px 8px;font-weight:700;font-size:10px;color:#fff;">
           ${sub.pastoNome}${siglaText}
@@ -483,8 +483,12 @@ export function exportMapaRebanhoPdf(
   <title>Mapa do Rebanho</title>
   <style>
     @page { margin: 18mm 14mm 14mm 14mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+    @media print {
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .sub-row, .sub-row td { background:#2D5A5A !important; color:#fff !important; }
+    }
     .report-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; border-bottom:2px solid #2D5A5A; margin-bottom:16px; }
     .brand { display:flex; align-items:center; gap:10px; }
     .brand img { width:44px; height:44px; object-fit:contain; }
@@ -500,6 +504,9 @@ export function exportMapaRebanhoPdf(
     table { width:100%; border-collapse:collapse; font-size:10px; }
     thead tr { background:#fff; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
     thead th { padding:6px 8px; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
+    .sub-row { background:#2D5A5A !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
+    .sub-row td { color:#fff !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .report-footer { margin-top:16px; padding-top:8px; border-top:1px solid #e0e0e0; display:flex; justify-content:space-between; font-size:9px; color:#aaa; }
   </style>
 </head>
