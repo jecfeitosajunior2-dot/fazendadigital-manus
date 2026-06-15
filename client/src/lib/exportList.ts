@@ -498,8 +498,8 @@ export function exportMapaRebanhoPdf(
     .report-title { font-size:14px; font-weight:700; color:#0F172A; margin-bottom:10px; }
     .report-count { font-size:10px; color:#666; margin-bottom:12px; }
     table { width:100%; border-collapse:collapse; font-size:10px; }
-    thead tr { background:#2D5A5A; color:#fff; }
-    thead th { padding:6px 8px; font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+    thead tr { background:#fff; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
+    thead th { padding:6px 8px; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
     .report-footer { margin-top:16px; padding-top:8px; border-top:1px solid #e0e0e0; display:flex; justify-content:space-between; font-size:9px; color:#aaa; }
   </style>
 </head>
