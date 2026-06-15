@@ -555,16 +555,16 @@ export default function MapaRebanhoPage() {
     return fazendasGeral.reduce((acc, f) => acc + f.totalAnimais, 0);
   }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral]);
 
-  // Dados para exportação
-  const exportHeaders = ["Fazenda", "Subdivisão", "Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
+  // Dados para exportação — coluna Fazenda só aparece na visão geral (todas as fazendas)
+  const exportHeaders = fazendaId
+    ? ["Subdivisão", "Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"]
+    : ["Fazenda", "Subdivisão", "Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
   const exportRows = useMemo(() => {
     const rows: (string | number | null)[][] = [];
-    const fazendaNomeAtual = fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome ?? "Todas as Fazendas";
     if (fazendaId) {
       subdivisoes.forEach(sub => {
         sub.lotes.forEach(lote => {
           rows.push([
-            fazendaNomeAtual,
             sub.pastoNome,
             lote.loteNome,
             lote.totalAnimais,
@@ -574,11 +574,11 @@ export default function MapaRebanhoPage() {
           ]);
         });
         if (sub.lotes.length === 0) {
-          rows.push([fazendaNomeAtual, sub.pastoNome, "—", sub.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, null]);
+          rows.push([sub.pastoNome, "—", sub.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, null]);
         }
       });
       semSubdivisao.forEach(lote => {
-        rows.push([fazendaNomeAtual, "Sem Subdivisão", lote.loteNome, lote.totalAnimais, null, null, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
+        rows.push(["Sem Subdivisão", lote.loteNome, lote.totalAnimais, null, null, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
       });
     } else {
       fazendasGeral.forEach(faz => {
