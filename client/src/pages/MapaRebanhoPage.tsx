@@ -592,7 +592,7 @@ export default function MapaRebanhoPage() {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-[18px] font-bold text-gray-800">Mapa do Rebanho</h1>
-            <p className="text-[12px] text-gray-400 mt-0.5">Distribuição dos lotes nas subdivisões da fazenda</p>
+
           </div>
           <div className="flex items-center gap-2">
             {fazendaId && (
