@@ -9,6 +9,7 @@ type Props = {
   alignRightFrom?: number;
   className?: string;
   fazendaNome?: string;
+  groupByCol?: number[];
 };
 
 export default function ListExportButtons({
@@ -19,6 +20,7 @@ export default function ListExportButtons({
   alignRightFrom,
   className,
   fazendaNome,
+  groupByCol,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -73,7 +75,7 @@ export default function ListExportButtons({
             type="button"
             onClick={() => {
               setOpen(false);
-              exportListPdf(title, headers, rows, { alignRightFrom, fazendaNome });
+              exportListPdf(title, headers, rows, { alignRightFrom, fazendaNome, groupByCol });
             }}
             className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors font-medium"
           >

@@ -89,7 +89,7 @@ export function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string }
+  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[] }
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
@@ -97,6 +97,7 @@ export function exportListPdf(
   }
   const alignRightFrom = options?.alignRightFrom ?? headers.length;
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
+  const groupByCol = options?.groupByCol ?? [];
 
   // Período: usa o fornecido ou gera automaticamente com a data atual
   const agora = new Date();
@@ -126,13 +127,24 @@ export function exportListPdf(
     )
     .join("");
   const body = rows
-    .map((r, idx) =>
-      `<tr class="${idx % 2 === 0 ? "row-even" : "row-odd"}">${r
-        .map((cell, i) =>
-          `<td style="text-align:${i >= alignRightFrom ? "right" : "left"}">${fmtCell(cell)}</td>`
-        )
-        .join("")}</tr>`
-    )
+    .map((r, idx) => {
+      const cells = r.map((cell, i) => {
+        // Suprimir valor se coluna está no grupo E o valor é igual à linha anterior
+        const suppress =
+          groupByCol.includes(i) &&
+          idx > 0 &&
+          String(rows[idx - 1]?.[i] ?? "") === String(cell ?? "");
+        const display = suppress ? "" : fmtCell(cell);
+        const style = [
+          `text-align:${i >= alignRightFrom ? "right" : "left"}`,
+          suppress ? "color:#ccc" : "",
+        ]
+          .filter(Boolean)
+          .join(";");
+        return `<td style="${style}">${display}</td>`;
+      });
+      return `<tr class="${idx % 2 === 0 ? "row-even" : "row-odd"}">${cells.join("")}</tr>`;
+    })
     .join("");
 
   const html = `<!DOCTYPE html>

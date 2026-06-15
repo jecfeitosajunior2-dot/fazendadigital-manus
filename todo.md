@@ -284,3 +284,7 @@
 - [x] Auto-expandir subdivisões ao selecionar fazenda (useEffect ao carregar mapaData)
 - [x] Dias no pasto por lote — exibido abaixo da data de entrada (ex: "12d no pasto")
 - [x] Alerta de superlotação — capacidade adicionada ao payload do backend; quando totalAnimais > capacidade, exibe contador vermelho com ⚠ e texto "X/Y UA"
+
+## Melhoria PDF Mapa do Rebanho (2026-06-15)
+- [x] PDF: coluna Subdivisão não repete o nome quando há múltiplos lotes no mesmo pasto — exibe apenas na primeira linha do grupo, demais ficam em branco (groupByCol no exportListPdf)
+- [x] Visão geral (todas as fazendas): colunas Fazenda e Subdivisão também agrupadas (groupByCol [0,1])

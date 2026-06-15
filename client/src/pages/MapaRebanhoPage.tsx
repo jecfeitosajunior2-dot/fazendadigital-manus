@@ -698,6 +698,7 @@ export default function MapaRebanhoPage() {
               rows={exportRows}
               alignRightFrom={3}
               fazendaNome={fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome}
+              groupByCol={fazendaId ? [0] : [0, 1]}
             />
           </div>
         </div>
