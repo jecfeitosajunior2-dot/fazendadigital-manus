@@ -1997,6 +1997,28 @@ const lotesRouter = router({
         ? resultadoPorFazenda.filter(f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q))
         : resultadoPorFazenda;
     }),
+
+  excluirMovimentacao: protectedProcedure
+    .input(z.object({ movimentacaoId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      // Busca a movimentação e valida que pertence ao usuário
+      const [mov] = await db.select().from(lotePastoMovimentacoes)
+        .where(and(
+          eq(lotePastoMovimentacoes.id, input.movimentacaoId),
+          eq(lotePastoMovimentacoes.userId, ctx.user.id),
+        ));
+      if (!mov) throw new TRPCError({ code: 'NOT_FOUND', message: 'Movimentação não encontrada.' });
+      // Bloqueia exclusão da movimentação atual (dataSaida nula = lote ainda está neste pasto)
+      if (!mov.dataSaida) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Não é possível excluir a movimentação atual. Mova o lote para outro pasto antes de excluir.',
+        });
+      }
+      await db.delete(lotePastoMovimentacoes)
+        .where(eq(lotePastoMovimentacoes.id, input.movimentacaoId));
+      return { ok: true };
+    }),
 });
 const saudeRouter = router({
   list: protectedProcedure

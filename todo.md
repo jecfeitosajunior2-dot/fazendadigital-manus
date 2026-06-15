@@ -272,3 +272,9 @@
 - [x] Frontend: quando nenhuma fazenda selecionada, exibe tabela agrupada por fazenda (expandível)
 - [x] Frontend: filtro "Todas as fazendas" substituindo o placeholder "Selecione a fazenda"
 - [x] Frontend: campo Buscar sempre visível (não depende de fazenda selecionada)
+
+## Exclusão de Movimentações no Histórico (2026-06-14)
+- [x] Backend: procedure lotes.excluirMovimentacao — valida que não é a movimentação atual (dataSaida IS NULL), exclui registro
+- [x] Frontend: botão lixeira em cada linha do histórico (exceto a linha "Atual")
+- [x] Frontend: confirmação inline Sim/Não antes de excluir
+- [x] Frontend: refetch do histórico após exclusão bem-sucedida
