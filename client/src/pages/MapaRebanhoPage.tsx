@@ -632,15 +632,7 @@ export default function MapaRebanhoPage() {
               </select>
             </div>
           )}
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-gray-500">Buscar</label>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
-              placeholder="Subdivisão ou lote..."
-              className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]" />
-          </div>
+
         </div>
 
         {/* Conteúdo */}
