@@ -1757,7 +1757,31 @@ const lotesRouter = router({
       ];
       if (input.pastoId) lotesConditions.push(eq(lotes.pastoAtualId, input.pastoId));
       const lotesList = await db.select().from(lotes).where(and(...lotesConditions));
-      if (lotesList.length === 0) return { subdivisoes: [], semSubdivisao: [] };
+
+      // Buscar última saída de cada pasto para calcular dias em descanso
+      const ultimaSaidaPorPasto = new Map<number, string>();
+      if (pastosList.length > 0) {
+        const pastoIds = pastosList.map(p => p.id);
+        const ultimasSaidas = await db
+          .select({
+            pastoOrigemId: lotePastoMovimentacoes.pastoOrigemId,
+            dataSaida: sql<string>`MAX(${lotePastoMovimentacoes.dataSaida})`,
+          })
+          .from(lotePastoMovimentacoes)
+          .where(and(
+            eq(lotePastoMovimentacoes.userId, ctx.user.id),
+            inArray(lotePastoMovimentacoes.pastoOrigemId, pastoIds),
+            isNotNull(lotePastoMovimentacoes.dataSaida),
+          ))
+          .groupBy(lotePastoMovimentacoes.pastoOrigemId);
+        for (const row of ultimasSaidas) {
+          if (row.pastoOrigemId && row.dataSaida) {
+            ultimaSaidaPorPasto.set(row.pastoOrigemId, row.dataSaida);
+          }
+        }
+      }
+
+      if (lotesList.length === 0 && pastosList.length === 0) return { subdivisoes: [], semSubdivisao: [] };
 
       const loteIds = lotesList.map(l => l.id);
       const animaisRows = await db.select({ loteId: animais.loteId })
@@ -1801,6 +1825,7 @@ const lotesRouter = router({
             capacidade: pasto.capacidade ?? null,
             taxaLotacao,
             totalAnimais,
+            diasVazio: null as number | null,
             lotes: lotesGrupo.map(l => ({
               loteId: l.id,
               loteNome: l.nome,
@@ -1813,6 +1838,35 @@ const lotesRouter = router({
         .filter(s => !q || s.pastoNome.toLowerCase().includes(q) || s.lotes.some(l => l.loteNome.toLowerCase().includes(q)))
         .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
 
+      // Pastos sem nenhum lote (vazios) — incluiímos mesmo sem animais
+      const pastosComLote = new Set(porPasto.keys());
+      const hoje = new Date();
+      const pastosVazios = pastosList
+        .filter(p => !pastosComLote.has(p.id))
+        .filter(p => !input.pastoId || p.id === input.pastoId)
+        .filter(p => !q || p.nome.toLowerCase().includes(q))
+        .map(p => {
+          const ultimaSaida = ultimaSaidaPorPasto.get(p.id);
+          let diasVazio: number | null = null;
+          if (ultimaSaida) {
+            const saida = new Date(ultimaSaida);
+            diasVazio = Math.floor((hoje.getTime() - saida.getTime()) / (1000 * 60 * 60 * 24));
+          }
+          return {
+            pastoId: p.id,
+            pastoNome: p.nome,
+            pastoSigla: p.sigla ?? null,
+            pastoStatus: p.status ?? 'vazio',
+            areaHa: p.area != null ? String(p.area) : null,
+            capacidade: p.capacidade ?? null,
+            taxaLotacao: 0,
+            totalAnimais: 0,
+            diasVazio,
+            lotes: [],
+          };
+        })
+        .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
+
       const semSubdivisao = semSubdivisaoLotes
         .filter(l => !q || l.nome.toLowerCase().includes(q))
         .map(l => ({
@@ -1823,7 +1877,7 @@ const lotesRouter = router({
           totalAnimais: totalPorLote.get(l.id) ?? 0,
         }));
 
-      return { subdivisoes, semSubdivisao };
+      return { subdivisoes: [...subdivisoes, ...pastosVazios].sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR')), semSubdivisao };
     }),
 
   mapaRebanhoHistorico: protectedProcedure

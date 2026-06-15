@@ -77,7 +77,9 @@ function statusBadge(status: string | null) {
 type LoteInfo = { loteId: number; loteNome: string; totalAnimais: number; dataEntradaPasto: string | null };
 type SubdivisaoInfo = {
   pastoId: number; pastoNome: string; pastoSigla: string | null; pastoStatus: string | null;
-  areaHa: string | null; capacidade?: number | null; taxaLotacao: number | null; totalAnimais: number; lotes: LoteInfo[];
+  areaHa: string | null; capacidade?: number | null; taxaLotacao: number | null; totalAnimais: number;
+  diasVazio?: number | null;
+  lotes: LoteInfo[];
 };
 
 function ModalMoverLote({
@@ -523,7 +525,18 @@ function SubdivisaoRow({
         </td>
         <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatArea(sub.areaHa)} ha</td>
         <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatTaxa(sub.taxaLotacao)} UA/ha</td>
-        <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-3 text-center">
+          {sub.totalAnimais === 0 && sub.diasVazio != null ? (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[12px] font-semibold text-amber-600">{sub.diasVazio}d vazio</span>
+              <span className="text-[10px] text-amber-500">em descanso</span>
+            </div>
+          ) : sub.totalAnimais === 0 ? (
+            <span className="text-[11px] text-gray-400 italic">sem histórico</span>
+          ) : (
+            <span className="text-[12px] text-gray-400">—</span>
+          )}
+        </td>
         <td className="px-3 py-3">
           <div className="flex items-center justify-center">
             <button type="button"
