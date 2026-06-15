@@ -294,3 +294,7 @@
 - [x] PDF/Planilha: coluna Taxa Lotação exporta a taxa proporcional do lote (não a taxa consolidada do pasto)
 - [x] Pasto com apenas 1 lote: taxa proporcional = taxa total (sem diferença visual)
 - [x] Pasto sem área cadastrada: exibe "—" como antes
+
+## Correções e Melhorias Mapa do Rebanho — Sessão 2 (2026-06-15)
+- [x] BUG FIX: Badge Ativo/Vazio — pastos sem lote (pastosVazios) agora sempre retornam pastoStatus: 'vazio' independente do campo status no banco
+- [x] Timeline vertical no ModalHistorico — substituiu tabela por cards com linha conectora, ponto colorido (verde=atual, verde-escuro=encerrado), rota DE→PARA com setas, badges de lote e status, datas, duração e observações

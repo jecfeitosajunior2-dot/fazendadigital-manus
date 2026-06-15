@@ -1858,7 +1858,7 @@ const lotesRouter = router({
             pastoId: p.id,
             pastoNome: p.nome,
             pastoSigla: p.sigla ?? null,
-            pastoStatus: p.status ?? 'vazio',
+            pastoStatus: 'vazio' as const,
             areaHa: p.area != null ? String(p.area) : null,
             capacidade: p.capacidade ?? null,
             taxaLotacao: 0,

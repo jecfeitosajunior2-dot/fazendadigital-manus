@@ -247,6 +247,187 @@ type HistoricoRow = {
   diasNoPasto: number | null; qtdAnimais: number | null; observacoes: string | null;
 };
 
+function TimelineCard({
+  row, isFirst, confirmandoId, onConfirmar, onCancelar, onExcluir, isPending,
+}: {
+  row: HistoricoRow;
+  isFirst: boolean;
+  confirmandoId: number | null;
+  onConfirmar: (id: number) => void;
+  onCancelar: () => void;
+  onExcluir: (id: number) => void;
+  isPending: boolean;
+}) {
+  const isAtual = !row.dataSaida;
+  const dias = row.diasNoPasto;
+  const diasLabel = dias != null ? `${dias}d no pasto` : null;
+
+  return (
+    <div className="flex gap-3">
+      {/* Linha vertical + ponto */}
+      <div className="flex flex-col items-center" style={{ width: 28, flexShrink: 0 }}>
+        <div
+          style={{
+            width: 12, height: 12, borderRadius: "50%", flexShrink: 0, marginTop: 4,
+            backgroundColor: isAtual ? "#16a34a" : "#2D5A5A",
+            border: `2px solid ${isAtual ? "#16a34a" : "#2D5A5A"}`,
+            boxShadow: isAtual ? "0 0 0 3px #dcfce7" : "none",
+          }}
+        />
+        {/* Linha conectora (não renderiza no último item) */}
+        <div style={{ flex: 1, width: 2, backgroundColor: "#e5e7eb", minHeight: 24 }} />
+      </div>
+
+      {/* Card */}
+      <div
+        className="flex-1 mb-3"
+        style={{
+          border: `1px solid ${isAtual ? "#bbf7d0" : "#e5e7eb"}`,
+          borderRadius: 6,
+          backgroundColor: isAtual ? "#f0fdf4" : "#fff",
+          padding: "10px 14px",
+        }}
+      >
+        {/* Cabeçalho do card */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Lote */}
+            <span
+              style={{
+                fontSize: 11, fontWeight: 700, color: "#374151",
+                backgroundColor: "#f3f4f6", borderRadius: 3,
+                padding: "1px 6px", border: "1px solid #e5e7eb",
+              }}
+            >
+              {row.loteNome}
+            </span>
+            {/* Badge atual */}
+            {isAtual && (
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 600, color: "#15803d",
+                  backgroundColor: "#dcfce7", borderRadius: 3,
+                  padding: "1px 6px", border: "1px solid #86efac",
+                }}
+              >
+                Atual
+              </span>
+            )}
+          </div>
+          {/* Botão excluir (só movimentações encerradas) */}
+          {row.dataSaida && (
+            confirmandoId === row.id ? (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onExcluir(row.id)}
+                  disabled={isPending}
+                  className="px-2 py-0.5 text-[10px] font-semibold text-white bg-red-500 rounded hover:bg-red-600 transition disabled:opacity-50"
+                >
+                  {isPending ? "..." : "Excluir"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancelar}
+                  className="px-2 py-0.5 text-[10px] font-semibold text-gray-500 border border-gray-200 rounded hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                title="Excluir movimentação"
+                onClick={() => onConfirmar(row.id)}
+                className="p-1 text-gray-300 hover:text-red-400 transition rounded flex-shrink-0"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )
+          )}
+        </div>
+
+        {/* Rota DE → PARA */}
+        <div className="flex items-center gap-2 mt-2">
+          <div
+            style={{
+              fontSize: 11, color: "#6b7280",
+              backgroundColor: "#f9fafb", borderRadius: 3,
+              padding: "2px 8px", border: "1px solid #e5e7eb",
+              maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+            title={row.pastoOrigemNome ?? "Entrada inicial"}
+          >
+            {row.pastoOrigemNome ?? <span style={{ color: "#d1d5db" }}>Entrada inicial</span>}
+          </div>
+          <svg style={{ width: 14, height: 14, color: "#9ca3af", flexShrink: 0 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+          <div
+            style={{
+              fontSize: 11, fontWeight: 600, color: "#2D5A5A",
+              backgroundColor: "#f0fdf4", borderRadius: 3,
+              padding: "2px 8px", border: "1px solid #bbf7d0",
+              maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}
+            title={row.pastoDestinoNome ?? "—"}
+          >
+            {row.pastoDestinoNome ?? "—"}
+          </div>
+        </div>
+
+        {/* Datas e metadados */}
+        <div className="flex items-center gap-4 mt-2 flex-wrap">
+          <div style={{ fontSize: 11, color: "#6b7280" }}>
+            <span style={{ fontWeight: 600, color: "#374151" }}>Entrada:</span>{" "}
+            {formatDate(row.dataEntrada)}
+          </div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>
+            <span style={{ fontWeight: 600, color: "#374151" }}>Saída:</span>{" "}
+            {row.dataSaida
+              ? formatDate(row.dataSaida)
+              : <span style={{ color: "#16a34a", fontWeight: 600 }}>Em andamento</span>}
+          </div>
+          {diasLabel && (
+            <div
+              style={{
+                fontSize: 10, fontWeight: 600,
+                color: isAtual ? "#15803d" : "#6b7280",
+                backgroundColor: isAtual ? "#dcfce7" : "#f3f4f6",
+                borderRadius: 3, padding: "1px 6px",
+                border: `1px solid ${isAtual ? "#86efac" : "#e5e7eb"}`,
+              }}
+            >
+              {diasLabel}
+            </div>
+          )}
+          {row.qtdAnimais != null && (
+            <div style={{ fontSize: 11, color: "#6b7280" }}>
+              <span style={{ fontWeight: 600, color: "#374151" }}>Animais:</span>{" "}
+              {row.qtdAnimais}
+            </div>
+          )}
+        </div>
+
+        {/* Observações */}
+        {row.observacoes && (
+          <div
+            style={{
+              marginTop: 6, fontSize: 11, color: "#6b7280",
+              fontStyle: "italic", borderTop: "1px solid #f3f4f6", paddingTop: 6,
+            }}
+          >
+            {row.observacoes}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ModalHistorico({
   fazendaId, loteId, pastoId, loteNome, onClose,
 }: {
@@ -278,17 +459,21 @@ function ModalHistorico({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-md shadow-xl w-full max-w-2xl mx-4 flex flex-col" style={{ maxHeight: "85vh" }}>
+      <div className="bg-white rounded-md shadow-xl w-full max-w-xl mx-4 flex flex-col" style={{ maxHeight: "88vh" }}>
+        {/* Cabeçalho */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-[14px] font-semibold text-gray-800">Histórico de Movimentação</h2>
-            {loteNome && <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{loteNome}</strong></p>}
-            {!loteNome && <p className="text-[12px] text-gray-500 mt-0.5">Todos os lotes da fazenda</p>}
+            {loteNome
+              ? <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{loteNome}</strong></p>
+              : <p className="text-[12px] text-gray-500 mt-0.5">Todos os lotes da fazenda</p>}
           </div>
           <button type="button" onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-[18px] leading-none font-light transition">✕</button>
         </div>
-        <div className="overflow-auto flex-1">
+
+        {/* Corpo — timeline */}
+        <div className="overflow-auto flex-1 px-5 pt-5 pb-2">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-5 h-5 border-2 border-[#2D5A5A] border-t-transparent rounded-full animate-spin" />
@@ -302,80 +487,40 @@ function ModalHistorico({
               <p className="text-[12px]">Nenhuma movimentação registrada</p>
             </div>
           ) : (
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Lote</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">De</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Para</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Entrada</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Saída</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Dias</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Animais</th>
-                  <th className="px-2 py-2.5 w-10" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                    <td className="px-4 py-2.5 text-gray-800 font-medium">{r.loteNome}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{r.pastoOrigemNome ?? <span className="text-gray-300">—</span>}</td>
-                    <td className="px-4 py-2.5 text-gray-800">{r.pastoDestinoNome ?? <span className="text-gray-300">—</span>}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{formatDate(r.dataEntrada)}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-500">
-                      {r.dataSaida ? formatDate(r.dataSaida) : <span className="text-green-600 font-medium">Atual</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{r.diasNoPasto ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{r.qtdAnimais ?? "—"}</td>
-                    <td className="px-2 py-2.5 text-center">
-                      {/* Só permite excluir movimentações encerradas (dataSaida preenchida) */}
-                      {r.dataSaida ? (
-                        confirmandoId === r.id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => excluirMov.mutate({ movimentacaoId: r.id })}
-                              disabled={excluirMov.isPending}
-                              className="px-2 py-0.5 text-[10px] font-semibold text-white bg-red-500 rounded hover:bg-red-600 transition disabled:opacity-50"
-                            >
-                              {excluirMov.isPending ? "..." : "Sim"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmandoId(null)}
-                              className="px-2 py-0.5 text-[10px] font-semibold text-gray-500 border border-gray-200 rounded hover:bg-gray-50 transition"
-                            >
-                              Não
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            title="Excluir movimentação"
-                            onClick={() => setConfirmandoId(r.id)}
-                            className="p-1 text-gray-300 hover:text-red-500 transition rounded"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )
-                      ) : (
-                        <span title="Movimentação atual não pode ser excluída" className="text-gray-200 cursor-not-allowed p-1 inline-block">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div>
+              {/* Legenda */}
+              <div className="flex items-center gap-4 mb-4 pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-1.5">
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#16a34a", boxShadow: "0 0 0 3px #dcfce7" }} />
+                  <span style={{ fontSize: 11, color: "#6b7280" }}>Movimentação atual</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#2D5A5A" }} />
+                  <span style={{ fontSize: 11, color: "#6b7280" }}>Encerrada</span>
+                </div>
+                <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: "auto" }}>
+                  {rows.length} movimentaç{rows.length === 1 ? "ão" : "ões"}
+                </span>
+              </div>
+
+              {/* Cards da timeline */}
+              {rows.map((r, i) => (
+                <TimelineCard
+                  key={r.id}
+                  row={r}
+                  isFirst={i === 0}
+                  confirmandoId={confirmandoId}
+                  onConfirmar={setConfirmandoId}
+                  onCancelar={() => setConfirmandoId(null)}
+                  onExcluir={(id) => excluirMov.mutate({ movimentacaoId: id })}
+                  isPending={excluirMov.isPending}
+                />
+              ))}
+            </div>
           )}
         </div>
+
+        {/* Rodapé */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
           <p className="text-[11px] text-gray-400">
             <svg className="w-3 h-3 inline mr-1 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
