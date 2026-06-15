@@ -46,14 +46,28 @@ function calcDiasNoPasto(dataEntradaPasto: string | null): number | null {
 
 function statusBadge(status: string | null) {
   if (!status) return null;
-  const map: Record<string, { label: string; color: string }> = {
-    ativo: { label: "Ativo", color: "bg-green-100 text-green-700" },
-    descanso: { label: "Descanso", color: "bg-yellow-100 text-yellow-700" },
-    vazio: { label: "Vazio", color: "bg-gray-100 text-gray-500" },
+  const map: Record<string, { label: string; bg: string; border: string; text: string }> = {
+    ativo:    { label: "Ativo",    bg: "#f0fdf4", border: "#16a34a", text: "#15803d" },
+    descanso: { label: "Descanso", bg: "#fefce8", border: "#ca8a04", text: "#a16207" },
+    vazio:    { label: "Vazio",    bg: "#f9fafb", border: "#9ca3af", text: "#6b7280" },
   };
-  const s = map[status] ?? { label: status, color: "bg-gray-100 text-gray-500" };
+  const s = map[status] ?? { label: status, bg: "#f9fafb", border: "#9ca3af", text: "#6b7280" };
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${s.color}`}>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "1px 7px",
+        borderRadius: "3px",
+        border: `1.5px solid ${s.border}`,
+        backgroundColor: s.bg,
+        color: s.text,
+        fontSize: "10px",
+        fontWeight: 600,
+        letterSpacing: "0.02em",
+        lineHeight: "16px",
+      }}
+    >
       {s.label}
     </span>
   );
@@ -490,7 +504,6 @@ function SubdivisaoRow({
               {sub.pastoSigla && <span className="ml-1.5 text-[10px] text-gray-400">({sub.pastoSigla})</span>}
             </div>
             {statusBadge(sub.pastoStatus)}
-            <span className="ml-1 text-[10px] text-gray-400">{sub.lotes.length} lote{sub.lotes.length !== 1 ? "s" : ""}</span>
           </div>
         </td>
         <td className="px-3 py-3 text-center">
