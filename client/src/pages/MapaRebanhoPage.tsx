@@ -685,21 +685,7 @@ export default function MapaRebanhoPage() {
             </div>
           ) : (
             <>
-              {/* Resumo geral */}
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[12px] text-gray-500">
-                  <strong className="text-gray-800">{fazendasGeral.length}</strong> fazenda(s) ·{" "}
-                  <strong className="text-gray-800">{fazendasGeral.reduce((a, f) => a + f.subdivisoes.length, 0)}</strong> subdivisão(oes) ·{" "}
-                  <strong style={{ color: GREEN }}>{totalAnimais}</strong> animal(is) ativo(s)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={expandAll}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 underline">Expandir tudo</button>
-                  <span className="text-gray-300 text-[11px]">|</span>
-                  <button type="button" onClick={collapseAll}
-                    className="text-[11px] text-gray-500 hover:text-gray-700 underline">Recolher tudo</button>
-                </div>
-              </div>
+
 
               {/* Tabela por fazenda */}
               <div className="space-y-3">
@@ -804,20 +790,6 @@ function TabelaMapa({
 }) {
   return (
     <>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[12px] text-gray-500">
-          <strong className="text-gray-800">{subdivisoes.length}</strong> subdivisão(ões) ·{" "}
-          <strong className="text-gray-800">{subdivisoes.reduce((a, s) => a + s.lotes.length, 0) + semSubdivisao.length}</strong> lote(s) ·{" "}
-          <strong style={{ color: GREEN }}>{totalAnimais}</strong> animal(is) ativo(s)
-        </span>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={onExpandAll}
-            className="text-[11px] text-gray-500 hover:text-gray-700 underline">Expandir tudo</button>
-          <span className="text-gray-300 text-[11px]">|</span>
-          <button type="button" onClick={onCollapseAll}
-            className="text-[11px] text-gray-500 hover:text-gray-700 underline">Recolher tudo</button>
-        </div>
-      </div>
       <div className="border border-gray-200 rounded-md overflow-hidden">
         <table className="w-full">
           <thead>
