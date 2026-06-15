@@ -4,7 +4,7 @@
  * Foco: Total de Animais, Área (ha), Taxa de Lotação, Histórico de Movimentação
  * Rota: /rebanho/mapa-rebanho
  */
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -12,6 +12,7 @@ import { usePersistedState } from "@/hooks/usePersistedState";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 import ListExportButtons from "@/components/ListExportButtons";
+import { exportMapaRebanhoPdf, exportListSpreadsheet, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
 
 const GREEN = "#2D5A5A";
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
@@ -660,6 +661,49 @@ export default function MapaRebanhoPage() {
     return rows;
   }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral, fazendasList, filters.fazendaId]);
 
+  // Dados hierárquicos para o PDF especializado
+  const exportPdfData = useMemo((): MapaFazendaExport[] => {
+    const calcTaxaProp = (taxaPasto: number | null, totalPasto: number, totalLote: number): number | null =>
+      taxaPasto != null && totalPasto > 0
+        ? Math.round((taxaPasto * (totalLote / totalPasto)) * 100) / 100
+        : null;
+    const calcDias = (dataEntrada: string | null): number | null => {
+      if (!dataEntrada) return null;
+      const diff = Date.now() - new Date(dataEntrada).getTime();
+      return Math.floor(diff / 86400000);
+    };
+    const toLote = (lote: LoteInfo, taxaPasto: number | null, totalPasto: number): MapaLoteExport => ({
+      loteNome: lote.loteNome,
+      totalAnimais: lote.totalAnimais,
+      taxaProporcional: calcTaxaProp(taxaPasto, totalPasto, lote.totalAnimais),
+      dataEntradaPasto: lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null,
+      diasNoPasto: calcDias(lote.dataEntradaPasto),
+    });
+    const toSub = (sub: SubdivisaoInfo): MapaSubdivisaoExport => ({
+      pastoNome: sub.pastoNome,
+      pastoSigla: sub.pastoSigla,
+      pastoStatus: sub.pastoStatus,
+      totalAnimais: sub.totalAnimais,
+      areaHa: sub.areaHa ? Number(sub.areaHa) : null,
+      taxaLotacao: sub.taxaLotacao,
+      capacidade: sub.capacidade ?? null,
+      lotes: sub.lotes.map(l => toLote(l, sub.taxaLotacao, sub.totalAnimais)),
+    });
+    if (fazendaId) {
+      const fazNome = fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome ?? "Fazenda";
+      return [{
+        fazendaNome: fazNome,
+        subdivisoes: subdivisoes.map(toSub),
+        semSubdivisao: semSubdivisao.map(l => toLote(l, null, 0)),
+      }];
+    }
+    return fazendasGeral.map(faz => ({
+      fazendaNome: faz.fazendaNome,
+      subdivisoes: (faz.subdivisoes as SubdivisaoInfo[]).map(toSub),
+      semSubdivisao: (faz.semSubdivisao ?? []).map((l: LoteInfo) => toLote(l, null, 0)),
+    }));
+  }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral, fazendasList, filters.fazendaId]);
+
   const toggleSubdivisao = (pastoId: number) => {
     setExpandedSubdivisoes(prev => {
       const next = new Set(prev);
@@ -716,14 +760,11 @@ export default function MapaRebanhoPage() {
                 Histórico Geral
               </button>
             )}
-            <ListExportButtons
-              title="Mapa do Rebanho"
-              filename="mapa-rebanho"
-              headers={exportHeaders}
-              rows={exportRows}
-              alignRightFrom={3}
+            <ExportarMapaButton
+              exportPdfData={exportPdfData}
+              exportHeaders={exportHeaders}
+              exportRows={exportRows}
               fazendaNome={fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome}
-              groupByCol={fazendaId ? [0] : [0, 1]}
             />
           </div>
         </div>
@@ -954,5 +995,71 @@ function TabelaMapa({
         </table>
       </div>
     </>
+  );
+}
+
+// ─── Botão de Exportação do Mapa do Rebanho ───────────────────────────────────
+function ExportarMapaButton({
+  exportPdfData,
+  exportHeaders,
+  exportRows,
+  fazendaNome,
+}: {
+  exportPdfData: MapaFazendaExport[];
+  exportHeaders: string[];
+  exportRows: (string | number | null)[][];
+  fazendaNome?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-white rounded-sm transition hover:brightness-95 active:scale-[.97]"
+        style={{ backgroundColor: GREEN }}
+      >
+        <span className="material-icons text-[16px]">download</span>
+        Exportar
+        <span className="material-icons text-[14px]">{open ? "expand_less" : "expand_more"}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded shadow-lg z-50 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              exportMapaRebanhoPdf(exportPdfData, { fazendaNome });
+            }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
+          >
+            <span className="material-icons text-[18px] text-gray-500">picture_as_pdf</span>
+            Exportar PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              exportListSpreadsheet(exportHeaders, exportRows, "mapa-rebanho");
+            }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
+          >
+            <span className="material-icons text-[18px] text-gray-500">table_chart</span>
+            Exportar Planilha
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -304,3 +304,251 @@ export function exportListPdf(
   win.focus();
   setTimeout(() => win.print(), 400);
 }
+
+// ─── Tipos para exportação hierárquica do Mapa do Rebanho ────────────────────
+export type MapaLoteExport = {
+  loteNome: string;
+  totalAnimais: number;
+  taxaProporcional: number | null;
+  dataEntradaPasto: string | null;
+  diasNoPasto: number | null;
+};
+
+export type MapaSubdivisaoExport = {
+  pastoNome: string;
+  pastoSigla: string | null;
+  pastoStatus: string | null;
+  totalAnimais: number;
+  areaHa: number | null;
+  taxaLotacao: number | null;
+  capacidade: number | null;
+  lotes: MapaLoteExport[];
+};
+
+export type MapaFazendaExport = {
+  fazendaNome: string;
+  subdivisoes: MapaSubdivisaoExport[];
+  semSubdivisao: MapaLoteExport[];
+};
+
+/**
+ * Exporta o Mapa do Rebanho em PDF com layout hierárquico:
+ * - Linha de resumo por subdivisão (fundo verde escuro, dados consolidados)
+ * - Linhas filhas de cada lote (recuadas, com taxa proporcional)
+ */
+export function exportMapaRebanhoPdf(
+  fazendas: MapaFazendaExport[],
+  options?: { fazendaNome?: string; periodo?: string }
+) {
+  const totalRegistros = fazendas.reduce(
+    (acc, f) =>
+      acc +
+      f.subdivisoes.reduce((a, s) => a + Math.max(s.lotes.length, 1), 0) +
+      f.semSubdivisao.length,
+    0
+  );
+  if (totalRegistros === 0) {
+    toast.error("Nenhum dado para exportar");
+    return;
+  }
+
+  const agora = new Date();
+  const dataFormatada = agora.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const horaFormatada = agora.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const periodo =
+    options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
+  const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
+
+  const LOGO_URL =
+    "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp";
+
+  const fmtNum = (v: number | null, decimals = 2): string =>
+    v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : "—";
+
+  const fmtArea = (v: number | null): string =>
+    v != null ? `${fmtNum(v)} ha` : "—";
+
+  const statusLabel: Record<string, string> = {
+    ativo: "Ativo",
+    inativo: "Inativo",
+    descanso: "Descanso",
+    reforma: "Reforma",
+  };
+
+  // ── Gera as linhas HTML ──────────────────────────────────────────────────
+  let bodyHtml = "";
+  let rowIdx = 0;
+
+  const addSubRow = (sub: MapaSubdivisaoExport, fazendaNomeLabel?: string) => {
+    const superlotado =
+      sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
+    const statusText = sub.pastoStatus ? (statusLabel[sub.pastoStatus] ?? sub.pastoStatus) : "";
+    const siglaText = sub.pastoSigla ? ` (${sub.pastoSigla})` : "";
+    const capText =
+      sub.capacidade != null && sub.capacidade > 0
+        ? `<br><span style="font-size:8px;color:${superlotado ? "#dc2626" : "#888"};">${superlotado ? "⚠ " : ""}${sub.totalAnimais}/${sub.capacidade} UA</span>`
+        : "";
+    const fazColHtml = fazendaNomeLabel
+      ? `<td style="padding:6px 8px;font-size:10px;color:#fff;font-weight:600;">${fazendaNomeLabel}</td>`
+      : "";
+
+    bodyHtml += `
+      <tr style="background:#2D5A5A;">
+        ${fazColHtml}
+        <td style="padding:6px 8px;font-weight:700;font-size:10px;color:#fff;">
+          ${sub.pastoNome}${siglaText}
+          ${statusText ? `<span style="margin-left:6px;font-size:8px;font-weight:600;background:rgba(255,255,255,0.2);padding:1px 5px;border-radius:3px;color:#d1fae5;">${statusText}</span>` : ""}
+          <span style="margin-left:6px;font-size:8px;color:rgba(255,255,255,0.6);">${sub.lotes.length} lote${sub.lotes.length !== 1 ? "s" : ""}</span>
+        </td>
+        <td style="padding:6px 8px;text-align:center;font-weight:700;color:#fff;font-size:11px;">${sub.totalAnimais}${capText}</td>
+        <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.85);font-size:10px;">${fmtArea(sub.areaHa)}</td>
+        <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.85);font-size:10px;">${fmtNum(sub.taxaLotacao)} UA/ha</td>
+        <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.5);font-size:10px;">—</td>
+      </tr>`;
+
+    if (sub.lotes.length === 0) {
+      const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
+      rowIdx++;
+      bodyHtml += `
+        <tr style="background:${bg};">
+          ${fazendaNomeLabel ? `<td style="padding:5px 8px;"></td>` : ""}
+          <td style="padding:5px 8px 5px 22px;font-size:10px;color:#aaa;">└ Sem lotes cadastrados</td>
+          <td colspan="4" style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
+        </tr>`;
+    } else {
+      sub.lotes.forEach(lote => {
+        const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
+        rowIdx++;
+        const diasText =
+          lote.diasNoPasto != null
+            ? `<br><span style="font-size:8px;color:#aaa;">${lote.diasNoPasto}d no pasto</span>`
+            : "";
+        const taxaText =
+          lote.taxaProporcional != null
+            ? `${fmtNum(lote.taxaProporcional)} UA/ha<br><span style="font-size:8px;color:#aaa;">contribuição</span>`
+            : "—";
+        bodyHtml += `
+          <tr style="background:${bg};border-bottom:1px solid #e8eded;">
+            ${fazendaNomeLabel ? `<td style="padding:5px 8px;"></td>` : ""}
+            <td style="padding:5px 8px 5px 22px;font-size:10px;color:#374151;">
+              <span style="color:#ccc;margin-right:4px;">└</span>${lote.loteNome}
+            </td>
+            <td style="padding:5px 8px;text-align:center;font-size:10px;font-weight:600;color:#1a1a1a;">${lote.totalAnimais}</td>
+            <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
+            <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${taxaText}</td>
+            <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${lote.dataEntradaPasto ?? "—"}${diasText}</td>
+          </tr>`;
+      });
+    }
+  };
+
+  const multiModo = fazendas.length > 1;
+
+  fazendas.forEach(faz => {
+    faz.subdivisoes.forEach(sub => addSubRow(sub, multiModo ? faz.fazendaNome : undefined));
+    faz.semSubdivisao.forEach(lote => {
+      const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
+      rowIdx++;
+      const diasText =
+        lote.diasNoPasto != null
+          ? `<br><span style="font-size:8px;color:#aaa;">${lote.diasNoPasto}d no pasto</span>`
+          : "";
+      bodyHtml += `
+        <tr style="background:${bg};border-bottom:1px solid #e8eded;">
+          ${multiModo ? `<td style="padding:5px 8px;font-size:10px;color:#374151;">${faz.fazendaNome}</td>` : ""}
+          <td style="padding:5px 8px;font-size:10px;color:#aaa;font-style:italic;">Sem Subdivisão</td>
+          <td style="padding:5px 8px;text-align:center;font-size:10px;font-weight:600;color:#1a1a1a;">${lote.totalAnimais}</td>
+          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
+          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
+          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${lote.dataEntradaPasto ?? "—"}${diasText}</td>
+        </tr>`;
+    });
+  });
+
+  const colFazenda = multiModo
+    ? `<th style="text-align:left;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Fazenda</th>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Mapa do Rebanho</title>
+  <style>
+    @page { margin: 18mm 14mm 14mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+    .report-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; border-bottom:2px solid #2D5A5A; margin-bottom:16px; }
+    .brand { display:flex; align-items:center; gap:10px; }
+    .brand img { width:44px; height:44px; object-fit:contain; }
+    .brand-text { display:flex; flex-direction:column; line-height:1; }
+    .brand-name { font-size:15px; font-weight:700; letter-spacing:.06em; color:#0F172A; text-transform:uppercase; }
+    .brand-sub { font-size:8px; font-weight:600; letter-spacing:.22em; color:#2D5A5A; text-transform:uppercase; margin-top:3px; }
+    .report-meta { text-align:right; }
+    .report-meta .fazenda-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#888; margin-bottom:2px; }
+    .report-meta .fazenda-nome { font-size:13px; font-weight:700; color:#2D5A5A; }
+    .report-meta .periodo { font-size:9px; color:#999; margin-top:3px; }
+    .report-title { font-size:14px; font-weight:700; color:#0F172A; margin-bottom:10px; }
+    .report-count { font-size:10px; color:#666; margin-bottom:12px; }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    thead tr { background:#2D5A5A; color:#fff; }
+    thead th { padding:6px 8px; font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+    .report-footer { margin-top:16px; padding-top:8px; border-top:1px solid #e0e0e0; display:flex; justify-content:space-between; font-size:9px; color:#aaa; }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <div class="brand">
+      <img src="${LOGO_URL}" alt="Fazenda Digital" />
+      <div class="brand-text">
+        <span class="brand-name">Fazenda</span>
+        <span class="brand-sub">Digital</span>
+      </div>
+    </div>
+    <div class="report-meta">
+      <div class="fazenda-label">Fazenda</div>
+      <div class="fazenda-nome">${fazendaNome}</div>
+      <div class="periodo">${periodo}</div>
+    </div>
+  </div>
+
+  <div class="report-title">Mapa do Rebanho</div>
+  <div class="report-count">${totalRegistros} registro${totalRegistros !== 1 ? "s" : ""} encontrado${totalRegistros !== 1 ? "s" : ""}</div>
+
+  <table>
+    <thead>
+      <tr>
+        ${colFazenda}
+        <th style="text-align:left;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Subdivisão / Lote</th>
+        <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Total Animais</th>
+        <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Área (ha)</th>
+        <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Taxa Lotação (UA/ha)</th>
+        <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Entrada no Pasto</th>
+      </tr>
+    </thead>
+    <tbody>${bodyHtml}</tbody>
+  </table>
+
+  <div class="report-footer">
+    <span>Fazenda Digital &copy; ${agora.getFullYear()} &mdash; Gestão Pecuária Inteligente</span>
+    <span>${dataFormatada} ${horaFormatada}</span>
+  </div>
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.error("Permita pop-ups para exportar PDF");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
+}
