@@ -616,22 +616,21 @@ export default function MapaRebanhoPage() {
               value={filters.fazendaId}
               onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
               className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]">
-              <option value="">Todas as fazendas</option>
+              <option value="">Selecione uma fazenda</option>
               {fazendasList.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
             </select>
           </div>
-          {fazendaId && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-gray-500">Subdivisão</label>
-              <select
-                value={filters.pastoId}
-                onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
-                className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[180px]">
-                <option value="">Todas as subdivisões</option>
-                {pastosList.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
-              </select>
-            </div>
-          )}
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-gray-500">Subdivisão</label>
+            <select
+              value={filters.pastoId}
+              onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
+              disabled={!fazendaId}
+              className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[180px] disabled:opacity-50 disabled:cursor-not-allowed">
+              <option value="">Todas as subdivisões</option>
+              {pastosList.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
+            </select>
+          </div>
 
         </div>
 
