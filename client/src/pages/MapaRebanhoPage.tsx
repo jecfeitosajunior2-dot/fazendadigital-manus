@@ -5,6 +5,7 @@
  * Rota: /rebanho/mapa-rebanho
  */
 import { useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -412,17 +413,20 @@ function LoteRow({
         </td>
       </tr>
 
-      {modalMoverLote && (
+      {modalMoverLote && createPortal(
         <ModalMoverLote lote={lote} fazendaId={fazendaId} pastoAtualId={pastoAtualId}
-          onClose={() => setModalMoverLote(false)} onSuccess={onRefresh} />
+          onClose={() => setModalMoverLote(false)} onSuccess={onRefresh} />,
+        document.body
       )}
-      {modalMoverAnimal && (
+      {modalMoverAnimal && createPortal(
         <ModalMoverAnimal lote={lote} fazendaId={fazendaId}
-          onClose={() => setModalMoverAnimal(false)} onSuccess={onRefresh} />
+          onClose={() => setModalMoverAnimal(false)} onSuccess={onRefresh} />,
+        document.body
       )}
-      {modalHistorico && (
+      {modalHistorico && createPortal(
         <ModalHistorico fazendaId={fazendaId} loteId={lote.loteId} loteNome={lote.loteNome}
-          onClose={() => setModalHistorico(false)} />
+          onClose={() => setModalHistorico(false)} />,
+        document.body
       )}
     </>
   );
@@ -477,9 +481,10 @@ function SubdivisaoRow({
           pastoAtualId={sub.pastoId} onRefresh={onRefresh} />
       ))}
 
-      {modalHistorico && (
+      {modalHistorico && createPortal(
         <ModalHistorico fazendaId={fazendaId} pastoId={sub.pastoId} loteNome={sub.pastoNome}
-          onClose={() => setModalHistorico(false)} />
+          onClose={() => setModalHistorico(false)} />,
+        document.body
       )}
     </>
   );
