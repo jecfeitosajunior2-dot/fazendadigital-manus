@@ -4,7 +4,7 @@
  * Foco: Total de Animais, Área (ha), Taxa de Lotação, Histórico de Movimentação
  * Rota: /rebanho/mapa-rebanho
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -34,6 +34,15 @@ function formatDate(d: string | null) {
   const [y, m, day] = d.split("-");
   return `${day}/${m}/${y}`;
 }
+function calcDiasNoPasto(dataEntradaPasto: string | null): number | null {
+  if (!dataEntradaPasto) return null;
+  const entrada = new Date(dataEntradaPasto);
+  if (isNaN(entrada.getTime())) return null;
+  const hoje = new Date();
+  const diffMs = hoje.getTime() - entrada.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
 function statusBadge(status: string | null) {
   if (!status) return null;
   const map: Record<string, { label: string; color: string }> = {
@@ -53,7 +62,7 @@ function statusBadge(status: string | null) {
 type LoteInfo = { loteId: number; loteNome: string; totalAnimais: number; dataEntradaPasto: string | null };
 type SubdivisaoInfo = {
   pastoId: number; pastoNome: string; pastoSigla: string | null; pastoStatus: string | null;
-  areaHa: string | null; taxaLotacao: number | null; totalAnimais: number; lotes: LoteInfo[];
+  areaHa: string | null; capacidade?: number | null; taxaLotacao: number | null; totalAnimais: number; lotes: LoteInfo[];
 };
 
 function ModalMoverLote({
@@ -66,7 +75,11 @@ function ModalMoverLote({
   const [data, setData] = useState(hojeStr());
   const [obs, setObs] = useState("");
 
-  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery({ fazendaId });
+  const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
+  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
+    { fazendaId: fazendaIdNum },
+    { enabled: fazendaIdNum > 0 }
+  );
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
     onSuccess: () => { toast.success(`Lote ${lote.loteNome} movido com sucesso!`); onSuccess(); onClose(); },
     onError: (e) => toast.error(e.message),
@@ -387,8 +400,13 @@ function LoteRow({
         </td>
         <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
         <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-        <td className="px-3 py-2.5 text-center text-[12px] text-gray-500">
-          {lote.dataEntradaPasto ? formatDate(lote.dataEntradaPasto) : "—"}
+        <td className="px-3 py-2.5 text-center">
+          {lote.dataEntradaPasto ? (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[12px] text-gray-500">{formatDate(lote.dataEntradaPasto)}</span>
+              {(() => { const dias = calcDiasNoPasto(lote.dataEntradaPasto); return dias !== null ? <span className="text-[10px] text-gray-400">{dias}d no pasto</span> : null; })()}
+            </div>
+          ) : <span className="text-[12px] text-gray-400">—</span>}
         </td>
         <td className="px-3 py-2.5">
           <div className="flex items-center justify-center gap-1.5">
@@ -460,7 +478,19 @@ function SubdivisaoRow({
           </div>
         </td>
         <td className="px-3 py-3 text-center">
-          <span className="text-[13px] font-bold" style={{ color: GREEN }}>{sub.totalAnimais}</span>
+          {(() => {
+            const superlotado = sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
+            return (
+              <div className="flex flex-col items-center gap-0.5">
+                <span className={`text-[13px] font-bold ${superlotado ? 'text-red-600' : ''}`} style={superlotado ? {} : { color: GREEN }}>{sub.totalAnimais}</span>
+                {sub.capacidade != null && sub.capacidade > 0 && (
+                  <span className={`text-[10px] ${superlotado ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+                    {superlotado ? '⚠ ' : ''}{sub.totalAnimais}/{sub.capacidade} UA
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </td>
         <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatArea(sub.areaHa)} ha</td>
         <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatTaxa(sub.taxaLotacao)} UA/ha</td>
@@ -541,6 +571,13 @@ export default function MapaRebanhoPage() {
   );
 
   const isLoading = fazendaId ? isLoadingFazenda : isLoadingGeral;
+
+  // Auto-expandir todas as subdivisões quando os dados da fazenda específica carregam
+  useEffect(() => {
+    if (fazendaId && mapaData?.subdivisoes && mapaData.subdivisoes.length > 0) {
+      setExpandedSubdivisoes(new Set((mapaData.subdivisoes as SubdivisaoInfo[]).map(s => s.pastoId)));
+    }
+  }, [fazendaId, mapaData]);
 
   const subdivisoes: SubdivisaoInfo[] = (mapaData?.subdivisoes ?? []) as SubdivisaoInfo[];
   const semSubdivisao: LoteInfo[] = (mapaData?.semSubdivisao ?? []) as LoteInfo[];

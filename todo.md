@@ -278,3 +278,9 @@
 - [x] Frontend: botão lixeira em cada linha do histórico (exceto a linha "Atual")
 - [x] Frontend: confirmação inline Sim/Não antes de excluir
 - [x] Frontend: refetch do histórico após exclusão bem-sucedida
+
+## Correções e Melhorias Mapa do Rebanho (2026-06-15)
+- [x] BUG FIX: Dropdown "Subdivisão Destino" vazio no ModalMoverLote — corrigido com enabled: fazendaIdNum > 0 e conversão explícita para number
+- [x] Auto-expandir subdivisões ao selecionar fazenda (useEffect ao carregar mapaData)
+- [x] Dias no pasto por lote — exibido abaixo da data de entrada (ex: "12d no pasto")
+- [x] Alerta de superlotação — capacidade adicionada ao payload do backend; quando totalAnimais > capacidade, exibe contador vermelho com ⚠ e texto "X/Y UA"

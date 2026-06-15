@@ -1798,6 +1798,7 @@ const lotesRouter = router({
             pastoSigla: pasto.sigla ?? null,
             pastoStatus: pasto.status ?? null,
             areaHa: pasto.area != null ? String(pasto.area) : null,
+            capacidade: pasto.capacidade ?? null,
             taxaLotacao,
             totalAnimais,
             lotes: lotesGrupo.map(l => ({
@@ -1957,6 +1958,7 @@ const lotesRouter = router({
               pastoSigla: pasto.sigla ?? null,
               pastoStatus: pasto.status ?? null,
               areaHa: pasto.area != null ? String(pasto.area) : null,
+              capacidade: pasto.capacidade ?? null,
               taxaLotacao,
               totalAnimais,
               lotes: lotesGrupo.map(l => ({
