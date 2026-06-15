@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
+import ListExportButtons from "@/components/ListExportButtons";
 
 const GREEN = "#2D5A5A";
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
@@ -549,6 +550,49 @@ export default function MapaRebanhoPage() {
     return fazendasGeral.reduce((acc, f) => acc + f.totalAnimais, 0);
   }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral]);
 
+  // Dados para exportação
+  const exportHeaders = ["Fazenda", "Subdivisão", "Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
+  const exportRows = useMemo(() => {
+    const rows: (string | number | null)[][] = [];
+    const fazendaNomeAtual = fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome ?? "Todas as Fazendas";
+    if (fazendaId) {
+      subdivisoes.forEach(sub => {
+        sub.lotes.forEach(lote => {
+          rows.push([
+            fazendaNomeAtual,
+            sub.pastoNome,
+            lote.loteNome,
+            lote.totalAnimais,
+            sub.areaHa ? Number(sub.areaHa) : null,
+            sub.taxaLotacao,
+            lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null,
+          ]);
+        });
+        if (sub.lotes.length === 0) {
+          rows.push([fazendaNomeAtual, sub.pastoNome, "—", sub.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, null]);
+        }
+      });
+      semSubdivisao.forEach(lote => {
+        rows.push([fazendaNomeAtual, "Sem Subdivisão", lote.loteNome, lote.totalAnimais, null, null, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
+      });
+    } else {
+      fazendasGeral.forEach(faz => {
+        faz.subdivisoes.forEach((sub: SubdivisaoInfo) => {
+          sub.lotes.forEach((lote: LoteInfo) => {
+            rows.push([faz.fazendaNome, sub.pastoNome, lote.loteNome, lote.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
+          });
+          if (sub.lotes.length === 0) {
+            rows.push([faz.fazendaNome, sub.pastoNome, "—", sub.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, null]);
+          }
+        });
+        faz.semSubdivisao?.forEach((lote: LoteInfo) => {
+          rows.push([faz.fazendaNome, "Sem Subdivisão", lote.loteNome, lote.totalAnimais, null, null, null]);
+        });
+      });
+    }
+    return rows;
+  }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral, fazendasList, filters.fazendaId]);
+
   const toggleSubdivisao = (pastoId: number) => {
     setExpandedSubdivisoes(prev => {
       const next = new Set(prev);
@@ -605,6 +649,14 @@ export default function MapaRebanhoPage() {
                 Histórico Geral
               </button>
             )}
+            <ListExportButtons
+              title="Mapa do Rebanho"
+              filename="mapa-rebanho"
+              headers={exportHeaders}
+              rows={exportRows}
+              alignRightFrom={3}
+              fazendaNome={fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome}
+            />
           </div>
         </div>
 
