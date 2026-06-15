@@ -288,3 +288,9 @@
 ## Melhoria PDF Mapa do Rebanho (2026-06-15)
 - [x] PDF: coluna Subdivisão não repete o nome quando há múltiplos lotes no mesmo pasto — exibe apenas na primeira linha do grupo, demais ficam em branco (groupByCol no exportListPdf)
 - [x] Visão geral (todas as fazendas): colunas Fazenda e Subdivisão também agrupadas (groupByCol [0,1])
+
+## Taxa de Lotação Proporcional por Lote (2026-06-15)
+- [x] Tela: linhas de lote exibem contribuição proporcional (taxa_pasto × animais_lote / total_pasto) na coluna Taxa Lotação com label "contribuição"
+- [x] PDF/Planilha: coluna Taxa Lotação exporta a taxa proporcional do lote (não a taxa consolidada do pasto)
+- [x] Pasto com apenas 1 lote: taxa proporcional = taxa total (sem diferença visual)
+- [x] Pasto sem área cadastrada: exibe "—" como antes

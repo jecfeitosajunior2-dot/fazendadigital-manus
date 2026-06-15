@@ -378,10 +378,18 @@ function ModalHistorico({
 
 // ─── Linha de Lote dentro da Subdivisão ───────────────────────────────────────
 function LoteRow({
-  lote, fazendaId, pastoAtualId, onRefresh,
+  lote, fazendaId, pastoAtualId, onRefresh, taxaLotacaoPasto, totalAnimaisPasto,
 }: {
   lote: LoteInfo; fazendaId: number; pastoAtualId: number | null; onRefresh: () => void;
+  taxaLotacaoPasto?: number | null; totalAnimaisPasto?: number;
 }) {
+  // Contribuição proporcional: taxa_pasto × (animais_lote / total_animais_pasto)
+  const taxaProporcional: number | null =
+    taxaLotacaoPasto != null &&
+    totalAnimaisPasto != null &&
+    totalAnimaisPasto > 0
+      ? Math.round((taxaLotacaoPasto * (lote.totalAnimais / totalAnimaisPasto)) * 100) / 100
+      : null;
   const [modalMoverLote, setModalMoverLote] = useState(false);
   const [modalMoverAnimal, setModalMoverAnimal] = useState(false);
   const [modalHistorico, setModalHistorico] = useState(false);
@@ -399,7 +407,14 @@ function LoteRow({
           <span className="text-[12px] font-semibold text-gray-800">{lote.totalAnimais}</span>
         </td>
         <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-        <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-2.5 text-center">
+          {taxaProporcional !== null ? (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[12px] text-gray-600">{formatTaxa(taxaProporcional)} UA/ha</span>
+              <span className="text-[10px] text-gray-400">contribuição</span>
+            </div>
+          ) : <span className="text-[12px] text-gray-400">—</span>}
+        </td>
         <td className="px-3 py-2.5 text-center">
           {lote.dataEntradaPasto ? (
             <div className="flex flex-col items-center gap-0.5">
@@ -508,7 +523,9 @@ function SubdivisaoRow({
 
       {expanded && sub.lotes.map(lote => (
         <LoteRow key={lote.loteId} lote={lote} fazendaId={fazendaId}
-          pastoAtualId={sub.pastoId} onRefresh={onRefresh} />
+          pastoAtualId={sub.pastoId} onRefresh={onRefresh}
+          taxaLotacaoPasto={sub.taxaLotacao}
+          totalAnimaisPasto={sub.totalAnimais} />
       ))}
 
       {modalHistorico && createPortal(
@@ -598,15 +615,22 @@ export default function MapaRebanhoPage() {
     : ["Fazenda", "Subdivisão", "Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
   const exportRows = useMemo(() => {
     const rows: (string | number | null)[][] = [];
+    // Helper: calcula taxa proporcional do lote dentro do pasto
+    const calcTaxaProp = (taxaPasto: number | null, totalPasto: number, totalLote: number): number | null =>
+      taxaPasto != null && totalPasto > 0
+        ? Math.round((taxaPasto * (totalLote / totalPasto)) * 100) / 100
+        : null;
+
     if (fazendaId) {
       subdivisoes.forEach(sub => {
         sub.lotes.forEach(lote => {
+          const taxaProp = calcTaxaProp(sub.taxaLotacao, sub.totalAnimais, lote.totalAnimais);
           rows.push([
             sub.pastoNome,
             lote.loteNome,
             lote.totalAnimais,
             sub.areaHa ? Number(sub.areaHa) : null,
-            sub.taxaLotacao,
+            taxaProp,
             lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null,
           ]);
         });
@@ -621,7 +645,8 @@ export default function MapaRebanhoPage() {
       fazendasGeral.forEach(faz => {
         faz.subdivisoes.forEach((sub: SubdivisaoInfo) => {
           sub.lotes.forEach((lote: LoteInfo) => {
-            rows.push([faz.fazendaNome, sub.pastoNome, lote.loteNome, lote.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
+            const taxaProp = calcTaxaProp(sub.taxaLotacao, sub.totalAnimais, lote.totalAnimais);
+            rows.push([faz.fazendaNome, sub.pastoNome, lote.loteNome, lote.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, taxaProp, lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null]);
           });
           if (sub.lotes.length === 0) {
             rows.push([faz.fazendaNome, sub.pastoNome, "—", sub.totalAnimais, sub.areaHa ? Number(sub.areaHa) : null, sub.taxaLotacao, null]);
