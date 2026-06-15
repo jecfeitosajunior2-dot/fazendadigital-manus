@@ -1040,7 +1040,7 @@ function ExportarMapaButton({
         type="button"
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-white rounded-sm transition hover:brightness-95 active:scale-[.97]"
-        style={{ backgroundColor: GREEN }}
+        style={{ backgroundColor: "#2563eb" }}
       >
         <span className="material-icons text-[16px]">download</span>
         Exportar
@@ -1053,23 +1053,23 @@ function ExportarMapaButton({
             type="button"
             onClick={() => {
               setOpen(false);
-              exportMapaRebanhoPdf(exportPdfData, { fazendaNome });
-            }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
-          >
-            <span className="material-icons text-[18px] text-gray-500">picture_as_pdf</span>
-            Exportar PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
               exportListSpreadsheet(exportHeaders, exportRows, "mapa-rebanho");
             }}
             className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
           >
             <span className="material-icons text-[18px] text-gray-500">table_chart</span>
             Exportar Planilha
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              exportMapaRebanhoPdf(exportPdfData, { fazendaNome });
+            }}
+            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
+          >
+            <span className="material-icons text-[18px] text-gray-500">picture_as_pdf</span>
+            PDF
           </button>
         </div>
       )}
