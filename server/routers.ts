@@ -1816,11 +1816,13 @@ const lotesRouter = router({
           const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
           const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
           const taxaLotacao = areaNum && areaNum > 0 ? Math.round((totalAnimais / areaNum) * 100) / 100 : null;
+          // Status calculado dinamicamente: se há animais → ativo, senão → vazio
+          const pastoStatusCalc = totalAnimais > 0 ? 'ativo' : 'vazio';
           return {
             pastoId,
             pastoNome: pasto.nome,
             pastoSigla: pasto.sigla ?? null,
-            pastoStatus: pasto.status ?? null,
+            pastoStatus: pastoStatusCalc,
             areaHa: pasto.area != null ? String(pasto.area) : null,
             capacidade: pasto.capacidade ?? null,
             taxaLotacao,
@@ -2006,11 +2008,13 @@ const lotesRouter = router({
             const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
             const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
             const taxaLotacao = areaNum && areaNum > 0 ? Math.round((totalAnimais / areaNum) * 100) / 100 : null;
+            // Status calculado dinamicamente: se há animais → ativo, senão → vazio
+            const pastoStatusCalc = totalAnimais > 0 ? 'ativo' : 'vazio';
             return {
               pastoId,
               pastoNome: pasto.nome,
               pastoSigla: pasto.sigla ?? null,
-              pastoStatus: pasto.status ?? null,
+              pastoStatus: pastoStatusCalc,
               areaHa: pasto.area != null ? String(pasto.area) : null,
               capacidade: pasto.capacidade ?? null,
               taxaLotacao,
