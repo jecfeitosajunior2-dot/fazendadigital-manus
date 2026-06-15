@@ -152,8 +152,7 @@ export function MoveLotePastoDialog({
               type="button"
               variant="outline"
               onClick={onClose}
-              className="h-8 text-[11px] flex-1"
-              style={{ backgroundColor: "#C0C0C0", borderColor: "#C0C0C0", color: "#1f2937" }}
+              className="h-8 text-[11px] flex-1 bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               Cancelar
             </Button>
