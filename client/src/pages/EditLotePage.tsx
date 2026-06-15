@@ -11,6 +11,7 @@ import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
 import LoteAnimaisTable, { type LoteAnimaisSortKey } from "@/components/lotes/LoteAnimaisTable";
 import IncluirAnimaisLoteDialog from "@/components/lotes/IncluirAnimaisLoteDialog";
 import MovimentarAnimaisLoteDialog from "@/components/lotes/MovimentarAnimaisLoteDialog";
+import { MoveLotePastoDialog } from "@/components/MoveLotePastoDialog";
 import ListExportButtons from "@/components/ListExportButtons";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { formatDateBR } from "@/lib/date-utils";
@@ -32,7 +33,6 @@ type FormState = {
   nome: string;
   sigla: string;
   dataCriacao: string;
-  pastoAtualId: number | null;
 };
 
 type TableState = {
@@ -57,7 +57,8 @@ export default function EditLotePage() {
   const [, setLocation] = useLocation();
   const loteId = Number(new URLSearchParams(window.location.search).get("id"));
 
-  const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISO(), pastoAtualId: null });
+  const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISO() });
+  const [moverSubdivisaoOpen, setMoverSubdivisaoOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [incluirOpen, setIncluirOpen] = useState(false);
   const [movimentarOpen, setMovimentarOpen] = useState(false);
@@ -119,7 +120,6 @@ export default function EditLotePage() {
       nome: lote.nome || "",
       sigla: lote.sigla || "",
       dataCriacao,
-      pastoAtualId: lote.pastoAtualId ?? null,
     });
   }, [lote]);
 
@@ -183,7 +183,6 @@ export default function EditLotePage() {
       nome: form.nome.trim(),
       sigla: form.sigla.trim(),
       dataCriacao: form.dataCriacao,
-      pastoAtualId: form.pastoAtualId ?? null,
     });
   };
 
@@ -282,6 +281,30 @@ export default function EditLotePage() {
         open={movimentarOpen}
         onClose={() => setMovimentarOpen(false)}
         onSuccess={handleMovimentacaoSuccess}
+      />
+
+      {/* Modal Mover para Subdivisão — usa moveToPasto com histórico completo */}
+      <MoveLotePastoDialog
+        lote={{
+          id: lote.id,
+          nome: lote.nome,
+          pastoAtualId: lote.pastoAtualId ?? null,
+          pastoNome: lote.pastoAtualId
+            ? (pastosData.find(p => p.id === lote.pastoAtualId)?.nome ?? null)
+            : null,
+        }}
+        open={moverSubdivisaoOpen}
+        onClose={() => setMoverSubdivisaoOpen(false)}
+        defaultFazendaId={lote.fazendaId ?? undefined}
+        defaultPastoId={lote.pastoAtualId ?? undefined}
+        onSuccess={() => {
+          utils.lotes.getById.invalidate({ id: loteId });
+          utils.lotes.list.invalidate();
+          utils.lotes.gerenciamento.invalidate();
+          utils.lotes.mapaRebanhoV2.invalidate();
+          utils.lotes.mapaRebanhoHistorico.invalidate();
+          utils.animais.list.invalidate();
+        }}
       />
 
       {/* Confirmação exclusão */}
@@ -396,20 +419,90 @@ export default function EditLotePage() {
               required
             />
           </div>
-          {/* Subdivisão Atual */}
-          <div className="flex-1 min-w-[160px]">
-            <FormLabel>Subdivisão Atual</FormLabel>
-            <select
-              value={form.pastoAtualId ?? ""}
-              onChange={e => setField("pastoAtualId", e.target.value ? Number(e.target.value) : null)}
-              className="w-full min-h-[42px] rounded border border-gray-200 bg-white px-3 text-[13px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#2D5A5A] focus:border-[#2D5A5A] transition rounded-sm"
+        </div>
+
+        {/* Card de Subdivisão — com histórico completo */}
+        <div
+          style={{
+            border: lote.pastoAtualId ? "1px solid #bbf7d0" : "1px dashed #d1d5db",
+            borderRadius: 6,
+            backgroundColor: lote.pastoAtualId ? "#f0fdf4" : "#fafafa",
+            padding: "12px 16px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Ícone */}
+          <div
+            style={{
+              width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+              backgroundColor: lote.pastoAtualId ? "#dcfce7" : "#f3f4f6",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <span
+              className="material-icons"
+              style={{ fontSize: 18, color: lote.pastoAtualId ? "#16a34a" : "#9ca3af" }}
             >
-              <option value="">Sem subdivisão</option>
-              {pastosData.map(p => (
-                <option key={p.id} value={p.id}>{p.nome}</option>
-              ))}
-            </select>
+              {lote.pastoAtualId ? "grass" : "location_off"}
+            </span>
           </div>
+
+          {/* Informações */}
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+              Subdivisão Atual
+            </p>
+            {lote.pastoAtualId ? (
+              <>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#15803d", margin: 0 }}>
+                  {pastosData.find(p => p.id === lote.pastoAtualId)?.nome ?? "Subdivisão"}
+                </p>
+                {fazendaNome && (
+                  <p style={{ fontSize: 11, color: "#6b7280", margin: "2px 0 0" }}>
+                    {fazendaNome}
+                    {lote.dataEntradaPasto && (
+                      <> · Entrada: <strong>{new Date(lote.dataEntradaPasto + "T00:00:00").toLocaleDateString("pt-BR")}</strong>
+                        {(() => {
+                          const d = lote.dataEntradaPasto;
+                          if (!d) return null;
+                          const dias = Math.floor((new Date().getTime() - new Date(d + "T00:00:00").getTime()) / (1000 * 60 * 60 * 24));
+                          return dias > 0 ? <> · <span style={{ color: "#2D5A5A", fontWeight: 600 }}>{dias}d no pasto</span></> : null;
+                        })()}
+                      </>
+                    )}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p style={{ fontSize: 12, color: "#9ca3af", margin: 0, fontStyle: "italic" }}>
+                Lote sem subdivisão — clique em "Mover" para alocar
+              </p>
+            )}
+          </div>
+
+          {/* Botão Mover */}
+          <button
+            type="button"
+            onClick={() => setMoverSubdivisaoOpen(true)}
+            style={{
+              height: 36, padding: "0 16px",
+              borderRadius: 4, border: "1.5px solid #2D5A5A",
+              backgroundColor: "#2D5A5A", color: "#fff",
+              fontSize: 11, fontWeight: 700, letterSpacing: "0.04em",
+              textTransform: "uppercase", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+              flexShrink: 0, transition: "filter 0.15s",
+            }}
+            onMouseOver={e => (e.currentTarget.style.filter = "brightness(1.1)")}
+            onMouseOut={e => (e.currentTarget.style.filter = "")}
+          >
+            <span className="material-icons" style={{ fontSize: 15 }}>swap_horiz</span>
+            {lote.pastoAtualId ? "Mover" : "Alocar"}
+          </button>
         </div>
 
         {/* Ações principais — iRancho */}

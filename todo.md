@@ -298,3 +298,10 @@
 ## Correções e Melhorias Mapa do Rebanho — Sessão 2 (2026-06-15)
 - [x] BUG FIX: Badge Ativo/Vazio — pastos sem lote (pastosVazios) agora sempre retornam pastoStatus: 'vazio' independente do campo status no banco
 - [x] Timeline vertical no ModalHistorico — substituiu tabela por cards com linha conectora, ponto colorido (verde=atual, verde-escuro=encerrado), rota DE→PARA com setas, badges de lote e status, datas, duração e observações
+
+## Melhoria EditLotePage — Subdivisão com movimentação correta (2026-06-15)
+- [x] Substituir select "Subdivisão Atual" por card informativo + botão "Mover para Subdivisão" que chama moveToPasto com registro completo de histórico
+- [x] Card exibe: subdivisão atual (nome + fazenda), data de entrada, dias no pasto; ou estado "Sem subdivisão" quando não alocado
+- [x] Modal de movimentação com select de fazenda + subdivisão destino, data e observações
+- [x] Botão "Remover do Pasto" quando lote já está alocado
+- [x] Invalidar mapaRebanhoV2 e mapaRebanhoHistorico após movimentação
