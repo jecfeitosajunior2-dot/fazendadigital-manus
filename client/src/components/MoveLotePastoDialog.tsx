@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -59,6 +59,7 @@ export function MoveLotePastoDialog({
   const utils = trpc.useUtils();
   const [fazendaId, setFazendaId] = useState<string>("");
   const [pastoId, setPastoId] = useState<string>("");
+  const pastoSelectRef = useRef<HTMLSelectElement>(null);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
   const fazendaNum = fazendaId ? parseInt(fazendaId) : 0;
@@ -66,6 +67,8 @@ export function MoveLotePastoDialog({
     { fazendaId: fazendaNum },
     { enabled: open && fazendaNum > 0 }
   );
+
+  // Quando os pastos carregam e já há fazenda selecionada, o painel de seleção fica sempre visível
 
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
     onSuccess: () => {
@@ -102,7 +105,7 @@ export function MoveLotePastoDialog({
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-[14px]">Mover lote — {lote?.nome}</DialogTitle>
+          <DialogTitle className="text-[14px]">Mover Lote — {lote?.nome}</DialogTitle>
         </DialogHeader>
         {lote?.pastoNome && (
           <p className="text-[11px] text-gray-500 -mt-2">
@@ -121,32 +124,78 @@ export function MoveLotePastoDialog({
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label className="text-[10px]">Pasto destino</Label>
-            <Select value={pastoId} onValueChange={setPastoId} disabled={!fazendaId}>
-              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione o pasto" /></SelectTrigger>
-              <SelectContent>
-                {pastos.map(p => (
-                  <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
-                    {p.nome}{p.capacidade ? ` (${p.capacidade} UA)` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Lista de pastos sempre visível quando há fazenda selecionada */}
+          {fazendaNum > 0 && (
+            <div>
+              <Label className="text-[10px]">Subdivisão Destino</Label>
+              {pastos.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic mt-1">Nenhum pasto cadastrado nesta fazenda.</p>
+              ) : (
+                <div
+                  className="mt-1 rounded border border-gray-200 overflow-hidden"
+                  style={{ maxHeight: 220, overflowY: "auto" }}
+                >
+                  {pastos
+                    .slice()
+                    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }))
+                    .map(p => {
+                      const isAtual = lote?.pastoAtualId === p.id;
+                      const selected = pastoId === String(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={isAtual}
+                          onClick={() => setPastoId(selected ? "" : String(p.id))}
+                          className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition border-b border-gray-100 last:border-b-0"
+                          style={{
+                            backgroundColor: selected ? "#d1fae5" : isAtual ? "#f9fafb" : "#fff",
+                            color: isAtual ? "#9ca3af" : "#1f2937",
+                            cursor: isAtual ? "not-allowed" : "pointer",
+                            fontWeight: selected ? 700 : 400,
+                          }}
+                        >
+                          <span className="flex items-center gap-2">
+                            {selected && (
+                              <span className="material-icons" style={{ fontSize: 14, color: "#16a34a" }}>check_circle</span>
+                            )}
+                            {!selected && (
+                              <span className="material-icons" style={{ fontSize: 14, color: isAtual ? "#d1d5db" : "#9ca3af" }}>radio_button_unchecked</span>
+                            )}
+                            {p.nome}
+                          </span>
+                          <span className="flex items-center gap-2 text-[10px] text-gray-400">
+                            {p.capacidade ? `${p.capacidade} UA` : ""}
+                            {isAtual && <span className="text-[10px] text-amber-500 font-medium">atual</span>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 pt-1">
             {lote?.pastoAtualId && (
               <Button type="button" variant="outline" onClick={handleRemove} className="h-8 text-[11px] text-red-600">
                 Remover do pasto
               </Button>
             )}
-            <Button type="button" variant="outline" onClick={onClose} className="h-8 text-[11px] flex-1">Cancelar</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="h-8 text-[11px] flex-1"
+              style={{ backgroundColor: "#C0C0C0", borderColor: "#C0C0C0", color: "#1f2937" }}
+            >
+              Cancelar
+            </Button>
             <Button
               type="button"
               onClick={handleMove}
               disabled={moveMutation.isPending || !pastoId}
-              className="h-8 text-[11px] flex-1 text-gray-800"
-              style={{ backgroundColor: "#4ECDC4" }}
+              className="h-8 text-[11px] flex-1"
+              style={{ backgroundColor: "#2D5A5A", color: "#fff", opacity: moveMutation.isPending || !pastoId ? 0.5 : 1 }}
             >
               {moveMutation.isPending ? "Movendo..." : "Mover"}
             </Button>
