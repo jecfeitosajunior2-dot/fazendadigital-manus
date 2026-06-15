@@ -455,7 +455,16 @@ function ModalHistorico({
     },
   });
 
-  const rows = historico as HistoricoRow[];
+  // Mais recentes no topo: ordena por dataEntrada DESC, com movimentação atual (dataSaida null) sempre primeiro
+  const rows = [...(historico as HistoricoRow[])].sort((a, b) => {
+    // Atual (sem dataSaida) sempre no topo
+    if (!a.dataSaida && b.dataSaida) return -1;
+    if (a.dataSaida && !b.dataSaida) return 1;
+    // Demais: dataEntrada mais recente primeiro
+    const da = a.dataEntrada ?? "";
+    const db = b.dataEntrada ?? "";
+    return db.localeCompare(da);
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
