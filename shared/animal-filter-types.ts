@@ -83,6 +83,8 @@ export type AnimaisListFiltersState = {
   // Filtro por data de entrada na fazenda
   dataEntradaDe: string;
   dataEntradaAte: string;
+  // Filtro de carência
+  apenasEmCarencia: boolean;
   // Filtros adicionais selecionados no dropdown
   filtrosAdicionaisSelecionados: FiltroAdicionalKey[];
 };
@@ -123,6 +125,7 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   statusFiltro: '',
   dataEntradaDe: '',
   dataEntradaAte: '',
+  apenasEmCarencia: false,
   filtrosAdicionaisSelecionados: [],
 };
 
@@ -161,6 +164,7 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     mae: filters.mae || undefined,
     dataEntradaDe: filters.dataEntradaDe || undefined,
     dataEntradaAte: filters.dataEntradaAte || undefined,
+    apenasEmCarencia: filters.apenasEmCarencia || undefined,
   };
 }
 
@@ -196,6 +200,7 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.mae ||
     !!filters.statusFiltro ||
     !!filters.dataEntradaDe ||
-    !!filters.dataEntradaAte
+    !!filters.dataEntradaAte ||
+    filters.apenasEmCarencia
   );
 }

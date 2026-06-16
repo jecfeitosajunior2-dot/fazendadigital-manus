@@ -614,7 +614,12 @@ export function HerdOverviewPage() {
       <div className="mb-4">
         <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Alertas e Pendências</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => {
+            const params = new URLSearchParams();
+            params.set('apenasEmCarencia', 'true');
+            if (fazendaId) params.set('fazendaId', String(fazendaId));
+            setLocation(`/rebanho/lista-animais?${params.toString()}`);
+          }} />
           <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
           <AlertCard icon="scale" label="Sem Pesagem (30d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
           <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => setLocation("/rebanho/lotes")} />

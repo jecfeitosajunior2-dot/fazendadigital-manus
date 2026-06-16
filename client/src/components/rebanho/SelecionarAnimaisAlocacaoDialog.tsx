@@ -48,6 +48,7 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   dataEntradaDe: "",
   dataEntradaAte: "",
   filtrosAdicionaisSelecionados: [],
+  apenasEmCarencia: false,
 };
 
 type AlocacaoAnimaisFiltersState = AnimaisListFiltersState & {

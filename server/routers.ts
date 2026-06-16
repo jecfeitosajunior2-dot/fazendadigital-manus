@@ -76,6 +76,7 @@ const animaisListInput = z.object({
   idadeMesesMax: z.number().optional(),
   dataEntradaDe: z.string().optional(),
   dataEntradaAte: z.string().optional(),
+  apenasEmCarencia: z.boolean().optional(),
 }).optional();
 
 const animaisRouter = router({
@@ -310,6 +311,9 @@ const animaisRouter = router({
       });
 
       let filtered = resultado;
+      if (input?.apenasEmCarencia) {
+        filtered = filtered.filter(animal => animal.emCarencia === true);
+      }
       if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
         filtered = filtered.filter(animal => {
           const peso = animal.ultimoPeso;
