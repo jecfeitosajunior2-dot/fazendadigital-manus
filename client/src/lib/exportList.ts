@@ -452,7 +452,14 @@ export function exportMapaRebanhoPdf(
   const multiModo = fazendas.length > 1;
 
   fazendas.forEach(faz => {
-    faz.subdivisoes.forEach(sub => addSubRow(sub, multiModo ? faz.fazendaNome : undefined));
+    // Nome da fazenda aparece apenas na primeira linha (primeira subdivisão ou primeiro lote sem subdivisão)
+    let primeiraLinhaFazenda = true;
+    const getFazLabel = () => {
+      if (!multiModo) return undefined;
+      if (primeiraLinhaFazenda) { primeiraLinhaFazenda = false; return faz.fazendaNome; }
+      return "";
+    };
+    faz.subdivisoes.forEach(sub => addSubRow(sub, getFazLabel()));
     faz.semSubdivisao.forEach(lote => {
       const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
       rowIdx++;
@@ -460,9 +467,10 @@ export function exportMapaRebanhoPdf(
         lote.diasNoPasto != null
           ? `<br><span style="font-size:8px;color:#aaa;">${lote.diasNoPasto}d no pasto</span>`
           : "";
+      const fazLabel = getFazLabel();
       bodyHtml += `
         <tr style="background:${bg};border-bottom:1px solid #e8eded;">
-          ${multiModo ? `<td style="padding:5px 8px;font-size:10px;color:#374151;">${faz.fazendaNome}</td>` : ""}
+          ${multiModo ? `<td style="padding:5px 8px;font-size:10px;color:#374151;">${fazLabel ?? ""}</td>` : ""}
           <td style="padding:5px 8px;font-size:10px;color:#aaa;font-style:italic;">Sem Subdivisão</td>
           <td style="padding:5px 8px;text-align:center;font-size:10px;font-weight:600;color:#1a1a1a;">${lote.totalAnimais}</td>
           <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
