@@ -153,7 +153,7 @@ export const rebanhoOverviewRouter = router({
       let totalSemPesagemRecente = 0;
       const top5Gmd: { brinco: string | null; categoria: string | null; gmd: number }[] = [];
 
-      const LIMITE_DIAS_SEM_PESAGEM = 30;
+      const LIMITE_DIAS_SEM_PESAGEM = 60;
 
       for (const animal of lista) {
         const pesos = pesagensPorAnimal.get(animal.id) || [];
@@ -166,7 +166,7 @@ export const rebanhoOverviewRouter = router({
           countComPeso++;
         }
 
-        // Sem pesagem recente: última pesagem há mais de 30 dias (ou nunca pesado)
+        // Sem pesagem recente: última pesagem há mais de 60 dias (ou nunca pesado)
         if (pesos.length === 0) {
           totalSemPesagemRecente++;
         } else {
