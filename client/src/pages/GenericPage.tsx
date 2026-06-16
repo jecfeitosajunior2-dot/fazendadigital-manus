@@ -43,11 +43,13 @@ export function AnimaisPage() {
     const params = new URLSearchParams(searchString);
     const dataEntradaDe = params.get('dataEntradaDe');
     const dataEntradaAte = params.get('dataEntradaAte');
-    if (dataEntradaDe || dataEntradaAte) {
+    const fazendaId = params.get('fazendaId');
+    if (dataEntradaDe || dataEntradaAte || fazendaId) {
       setFilters(prev => ({
         ...prev,
-        dataEntradaDe: dataEntradaDe ?? prev.dataEntradaDe,
-        dataEntradaAte: dataEntradaAte ?? prev.dataEntradaAte,
+        ...(dataEntradaDe ? { dataEntradaDe } : {}),
+        ...(dataEntradaAte ? { dataEntradaAte } : {}),
+        ...(fazendaId ? { fazendaId } : {}),
         // Abre o painel de filtros adicionais e garante que 'dataEntrada' está visível
         maisFiltrosAbertos: true,
         filtrosAdicionaisSelecionados: prev.filtrosAdicionaisSelecionados.includes('dataEntrada')

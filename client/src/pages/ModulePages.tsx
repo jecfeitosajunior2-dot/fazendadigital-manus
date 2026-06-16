@@ -484,7 +484,13 @@ export function HerdOverviewPage() {
       value: data.evolucaoEfetivo.entradas.toString(),
       icon: "login",
       color: "#10B981",
-      onClick: () => setLocation(`/rebanho/lista-animais?dataEntradaDe=${primeiroDiaMes}&dataEntradaAte=${ultimoDiaMes}`),
+      onClick: () => {
+        const params = new URLSearchParams();
+        params.set('dataEntradaDe', primeiroDiaMes);
+        params.set('dataEntradaAte', ultimoDiaMes);
+        if (fazendaId) params.set('fazendaId', String(fazendaId));
+        setLocation(`/rebanho/lista-animais?${params.toString()}`);
+      },
     },
   ];
 
