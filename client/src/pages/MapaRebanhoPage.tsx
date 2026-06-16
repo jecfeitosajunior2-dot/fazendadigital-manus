@@ -13,6 +13,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 import ListExportButtons from "@/components/ListExportButtons";
 import { exportMapaRebanhoPdf, exportListSpreadsheet, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
+import { FormDatePicker, FormLabel, FormNativeSelect, FieldBox, inputClass } from "@/components/FormFields";
 
 const GREEN = "#2D5A5A";
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
@@ -112,22 +113,7 @@ function ModalMoverLote({
 }) {
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
-  const [dataBr, setDataBr] = useState(isoToBr(hojeStr()));
   const [obs, setObs] = useState("");
-  const dateInputRef = useRef<HTMLInputElement>(null);
-
-  // Texto digitado (DD/MM/AAAA): aplica máscara e converte para ISO quando completo
-  const handleDataBrChange = (raw: string) => {
-    const masked = maskBrDate(raw);
-    setDataBr(masked);
-    const iso = brToIso(masked);
-    if (iso) setData(iso);
-  };
-  // Seleção pelo calendário nativo (ISO): sincroniza o texto BR
-  const handleDatePicker = (iso: string) => {
-    setData(iso);
-    setDataBr(isoToBr(iso));
-  };
 
   const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
@@ -155,71 +141,35 @@ function ModalMoverLote({
         <div className="px-6 py-4 space-y-3">
           {/* Data da Movimentação */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">
-              Data de Movimentação<span className="text-red-500 ml-0.5">*</span>
-            </label>
-            <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#4ECDC4]">
-              <div className="w-1 flex-shrink-0 bg-[#4ECDC4]" />
-              <div className="flex items-center flex-1 relative">
-                <button
-                  type="button"
-                  title="Abrir calendário"
-                  onClick={() => dateInputRef.current?.showPicker?.()}
-                  className="flex items-center justify-center ml-3 flex-shrink-0 text-gray-400 hover:text-[#2D5A5A] transition"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </button>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="DD/MM/AAAA"
-                  value={dataBr}
-                  onChange={e => handleDataBrChange(e.target.value)}
-                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0"
-                />
-                {/* input date oculto, acionado pelo ícone de calendário */}
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={data}
-                  onChange={e => handleDatePicker(e.target.value)}
-                  className="absolute right-0 bottom-0 w-0 h-0 opacity-0 pointer-events-none"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                />
-              </div>
-            </div>
+            <FormLabel required>Data de Movimentação</FormLabel>
+            <FormDatePicker value={data} onChange={setData} required />
           </div>
           {/* Subdivisão Destino */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">
-              Subdivisão Destino<span className="text-red-500 ml-0.5">*</span>
-            </label>
-            <div className="flex overflow-hidden rounded-sm">
-              <div className="w-1 flex-shrink-0 bg-[#4ECDC4]" />
+            <FormLabel required>Subdivisão Destino</FormLabel>
+            <FieldBox required>
               <select
                 value={pastoDestinoId}
                 onChange={e => setPastoDestinoId(e.target.value)}
-                className="flex-1 h-[38px] px-3 text-[12px] bg-[#EEEEEE] text-gray-700 focus:outline-none border-0"
+                className={inputClass + " appearance-none cursor-pointer min-h-[42px]"}
               >
                 <option value="">Selecione a subdivisão</option>
                 {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
               </select>
-            </div>
+            </FieldBox>
           </div>
           {/* Observações */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Observações</label>
-            <textarea
-              value={obs}
-              onChange={e => setObs(e.target.value)}
-              rows={2}
-              placeholder="Opcional"
-              className="w-full px-3 py-2 text-[12px] bg-white text-gray-800 border border-gray-200 rounded-sm focus:outline-none focus:border-[#2D5A5A] resize-none"
-            />
+            <FormLabel>Observações</FormLabel>
+            <FieldBox>
+              <textarea
+                value={obs}
+                onChange={e => setObs(e.target.value)}
+                rows={2}
+                placeholder="Opcional"
+                className={inputClass + " resize-none min-h-[60px]"}
+              />
+            </FieldBox>
           </div>
         </div>
         {/* Footer */}
@@ -230,7 +180,7 @@ function ModalMoverLote({
           </button>
           <button type="button" onClick={() => {
             if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
-            if (!brToIso(dataBr)) { toast.error("Informe uma data válida (DD/MM/AAAA)."); return; }
+            if (!data) { toast.error("Informe uma data válida."); return; }
             moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data, observacoes: obs || undefined });
           }} disabled={moveMutation.isPending}
             className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
