@@ -711,7 +711,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
                 onChange={e => setDraftFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "", pastoId: "" }))}
                 className={selectClass}
               >
-                <option value="">Selecione a fazenda</option>
+                <option value="">Selecione uma fazenda</option>
                 {fazendas.map(f => (
                   <option key={f.id} value={String(f.id)}>{f.nome}</option>
                 ))}

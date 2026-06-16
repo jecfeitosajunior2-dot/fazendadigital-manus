@@ -257,7 +257,7 @@ export default function ListaAnimaisFiltros({
                   onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
                   className={`${selectClass} pr-7`}
                 >
-                  <option value="">Selecione a fazenda</option>
+                  <option value="">Selecione uma fazenda</option>
                   {fazendas.map(f => (
                     <option key={f.id} value={String(f.id)}>{f.nome}</option>
                   ))}

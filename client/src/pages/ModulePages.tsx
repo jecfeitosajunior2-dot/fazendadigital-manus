@@ -382,7 +382,7 @@ export function SubdivisionsPage() {
           onChange={e => setFazendaId(e.target.value)}
           className="h-8 text-[11px] border border-gray-200 rounded px-2 bg-white min-w-[200px]"
         >
-          <option value="">Selecione a fazenda</option>
+          <option value="">Selecione uma fazenda</option>
           {fazendas.map(f => (
             <option key={f.id} value={String(f.id)}>{f.nome}</option>
           ))}

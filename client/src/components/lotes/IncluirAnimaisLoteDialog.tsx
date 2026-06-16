@@ -213,7 +213,7 @@ export default function IncluirAnimaisLoteDialog({ loteId, fazendaId, open, onCl
                 onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, loteId: "" }))}
                 className={filterSelectClass}
               >
-                <option value="">Selecione a fazenda</option>
+                <option value="">Selecione uma fazenda</option>
                 {fazendas.map(f => (
                   <option key={f.id} value={String(f.id)}>{f.nome}</option>
                 ))}
