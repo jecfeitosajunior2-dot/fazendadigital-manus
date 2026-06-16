@@ -12,7 +12,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Trash2, Edit, AlertTriangle, AlertCircle } from "lucide-react";
+import { AlertTriangle, AlertCircle, X } from "lucide-react";
 import { toast } from "sonner";
 import { FAIXAS_IDADE_LOTE } from "@shared/lote-faixas-idade";
 import type { ContagemPorFaixa } from "@shared/lote-faixas-idade";
@@ -45,6 +45,10 @@ type LoteGerenciamento = {
   femeas: ContagemPorFaixa;
   machosSemIdade: number;
   femeasSemIdade: number;
+  capacidade: number | null;
+  totalAnimais: number;
+  pctOcupacao: number | null;
+  superlotado: boolean;
 };
 
 interface DeleteConfirmState { lote: LoteItem }
@@ -62,12 +66,52 @@ function novoLoteUrl(fazendaId?: string) {
   return fazendaId ? `/rebanho/novo-lote?fazendaId=${fazendaId}` : "/rebanho/novo-lote";
 }
 
+// ─── Barra de ocupação ────────────────────────────────────────────────────────
+
+function OcupacaoBar({ pct, superlotado }: { pct: number | null; superlotado: boolean }) {
+  if (pct === null) {
+    return <span className="text-gray-300 text-[11px]">—</span>;
+  }
+  const clampedPct = Math.min(pct, 100);
+  const barColor = superlotado
+    ? "#EF4444"          // vermelho — superlotado
+    : pct >= 80
+    ? "#F59E0B"          // âmbar — atenção
+    : "#22C55E";         // verde — normal
+
+  return (
+    <div className="flex flex-col gap-0.5 min-w-[72px]">
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className="text-[10px] font-semibold tabular-nums"
+          style={{ color: superlotado ? "#EF4444" : pct >= 80 ? "#B45309" : "#15803D" }}
+        >
+          {pct}%
+        </span>
+        {superlotado && (
+          <span className="material-icons text-[12px] text-red-500" title="Superlotado">warning</span>
+        )}
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{ width: `${clampedPct}%`, backgroundColor: barColor }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function LotsManagementPage() {
   const [, setLocation] = useLocation();
-  const fazendaInicial = new URLSearchParams(window.location.search).get("fazendaId") || "";
+  const urlParams = new URLSearchParams(window.location.search);
+  const fazendaInicial = urlParams.get("fazendaId") || "";
+  const apenasSuperlotadosInicial = urlParams.get("apenasSuperlotados") === "true";
+
   const [fazendaFilter, setFazendaFilter] = useState(fazendaInicial);
+  const [apenasSuperlotados, setApenasSuperlotados] = useState(apenasSuperlotadosInicial);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
@@ -90,13 +134,16 @@ export default function LotsManagementPage() {
   );
 
   const sorted = useMemo(() => {
-    const lista = [...(gerenciamento as LoteGerenciamento[])];
+    let lista = [...(gerenciamento as LoteGerenciamento[])];
+    if (apenasSuperlotados) {
+      lista = lista.filter(l => l.superlotado);
+    }
     lista.sort((a, b) => {
       const cmp = a.nome.localeCompare(b.nome, "pt-BR");
       return sortAsc ? cmp : -cmp;
     });
     return lista;
-  }, [gerenciamento, sortAsc]);
+  }, [gerenciamento, sortAsc, apenasSuperlotados]);
 
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -154,6 +201,8 @@ export default function LotsManagementPage() {
     ...FAIXAS_IDADE_LOTE.map(f => `Machos ${f}`),
     ...FAIXAS_IDADE_LOTE.map(f => `Fêmeas ${f}`),
     "Total",
+    "Capacidade",
+    "Ocupação (%)",
   ];
 
   const exportData = useMemo(
@@ -165,6 +214,8 @@ export default function LotsManagementPage() {
         ...FAIXAS_IDADE_LOTE.map(f => l.machos[f] || 0),
         ...FAIXAS_IDADE_LOTE.map(f => l.femeas[f] || 0),
         totalMachos + totalFemeas,
+        l.capacidade ?? "—",
+        l.pctOcupacao !== null ? `${l.pctOcupacao}%` : "—",
       ];
     }),
     [sorted],
@@ -172,6 +223,9 @@ export default function LotsManagementPage() {
 
   const inicio = total === 0 ? 0 : (pageSafe - 1) * perPage + 1;
   const fim = Math.min(pageSafe * perPage, total);
+
+  // Contagem de superlotados para o banner
+  const qtdSuperlotados = (gerenciamento as LoteGerenciamento[]).filter(l => l.superlotado).length;
 
   return (
     <div className="p-4 sm:p-6">
@@ -239,6 +293,30 @@ export default function LotsManagementPage() {
         />
       </div>
 
+      {/* Banner: filtro "Apenas Superlotados" ativo */}
+      {apenasSuperlotados && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
+          <span className="material-icons text-[16px] text-red-500">warning</span>
+          <span className="font-medium">
+            Exibindo apenas lotes superlotados
+            {qtdSuperlotados > 0 ? ` (${qtdSuperlotados} ${qtdSuperlotados === 1 ? "lote" : "lotes"})` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setApenasSuperlotados(false);
+              setPage(1);
+              setLocation(lotesListUrl(fazendaFilter), { replace: true });
+            }}
+            className="ml-auto flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors"
+            title="Remover filtro"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Remover filtro</span>
+          </button>
+        </div>
+      )}
+
       {/* Barra de controles */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <button
@@ -257,7 +335,10 @@ export default function LotsManagementPage() {
               const v = e.target.value;
               setFazendaFilter(v);
               setPage(1);
-              setLocation(lotesListUrl(v), { replace: true });
+              const url = new URLSearchParams();
+              if (v) url.set("fazendaId", v);
+              if (apenasSuperlotados) url.set("apenasSuperlotados", "true");
+              setLocation(`/rebanho/lotes${url.toString() ? `?${url.toString()}` : ""}`, { replace: true });
             }}
             className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
           >
@@ -285,7 +366,7 @@ export default function LotsManagementPage() {
       {/* Tabela — iRancho */}
       <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] min-w-[900px]">
+          <table className="w-full text-[12px] min-w-[1000px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th rowSpan={2} className="w-10 px-2 py-2 border-r border-gray-200">
@@ -316,6 +397,9 @@ export default function LotsManagementPage() {
                 <th rowSpan={2} className="w-16 px-2 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">
                   Total
                 </th>
+                <th rowSpan={2} className="w-28 px-2 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-r border-gray-200">
+                  Ocupação
+                </th>
                 <th rowSpan={2} className="w-24 px-2 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase border-l border-gray-200">
                   Ações
                 </th>
@@ -335,13 +419,20 @@ export default function LotsManagementPage() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={15} className="px-4 py-10 text-center text-gray-400">Carregando...</td></tr>
               )}
               {!isLoading && paginated.length === 0 && (
-                <tr><td colSpan={14} className="px-4 py-10 text-center text-gray-400">Nenhum lote encontrado</td></tr>
+                <tr>
+                  <td colSpan={15} className="px-4 py-10 text-center text-gray-400">
+                    {apenasSuperlotados ? "Nenhum lote superlotado encontrado" : "Nenhum lote encontrado"}
+                  </td>
+                </tr>
               )}
               {paginated.map(lote => (
-                <tr key={lote.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                <tr
+                  key={lote.id}
+                  className={`border-t border-gray-100 hover:bg-gray-50/50 ${lote.superlotado ? "bg-red-50/30" : ""}`}
+                >
                   <td className="px-2 py-2 text-center border-r border-gray-50">
                     <Checkbox
                       checked={selected.has(lote.id)}
@@ -376,6 +467,15 @@ export default function LotsManagementPage() {
                       const total = totalMachos + totalFemeas;
                       return total > 0 ? total : <span className="text-gray-300">&mdash;</span>;
                     })()}
+                  </td>
+                  {/* Coluna Ocupação */}
+                  <td className="px-3 py-2 border-r border-gray-200">
+                    <OcupacaoBar pct={lote.pctOcupacao} superlotado={lote.superlotado} />
+                    {lote.capacidade !== null && (
+                      <div className="text-[10px] text-gray-400 mt-0.5 tabular-nums">
+                        {lote.totalAnimais}/{lote.capacidade} animais
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-2 border-l border-gray-50">
                     <div className="flex items-center justify-center gap-0.5">

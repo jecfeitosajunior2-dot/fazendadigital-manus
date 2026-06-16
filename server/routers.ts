@@ -1102,17 +1102,25 @@ const lotesRouter = router({
       ));
 
       const resumoPorLote = new Map<number, ReturnType<typeof criarResumoSexoFaixa>>();
+      const totalPorLote = new Map<number, number>();
       const hoje = new Date();
       for (const animal of animaisAtivos) {
         if (!animal.loteId) continue;
         const idade = calcularIdadeMeses(animal.dataNascimento, hoje);
         const atual = resumoPorLote.get(animal.loteId) ?? criarResumoSexoFaixa();
         resumoPorLote.set(animal.loteId, adicionarAnimalAoResumo(atual, animal.sexo, idade));
+        totalPorLote.set(animal.loteId, (totalPorLote.get(animal.loteId) ?? 0) + 1);
       }
 
       let resultado = lotesList.map(lote => {
         const fazendaId = resolveFazendaId(lote);
         const resumo = resumoPorLote.get(lote.id) ?? criarResumoSexoFaixa();
+        const totalAnimaisLote = totalPorLote.get(lote.id) ?? 0;
+        const capacidade = lote.capacidade ?? null;
+        const pctOcupacao = capacidade && capacidade > 0
+          ? Math.round((totalAnimaisLote / capacidade) * 100)
+          : null;
+        const superlotado = capacidade !== null && capacidade > 0 && totalAnimaisLote > capacidade;
         return {
           id: lote.id,
           nome: lote.nome,
@@ -1123,6 +1131,10 @@ const lotesRouter = router({
           femeas: resumo.femeas,
           machosSemIdade: resumo.machosSemIdade,
           femeasSemIdade: resumo.femeasSemIdade,
+          capacidade,
+          totalAnimais: totalAnimaisLote,
+          pctOcupacao,
+          superlotado,
         };
       });
 
