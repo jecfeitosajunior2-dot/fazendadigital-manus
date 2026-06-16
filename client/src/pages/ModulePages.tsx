@@ -487,7 +487,7 @@ export function HerdOverviewPage() {
             onChange={e => setFazendaId(e.target.value ? Number(e.target.value) : undefined)}
             className="text-[12px] border border-gray-200 rounded-md px-3 py-1.5 bg-white text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
           >
-            <option value="">Todas as Fazendas</option>
+            <option value="">Selecione uma fazenda</option>
             {fazendaList.map(f => (
               <option key={f.id} value={f.id}>{f.nome}</option>
             ))}
