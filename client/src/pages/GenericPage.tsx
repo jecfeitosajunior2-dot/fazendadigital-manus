@@ -43,18 +43,26 @@ export function AnimaisPage() {
     const params = new URLSearchParams(searchString);
     const dataEntradaDe = params.get('dataEntradaDe');
     const dataEntradaAte = params.get('dataEntradaAte');
+    const dataNascimentoDe = params.get('dataNascimentoDe');
+    const dataNascimentoAte = params.get('dataNascimentoAte');
     const fazendaId = params.get('fazendaId');
-    if (dataEntradaDe || dataEntradaAte || fazendaId) {
+    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId;
+    if (hasParams) {
       // Reseta para o estado inicial para evitar que filtros antigos persistidos
       // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
+      const filtrosAdicionais: import('@shared/animal-filter-types').FiltroAdicionalKey[] = [];
+      if (dataEntradaDe || dataEntradaAte) filtrosAdicionais.push('dataEntrada');
+      if (dataNascimentoDe || dataNascimentoAte) filtrosAdicionais.push('dataNascimento');
       setFilters({
         ...INITIAL_ANIMAIS_LIST_FILTERS,
         ...(dataEntradaDe ? { dataEntradaDe } : {}),
         ...(dataEntradaAte ? { dataEntradaAte } : {}),
+        ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
+        ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
         ...(fazendaId ? { fazendaId } : {}),
-        // Abre o painel de filtros adicionais e garante que 'dataEntrada' está visível
-        maisFiltrosAbertos: true,
-        filtrosAdicionaisSelecionados: ['dataEntrada'],
+        // Abre o painel de filtros adicionais e garante que os filtros relevantes estão visíveis
+        maisFiltrosAbertos: filtrosAdicionais.length > 0,
+        filtrosAdicionaisSelecionados: filtrosAdicionais,
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -328,10 +328,10 @@ export const rebanhoOverviewRouter = router({
       // ── 7. Evolução do efetivo no mês atual ───────────────────────────────
       const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       const inicioMesStr = inicioMes.toISOString().slice(0, 10);
-      const entradas = lista.filter(a => {
-        const d = a.dataEntrada || a.dataNascimento;
-        return d && d >= inicioMesStr;
-      }).length;
+      // Entradas: apenas animais com dataEntrada no mês atual
+      const entradas = lista.filter(a => a.dataEntrada && a.dataEntrada >= inicioMesStr).length;
+      // Nascimentos: apenas animais com dataNascimento no mês atual
+      const nascimentosNoMes = lista.filter(a => a.dataNascimento && a.dataNascimento >= inicioMesStr).length;
       const saidas = await db.select({ count: sql<number>`count(*)` })
         .from(animais)
         .where(and(
@@ -360,7 +360,7 @@ export const rebanhoOverviewRouter = router({
         porAtividade,
         porFaixaPeso,
         top5Gmd: top5,
-        evolucaoEfetivo: { entradas, saidas: saidasCount },
+        evolucaoEfetivo: { entradas, saidas: saidasCount, nascimentosNoMes },
       };
     }),
 });

@@ -492,6 +492,19 @@ export function HerdOverviewPage() {
         setLocation(`/rebanho/lista-animais?${params.toString()}`);
       },
     },
+    {
+      label: "Nascimentos no Mês",
+      value: (data.evolucaoEfetivo.nascimentosNoMes ?? 0).toString(),
+      icon: "child_care",
+      color: "#F59E0B",
+      onClick: () => {
+        const params = new URLSearchParams();
+        params.set('dataNascimentoDe', primeiroDiaMes);
+        params.set('dataNascimentoAte', ultimoDiaMes);
+        if (fazendaId) params.set('fazendaId', String(fazendaId));
+        setLocation(`/rebanho/lista-animais?${params.toString()}`);
+      },
+    },
   ];
 
   return (
