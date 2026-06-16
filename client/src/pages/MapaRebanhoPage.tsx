@@ -609,37 +609,44 @@ function SubdivisaoRow({
             const cap = sub.capacidade != null && sub.capacidade > 0 ? sub.capacidade : null;
             const superlotado = cap !== null && sub.totalAnimais > cap;
             const pct = cap !== null ? Math.round((sub.totalAnimais / cap) * 100) : null;
-            const barColor = pct === null ? '#9ca3af' : pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#16a34a';
+            // Cores discretas e profissionais
+            const trackColor = pct === null ? '#e5e7eb' : pct >= 100 ? '#fee2e2' : pct >= 80 ? '#fef3c7' : '#dcfce7';
+            const fillColor  = pct === null ? '#9ca3af' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#16a34a';
+            const textColor  = pct === null ? '#6b7280' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#15803d';
             return (
-              <div className="flex flex-col items-center gap-1">
-                {/* Número principal */}
-                {superlotado ? (
-                  <div
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded"
-                    style={{ backgroundColor: '#fef2f2', border: '1.5px solid #fca5a5' }}
-                  >
-                    <svg className="w-3 h-3 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-[14px] font-bold text-red-600">{sub.totalAnimais}</span>
-                  </div>
-                ) : (
-                  <span className="text-[13px] font-bold text-gray-800">{sub.totalAnimais}</span>
-                )}
-                {/* Barra de progresso + legenda */}
+              <div className="flex flex-col items-center gap-1.5" style={{ minWidth: 72 }}>
+                {/* Número + badge de status */}
+                <div className="flex items-center gap-1.5 justify-center">
+                  <span className={`text-[15px] font-bold leading-none ${superlotado ? 'text-red-600' : 'text-gray-800'}`}>
+                    {sub.totalAnimais}
+                  </span>
+                  {superlotado && (
+                    <span
+                      className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-sm"
+                      style={{ backgroundColor: '#dc2626', color: '#fff', letterSpacing: '0.06em' }}
+                    >
+                      LOTADO
+                    </span>
+                  )}
+                </div>
+                {/* Barra de ocupação */}
                 {cap !== null && (
-                  <div className="w-full flex flex-col items-center gap-0.5" style={{ minWidth: 64 }}>
-                    <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="w-full flex flex-col items-center gap-0.5">
+                    <div
+                      className="w-full rounded-full overflow-hidden"
+                      style={{ height: 5, backgroundColor: trackColor }}
+                    >
                       <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(pct!, 100)}%`, backgroundColor: barColor }}
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(pct!, 100)}%`,
+                          backgroundColor: fillColor,
+                          transition: 'width 0.4s cubic-bezier(0.23,1,0.32,1)',
+                        }}
                       />
                     </div>
-                    <span
-                      className="text-[10px] font-semibold"
-                      style={{ color: barColor }}
-                    >
-                      {sub.totalAnimais}/{cap} UA{pct !== null ? ` · ${pct}%` : ''}
+                    <span className="text-[10px] font-medium" style={{ color: textColor }}>
+                      {sub.totalAnimais} / {cap} UA
                     </span>
                   </div>
                 )}
