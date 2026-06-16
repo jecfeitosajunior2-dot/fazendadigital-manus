@@ -377,7 +377,13 @@ const AnimalFormPage: React.FC = () => {
       return;
     }
     if (isEditMode) {
-      updateMutation.mutate({ id: animalId!, ...buildPayload() });
+      const payload = buildPayload();
+      // Em modo edição, se loteId não foi preenchido, envia null para limpar o lote no banco
+      const editPayload = {
+        ...payload,
+        loteId: form.loteId ? parseInt(form.loteId) : null,
+      };
+      updateMutation.mutate({ id: animalId!, ...editPayload });
     } else {
       createMutation.mutate(buildPayload(), {
         onSuccess: () => {

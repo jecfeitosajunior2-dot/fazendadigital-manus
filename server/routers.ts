@@ -426,7 +426,7 @@ const animaisRouter = router({
       sexo: z.enum(["macho", "femea"]).optional(),
       dataNascimento: z.string().nullable().optional(),
       pesoAtual: z.string().optional(),
-      loteId: z.number().optional(),
+      loteId: z.number().nullable().optional(),
       categoria: z.string().optional(),
       status: z.enum(["ativo", "vendido", "morto", "transferido"]).optional(),
       observacoes: z.string().optional(),
@@ -450,20 +450,25 @@ const animaisRouter = router({
       pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, ...rest } = input;
+      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, loteId, ...rest } = input;
       // Para campos de data: null = limpar o campo, undefined = não alterar, string = novo valor
       const resolveData = (v: string | null | undefined) => {
         if (v === null) return null;          // explicitamente limpo
         if (!v) return undefined;             // não enviado, não alterar
         return v;                             // novo valor
       };
-      await db.update(animais).set({
+      // Para loteId: null = limpar o lote, undefined = não alterar, number = novo valor
+      const setData: Record<string, unknown> = {
         ...rest,
         dataNascimento: resolveData(dataNascimento),
         dataDesmama: resolveData(dataDesmama),
         dataEntrada: resolveData(dataEntrada),
         dataRnd: resolveData(dataRnd),
-      }).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
+      };
+      if (loteId !== undefined) {
+        setData.loteId = loteId; // null limpa o lote, number atualiza
+      }
+      await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
 
