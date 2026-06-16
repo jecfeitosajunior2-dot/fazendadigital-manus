@@ -208,8 +208,8 @@ export const rebanhoOverviewRouter = router({
         .map(([label, value]) => ({ label, value, pct: Math.round((value / total) * 100) }));
 
       // Por categoria separado por sexo
-      const CATS_MACHOS = ["boi", "novilho", "bezerro", "touro", "reprodutor"];
-      const CATS_FEMEAS = ["vaca", "novilha", "bezerra", "vaca prenha", "prenha", "matriz"];
+      const CATS_MACHOS = ["boi", "novilho", "bezerro"];
+      const CATS_FEMEAS = ["vaca", "novilha", "bezerra"];
       const catMachosCount = new Map<string, number>();
       const catFemeasCount = new Map<string, number>();
       for (const a of lista) {
