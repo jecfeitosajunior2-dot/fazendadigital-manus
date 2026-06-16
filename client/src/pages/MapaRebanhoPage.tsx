@@ -610,9 +610,11 @@ function SubdivisaoRow({
             const superlotado = cap !== null && sub.totalAnimais > cap;
             const pct = cap !== null ? Math.round((sub.totalAnimais / cap) * 100) : null;
             // Cores discretas e profissionais
-            const trackColor = pct === null ? '#e5e7eb' : pct >= 100 ? '#fee2e2' : pct >= 80 ? '#fef3c7' : '#dcfce7';
-            const fillColor  = pct === null ? '#9ca3af' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#16a34a';
-            const textColor  = pct === null ? '#6b7280' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#15803d';
+            // Cinza neutro quando vazio (0 animais) ou sem capacidade cadastrada
+            const isEmpty = sub.totalAnimais === 0;
+            const trackColor = (pct === null || isEmpty) ? '#e5e7eb' : pct >= 100 ? '#fee2e2' : pct >= 80 ? '#fef3c7' : '#dcfce7';
+            const fillColor  = (pct === null || isEmpty) ? '#d1d5db' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#16a34a';
+            const textColor  = (pct === null || isEmpty) ? '#9ca3af' : pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#15803d';
             return (
               <div className="flex flex-col items-center gap-1.5" style={{ minWidth: 72 }}>
                 {/* Número + badge de status */}
