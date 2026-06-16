@@ -305,6 +305,147 @@ export function exportListPdf(
   setTimeout(() => win.print(), 400);
 }
 
+/**
+ * Exporta o Mapa do Rebanho em XLSX com layout hierárquico:
+ *  - Linha de cabeçalho da fazenda (negrito, separada por linha em branco)
+ *  - Linha de cabeçalho de colunas
+ *  - Linha de subdivisão (negrito)
+ *  - Linhas de lotes (recuadas com "  └ ")
+ * Sem cores — estrutura idêntica ao relatório PDF.
+ */
+export function exportMapaRebanhoXlsx(
+  fazendas: MapaFazendaExport[],
+  options?: { fazendaNome?: string }
+) {
+  const totalRegistros = fazendas.reduce(
+    (acc, f) =>
+      acc +
+      f.subdivisoes.reduce((a, s) => a + Math.max(s.lotes.length, 1), 0) +
+      f.semSubdivisao.length,
+    0
+  );
+  if (totalRegistros === 0) {
+    toast.error("Nenhum dado para exportar");
+    return;
+  }
+
+  const NUM_FMT = "#,##0.00";
+  const COL_HEADERS = ["Subdivisão / Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
+  const NUM_COLS = COL_HEADERS.length; // 5
+
+  // Cada item: { values: string[], bold?: boolean, indent?: boolean, emptyRow?: boolean }
+  type SheetRow = { values: (string | number | null)[]; bold?: boolean; emptyRow?: boolean };
+  const sheetRows: SheetRow[] = [];
+
+  const fmtNum = (v: number | null, dec = 2): string =>
+    v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : "—";
+
+  fazendas.forEach((faz, fi) => {
+    // Linha em branco entre fazendas
+    if (fi > 0) sheetRows.push({ values: Array(NUM_COLS).fill(""), emptyRow: true });
+
+    // Cabeçalho da fazenda
+    const totalFaz =
+      faz.subdivisoes.reduce((a, s) => a + s.totalAnimais, 0) +
+      faz.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0);
+    sheetRows.push({
+      values: [`FAZENDA: ${faz.fazendaNome}  —  ${totalFaz} animal${totalFaz !== 1 ? "is" : ""}`, "", "", "", ""],
+      bold: true,
+    });
+
+    // Cabeçalho das colunas
+    sheetRows.push({ values: COL_HEADERS, bold: true });
+
+    // Subdivisões e lotes
+    faz.subdivisoes.forEach(sub => {
+      const areaStr = sub.areaHa != null ? fmtNum(sub.areaHa) : "—";
+      const taxaStr = sub.taxaLotacao != null ? `${fmtNum(sub.taxaLotacao)} UA/ha` : "—";
+      sheetRows.push({
+        values: [sub.pastoNome, sub.totalAnimais, areaStr, taxaStr, ""],
+        bold: true,
+      });
+
+      if (sub.lotes.length === 0) {
+        sheetRows.push({ values: ["  └ Sem lotes", 0, "", "", ""] });
+      } else {
+        sub.lotes.forEach(lote => {
+          const taxaLote =
+            lote.taxaProporcional != null ? `${fmtNum(lote.taxaProporcional)} UA/ha` : "—";
+          sheetRows.push({
+            values: [
+              `  └ ${lote.loteNome}`,
+              lote.totalAnimais,
+              "",
+              taxaLote,
+              lote.dataEntradaPasto ?? "—",
+            ],
+          });
+        });
+      }
+    });
+
+    // Sem subdivisão
+    faz.semSubdivisao.forEach(lote => {
+      sheetRows.push({
+        values: [
+          `  └ ${lote.loteNome} (sem subdivisão)`,
+          lote.totalAnimais,
+          "",
+          "",
+          lote.dataEntradaPasto ?? "—",
+        ],
+      });
+    });
+  });
+
+  // Monta array-of-arrays para SheetJS
+  const aoa: (string | number)[][] = sheetRows.map(r =>
+    r.values.map(v => (v == null ? "" : v) as string | number)
+  );
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Aplica negrito via cell.s (requer sheetjs-style ou xlsx-js-style)
+  // SheetJS CE não suporta estilos — usamos apenas a estrutura de dados.
+  // Tipagem correta: números como t:'n', resto como t:'s'
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[addr];
+      if (!cell) continue;
+      const original = sheetRows[R]?.values[C];
+      if (typeof original === "number" && Number.isFinite(original)) {
+        cell.t = "n";
+        cell.v = original;
+        cell.z = NUM_FMT;
+      } else {
+        cell.t = "s";
+        cell.v = String(original ?? "");
+      }
+    }
+  }
+
+  // Largura automática das colunas
+  ws["!cols"] = COL_HEADERS.map((h, c) => {
+    let max = String(h).length;
+    for (const r of sheetRows) {
+      const v = r.values[c];
+      const len = v == null ? 0 : String(v).length;
+      if (len > max) max = len;
+    }
+    return { wch: Math.min(Math.max(max + 2, 12), 60) };
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Mapa do Rebanho");
+
+  const agora = new Date();
+  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
+  XLSX.writeFile(wb, `mapa-rebanho_${carimbo}.xlsx`);
+  toast.success("Planilha exportada!");
+}
+
 // ─── Tipos para exportação hierárquica do Mapa do Rebanho ────────────────────
 export type MapaLoteExport = {
   loteNome: string;

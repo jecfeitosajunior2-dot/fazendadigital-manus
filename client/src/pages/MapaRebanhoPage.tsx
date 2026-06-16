@@ -12,7 +12,7 @@ import { usePersistedState } from "@/hooks/usePersistedState";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 import ListExportButtons from "@/components/ListExportButtons";
-import { exportMapaRebanhoPdf, exportListSpreadsheet, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
+import { exportMapaRebanhoPdf, exportMapaRebanhoXlsx, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
 import { FormDatePicker, FormLabel, FormNativeSelect, FieldBox, inputClass } from "@/components/FormFields";
 
 const GREEN = "#2D5A5A";
@@ -1162,7 +1162,7 @@ function ExportarMapaButton({
             type="button"
             onClick={() => {
               setOpen(false);
-              exportListSpreadsheet(exportHeaders, exportRows, "mapa-rebanho");
+              exportMapaRebanhoXlsx(exportPdfData, { fazendaNome });
             }}
             className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
           >
