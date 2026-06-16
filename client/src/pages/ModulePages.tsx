@@ -474,7 +474,7 @@ export function HerdOverviewPage() {
   const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
 
   const kpis = [
-    { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "pets", color: TEAL, onClick: undefined },
+    { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "__cow__", color: TEAL, onClick: undefined },
     { label: "Machos", value: data.totalMachos.toString(), icon: "male", color: BLUE, onClick: undefined },
     { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK, onClick: undefined },
     { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER, onClick: undefined },
@@ -524,7 +524,30 @@ export function HerdOverviewPage() {
           >
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: kpi.color + '18' }}>
-                <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
+                {kpi.icon === '__cow__' ? (
+                  <svg viewBox="0 0 32 24" width="20" height="20" fill={kpi.color} xmlns="http://www.w3.org/2000/svg">
+                    {/* Corpo */}
+                    <ellipse cx="15" cy="14" rx="10" ry="6" />
+                    {/* Cabeça */}
+                    <ellipse cx="25.5" cy="11" rx="4.5" ry="3.5" />
+                    {/* Focinho */}
+                    <ellipse cx="29" cy="12.5" rx="2" ry="1.5" />
+                    {/* Orelha */}
+                    <ellipse cx="24" cy="7.5" rx="1.5" ry="2.5" transform="rotate(-20 24 7.5)" />
+                    {/* Pernas dianteiras */}
+                    <rect x="20" y="19" width="2.5" height="5" rx="1" />
+                    <rect x="23.5" y="19" width="2.5" height="5" rx="1" />
+                    {/* Pernas traseiras */}
+                    <rect x="7" y="19" width="2.5" height="5" rx="1" />
+                    <rect x="10.5" y="19" width="2.5" height="5" rx="1" />
+                    {/* Rabo */}
+                    <path d="M5 12 Q2 10 3 7 Q4 5 5 6" stroke={kpi.color} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                    {/* Úbere */}
+                    <ellipse cx="13" cy="19.5" rx="3" ry="1.5" opacity="0.6" />
+                  </svg>
+                ) : (
+                  <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
+                )}
               </div>
               <div className="min-w-0">
                 <div className="text-[17px] font-bold text-gray-800 leading-tight">{kpi.value}</div>
