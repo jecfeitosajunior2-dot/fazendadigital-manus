@@ -655,8 +655,9 @@ export function HerdOverviewPage() {
           <AlertCard icon="scale" label="Sem Pesagem (60d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
           <AlertCard icon="warning" label="Pastos Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => {
             const params = new URLSearchParams();
-            if (fazendaId) params.set('fazendaId', String(fazendaId));
-            setLocation(`/rebanho/mapa-rebanho${params.toString() ? `?${params.toString()}` : ''}`);
+            // Sempre passa fazendaId: valor real se selecionada, ou '0' para limpar o filtro persistido
+            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
+            setLocation(`/rebanho/mapa-rebanho?${params.toString()}`);
           }} />
         </div>
       </div>

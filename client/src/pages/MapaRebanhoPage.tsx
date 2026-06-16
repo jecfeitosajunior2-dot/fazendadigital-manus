@@ -708,20 +708,31 @@ type FazendaMapaRow = {
 
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function MapaRebanhoPage() {
-  // Lê fazendaId da URL (ex: /rebanho/mapa-rebanho?fazendaId=123)
+  // Lê fazendaId da URL (ex: /rebanho/mapa-rebanho?fazendaId=123 ou ?fazendaId=0 para limpar)
   const urlFazendaId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('fazendaId') || '';
+    const val = params.get('fazendaId');
+    // '0' significa "sem fazenda" — limpar o filtro persistido
+    if (val === '0') return '__clear__';
+    return val || '';
   }, []);
+
+  const initialFilters = useMemo(() => {
+    if (urlFazendaId === '__clear__') return INITIAL_FILTERS;
+    if (urlFazendaId) return { ...INITIAL_FILTERS, fazendaId: urlFazendaId };
+    return undefined; // usa o valor persistido
+  }, [urlFazendaId]);
 
   const [filters, setFilters] = usePersistedState<FiltersState>(
     FILTERS_KEY,
-    urlFazendaId ? { ...INITIAL_FILTERS, fazendaId: urlFazendaId } : INITIAL_FILTERS
+    initialFilters ?? INITIAL_FILTERS
   );
 
   // Se a URL trouxer um fazendaId diferente do estado persistido, sobrescreve
   useEffect(() => {
-    if (urlFazendaId && filters.fazendaId !== urlFazendaId) {
+    if (urlFazendaId === '__clear__') {
+      setFilters(INITIAL_FILTERS);
+    } else if (urlFazendaId && filters.fazendaId !== urlFazendaId) {
       setFilters(f => ({ ...f, fazendaId: urlFazendaId, pastoId: '' }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
