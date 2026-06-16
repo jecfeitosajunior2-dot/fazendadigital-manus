@@ -620,7 +620,12 @@ export function HerdOverviewPage() {
             if (fazendaId) params.set('fazendaId', String(fazendaId));
             setLocation(`/rebanho/lista-animais?${params.toString()}`);
           }} />
-          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => {
+            const params = new URLSearchParams();
+            params.set('apenasSemLote', 'true');
+            if (fazendaId) params.set('fazendaId', String(fazendaId));
+            setLocation(`/rebanho/lista-animais?${params.toString()}`);
+          }} />
           <AlertCard icon="scale" label="Sem Pesagem (30d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
           <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => setLocation("/rebanho/lotes")} />
         </div>

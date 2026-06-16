@@ -77,6 +77,7 @@ const animaisListInput = z.object({
   dataEntradaDe: z.string().optional(),
   dataEntradaAte: z.string().optional(),
   apenasEmCarencia: z.boolean().optional(),
+  apenasSemLote: z.boolean().optional(),
 }).optional();
 
 const animaisRouter = router({
@@ -313,6 +314,9 @@ const animaisRouter = router({
       let filtered = resultado;
       if (input?.apenasEmCarencia) {
         filtered = filtered.filter(animal => animal.emCarencia === true);
+      }
+      if (input?.apenasSemLote) {
+        filtered = filtered.filter(animal => !animal.loteId);
       }
       if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
         filtered = filtered.filter(animal => {

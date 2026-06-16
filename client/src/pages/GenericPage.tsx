@@ -47,7 +47,8 @@ export function AnimaisPage() {
     const dataNascimentoAte = params.get('dataNascimentoAte');
     const fazendaId = params.get('fazendaId');
     const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
-    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia;
+    const apenasSemLote = params.get('apenasSemLote') === 'true';
+    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia || apenasSemLote;
     if (hasParams) {
       // Reseta para o estado inicial para evitar que filtros antigos persistidos
       // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
@@ -62,6 +63,7 @@ export function AnimaisPage() {
         ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
         ...(fazendaId ? { fazendaId } : {}),
         ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
+        ...(apenasSemLote ? { apenasSemLote: true } : {}),
         // Abre o painel de filtros adicionais e garante que os filtros relevantes estão visíveis
         maisFiltrosAbertos: filtrosAdicionais.length > 0,
         filtrosAdicionaisSelecionados: filtrosAdicionais,

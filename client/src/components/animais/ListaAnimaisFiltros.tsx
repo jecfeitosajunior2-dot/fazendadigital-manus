@@ -690,6 +690,20 @@ export default function ListaAnimaisFiltros({
             </div>
           )}
 
+          {/* Indicador de filtro Sem Lote ativo */}
+          {value.apenasSemLote && (
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-md">
+              <span className="material-icons text-[14px] text-orange-600">folder_off</span>
+              <span className="text-[12px] font-medium text-orange-700">Filtrando apenas animais sem lote</span>
+              <button
+                onClick={() => onChange(patch(value, { apenasSemLote: false }))}
+                className="ml-auto text-orange-500 hover:text-orange-700 transition-colors"
+              >
+                <span className="material-icons text-[14px]">close</span>
+              </button>
+            </div>
+          )}
+
         </div>
       )}
     </div>
