@@ -91,6 +91,7 @@ function ModalMoverLote({
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
   const [obs, setObs] = useState("");
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
@@ -121,18 +122,22 @@ function ModalMoverLote({
             <label className="block text-[11px] font-medium text-gray-600 mb-1">
               Data de Movimentação<span className="text-red-500 ml-0.5">*</span>
             </label>
-            <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#2D5A5A]">
-              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
-              <div className="flex items-center flex-1">
+            <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#4ECDC4]">
+              <div className="w-1 flex-shrink-0 bg-[#4ECDC4]" />
+              <div
+                className="flex items-center flex-1 cursor-pointer"
+                onClick={() => dateInputRef.current?.showPicker?.()}
+              >
                 <svg className="w-4 h-4 text-gray-400 ml-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 <input
+                  ref={dateInputRef}
                   type="date"
                   value={data}
                   onChange={e => setData(e.target.value)}
-                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden"
+                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0 cursor-pointer [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden"
                 />
               </div>
             </div>
@@ -143,7 +148,7 @@ function ModalMoverLote({
               Subdivisão Destino<span className="text-red-500 ml-0.5">*</span>
             </label>
             <div className="flex overflow-hidden rounded-sm">
-              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
+              <div className="w-1 flex-shrink-0 bg-[#4ECDC4]" />
               <select
                 value={pastoDestinoId}
                 onChange={e => setPastoDestinoId(e.target.value)}
