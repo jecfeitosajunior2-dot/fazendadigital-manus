@@ -353,18 +353,18 @@ export default function LotsManagementPage() {
                     <button
                       type="button"
                       onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)}
-                      className="text-left font-medium text-[#2D5A5A] hover:underline"
+                      className="text-left font-medium text-gray-800 hover:underline"
                     >
                       {lote.nome}
                     </button>
                   </td>
                   {FAIXAS_IDADE_LOTE.map(f => (
-                    <td key={`m-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
+                    <td key={`m-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-800 border-r border-gray-50 tabular-nums">
                       {celulaValor(lote.machos[f])}
                     </td>
                   ))}
                   {FAIXAS_IDADE_LOTE.map(f => (
-                    <td key={`f-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-700 border-r border-gray-50 tabular-nums">
+                    <td key={`f-${lote.id}-${f}`} className="px-2 py-2 text-center text-gray-800 border-r border-gray-50 tabular-nums">
                       {celulaValor(lote.femeas[f])}
                     </td>
                   ))}
