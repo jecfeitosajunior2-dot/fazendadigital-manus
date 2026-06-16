@@ -48,6 +48,11 @@ export function AnimaisPage() {
         ...prev,
         dataEntradaDe: dataEntradaDe ?? prev.dataEntradaDe,
         dataEntradaAte: dataEntradaAte ?? prev.dataEntradaAte,
+        // Abre o painel de filtros adicionais e garante que 'dataEntrada' está visível
+        maisFiltrosAbertos: true,
+        filtrosAdicionaisSelecionados: prev.filtrosAdicionaisSelecionados.includes('dataEntrada')
+          ? prev.filtrosAdicionaisSelecionados
+          : [...prev.filtrosAdicionaisSelecionados, 'dataEntrada'],
       }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
