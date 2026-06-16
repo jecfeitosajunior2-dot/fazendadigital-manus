@@ -505,7 +505,7 @@ export function HerdOverviewPage() {
       </div>
 
       {/* ── Distribuições ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Categoria</h2>
           <BarChart items={data.porCategoria} color={TEAL} />
@@ -513,10 +513,6 @@ export function HerdOverviewPage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
           <BarChart items={data.porRaca} color={ORANGE} />
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Atividade</h2>
-          <BarChart items={data.porAtividade} color={BLUE} />
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
