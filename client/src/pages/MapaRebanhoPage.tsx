@@ -157,16 +157,13 @@ function ModalMoverLote({
           {/* Observações */}
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1">Observações</label>
-            <div className="flex overflow-hidden rounded-sm border border-gray-200 focus-within:border-[#2D5A5A]">
-              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
-              <textarea
-                value={obs}
-                onChange={e => setObs(e.target.value)}
-                rows={2}
-                placeholder="Opcional"
-                className="flex-1 px-3 py-2 text-[12px] bg-white text-gray-800 focus:outline-none border-0 resize-none"
-              />
-            </div>
+            <textarea
+              value={obs}
+              onChange={e => setObs(e.target.value)}
+              rows={2}
+              placeholder="Opcional"
+              className="w-full px-3 py-2 text-[12px] bg-white text-gray-800 border border-gray-200 rounded-sm focus:outline-none focus:border-[#2D5A5A] resize-none"
+            />
           </div>
         </div>
         {/* Footer */}
