@@ -962,7 +962,6 @@ export default function MapaRebanhoPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-white/70 transition-transform" style={{ display: "inline-block", transform: expandedFazendas.has(fazenda.fazendaId) ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
                         <span className="text-[14px] font-bold text-white">{fazenda.fazendaNome}</span>
-                        <span className="text-[11px] text-white/60">{fazenda.subdivisoes.length} subdivisão(oes) · {fazenda.subdivisoes.reduce((a, s) => a + s.lotes.length, 0) + fazenda.semSubdivisao.length} lote(s)</span>
                       </div>
                       <span className="text-[13px] font-bold text-white">{fazenda.totalAnimais} animais</span>
                     </div>

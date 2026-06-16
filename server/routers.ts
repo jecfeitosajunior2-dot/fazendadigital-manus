@@ -2004,16 +2004,18 @@ const lotesRouter = router({
           }
         }
 
-        const subdivisoes = [...porPasto.entries()]
-          .map(([pastoId, lotesGrupo]) => {
-            const pasto = pastoMap.get(pastoId)!;
+        // Inclui TODOS os pastos da fazenda, mesmo os sem lotes atribuídos
+        const pastosDaFazenda = pastosList.filter(p => p.fazendaId === fazenda.id);
+        const subdivisoes = pastosDaFazenda
+          .map(pasto => {
+            const lotesGrupo = porPasto.get(pasto.id) ?? [];
             const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
             const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
             const taxaLotacao = areaNum && areaNum > 0 ? Math.round((totalAnimais / areaNum) * 100) / 100 : null;
             // Status calculado dinamicamente: se há animais → ativo, senão → vazio
             const pastoStatusCalc = totalAnimais > 0 ? 'ativo' : 'vazio';
             return {
-              pastoId,
+              pastoId: pasto.id,
               pastoNome: pasto.nome,
               pastoSigla: pasto.sigla ?? null,
               pastoStatus: pastoStatusCalc,
