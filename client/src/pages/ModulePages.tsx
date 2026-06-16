@@ -397,68 +397,161 @@ export function SubdivisionsPage() {
 // MÓDULO REBANHO
 // ============================================================
 
+function BarChart({ items, color }: { items: { label: string; value: number; pct: number }[]; color: string }) {
+  if (!items.length) return <p className="text-[11px] text-gray-400">Sem dados</p>;
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-600 truncate" style={{ minWidth: 80, maxWidth: 100 }}>{item.label}</span>
+          <div className="flex-1 h-3.5 bg-gray-100 rounded overflow-hidden">
+            <div
+              className="h-full rounded transition-all duration-500"
+              style={{ width: `${Math.max(item.pct, 2)}%`, backgroundColor: color }}
+            />
+          </div>
+          <span className="text-[11px] text-gray-700 font-semibold" style={{ minWidth: 28, textAlign: 'right' }}>{item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AlertCard({ icon, label, value, color, onClick }: { icon: string; label: string; value: number; color: string; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-3 bg-white rounded border p-3 text-left w-full transition hover:shadow-md ${
+        value > 0 ? 'border-orange-200' : 'border-gray-100'
+      }`}
+    >
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0`} style={{ backgroundColor: color + '22' }}>
+        <span className="material-icons text-[18px]" style={{ color }}>{icon}</span>
+      </div>
+      <div className="min-w-0">
+        <div className={`text-[17px] font-bold ${value > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{value}</div>
+        <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
+      </div>
+    </button>
+  );
+}
+
 export function HerdOverviewPage() {
+  const [, setLocation] = useLocation();
+  const { data, isLoading } = trpc.rebanho.overview.useQuery(undefined, { refetchOnWindowFocus: false });
+
+  const TEAL = "#2D5A5A";
+  const ORANGE = "#F97316";
+  const BLUE = "#3B82F6";
+  const PINK = "#EC4899";
+  const AMBER = "#F59E0B";
+  const PURPLE = "#8B5CF6";
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!data) return null;
+
+  const kpis = [
+    { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "pets", color: TEAL },
+    { label: "Machos", value: data.totalMachos.toString(), icon: "male", color: BLUE },
+    { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK },
+    { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER },
+    { label: "GMD Médio", value: data.gmdMedio !== null ? `${data.gmdMedio} kg/d` : "—", icon: "trending_up", color: PURPLE },
+    { label: "Entradas no Mês", value: data.evolucaoEfetivo.entradas.toString(), icon: "login", color: "#10B981" },
+  ];
+
   return (
     <AppLayout>
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4">
-        {[
-          { label: "Total de animais", value: "243", icon: "pets", color: "green" },
-          { label: "Machos", value: "108", icon: "male", color: "blue" },
-          { label: "Fêmeas", value: "135", icon: "female", color: "pink" },
-          { label: "Peso médio", value: "385 kg", icon: "monitor_weight", color: "amber" },
-        ].map((kpi, i) => (
-          <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full bg-${kpi.color}-100 flex items-center justify-center`}>
-                <span className={`material-icons text-[20px] text-${kpi.color}-600`}>{kpi.icon}</span>
+
+      {/* ── KPIs ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        {kpis.map((kpi, i) => (
+          <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-100 p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: kpi.color + '18' }}>
+                <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
               </div>
-              <div>
-                <div className="text-[18px] font-bold text-gray-800">{kpi.value}</div>
-                <div className="text-[11px] text-gray-500">{kpi.label}</div>
+              <div className="min-w-0">
+                <div className="text-[17px] font-bold text-gray-800 leading-tight">{kpi.value}</div>
+                <div className="text-[10px] text-gray-500 leading-tight">{kpi.label}</div>
               </div>
             </div>
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribuição por atividade</h2>
-          <div className="space-y-2">
-            {[
-              { label: "Cria", value: 145, pct: 60 },
-              { label: "Engorda", value: 52, pct: 21 },
-              { label: "Recria", value: 46, pct: 19 },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-[11px] text-gray-600 w-20">{item.label}</span>
-                <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                  <div className="h-full rounded" style={{ width: `${item.pct}%`, backgroundColor: "#4ECDC4" }} />
-                </div>
-                <span className="text-[11px] text-gray-700 font-medium w-8 text-right">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[13px] font-medium text-gray-800 mb-3">Distribuição por raça</h2>
-          <div className="space-y-2">
-            {[
-              { label: "Nelore", value: 200, pct: 82 },
-              { label: "Angus", value: 25, pct: 10 },
-              { label: "Senepol", value: 18, pct: 8 },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-[11px] text-gray-600 w-20">{item.label}</span>
-                <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                  <div className="h-full rounded" style={{ width: `${item.pct}%`, backgroundColor: "#FF9800" }} />
-                </div>
-                <span className="text-[11px] text-gray-700 font-medium w-8 text-right">{item.value}</span>
-              </div>
-            ))}
-          </div>
+
+      {/* ── Alertas ── */}
+      <div className="mb-4">
+        <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Alertas e Pendências</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="scale" label="Sem Pesagem (30d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => setLocation("/rebanho/lotes")} />
         </div>
       </div>
+
+      {/* ── Distribuições ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Categoria</h2>
+          <BarChart items={data.porCategoria} color={TEAL} />
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
+          <BarChart items={data.porRaca} color={ORANGE} />
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Atividade</h2>
+          <BarChart items={data.porAtividade} color={BLUE} />
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
+          <BarChart items={data.porFaixaPeso} color={PURPLE} />
+        </div>
+      </div>
+
+      {/* ── Top 5 GMD ── */}
+      {data.top5Gmd.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Top 5 Animais por GMD (kg/dia)</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">#</th>
+                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Brinco</th>
+                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Categoria</th>
+                  <th className="text-right py-1.5 text-gray-500 font-medium">GMD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.top5Gmd.map((a, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                    <td className="py-1.5 pr-3 text-gray-400 font-medium">{i + 1}</td>
+                    <td className="py-1.5 pr-3 font-semibold text-gray-800">{a.brinco || "—"}</td>
+                    <td className="py-1.5 pr-3 text-gray-600">{a.categoria || "—"}</td>
+                    <td className="py-1.5 text-right font-bold" style={{ color: TEAL }}>{a.gmd} kg/d</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

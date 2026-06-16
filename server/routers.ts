@@ -13,6 +13,7 @@ import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } fr
 import { createSession, clearAuthCookie } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
+import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -4354,7 +4355,7 @@ export const appRouter = router({
   compras: comprasRouter,
   vendas: vendasRouter,
   fazendas: fazendasRouter,
-  pastos: pastosRouter,
+    pastos: pastosRouter,
+  rebanho: rebanhoOverviewRouter,
 });
-
 export type AppRouter = typeof appRouter;
