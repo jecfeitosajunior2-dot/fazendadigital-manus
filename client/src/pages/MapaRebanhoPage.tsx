@@ -122,18 +122,19 @@ function ModalMoverLote({
               Data de Movimentação<span className="text-red-500 ml-0.5">*</span>
             </label>
             <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#2D5A5A]">
-              <div className="flex items-center justify-center px-3 bg-[#2D5A5A] text-white flex-shrink-0">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
+              <div className="flex items-center flex-1">
+                <svg className="w-4 h-4 text-gray-400 ml-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
+                <input
+                  type="date"
+                  value={data}
+                  onChange={e => setData(e.target.value)}
+                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0"
+                />
               </div>
-              <input
-                type="date"
-                value={data}
-                onChange={e => setData(e.target.value)}
-                className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0"
-              />
             </div>
           </div>
           {/* Subdivisão Destino */}
