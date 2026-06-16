@@ -152,6 +152,7 @@ export function AnimaisPage() {
             rows={exportData}
             alignRightFrom={6}
             fazendaNome={fazendaNomePdf}
+            colWidths={["7%","8%","9%","11%","6%","7%","8%","9%","9%","9%","7%"]}
           />
           <button
             onClick={() => setImportarOpen(true)}
