@@ -31,11 +31,27 @@ function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: Ani
 // --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [filters, setFilters] = usePersistedState(ANIMAIS_LIST_FILTERS_STORAGE_KEY, INITIAL_ANIMAIS_LIST_FILTERS);
   const debouncedPesquisa = useDebounce(filters.pesquisa, 500);
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const [perPage, setPerPage] = useState(50);
+
+  // Lê parâmetros de URL para pré-aplicar filtros (ex: vindo da Visão Geral)
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const dataEntradaDe = params.get('dataEntradaDe');
+    const dataEntradaAte = params.get('dataEntradaAte');
+    if (dataEntradaDe || dataEntradaAte) {
+      setFilters(prev => ({
+        ...prev,
+        dataEntradaDe: dataEntradaDe ?? prev.dataEntradaDe,
+        dataEntradaAte: dataEntradaAte ?? prev.dataEntradaAte,
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Ordenação: padrão crescente por brinco
   const [sortKey, setSortKey] = useState<AnimaisSortKey>("brinco");

@@ -48,6 +48,8 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   pai: "",
   mae: "",
   statusFiltro: "",
+  dataEntradaDe: "",
+  dataEntradaAte: "",
   filtrosAdicionaisSelecionados: [],
 };
 

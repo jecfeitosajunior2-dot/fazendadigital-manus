@@ -636,6 +636,27 @@ export default function ListaAnimaisFiltros({
                 </FilterCard>
               )}
 
+              {/* Data de Entrada */}
+              {has('dataEntrada') && (
+                <FilterCard label="Período de Entrada na Fazenda">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      value={value.dataEntradaDe}
+                      onChange={e => onChange(patch(value, { dataEntradaDe: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
+                    <input
+                      type="date"
+                      value={value.dataEntradaAte}
+                      onChange={e => onChange(patch(value, { dataEntradaAte: e.target.value }))}
+                      className={`${inputClass} flex-1 min-w-0`}
+                    />
+                  </div>
+                </FilterCard>
+              )}
+
               {/* Status */}
               {has('status') && (
                 <FilterCard label="Status">

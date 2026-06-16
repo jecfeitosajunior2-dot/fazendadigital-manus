@@ -468,13 +468,24 @@ export function HerdOverviewPage() {
 
   if (!data) return null;
 
+  // Calcula o primeiro e último dia do mês atual para o filtro de Entradas no Mês
+  const hoje = new Date();
+  const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+  const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+
   const kpis = [
-    { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "pets", color: TEAL },
-    { label: "Machos", value: data.totalMachos.toString(), icon: "male", color: BLUE },
-    { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK },
-    { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER },
-    { label: "GMD Médio", value: data.gmdMedio !== null ? `${data.gmdMedio} kg/d` : "—", icon: "trending_up", color: PURPLE },
-    { label: "Entradas no Mês", value: data.evolucaoEfetivo.entradas.toString(), icon: "login", color: "#10B981" },
+    { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "pets", color: TEAL, onClick: undefined },
+    { label: "Machos", value: data.totalMachos.toString(), icon: "male", color: BLUE, onClick: undefined },
+    { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK, onClick: undefined },
+    { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER, onClick: undefined },
+    { label: "GMD Médio", value: data.gmdMedio !== null ? `${data.gmdMedio} kg/d` : "—", icon: "trending_up", color: PURPLE, onClick: undefined },
+    {
+      label: "Entradas no Mês",
+      value: data.evolucaoEfetivo.entradas.toString(),
+      icon: "login",
+      color: "#10B981",
+      onClick: () => setLocation(`/rebanho/lista-animais?dataEntradaDe=${primeiroDiaMes}&dataEntradaAte=${ultimoDiaMes}`),
+    },
   ];
 
   return (
@@ -498,14 +509,23 @@ export function HerdOverviewPage() {
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         {kpis.map((kpi, i) => (
-          <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-100 p-3">
+          <div
+            key={i}
+            onClick={kpi.onClick}
+            className={`bg-white rounded-lg shadow-sm border border-gray-100 p-3 transition ${
+              kpi.onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 active:scale-[0.98]' : ''
+            }`}
+          >
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: kpi.color + '18' }}>
                 <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
               </div>
               <div className="min-w-0">
                 <div className="text-[17px] font-bold text-gray-800 leading-tight">{kpi.value}</div>
-                <div className="text-[10px] text-gray-500 leading-tight">{kpi.label}</div>
+                <div className="text-[10px] text-gray-500 leading-tight flex items-center gap-1">
+                  {kpi.label}
+                  {kpi.onClick && <span className="material-icons text-[10px] text-gray-400">open_in_new</span>}
+                </div>
               </div>
             </div>
           </div>

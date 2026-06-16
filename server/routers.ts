@@ -74,6 +74,8 @@ const animaisListInput = z.object({
   rgd: z.string().optional(),
   idadeMesesMin: z.number().optional(),
   idadeMesesMax: z.number().optional(),
+  dataEntradaDe: z.string().optional(),
+  dataEntradaAte: z.string().optional(),
 }).optional();
 
 const animaisRouter = router({
@@ -157,6 +159,8 @@ const animaisRouter = router({
         // Filtra diretamente pelo fazendaId do animal (campo salvo no cadastro)
         conditions.push(eq(animais.fazendaId, input.fazendaId));
       }
+      if (input?.dataEntradaDe) conditions.push(gte(animais.dataEntrada, input.dataEntradaDe));
+      if (input?.dataEntradaAte) conditions.push(lte(animais.dataEntrada, input.dataEntradaAte));
       if (input?.pastoId) {
         const lotesPasto = await db.select({ id: lotes.id })
           .from(lotes)

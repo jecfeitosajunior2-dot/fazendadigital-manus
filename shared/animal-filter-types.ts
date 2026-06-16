@@ -19,6 +19,7 @@ export type FiltroAdicionalKey =
   | 'pai'
   | 'mae'
   | 'status'
+  | 'dataEntrada'
   // mantidos por compatibilidade
   | 'peso'
   | 'categoria'
@@ -43,6 +44,7 @@ export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string
   { key: 'pai', label: 'Pai (Reprodutor)' },
   { key: 'mae', label: 'Mãe (Matriz)' },
   { key: 'status', label: 'Status' },
+  { key: 'dataEntrada', label: 'Data de Entrada' },
 ];
 
 export type AnimaisListFiltersState = {
@@ -78,6 +80,9 @@ export type AnimaisListFiltersState = {
   pai: string;
   mae: string;
   statusFiltro: string; // 'ativo' | 'inativo' | ''
+  // Filtro por data de entrada na fazenda
+  dataEntradaDe: string;
+  dataEntradaAte: string;
   // Filtros adicionais selecionados no dropdown
   filtrosAdicionaisSelecionados: FiltroAdicionalKey[];
 };
@@ -116,6 +121,8 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   pai: '',
   mae: '',
   statusFiltro: '',
+  dataEntradaDe: '',
+  dataEntradaAte: '',
   filtrosAdicionaisSelecionados: [],
 };
 
@@ -152,6 +159,8 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     castrado: filters.castrado === 'sim' ? true : filters.castrado === 'nao' ? false : undefined,
     pai: filters.pai || undefined,
     mae: filters.mae || undefined,
+    dataEntradaDe: filters.dataEntradaDe || undefined,
+    dataEntradaAte: filters.dataEntradaAte || undefined,
   };
 }
 
@@ -185,6 +194,8 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.produtorOrigem ||
     !!filters.pai ||
     !!filters.mae ||
-    !!filters.statusFiltro
+    !!filters.statusFiltro ||
+    !!filters.dataEntradaDe ||
+    !!filters.dataEntradaAte
   );
 }
