@@ -2068,12 +2068,17 @@ const lotesRouter = router({
           eq(lotePastoMovimentacoes.userId, ctx.user.id),
         ));
       if (!mov) throw new TRPCError({ code: 'NOT_FOUND', message: 'Movimentação não encontrada.' });
-      // Bloqueia exclusão da movimentação atual (dataSaida nula = lote ainda está neste pasto)
+      // Se for movimentação atual (dataSaida nula), limpa pastoAtualId do lote também
       if (!mov.dataSaida) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Não é possível excluir a movimentação atual. Mova o lote para outro pasto antes de excluir.',
-        });
+        await db.update(lotes)
+          .set({ pastoAtualId: null, dataEntradaPasto: null })
+          .where(eq(lotes.id, mov.loteId));
+        // Atualiza status do pasto para vazio
+        if (mov.pastoDestinoId) {
+          await db.update(pastos)
+            .set({ status: 'vazio' })
+            .where(eq(pastos.id, mov.pastoDestinoId));
+        }
       }
       await db.delete(lotePastoMovimentacoes)
         .where(eq(lotePastoMovimentacoes.id, input.movimentacaoId));
