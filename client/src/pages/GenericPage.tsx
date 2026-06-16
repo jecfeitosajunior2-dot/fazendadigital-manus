@@ -152,6 +152,7 @@ export function AnimaisPage() {
             rows={exportData}
             alignRightFrom={6}
             fazendaNome={fazendaNomePdf}
+            landscape
           />
           <button
             onClick={() => setImportarOpen(true)}

@@ -89,7 +89,7 @@ export function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[] }
+  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[]; landscape?: boolean }
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
@@ -98,6 +98,7 @@ export function exportListPdf(
   const alignRightFrom = options?.alignRightFrom ?? headers.length;
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
   const groupByCol = options?.groupByCol ?? [];
+  const landscape = options?.landscape ?? false;
 
   // Período: usa o fornecido ou gera automaticamente com a data atual
   const agora = new Date();
@@ -153,7 +154,7 @@ export function exportListPdf(
   <meta charset="utf-8">
   <title>${title}</title>
   <style>
-    @page { margin: 18mm 14mm 14mm 14mm; }
+    @page { margin: 14mm 12mm 12mm 12mm; ${landscape ? "size: A4 landscape;" : ""} }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
 
