@@ -102,7 +102,9 @@ function ModalMoverLote({
     onError: (e) => toast.error(e.message),
   });
 
-  const pastosDisponiveis = (pastos as { id: number; nome: string }[]).filter(p => p.id !== pastoAtualId);
+  const pastosDisponiveis = (pastos as { id: number; nome: string }[])
+    .filter(p => p.id !== pastoAtualId)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
