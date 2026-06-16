@@ -89,7 +89,7 @@ export function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[]; colWidths?: string[] }
+  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[] }
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
@@ -98,7 +98,6 @@ export function exportListPdf(
   const alignRightFrom = options?.alignRightFrom ?? headers.length;
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
   const groupByCol = options?.groupByCol ?? [];
-  const colWidths = options?.colWidths ?? [];
 
   // Período: usa o fornecido ou gera automaticamente com a data atual
   const agora = new Date();
@@ -232,7 +231,7 @@ export function exportListPdf(
     }
 
     /* ── Tabela ── */
-    table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
     thead tr { background: #2D5A5A; color: #fff; }
     thead th {
       padding: 6px 8px;
@@ -241,12 +240,10 @@ export function exportListPdf(
       text-transform: uppercase;
       letter-spacing: 0.04em;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
     tbody tr.row-even { background: #fff; }
     tbody tr.row-odd  { background: #f7fafa; }
-    tbody td { padding: 5px 8px; border-bottom: 1px solid #e8eded; color: #222; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody td { padding: 5px 8px; border-bottom: 1px solid #e8eded; color: #222; }
     tbody tr:last-child td { border-bottom: none; }
 
     /* ── Rodapé ── */
@@ -285,7 +282,6 @@ export function exportListPdf(
 
   <!-- Tabela -->
   <table>
-    ${colWidths.length > 0 ? `<colgroup>${colWidths.map(w => `<col style="width:${w}">`).join("")}</colgroup>` : ""}
     <thead><tr>${head}</tr></thead>
     <tbody>${body}</tbody>
   </table>
