@@ -45,17 +45,17 @@ export function AnimaisPage() {
     const dataEntradaAte = params.get('dataEntradaAte');
     const fazendaId = params.get('fazendaId');
     if (dataEntradaDe || dataEntradaAte || fazendaId) {
-      setFilters(prev => ({
-        ...prev,
+      // Reseta para o estado inicial para evitar que filtros antigos persistidos
+      // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
+      setFilters({
+        ...INITIAL_ANIMAIS_LIST_FILTERS,
         ...(dataEntradaDe ? { dataEntradaDe } : {}),
         ...(dataEntradaAte ? { dataEntradaAte } : {}),
         ...(fazendaId ? { fazendaId } : {}),
         // Abre o painel de filtros adicionais e garante que 'dataEntrada' está visível
         maisFiltrosAbertos: true,
-        filtrosAdicionaisSelecionados: prev.filtrosAdicionaisSelecionados.includes('dataEntrada')
-          ? prev.filtrosAdicionaisSelecionados
-          : [...prev.filtrosAdicionaisSelecionados, 'dataEntrada'],
-      }));
+        filtrosAdicionaisSelecionados: ['dataEntrada'],
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
