@@ -5,6 +5,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import z from "zod";
+import { calcularIdadeMeses, faixaIdadeLote, FAIXAS_IDADE_LOTE } from "../../shared/lote-faixas-idade";
 
 // ─── Helper: dias entre data e hoje ──────────────────────────────────────────
 function diasDesde(dateStr: string | null | undefined): number | null {
@@ -51,6 +52,7 @@ export const rebanhoOverviewRouter = router({
           porRaca: [] as { label: string; value: number; pct: number }[],
           porAtividade: [] as { label: string; value: number; pct: number }[],
           porFaixaPeso: [] as { label: string; value: number; pct: number }[],
+          porFaixaEtaria: [] as { label: string; value: number; pct: number }[],
           top5Gmd: [] as { brinco: string | null; categoria: string | null; gmd: number }[],
           evolucaoEfetivo: { entradas: 0, saidas: 0 },
         };
@@ -255,6 +257,31 @@ export const rebanhoOverviewRouter = router({
         .sort((a, b) => b[1] - a[1])
         .map(([label, value]) => ({ label, value, pct: Math.round((value / total) * 100) }));
 
+      // Por faixa etária
+      const etariaCount = new Map<string, number>(FAIXAS_IDADE_LOTE.map(f => [f, 0]));
+      let semIdadeCount = 0;
+      for (const a of lista) {
+        const meses = calcularIdadeMeses(a.dataNascimento);
+        const faixa = faixaIdadeLote(meses);
+        if (faixa) {
+          etariaCount.set(faixa, (etariaCount.get(faixa) || 0) + 1);
+        } else {
+          semIdadeCount++;
+        }
+      }
+      const LABEL_MAP: Record<string, string> = {
+        '0-8': '0–8 meses',
+        '9-12': '9–12 meses',
+        '13-24': '13–24 meses',
+        '25-36': '25–36 meses',
+        '36+': '> 36 meses',
+      };
+      const totalComIdade = total - semIdadeCount;
+      const porFaixaEtaria = FAIXAS_IDADE_LOTE.map(f => {
+        const value = etariaCount.get(f) || 0;
+        return { label: LABEL_MAP[f] || f, value, pct: totalComIdade > 0 ? Math.round((value / totalComIdade) * 100) : 0 };
+      });
+
       // Por faixa de peso
       const faixas = [
         { label: "< 200 kg", min: 0, max: 200 },
@@ -305,6 +332,7 @@ export const rebanhoOverviewRouter = router({
         porCategoria,
         porCategoriaMachos,
         porCategoriaFemeas,
+        porFaixaEtaria,
         porRaca,
         porAtividade,
         porFaixaPeso,
