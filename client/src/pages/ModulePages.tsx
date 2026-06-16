@@ -546,7 +546,15 @@ export function HerdOverviewPage() {
             <span className="material-icons text-[14px]">male</span> Machos
           </h2>
           {data.porCategoriaMachos.length > 0
-            ? <BarChart items={data.porCategoriaMachos} color={BLUE} />
+            ? <BarChart items={[...data.porCategoriaMachos].sort((a, b) => {
+                const ORDER_MACHOS = ['Bezerro', 'Novilho', 'Boi'];
+                const ia = ORDER_MACHOS.indexOf(a.label);
+                const ib = ORDER_MACHOS.indexOf(b.label);
+                if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, 'pt-BR');
+                if (ia === -1) return 1;
+                if (ib === -1) return -1;
+                return ia - ib;
+              })} color={BLUE} />
             : <p className="text-[11px] text-gray-400">Nenhum macho cadastrado</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
@@ -554,7 +562,15 @@ export function HerdOverviewPage() {
             <span className="material-icons text-[14px]">female</span> Fêmeas
           </h2>
           {data.porCategoriaFemeas.length > 0
-            ? <BarChart items={data.porCategoriaFemeas} color={PINK} />
+            ? <BarChart items={[...data.porCategoriaFemeas].sort((a, b) => {
+                const ORDER_FEMEAS = ['Bezerra', 'Novilha', 'Vaca'];
+                const ia = ORDER_FEMEAS.indexOf(a.label);
+                const ib = ORDER_FEMEAS.indexOf(b.label);
+                if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, 'pt-BR');
+                if (ia === -1) return 1;
+                if (ib === -1) return -1;
+                return ia - ib;
+              })} color={PINK} />
             : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
