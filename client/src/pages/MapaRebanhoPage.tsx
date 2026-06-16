@@ -142,12 +142,12 @@ function ModalMoverLote({
             <label className="block text-[11px] font-medium text-gray-600 mb-1">
               Subdivisão Destino<span className="text-red-500 ml-0.5">*</span>
             </label>
-            <div className="flex overflow-hidden rounded-sm border border-gray-200 focus-within:border-[#2D5A5A]">
+            <div className="flex overflow-hidden rounded-sm">
               <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
               <select
                 value={pastoDestinoId}
                 onChange={e => setPastoDestinoId(e.target.value)}
-                className="flex-1 h-[38px] px-3 text-[12px] bg-[#EEEEEE] text-gray-800 focus:outline-none border-0"
+                className="flex-1 h-[38px] px-3 text-[12px] bg-[#EEEEEE] text-gray-700 focus:outline-none border-0"
               >
                 <option value="">Selecione a subdivisão</option>
                 {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
