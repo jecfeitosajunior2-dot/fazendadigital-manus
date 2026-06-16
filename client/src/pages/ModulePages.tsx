@@ -525,26 +525,13 @@ export function HerdOverviewPage() {
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: kpi.color + '18' }}>
                 {kpi.icon === '__cow__' ? (
-                  <svg viewBox="0 0 32 24" width="20" height="20" fill={kpi.color} xmlns="http://www.w3.org/2000/svg">
-                    {/* Corpo */}
-                    <ellipse cx="15" cy="14" rx="10" ry="6" />
-                    {/* Cabeça */}
-                    <ellipse cx="25.5" cy="11" rx="4.5" ry="3.5" />
-                    {/* Focinho */}
-                    <ellipse cx="29" cy="12.5" rx="2" ry="1.5" />
-                    {/* Orelha */}
-                    <ellipse cx="24" cy="7.5" rx="1.5" ry="2.5" transform="rotate(-20 24 7.5)" />
-                    {/* Pernas dianteiras */}
-                    <rect x="20" y="19" width="2.5" height="5" rx="1" />
-                    <rect x="23.5" y="19" width="2.5" height="5" rx="1" />
-                    {/* Pernas traseiras */}
-                    <rect x="7" y="19" width="2.5" height="5" rx="1" />
-                    <rect x="10.5" y="19" width="2.5" height="5" rx="1" />
-                    {/* Rabo */}
-                    <path d="M5 12 Q2 10 3 7 Q4 5 5 6" stroke={kpi.color} strokeWidth="1.5" fill="none" strokeLinecap="round" />
-                    {/* Úbere */}
-                    <ellipse cx="13" cy="19.5" rx="3" ry="1.5" opacity="0.6" />
-                  </svg>
+                  <img
+                    src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
+                    alt="Boi Nelore"
+                    width="26"
+                    height="26"
+                    style={{ objectFit: 'contain' }}
+                  />
                 ) : (
                   <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
                 )}
