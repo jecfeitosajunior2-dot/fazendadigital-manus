@@ -108,34 +108,70 @@ function ModalMoverLote({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-md shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-[14px] font-semibold text-gray-800 mb-1">Mover Lote para Subdivisão</h2>
-        <p className="text-[12px] text-gray-500 mb-4">
-          Lote: <strong>{lote.loteNome}</strong>
-        </p>
-        <div className="space-y-3">
+      <div className="bg-white rounded-md shadow-xl w-full max-w-md mx-4">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-gray-100">
+          <h2 className="text-[14px] font-semibold text-gray-800">Mover Lote para Subdivisão</h2>
+          <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{lote.loteNome}</strong></p>
+        </div>
+        {/* Body */}
+        <div className="px-6 py-4 space-y-3">
+          {/* Data da Movimentação */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Subdivisão Destino *</label>
-            <select value={pastoDestinoId} onChange={e => setPastoDestinoId(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]">
-              <option value="">Selecione a subdivisão</option>
-              {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
-            </select>
+            <label className="block text-[11px] font-medium text-gray-600 mb-1">
+              Data de Movimentação<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#2D5A5A]">
+              <div className="flex items-center justify-center px-3 bg-[#2D5A5A] text-white flex-shrink-0">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <input
+                type="date"
+                value={data}
+                onChange={e => setData(e.target.value)}
+                className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0"
+              />
+            </div>
           </div>
+          {/* Subdivisão Destino */}
           <div>
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Movimentação *</label>
-            <input type="date" value={data} onChange={e => setData(e.target.value)}
-              className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]" />
+            <label className="block text-[11px] font-medium text-gray-600 mb-1">
+              Subdivisão Destino<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <div className="flex overflow-hidden rounded-sm border border-gray-200 focus-within:border-[#2D5A5A]">
+              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
+              <select
+                value={pastoDestinoId}
+                onChange={e => setPastoDestinoId(e.target.value)}
+                className="flex-1 h-[38px] px-3 text-[12px] bg-[#EEEEEE] text-gray-800 focus:outline-none border-0"
+              >
+                <option value="">Selecione a subdivisão</option>
+                {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
+              </select>
+            </div>
           </div>
+          {/* Observações */}
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1">Observações</label>
-            <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} placeholder="Opcional"
-              className="w-full px-3 py-2 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] resize-none" />
+            <div className="flex overflow-hidden rounded-sm border border-gray-200 focus-within:border-[#2D5A5A]">
+              <div className="w-1 flex-shrink-0 bg-[#2D5A5A]" />
+              <textarea
+                value={obs}
+                onChange={e => setObs(e.target.value)}
+                rows={2}
+                placeholder="Opcional"
+                className="flex-1 px-3 py-2 text-[12px] bg-white text-gray-800 focus:outline-none border-0 resize-none"
+              />
+            </div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 mt-5">
+        {/* Footer */}
+        <div className="px-6 pb-5 flex justify-end gap-2">
           <button type="button" onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
+            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition bg-white">
             Cancelar
           </button>
           <button type="button" onClick={() => {
