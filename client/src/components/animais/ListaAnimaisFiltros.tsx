@@ -186,10 +186,12 @@ function FiltrosAdicionaisDropdown({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#8ab83d] text-left flex items-center justify-between gap-2"
+        className={`w-full h-[36px] px-3 text-[12px] border rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none text-left flex items-center justify-between gap-2 transition-colors ${
+          open ? 'border-[#2D5A5A] ring-1 ring-[#2D5A5A]/20' : 'border-gray-200 hover:border-[#2D5A5A]/50'
+        }`}
       >
-        <span className="text-gray-400 truncate">Adicionar Filtros</span>
-        <span className="material-icons text-[16px] text-gray-400 shrink-0">
+        <span className={`truncate ${open ? 'text-[#2D5A5A] font-medium' : 'text-gray-400'}`}>Adicionar Filtros</span>
+        <span className={`material-icons text-[16px] shrink-0 ${open ? 'text-[#2D5A5A]' : 'text-gray-400'}`}>
           {open ? 'expand_less' : 'expand_more'}
         </span>
       </button>
@@ -209,7 +211,7 @@ function FiltrosAdicionaisDropdown({
                   type="checkbox"
                   checked={selecionados.includes(opcao.key)}
                   onChange={() => toggle(opcao.key)}
-                  className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d] shrink-0"
+                  className="rounded border-gray-300 text-[#2D5A5A] focus:ring-[#2D5A5A] accent-[#2D5A5A] shrink-0"
                 />
                 <span>{opcao.label}</span>
               </label>
@@ -578,7 +580,7 @@ export default function ListaAnimaisFiltros({
                   <Switch
                     checked={value.animalComSisbov}
                     onCheckedChange={checked => onChange(patch(value, { animalComSisbov: checked }))}
-                    className="data-[state=checked]:bg-[#8ab83d]"
+                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
                   />
                   <span className="text-[12px] text-gray-700">Animal com SISBOV</span>
                 </div>
