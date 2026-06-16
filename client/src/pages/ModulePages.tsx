@@ -532,12 +532,12 @@ export function HerdOverviewPage() {
             : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
-          <BarChart items={data.porRaca} color={ORANGE} />
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
           <BarChart items={data.porFaixaPeso} color={PURPLE} />
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
+          <BarChart items={data.porRaca} color={ORANGE} />
         </div>
       </div>
 
