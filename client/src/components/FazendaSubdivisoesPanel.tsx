@@ -20,6 +20,7 @@ const emptyForm = () => ({
   nome: "",
   sigla: "",
   area: "",
+  capacidade: "",
   tipoPastagem: "",
   incluirArea: true,
 });
@@ -83,6 +84,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       tipoPastagem: form.tipoPastagem || undefined,
       area: form.area,
       incluirArea: form.incluirArea,
+      capacidade: form.capacidade ? parseInt(form.capacidade, 10) : undefined,
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload });
@@ -98,6 +100,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       nome: s.nome,
       sigla: s.sigla || "",
       area: s.area ? String(s.area) : "",
+      capacidade: s.capacidade ? String(s.capacidade) : "",
       tipoPastagem: s.tipoPastagem || "",
       incluirArea: s.incluirArea !== false,
     });
@@ -185,6 +188,16 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
               />
             </div>
             <div>
+              <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Capacidade (UA)</FormLabel>
+              <FormInput
+                compact
+                type="number"
+                value={form.capacidade}
+                onChange={v => setForm(f => ({ ...f, capacidade: v }))}
+                placeholder="Ex. 50"
+              />
+            </div>
+            <div>
               <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Pastagem</FormLabel>
               <FormSelect
                 compact
@@ -241,6 +254,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Sigla</th>
               <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Cap. (UA)</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Divisão</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Pastagem</th>
               <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-20">Ações</th>
@@ -260,6 +274,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 <td className="px-4 py-2.5 font-medium text-gray-800">{s.nome}</td>
                 <td className="px-4 py-2.5 text-gray-600">{s.sigla || "-"}</td>
                 <td className="px-4 py-2.5 text-right text-gray-700">{s.area ?? "-"}</td>
+                <td className="px-4 py-2.5 text-right text-gray-700">{s.capacidade ?? "-"}</td>
                 <td className="px-4 py-2.5 text-gray-600">{s.tipo || "-"}</td>
                 <td className="px-4 py-2.5 text-gray-600">{s.tipoPastagem || "-"}</td>
                 <td className="px-4 py-2.5 text-center">
