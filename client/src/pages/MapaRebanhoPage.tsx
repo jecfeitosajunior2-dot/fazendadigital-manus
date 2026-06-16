@@ -705,7 +705,7 @@ function SubdivisaoRow({
             const superlotado = sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
             return (
               <div className="flex flex-col items-center gap-0.5">
-                <span className={`text-[13px] font-bold ${superlotado ? 'text-red-600' : ''}`} style={superlotado ? {} : { color: GREEN }}>{sub.totalAnimais}</span>
+                <span className={`text-[13px] font-bold ${superlotado ? 'text-red-600' : 'text-gray-800'}`}>{sub.totalAnimais}</span>
                 {sub.capacidade != null && sub.capacidade > 0 && (
                   <span className={`text-[10px] ${superlotado ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
                     {superlotado ? '⚠ ' : ''}{sub.totalAnimais}/{sub.capacidade} UA
@@ -1106,7 +1106,7 @@ export default function MapaRebanhoPage() {
                                   <span className="text-[12px] font-semibold text-gray-500 italic">Sem Subdivisão</span>
                                   <span className="ml-2 text-[10px] text-gray-400">{fazenda.semSubdivisao.length} lote(s)</span>
                                 </td>
-                                <td className="px-3 py-2.5 text-center text-[12px] font-bold text-gray-500">{fazenda.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</td>
+                                <td className="px-3 py-2.5 text-center text-[12px] font-bold text-gray-800">{fazenda.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
@@ -1197,7 +1197,7 @@ function TabelaMapa({
                       <span className="text-[10px] text-gray-400">{semSubdivisao.length} lote{semSubdivisao.length !== 1 ? "s" : ""}</span>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-center"><span className="text-[13px] font-bold text-gray-500">{semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</span></td>
+                  <td className="px-3 py-3 text-center"><span className="text-[13px] font-bold text-gray-800">{semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</span></td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
