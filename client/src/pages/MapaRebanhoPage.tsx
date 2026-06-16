@@ -869,16 +869,6 @@ export default function MapaRebanhoPage() {
 
           </div>
           <div className="flex items-center gap-2">
-            {fazendaId && (
-              <button type="button" onClick={() => setModalHistoricoGeral(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition bg-white">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Histórico Geral
-              </button>
-            )}
             <ExportarMapaButton
               exportPdfData={exportPdfData}
               exportHeaders={exportHeaders}
@@ -942,6 +932,7 @@ export default function MapaRebanhoPage() {
               onExpandAll={expandAll}
               onCollapseAll={collapseAll}
               onRefresh={handleRefresh}
+              onHistoricoGeral={() => setModalHistoricoGeral(true)}
             />
           )
         ) : (
@@ -1045,7 +1036,7 @@ export default function MapaRebanhoPage() {
 function TabelaMapa({
   subdivisoes, semSubdivisao, fazendaId, totalAnimais,
   expandedSubdivisoes, semSubdivisaoExpanded,
-  onToggleSubdivisao, onToggleSemSubdivisao, onExpandAll, onCollapseAll, onRefresh,
+  onToggleSubdivisao, onToggleSemSubdivisao, onExpandAll, onCollapseAll, onRefresh, onHistoricoGeral,
 }: {
   subdivisoes: SubdivisaoInfo[];
   semSubdivisao: LoteInfo[];
@@ -1058,6 +1049,7 @@ function TabelaMapa({
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh: () => void;
+  onHistoricoGeral: () => void;
 }) {
   return (
     <>
@@ -1070,7 +1062,19 @@ function TabelaMapa({
               <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28">Área (ha)</th>
               <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">Taxa Lotação</th>
               <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">Entrada no Pasto</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-48">Ações</th>
+              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-48">
+                <div className="flex flex-col items-center gap-1">
+                  <button type="button" onClick={onHistoricoGeral}
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-white/90 border border-white/30 rounded hover:bg-white/20 transition whitespace-nowrap">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Histórico Geral
+                  </button>
+                  <span>Ações</span>
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
