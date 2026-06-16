@@ -151,7 +151,7 @@ export default function EditLotePage() {
 
   const selectedIds = useMemo(() => [...selected], [selected]);
 
-  const exportHeaders = ["Brinco", "Categoria", "Sexo", "Raça", "Subdivisão (Pasto)"];
+  const exportHeaders = ["Brinco", "Categoria", "Sexo", "Raça", "Subdivisão"];
   const exportRows = useMemo(
     () => animalRows.map(a => [
       a.brinco?.trim() || a.nome?.trim() || String(a.id),

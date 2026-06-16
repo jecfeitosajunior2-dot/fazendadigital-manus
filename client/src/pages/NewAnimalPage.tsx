@@ -573,7 +573,7 @@ const AnimalFormPage: React.FC = () => {
                 <FieldInput value={form.marca} onChange={v => set('marca', v)} placeholder="ex: Marca a fogo" />
               </div>
               <div>
-                <FormLabel>Subdivisão (Pasto)</FormLabel>
+                <FormLabel>Subdivisão</FormLabel>
                 <FieldBox>
                   <select
                     value={pastoId}

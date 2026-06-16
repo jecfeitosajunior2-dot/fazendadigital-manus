@@ -487,7 +487,7 @@ export default function ListaAnimaisFiltros({
 
               {/* Subdivisão */}
               {has('subdivisao') && (
-                <FilterCard label="Subdivisão (Pasto)">
+                <FilterCard label="Subdivisão">
                   <select
                     value={value.pastoId}
                     onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
