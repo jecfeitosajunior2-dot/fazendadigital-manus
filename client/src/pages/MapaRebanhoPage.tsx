@@ -193,95 +193,6 @@ function ModalMoverLote({
   );
 }
 
-// ─── Modal Mover Animal ────────────────────────────────────────────────────────
-function ModalMoverAnimal({
-  lote, fazendaId, onClose, onSuccess,
-}: {
-  lote: LoteInfo; fazendaId: number; onClose: () => void; onSuccess: () => void;
-}) {
-  const [loteDestinoId, setLoteDestinoId] = useState("");
-  const [data, setData] = useState(hojeStr());
-  const [selectedAnimais, setSelectedAnimais] = useState<number[]>([]);
-
-  const { data: animaisData } = trpc.animais.list.useQuery({ fazendaId, loteId: lote.loteId });
-  const animaisList = (animaisData ?? []) as { id: number; brinco: string; categoria: string; sexo: string }[];
-
-  const { data: lotesData } = trpc.lotes.list.useQuery();
-  const lotesDisponiveis = ((lotesData as { id: number; nome: string; fazendaId?: number | null }[] | undefined) ?? [])
-    .filter(l => l.id !== lote.loteId && l.fazendaId === fazendaId);
-
-  const moveMutation = trpc.lotes.movimentarAnimais.useMutation({
-    onSuccess: (res) => {
-      toast.success(`${(res as { count?: number }).count ?? selectedAnimais.length} animal(is) movido(s)!`);
-      onSuccess(); onClose();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const toggleAnimal = (id: number) =>
-    setSelectedAnimais(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
-  const toggleAll = () =>
-    setSelectedAnimais(selectedAnimais.length === animaisList.length ? [] : animaisList.map(a => a.id));
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-md shadow-xl w-full max-w-lg mx-4 p-6">
-        <h2 className="text-[14px] font-semibold text-gray-800 mb-1">Mover Animal para Outro Lote</h2>
-        <p className="text-[12px] text-gray-500 mb-4">Lote origem: <strong>{lote.loteNome}</strong></p>
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-[11px] font-medium text-gray-600">Selecionar Animais *</label>
-            <button type="button" onClick={toggleAll} className="text-[11px] text-[#2D5A5A] hover:underline">
-              {selectedAnimais.length === animaisList.length ? "Desmarcar todos" : "Selecionar todos"}
-            </button>
-          </div>
-          <div className="border border-gray-200 rounded-sm max-h-[150px] overflow-y-auto bg-[#EEEEEE]">
-            {animaisList.length === 0 ? (
-              <p className="px-3 py-4 text-[12px] text-gray-400 text-center">Nenhum animal neste lote</p>
-            ) : animaisList.map(a => (
-              <label key={a.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 cursor-pointer">
-                <input type="checkbox" checked={selectedAnimais.includes(a.id)} onChange={() => toggleAnimal(a.id)}
-                  className="accent-[#2D5A5A]" />
-                <span className="text-[12px] text-gray-700">
-                  Brinco <strong>{a.brinco}</strong> — {a.categoria} — {a.sexo}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div className="mb-3">
-          <label className="block text-[11px] font-medium text-gray-600 mb-1">Lote Destino *</label>
-          <select value={loteDestinoId} onChange={e => setLoteDestinoId(e.target.value)}
-            className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]">
-            <option value="">Selecione o lote destino</option>
-            {lotesDisponiveis.map(l => <option key={l.id} value={String(l.id)}>{l.nome}</option>)}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label className="block text-[11px] font-medium text-gray-600 mb-1">Data da Movimentação *</label>
-          <input type="date" value={data} onChange={e => setData(e.target.value)}
-            className="w-full h-[38px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]" />
-        </div>
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
-            Cancelar
-          </button>
-          <button type="button" onClick={() => {
-            if (selectedAnimais.length === 0) { toast.error("Selecione ao menos um animal."); return; }
-            if (!loteDestinoId) { toast.error("Selecione o lote destino."); return; }
-            moveMutation.mutate({ loteOrigemId: lote.loteId, loteDestinoId: Number(loteDestinoId), animalIds: selectedAnimais, dataMovimentacao: data });
-          }} disabled={moveMutation.isPending}
-            className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: GREEN }}>
-            {moveMutation.isPending ? "Movendo..." : "Confirmar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Modal Histórico ───────────────────────────────────────────────────────────
 type HistoricoRow = {
   id: number; loteId: number; loteNome: string;
@@ -600,7 +511,6 @@ function LoteRow({
       ? Math.round((taxaLotacaoPasto * (lote.totalAnimais / totalAnimaisPasto)) * 100) / 100
       : null;
   const [modalMoverLote, setModalMoverLote] = useState(false);
-  const [modalMoverAnimal, setModalMoverAnimal] = useState(false);
   const [modalHistorico, setModalHistorico] = useState(false);
 
   return (
@@ -645,12 +555,7 @@ function LoteRow({
               style={{ backgroundColor: GREEN }}>
               Mover Lote
             </button>
-            <button type="button" onClick={() => setModalMoverAnimal(true)}
-              title="Mover animais para outro lote"
-              className="px-2 py-1 text-[10px] font-medium border rounded hover:bg-gray-50 transition"
-              style={{ color: GREEN, borderColor: GREEN }}>
-              Mover Animal
-            </button>
+
           </div>
         </td>
       </tr>
@@ -660,11 +565,7 @@ function LoteRow({
           onClose={() => setModalMoverLote(false)} onSuccess={onRefresh} />,
         document.body
       )}
-      {modalMoverAnimal && createPortal(
-        <ModalMoverAnimal lote={lote} fazendaId={fazendaId}
-          onClose={() => setModalMoverAnimal(false)} onSuccess={onRefresh} />,
-        document.body
-      )}
+
       {modalHistorico && createPortal(
         <ModalHistorico fazendaId={fazendaId} loteId={lote.loteId} loteNome={lote.loteNome}
           onClose={() => setModalHistorico(false)} />,
