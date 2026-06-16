@@ -468,7 +468,7 @@ export function HerdOverviewPage() {
 
   if (!data) return null;
 
-  // Calcula o primeiro e último dia do mês atual para o filtro de Entradas no Mês
+  // Calcula o primeiro e último dia do mês atual para o filtro de Nascimentos no Mês
   const hoje = new Date();
   const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
   const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -479,19 +479,6 @@ export function HerdOverviewPage() {
     { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK, onClick: undefined },
     { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER, onClick: undefined },
     { label: "GMD Médio", value: data.gmdMedio !== null ? `${data.gmdMedio} kg/d` : "—", icon: "trending_up", color: PURPLE, onClick: undefined },
-    {
-      label: "Entradas no Mês",
-      value: data.evolucaoEfetivo.entradas.toString(),
-      icon: "login",
-      color: "#10B981",
-      onClick: () => {
-        const params = new URLSearchParams();
-        params.set('dataEntradaDe', primeiroDiaMes);
-        params.set('dataEntradaAte', ultimoDiaMes);
-        if (fazendaId) params.set('fazendaId', String(fazendaId));
-        setLocation(`/rebanho/lista-animais?${params.toString()}`);
-      },
-    },
     {
       label: "Nascimentos no Mês",
       value: (data.evolucaoEfetivo.nascimentosNoMes ?? 0).toString(),
