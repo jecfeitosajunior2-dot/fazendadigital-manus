@@ -439,7 +439,12 @@ function AlertCard({ icon, label, value, color, onClick }: { icon: string; label
 
 export function HerdOverviewPage() {
   const [, setLocation] = useLocation();
-  const { data, isLoading } = trpc.rebanho.overview.useQuery(undefined, { refetchOnWindowFocus: false });
+  const [fazendaId, setFazendaId] = useState<number | undefined>(undefined);
+  const { data: fazendaList } = trpc.fazendas.list.useQuery(undefined, { refetchOnWindowFocus: false });
+  const { data, isLoading } = trpc.rebanho.overview.useQuery(
+    fazendaId ? { fazendaId } : undefined,
+    { refetchOnWindowFocus: false }
+  );
 
   const TEAL = "#2D5A5A";
   const ORANGE = "#F97316";
@@ -474,7 +479,21 @@ export function HerdOverviewPage() {
 
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h1 className="text-[15px] font-medium text-gray-800">Visão Geral do Rebanho</h1>
+        {fazendaList && fazendaList.length > 1 && (
+          <select
+            value={fazendaId ?? ""}
+            onChange={e => setFazendaId(e.target.value ? Number(e.target.value) : undefined)}
+            className="text-[12px] border border-gray-200 rounded-md px-3 py-1.5 bg-white text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+          >
+            <option value="">Todas as Fazendas</option>
+            {fazendaList.map(f => (
+              <option key={f.id} value={f.id}>{f.nome}</option>
+            ))}
+          </select>
+        )}
+      </div>
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
