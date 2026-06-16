@@ -53,6 +53,7 @@ export const rebanhoOverviewRouter = router({
           porAtividade: [] as { label: string; value: number; pct: number }[],
           porFaixaPeso: [] as { label: string; value: number; pct: number }[],
           porFaixaEtaria: [] as { label: string; value: number; pct: number }[],
+          porFaixaEtariaCategoria: [] as { faixa: string; categorias: Record<string, number> }[],
           top5Gmd: [] as { brinco: string | null; categoria: string | null; gmd: number }[],
           evolucaoEfetivo: { entradas: 0, saidas: 0 },
         };
@@ -282,6 +283,27 @@ export const rebanhoOverviewRouter = router({
         return { label: LABEL_MAP[f] || f, value, pct: totalComIdade > 0 ? Math.round((value / totalComIdade) * 100) : 0 };
       });
 
+      // Tabela cruzada: Faixa Etária × Categoria
+      const TODAS_CATS = ['Boi', 'Novilho', 'Bezerro', 'Vaca', 'Novilha', 'Bezerra'];
+      // mapa faixa -> { categoria -> count }
+      const cruzadoMap = new Map<string, Record<string, number>>();
+      for (const f of FAIXAS_IDADE_LOTE) {
+        cruzadoMap.set(f, Object.fromEntries(TODAS_CATS.map(c => [c, 0])));
+      }
+      for (const a of lista) {
+        const meses = calcularIdadeMeses(a.dataNascimento);
+        const faixa = faixaIdadeLote(meses);
+        const cat = a.categoria;
+        if (faixa && cat && TODAS_CATS.includes(cat)) {
+          const row = cruzadoMap.get(faixa)!;
+          row[cat] = (row[cat] || 0) + 1;
+        }
+      }
+      const porFaixaEtariaCategoria = FAIXAS_IDADE_LOTE.map(f => ({
+        faixa: LABEL_MAP[f] || f,
+        categorias: cruzadoMap.get(f) || {},
+      }));
+
       // Por faixa de peso
       const faixas = [
         { label: "< 200 kg", min: 0, max: 200 },
@@ -333,6 +355,7 @@ export const rebanhoOverviewRouter = router({
         porCategoriaMachos,
         porCategoriaFemeas,
         porFaixaEtaria,
+        porFaixaEtariaCategoria,
         porRaca,
         porAtividade,
         porFaixaPeso,

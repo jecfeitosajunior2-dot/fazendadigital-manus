@@ -513,7 +513,8 @@ export function HerdOverviewPage() {
       </div>
 
       {/* ── Distribuições ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+      {/* Linha 1: Machos | Fêmeas | Por Raça | Por Faixa de Peso */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: BLUE }}>
             <span className="material-icons text-[14px]">male</span> Machos
@@ -531,12 +532,6 @@ export function HerdOverviewPage() {
             : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Faixa Etária</h2>
-          {data.porFaixaEtaria.some(f => f.value > 0)
-            ? <BarChart items={data.porFaixaEtaria} color="#10b981" />
-            : <p className="text-[11px] text-gray-400">Sem data de nascimento cadastrada</p>}
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
           <BarChart items={data.porRaca} color={ORANGE} />
         </div>
@@ -544,6 +539,49 @@ export function HerdOverviewPage() {
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
           <BarChart items={data.porFaixaPeso} color={PURPLE} />
         </div>
+      </div>
+
+      {/* Linha 2: Tabela cruzada Faixa Etária × Categoria (largura total) */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 overflow-x-auto">
+        <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Faixa Etária por Categoria</h2>
+        {data.porFaixaEtariaCategoria.some(r => Object.values(r.categorias).some(v => v > 0)) ? (
+          <table className="w-full text-[11px] border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="text-left py-1.5 px-2 font-semibold text-gray-600 border-b border-gray-200 w-28">Faixa</th>
+                {['Bezerro','Novilho','Boi','Bezerra','Novilha','Vaca'].map(cat => (
+                  <th key={cat} className="text-center py-1.5 px-2 font-semibold border-b border-gray-200"
+                    style={{ color: ['Bezerro','Novilho','Boi'].includes(cat) ? BLUE : PINK }}>
+                    {cat}
+                  </th>
+                ))}
+                <th className="text-center py-1.5 px-2 font-semibold text-gray-600 border-b border-gray-200">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.porFaixaEtariaCategoria.map((row, i) => {
+                const rowTotal = Object.values(row.categorias).reduce((s, v) => s + v, 0);
+                return (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <td className="py-1.5 px-2 font-medium text-gray-700">{row.faixa}</td>
+                    {['Bezerro','Novilho','Boi','Bezerra','Novilha','Vaca'].map(cat => (
+                      <td key={cat} className="text-center py-1.5 px-2 text-gray-600">
+                        {(row.categorias[cat] || 0) > 0
+                          ? <span className="font-semibold">{row.categorias[cat]}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                    ))}
+                    <td className="text-center py-1.5 px-2 font-semibold text-gray-700">
+                      {rowTotal > 0 ? rowTotal : <span className="text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-[11px] text-gray-400">Sem data de nascimento cadastrada para exibir faixas etárias</p>
+        )}
       </div>
 
       {/* ── Alertas ── */}
