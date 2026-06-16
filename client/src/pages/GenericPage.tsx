@@ -266,11 +266,11 @@ export function AnimaisPage() {
                   <td className="px-3 py-2 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
-                      <span className="font-semibold text-[#2D5A5A]">{animal.brinco || "-"}</span>
+                      <span className="font-semibold text-gray-800">{animal.brinco || "-"}</span>
                     </div>
                   </td>
                   {/* Nº RFID */}
-                  <td className="px-3 py-2 text-center text-gray-500 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-3 py-2 text-center text-gray-800 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
                   {/* Categoria */}
                   <td className="px-3 py-2 text-center">
                     {animal.categoria ? (
@@ -290,13 +290,13 @@ export function AnimaisPage() {
                     </span>
                   </td>
                   {/* Idade */}
-                  <td className="px-3 py-2 text-center tabular-nums">{formatIdade(animal.idadeMeses ?? null)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums text-gray-800">{formatIdade(animal.idadeMeses ?? null)}</td>
                   {/* Dias Fazenda */}
-                  <td className="px-3 py-2 text-center tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums text-gray-800">
                     {animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? animal.diasNaFazenda : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Último Peso */}
-                  <td className="px-3 py-2 text-center tabular-nums font-medium">
+                  <td className="px-3 py-2 text-center tabular-nums font-medium text-gray-800">
                     {animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? Number(animal.ultimoPeso).toFixed(1) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Ganho KG */}
