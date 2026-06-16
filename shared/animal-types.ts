@@ -38,8 +38,6 @@ export function isCategoriaValidaParaSexo(sexo: string, categoria: string): bool
  * Retorna todas as categorias válidas (sem duplicatas)
  */
 export function todasAsCategorias(): string[] {
-  // Ordem definida: machos primeiro (Bezerro, Novilho, Boi), depois fêmeas (Bezerra, Novilha, Vaca)
-  const todasCategorias = new Set<string>();
-  Object.values(CATEGORIAS_POR_SEXO).forEach(cats => cats.forEach(cat => todasCategorias.add(cat)));
-  return Array.from(todasCategorias);
+  // Ordem agrupada por faixa etária: Bezerro, Bezerra, Novilho, Novilha, Boi, Vaca
+  return ['Bezerro', 'Bezerra', 'Novilho', 'Novilha', 'Boi', 'Vaca'];
 }
