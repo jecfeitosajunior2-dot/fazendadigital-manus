@@ -493,17 +493,6 @@ export function HerdOverviewPage() {
         ))}
       </div>
 
-      {/* ── Alertas ── */}
-      <div className="mb-4">
-        <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Alertas e Pendências</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
-          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
-          <AlertCard icon="scale" label="Sem Pesagem (30d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
-          <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => setLocation("/rebanho/lotes")} />
-        </div>
-      </div>
-
       {/* ── Distribuições ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
@@ -517,6 +506,17 @@ export function HerdOverviewPage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
           <BarChart items={data.porFaixaPeso} color={PURPLE} />
+        </div>
+      </div>
+
+      {/* ── Alertas ── */}
+      <div className="mb-4">
+        <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Alertas e Pendências</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="scale" label="Sem Pesagem (30d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => setLocation("/rebanho/lotes")} />
         </div>
       </div>
 
