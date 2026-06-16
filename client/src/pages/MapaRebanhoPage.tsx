@@ -708,7 +708,24 @@ type FazendaMapaRow = {
 
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function MapaRebanhoPage() {
-  const [filters, setFilters] = usePersistedState<FiltersState>(FILTERS_KEY, INITIAL_FILTERS);
+  // Lê fazendaId da URL (ex: /rebanho/mapa-rebanho?fazendaId=123)
+  const urlFazendaId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('fazendaId') || '';
+  }, []);
+
+  const [filters, setFilters] = usePersistedState<FiltersState>(
+    FILTERS_KEY,
+    urlFazendaId ? { ...INITIAL_FILTERS, fazendaId: urlFazendaId } : INITIAL_FILTERS
+  );
+
+  // Se a URL trouxer um fazendaId diferente do estado persistido, sobrescreve
+  useEffect(() => {
+    if (urlFazendaId && filters.fazendaId !== urlFazendaId) {
+      setFilters(f => ({ ...f, fazendaId: urlFazendaId, pastoId: '' }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlFazendaId]);
   const debouncedSearch = useDebounce(filters.search, 300);
   const [expandedSubdivisoes, setExpandedSubdivisoes] = useState<Set<number>>(new Set());
   const [expandedFazendas, setExpandedFazendas] = useState<Set<number>>(new Set());
