@@ -46,6 +46,8 @@ export const rebanhoOverviewRouter = router({
           totalSemPesagemRecente: 0,
           totalLotesSuperLotados: 0,
           porCategoria: [] as { label: string; value: number; pct: number }[],
+          porCategoriaMachos: [] as { label: string; value: number; pct: number }[],
+          porCategoriaFemeas: [] as { label: string; value: number; pct: number }[],
           porRaca: [] as { label: string; value: number; pct: number }[],
           porAtividade: [] as { label: string; value: number; pct: number }[],
           porFaixaPeso: [] as { label: string; value: number; pct: number }[],
@@ -205,6 +207,33 @@ export const rebanhoOverviewRouter = router({
         .sort((a, b) => b[1] - a[1])
         .map(([label, value]) => ({ label, value, pct: Math.round((value / total) * 100) }));
 
+      // Por categoria separado por sexo
+      const CATS_MACHOS = ["boi", "novilho", "bezerro", "touro", "reprodutor"];
+      const CATS_FEMEAS = ["vaca", "novilha", "bezerra", "vaca prenha", "prenha", "matriz"];
+      const catMachosCount = new Map<string, number>();
+      const catFemeasCount = new Map<string, number>();
+      for (const a of lista) {
+        const cat = (a.categoria || "").toLowerCase().trim();
+        const label = a.categoria || "Outros";
+        if (CATS_MACHOS.some(m => cat.includes(m))) {
+          catMachosCount.set(label, (catMachosCount.get(label) || 0) + 1);
+        } else if (CATS_FEMEAS.some(f => cat.includes(f))) {
+          catFemeasCount.set(label, (catFemeasCount.get(label) || 0) + 1);
+        } else if (a.sexo === "macho") {
+          catMachosCount.set(label, (catMachosCount.get(label) || 0) + 1);
+        } else if (a.sexo === "femea") {
+          catFemeasCount.set(label, (catFemeasCount.get(label) || 0) + 1);
+        }
+      }
+      const totalMachosCateg = [...catMachosCount.values()].reduce((s, v) => s + v, 0);
+      const totalFemeasCateg = [...catFemeasCount.values()].reduce((s, v) => s + v, 0);
+      const porCategoriaMachos = [...catMachosCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, value]) => ({ label, value, pct: totalMachosCateg > 0 ? Math.round((value / totalMachosCateg) * 100) : 0 }));
+      const porCategoriaFemeas = [...catFemeasCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, value]) => ({ label, value, pct: totalFemeasCateg > 0 ? Math.round((value / totalFemeasCateg) * 100) : 0 }));
+
       // Por raça
       const racaCount = new Map<string, number>();
       for (const a of lista) {
@@ -274,6 +303,8 @@ export const rebanhoOverviewRouter = router({
         totalSemPesagemRecente,
         totalLotesSuperLotados,
         porCategoria,
+        porCategoriaMachos,
+        porCategoriaFemeas,
         porRaca,
         porAtividade,
         porFaixaPeso,

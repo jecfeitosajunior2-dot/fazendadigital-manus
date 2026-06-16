@@ -513,10 +513,22 @@ export function HerdOverviewPage() {
       </div>
 
       {/* ── Distribuições ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Categoria</h2>
-          <BarChart items={data.porCategoria} color={TEAL} />
+          <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: BLUE }}>
+            <span className="material-icons text-[14px]">male</span> Machos
+          </h2>
+          {data.porCategoriaMachos.length > 0
+            ? <BarChart items={data.porCategoriaMachos} color={BLUE} />
+            : <p className="text-[11px] text-gray-400">Nenhum macho cadastrado</p>}
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: PINK }}>
+            <span className="material-icons text-[14px]">female</span> Fêmeas
+          </h2>
+          {data.porCategoriaFemeas.length > 0
+            ? <BarChart items={data.porCategoriaFemeas} color={PINK} />
+            : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
