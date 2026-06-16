@@ -33,7 +33,7 @@ export const FILTROS_ADICIONAIS_OPCOES: { key: FiltroAdicionalKey; label: string
   { key: 'raca', label: 'Raça' },
   { key: 'pelagem', label: 'Pelagem' },
   { key: 'marca', label: 'Marca' },
-  { key: 'subdivisao', label: 'Subdivisão (Pasto)' },
+  { key: 'subdivisao', label: 'Subdivisão' },
   { key: 'dataNascimento', label: 'Data de Nascimento' },
   { key: 'dataDesmama', label: 'Data de Desmama' },
   { key: 'castrado', label: 'Castrado' },
