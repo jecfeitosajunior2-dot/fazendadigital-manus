@@ -70,21 +70,26 @@ describe('animaisFiltersToApiParams', () => {
 });
 
 describe('FILTROS_ADICIONAIS_OPCOES', () => {
-  it('contém exatamente os 12 filtros na sequência especificada', () => {
+  it('contém os filtros esperados na sequência definida', () => {
     const keys = FILTROS_ADICIONAIS_OPCOES.map(o => o.key);
     expect(keys).toEqual([
-      'dataNascimento',
       'peso',
       'rfid',
-      'subdivisao',
       'raca',
-      'categoria',
-      'inativos',
-      'marcadores',
-      'idadeMeses',
+      'pelagem',
+      'marca',
+      'subdivisao',
+      'dataNascimento',
+      'dataDesmama',
+      'castrado',
+      'produtorOrigem',
+      'animalComSisbov',
       'rgn',
       'rgd',
-      'animalComSisbov',
+      'pai',
+      'mae',
+      'status',
+      'dataEntrada',
     ]);
   });
 });

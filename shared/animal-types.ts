@@ -12,8 +12,8 @@ export const SEXOS = ['Macho', 'Fêmea'] as const;
 export type Sexo = (typeof SEXOS)[number];
 
 export const CATEGORIAS_POR_SEXO: Record<Sexo, string[]> = {
-  Macho: ['Boi', 'Novilho', 'Bezerro'],
-  Fêmea: ['Vaca', 'Novilha', 'Bezerra'],
+  Macho: ['Bezerro', 'Novilho', 'Boi'],
+  Fêmea: ['Bezerra', 'Novilha', 'Vaca'],
 };
 
 /**
@@ -38,7 +38,8 @@ export function isCategoriaValidaParaSexo(sexo: string, categoria: string): bool
  * Retorna todas as categorias válidas (sem duplicatas)
  */
 export function todasAsCategorias(): string[] {
+  // Ordem definida: machos primeiro (Bezerro, Novilho, Boi), depois fêmeas (Bezerra, Novilha, Vaca)
   const todasCategorias = new Set<string>();
   Object.values(CATEGORIAS_POR_SEXO).forEach(cats => cats.forEach(cat => todasCategorias.add(cat)));
-  return Array.from(todasCategorias).sort();
+  return Array.from(todasCategorias);
 }

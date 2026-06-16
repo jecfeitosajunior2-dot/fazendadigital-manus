@@ -19,8 +19,8 @@ import {
 
 describe('CATEGORIAS_POR_SEXO — regra definitiva', () => {
   describe('Macho', () => {
-    it('contém exatamente Boi, Novilho e Bezerro', () => {
-      expect(CATEGORIAS_POR_SEXO.Macho).toEqual(['Boi', 'Novilho', 'Bezerro']);
+    it('contém exatamente Bezerro, Novilho e Boi (nessa ordem)', () => {
+      expect(CATEGORIAS_POR_SEXO.Macho).toEqual(['Bezerro', 'Novilho', 'Boi']);
     });
 
     it('NÃO contém Touro', () => {
@@ -33,8 +33,8 @@ describe('CATEGORIAS_POR_SEXO — regra definitiva', () => {
   });
 
   describe('Fêmea', () => {
-    it('contém exatamente Vaca, Novilha e Bezerra', () => {
-      expect(CATEGORIAS_POR_SEXO['Fêmea']).toEqual(['Vaca', 'Novilha', 'Bezerra']);
+    it('contém exatamente Bezerra, Novilha e Vaca (nessa ordem)', () => {
+      expect(CATEGORIAS_POR_SEXO['Fêmea']).toEqual(['Bezerra', 'Novilha', 'Vaca']);
     });
 
     it('NÃO contém Vaca Prenha', () => {
@@ -48,12 +48,12 @@ describe('CATEGORIAS_POR_SEXO — regra definitiva', () => {
 });
 
 describe('getCategoriasPorSexo', () => {
-  it('retorna [Boi, Novilho, Bezerro] para Macho', () => {
-    expect(getCategoriasPorSexo('Macho')).toEqual(['Boi', 'Novilho', 'Bezerro']);
+  it('retorna [Bezerro, Novilho, Boi] para Macho', () => {
+    expect(getCategoriasPorSexo('Macho')).toEqual(['Bezerro', 'Novilho', 'Boi']);
   });
 
-  it('retorna [Vaca, Novilha, Bezerra] para Fêmea', () => {
-    expect(getCategoriasPorSexo('Fêmea')).toEqual(['Vaca', 'Novilha', 'Bezerra']);
+  it('retorna [Bezerra, Novilha, Vaca] para Fêmea', () => {
+    expect(getCategoriasPorSexo('Fêmea')).toEqual(['Bezerra', 'Novilha', 'Vaca']);
   });
 
   it('retorna [] para sexo desconhecido', () => {
