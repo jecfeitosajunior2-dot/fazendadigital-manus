@@ -21,6 +21,28 @@ type FiltersState = { fazendaId: string; pastoId: string; search: string };
 const INITIAL_FILTERS: FiltersState = { fazendaId: "", pastoId: "", search: "" };
 
 function hojeStr() { return new Date().toISOString().slice(0, 10); }
+// ISO (AAAA-MM-DD) -> BR (DD/MM/AAAA)
+function isoToBr(iso: string) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return "";
+  return `${d}/${m}/${y}`;
+}
+// Aplica máscara DD/MM/AAAA enquanto digita
+function maskBrDate(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+  return parts.join("/");
+}
+// BR (DD/MM/AAAA) completo -> ISO (AAAA-MM-DD), ou null se incompleto/inválido
+function brToIso(br: string): string | null {
+  const m = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy] = m;
+  const dt = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  if (dt.getFullYear() !== Number(yyyy) || dt.getMonth() !== Number(mm) - 1 || dt.getDate() !== Number(dd)) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
 function formatArea(area: string | null) {
   if (!area) return "—";
   const n = Number(area);
@@ -90,8 +112,22 @@ function ModalMoverLote({
 }) {
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
+  const [dataBr, setDataBr] = useState(isoToBr(hojeStr()));
   const [obs, setObs] = useState("");
   const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Texto digitado (DD/MM/AAAA): aplica máscara e converte para ISO quando completo
+  const handleDataBrChange = (raw: string) => {
+    const masked = maskBrDate(raw);
+    setDataBr(masked);
+    const iso = brToIso(masked);
+    if (iso) setData(iso);
+  };
+  // Seleção pelo calendário nativo (ISO): sincroniza o texto BR
+  const handleDatePicker = (iso: string) => {
+    setData(iso);
+    setDataBr(isoToBr(iso));
+  };
 
   const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
@@ -124,20 +160,35 @@ function ModalMoverLote({
             </label>
             <div className="flex overflow-hidden rounded-sm border border-gray-200 bg-white focus-within:border-[#4ECDC4]">
               <div className="w-1 flex-shrink-0 bg-[#4ECDC4]" />
-              <div
-                className="flex items-center flex-1 cursor-pointer"
-                onClick={() => dateInputRef.current?.showPicker?.()}
-              >
-                <svg className="w-4 h-4 text-gray-400 ml-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+              <div className="flex items-center flex-1 relative">
+                <button
+                  type="button"
+                  title="Abrir calendário"
+                  onClick={() => dateInputRef.current?.showPicker?.()}
+                  className="flex items-center justify-center ml-3 flex-shrink-0 text-gray-400 hover:text-[#2D5A5A] transition"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="DD/MM/AAAA"
+                  value={dataBr}
+                  onChange={e => handleDataBrChange(e.target.value)}
+                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0"
+                />
+                {/* input date oculto, acionado pelo ícone de calendário */}
                 <input
                   ref={dateInputRef}
                   type="date"
                   value={data}
-                  onChange={e => setData(e.target.value)}
-                  className="flex-1 h-[38px] px-3 text-[12px] bg-white text-gray-800 focus:outline-none border-0 cursor-pointer [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden"
+                  onChange={e => handleDatePicker(e.target.value)}
+                  className="absolute right-0 bottom-0 w-0 h-0 opacity-0 pointer-events-none"
+                  tabIndex={-1}
+                  aria-hidden="true"
                 />
               </div>
             </div>
@@ -179,7 +230,8 @@ function ModalMoverLote({
           </button>
           <button type="button" onClick={() => {
             if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
-            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), observacoes: obs || undefined });
+            if (!brToIso(dataBr)) { toast.error("Informe uma data válida (DD/MM/AAAA)."); return; }
+            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data, observacoes: obs || undefined });
           }} disabled={moveMutation.isPending}
             className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
             style={{ backgroundColor: GREEN }}>

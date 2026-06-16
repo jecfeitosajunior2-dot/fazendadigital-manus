@@ -1279,6 +1279,7 @@ const lotesRouter = router({
       loteId: z.number(),
       pastoId: z.number().nullable(),
       observacoes: z.string().optional(),
+      dataEntrada: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const [lote] = await db.select().from(lotes).where(
@@ -1286,7 +1287,8 @@ const lotesRouter = router({
       ).limit(1);
       if (!lote) throw new Error("Lote não encontrado");
 
-      const hoje = hojeISO();
+      // Data efetiva da movimentação: usa a informada pelo usuário ou hoje
+      const hoje = input.dataEntrada ?? hojeISO();
       const qtdAnimais = await countAnimaisLote(lote.id);
       const pastoOrigemId = lote.pastoAtualId ?? null;
 
