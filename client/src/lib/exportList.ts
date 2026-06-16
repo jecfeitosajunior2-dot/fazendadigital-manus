@@ -154,7 +154,9 @@ export function exportListPdf(
   <meta charset="utf-8">
   <title>${title}</title>
   <style>
-    @page { margin: 14mm 12mm 12mm 12mm; ${landscape ? "size: A4 landscape;" : ""} }
+    @page { margin: 14mm 12mm 12mm 12mm; ${landscape ? "size: A4 landscape;" : "size: A4 portrait;"} }
+    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @media screen { body { outline: none !important; border: none !important; } }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
 
@@ -295,7 +297,12 @@ export function exportListPdf(
 
 </body></html>`;
 
-  const win = window.open("", "_blank");
+  // Dimensões da janela: A4 portrait = 850×1160px, A4 landscape = 1200×820px
+  const W = landscape ? 1200 : 850;
+  const H = landscape ? 820 : 1160;
+  const left = Math.max(0, Math.round((screen.width - W) / 2));
+  const top = Math.max(0, Math.round((screen.height - H) / 2));
+  const win = window.open("", "_blank", `width=${W},height=${H},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`);
   if (!win) {
     toast.error("Permita pop-ups para exportar PDF");
     return;
@@ -303,7 +310,7 @@ export function exportListPdf(
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => win.print(), 400);
+  setTimeout(() => win.print(), 500);
 }
 
 /**
@@ -696,7 +703,12 @@ export function exportMapaRebanhoPdf(
   </div>
 </body></html>`;
 
-  const win = window.open("", "_blank");
+  // Abre janela com dimensões A4 portrait para evitar linha pontilhada de quebra de página
+  const _W = 850;
+  const _H = 1160;
+  const _left = Math.max(0, Math.round((screen.width - _W) / 2));
+  const _top = Math.max(0, Math.round((screen.height - _H) / 2));
+  const win = window.open("", "_blank", `width=${_W},height=${_H},left=${_left},top=${_top},menubar=no,toolbar=no,location=no,status=no`);
   if (!win) {
     toast.error("Permita pop-ups para exportar PDF");
     return;
@@ -704,5 +716,5 @@ export function exportMapaRebanhoPdf(
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => win.print(), 400);
+  setTimeout(() => win.print(), 500);
 }
