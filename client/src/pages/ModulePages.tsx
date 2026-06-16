@@ -643,11 +643,10 @@ export function HerdOverviewPage() {
             setLocation(`/rebanho/lista-animais?${params.toString()}`);
           }} />
           <AlertCard icon="scale" label="Sem Pesagem (60d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
-          <AlertCard icon="warning" label="Lotes Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => {
+          <AlertCard icon="warning" label="Pastos Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => {
             const params = new URLSearchParams();
-            params.set('apenasSuperlotados', 'true');
             if (fazendaId) params.set('fazendaId', String(fazendaId));
-            setLocation(`/rebanho/lotes?${params.toString()}`);
+            setLocation(`/rebanho/mapa-rebanho${params.toString() ? `?${params.toString()}` : ''}`);
           }} />
         </div>
       </div>

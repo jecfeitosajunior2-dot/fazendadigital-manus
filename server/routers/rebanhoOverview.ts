@@ -111,7 +111,7 @@ export const rebanhoOverviewRouter = router({
 
       // ── 4. Lotes com atividade ────────────────────────────────────────────
       const lotesRows = loteIds.length
-        ? await db.select({ id: lotes.id, nome: lotes.nome, capacidade: lotes.capacidade })
+        ? await db.select({ id: lotes.id, nome: lotes.nome, capacidade: lotes.capacidade, pastoAtualId: lotes.pastoAtualId })
             .from(lotes)
             .where(inArray(lotes.id, loteIds))
         : [];
@@ -130,18 +130,41 @@ export const rebanhoOverviewRouter = router({
         }
       }
 
-      // Contar animais por lote para verificar superlotação
+      // Contar animais por lote para verificar superlotação via pasto (subdivisão)
       const animaisPorLote = new Map<number, number>();
       for (const a of lista) {
         if (a.loteId) {
           animaisPorLote.set(a.loteId, (animaisPorLote.get(a.loteId) || 0) + 1);
         }
       }
-      let totalLotesSuperLotados = 0;
+
+      // Buscar capacidade dos pastos vinculados aos lotes
+      const pastoIdsSuperlot = [...new Set(
+        lotesRows.map(l => l.pastoAtualId).filter(Boolean) as number[]
+      )];
+      const pastosCapacidade = pastoIdsSuperlot.length
+        ? await db.select({ id: pastos.id, capacidade: pastos.capacidade })
+            .from(pastos)
+            .where(inArray(pastos.id, pastoIdsSuperlot))
+        : [];
+      const pastoCapacidadeMap = new Map<number, number | null>(
+        pastosCapacidade.map(p => [p.id, p.capacidade ?? null])
+      );
+
+      // Superlotação: soma de todos os animais nos lotes de um pasto vs capacidade do pasto
+      const animaisPorPasto = new Map<number, number>();
       for (const l of lotesRows) {
-        if (l.capacidade && l.capacidade > 0) {
+        if (l.pastoAtualId) {
           const qtd = animaisPorLote.get(l.id) || 0;
-          if (qtd > l.capacidade) totalLotesSuperLotados++;
+          animaisPorPasto.set(l.pastoAtualId, (animaisPorPasto.get(l.pastoAtualId) || 0) + qtd);
+        }
+      }
+      // Contar pastos superlotados (cada pasto superlotado conta como 1 alerta)
+      let totalLotesSuperLotados = 0;
+      for (const [pastoId, totalAnimaisPasto] of animaisPorPasto.entries()) {
+        const cap = pastoCapacidadeMap.get(pastoId);
+        if (cap && cap > 0 && totalAnimaisPasto > cap) {
+          totalLotesSuperLotados++;
         }
       }
 
