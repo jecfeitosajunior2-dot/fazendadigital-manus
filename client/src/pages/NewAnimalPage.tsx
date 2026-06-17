@@ -378,12 +378,27 @@ const AnimalFormPage: React.FC = () => {
     }
     if (isEditMode) {
       const payload = buildPayload();
-      // Em modo edição, se loteId não foi preenchido, envia null para limpar o lote no banco
+      // Em modo edição: campos vazios enviam null para limpar o valor no banco
+      const resolveStr = (v: string) => v.trim() ? v.trim() : null;
       const editPayload = {
         ...payload,
         loteId: form.loteId ? parseInt(form.loteId) : null,
-        // null limpa o campo no banco; undefined não altera
-        pesoEntrada: form.pesoEntrada.trim() ? form.pesoEntrada.trim() : null,
+        pastoId: pastoId ? parseInt(pastoId) : null,
+        // Campos de texto: null limpa, string atualiza
+        brincoEletronico: resolveStr(form.brincoEletronico),
+        raca: resolveStr(form.raca),
+        pelagem: resolveStr(form.pelagem),
+        marca: resolveStr(form.marca),
+        pesoEntrada: resolveStr(form.pesoEntrada),
+        produtorOrigem: resolveStr(form.produtorOrigem),
+        precoKg: resolveStr(form.precoKg),
+        frete: resolveStr(form.frete),
+        sisbov: resolveStr(form.sisbov),
+        rgn: resolveStr(form.rgn),
+        rgd: resolveStr(form.rgd),
+        pai: resolveStr(form.pai),
+        mae: resolveStr(form.mae),
+        observacoes: resolveStr(form.observacoes),
       };
       updateMutation.mutate({ id: animalId!, ...editPayload });
     } else {

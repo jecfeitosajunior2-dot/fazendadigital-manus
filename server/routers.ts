@@ -449,51 +449,61 @@ const animaisRouter = router({
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
-      brinco: z.string().optional(),
-      brincoEletronico: z.string().optional(),
-      nome: z.string().optional(),
-      raca: z.string().optional(),
+      brinco: z.string().nullable().optional(),
+      brincoEletronico: z.string().nullable().optional(),
+      nome: z.string().nullable().optional(),
+      raca: z.string().nullable().optional(),
       sexo: z.enum(["macho", "femea"]).optional(),
       dataNascimento: z.string().nullable().optional(),
       pesoAtual: z.string().nullable().optional(),
       loteId: z.number().nullable().optional(),
-      categoria: z.string().optional(),
+      categoria: z.string().nullable().optional(),
       status: z.enum(["ativo", "vendido", "morto", "transferido"]).optional(),
-      observacoes: z.string().optional(),
-      pelagem: z.string().optional(),
-      marca: z.string().optional(),
+      observacoes: z.string().nullable().optional(),
+      pelagem: z.string().nullable().optional(),
+      marca: z.string().nullable().optional(),
       dataDesmama: z.string().nullable().optional(),
       castrado: z.boolean().optional(),
       dataEntrada: z.string().nullable().optional(),
       pesoEntrada: z.string().nullable().optional(),
-      produtorOrigem: z.string().optional(),
-      precoKg: z.string().optional(),
-      frete: z.string().optional(),
-      sisbov: z.string().optional(),
+      produtorOrigem: z.string().nullable().optional(),
+      precoKg: z.string().nullable().optional(),
+      frete: z.string().nullable().optional(),
+      sisbov: z.string().nullable().optional(),
       dataRnd: z.string().nullable().optional(),
-      rgn: z.string().optional(),
-      rgd: z.string().optional(),
+      rgn: z.string().nullable().optional(),
+      rgd: z.string().nullable().optional(),
       rastreadoNascimento: z.boolean().optional(),
-      pai: z.string().optional(),
-      mae: z.string().optional(),
-      fazendaId: z.number().optional(),
-      pastoId: z.number().optional(),
+      pai: z.string().nullable().optional(),
+      mae: z.string().nullable().optional(),
+      fazendaId: z.number().nullable().optional(),
+      pastoId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, loteId, pesoEntrada, pesoAtual, ...rest } = input;
-      // Para campos de data: null = limpar o campo, undefined = não alterar, string = novo valor
+      const {
+        id, dataNascimento, dataDesmama, dataEntrada, dataRnd,
+        loteId, pastoId, pesoEntrada, pesoAtual,
+        brinco, brincoEletronico, nome, raca, categoria, observacoes,
+        pelagem, marca, produtorOrigem, precoKg, frete,
+        sisbov, rgn, rgd, pai, mae, fazendaId,
+        ...rest
+      } = input;
+
+      // null = limpar campo, undefined = não alterar, string = atualizar
       const resolveData = (v: string | null | undefined) => {
-        if (v === null) return null;          // explicitamente limpo
-        if (!v) return undefined;             // não enviado, não alterar
-        return v;                             // novo valor
+        if (v === null) return null;
+        if (v === undefined) return undefined;
+        return v || null; // string vazia também limpa
       };
-      // Para campos de peso: null ou string vazia = limpar, undefined = não alterar, string = novo valor
+      const resolveStr = (v: string | null | undefined) => {
+        if (v === undefined) return undefined;
+        return v === null || v === '' ? null : v;
+      };
       const resolvePeso = (v: string | null | undefined) => {
-        if (v === null || v === '') return null; // limpar
-        if (v === undefined) return undefined;   // não alterar
-        return v;                                // novo valor
+        if (v === undefined) return undefined;
+        return v === null || v === '' ? null : v;
       };
-      // Para loteId: null = limpar o lote, undefined = não alterar, number = novo valor
+
       const setData: Record<string, unknown> = {
         ...rest,
         dataNascimento: resolveData(dataNascimento),
@@ -502,12 +512,28 @@ const animaisRouter = router({
         dataRnd: resolveData(dataRnd),
         pesoEntrada: resolvePeso(pesoEntrada),
         pesoAtual: resolvePeso(pesoAtual),
+        brinco: resolveStr(brinco),
+        brincoEletronico: resolveStr(brincoEletronico),
+        nome: resolveStr(nome),
+        raca: resolveStr(raca),
+        categoria: resolveStr(categoria),
+        observacoes: resolveStr(observacoes),
+        pelagem: resolveStr(pelagem),
+        marca: resolveStr(marca),
+        produtorOrigem: resolveStr(produtorOrigem),
+        precoKg: resolveStr(precoKg),
+        frete: resolveStr(frete),
+        sisbov: resolveStr(sisbov),
+        rgn: resolveStr(rgn),
+        rgd: resolveStr(rgd),
+        pai: resolveStr(pai),
+        mae: resolveStr(mae),
       };
       // Remove chaves undefined para não sobrescrever campos não enviados
       Object.keys(setData).forEach(k => setData[k] === undefined && delete setData[k]);
-      if (loteId !== undefined) {
-        setData.loteId = loteId; // null limpa o lote, number atualiza
-      }
+      if (loteId !== undefined) setData.loteId = loteId;
+      if (pastoId !== undefined) setData.pastoId = pastoId;
+      if (fazendaId !== undefined) setData.fazendaId = fazendaId;
       await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
       return { success: true };
     }),
