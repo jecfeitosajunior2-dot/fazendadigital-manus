@@ -60,12 +60,12 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
         {item.icon && depth === 0 && (
           item.icon === 'pets' ? (
             <img
-              src="/manus-storage/icon-rebanho-sidebar-v2_d68cf0da.png"
+              src="/manus-storage/pasted_file_WNZSRT_image_ffdc2cbe.png"
               alt="Rebanho"
-              width="20"
-              height="20"
-              className="mr-3 flex-shrink-0 opacity-90"
-              style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+              width="24"
+              height="24"
+              className="mr-3 flex-shrink-0"
+              style={{ objectFit: 'contain' }}
             />
           ) : (
             <span className="material-icons text-[18px] mr-3 opacity-90">{item.icon}</span>
