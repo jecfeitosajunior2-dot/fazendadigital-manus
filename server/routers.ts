@@ -275,7 +275,10 @@ const animaisRouter = router({
 
         // Pesagens do animal (ordenadas por data asc)
         const pesos = pesagensPorAnimal.get(animal.id) || [];
-        const ultimoPeso = pesos.length > 0 ? Number(pesos[pesos.length - 1].peso) : (animal.pesoAtual ? Number(animal.pesoAtual) : null);
+        // ultimoPeso: pesagens > pesoAtual > pesoEntrada (fallback em cascata)
+        const ultimoPeso = pesos.length > 0
+          ? Number(pesos[pesos.length - 1].peso)
+          : (animal.pesoAtual ? Number(animal.pesoAtual) : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null));
         const primeiroPeso = pesos.length > 0 ? Number(pesos[0].peso) : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
 
         // Ganho total (kg)
@@ -452,7 +455,7 @@ const animaisRouter = router({
       raca: z.string().optional(),
       sexo: z.enum(["macho", "femea"]).optional(),
       dataNascimento: z.string().nullable().optional(),
-      pesoAtual: z.string().optional(),
+      pesoAtual: z.string().nullable().optional(),
       loteId: z.number().nullable().optional(),
       categoria: z.string().optional(),
       status: z.enum(["ativo", "vendido", "morto", "transferido"]).optional(),
@@ -462,7 +465,7 @@ const animaisRouter = router({
       dataDesmama: z.string().nullable().optional(),
       castrado: z.boolean().optional(),
       dataEntrada: z.string().nullable().optional(),
-      pesoEntrada: z.string().optional(),
+      pesoEntrada: z.string().nullable().optional(),
       produtorOrigem: z.string().optional(),
       precoKg: z.string().optional(),
       frete: z.string().optional(),
@@ -477,12 +480,18 @@ const animaisRouter = router({
       pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, loteId, ...rest } = input;
+      const { id, dataNascimento, dataDesmama, dataEntrada, dataRnd, loteId, pesoEntrada, pesoAtual, ...rest } = input;
       // Para campos de data: null = limpar o campo, undefined = não alterar, string = novo valor
       const resolveData = (v: string | null | undefined) => {
         if (v === null) return null;          // explicitamente limpo
         if (!v) return undefined;             // não enviado, não alterar
         return v;                             // novo valor
+      };
+      // Para campos de peso: null ou string vazia = limpar, undefined = não alterar, string = novo valor
+      const resolvePeso = (v: string | null | undefined) => {
+        if (v === null || v === '') return null; // limpar
+        if (v === undefined) return undefined;   // não alterar
+        return v;                                // novo valor
       };
       // Para loteId: null = limpar o lote, undefined = não alterar, number = novo valor
       const setData: Record<string, unknown> = {
@@ -491,7 +500,11 @@ const animaisRouter = router({
         dataDesmama: resolveData(dataDesmama),
         dataEntrada: resolveData(dataEntrada),
         dataRnd: resolveData(dataRnd),
+        pesoEntrada: resolvePeso(pesoEntrada),
+        pesoAtual: resolvePeso(pesoAtual),
       };
+      // Remove chaves undefined para não sobrescrever campos não enviados
+      Object.keys(setData).forEach(k => setData[k] === undefined && delete setData[k]);
       if (loteId !== undefined) {
         setData.loteId = loteId; // null limpa o lote, number atualiza
       }

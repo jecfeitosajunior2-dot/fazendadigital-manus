@@ -382,6 +382,8 @@ const AnimalFormPage: React.FC = () => {
       const editPayload = {
         ...payload,
         loteId: form.loteId ? parseInt(form.loteId) : null,
+        // null limpa o campo no banco; undefined não altera
+        pesoEntrada: form.pesoEntrada.trim() ? form.pesoEntrada.trim() : null,
       };
       updateMutation.mutate({ id: animalId!, ...editPayload });
     } else {
