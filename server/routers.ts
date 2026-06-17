@@ -7,7 +7,8 @@ import {
   users, animais, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
-  compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes
+  compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
+  historicoBrincos
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
 import { createSession, clearAuthCookie } from "./_core/cookies";
@@ -4431,6 +4432,63 @@ const pastosRouter = router({
     }),
 });
 
+// ─── BRINCOS ROUTER ──────────────────────────────────────────────────────────
+const brincosRouter = router({
+  list: protectedProcedure
+    .input(z.object({ animalId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return db
+        .select()
+        .from(historicoBrincos)
+        .where(
+          and(
+            eq(historicoBrincos.animalId, input.animalId),
+            eq(historicoBrincos.userId, ctx.user.id)
+          )
+        )
+        .orderBy(desc(historicoBrincos.createdAt));
+    }),
+
+  registrar: protectedProcedure
+    .input(
+      z.object({
+        animalId: z.number(),
+        brincoAnterior: z.string().nullable().optional(),
+        brincoNovo: z.string().min(1),
+        motivo: z.enum(["perda", "danificado", "reidentificacao", "erro_cadastro", "outro"]),
+        observacoes: z.string().nullable().optional(),
+        dataAlteracao: z.string(), // YYYY-MM-DD
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.insert(historicoBrincos).values({
+        userId: ctx.user.id,
+        animalId: input.animalId,
+        brincoAnterior: input.brincoAnterior ?? null,
+        brincoNovo: input.brincoNovo,
+        motivo: input.motivo,
+        observacoes: input.observacoes ?? null,
+        dataAlteracao: input.dataAlteracao,
+        usuarioNome: ctx.user.name ?? null,
+      });
+      return { success: true, id: (result as any)[0]?.insertId };
+    }),
+
+  deletar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db
+        .delete(historicoBrincos)
+        .where(
+          and(
+            eq(historicoBrincos.id, input.id),
+            eq(historicoBrincos.userId, ctx.user.id)
+          )
+        );
+      return { success: true };
+    }),
+});
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: authRouter,
@@ -4452,5 +4510,6 @@ export const appRouter = router({
   fazendas: fazendasRouter,
     pastos: pastosRouter,
   rebanho: rebanhoOverviewRouter,
+  brincos: brincosRouter,
 });
 export type AppRouter = typeof appRouter;

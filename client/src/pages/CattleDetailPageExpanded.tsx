@@ -7,14 +7,14 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, TrendingUp, Zap, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, Plus, Trash2 } from 'lucide-react';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const CattleDetailPageExpanded: React.FC = () => {
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState('geral');
+  const [activeTab, setActiveTab] = useState('pesagens');
   const utils = trpc.useUtils();
 
   // Get animal ID from URL
@@ -289,87 +289,13 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 mb-6">
-            <TabsTrigger value="geral">Geral</TabsTrigger>
-            <TabsTrigger value="saude">Saúde</TabsTrigger>
-            <TabsTrigger value="reproducao">Reprodução</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="pesagens">Pesagens</TabsTrigger>
-            <TabsTrigger value="pastos">Pastos</TabsTrigger>
+            <TabsTrigger value="saude">Sanitário</TabsTrigger>
+            <TabsTrigger value="reproducao">Reprodução</TabsTrigger>
+            <TabsTrigger value="pastos">Subdivisão</TabsTrigger>
             <TabsTrigger value="observacoes">Observações</TabsTrigger>
           </TabsList>
-
-          {/* ─── Geral Tab ─────────────────────────────────────────────────── */}
-          <TabsContent value="geral">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="p-6">
-                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                  <Zap className="w-5 h-5 mr-2 text-blue-600" />
-                  Dados Completos
-                </h2>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">ID Interno</span>
-                    <span className="font-semibold">#{animal.id}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Nome</span>
-                    <span className="font-semibold">{animal.nome || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Brinco</span>
-                    <span className="font-semibold">{animal.brinco || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Raça</span>
-                    <span className="font-semibold">{animal.raca || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Sexo</span>
-                    <span className="font-semibold">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Categoria</span>
-                    <span className="font-semibold">{animal.categoria || '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Status</span>
-                    <span className={`font-semibold px-2 py-0.5 rounded text-xs ${animal.status === 'ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{animal.status}</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-2">
-                    <span className="text-gray-600">Cadastrado em</span>
-                    <span className="font-semibold">{formatDate(animal.createdAt)}</span>
-                  </div>
-                </div>
-              </Card>
-
-              <Card className="p-6">
-                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                  <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
-                  Resumo de Peso
-                </h2>
-                <div className="space-y-3">
-                  <div className="p-3 bg-gray-50 rounded">
-                    <p className="text-xs text-gray-600">Peso Atual (cadastrado)</p>
-                    <p className="text-2xl font-bold text-gray-800">{animal.pesoAtual || '—'}kg</p>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded">
-                    <p className="text-xs text-gray-600">Última Pesagem</p>
-                    <p className="text-2xl font-bold text-gray-800">{latestWeight}kg</p>
-                  </div>
-                  <div className="p-3 bg-green-50 rounded border border-green-200">
-                    <p className="text-xs text-gray-600">Ganho Total (pesagens)</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
-                    </p>
-                  </div>
-                  <div className="p-3 bg-blue-50 rounded border border-blue-200">
-                    <p className="text-xs text-gray-600">Total de Pesagens</p>
-                    <p className="text-2xl font-bold text-blue-600">{pesagens?.length || 0}</p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </TabsContent>
 
           {/* ─── Saúde Tab ─────────────────────────────────────────────────── */}
           <TabsContent value="saude">
@@ -753,12 +679,12 @@ export const CattleDetailPageExpanded: React.FC = () => {
             </Card>
           </TabsContent>
 
-          {/* ─── Pastos Tab ────────────────────────────────────────────────────────────────────────────────────── */}
+          {/* ─── Subdivisão Tab ─────────────────────────────────────────────────── */}
           <TabsContent value="pastos">
             <Card className="p-6">
               <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#7CB342' }} />
-                Histórico de Pastos
+                Histórico de Subdivisões
               </h2>
               {loadingPastos ? (
                 <div className="flex justify-center py-8"><Loader2 className="animate-spin w-6 h-6 text-gray-400" /></div>
