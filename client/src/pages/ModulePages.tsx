@@ -542,7 +542,7 @@ export function HerdOverviewPage() {
                   />
                 ) : kpi.icon === '__calf__' ? (
                   <img
-                    src="/manus-storage/pasted_file_9MjDk4_pasted_file_PYJz6q_image(2)_a828d114.png"
+                    src="/manus-storage/icon-nascimentos-verde_teal_058eb87f.png"
                     alt="Vaca com bezerro"
                     width="32"
                     height="32"
