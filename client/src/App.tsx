@@ -23,7 +23,7 @@ import {
   SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
-import { EditAnimalPage } from "./pages/NewAnimalPage";
+import { EditAnimalPage } from "./pages/EditAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
 import LotsManagementPage from "./pages/LotsManagementPage";
 import MapaRebanhoPage from "./pages/MapaRebanhoPage";
