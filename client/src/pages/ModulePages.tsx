@@ -523,7 +523,7 @@ export function HerdOverviewPage() {
             }`}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: kpi.color + '18' }}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.color + '18' }}>
                 {kpi.icon === '__cow__' ? (
                   <img
                     src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
@@ -542,11 +542,11 @@ export function HerdOverviewPage() {
                   />
                 ) : kpi.icon === '__calf__' ? (
                   <img
-                    src="/manus-storage/icon-nascimentos_06be7b01.png"
+                    src="/manus-storage/pasted_file_9MjDk4_pasted_file_PYJz6q_image(2)_a828d114.png"
                     alt="Vaca com bezerro"
-                    width="26"
-                    height="26"
-                    style={{ objectFit: 'contain' }}
+                    width="32"
+                    height="32"
+                    style={{ objectFit: 'cover', borderRadius: '50%' }}
                   />
                 ) : (
                   <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
