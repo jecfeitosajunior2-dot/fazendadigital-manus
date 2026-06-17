@@ -523,7 +523,7 @@ export function HerdOverviewPage() {
             }`}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.icon === '__scale__' ? AMBER + '25' : kpi.color + '18' }}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.icon === '__scale__' ? '#4A90D918' : kpi.color + '18' }}>
                 {kpi.icon === '__cow__' ? (
                   <img
                     src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
