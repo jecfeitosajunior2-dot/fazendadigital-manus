@@ -533,13 +533,7 @@ export function HerdOverviewPage() {
                     style={{ objectFit: 'contain' }}
                   />
                 ) : kpi.icon === '__scale__' ? (
-                  <img
-                    src="/manus-storage/icon-peso-medio_b559b2ba.png"
-                    alt="Balança"
-                    width="26"
-                    height="26"
-                    style={{ objectFit: 'contain' }}
-                  />
+                  <span className="material-icons text-[20px]" style={{ color: AMBER }}>monitor_weight</span>
                 ) : kpi.icon === '__calf__' ? (
                   <img
                     src="/manus-storage/icon-nascimentos-verde_teal_058eb87f.png"
