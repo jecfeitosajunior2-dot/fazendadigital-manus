@@ -477,12 +477,12 @@ export function HerdOverviewPage() {
     { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "__cow__", color: TEAL, onClick: undefined },
     { label: "Machos", value: data.totalMachos.toString(), icon: "male", color: BLUE, onClick: undefined },
     { label: "Fêmeas", value: data.totalFemeas.toString(), icon: "female", color: PINK, onClick: undefined },
-    { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "monitor_weight", color: AMBER, onClick: undefined },
+    { label: "Peso Médio", value: data.pesoMedio !== null ? `${data.pesoMedio} kg` : "—", icon: "__scale__", color: AMBER, onClick: undefined },
     { label: "GMD Médio", value: data.gmdMedio !== null ? `${data.gmdMedio} kg/d` : "—", icon: "trending_up", color: PURPLE, onClick: undefined },
     {
       label: "Nascimentos no Mês",
       value: (data.evolucaoEfetivo.nascimentosNoMes ?? 0).toString(),
-      icon: "child_care",
+      icon: "__calf__",
       color: "#F59E0B",
       onClick: () => {
         const params = new URLSearchParams();
@@ -528,6 +528,22 @@ export function HerdOverviewPage() {
                   <img
                     src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
                     alt="Boi Nelore"
+                    width="26"
+                    height="26"
+                    style={{ objectFit: 'contain' }}
+                  />
+                ) : kpi.icon === '__scale__' ? (
+                  <img
+                    src="/manus-storage/icon-peso-medio_b559b2ba.png"
+                    alt="Balança"
+                    width="26"
+                    height="26"
+                    style={{ objectFit: 'contain' }}
+                  />
+                ) : kpi.icon === '__calf__' ? (
+                  <img
+                    src="/manus-storage/icon-nascimentos_06be7b01.png"
+                    alt="Vaca com bezerro"
                     width="26"
                     height="26"
                     style={{ objectFit: 'contain' }}

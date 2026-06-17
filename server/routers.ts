@@ -343,7 +343,21 @@ const animaisRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const [animal] = await db.select().from(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id))).limit(1);
-      return animal;
+      if (!animal) return null;
+
+      // Busca nome do lote
+      let loteNome: string | null = null;
+      if (animal.loteId) {
+        const [lote] = await db.select({ nome: lotes.nome }).from(lotes).where(eq(lotes.id, animal.loteId)).limit(1);
+        loteNome = lote?.nome ?? null;
+      }
+
+      // Calcula dias na fazenda
+      const diasNaFazenda = animal.createdAt
+        ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      return { ...animal, loteNome, diasNaFazenda };
     }),
 
   create: protectedProcedure

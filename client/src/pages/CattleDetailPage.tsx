@@ -21,13 +21,13 @@ export const CattleDetailPage: React.FC = () => {
     return (
       <AppLayout>
         <div className="max-w-4xl mx-auto">
-          <Button
+          <button
             onClick={() => setLocation('/rebanho/lista-animais')}
-            className="mb-6 bg-gray-400 hover:bg-gray-500 text-white"
+            className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Voltar para Lista de Animais
-          </Button>
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            <span className="text-[13px]">Animais</span>
+          </button>
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600">Animal não encontrado. Por favor, selecione um animal válido.</p>
@@ -142,13 +142,13 @@ export const CattleDetailPage: React.FC = () => {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto">
-        <Button
+        <button
           onClick={() => setLocation('/rebanho/lista-animais')}
-          className="mb-6 bg-gray-400 hover:bg-gray-500 text-white"
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
         >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Voltar para Lista de Animais
-        </Button>
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          <span className="text-[13px]">Animais</span>
+        </button>
 
         {/* Header Card */}
         <Card className="p-6 mb-6 bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">

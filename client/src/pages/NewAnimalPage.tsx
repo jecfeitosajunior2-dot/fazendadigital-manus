@@ -462,10 +462,10 @@ const AnimalFormPage: React.FC = () => {
           type="button"
           onClick={() => setLocation('/rebanho/lista-animais')}
           disabled={isSubmitting}
-          className="flex items-center gap-1 text-[12px] text-gray-500 hover:text-gray-800 transition mb-4"
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Voltar</span>
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          <span className="text-[13px]">Animais</span>
         </button>
 
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

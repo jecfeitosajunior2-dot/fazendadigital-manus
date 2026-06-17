@@ -58,7 +58,18 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
         }`}
       >
         {item.icon && depth === 0 && (
-          <span className="material-icons text-[18px] mr-3 opacity-90">{item.icon}</span>
+          item.icon === 'pets' ? (
+            <img
+              src="/manus-storage/icon-rebanho-sidebar-v2_d68cf0da.png"
+              alt="Rebanho"
+              width="20"
+              height="20"
+              className="mr-3 flex-shrink-0 opacity-90"
+              style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+            />
+          ) : (
+            <span className="material-icons text-[18px] mr-3 opacity-90">{item.icon}</span>
+          )
         )}
         {depth > 0 && <span className="w-[5px] h-[5px] rounded-full bg-white/40 mr-3 flex-shrink-0" />}
         <span className="flex-1 text-left truncate">{item.label}</span>

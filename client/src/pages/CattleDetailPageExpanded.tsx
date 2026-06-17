@@ -205,49 +205,79 @@ export const CattleDetailPageExpanded: React.FC = () => {
         style={{ maxHeight: "calc(100vh - 200px)" }}
       >
       <div className="max-w-7xl mx-auto">
-        <Button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-6 bg-gray-400 hover:bg-gray-500 text-white">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Voltar para Lista de Animais
-        </Button>
+        <button onClick={() => setLocation('/rebanho/lista-animais')} className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group">
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          <span className="text-[13px]">Animais</span>
+        </button>
 
         {/* Header Card */}
-        <Card className="p-6 mb-6 bg-gradient-to-r from-green-50 to-green-100 border-green-200">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                {animal.nome || animal.brinco || `Animal #${animal.id}`}
-              </h1>
-              <p className="text-gray-600 mb-1">Brinco: {animal.brinco || '—'}</p>
-              <div className="space-y-1 text-sm mt-3">
-                <p><span className="text-gray-600">Sexo:</span> <span className="font-semibold">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</span></p>
-                <p><span className="text-gray-600">Raça:</span> <span className="font-semibold">{animal.raca || '—'}</span></p>
-                <p><span className="text-gray-600">Data Nasc.:</span> <span className="font-semibold">{formatDate(animal.dataNascimento)}</span></p>
-                <p><span className="text-gray-600">Idade:</span> <span className="font-semibold">{calculateAge(animal.dataNascimento)}</span></p>
+        <Card className="mb-6 overflow-hidden border border-gray-200 shadow-sm">
+          {/* Faixa de status superior */}
+          <div className={`h-1 w-full ${animal.status === 'ativo' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+          <div className="p-5">
+            <div className="flex flex-col md:flex-row md:items-start gap-5">
+              {/* Número grande + identificação */}
+              <div className="flex-shrink-0">
+                <div className="text-5xl font-black text-gray-800 leading-none tracking-tight">
+                  {animal.nome || animal.brinco || `#${animal.id}`}
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                    animal.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                  }`}>{animal.status}</span>
+                </div>
               </div>
-            </div>
-            <div>
-              <div className="space-y-1 text-sm">
-                <p><span className="text-gray-600">Categoria:</span> <span className="font-semibold">{animal.categoria || '—'}</span></p>
-                <p><span className="text-gray-600">Status:</span> <span className={`font-semibold px-2 py-0.5 rounded text-xs ${animal.status === 'ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{animal.status}</span></p>
-                <p><span className="text-gray-600">Lote ID:</span> <span className="font-semibold">{animal.loteId || '—'}</span></p>
-                <p><span className="text-gray-600">Registros Saúde:</span> <span className="font-semibold">{saudeRegistros?.length || 0}</span></p>
+
+              {/* Campos em grid */}
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Brinco</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{animal.brinco || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">N° RFID</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{animal.brincoEletronico || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Sexo</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Categoria</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{animal.categoria || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Lote</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{(animal as any).loteNome || (animal.loteId ? `#${animal.loteId}` : '—')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Idade</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{calculateAge(animal.dataNascimento)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Dias na Fazenda</p>
+                  <p className="font-semibold text-gray-800 mt-0.5">{(animal as any).diasNaFazenda != null ? `${(animal as any).diasNaFazenda}d` : '—'}</p>
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-white rounded p-3">
-                <p className="text-xs text-gray-600">Peso Atual</p>
-                <p className="text-2xl font-bold text-gray-800">{latestWeight}kg</p>
-              </div>
-              <div className="bg-white rounded p-3">
-                <p className="text-xs text-gray-600">Ganho</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
-                </p>
-              </div>
-              <div className="col-span-2 bg-white rounded p-3">
+
+              {/* Métricas de peso + ação */}
+              <div className="flex-shrink-0 flex flex-col gap-2 min-w-[160px]">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-gray-400">Peso Atual</p>
+                    <p className="text-xl font-bold text-gray-800">{latestWeight}kg</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-gray-400">Ganho</p>
+                    <p className={`text-xl font-bold ${calculateWeightGain() >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
+                    </p>
+                  </div>
+                </div>
                 <Button
                   size="sm"
                   onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
-                  className="w-full text-white text-xs"
+                  className="w-full text-white text-sm font-medium"
                   style={{ backgroundColor: '#4ECDC4' }}
                 >
                   Editar Animal
