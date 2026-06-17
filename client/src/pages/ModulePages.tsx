@@ -523,7 +523,7 @@ export function HerdOverviewPage() {
             }`}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.color + '18' }}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.icon === '__scale__' ? AMBER + '25' : kpi.color + '18' }}>
                 {kpi.icon === '__cow__' ? (
                   <img
                     src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
@@ -533,7 +533,13 @@ export function HerdOverviewPage() {
                     style={{ objectFit: 'contain' }}
                   />
                 ) : kpi.icon === '__scale__' ? (
-                  <span className="material-icons text-[20px]" style={{ color: AMBER }}>monitor_weight</span>
+                  <img
+                    src="/manus-storage/icon-peso-medio_b559b2ba.png"
+                    alt="Balança"
+                    width="32"
+                    height="32"
+                    style={{ objectFit: 'cover', borderRadius: '50%' }}
+                  />
                 ) : kpi.icon === '__calf__' ? (
                   <img
                     src="/manus-storage/icon-nascimentos-verde_teal_058eb87f.png"
