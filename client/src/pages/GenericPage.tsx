@@ -48,7 +48,8 @@ export function AnimaisPage() {
     const fazendaId = params.get('fazendaId');
     const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
     const apenasSemLote = params.get('apenasSemLote') === 'true';
-    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia || apenasSemLote;
+    const apenasSemPesagem = params.get('apenasSemPesagem') === 'true';
+    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia || apenasSemLote || apenasSemPesagem;
     if (hasParams) {
       // Reseta para o estado inicial para evitar que filtros antigos persistidos
       // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
@@ -61,9 +62,11 @@ export function AnimaisPage() {
         ...(dataEntradaAte ? { dataEntradaAte } : {}),
         ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
         ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
-        ...(fazendaId ? { fazendaId } : {}),
+        // fazendaId='0' significa "limpar filtro de fazenda" (vindo de Visão Geral sem fazenda selecionada)
+        ...(fazendaId && fazendaId !== '0' ? { fazendaId } : {}),
         ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
         ...(apenasSemLote ? { apenasSemLote: true } : {}),
+        ...(apenasSemPesagem ? { apenasSemPesagem: true } : {}),
         // Abre o painel de filtros adicionais e garante que os filtros relevantes estão visíveis
         maisFiltrosAbertos: filtrosAdicionais.length > 0,
         filtrosAdicionaisSelecionados: filtrosAdicionais,

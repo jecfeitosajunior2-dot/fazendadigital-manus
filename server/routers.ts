@@ -78,6 +78,7 @@ const animaisListInput = z.object({
   dataEntradaAte: z.string().optional(),
   apenasEmCarencia: z.boolean().optional(),
   apenasSemLote: z.boolean().optional(),
+  apenasSemPesagem: z.boolean().optional(),
 }).optional();
 
 const animaisRouter = router({
@@ -317,6 +318,18 @@ const animaisRouter = router({
       }
       if (input?.apenasSemLote) {
         filtered = filtered.filter(animal => !animal.loteId);
+      }
+      if (input?.apenasSemPesagem) {
+        const limite60d = new Date(hoje);
+        limite60d.setDate(limite60d.getDate() - 60);
+        const limite60dStr = limite60d.toISOString().split('T')[0];
+        // Animal sem pesagem recente = sem pesagens OU última pesagem há mais de 60 dias
+        filtered = filtered.filter(animal => {
+          const pesos = pesagensPorAnimal.get(animal.id) || [];
+          if (pesos.length === 0) return true;
+          const ultimaData = pesos[pesos.length - 1].data;
+          return String(ultimaData) < limite60dStr;
+        });
       }
       if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
         filtered = filtered.filter(animal => {

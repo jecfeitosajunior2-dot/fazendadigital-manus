@@ -422,7 +422,7 @@ function AlertCard({ icon, label, value, color, onClick }: { icon: string; label
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-3 bg-white rounded border p-3 text-left w-full transition hover:shadow-md ${
+      className={`flex items-center gap-3 bg-white rounded border p-3 text-left w-full h-[60px] transition hover:shadow-md ${
         value > 0 ? 'border-orange-200' : 'border-gray-100'
       }`}
     >
@@ -430,7 +430,7 @@ function AlertCard({ icon, label, value, color, onClick }: { icon: string; label
         <span className="material-icons text-[18px]" style={{ color }}>{icon}</span>
       </div>
       <div className="min-w-0">
-        <div className={`text-[17px] font-bold ${value > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{value}</div>
+        <div className={`text-[17px] font-bold leading-tight ${value > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{value}</div>
         <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
       </div>
     </button>
@@ -659,19 +659,23 @@ export function HerdOverviewPage() {
           <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => {
             const params = new URLSearchParams();
             params.set('apenasEmCarencia', 'true');
-            if (fazendaId) params.set('fazendaId', String(fazendaId));
+            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
             setLocation(`/rebanho/lista-animais?${params.toString()}`);
           }} />
           <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => {
             const params = new URLSearchParams();
             params.set('apenasSemLote', 'true');
-            if (fazendaId) params.set('fazendaId', String(fazendaId));
+            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
             setLocation(`/rebanho/lista-animais?${params.toString()}`);
           }} />
-          <AlertCard icon="scale" label="Sem Pesagem (60d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => setLocation("/rebanho/lista-animais")} />
+          <AlertCard icon="scale" label="Sem Pesagem (60d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => {
+            const params = new URLSearchParams();
+            params.set('apenasSemPesagem', 'true');
+            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
+            setLocation(`/rebanho/lista-animais?${params.toString()}`);
+          }} />
           <AlertCard icon="warning" label="Pastos Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => {
             const params = new URLSearchParams();
-            // Sempre passa fazendaId: valor real se selecionada, ou '0' para limpar o filtro persistido
             params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
             setLocation(`/rebanho/mapa-rebanho?${params.toString()}`);
           }} />

@@ -271,6 +271,20 @@ export const manutencaoPecas = mysqlTable("manutencao_pecas", {
   createdAt: timestamp("createdAt").defaultNow(),
 });
 
+// Histórico de brincos
+export const historicoBrincos = mysqlTable("historico_brincos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  animalId: int("animalId").notNull(),
+  brincoAnterior: varchar("brincoAnterior", { length: 50 }),
+  brincoNovo: varchar("brincoNovo", { length: 50 }).notNull(),
+  motivo: mysqlEnum("motivo", ["perda", "danificado", "reidentificacao", "erro_cadastro", "outro"]).notNull().default("perda"),
+  observacoes: text("observacoes"),
+  dataAlteracao: date("dataAlteracao", { mode: "string" }).notNull(),
+  usuarioNome: varchar("usuarioNome", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow(),
+});
+
 // Pesagens table
 export const pesagens = mysqlTable("pesagens", {
   id: int("id").primaryKey().autoincrement(),

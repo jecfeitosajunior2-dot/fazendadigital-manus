@@ -87,6 +87,8 @@ export type AnimaisListFiltersState = {
   apenasEmCarencia: boolean;
   // Filtro sem lote
   apenasSemLote: boolean;
+  // Filtro sem pesagem recente (60 dias)
+  apenasSemPesagem: boolean;
   // Filtros adicionais selecionados no dropdown
   filtrosAdicionaisSelecionados: FiltroAdicionalKey[];
 };
@@ -129,6 +131,7 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   dataEntradaAte: '',
   apenasEmCarencia: false,
   apenasSemLote: false,
+  apenasSemPesagem: false,
   filtrosAdicionaisSelecionados: [],
 };
 
@@ -169,6 +172,7 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     dataEntradaAte: filters.dataEntradaAte || undefined,
     apenasEmCarencia: filters.apenasEmCarencia || undefined,
     apenasSemLote: filters.apenasSemLote || undefined,
+    apenasSemPesagem: filters.apenasSemPesagem || undefined,
   };
 }
 
@@ -206,6 +210,7 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.dataEntradaDe ||
     !!filters.dataEntradaAte ||
     filters.apenasEmCarencia ||
-    filters.apenasSemLote
+    filters.apenasSemLote ||
+    filters.apenasSemPesagem
   );
 }

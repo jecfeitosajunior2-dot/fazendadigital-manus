@@ -53,6 +53,7 @@ const INITIAL_FILTERS: AnimaisListFiltersState = {
   filtrosAdicionaisSelecionados: [],
   apenasEmCarencia: false,
   apenasSemLote: false,
+  apenasSemPesagem: false,
 };
 
 const filterCardClass =
