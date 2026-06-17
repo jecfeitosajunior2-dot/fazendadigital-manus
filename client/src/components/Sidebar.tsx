@@ -62,8 +62,8 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
             <img
               src="/manus-storage/icon-rebanho-sidebar-v3_c7170531.png"
               alt="Rebanho"
-              width="24"
-              height="24"
+              width="26"
+              height="26"
               className="mr-3 flex-shrink-0"
               style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
             />
