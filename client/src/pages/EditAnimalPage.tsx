@@ -164,7 +164,7 @@ export function EditAnimalPage() {
           disabled={isSubmitting}
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-          <span className="text-[13px]">Animais</span>
+          <span className="text-[13px]">Voltar</span>
         </button>
 
         <Card className="p-8">
