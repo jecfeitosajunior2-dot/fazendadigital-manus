@@ -250,7 +250,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Fazenda */}
           <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/manus-storage/icon-fazenda_3a7a9041.png">
+            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/assets/icon-fazenda.png">
               <div className="relative">
                 <select
                   value={value.fazendaId}

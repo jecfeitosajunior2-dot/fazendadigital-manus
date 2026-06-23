@@ -27,15 +27,20 @@ app.use("/api/trpc", createExpressMiddleware({
 // Serve frontend (Vite in dev, static in prod)
 if (process.env.NODE_ENV === "production") {
   const path = await import("path");
+  const fs = await import("fs");
   const { fileURLToPath } = await import("url");
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  app.use(express.static(path.join(__dirname, "public")));
+  const bundledPublicDir = path.join(__dirname, "public");
+  const sourcePublicDir = path.resolve(__dirname, "..", "dist", "public");
+  const publicDir = fs.existsSync(bundledPublicDir) ? bundledPublicDir : sourcePublicDir;
+  app.use(express.static(publicDir));
   app.get("*", (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+    res.sendFile(path.join(publicDir, "index.html"));
   });
 } else {
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
+    configLoader: "runner",
     server: {
       middlewareMode: true,
       hmr: true,

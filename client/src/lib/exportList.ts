@@ -111,8 +111,7 @@ export function exportListPdf(
   const periodo = options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
 
   // Logo do Fazenda Digital (URL pública usada na Sidebar)
-  const LOGO_URL =
-    "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp";
+  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
 
   // Formata números no padrão brasileiro apenas para EXIBIÇÃO no PDF.
   const fmtCell = (cell: unknown): string => {
@@ -515,8 +514,7 @@ export function exportMapaRebanhoPdf(
     options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
 
-  const LOGO_URL =
-    "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp";
+  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
 
   const fmtNum = (v: number | null, decimals = 2): string =>
     v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : "—";

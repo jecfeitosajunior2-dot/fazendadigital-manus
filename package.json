@@ -4,16 +4,19 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "dev": "tsx watch server/index.ts",
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/start.mjs",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "test": "vitest run",
-    "dev:server": "NODE_ENV=development tsx watch server/index.ts",
-    "dev:client": "vite --host"
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx scripts/seed.ts && tsx scripts/seed-manus-data.ts",
+    "db:seed:manus": "tsx scripts/seed-manus-data.ts",
+    "setup:local": "docker compose up -d && drizzle-kit push && tsx scripts/seed.ts",
+    "test": "vitest run --configLoader runner",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite --host --configLoader runner"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

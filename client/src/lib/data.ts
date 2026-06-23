@@ -7,27 +7,19 @@ export interface MenuItem {
 }
 
 export const menuItems: MenuItem[] = [
-  { label: "Acesso Rápido", icon: "flash_on", path: "/primeiro-uso/help" },
-  { label: "Painel de Controle", icon: "dashboard", path: "/admin/overview" },
+  { label: "Painel de Controle", icon: "fd_panel_chart", path: "/admin/overview" },
+  { label: "Acesso Rápido", icon: "fd_rocket", path: "/primeiro-uso/help" },
   {
     label: "Fazendas",
-    icon: "home_work",
+    icon: "fd_farm_land",
     children: [
       { label: "Visão Geral", icon: "", path: "/fazendas/visao-geral" },
       { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
     ],
   },
   {
-    label: "Administrativo",
-    icon: "settings",
-    children: [
-      { label: "Visão Geral", icon: "", path: "/administrativo/visao-geral" },
-      { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
-    ],
-  },
-  {
     label: "Rebanho",
-    icon: "pets",
+    icon: "__calf__",
     children: [
       { label: "Visão Geral", icon: "", path: "/rebanho/visao-geral" },
       { label: "Animais", icon: "", path: "/rebanho/lista-animais" },
@@ -36,8 +28,26 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
+    label: "Insumos",
+    icon: "fd_supply_bag",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/insumos/visao-geral" },
+      { label: "Lista de Produtos", icon: "", path: "/insumos/lista-produtos" },
+      { label: "Movimentação", icon: "", path: "/insumos/movimentacao" },
+    ],
+  },
+  {
+    label: "Máquinas",
+    icon: "fd_tractor",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/maquinas/visao-geral" },
+      { label: "Abastecimento", icon: "", path: "/maquinas/abastecimento" },
+      { label: "Manutenção", icon: "", path: "/maquinas/manutencao" },
+    ],
+  },
+  {
     label: "Manejo",
-    icon: "playlist_add_check",
+    icon: "fd_management_checklist",
     children: [
       { label: "Visão Geral", icon: "", path: "/manejo/visao-geral" },
       { label: "Meus Manejos", icon: "", path: "/manejos/meus" },
@@ -47,26 +57,8 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    label: "Insumos",
-    icon: "inventory_2",
-    children: [
-      { label: "Visão Geral", icon: "", path: "/insumos/visao-geral" },
-      { label: "Lista de Produtos", icon: "", path: "/insumos/lista-produtos" },
-      { label: "Movimentação", icon: "", path: "/insumos/movimentacao" },
-    ],
-  },
-  {
-    label: "Máquinas",
-    icon: "agriculture",
-    children: [
-      { label: "Visão Geral", icon: "", path: "/maquinas/visao-geral" },
-      { label: "Abastecimento", icon: "", path: "/maquinas/abastecimento" },
-      { label: "Manutenção", icon: "", path: "/maquinas/manutencao" },
-    ],
-  },
-  {
     label: "Reprodução",
-    icon: "favorite",
+    icon: "fd_dna",
     children: [
       { label: "Visão Geral", icon: "", path: "/reproducao/visao-geral" },
       { label: "Protocolos", icon: "", path: "/reproducao/protocolos" },
@@ -76,7 +68,7 @@ export const menuItems: MenuItem[] = [
   },
   {
     label: "Nutrição",
-    icon: "grass",
+    icon: "fd_nutrition_grass",
     children: [
       { label: "Visão Geral", icon: "", path: "/nutricao/visao-geral" },
       { label: "Dietas", icon: "", path: "/nutricao/dietas" },
@@ -85,7 +77,7 @@ export const menuItems: MenuItem[] = [
   },
   {
     label: "Compra e Venda",
-    icon: "attach_money",
+    icon: "fd_cart",
     children: [
       { label: "Visão Geral", icon: "", path: "/compra-venda/visao-geral" },
       { label: "Compras", icon: "", path: "/compra-venda/compras" },
@@ -94,7 +86,7 @@ export const menuItems: MenuItem[] = [
   },
   {
     label: "Financeiro",
-    icon: "account_balance_wallet",
+    icon: "fd_finance_cycle",
     children: [
       { label: "Visão Geral", icon: "", path: "/financeiro/visao-geral" },
       { label: "Contas", icon: "", path: "/financeiro/contas" },
@@ -104,8 +96,16 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
+    label: "Administrativo",
+    icon: "fd_admin_gear_check",
+    children: [
+      { label: "Visão Geral", icon: "", path: "/administrativo/visao-geral" },
+      { label: "Benfeitorias", icon: "", path: "/fazendas/benfeitorias" },
+    ],
+  },
+  {
     label: "Relatórios",
-    icon: "description",
+    icon: "fd_reports_doc_chart",
     children: [
       { label: "Visão Geral", icon: "", path: "/relatorios/visao-geral" },
       { label: "Gerenciais", icon: "", path: "/relatorios/gerenciais" },

@@ -9,15 +9,15 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/manus-storage/fd-favicon-new_6b05d71f.png",
-      "sizes": "192x192",
-      "type": "image/png",
+      "src": "/assets/fd-logo.webp",
+      "sizes": "any",
+      "type": "image/webp",
       "purpose": "any maskable"
     },
     {
-      "src": "/manus-storage/fd-apple-touch-icon_5998a6b2.png",
-      "sizes": "512x512",
-      "type": "image/png",
+      "src": "/assets/fd-logo.webp",
+      "sizes": "any",
+      "type": "image/webp",
       "purpose": "any maskable"
     }
   ],

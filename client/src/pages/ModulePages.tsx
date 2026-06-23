@@ -526,7 +526,7 @@ export function HerdOverviewPage() {
               <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.icon === '__scale__' ? '#4A90D918' : kpi.color + '18' }}>
                 {kpi.icon === '__cow__' ? (
                   <img
-                    src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/icon-boi-nelore-adpnzZjTcBS3gc26CjJX3z.webp"
+                    src="/assets/icon-boi-nelore.webp"
                     alt="Boi Nelore"
                     width="26"
                     height="26"
@@ -534,7 +534,7 @@ export function HerdOverviewPage() {
                   />
                 ) : kpi.icon === '__scale__' ? (
                   <img
-                    src="/manus-storage/icon-peso-medio_b559b2ba.png"
+                    src="/assets/icon-peso-medio.png"
                     alt="Balança"
                     width="32"
                     height="32"
@@ -542,7 +542,7 @@ export function HerdOverviewPage() {
                   />
                 ) : kpi.icon === '__calf__' ? (
                   <img
-                    src="/manus-storage/icon-nascimentos-verde_teal_058eb87f.png"
+                    src="/assets/icon-nascimentos.png"
                     alt="Vaca com bezerro"
                     width="32"
                     height="32"
@@ -2078,6 +2078,100 @@ export function ImprovementsPage() {
 // ACESSO RÁPIDO
 // ============================================================
 
+function QuickAccessCardIcon({ icon }: { icon: string }) {
+  if (icon === "fd_farm_land") {
+    return (
+      <svg
+        viewBox="0 0 32 32"
+        aria-hidden="true"
+        className="h-[30px] w-[30px]"
+        fill="none"
+        shapeRendering="geometricPrecision"
+      >
+        <path
+          d="M7.2 14.1 16 6.85l8.8 7.25"
+          stroke="currentColor"
+          strokeWidth="2.45"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M9.4 13.7v12.15h13.2V13.7L16 8.25Z" fill="currentColor" />
+        <rect x="13.55" y="12.1" width="2.25" height="2.5" rx=".25" fill="#ECFDF5" />
+        <rect x="16.25" y="12.1" width="2.25" height="2.5" rx=".25" fill="#ECFDF5" />
+        <path d="M12.6 18.05h6.8v7.8h-6.8Z" fill="#ECFDF5" />
+        <path
+          d="M12.6 18.05 19.4 25.85M19.4 18.05 12.6 25.85M16 18.05v7.8"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
+  if (icon === "__calf__" || icon === "pets") {
+    return (
+      <img
+        src="/assets/icon-nascimentos-green.png"
+        alt="Vaca com bezerro"
+        width="32"
+        height="32"
+        style={{ objectFit: "contain" }}
+      />
+    );
+  }
+
+  if (icon === "fd_supply_bag") {
+    return (
+      <img
+        src="/assets/icon-insumo-saco-green.png"
+        alt="Saco de insumo"
+        width="28"
+        height="28"
+        style={{ objectFit: "contain" }}
+      />
+    );
+  }
+
+  if (icon === "fd_tractor") {
+    return (
+      <img
+        src="/assets/icon-maquina-trator-green.png"
+        alt="Trator"
+        width="32"
+        height="32"
+        style={{ objectFit: "contain" }}
+      />
+    );
+  }
+
+  if (icon === "fd_management_checklist") {
+    return (
+      <img
+        src="/assets/icon-manejo-checklist-green.png"
+        alt="Checklist de manejo"
+        width="30"
+        height="30"
+        style={{ objectFit: "contain" }}
+      />
+    );
+  }
+
+  if (icon === "fd_finance_cycle") {
+    return (
+      <img
+        src="/assets/icon-financeiro-ciclo-green.png"
+        alt="Financeiro"
+        width="30"
+        height="30"
+        style={{ width: "30px", height: "30px", objectFit: "contain", display: "block" }}
+      />
+    );
+  }
+
+  return <span className="material-icons text-[20px]">{icon}</span>;
+}
+
 export function QuickAccessPage() {
   const [, setLocation] = useLocation();
   return (
@@ -2085,21 +2179,23 @@ export function QuickAccessPage() {
       <h1 className="text-[15px] font-medium text-gray-800 mb-4">Acesso Rápido</h1>
       <div className="grid grid-cols-2 gap-4">
         {[
-          { label: "Cadastrar Fazenda", icon: "home_work", path: "/fazendas/cadastro" },
-          { label: "Cadastrar Rebanho", icon: "pets", path: "/rebanho/lista-animais" },
-          { label: "Cadastrar Insumo", icon: "inventory_2", path: "/insumos/cadastro" },
-          { label: "Cadastrar Máquina", icon: "agriculture", path: "/maquinas/visao-geral" },
-          { label: "Lançar Manejo", icon: "playlist_add_check", path: "/manejos/criar" },
-          { label: "Lançar Financeiro", icon: "account_balance", path: "/financeiro/movimentacao" },
+          { label: "Cadastrar Fazenda", icon: "fd_farm_land", path: "/fazendas/cadastro" },
+          { label: "Cadastrar Rebanho", icon: "__calf__", path: "/rebanho/lista-animais" },
+          { label: "Cadastrar Insumo", icon: "fd_supply_bag", path: "/insumos/cadastro" },
+          { label: "Cadastrar Máquina", icon: "fd_tractor", path: "/maquinas/visao-geral" },
+          { label: "Lançar Manejo", icon: "fd_management_checklist", path: "/manejos/criar" },
+          { label: "Lançar Financeiro", icon: "fd_finance_cycle", path: "/financeiro/movimentacao" },
         ].map((item, i) => (
           <button
             key={i}
             type="button"
             onClick={() => setLocation(item.path)}
-            className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 hover:shadow-md transition-shadow text-left w-full"
+            className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 border-l-[4px] border-l-[#4ECDC4] hover:shadow-md hover:border-l-[#4ECDC4] transition-shadow text-left w-full"
           >
-            <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
-              <span className="material-icons text-[20px]" style={{ color: "#4ECDC4" }}>{item.icon}</span>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: "#ECFDF5" }}>
+              <div className="text-[#4ECDC4]">
+                <QuickAccessCardIcon icon={item.icon} />
+              </div>
             </div>
             <span className="text-[13px] font-medium text-gray-700">{item.label}</span>
           </button>

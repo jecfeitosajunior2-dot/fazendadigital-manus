@@ -63,7 +63,7 @@ export default function LoginPage() {
       className="min-h-screen flex items-center justify-center relative overflow-hidden"
       style={{
         background: "#0d1b2e",
-        backgroundImage: `url('https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-login-bg-eEvanysYRdc4cQz3Zr2BKR.webp')`,
+        backgroundImage: `url('/assets/fd-login-bg.webp')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
@@ -111,7 +111,7 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
             <img
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-icon-bull-new-9aYJEWBxP7vf2ogfzT5b8k.webp"
+              src="/assets/fd-icon-bull.webp"
               alt="Fazenda Digital"
               className="h-[60px] w-[60px] rounded-xl flex-shrink-0"
               style={{ boxShadow: "0 4px 20px rgba(27,197,189,0.4)" }}

@@ -200,6 +200,24 @@ export async function ensureSchema() {
         PRIMARY KEY(\`id\`)
       )
     `);
+
+    // Histórico de troca de brincos (funcionalidade lançada no commit a25457d5)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`historico_brincos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`animalId\` int NOT NULL,
+        \`brincoAnterior\` varchar(50),
+        \`brincoNovo\` varchar(50) NOT NULL,
+        \`motivo\` enum('perda','danificado','reidentificacao','erro_cadastro','outro') NOT NULL DEFAULT 'perda',
+        \`observacoes\` text,
+        \`dataAlteracao\` date NOT NULL,
+        \`usuarioNome\` varchar(200),
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        INDEX \`historico_brincos_animal_user_idx\` (\`animalId\`, \`userId\`)
+      )
+    `);
     // ── Animais: novas colunas fazendaId e pastoId ──────────────────────────────────────
     const [animaisTable] = await pool.query(`SHOW TABLES LIKE 'animais'`);
     if ((animaisTable as unknown[]).length > 0) {

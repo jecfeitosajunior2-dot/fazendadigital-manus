@@ -784,6 +784,15 @@ export default function MapaRebanhoPage() {
     }
   }, [fazendaId, mapaData]);
 
+  // Na visão geral, abrir fazendas e subdivisões por padrão para ficar igual ao Manus.
+  useEffect(() => {
+    if (!fazendaId && mapaGeralData && mapaGeralData.length > 0) {
+      const fazendas = mapaGeralData as FazendaMapaRow[];
+      setExpandedFazendas(new Set(fazendas.map(f => f.fazendaId)));
+      setExpandedSubdivisoes(new Set(fazendas.flatMap(f => f.subdivisoes.map(s => s.pastoId))));
+    }
+  }, [fazendaId, mapaGeralData]);
+
   const subdivisoes: SubdivisaoInfo[] = (mapaData?.subdivisoes ?? []) as SubdivisaoInfo[];
   const semSubdivisao: LoteInfo[] = (mapaData?.semSubdivisao ?? []) as LoteInfo[];
   const fazendasGeral: FazendaMapaRow[] = (mapaGeralData ?? []) as FazendaMapaRow[];

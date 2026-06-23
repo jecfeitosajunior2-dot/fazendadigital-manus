@@ -24,7 +24,17 @@ const imageSlotInput = z.discriminatedUnion("type", [
 
 // ─── AUTH ROUTER ─────────────────────────────────────────────────────────────
 const authRouter = router({
-  me: protectedProcedure.query(({ ctx }) => ctx.user),
+  me: protectedProcedure.query(async ({ ctx }) => {
+    const [freshUser] = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
+    if (!freshUser) return ctx.user;
+    return {
+      id: freshUser.id,
+      openId: freshUser.openId,
+      name: freshUser.name,
+      email: freshUser.email || "",
+      role: freshUser.role || "user",
+    };
+  }),
 
   login: publicProcedure
     .input(z.object({ username: z.string(), password: z.string() }))
