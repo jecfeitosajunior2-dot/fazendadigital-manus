@@ -69,6 +69,10 @@ export default defineConfig({
     port: 5173,
     host: true,
     allowedHosts: true,
+    fs: {
+      strict: false,
+      allow: [path.resolve(import.meta.dirname)],
+    },
     proxy: {
       "/api": {
         target: "http://localhost:3000",

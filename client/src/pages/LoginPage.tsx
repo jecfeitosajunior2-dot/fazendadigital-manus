@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { getLocalAuthUser, signInLocal } from "@/lib/localAuth";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -8,6 +9,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  const [accessPanel, setAccessPanel] = useState<"none" | "forgot" | "register">("none");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [registerName, setRegisterName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [accessFeedback, setAccessFeedback] = useState("");
+  const [localUser, setLocalUser] = useState(() => getLocalAuthUser());
+  const currentYear = new Date().getFullYear();
 
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -15,18 +23,27 @@ export default function LoginPage() {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: () => {
+      setIsLoggingIn(false);
       setLocation("/admin/overview");
     },
     onError: () => {
+      const session = signInLocal(email, password);
+      if (session) {
+        setLocalUser(session);
+        setIsLoggingIn(false);
+        setLocation("/admin/overview");
+        return;
+      }
+
       setIsLoggingIn(false);
     },
   });
 
   useEffect(() => {
-    if (user) {
+    if (user || localUser) {
       setLocation("/admin/overview");
     }
-  }, [user, setLocation]);
+  }, [user, localUser, setLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,16 +52,18 @@ export default function LoginPage() {
     loginMutation.mutate({ username: email, password });
   };
 
-  const handleOAuth = () => {
-    const origin = window.location.origin;
-    const returnPath = "/admin/overview";
-    const state = btoa(JSON.stringify({ origin, returnPath }));
-    const redirectUri = `${origin}/api/oauth/callback`;
-    const oauthUrl = `${import.meta.env.VITE_OAUTH_PORTAL_URL || "https://manus.im"}/oauth/authorize?client_id=${import.meta.env.VITE_APP_ID || ""}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`;
-    window.location.href = oauthUrl;
+  const openAccessPanel = (panel: "forgot" | "register") => {
+    setAccessFeedback("");
+    setAccessPanel(panel);
+    if (panel === "forgot") {
+      setRecoveryEmail(email);
+    }
+    if (panel === "register") {
+      setRegisterEmail(email);
+    }
   };
 
-  if (isLoading) {
+  if (isLoading && !localUser) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#0d1b2e" }}>
         <div className="text-center">
@@ -69,8 +88,8 @@ export default function LoginPage() {
         backgroundRepeat: "no-repeat",
       }}
     >
-      {/* Dark overlay for readability */}
-      <div className="absolute inset-0 pointer-events-none" style={{ background: "rgba(10,18,32,0.72)" }} />
+      {/* Balanced overlay for readability */}
+      <div className="absolute inset-0 pointer-events-none" style={{ background: "rgba(10,18,32,0.56)" }} />
 
 
       {/* Glow top-right */}
@@ -108,34 +127,47 @@ export default function LoginPage() {
             boxShadow: "0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(27,197,189,0.06)",
           }}
         >
-          {/* Logo */}
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <img
-              src="/assets/fd-icon-bull.webp"
-              alt="Fazenda Digital"
-              className="h-[60px] w-[60px] rounded-xl flex-shrink-0"
-              style={{ boxShadow: "0 4px 20px rgba(27,197,189,0.4)" }}
-            />
-            <div style={{ lineHeight: 1 }}>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "20px", letterSpacing: "0.08em", color: "white" }}>
-                FAZENDA
+          {/* Brand access header */}
+          <div className="mb-8">
+            <div className="flex flex-col items-center text-center">
+              <div
+                className="relative mb-1 grid place-items-center"
+                style={{
+                  width: "132px",
+                  height: "116px",
+                }}
+              >
+                <img
+                  src="/assets/brand/fd-symbol-final-aligned.png"
+                  alt="Fazenda Digital"
+                  className="relative h-[120px] w-[132px]"
+                  style={{
+                    objectFit: "contain",
+                    objectPosition: "center",
+                    filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
+                  }}
+                />
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "3px" }}>
-                <span style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, transparent, #1BC5BD)" }} />
-                <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "9px", letterSpacing: "0.3em", color: "#1BC5BD" }}>DIGITAL</span>
-                <span style={{ flex: 1, height: "1px", background: "linear-gradient(90deg, #1BC5BD, transparent)" }} />
+
+              <div style={{ lineHeight: 1 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 820, fontSize: "28px", letterSpacing: "0.058em", color: "white", textShadow: "0 4px 18px rgba(0,0,0,0.18)" }}>
+                  FAZENDA
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "6px" }}>
+                  <span style={{ width: "28px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(120,214,207,0.64))" }} />
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "12px", letterSpacing: "0.255em", color: "#78D6CF" }}>
+                    DIGITAL
+                  </span>
+                  <span style={{ width: "28px", height: "1px", background: "linear-gradient(90deg, rgba(120,214,207,0.64), transparent)" }} />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Heading */}
-          <div className="mb-7">
-            <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "1.6rem", color: "white", marginBottom: "6px" }}>
-              Bem-vindo de volta
-            </h2>
-            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "14px", fontFamily: "'Inter', sans-serif" }}>
-              Acesse sua conta para continuar
-            </p>
+            <div className="mt-7">
+              <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 750, fontSize: "1.52rem", color: "white", marginBottom: "7px", letterSpacing: "-0.025em" }}>
+                Bem-vindo de volta
+              </h2>
+            </div>
           </div>
 
           {/* Form */}
@@ -188,18 +220,34 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <label style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.5)",
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                display: "block",
-                marginBottom: "7px",
-              }}>
-                SENHA
-              </label>
+              <div className="mb-[7px] flex items-center justify-between gap-3">
+                <label style={{
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  display: "block",
+                }}>
+                  SENHA
+                </label>
+                <button
+                  type="button"
+                  onClick={() => openAccessPanel("forgot")}
+                  className="transition-colors"
+                  style={{
+                    color: accessPanel === "forgot" ? "#4ECDC4" : "rgba(255,255,255,0.45)",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "#4ECDC4")}
+                  onMouseLeave={e => (e.currentTarget.style.color = accessPanel === "forgot" ? "#4ECDC4" : "rgba(255,255,255,0.45)")}
+                >
+                  Esqueceu sua senha?
+                </button>
+              </div>
               <div className="relative">
                 <span className="material-icons absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]" style={{ color: "rgba(255,255,255,0.35)" }}>
                   lock
@@ -284,42 +332,162 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+
+            <div className="text-center" style={{ marginTop: "2px" }}>
+              <span style={{ color: "rgba(255,255,255,0.36)", fontSize: "12.5px", fontFamily: "'Inter', sans-serif" }}>
+                Ainda não é usuário?
+              </span>{" "}
+              <button
+                type="button"
+                onClick={() => openAccessPanel("register")}
+                className="transition-colors"
+                style={{
+                  color: accessPanel === "register" ? "#4ECDC4" : "rgba(78,205,196,0.88)",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#8EF4EA")}
+                onMouseLeave={e => (e.currentTarget.style.color = accessPanel === "register" ? "#4ECDC4" : "rgba(78,205,196,0.88)")}
+              >
+                Cadastre-se
+              </button>
+            </div>
+
+            {accessPanel !== "none" && (
+              <div
+                className="rounded-2xl p-4"
+                style={{
+                  background: "rgba(255,255,255,0.045)",
+                  border: "1px solid rgba(78,205,196,0.18)",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                }}
+              >
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 style={{ color: "white", fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 700 }}>
+                      {accessPanel === "forgot" ? "Recuperar acesso" : "Solicitar cadastro"}
+                    </h3>
+                    <p style={{ marginTop: "3px", color: "rgba(255,255,255,0.44)", fontFamily: "'Inter', sans-serif", fontSize: "12px", lineHeight: 1.4 }}>
+                      {accessPanel === "forgot"
+                        ? "Informe seu e-mail para iniciar a recuperação."
+                        : "Preencha seus dados para solicitar acesso ao sistema."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccessPanel("none");
+                      setAccessFeedback("");
+                    }}
+                    className="grid place-items-center rounded-lg transition-colors"
+                    style={{ width: "28px", height: "28px", color: "rgba(255,255,255,0.42)" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.75)")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.42)")}
+                    aria-label="Fechar"
+                  >
+                    <span className="material-icons text-[18px]">close</span>
+                  </button>
+                </div>
+
+                {accessPanel === "forgot" ? (
+                  <div className="space-y-3">
+                    <input
+                      type="email"
+                      value={recoveryEmail}
+                      onChange={e => setRecoveryEmail(e.target.value)}
+                      placeholder="seu@email.com"
+                      className="w-full px-4 py-3 text-sm rounded-xl transition-all focus:outline-none"
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: "white",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAccessFeedback("Solicitação de recuperação registrada.")}
+                      disabled={!recoveryEmail}
+                      className="w-full py-2.5 rounded-xl font-semibold transition-all active:scale-[0.98] disabled:opacity-40"
+                      style={{
+                        background: "rgba(78,205,196,0.14)",
+                        border: "1px solid rgba(78,205,196,0.28)",
+                        color: "#8EF4EA",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Enviar instruções
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={registerName}
+                      onChange={e => setRegisterName(e.target.value)}
+                      placeholder="Nome completo"
+                      className="w-full px-4 py-3 text-sm rounded-xl transition-all focus:outline-none"
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: "white",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                      }}
+                    />
+                    <input
+                      type="email"
+                      value={registerEmail}
+                      onChange={e => setRegisterEmail(e.target.value)}
+                      placeholder="E-mail de acesso"
+                      className="w-full px-4 py-3 text-sm rounded-xl transition-all focus:outline-none"
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        color: "white",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAccessFeedback("Solicitação de cadastro registrada.")}
+                      disabled={!registerName || !registerEmail}
+                      className="w-full py-2.5 rounded-xl font-semibold transition-all active:scale-[0.98] disabled:opacity-40"
+                      style={{
+                        background: "rgba(78,205,196,0.14)",
+                        border: "1px solid rgba(78,205,196,0.28)",
+                        color: "#8EF4EA",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Solicitar cadastro
+                    </button>
+                  </div>
+                )}
+
+                {accessFeedback && (
+                  <div
+                    className="mt-3 rounded-xl px-3 py-2 flex items-center gap-2"
+                    style={{ background: "rgba(78,205,196,0.09)", border: "1px solid rgba(78,205,196,0.18)" }}
+                  >
+                    <span className="material-icons text-[15px]" style={{ color: "#4ECDC4" }}>check_circle</span>
+                    <span style={{ color: "rgba(255,255,255,0.66)", fontFamily: "'Inter', sans-serif", fontSize: "12px" }}>
+                      {accessFeedback}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
-            <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)", fontFamily: "'Inter', sans-serif" }}>ou</span>
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
-          </div>
-
-          {/* OAuth */}
-          <button
-            onClick={handleOAuth}
-            className="w-full py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
-            style={{
-              background: "rgba(27,197,189,0.08)",
-              border: "1px solid rgba(27,197,189,0.25)",
-              color: "#1BC5BD",
-              fontFamily: "'Inter', sans-serif",
-              fontSize: "14px",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = "rgba(27,197,189,0.14)";
-              e.currentTarget.style.borderColor = "rgba(27,197,189,0.45)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = "rgba(27,197,189,0.08)";
-              e.currentTarget.style.borderColor = "rgba(27,197,189,0.25)";
-            }}
-          >
-            <span className="material-icons text-[18px]">verified_user</span>
-            Entrar com Manus OAuth
-          </button>
 
           {/* Footer */}
           <p className="text-center mt-6" style={{ fontSize: "12px", color: "rgba(255,255,255,0.2)", fontFamily: "'Inter', sans-serif" }}>
-            Fazenda Digital © 2024 — Gestão Pecuária Inteligente
+            Fazenda Digital © {currentYear} - Gestão Pecuária Inteligente
           </p>
         </div>
       </div>

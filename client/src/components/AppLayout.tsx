@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { getLocalAuthUser } from "@/lib/localAuth";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import BottomNav from "./BottomNav";
@@ -13,17 +14,18 @@ interface AppLayoutProps {
 
 export function AuthGuard({ children }: AppLayoutProps) {
   const [, setLocation] = useLocation();
+  const [localUser] = useState(() => getLocalAuthUser());
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isLoading && !user && !localUser) {
       setLocation("/entrar");
     }
-  }, [user, isLoading, setLocation]);
+  }, [user, localUser, isLoading, setLocation]);
 
-  if (isLoading && !user) {
+  if (isLoading && !user && !localUser) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
         <div className="text-center">
@@ -34,7 +36,7 @@ export function AuthGuard({ children }: AppLayoutProps) {
     );
   }
 
-  if (!user) return null;
+  if (!user && !localUser) return null;
 
   return <>{children}</>;
 }

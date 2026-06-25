@@ -29,7 +29,7 @@ export async function ensureSchema() {
         \`area\` decimal(10,2),
         \`incluirArea\` boolean DEFAULT true,
         \`capacidade\` int,
-        \`status\` enum('ativo','descanso','vazio') DEFAULT 'vazio',
+        \`status\` enum('ativo','descanso','vazio','reforma','interditado','reserva','sem_uso') DEFAULT 'ativo',
         \`observacoes\` text,
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -68,6 +68,24 @@ export async function ensureSchema() {
       )
     `);
 
+    const [fazendasTable] = await pool.query(`SHOW TABLES LIKE 'fazendas'`);
+    if ((fazendasTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "fazendas", "atividadePrincipal", "varchar(50)");
+      await ensureColumn(pool, "fazendas", "atividadeLeite", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "atividadeAgricultura", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "atividadeOutros", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "quantidadeAnimais", "int");
+      await ensureColumn(pool, "fazendas", "numeroCar", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "matriculaImovel", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "matriculasImovel", "text");
+      await ensureColumn(pool, "fazendas", "tipoPosse", "varchar(50)");
+      await ensureColumn(pool, "fazendas", "fonteEnergia", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "fonteAgua", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalNome", "varchar(200)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalTelefone", "varchar(40)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalFuncao", "varchar(80)");
+    }
+
     const [lotesTable] = await pool.query(`SHOW TABLES LIKE 'lotes'`);
     if ((lotesTable as unknown[]).length > 0) {
       await ensureColumn(pool, "lotes", "fazendaId", "int");
@@ -83,6 +101,9 @@ export async function ensureSchema() {
       await ensureColumn(pool, "pastos", "tipoPastagem", "varchar(80)");
       await ensureColumn(pool, "pastos", "incluirArea", "boolean DEFAULT true");
       await ensureColumn(pool, "pastos", "coordenadas", "text");
+      await pool.query(
+        "ALTER TABLE `pastos` MODIFY COLUMN `status` enum('ativo','descanso','vazio','reforma','interditado','reserva','sem_uso') DEFAULT 'ativo'"
+      );
     }
     console.log("[schema] Tabelas de pastos verificadas");
 

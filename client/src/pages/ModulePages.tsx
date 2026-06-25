@@ -23,6 +23,42 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+function areaUnitLabel(unidade?: string | null) {
+  const value = String(unidade || "Hectare").toLowerCase();
+  if (value.includes("alqueire")) return "alq.";
+  if (value.includes("acre")) return "ac";
+  if (value.includes("m²") || value.includes("metro")) return "m²";
+  return "ha";
+}
+
+function parseAreaValue(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatAreaWithUnit(value: unknown, unidade?: string | null) {
+  const unit = areaUnitLabel(unidade);
+  const number = parseAreaValue(value);
+  if (number === null) {
+    const raw = String(value ?? "").trim();
+    return raw ? `${raw} ${unit}` : "-";
+  }
+  return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`;
+}
+
+function formatFarmLocation(cidade?: string | null, estado?: string | null) {
+  const city = String(cidade || "").trim();
+  const uf = String(estado || "").trim();
+  if (city && uf) return `${city}/${uf}`;
+  return city || uf || "-";
+}
+
 // ============================================================
 // AÇÕES DA LINHA DE FAZENDA
 // ============================================================
@@ -150,7 +186,8 @@ export function FarmsOverviewPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome da Fazenda</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Localização</th>
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Total</th>
                 <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Líquida</th>
                 <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Subdivisões</th>
                 <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24">Ações</th>
@@ -158,10 +195,10 @@ export function FarmsOverviewPage() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
               )}
               {!isLoading && filtered.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>
               )}
               {pageItems.map((f: any) => (
                 <tr
@@ -177,8 +214,9 @@ export function FarmsOverviewPage() {
                       {f.nome}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{f.area || "-"}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{f.areaLiquida || "-"}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{formatFarmLocation(f.cidade, f.estado)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-700">{formatAreaWithUnit(f.area, f.unidadeArea)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-700">{formatAreaWithUnit(f.areaLiquida, f.unidadeArea)}</td>
                   <td className="px-4 py-2.5 text-center text-gray-700">{pastosPorFazenda[f.id] ?? 0}</td>
                   <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">

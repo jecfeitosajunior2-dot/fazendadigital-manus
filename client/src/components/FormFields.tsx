@@ -56,16 +56,20 @@ export const inputClassCompact =
 export function FormInput({
   value,
   onChange,
+  onBlur,
   placeholder,
   type = "text",
+  inputMode,
   required,
   compact,
   className,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: (v: string) => void;
   placeholder?: string;
   type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   required?: boolean;
   compact?: boolean;
   className?: string;
@@ -74,8 +78,10 @@ export function FormInput({
     <FieldBox required={required}>
       <input
         type={type}
+        inputMode={inputMode}
         value={value}
         onChange={e => onChange(e.target.value)}
+        onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
         placeholder={placeholder}
         className={cn(compact ? inputClassCompact : inputClass, className)}
       />

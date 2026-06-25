@@ -13,7 +13,18 @@ type Fazenda = {
   id: number;
   nome: string;
   responsavel?: string | null;
+  unidadeArea?: string | null;
 };
+
+const STATUS_OPERACIONAL = [
+  { value: "ativo", label: "Disponível" },
+  { value: "descanso", label: "Em descanso" },
+  { value: "reforma", label: "Em reforma" },
+  { value: "interditado", label: "Interditado" },
+  { value: "reserva", label: "Reserva" },
+  { value: "sem_uso", label: "Sem uso" },
+  { value: "vazio", label: "Sem uso" },
+] as const;
 
 const emptyForm = () => ({
   tipo: "Invernada",
@@ -22,8 +33,60 @@ const emptyForm = () => ({
   area: "",
   capacidade: "",
   tipoPastagem: "",
+  status: "ativo",
   incluirArea: true,
 });
+
+function areaUnitLabel(unidade?: string | null) {
+  const value = String(unidade || "Hectare").toLowerCase();
+  if (value.includes("alqueire")) return "alq.";
+  if (value.includes("acre")) return "ac";
+  if (value.includes("m²") || value.includes("metro")) return "m²";
+  return "ha";
+}
+
+function parseNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatArea(value: unknown, unidade?: string | null) {
+  const unit = areaUnitLabel(unidade);
+  const number = parseNumber(value);
+  if (number === null) {
+    const raw = String(value ?? "").trim();
+    return raw ? `${raw} ${unit}` : "-";
+  }
+  return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`;
+}
+
+function formatCapacidade(value: unknown) {
+  const number = parseNumber(value);
+  if (number === null) return "-";
+  return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} UA`;
+}
+
+function statusOperacionalLabel(status?: string | null) {
+  return STATUS_OPERACIONAL.find(s => s.value === status)?.label ?? "Disponível";
+}
+
+function statusOperacionalClass(status?: string | null) {
+  if (status === "interditado" || status === "reforma") return "bg-red-50 text-red-600 border-red-100";
+  if (status === "descanso" || status === "reserva") return "bg-amber-50 text-amber-700 border-amber-100";
+  if (status === "sem_uso" || status === "vazio") return "bg-gray-50 text-gray-500 border-gray-200";
+  return "bg-teal-50 text-teal-700 border-teal-100";
+}
+
+function pastagemAplicavel(tipo?: string | null) {
+  const value = String(tipo || "").toLowerCase();
+  return value.includes("pasto") || value.includes("piquete") || value.includes("potreiro") || value.includes("invernada");
+}
 
 export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }) {
   const utils = trpc.useUtils();
@@ -85,6 +148,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       area: form.area,
       incluirArea: form.incluirArea,
       capacidade: form.capacidade ? parseInt(form.capacidade, 10) : undefined,
+      status: form.status as "ativo" | "descanso" | "vazio" | "reforma" | "interditado" | "reserva" | "sem_uso",
     };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload });
@@ -102,6 +166,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       area: s.area ? String(s.area) : "",
       capacidade: s.capacidade ? String(s.capacidade) : "",
       tipoPastagem: s.tipoPastagem || "",
+      status: s.status === "vazio" ? "sem_uso" : s.status || "ativo",
       incluirArea: s.incluirArea !== false,
     });
     setShowForm(true);
@@ -113,7 +178,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     return (
       <div className="mt-6 bg-white rounded border border-gray-200 p-8 text-center text-gray-400">
         <span className="material-icons text-4xl block mb-2 opacity-30">touch_app</span>
-        <p className="text-[12px]">Selecione uma fazenda na lista acima para gerenciar subdivisões</p>
+        <p className="text-[12px]">Selecione uma fazenda acima para visualizar suas subdivisões.</p>
       </div>
     );
   }
@@ -123,8 +188,8 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       {/* Cabeçalho — estilo iRancho */}
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[13px] font-semibold text-gray-800">
-          Subdivisões da fazenda{" "}
-          <span className="font-normal text-gray-600">{fazenda.responsavel || fazenda.nome}</span>
+          Subdivisões da Fazenda:{" "}
+          <span className="font-normal text-gray-600">{fazenda.nome}</span>
         </h2>
         <div className="flex items-center gap-2">
           <button
@@ -211,6 +276,19 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 ))}
               </FormSelect>
             </div>
+            <div>
+              <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Status Operacional</FormLabel>
+              <FormSelect
+                compact
+                value={form.status}
+                onChange={v => setForm(f => ({ ...f, status: v }))}
+                placeholder="Status"
+              >
+                {STATUS_OPERACIONAL.filter((item, index, arr) => arr.findIndex(i => i.label === item.label) === index).map(s => (
+                  <SelectItem key={s.value} value={s.value} className="text-[11px]">{s.label}</SelectItem>
+                ))}
+              </FormSelect>
+            </div>
             <div className="flex items-center gap-3 pb-1">
               <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
@@ -254,29 +332,37 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Sigla</th>
               <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área</th>
-              <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Cap. (UA)</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Capacidade (UA)</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Divisão</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Pastagem</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status Operacional</th>
               <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-20">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
             )}
             {!isLoading && subdivisoes.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-400 text-[12px]">Sem dados</td>
+                <td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-[12px]">
+                  Nenhuma subdivisão cadastrada ainda. Cadastre pastos, piquetes, currais, reservas ou áreas de manejo para organizar a fazenda.
+                </td>
               </tr>
             )}
             {subdivisoes.map(s => (
               <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50/60">
                 <td className="px-4 py-2.5 font-medium text-gray-800">{s.nome}</td>
                 <td className="px-4 py-2.5 text-gray-600">{s.sigla || "-"}</td>
-                <td className="px-4 py-2.5 text-right text-gray-700">{s.area ?? "-"}</td>
-                <td className="px-4 py-2.5 text-right text-gray-700">{s.capacidade ?? "-"}</td>
+                <td className="px-4 py-2.5 text-right text-gray-700">{formatArea(s.area, fazenda.unidadeArea)}</td>
+                <td className="px-4 py-2.5 text-right text-gray-700">{formatCapacidade(s.capacidade)}</td>
                 <td className="px-4 py-2.5 text-gray-600">{s.tipo || "-"}</td>
-                <td className="px-4 py-2.5 text-gray-600">{s.tipoPastagem || "-"}</td>
+                <td className="px-4 py-2.5 text-gray-600">{s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusOperacionalClass(s.status)}`}>
+                    {statusOperacionalLabel(s.status)}
+                  </span>
+                </td>
                 <td className="px-4 py-2.5 text-center">
                   <div className="flex items-center justify-center gap-1">
                     <button

@@ -5,8 +5,21 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { handleOAuthCallback } from "./_core/oauth";
 import { ensureSchema } from "./ensureSchema";
+import mysql from "mysql2/promise";
+import { env } from "./_core/env";
 
-await ensureSchema();
+let databaseAvailable = false;
+
+try {
+  await ensureSchema();
+  databaseAvailable = true;
+} catch (err) {
+  databaseAvailable = false;
+  console.error(
+    "[startup] Banco de dados indisponível. O servidor web continuará ativo, mas operações que salvam/listam dados vão falhar até o MySQL estar ligado.",
+    err
+  );
+}
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -17,6 +30,28 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // OAuth callback
 app.get("/api/oauth/callback", handleOAuthCallback);
+
+app.get("/api/health", async (_req, res) => {
+  try {
+    const connection = await mysql.createConnection(env.DATABASE_URL);
+    await connection.ping();
+    await connection.end();
+    databaseAvailable = true;
+    res.json({ ok: true, database: "online" });
+  } catch (err) {
+    databaseAvailable = false;
+    res.status(503).json({
+      ok: false,
+      database: "offline",
+      message: "Banco de dados local indisponível. Ligue o MySQL/Docker para salvar e consultar dados.",
+    });
+  }
+});
+
+app.use("/api", (_req, res, next) => {
+  res.setHeader("X-Fazenda-Digital-Database", databaseAvailable ? "online" : "offline");
+  next();
+});
 
 // tRPC API
 app.use("/api/trpc", createExpressMiddleware({

@@ -2,15 +2,17 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { NotificationCenter } from "./NotificationCenter";
 import { trpc } from "@/lib/trpc";
+import { clearLocalAuthSession, getLocalAuthUser } from "@/lib/localAuth";
 
 export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const [, setLocation] = useLocation();
   const [showUser, setShowUser] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
+  const localUser = getLocalAuthUser();
 
-  const { data: user } = trpc.auth.me.useQuery();
+  const { data: user } = trpc.auth.me.useQuery(undefined, { retry: false });
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => setLocation("/entrar"),
+    onSettled: () => setLocation("/entrar"),
   });
 
   useEffect(() => {
@@ -22,11 +24,12 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   }, []);
 
   const handleLogout = () => {
+    clearLocalAuthSession();
     logoutMutation.mutate();
   };
 
-  const displayName = user?.name || "Administrador";
-  const displayEmail = user?.email || "admin@fazendadigital.com.br";
+  const displayName = user?.name || localUser?.name || "Administrador";
+  const displayEmail = user?.email || localUser?.email || "admin@fazendadigital.com.br";
   const initials = displayName.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
 
   return (
@@ -51,16 +54,25 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
           </button>
         )}
         {/* Logo in topbar (visible on mobile when sidebar hidden) */}
-        <div className="lg:hidden flex items-center gap-2">
-          <div
-            className="h-[30px] w-[30px] rounded-lg flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg, #1BC5BD, #0891B2)" }}
-          >
-            <span className="material-icons text-white text-[18px]">agriculture</span>
+        <div className="lg:hidden flex items-center gap-1.5">
+          <div className="grid h-[34px] w-[34px] place-items-center shrink-0">
+            <img
+              src="/assets/brand/fd-symbol-final-aligned.png"
+              alt="Fazenda Digital"
+              className="h-[34px] w-[34px] object-contain"
+              style={{
+                objectPosition: "center",
+                filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
+              }}
+            />
           </div>
-          <div className="flex flex-col" style={{ lineHeight: 1 }}>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "12px", letterSpacing: "0.05em", color: "white" }}>FAZENDA</span>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "8px", letterSpacing: "0.2em", color: "#1BC5BD" }}>DIGITAL</span>
+          <div className="flex flex-col items-center" style={{ lineHeight: 1, width: "92px" }}>
+            <span style={{ width: "100%", textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 820, fontSize: "12px", letterSpacing: "0.058em", color: "white" }}>FAZENDA</span>
+            <div style={{ width: "78px", display: "flex", alignItems: "center", justifyContent: "center", gap: "4px", marginTop: "4px" }}>
+              <span style={{ width: "13px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(120,214,207,0.64))" }} />
+              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "7.5px", letterSpacing: "0.24em", color: "#78D6CF", transform: "translateX(0.8px)" }}>DIGITAL</span>
+              <span style={{ width: "13px", height: "1px", background: "linear-gradient(90deg, rgba(120,214,207,0.64), transparent)" }} />
+            </div>
           </div>
         </div>
       </div>
@@ -112,7 +124,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
                     <p className="text-xs text-white/40 truncate">{displayEmail}</p>
                   </div>
                 </div>
-                {user?.role === "admin" && (
+                {(user?.role === "admin" || localUser?.role === "admin") && (
                   <span
                     className="inline-block mt-2 px-2 py-0.5 text-[10px] rounded-full font-semibold"
                     style={{ background: "rgba(27,197,189,0.15)", color: "#1BC5BD", border: "1px solid rgba(27,197,189,0.3)" }}

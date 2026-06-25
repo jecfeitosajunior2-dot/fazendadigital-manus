@@ -452,7 +452,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = false;
   const [location] = useLocation();
 
   // Fecha o menu mobile APENAS quando a rota muda (navegação).
@@ -497,48 +497,42 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         style={{ backgroundColor: "#0F172A", backgroundImage: "linear-gradient(180deg, #0F172A 0%, #0D1B2A 100%)" }}
       >
         {/* Logo area */}
-        <div className="h-[48px] flex items-center px-3 border-b border-white/10">
+        <div className="h-[58px] flex items-center px-4 border-b border-white/10">
           {!collapsed && (
-            <div className="flex items-center gap-2.5">
-              <img
-                src="/assets/fd-logo.webp"
-                alt="Fazenda Digital"
-                className="h-[36px] w-[36px] object-contain"
-              />
-              <div className="flex flex-col" style={{ lineHeight: 1 }}>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "13px", letterSpacing: "0.05em", color: "white" }}>FAZENDA</span>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
-                  <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.6 }} />
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "9px", letterSpacing: "0.2em", color: "#1BC5BD" }}>DIGITAL</span>
-                  <span style={{ flex: 1, height: "1px", background: "#1BC5BD", opacity: 0.6 }} />
+            <div className="flex w-full items-center gap-1.5">
+              <div
+                className="grid place-items-center shrink-0"
+                style={{
+                  width: "44px",
+                  height: "44px",
+                }}
+              >
+                <img
+                  src="/assets/brand/fd-symbol-final-aligned.png"
+                  alt="Fazenda Digital"
+                  className="h-[44px] w-[44px] object-contain"
+                  style={{
+                    objectPosition: "center",
+                    filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
+                  }}
+                />
+              </div>
+              <div className="flex flex-col min-w-0 items-center" style={{ lineHeight: 1, width: "118px" }}>
+                <span style={{ width: "100%", textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 820, fontSize: "15px", letterSpacing: "0.058em", color: "white", textShadow: "0 4px 18px rgba(0,0,0,0.18)" }}>FAZENDA</span>
+                <div style={{ width: "104px", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", marginTop: "5px" }}>
+                  <span style={{ width: "18px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(120,214,207,0.64))" }} />
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "9px", letterSpacing: "0.255em", color: "#78D6CF", transform: "translateX(1px)" }}>DIGITAL</span>
+                  <span style={{ width: "18px", height: "1px", background: "linear-gradient(90deg, rgba(120,214,207,0.64), transparent)" }} />
                 </div>
               </div>
             </div>
           )}
-          <button
-            onClick={() => {
-              if (window.innerWidth < 1024 && onMobileClose) {
-                onMobileClose();
-              } else {
-                setCollapsed(!collapsed);
-              }
-            }}
-            className={`${collapsed ? "mx-auto" : "ml-auto"} text-white/60 hover:text-white p-1`}
-          >
-            <span className="material-icons text-[18px]">{collapsed ? "chevron_right" : "chevron_left"}</span>
-          </button>
         </div>
 
         {/* Menu label */}
         {!collapsed && (
           <div className="px-4 pt-3 pb-1 flex items-center justify-between">
             <span className="text-[11px] text-white/50 font-medium">Menu</span>
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              className="text-white/50 hover:text-white hidden md:block"
-            >
-              <span className="material-icons text-[16px]">chevron_left</span>
-            </button>
           </div>
         )}
 
@@ -551,10 +545,9 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
         {/* Footer */}
         {!collapsed && (
-          <div className="px-3 py-3 border-t border-white/10 text-[9px] text-white/30 text-center leading-tight">
-            Desenvolvido por Fazenda Digital<br />© Copyright 2026
-            <br />
-            <span className="text-white/40">build 2026-06-08-19h00</span>
+          <div className="px-3 py-3 border-t border-white/10 text-[10px] text-white/30 text-center leading-snug">
+            Fazenda Digital © {new Date().getFullYear()}<br />
+            Gestão Pecuária Inteligente
           </div>
         )}
       </aside>

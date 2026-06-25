@@ -10,10 +10,11 @@
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
+    "db:up": "docker compose up -d mysql",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts && tsx scripts/seed-manus-data.ts",
     "db:seed:manus": "tsx scripts/seed-manus-data.ts",
-    "setup:local": "docker compose up -d && drizzle-kit push && tsx scripts/seed.ts",
+    "setup:local": "docker compose up -d mysql && drizzle-kit push && tsx scripts/seed.ts",
     "test": "vitest run --configLoader runner",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite --host --configLoader runner"
