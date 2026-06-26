@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
   FormLabel,
   FormInput,
   FormSelect,
+  FormNativeSelect,
   FieldBox,
   inputClass,
 } from "@/components/FormFields";
@@ -55,7 +56,8 @@ type FormState = {
   fonteAgua: string;
   responsavelOperacionalNome: string;
   responsavelOperacionalTelefone: string;
-  responsavelOperacionalFuncao: string;
+  responsavelOperacionalFuncaoSelect: string;
+  responsavelOperacionalFuncaoOutro: string;
   observacoes: string;
 };
 
@@ -97,7 +99,8 @@ const emptyForm = (responsavel = ""): FormState => ({
   fonteAgua: "",
   responsavelOperacionalNome: "",
   responsavelOperacionalTelefone: "",
-  responsavelOperacionalFuncao: "",
+  responsavelOperacionalFuncaoSelect: "",
+  responsavelOperacionalFuncaoOutro: "",
   observacoes: "",
 });
 
@@ -202,6 +205,59 @@ function parseMatriculasImovel(value: unknown, fallback?: string) {
   return fallback?.trim() ? [fallback.trim()] : [];
 }
 
+function mapFazendaToForm(fazenda: Record<string, unknown>): FormState {
+  const estadoUf = normalizeEstadoUf(String(fazenda.estado ?? ""));
+  const cidadeSalva = String(fazenda.cidade ?? "");
+  const matriculas = parseMatriculasImovel(
+    fazenda.matriculasImovel,
+    String(fazenda.matriculaImovel ?? "")
+  );
+
+  return {
+    nome: String(fazenda.nome ?? ""),
+    sigla: String(fazenda.sigla ?? ""),
+    responsavel: String(fazenda.responsavel ?? ""),
+    pais: String(fazenda.pais ?? "Brasil"),
+    estado: estadoUf,
+    cidade: cidadeSalva,
+    unidadeArea: String(fazenda.unidadeArea ?? "Hectare"),
+    area: str(fazenda.area),
+    areaReserva: str(fazenda.areaReserva),
+    areaLiquida: str(fazenda.areaLiquida),
+    endereco: String(fazenda.endereco ?? ""),
+    atividadePrincipal: String(fazenda.atividadePrincipal ?? ""),
+    atividadeCria: bool(fazenda.atividadeCria),
+    atividadeRecria: bool(fazenda.atividadeRecria),
+    atividadeEngorda: bool(fazenda.atividadeEngorda),
+    atividadeConfinamento: bool(fazenda.atividadeConfinamento),
+    atividadeLeite: bool(fazenda.atividadeLeite),
+    atividadeAgricultura: bool(fazenda.atividadeAgricultura),
+    atividadeOutros: bool(fazenda.atividadeOutros),
+    quantidadeAnimais: str(fazenda.quantidadeAnimais),
+    cpfCnpj: formatCpfCnpj(String(fazenda.cpfCnpj ?? "")),
+    inscricaoEstadual: String(fazenda.inscricaoEstadual ?? ""),
+    registroIncra: String(fazenda.registroIncra ?? ""),
+    nirf: String(fazenda.nirf ?? ""),
+    numeroCar: String(fazenda.numeroCar ?? ""),
+    matriculasImovel: matriculas.length
+      ? matriculas
+      : [String(fazenda.matriculaImovel ?? "")].filter(Boolean),
+    tipoPosse: String(fazenda.tipoPosse ?? ""),
+    possuiSisbov: fazenda.possuiSisbov === true ? "sim" : fazenda.possuiSisbov === false ? "nao" : "nao",
+    razaoSocial: String(fazenda.razaoSocial ?? ""),
+    latitude: String(fazenda.latitude ?? ""),
+    longitude: String(fazenda.longitude ?? ""),
+    distanciaMunicipio: str(fazenda.distanciaMunicipio),
+    valorHectare: formatMoneyBRL(str(fazenda.valorHectare)),
+    fonteEnergia: String(fazenda.fonteEnergia ?? ""),
+    fonteAgua: String(fazenda.fonteAgua ?? ""),
+    responsavelOperacionalNome: String(fazenda.responsavelOperacionalNome ?? ""),
+    responsavelOperacionalTelefone: formatPhoneBR(String(fazenda.responsavelOperacionalTelefone ?? "")),
+    ...parseResponsavelOperacionalFuncao(String(fazenda.responsavelOperacionalFuncao ?? "")),
+    observacoes: String(fazenda.observacoes ?? ""),
+  };
+}
+
 function FormSection({
   title,
   description,
@@ -222,34 +278,130 @@ function FormSection({
   );
 }
 
-function estadoNome(uf: string) {
-  return ESTADOS_BR.find(e => e.uf === uf)?.nome ?? uf;
+function normalizeEstadoUf(value: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  const found = ESTADOS_BR.find(
+    e => e.nome.toLowerCase() === trimmed.toLowerCase() || e.uf.toLowerCase() === trimmed.toLowerCase()
+  );
+  return found?.uf ?? trimmed;
+}
+
+const ATIVIDADE_PRINCIPAL_OPTIONS = [
+  { value: "Cria", label: "Cria" },
+  { value: "Recria", label: "Recria" },
+  { value: "Engorda", label: "Engorda" },
+  { value: "Ciclo completo", label: "Ciclo completo" },
+  { value: "Confinamento", label: "Confinamento" },
+  { value: "Leite", label: "Leite" },
+] as const;
+
+const RESPONSAVEL_FUNCAO_OPTIONS = [
+  { value: "Proprietário", label: "Proprietário" },
+  { value: "Administrador", label: "Administrador" },
+  { value: "Gerente", label: "Gerente" },
+  { value: "Capataz", label: "Capataz" },
+  { value: "Vaqueiro", label: "Vaqueiro" },
+  { value: "Consultor", label: "Consultor" },
+  { value: "Outro", label: "Outro" },
+] as const;
+
+const RESPONSAVEL_FUNCAO_PADRAO = new Set(
+  RESPONSAVEL_FUNCAO_OPTIONS.map(o => o.value).filter(v => v !== "Outro"),
+);
+
+function parseResponsavelOperacionalFuncao(stored: string) {
+  const funcao = stored.trim();
+  if (!funcao) {
+    return { responsavelOperacionalFuncaoSelect: "", responsavelOperacionalFuncaoOutro: "" };
+  }
+  if (RESPONSAVEL_FUNCAO_PADRAO.has(funcao)) {
+    return { responsavelOperacionalFuncaoSelect: funcao, responsavelOperacionalFuncaoOutro: "" };
+  }
+  return { responsavelOperacionalFuncaoSelect: "Outro", responsavelOperacionalFuncaoOutro: funcao };
+}
+
+function buildResponsavelOperacionalFuncao(select: string, outro: string) {
+  if (!select) return undefined;
+  if (select === "Outro") {
+    const descricao = outro.trim();
+    return descricao || undefined;
+  }
+  return select;
+}
+
+const PAIS_OPTIONS = [
+  { value: "Brasil", label: "Brasil" },
+  { value: "Argentina", label: "Argentina" },
+  { value: "Paraguai", label: "Paraguai" },
+  { value: "Uruguai", label: "Uruguai" },
+] as const;
+
+function parseFazendaId(search: string): number | null {
+  const query = search.startsWith("?") ? search.slice(1) : search;
+  const idParam = new URLSearchParams(query).get("id");
+  if (!idParam) return null;
+  const parsed = parseInt(idParam, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fazendaHydrationKey(fazenda: Record<string, unknown> | null | undefined) {
+  if (!fazenda) return "";
+  return [
+    fazenda.id,
+    fazenda.updatedAt,
+    fazenda.createdAt,
+    fazenda.nome,
+    fazenda.estado,
+    fazenda.cidade,
+    fazenda.atividadePrincipal,
+    fazenda.area,
+  ]
+    .map(v => String(v ?? ""))
+    .join("|");
 }
 
 export function FarmRegistrationPage() {
+  const searchString = useSearch();
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const searchParams = new URLSearchParams(window.location.search);
-  const fazendaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
-  const isEdit = fazendaId != null && !isNaN(fazendaId);
+  const fazendaId = parseFazendaId(searchString);
+  const isEdit = fazendaId != null;
 
   const { data: user } = trpc.auth.me.useQuery();
-  const { data: fazenda, isLoading: loadingFazenda } = trpc.fazendas.get.useQuery(
+  const {
+    data: fazenda,
+    isLoading: loadingFazenda,
+    isFetching: fetchingFazenda,
+  } = trpc.fazendas.get.useQuery(
     { id: fazendaId! },
-    { enabled: isEdit }
+    {
+      enabled: isEdit,
+      refetchOnMount: "always",
+      staleTime: 0,
+      gcTime: 0,
+    }
   );
 
   const [cadastroAvancado, setCadastroAvancado] = useState(false);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [cidades, setCidades] = useState<string[]>([]);
   const [loadingCidades, setLoadingCidades] = useState(false);
-  const loadedFazendaIdRef = useRef<number | null>(null);
+  const [hydratedKey, setHydratedKey] = useState("");
+
+  const hydrationKey = isEdit ? fazendaHydrationKey(fazenda as Record<string, unknown> | undefined) : "new";
 
   useEffect(() => {
-    loadedFazendaIdRef.current = null;
-    setCidades([]);
-    setForm(emptyForm(user?.name || ""));
+    setHydratedKey("");
   }, [fazendaId]);
+
+  useEffect(() => {
+    if (isEdit) return;
+    setForm(emptyForm(user?.name || ""));
+    setCidades([]);
+    setHydratedKey("new");
+  }, [fazendaId, isEdit, user?.name]);
 
   useEffect(() => {
     if (!isEdit && user?.name) {
@@ -258,60 +410,49 @@ export function FarmRegistrationPage() {
   }, [user?.name, isEdit]);
 
   useEffect(() => {
-    if (isEdit && fazenda && loadedFazendaIdRef.current !== fazendaId) {
-      const fazendaExtra = fazenda as any;
-      setForm({
-        nome: fazenda.nome || "",
-        sigla: fazenda.sigla || "",
-        responsavel: fazenda.responsavel || "",
-        pais: fazenda.pais || "Brasil",
-        estado: fazenda.estado || "",
-        cidade: fazenda.cidade || "",
-        unidadeArea: fazenda.unidadeArea || "Hectare",
-        area: str(fazenda.area),
-        areaReserva: str(fazenda.areaReserva),
-        areaLiquida: str(fazenda.areaLiquida),
-        endereco: fazenda.endereco || "",
-        atividadePrincipal: fazendaExtra.atividadePrincipal || "",
-        atividadeCria: bool(fazenda.atividadeCria),
-        atividadeRecria: bool(fazenda.atividadeRecria),
-        atividadeEngorda: bool(fazenda.atividadeEngorda),
-        atividadeConfinamento: bool(fazenda.atividadeConfinamento),
-        atividadeLeite: bool(fazendaExtra.atividadeLeite),
-        atividadeAgricultura: bool(fazendaExtra.atividadeAgricultura),
-        atividadeOutros: bool(fazendaExtra.atividadeOutros),
-        quantidadeAnimais: str(fazendaExtra.quantidadeAnimais),
-        cpfCnpj: formatCpfCnpj(fazenda.cpfCnpj || ""),
-        inscricaoEstadual: fazenda.inscricaoEstadual || "",
-        registroIncra: fazenda.registroIncra || "",
-        nirf: fazenda.nirf || "",
-        numeroCar: fazendaExtra.numeroCar || "",
-        matriculasImovel: parseMatriculasImovel(
-          fazendaExtra.matriculasImovel,
-          fazendaExtra.matriculaImovel || ""
-        ).length ? parseMatriculasImovel(
-          fazendaExtra.matriculasImovel,
-          fazendaExtra.matriculaImovel || ""
-        ) : [fazendaExtra.matriculaImovel || ""].filter(Boolean),
-        tipoPosse: fazendaExtra.tipoPosse || "",
-        possuiSisbov: fazenda.possuiSisbov === true ? "sim" : fazenda.possuiSisbov === false ? "nao" : "nao",
-        razaoSocial: fazenda.razaoSocial || "",
-        latitude: fazenda.latitude || "",
-        longitude: fazenda.longitude || "",
-        distanciaMunicipio: str(fazenda.distanciaMunicipio),
-        valorHectare: formatMoneyBRL(str(fazenda.valorHectare)),
-        fonteEnergia: "",
-        fonteAgua: "",
-        responsavelOperacionalNome: fazendaExtra.responsavelOperacionalNome || "",
-        responsavelOperacionalTelefone: formatPhoneBR(fazendaExtra.responsavelOperacionalTelefone || ""),
-        responsavelOperacionalFuncao: fazendaExtra.responsavelOperacionalFuncao || "",
-        observacoes: fazenda.observacoes || "",
-      });
-      loadedFazendaIdRef.current = fazendaId;
-    }
-  }, [isEdit, fazenda, fazendaId]);
+    if (!isEdit || !fazenda || !hydrationKey) return;
+    if (hydratedKey === hydrationKey) return;
+
+    setForm(mapFazendaToForm(fazenda as Record<string, unknown>));
+    setHydratedKey(hydrationKey);
+  }, [isEdit, fazenda, hydrationKey, hydratedKey]);
 
   useEffect(() => {
+    if (isEdit && !fazenda) return;
+    if (!form.estado) {
+      setCidades([]);
+      return;
+    }
+
+    let cancelled = false;
+    const savedCidade = form.cidade.trim();
+    setLoadingCidades(true);
+    fetchCidadesPorEstado(form.estado)
+      .then(list => {
+        if (cancelled) return;
+        if (savedCidade && !list.includes(savedCidade)) {
+          setCidades([savedCidade, ...list]);
+        } else {
+          setCidades(list);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCidades(savedCidade ? [savedCidade] : []);
+        toast.error("Não foi possível carregar os municípios");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCidades(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.estado, form.cidade, isEdit, fazenda, hydrationKey]);
+
+  useEffect(() => {
+    if (!isEdit || !fazenda) return;
+
     const areaTotal = parseDecimal(form.area);
     if (areaTotal == null) {
       if (form.areaLiquida) setForm(f => ({ ...f, areaLiquida: "" }));
@@ -325,22 +466,31 @@ export function FarmRegistrationPage() {
     if (form.areaLiquida !== areaLiquidaFormatada) {
       setForm(f => ({ ...f, areaLiquida: areaLiquidaFormatada }));
     }
-  }, [form.area, form.areaReserva, form.areaLiquida]);
+  }, [form.area, form.areaReserva, form.areaLiquida, isEdit, fazenda]);
 
-  useEffect(() => {
-    if (!form.estado) {
-      setCidades([]);
-      return;
-    }
-    setLoadingCidades(true);
-    fetchCidadesPorEstado(form.estado)
-      .then(setCidades)
-      .catch(() => {
-        setCidades([]);
-        toast.error("Não foi possível carregar os municípios");
-      })
-      .finally(() => setLoadingCidades(false));
+  const estadoOptions = useMemo(
+    () => ESTADOS_BR.map(e => ({ value: e.uf, label: e.nome })),
+    [],
+  );
+
+  const estadoDisplayName = useMemo(() => {
+    const found = ESTADOS_BR.find(e => e.uf === form.estado);
+    return found?.nome ?? form.estado;
   }, [form.estado]);
+
+  const municipioPlaceholder = loadingCidades
+    ? "Carregando..."
+    : form.estado
+      ? "Selecione o município"
+      : "Selecione o estado primeiro";
+
+  const municipioOptions = useMemo(() => {
+    const base = cidades.map(c => ({ value: c, label: c }));
+    if (form.cidade && !base.some(o => o.value === form.cidade)) {
+      return [{ value: form.cidade, label: form.cidade }, ...base];
+    }
+    return base;
+  }, [cidades, form.cidade]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -404,7 +554,10 @@ export function FarmRegistrationPage() {
     valorHectare: moneyToPayload(form.valorHectare),
     responsavelOperacionalNome: form.responsavelOperacionalNome || undefined,
     responsavelOperacionalTelefone: form.responsavelOperacionalTelefone || undefined,
-    responsavelOperacionalFuncao: form.responsavelOperacionalFuncao || undefined,
+    responsavelOperacionalFuncao: buildResponsavelOperacionalFuncao(
+      form.responsavelOperacionalFuncaoSelect,
+      form.responsavelOperacionalFuncaoOutro,
+    ),
     observacoes: form.observacoes || undefined,
   });
 
@@ -420,6 +573,7 @@ export function FarmRegistrationPage() {
   const updateMutation = trpc.fazendas.update.useMutation({
     onSuccess: () => {
       utils.fazendas.list.invalidate();
+      if (fazendaId) utils.fazendas.get.invalidate({ id: fazendaId });
       toast.success("Fazenda atualizada!");
       setLocation("/fazendas/visao-geral");
     },
@@ -444,10 +598,37 @@ export function FarmRegistrationPage() {
     }
   };
 
-  if (isEdit && loadingFazenda) {
+  const formSyncedForEdit = !isEdit || (hydratedKey === hydrationKey && hydrationKey !== "");
+
+  if (isEdit && (loadingFazenda || fetchingFazenda) && !fazenda) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando fazenda...</div>
+      </AppLayout>
+    );
+  }
+
+  if (isEdit && !loadingFazenda && !fetchingFazenda && !fazenda) {
+    return (
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400 text-sm gap-3">
+          <span>Fazenda não encontrada.</span>
+          <button
+            type="button"
+            onClick={() => setLocation("/fazendas/visao-geral")}
+            className="px-4 py-2 rounded-full text-[11px] font-semibold uppercase bg-[#EEEEEE] text-gray-700"
+          >
+            Voltar
+          </button>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (isEdit && fazenda && !formSyncedForEdit) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Preparando formulário...</div>
       </AppLayout>
     );
   }
@@ -465,7 +646,7 @@ export function FarmRegistrationPage() {
               <div className="text-right leading-tight">
                 <div className="text-[11px] font-semibold text-gray-800">Cadastro Avançado</div>
                 <div className="text-[10px] text-gray-500">
-                  {cadastroAvancado ? "Dados complementares visíveis" : "Dados complementares ocultos"}
+                  Dados complementares opcionais
                 </div>
               </div>
               <Switch
@@ -495,15 +676,16 @@ export function FarmRegistrationPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-start">
                 <div>
                   <FormLabel required>País</FormLabel>
-                  <FormSelect value={form.pais} onChange={v => set("pais", v)} placeholder="Selecione" required displayValue={form.pais}>
-                    <SelectItem value="Brasil" className="text-[13px]">Brasil</SelectItem>
-                    <SelectItem value="Argentina" className="text-[13px]">Argentina</SelectItem>
-                    <SelectItem value="Paraguai" className="text-[13px]">Paraguai</SelectItem>
-                    <SelectItem value="Uruguai" className="text-[13px]">Uruguai</SelectItem>
-                  </FormSelect>
+                  <FormNativeSelect
+                    value={form.pais}
+                    onChange={v => set("pais", v)}
+                    placeholder="Selecione"
+                    required
+                    options={PAIS_OPTIONS}
+                  />
                 </div>
                 <div>
                   <FormLabel required>Estado</FormLabel>
@@ -512,10 +694,12 @@ export function FarmRegistrationPage() {
                     onChange={v => setForm(f => ({ ...f, estado: v, cidade: "" }))}
                     placeholder="Selecione"
                     required
-                    displayValue={form.estado ? estadoNome(form.estado) : ""}
+                    displayValue={estadoDisplayName}
                   >
-                    {ESTADOS_BR.map(e => (
-                      <SelectItem key={e.uf} value={e.uf} className="text-[13px]">{e.nome}</SelectItem>
+                    {estadoOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                        {o.label}
+                      </SelectItem>
                     ))}
                   </FormSelect>
                 </div>
@@ -524,13 +708,15 @@ export function FarmRegistrationPage() {
                   <FormSelect
                     value={form.cidade}
                     onChange={v => set("cidade", v)}
-                    placeholder={loadingCidades ? "Carregando..." : form.estado ? "Selecione o município" : "Selecione o estado primeiro"}
+                    placeholder={municipioPlaceholder}
                     disabled={!form.estado || loadingCidades}
                     required
                     displayValue={form.cidade}
                   >
-                    {cidades.map(c => (
-                      <SelectItem key={c} value={c} className="text-[13px]">{c}</SelectItem>
+                    {municipioOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                        {o.label}
+                      </SelectItem>
                     ))}
                   </FormSelect>
                 </div>
@@ -568,17 +754,16 @@ export function FarmRegistrationPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4 items-start">
                 <div className="lg:col-span-4">
                   <FormLabel required>Atividade Principal da Fazenda</FormLabel>
-                  <FormSelect value={form.atividadePrincipal} onChange={v => set("atividadePrincipal", v)} placeholder="Selecione" required displayValue={form.atividadePrincipal}>
-                    <SelectItem value="Cria" className="text-[13px]">Cria</SelectItem>
-                    <SelectItem value="Recria" className="text-[13px]">Recria</SelectItem>
-                    <SelectItem value="Engorda" className="text-[13px]">Engorda</SelectItem>
-                    <SelectItem value="Ciclo completo" className="text-[13px]">Ciclo completo</SelectItem>
-                    <SelectItem value="Confinamento" className="text-[13px]">Confinamento</SelectItem>
-                    <SelectItem value="Leite" className="text-[13px]">Leite</SelectItem>
-                  </FormSelect>
+                  <FormNativeSelect
+                    value={form.atividadePrincipal}
+                    onChange={v => set("atividadePrincipal", v)}
+                    placeholder="Selecione"
+                    required
+                    options={ATIVIDADE_PRINCIPAL_OPTIONS}
+                  />
                 </div>
                 <div className="lg:col-span-8">
                   <FormLabel>Endereço da Fazenda</FormLabel>
@@ -763,8 +948,29 @@ export function FarmRegistrationPage() {
                     </div>
                     <div>
                       <FormLabel>Função</FormLabel>
-                      <FormInput value={form.responsavelOperacionalFuncao} onChange={v => set("responsavelOperacionalFuncao", v)} placeholder="Ex. gerente, vaqueiro, administrador" />
+                      <FormSelect
+                        value={form.responsavelOperacionalFuncaoSelect}
+                        onChange={v => set("responsavelOperacionalFuncaoSelect", v)}
+                        placeholder="Selecione a função"
+                        displayValue={form.responsavelOperacionalFuncaoSelect}
+                      >
+                        {RESPONSAVEL_FUNCAO_OPTIONS.map(o => (
+                          <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </FormSelect>
                     </div>
+                    {form.responsavelOperacionalFuncaoSelect === "Outro" && (
+                      <div className="sm:col-span-3">
+                        <FormLabel>Especificar função</FormLabel>
+                        <FormInput
+                          value={form.responsavelOperacionalFuncaoOutro}
+                          onChange={v => set("responsavelOperacionalFuncaoOutro", v)}
+                          placeholder="Descreva a função"
+                        />
+                      </div>
+                    )}
                   </div>
                 </FormSection>
               </div>

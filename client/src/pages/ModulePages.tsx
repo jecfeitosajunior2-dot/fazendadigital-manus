@@ -7,6 +7,14 @@ import ListExportButtons from "@/components/ListExportButtons";
 import FarmPastosSheet from "@/components/FarmPastosSheet";
 import { FazendaSubdivisoesPanel } from "@/components/FazendaSubdivisoesPanel";
 import {
+  DeleteActionIcon,
+  EditActionIcon,
+  FarmRowActionButtons,
+} from "@/components/icons/FarmActionIcons";
+import TableHorizontalScroll from "@/components/TableHorizontalScroll";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
+import { useConfirm } from "@/components/ConfirmDialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -86,19 +94,19 @@ function FarmRowActions({
           className="text-[12px] cursor-pointer gap-2"
           onClick={() => setLocation(`/fazendas/cadastro?id=${fazenda.id}`)}
         >
-          <span className="material-icons text-[14px] text-blue-500">edit</span>
+          <EditActionIcon size={16} />
           Editar
         </DropdownMenuItem>
-        <DropdownMenuItem className="text-[12px] cursor-pointer gap-2" onClick={onPastos}>
-          <span className="material-icons text-[14px]" style={{ color: "#4ECDC4" }}>grass</span>
+        <DropdownMenuItem className="text-[12px] cursor-pointer gap-2.5" onClick={onPastos}>
+          <span className="material-icons text-[15px]" style={{ color: "#4ECDC4" }}>grass</span>
           Pastos
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
+          className="text-[12px] cursor-pointer gap-2.5 text-red-600 focus:text-red-600 focus:bg-red-50"
           onClick={onDelete}
         >
-          <span className="material-icons text-[14px]">delete</span>
+          <DeleteActionIcon size={16} />
           Excluir
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -112,10 +120,11 @@ function FarmRowActions({
 
 export function FarmsOverviewPage() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
   const { data: allPastos = [] } = trpc.pastos.list.useQuery();
@@ -132,6 +141,17 @@ export function FarmsOverviewPage() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const handleDeleteFazenda = async (fazenda: { id: number; nome?: string | null }) => {
+    const ok = await confirm({
+      title: "Excluir fazenda",
+      description: `Tem certeza que deseja excluir a fazenda "${fazenda.nome ?? "selecionada"}"? Esta ação não pode ser desfeita.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) deleteMutation.mutate({ id: fazenda.id });
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -160,13 +180,14 @@ export function FarmsOverviewPage() {
       {/* Lista de fazendas — layout iRancho */}
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-[13px] font-semibold text-gray-800">Lista de fazendas</h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-[13px] font-semibold text-gray-800 leading-none">Lista de Fazendas</h1>
             <button
+              type="button"
               onClick={() => setLocation("/fazendas/cadastro")}
-              className="px-3 py-1.5 rounded text-[10px] font-semibold uppercase text-white"
-              style={{ backgroundColor: "#4ECDC4" }}
+              className="inline-flex items-center justify-center gap-2 h-[38px] px-[17px] rounded-md text-[10px] font-bold uppercase tracking-wide text-white bg-[#4ECDC4] hover:bg-[#36BDB4] active:scale-[0.98] active:brightness-95 transition-colors"
             >
+              <span className="text-[13px] leading-none font-bold">+</span>
               Nova Fazenda
             </button>
           </div>
@@ -181,97 +202,87 @@ export function FarmsOverviewPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-[11px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome da Fazenda</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Localização</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Total</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Líquida</th>
-                <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Subdivisões</th>
-                <th className="px-4 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
-              )}
-              {!isLoading && filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>
-              )}
-              {pageItems.map((f: any) => (
-                <tr
-                  key={f.id}
-                  onClick={() => setSelectedId(f.id)}
-                  className={cn(
-                    "border-t border-gray-50 cursor-pointer transition-colors",
-                    selectedId === f.id ? "bg-teal-50/80 hover:bg-teal-50" : "hover:bg-gray-50/60"
-                  )}
-                >
-                  <td className="px-4 py-2.5">
-                    <span className="font-medium" style={{ color: selectedId === f.id ? "#2D5A5A" : "#4ECDC4" }}>
-                      {f.nome}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-600">{formatFarmLocation(f.cidade, f.estado)}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{formatAreaWithUnit(f.area, f.unidadeArea)}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">{formatAreaWithUnit(f.areaLiquida, f.unidadeArea)}</td>
-                  <td className="px-4 py-2.5 text-center text-gray-700">{pastosPorFazenda[f.id] ?? 0}</td>
-                  <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setLocation(`/fazendas/cadastro?id=${f.id}`)}
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
-                        title="Editar"
-                      >
-                        <span className="material-icons text-[15px]">edit</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { if (confirm("Excluir esta fazenda?")) deleteMutation.mutate({ id: f.id }); }}
-                        className="p-1 rounded hover:bg-red-50 text-red-400"
-                        title="Excluir"
-                      >
-                        <span className="material-icons text-[15px]">delete</span>
-                      </button>
-                    </div>
-                  </td>
+        <TableHorizontalScroll
+          footer={
+            <TablePaginationFooter
+              pageSize={pageSize}
+              page={page}
+              totalItems={filtered.length}
+              onPageChange={setPage}
+              onPageSizeChange={size => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
+          }
+        >
+            <table className="text-[11px]">
+              <colgroup>
+                <col className="w-[1%]" />
+                <col className="w-[1%]" />
+                <col className="w-[1%]" />
+                <col className="w-[1%]" />
+                <col className="w-[1%]" />
+                <col className="w-[1%]" />
+              </colgroup>
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Nome da Fazenda</th>
+                  <th className="pl-2 pr-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Localização</th>
+                  <th className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Total</th>
+                  <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Área Líquida</th>
+                  <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Subdivisões</th>
+                  <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Paginação — estilo iRancho */}
-        <div className="px-4 py-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500">
-          <span>{pageSize} itens por página</span>
-          <div className="flex items-center gap-3">
-            <span>
-              Mostrando {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} itens
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage(p => p - 1)}
-                className="p-0.5 rounded disabled:opacity-30 hover:bg-gray-100"
-              >
-                <span className="material-icons text-[16px]">chevron_left</span>
-              </button>
-              <span className="px-2 py-0.5 rounded bg-gray-100 font-medium text-gray-700">{page}</span>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                className="p-0.5 rounded disabled:opacity-30 hover:bg-gray-100"
-              >
-                <span className="material-icons text-[16px]">chevron_right</span>
-              </button>
-            </div>
-          </div>
-        </div>
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Carregando...</td></tr>
+                )}
+                {!isLoading && filtered.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhuma fazenda cadastrada.</td></tr>
+                )}
+                {pageItems.map((f: any) => {
+                  const isSelected = selectedId === f.id;
+                  return (
+                  <tr
+                    key={f.id}
+                    onClick={() => setSelectedId(f.id)}
+                    className={cn(
+                      "border-t border-gray-50 cursor-pointer transition-colors",
+                      isSelected ? "bg-[#E6FAF8] hover:bg-[#E3F8F6]" : "hover:bg-gray-50/60"
+                    )}
+                  >
+                    <td className={cn(
+                      "relative pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap",
+                      isSelected && "before:content-[''] before:absolute before:left-0 before:inset-y-0 before:w-[5px] before:bg-[#4ECDC4]",
+                    )}>
+                      <span
+                        className={cn(
+                          isSelected ? "font-bold text-[#0F3D44]" : "font-medium text-[#4ECDC4]",
+                        )}
+                      >
+                        {f.nome}
+                      </span>
+                    </td>
+                    <td className="pl-2 pr-3 py-2.5 text-left align-middle whitespace-nowrap text-gray-600">{formatFarmLocation(f.cidade, f.estado)}</td>
+                    <td className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatAreaWithUnit(f.area, f.unidadeArea)}</td>
+                    <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatAreaWithUnit(f.areaLiquida, f.unidadeArea)}</td>
+                    <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{pastosPorFazenda[f.id] ?? 0}</td>
+                    <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex justify-center">
+                        <FarmRowActionButtons
+                          onEdit={() => setLocation(`/fazendas/cadastro?id=${f.id}`)}
+                          onDelete={() => handleDeleteFazenda(f)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+        </TableHorizontalScroll>
       </div>
 
       {/* Painel de subdivisões — espelho iRancho */}
@@ -282,6 +293,7 @@ export function FarmsOverviewPage() {
 
 export function FarmsListPage() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const [pastosFazenda, setPastosFazenda] = useState<any>(null);
   const utils = trpc.useUtils();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
@@ -295,6 +307,18 @@ export function FarmsListPage() {
     onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
     onError: (e) => toast.error(e.message),
   });
+
+  const handleDeleteFazenda = async (fazenda: { id: number; nome?: string | null }) => {
+    const ok = await confirm({
+      title: "Excluir fazenda",
+      description: `Tem certeza que deseja excluir a fazenda "${fazenda.nome ?? "selecionada"}"? Esta ação não pode ser desfeita.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) deleteMutation.mutate({ id: fazenda.id });
+  };
+
   const exportData = useMemo(
     () => fazendaList.map((f: { nome: string; cidade?: string | null; estado?: string | null; area?: string | null }) => [
       f.nome,
@@ -345,7 +369,7 @@ export function FarmsListPage() {
                 </div>
                 <p className="text-[12px] text-gray-400 mt-0.5">{[f.cidade, f.estado].filter(Boolean).join(' / ') || '-'}</p>
               </div>
-              <FarmRowActions fazenda={f} onPastos={() => setPastosFazenda(f)} onDelete={() => { if (confirm('Excluir esta fazenda?')) deleteMutation.mutate({ id: f.id }); }} />
+              <FarmRowActions fazenda={f} onPastos={() => setPastosFazenda(f)} onDelete={() => handleDeleteFazenda(f)} />
             </div>
             <div className="mt-2 pt-2 border-t border-gray-100 text-[12px]"><span className="text-gray-400">Área: </span><span className="font-semibold text-gray-800">{f.area ? `${f.area} ha` : '-'}</span></div>
           </div>
@@ -388,7 +412,7 @@ export function FarmsListPage() {
                   <FarmRowActions
                     fazenda={f}
                     onPastos={() => setPastosFazenda(f)}
-                    onDelete={() => { if (confirm("Excluir esta fazenda?")) deleteMutation.mutate({ id: f.id }); }}
+                    onDelete={() => handleDeleteFazenda(f)}
                   />
                 </td>
               </tr>

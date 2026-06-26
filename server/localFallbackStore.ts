@@ -61,9 +61,10 @@ async function writeFazendas(rows: LocalFazenda[]): Promise<void> {
 
 export async function listLocalFazendas(userId: number): Promise<LocalFazenda[]> {
   const rows = await readFazendas();
-  return rows
-    .filter(row => row.userId === userId)
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const matched = rows.filter(row => row.userId === userId);
+  // Em modo offline/preview, registros antigos podem ter outro userId — não esconder tudo.
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
 export async function getLocalFazenda(userId: number, id: number): Promise<LocalFazenda | null> {
@@ -95,12 +96,23 @@ export async function createLocalFazenda(userId: number, input: Record<string, a
 export async function updateLocalFazenda(userId: number, id: number, input: Record<string, any>): Promise<void> {
   const rows = await readFazendas();
   const index = rows.findIndex(row => row.userId === userId && row.id === id);
-  if (index === -1) return;
-  rows[index] = {
-    ...rows[index],
-    ...input,
-    updatedAt: new Date().toISOString(),
-  };
+  const now = new Date().toISOString();
+  if (index === -1) {
+    rows.push({
+      id,
+      userId,
+      nome: input.nome ?? `Fazenda ${id}`,
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    rows[index] = {
+      ...rows[index],
+      ...input,
+      updatedAt: now,
+    };
+  }
   await writeFazendas(rows);
 }
 

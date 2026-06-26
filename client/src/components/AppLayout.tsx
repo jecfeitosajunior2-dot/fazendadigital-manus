@@ -14,7 +14,7 @@ interface AppLayoutProps {
 
 export function AuthGuard({ children }: AppLayoutProps) {
   const [, setLocation] = useLocation();
-  const [localUser] = useState(() => getLocalAuthUser());
+  const localUser = getLocalAuthUser();
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });

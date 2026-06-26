@@ -4,6 +4,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { handleOAuthCallback } from "./_core/oauth";
+import { clearAuthCookie } from "./_core/cookies";
 import { ensureSchema } from "./ensureSchema";
 import mysql from "mysql2/promise";
 import { env } from "./_core/env";
@@ -30,6 +31,12 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // OAuth callback
 app.get("/api/oauth/callback", handleOAuthCallback);
+
+// Logout direto — limpa cookie e redireciona (funciona mesmo sem JS no cliente)
+app.get("/api/auth/logout", (_req, res) => {
+  clearAuthCookie(res);
+  res.redirect(302, "/entrar");
+});
 
 app.get("/api/health", async (_req, res) => {
   try {

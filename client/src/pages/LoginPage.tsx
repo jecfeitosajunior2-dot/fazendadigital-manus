@@ -19,6 +19,7 @@ export default function LoginPage() {
 
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
+    refetchOnMount: "always",
   });
 
   const loginMutation = trpc.auth.login.useMutation({
@@ -40,10 +41,14 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    if (user || localUser) {
+    if (isLoading) return;
+
+    const session = getLocalAuthUser();
+    if (user || session) {
+      setLocalUser(session);
       setLocation("/admin/overview");
     }
-  }, [user, localUser, setLocation]);
+  }, [user, isLoading, setLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

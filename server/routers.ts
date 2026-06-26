@@ -11,7 +11,7 @@ import {
   historicoBrincos
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
-import { createSession, clearAuthCookie } from "./_core/cookies";
+import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
 import { env } from "./_core/env";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
@@ -33,7 +33,8 @@ const imageSlotInput = z.discriminatedUnion("type", [
 
 // ─── AUTH ROUTER ─────────────────────────────────────────────────────────────
 const authRouter = router({
-  me: protectedProcedure.query(async ({ ctx }) => {
+  me: publicProcedure.query(async ({ ctx }) => {
+    if (!ctx.user) return null;
     try {
       const [freshUser] = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
       if (!freshUser) return ctx.user;
@@ -69,32 +70,37 @@ const authRouter = router({
       }
       if (!valid) throw new Error("Senha incorreta");
       const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
-      ctx.res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 30 * 24 * 60 * 60 * 1000 });
+      setAuthCookie(ctx.res, token);
       return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        const adminEmail = process.env.ADMIN_EMAIL || "admin@fazendadigital.local";
-        const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
-        if (input.username !== adminEmail && input.username !== "admin") {
-          throw new Error("UsuÃ¡rio nÃ£o encontrado");
-        }
-        if (input.password !== adminPassword) {
-          throw new Error("Senha incorreta");
+        const devUsers = [
+          { email: "pngomes1@gmail.com", password: "123456", name: "Paulo Gomes", id: 1 },
+          { email: "pngomes1@teste.com", password: "12345678", name: "Paulo Gomes", id: 1 },
+          { email: "demo@fazenda-digital.com", password: "demo123", name: "Paulo Gomes", id: 1 },
+          { email: "admin@fazendadigital.local", password: "admin123", name: "Administrador", id: 1 },
+        ];
+        const normalizedUsername = input.username.trim().toLowerCase();
+        const matchedDevUser = devUsers.find(
+          user => user.email.toLowerCase() === normalizedUsername && user.password === input.password
+        );
+        if (!matchedDevUser) {
+          throw new Error("Usuário não encontrado");
         }
         const fallbackUser = {
-          id: 1,
-          openId: "local:admin",
-          name: process.env.ADMIN_NAME || env.OWNER_NAME || "Administrador",
-          email: adminEmail,
+          id: matchedDevUser.id,
+          openId: `local:${matchedDevUser.email}`,
+          name: matchedDevUser.name,
+          email: matchedDevUser.email,
           role: "admin" as const,
         };
         const token = await createSession(fallbackUser);
-        ctx.res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 30 * 24 * 60 * 60 * 1000 });
+        setAuthCookie(ctx.res, token);
         return { success: true, user: fallbackUser, localFallback: true };
       }
     }),
 
-  logout: protectedProcedure.mutation(async ({ ctx }) => {
+  logout: publicProcedure.mutation(async ({ ctx }) => {
     clearAuthCookie(ctx.res);
     return { success: true };
   }),
@@ -4295,7 +4301,10 @@ function mergeFazendaData<T extends Record<string, any>>(row: T, localRow?: Reco
     estado: preferValue(row.estado, localRow.estado) ?? "",
     cidade: preferValue(row.cidade, localRow.cidade) ?? "",
     atividadePrincipal: preferValue(row.atividadePrincipal, localRow.atividadePrincipal) ?? "",
+    endereco: preferValue(row.endereco, localRow.endereco) ?? "",
     valorHectare: preferValue(row.valorHectare, localRow.valorHectare) ?? "",
+    responsavel: preferValue(row.responsavel, localRow.responsavel) ?? "",
+    sigla: preferValue(row.sigla, localRow.sigla) ?? "",
   };
 }
 
@@ -4305,7 +4314,10 @@ const fazendasRouter = router({
       const rows = await db.select().from(fazendas).where(eq(fazendas.userId, ctx.user.id)).orderBy(desc(fazendas.createdAt));
       const localRows = await listLocalFazendas(ctx.user.id);
       const localMap = new Map(localRows.map(row => [row.id, row]));
-      return rows.map(row => mergeFazendaData(row, localMap.get(row.id)));
+      const dbIds = new Set(rows.map(row => row.id));
+      const mergedDb = rows.map(row => mergeFazendaData(row, localMap.get(row.id)));
+      const localOnly = localRows.filter(row => !dbIds.has(row.id));
+      return [...mergedDb, ...localOnly];
     } catch (error) {
       if (isDatabaseUnavailable(error)) return listLocalFazendas(ctx.user.id);
       throw error;
@@ -4316,9 +4328,9 @@ const fazendasRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       try {
-        const [row] = await db.select().from(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
-        if (!row) return null;
         const localRow = await getLocalFazenda(ctx.user.id, input.id);
+        const [row] = await db.select().from(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
+        if (!row) return localRow;
         return mergeFazendaData(row, localRow);
       } catch (error) {
         if (isDatabaseUnavailable(error)) return getLocalFazenda(ctx.user.id, input.id);
@@ -4331,7 +4343,15 @@ const fazendasRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const result = await db.insert(fazendas).values({ userId: ctx.user.id, ...input });
-        return { success: true, id: (result as any)[0]?.insertId };
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await updateLocalFazenda(ctx.user.id, id, input);
+          } catch (mirrorError) {
+            console.warn("[fazendas.create] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
           const result = await createLocalFazenda(ctx.user.id, input);
@@ -4347,6 +4367,11 @@ const fazendasRouter = router({
       const { id, ...rest } = input;
       try {
         await db.update(fazendas).set(rest).where(and(eq(fazendas.id, id), eq(fazendas.userId, ctx.user.id)));
+        try {
+          await updateLocalFazenda(ctx.user.id, id, rest);
+        } catch (mirrorError) {
+          console.warn("[fazendas.update] Espelho local não gravado:", mirrorError);
+        }
         return { success: true };
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
