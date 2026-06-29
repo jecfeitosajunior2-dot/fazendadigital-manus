@@ -7,7 +7,7 @@ import { ESTADOS_BR, fetchCidadesPorEstado } from "@/lib/brazil-locations";
 import { SelectItem } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn, formatCpfCnpj } from "@/lib/utils";
+import { cn, formatCpfCnpj, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
@@ -124,52 +124,6 @@ function formatDecimal(value: number) {
   return fixed.endsWith(".00") ? fixed.slice(0, -3) : fixed.replace(/0$/, "");
 }
 
-function parseMoneyValue(value: string) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-
-  const cleaned = raw.replace(/[R$\s]/g, "").replace(/[^\d,.-]/g, "");
-  if (!cleaned) return null;
-
-  const lastComma = cleaned.lastIndexOf(",");
-  const lastDot = cleaned.lastIndexOf(".");
-  let normalized = cleaned;
-
-  if (lastComma > -1 && lastDot > -1) {
-    const decimalSep = lastComma > lastDot ? "," : ".";
-    const thousandSep = decimalSep === "," ? "." : ",";
-    normalized = cleaned.replace(new RegExp(`\\${thousandSep}`, "g"), "").replace(decimalSep, ".");
-  } else if (lastComma > -1) {
-    normalized = cleaned.replace(/\./g, "").replace(",", ".");
-  } else if (lastDot > -1) {
-    const pieces = cleaned.split(".");
-    if (pieces.length > 2) {
-      normalized = pieces.join("");
-    } else if (pieces[1]?.length !== 2) {
-      normalized = cleaned.replace(/\./g, "");
-    }
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function formatMoneyBRL(value: string) {
-  const numeric = parseMoneyValue(value);
-  if (numeric == null) return "";
-
-  return `R$ ${new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(numeric)}`;
-}
-
-function moneyToPayload(value: string) {
-  const amount = parseMoneyValue(value);
-  if (amount == null) return undefined;
-  return amount.toFixed(2);
-}
-
 function formatPhoneBR(value: string) {
   const digits = String(value ?? "").replace(/\D/g, "").slice(0, 11);
   if (!digits) return "";
@@ -248,7 +202,9 @@ function mapFazendaToForm(fazenda: Record<string, unknown>): FormState {
     latitude: String(fazenda.latitude ?? ""),
     longitude: String(fazenda.longitude ?? ""),
     distanciaMunicipio: str(fazenda.distanciaMunicipio),
-    valorHectare: formatMoneyBRL(str(fazenda.valorHectare)),
+    valorHectare: fazenda.valorHectare
+      ? formatCurrencyBrl(String(Math.round(parseFloat(String(fazenda.valorHectare)) * 100)))
+      : "",
     fonteEnergia: String(fazenda.fonteEnergia ?? ""),
     fonteAgua: String(fazenda.fonteAgua ?? ""),
     responsavelOperacionalNome: String(fazenda.responsavelOperacionalNome ?? ""),
@@ -551,7 +507,7 @@ export function FarmRegistrationPage() {
     latitude: form.latitude || undefined,
     longitude: form.longitude || undefined,
     distanciaMunicipio: form.distanciaMunicipio || undefined,
-    valorHectare: moneyToPayload(form.valorHectare),
+    valorHectare: parseCurrencyBrl(form.valorHectare) || undefined,
     responsavelOperacionalNome: form.responsavelOperacionalNome || undefined,
     responsavelOperacionalTelefone: form.responsavelOperacionalTelefone || undefined,
     responsavelOperacionalFuncao: buildResponsavelOperacionalFuncao(
@@ -896,10 +852,8 @@ export function FarmRegistrationPage() {
                       <FormLabel>Valor estimado do hectare</FormLabel>
                       <FormInput
                         value={form.valorHectare}
-                        onChange={v => set("valorHectare", v)}
+                        onChange={v => set("valorHectare", formatCurrencyBrl(v))}
                         placeholder="R$ 0,00"
-                        type="text"
-                        inputMode="decimal"
                       />
                     </div>
                   </div>

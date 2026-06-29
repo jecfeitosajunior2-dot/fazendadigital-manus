@@ -62,7 +62,7 @@ export default function BenfeitoriasListPage() {
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de benfeitorias</h1>
+          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de Benfeitorias</h1>
           <div className="flex flex-wrap items-center gap-2">
             <ListExportButtons
               title="Lista de Benfeitorias"

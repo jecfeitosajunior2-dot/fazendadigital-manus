@@ -30,6 +30,7 @@ export async function ensureSchema() {
         \`incluirArea\` boolean DEFAULT true,
         \`capacidade\` int,
         \`status\` enum('ativo','descanso','vazio','reforma','interditado','reserva','sem_uso') DEFAULT 'ativo',
+        \`coordenadas\` text,
         \`observacoes\` text,
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -116,9 +117,14 @@ export async function ensureSchema() {
       await ensureColumn(pool, "benfeitorias", "percentualAtividade", "decimal(5,2)");
       await ensureColumn(pool, "benfeitorias", "valorEstimado", "decimal(12,2)");
       await ensureColumn(pool, "benfeitorias", "dataInstalacao", "date");
-      await ensureColumn(pool, "benfeitorias", "imagem1", "text");
-      await ensureColumn(pool, "benfeitorias", "imagem2", "text");
-      await ensureColumn(pool, "benfeitorias", "imagem3", "text");
+      await ensureColumn(pool, "benfeitorias", "imagem1", "longtext");
+      await ensureColumn(pool, "benfeitorias", "imagem2", "longtext");
+      await ensureColumn(pool, "benfeitorias", "imagem3", "longtext");
+      try {
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem1` longtext");
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem2` longtext");
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem3` longtext");
+      } catch { /* colunas ausentes */ }
       await ensureColumn(pool, "benfeitorias", "createdAt", "timestamp DEFAULT CURRENT_TIMESTAMP");
       await ensureColumn(pool, "benfeitorias", "updatedAt", "timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
       // Migra dados de colunas legadas (snake_case) se existirem

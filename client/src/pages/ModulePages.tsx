@@ -185,10 +185,10 @@ export function FarmsOverviewPage() {
             <button
               type="button"
               onClick={() => setLocation("/fazendas/cadastro")}
-              className="inline-flex items-center justify-center gap-2 h-[38px] px-[17px] rounded-md text-[10px] font-bold uppercase tracking-wide text-white bg-[#4ECDC4] hover:bg-[#36BDB4] active:scale-[0.98] active:brightness-95 transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-semibold uppercase text-white bg-[#4ECDC4] hover:bg-[#36BDB4] transition-colors"
             >
-              <span className="text-[13px] leading-none font-bold">+</span>
-              Nova Fazenda
+              <span className="text-[11px] leading-none font-semibold">+</span>
+              <span className="leading-none">Nova Fazenda</span>
             </button>
           </div>
           <div className="relative">

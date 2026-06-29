@@ -3,6 +3,8 @@ import path from "node:path";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
+const pastosFile = path.join(dataDir, "pastos.json");
+const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
   const parts: string[] = [];
@@ -119,4 +121,172 @@ export async function updateLocalFazenda(userId: number, id: number, input: Reco
 export async function deleteLocalFazenda(userId: number, id: number): Promise<void> {
   const rows = await readFazendas();
   await writeFazendas(rows.filter(row => !(row.userId === userId && row.id === id)));
+}
+
+export type LocalPasto = Record<string, any> & {
+  id: number;
+  userId: number;
+  fazendaId: number;
+  nome: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readPastos(): Promise<LocalPasto[]> {
+  return readJsonFile<LocalPasto[]>(pastosFile, []);
+}
+
+async function writePastos(rows: LocalPasto[]): Promise<void> {
+  await writeJsonFile(pastosFile, rows);
+}
+
+export async function listLocalPastos(userId: number): Promise<LocalPasto[]> {
+  const rows = await readPastos();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function listLocalPastosByFazenda(userId: number, fazendaId: number): Promise<LocalPasto[]> {
+  const rows = await readPastos();
+  const matched = rows.filter(row => row.userId === userId && row.fazendaId === fazendaId);
+  const visible = matched.length > 0 ? matched : rows.filter(row => row.fazendaId === fazendaId);
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function createLocalPasto(
+  userId: number,
+  input: Record<string, any> & { fazendaId: number; nome: string },
+): Promise<{ id: number }> {
+  const rows = await readPastos();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    status: "ativo",
+    incluirArea: true,
+    ...input,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writePastos(rows);
+  return { id };
+}
+
+export async function updateLocalPasto(userId: number, id: number, input: Record<string, any>): Promise<void> {
+  const rows = await readPastos();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const now = new Date().toISOString();
+  if (index === -1) {
+    rows.push({
+      id,
+      userId,
+      fazendaId: input.fazendaId ?? 0,
+      nome: input.nome ?? `Subdivisão ${id}`,
+      status: "ativo",
+      incluirArea: true,
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    rows[index] = {
+      ...rows[index],
+      ...input,
+      updatedAt: now,
+    };
+  }
+  await writePastos(rows);
+}
+
+export async function deleteLocalPasto(userId: number, id: number): Promise<void> {
+  const rows = await readPastos();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writePastos(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writePastos(remaining);
+}
+
+export type LocalBenfeitoria = Record<string, any> & {
+  id: number;
+  userId: number;
+  fazendaId: number;
+  nome: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readBenfeitorias(): Promise<LocalBenfeitoria[]> {
+  return readJsonFile<LocalBenfeitoria[]>(benfeitoriasFile, []);
+}
+
+async function writeBenfeitorias(rows: LocalBenfeitoria[]): Promise<void> {
+  await writeJsonFile(benfeitoriasFile, rows);
+}
+
+export async function listLocalBenfeitorias(userId: number): Promise<LocalBenfeitoria[]> {
+  const rows = await readBenfeitorias();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function getLocalBenfeitoria(userId: number, id: number): Promise<LocalBenfeitoria | null> {
+  const rows = await readBenfeitorias();
+  return rows.find(row => row.userId === userId && row.id === id)
+    ?? rows.find(row => row.id === id)
+    ?? null;
+}
+
+export async function createLocalBenfeitoria(
+  userId: number,
+  input: Record<string, any> & { fazendaId: number; nome: string },
+): Promise<{ id: number }> {
+  const rows = await readBenfeitorias();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    status: "ativo",
+    ...input,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeBenfeitorias(rows);
+  return { id };
+}
+
+export async function updateLocalBenfeitoria(userId: number, id: number, input: Record<string, any>): Promise<void> {
+  const rows = await readBenfeitorias();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const now = new Date().toISOString();
+  if (index === -1) {
+    rows.push({
+      id,
+      userId,
+      fazendaId: input.fazendaId ?? 0,
+      nome: input.nome ?? `Benfeitoria ${id}`,
+      status: "ativo",
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    rows[index] = { ...rows[index], ...input, updatedAt: now };
+  }
+  await writeBenfeitorias(rows);
+}
+
+export async function deleteLocalBenfeitoria(userId: number, id: number): Promise<void> {
+  const rows = await readBenfeitorias();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeBenfeitorias(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeBenfeitorias(remaining);
 }

@@ -8,8 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-
-const IRANCHO_IMPORT_GREEN = '#C5D97E';
+import { FD_PRIMARY } from '@/components/FormFields';
 
 type Props = {
   open: boolean;
@@ -97,8 +96,11 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
             <p className="font-semibold text-gray-800 mb-2">Instruções:</p>
             <ul className="list-disc pl-5 space-y-1.5">
               <li>Os formatos aceitos para importação são <strong>.kml</strong> ou <strong>.kmz</strong>;</li>
-              <li>Apenas as subdivisões cadastradas previamente serão importadas;</li>
-              <li>Caso o arquivo contenha coordenadas cadastradas com nomes iguais, as coordenadas serão sobrescritas valendo apenas a última;</li>
+              <li>Antes de importar, cadastre as subdivisões da fazenda;</li>
+              <li>O arquivo deve conter o contorno de cada subdivisão, como pastos, piquetes, currais, reservas ou áreas de manejo;</li>
+              <li>Os nomes no arquivo devem corresponder ao <strong>nome</strong> ou à <strong>sigla</strong> das subdivisões cadastradas;</li>
+              <li>Se houver mais de uma coordenada com o mesmo nome, o sistema manterá apenas a última encontrada;</li>
+              <li>Após a importação, as coordenadas serão vinculadas às subdivisões correspondentes.</li>
             </ul>
           </div>
 
@@ -142,7 +144,7 @@ export function ImportarCoordenadasModal({ open, onClose, fazendaId, onImportado
             onClick={handleImportar}
             disabled={!arquivo || importarMutation.isPending}
             className="inline-flex items-center gap-2 px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white disabled:opacity-50 hover:brightness-95 transition"
-            style={{ backgroundColor: IRANCHO_IMPORT_GREEN }}
+            style={{ backgroundColor: FD_PRIMARY }}
           >
             <span className="material-icons text-[16px]">vertical_align_bottom</span>
             {importarMutation.isPending ? 'Importando...' : 'Importar'}

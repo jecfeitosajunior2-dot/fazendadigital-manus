@@ -6,6 +6,7 @@ import { createContext } from "./_core/context";
 import { handleOAuthCallback } from "./_core/oauth";
 import { clearAuthCookie } from "./_core/cookies";
 import { ensureSchema } from "./ensureSchema";
+import { mountLocalManusStorage } from "./_core/localManusStorage";
 import mysql from "mysql2/promise";
 import { env } from "./_core/env";
 
@@ -24,6 +25,8 @@ try {
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+
+mountLocalManusStorage(app);
 
 app.use(cookieParser());
 app.use(express.json({ limit: "25mb" }));

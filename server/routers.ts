@@ -15,14 +15,29 @@ import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
 import { env } from "./_core/env";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
+import { toBenfeitoriaRow, toBenfeitoriaUpdateRow } from "./benfeitoriasDb";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
 import {
+  importarCoordenadasPastos,
+  importarCoordenadasPastosLocal,
+} from "./importarCoordenadasPastos";
+import {
   createLocalFazenda,
+  createLocalPasto,
+  createLocalBenfeitoria,
   deleteLocalFazenda,
+  deleteLocalPasto,
+  deleteLocalBenfeitoria,
   getLocalFazenda,
+  getLocalBenfeitoria,
   isDatabaseUnavailable,
   listLocalFazendas,
+  listLocalPastos,
+  listLocalPastosByFazenda,
+  listLocalBenfeitorias,
   updateLocalFazenda,
+  updateLocalPasto,
+  updateLocalBenfeitoria,
 } from "./localFallbackStore";
 
 const imageSlotInput = z.discriminatedUnion("type", [
@@ -3380,18 +3395,9 @@ async function inserirBenfeitoriaImportada(
     observacoes?: string;
   }
 ): Promise<number | undefined> {
-  const result = await db.insert(benfeitorias).values({
-    userId,
-    fazendaId: data.fazendaId,
-    nome: data.nome,
-    anoConstrucao: data.anoConstrucao,
-    vidaUtil: data.vidaUtil,
-    valorEstimado: data.valorEstimado,
-    observacoes: data.observacoes,
-    imagem1: null,
-    imagem2: null,
-    imagem3: null,
-  });
+  const result = await db.insert(benfeitorias).values(
+    toBenfeitoriaRow(userId, data, [null, null, null]),
+  );
   return (result as any)[0]?.insertId;
 }
 
@@ -3494,16 +3500,30 @@ const benfeitoriasRouter = router({
     }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
+    try {
+      const rows = await db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
+      const localRows = await listLocalBenfeitorias(ctx.user.id);
+      const dbIds = new Set(rows.map(row => row.id));
+      const localOnly = localRows.filter(row => !dbIds.has(row.id));
+      return [...rows, ...localOnly];
+    } catch (error) {
+      if (isDatabaseUnavailable(error)) return listLocalBenfeitorias(ctx.user.id);
+      throw error;
+    }
   }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [row] = await db.select().from(benfeitorias).where(
-        and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id))
-      );
-      return row ?? null;
+      try {
+        const [row] = await db.select().from(benfeitorias).where(
+          and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id))
+        );
+        if (row) return row;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      return getLocalBenfeitoria(ctx.user.id, input.id);
     }),
 
   create: protectedProcedure
@@ -3511,16 +3531,30 @@ const benfeitoriasRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      const result = await db.insert(benfeitorias).values({
-        userId: ctx.user.id,
-        ...rest,
-        percentualAtividade: percentualAtividade != null ? String(percentualAtividade) : undefined,
-        dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      const row = toBenfeitoriaRow(
+        ctx.user.id,
+        { ...rest, dataInstalacao, percentualAtividade },
+        [img1, img2, img3],
+      );
+      try {
+        const result = await db.insert(benfeitorias).values(row);
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await updateLocalBenfeitoria(ctx.user.id, id, row);
+          } catch (mirrorError) {
+            console.warn("[benfeitorias.create] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          const result = await createLocalBenfeitoria(ctx.user.id, row);
+          return { success: true, id: result.id, localFallback: true };
+        }
+        console.error("[benfeitorias.create]", err);
+        throw new Error(formatImportDbError(err));
+      }
     }),
 
   update: protectedProcedure
@@ -3528,22 +3562,43 @@ const benfeitoriasRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      await db.update(benfeitorias).set({
-        ...rest,
-        percentualAtividade: percentualAtividade != null ? String(percentualAtividade) : undefined,
-        dataInstalacao: dataInstalacao ? new Date(dataInstalacao) : undefined,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      }).where(and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)));
-      return { success: true };
+      const row = toBenfeitoriaUpdateRow(
+        { ...rest, dataInstalacao, percentualAtividade },
+        [img1, img2, img3],
+      );
+      try {
+        await db.update(benfeitorias).set(row).where(
+          and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)),
+        );
+        try {
+          await updateLocalBenfeitoria(ctx.user.id, id, row);
+        } catch (mirrorError) {
+          console.warn("[benfeitorias.update] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          await updateLocalBenfeitoria(ctx.user.id, id, row);
+          return { success: true, localFallback: true };
+        }
+        console.error("[benfeitorias.update]", err);
+        throw new Error(formatImportDbError(err));
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(benfeitorias).where(and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(benfeitorias).where(and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          await deleteLocalBenfeitoria(ctx.user.id, input.id);
+          return { success: true, localFallback: true };
+        }
+        throw error;
+      }
     }),
 
   validarImportacao: protectedProcedure
@@ -4401,15 +4456,35 @@ const fazendasRouter = router({
 // ─── PASTOS ROUTER ──────────────────────────────────────────────────────────
 const pastosRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(pastos).where(eq(pastos.userId, ctx.user.id)).orderBy(desc(pastos.createdAt));
+    try {
+      const rows = await db.select().from(pastos).where(eq(pastos.userId, ctx.user.id)).orderBy(desc(pastos.createdAt));
+      const localRows = await listLocalPastos(ctx.user.id);
+      const dbIds = new Set(rows.map(row => row.id));
+      const localOnly = localRows.filter(row => !dbIds.has(row.id));
+      return [...rows, ...localOnly];
+    } catch (error) {
+      if (isDatabaseUnavailable(error)) return listLocalPastos(ctx.user.id);
+      throw error;
+    }
   }),
 
   listByFazenda: protectedProcedure
     .input(z.object({ fazendaId: z.number() }))
     .query(async ({ ctx, input }) => {
-      return db.select().from(pastos).where(
-        and(eq(pastos.fazendaId, input.fazendaId), eq(pastos.userId, ctx.user.id))
-      ).orderBy(desc(pastos.createdAt));
+      try {
+        const rows = await db.select().from(pastos).where(
+          and(eq(pastos.fazendaId, input.fazendaId), eq(pastos.userId, ctx.user.id))
+        ).orderBy(desc(pastos.createdAt));
+        const localRows = await listLocalPastosByFazenda(ctx.user.id, input.fazendaId);
+        const dbIds = new Set(rows.map(row => row.id));
+        const localOnly = localRows.filter(row => !dbIds.has(row.id));
+        return [...rows, ...localOnly];
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          return listLocalPastosByFazenda(ctx.user.id, input.fazendaId);
+        }
+        throw error;
+      }
     }),
 
   create: protectedProcedure
@@ -4426,8 +4501,24 @@ const pastosRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(pastos).values({ userId: ctx.user.id, ...input });
-      return { success: true, id: (result as any)[0]?.insertId };
+      try {
+        const result = await db.insert(pastos).values({ userId: ctx.user.id, ...input });
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await updateLocalPasto(ctx.user.id, id, { ...input, userId: ctx.user.id });
+          } catch (mirrorError) {
+            console.warn("[pastos.create] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          const result = await createLocalPasto(ctx.user.id, input);
+          return { success: true, id: result.id, localFallback: true };
+        }
+        throw error;
+      }
     }),
 
   update: protectedProcedure
@@ -4445,15 +4536,41 @@ const pastosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
-      await db.update(pastos).set(rest).where(and(eq(pastos.id, id), eq(pastos.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.update(pastos).set(rest).where(and(eq(pastos.id, id), eq(pastos.userId, ctx.user.id)));
+        try {
+          await updateLocalPasto(ctx.user.id, id, rest);
+        } catch (mirrorError) {
+          console.warn("[pastos.update] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          await updateLocalPasto(ctx.user.id, id, rest);
+          return { success: true, localFallback: true };
+        }
+        throw error;
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(pastos).where(and(eq(pastos.id, input.id), eq(pastos.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(pastos).where(and(eq(pastos.id, input.id), eq(pastos.userId, ctx.user.id)));
+        try {
+          await deleteLocalPasto(ctx.user.id, input.id);
+        } catch (mirrorError) {
+          console.warn("[pastos.delete] Espelho local não removido:", mirrorError);
+        }
+        return { success: true };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          await deleteLocalPasto(ctx.user.id, input.id);
+          return { success: true, localFallback: true };
+        }
+        throw error;
+      }
     }),
 
   importarCoordenadas: protectedProcedure
@@ -4462,65 +4579,14 @@ const pastosRouter = router({
       kmlContent: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { extrairCoordenadasKml, mapaCoordenadasPorNome, normalizarNomeSubdivisao } =
-        await import('../shared/parseKmlCoordenadas');
-
-      const placemarks = extrairCoordenadasKml(input.kmlContent);
-      if (placemarks.length === 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Nenhuma coordenada encontrada no arquivo KML/KMZ',
-        });
-      }
-
-      const coordenadasPorNome = mapaCoordenadasPorNome(placemarks);
-
-      const subdivisoes = await db.select().from(pastos).where(
-        and(eq(pastos.fazendaId, input.fazendaId), eq(pastos.userId, ctx.user.id)),
-      );
-
-      if (subdivisoes.length === 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Cadastre subdivisões antes de importar coordenadas',
-        });
-      }
-
-      const lookup = new Map<string, number>();
-      for (const s of subdivisoes) {
-        lookup.set(normalizarNomeSubdivisao(s.nome), s.id);
-        if (s.sigla?.trim()) {
-          lookup.set(normalizarNomeSubdivisao(s.sigla), s.id);
+      try {
+        return await importarCoordenadasPastos(ctx.user.id, input);
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          return await importarCoordenadasPastosLocal(ctx.user.id, input);
         }
+        throw error;
       }
-
-      const atualizados = new Set<number>();
-      const ignorados: string[] = [];
-
-      for (const [nomeNorm, coordinates] of coordenadasPorNome) {
-        const pastoId = lookup.get(nomeNorm);
-        if (!pastoId) {
-          const original = placemarks.find(p => normalizarNomeSubdivisao(p.nome) === nomeNorm);
-          ignorados.push(original?.nome ?? nomeNorm);
-          continue;
-        }
-
-        const payload = JSON.stringify({
-          coordinates,
-          importadoEm: new Date().toISOString(),
-        });
-
-        await db.update(pastos).set({ coordenadas: payload }).where(
-          and(eq(pastos.id, pastoId), eq(pastos.userId, ctx.user.id)),
-        );
-        atualizados.add(pastoId);
-      }
-
-      return {
-        importados: atualizados.size,
-        ignorados: [...new Set(ignorados)],
-        totalNoArquivo: coordenadasPorNome.size,
-      };
     }),
 
   listWithDetails: protectedProcedure

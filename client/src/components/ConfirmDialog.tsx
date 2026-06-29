@@ -17,9 +17,11 @@ type ConfirmOptions = {
   cancelText?: string;
   /** "danger" pinta o botão de confirmar em vermelho (exclusões). */
   variant?: "danger" | "default";
+  /** Fechar pelo X/backdrop resolve null em vez de false. */
+  abortOnDismiss?: boolean;
 };
 
-type ConfirmContextValue = (options?: ConfirmOptions) => Promise<boolean>;
+type ConfirmContextValue = (options?: ConfirmOptions) => Promise<boolean | null>;
 
 const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 
@@ -30,17 +32,17 @@ const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({});
-  const resolverRef = useRef<((value: boolean) => void) | null>(null);
+  const resolverRef = useRef<((value: boolean | null) => void) | null>(null);
 
   const confirm = useCallback<ConfirmContextValue>((opts) => {
     setOptions(opts ?? {});
     setOpen(true);
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean | null>((resolve) => {
       resolverRef.current = resolve;
     });
   }, []);
 
-  const settle = useCallback((value: boolean) => {
+  const settle = useCallback((value: boolean | null) => {
     setOpen(false);
     resolverRef.current?.(value);
     resolverRef.current = null;
@@ -52,6 +54,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     confirmText = "Confirmar",
     cancelText = "Cancelar",
     variant = "danger",
+    abortOnDismiss = false,
   } = options;
 
   return (
@@ -60,7 +63,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
       <AlertDialog
         open={open}
         onOpenChange={(o) => {
-          if (!o) settle(false);
+          if (!o) settle(abortOnDismiss ? null : false);
         }}
       >
         <AlertDialogContent className="max-w-[420px]">
@@ -71,7 +74,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
               )}
               {title}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
+            <AlertDialogDescription className="text-gray-600 whitespace-pre-line">
               {description}
             </AlertDialogDescription>
           </AlertDialogHeader>

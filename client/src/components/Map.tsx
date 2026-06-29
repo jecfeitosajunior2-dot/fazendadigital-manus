@@ -93,21 +93,31 @@ const FORGE_BASE_URL =
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 
 function loadMapScript() {
-  return new Promise(resolve => {
+  if (window.google?.maps) {
+    return Promise.resolve();
+  }
+
+  const existing = document.querySelector<HTMLScriptElement>('script[data-fd-google-maps]');
+  if (existing) {
+    return new Promise<void>((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Falha ao carregar Google Maps")), { once: true });
+    });
+  }
+
+  return new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
+    script.dataset.fdGoogleMaps = "true";
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
     script.crossOrigin = "anonymous";
-    script.onload = () => {
-      resolve(null);
-      script.remove(); // Clean up immediately
-    };
-    script.onerror = () => {
-      console.error("Failed to load Google Maps script");
-    };
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Falha ao carregar Google Maps"));
     document.head.appendChild(script);
   });
 }
+
+export { loadMapScript };
 
 interface MapViewProps {
   className?: string;
