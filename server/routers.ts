@@ -21,6 +21,7 @@ import {
   importarCoordenadasPastos,
   importarCoordenadasPastosLocal,
 } from "./importarCoordenadasPastos";
+import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
 import {
   createLocalFazenda,
   createLocalPasto,
@@ -3390,6 +3391,9 @@ async function inserirBenfeitoriaImportada(
     fazendaId: number;
     nome: string;
     anoConstrucao: number;
+    tipo?: string;
+    localizacao?: string;
+    estado?: string;
     vidaUtil?: string;
     valorEstimado?: string;
     observacoes?: string;
@@ -3406,9 +3410,26 @@ const benfeitoriasInputFields = {
   nome: z.string(),
   anoConstrucao: z.number(),
   percentualAtividade: z.number().optional(),
-  tipo: z.string().optional(),
+  tipo: z.string().min(1),
   vidaUtil: z.string().optional(),
   localizacao: z.string().optional(),
+  estado: z.string().min(1),
+  status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
+  dataInstalacao: z.string().optional(),
+  valorEstimado: z.string().optional(),
+  observacoes: z.string().optional(),
+  imageSlots: z.array(imageSlotInput).length(3).optional(),
+};
+
+const benfeitoriasUpdateInputFields = {
+  fazendaId: z.number().optional(),
+  nome: z.string().min(1).optional(),
+  anoConstrucao: z.number().optional(),
+  percentualAtividade: z.number().optional(),
+  tipo: z.string().min(1).optional(),
+  vidaUtil: z.string().optional(),
+  localizacao: z.string().optional(),
+  estado: z.string().min(1).optional(),
   status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
   dataInstalacao: z.string().optional(),
   valorEstimado: z.string().optional(),
@@ -3558,7 +3579,7 @@ const benfeitoriasRouter = router({
     }),
 
   update: protectedProcedure
-    .input(z.object({ id: z.number(), ...benfeitoriasInputFields }))
+    .input(z.object({ id: z.number(), ...benfeitoriasUpdateInputFields }))
     .mutation(async ({ ctx, input }) => {
       const { id, dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
@@ -3635,16 +3656,16 @@ const benfeitoriasRouter = router({
 
         const nome = (linha.nome || '').trim();
         if (!nome) {
-          errosLinha.push({ linha: numLinha, campo: 'Nome (Benfeitoria)', mensagem: 'Nome da benfeitoria é obrigatório' });
+          errosLinha.push({ linha: numLinha, campo: 'Nome', mensagem: 'Nome da benfeitoria é obrigatório' });
         }
 
         const anoRaw = (linha.anoConstrucao || '').trim();
         if (!anoRaw) {
-          errosLinha.push({ linha: numLinha, campo: 'Ano', mensagem: 'Ano é obrigatório' });
+          errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: 'Ano de Construção é obrigatório' });
         } else {
           const ano = parseInt(anoRaw.replace(/[^0-9]/g, ''), 10);
           if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
-            errosLinha.push({ linha: numLinha, campo: 'Ano', mensagem: `Ano inválido: "${anoRaw}"` });
+            errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: `Ano de Construção inválido: "${anoRaw}"` });
           } else {
             linha.anoConstrucao = String(ano);
           }
@@ -3654,7 +3675,7 @@ const benfeitoriasRouter = router({
         if (valorRaw) {
           const valorParsed = parseValorImport(valorRaw);
           if (!valorParsed) {
-            errosLinha.push({ linha: numLinha, campo: 'Valor (R$)', mensagem: `Valor inválido: "${valorRaw}"` });
+            errosLinha.push({ linha: numLinha, campo: 'Valor', mensagem: `Valor inválido: "${valorRaw}"` });
           } else {
             linha.valor = valorParsed;
           }
@@ -3664,7 +3685,7 @@ const benfeitoriasRouter = router({
         if (vidaUtilRaw) {
           const vidaUtilNum = parseInt(vidaUtilRaw.replace(/[^0-9]/g, ''), 10);
           if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) {
-            errosLinha.push({ linha: numLinha, campo: 'Vida útil', mensagem: `Vida útil inválida: "${vidaUtilRaw}"` });
+            errosLinha.push({ linha: numLinha, campo: 'Vida Útil', mensagem: `Vida Útil inválida: "${vidaUtilRaw}"` });
           } else {
             linha.vidaUtil = String(vidaUtilNum);
           }
@@ -3719,20 +3740,20 @@ const benfeitoriasRouter = router({
 
           const nome = (linha.nome || '').trim();
           if (!nome) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Nome (Benfeitoria) é obrigatório.' });
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Nome é obrigatório.' });
             continue;
           }
 
           const anoNum = parseInt(String(linha.anoConstrucao || '').replace(/[^0-9]/g, ''), 10);
           if (isNaN(anoNum)) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Ano deve conter um número válido.' });
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Ano de Construção deve conter um número válido.' });
             continue;
           }
 
           const valorRaw = (linha.valor || '').trim();
           const valorNum = valorRaw ? parseValorImport(valorRaw) : undefined;
           if (valorRaw && !valorNum) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Valor (R$) possui um formato inválido.' });
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Valor possui um formato inválido.' });
             continue;
           }
 
@@ -4437,14 +4458,29 @@ const fazendasRouter = router({
       }
     }),
 
+  deleteCheck: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getFazendaDeleteCheck(ctx.user.id, input.id);
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          return getFazendaDeleteCheck(ctx.user.id, input.id, true);
+        }
+        throw error;
+      }
+    }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertFazendaCanDelete(ctx.user.id, input.id);
         await db.delete(fazendas).where(and(eq(fazendas.id, input.id), eq(fazendas.userId, ctx.user.id)));
         return { success: true };
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
+          await assertFazendaCanDelete(ctx.user.id, input.id, true);
           await deleteLocalFazenda(ctx.user.id, input.id);
           return { success: true, localFallback: true };
         }

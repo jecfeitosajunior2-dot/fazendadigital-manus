@@ -89,13 +89,21 @@ export function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[]; landscape?: boolean }
+  options?: {
+    alignRightFrom?: number;
+    alignRightCols?: number[];
+    fazendaNome?: string;
+    periodo?: string;
+    groupByCol?: number[];
+    landscape?: boolean;
+  }
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
     return;
   }
   const alignRightFrom = options?.alignRightFrom ?? headers.length;
+  const alignRightCols = options?.alignRightCols ?? [];
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
   const groupByCol = options?.groupByCol ?? [];
   const landscape = options?.landscape ?? false;
@@ -123,7 +131,7 @@ export function exportListPdf(
 
   const head = headers
     .map((h, i) =>
-      `<th style="text-align:${i >= alignRightFrom ? "right" : "left"}">${h}</th>`
+      `<th style="text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}">${h}</th>`
     )
     .join("");
   const body = rows
@@ -136,7 +144,7 @@ export function exportListPdf(
           String(rows[idx - 1]?.[i] ?? "") === String(cell ?? "");
         const display = suppress ? "" : fmtCell(cell);
         const style = [
-          `text-align:${i >= alignRightFrom ? "right" : "left"}`,
+          `text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}`,
           suppress ? "color:#ccc" : "",
         ]
           .filter(Boolean)

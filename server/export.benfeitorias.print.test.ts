@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
+import { EXPORT_HEADERS, EXPORT_VALOR_COL_INDEX } from "../shared/importacaoBenfeitorias";
 
 /**
  * Regressão do bug reportado pelo usuário (prints de 08/06/2026):
@@ -49,7 +50,9 @@ function buildWorkbook(headers: string[], rows: (string | number)[][]) {
   return wb;
 }
 
-const EXPORT_HEADERS = ["Fazenda", "Nome (Benfeitoria)", "Ano", "Valor (R$)", "Vida útil", "Observações"];
+function valorCellRef(rowIndex: number): string {
+  return XLSX.utils.encode_cell({ r: rowIndex, c: EXPORT_VALOR_COL_INDEX });
+}
 
 describe("Exportação de benfeitorias — cenário exato do print do usuário", () => {
   // Dados idênticos ao banco/print: valorEstimado vem como string decimal "100.00".
@@ -59,24 +62,21 @@ describe("Exportação de benfeitorias — cenário exato do print do usuário",
   ];
 
   const rows = benfeitorias.map(b => [
-    b.fazenda,
     b.nome,
     b.ano,
-    parseValorDecimalBanco(b.valorBanco) ?? "",
     b.vidaUtil,
-    b.obs,
+    parseValorDecimalBanco(b.valorBanco) ?? "",
   ]) as (string | number)[][];
 
   it("grava o valor como número 100 (não 100000) na célula", () => {
     const wb = buildWorkbook(EXPORT_HEADERS, rows);
     const ws = wb.Sheets["Dados"];
-    // D2 e D3 são a coluna Valor (R$)
-    expect(ws["D2"].t).toBe("n");
-    expect(ws["D2"].v).toBe(100);
-    expect(ws["D2"].v).not.toBe(100000);
-    expect(ws["D3"].t).toBe("n");
-    expect(ws["D3"].v).toBe(100);
-    expect(ws["D3"].v).not.toBe(100000);
+    expect(ws[valorCellRef(1)].t).toBe("n");
+    expect(ws[valorCellRef(1)].v).toBe(100);
+    expect(ws[valorCellRef(1)].v).not.toBe(100000);
+    expect(ws[valorCellRef(2)].t).toBe("n");
+    expect(ws[valorCellRef(2)].v).toBe(100);
+    expect(ws[valorCellRef(2)].v).not.toBe(100000);
   });
 
   it("round-trip: ao reler o XLSX, o valor continua 100", () => {
@@ -85,8 +85,8 @@ describe("Exportação de benfeitorias — cenário exato do print do usuário",
     const wb2 = XLSX.read(buf, { type: "buffer" });
     const ws2 = wb2.Sheets["Dados"];
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws2);
-    expect(Number(json[0]["Valor (R$)"])).toBe(100);
-    expect(Number(json[1]["Valor (R$)"])).toBe(100);
+    expect(Number(json[0]["Valor"])).toBe(100);
+    expect(Number(json[1]["Valor"])).toBe(100);
   });
 
   it("não infla outros valores realistas (1500, 150000, 99999.99)", () => {
@@ -96,10 +96,10 @@ describe("Exportação de benfeitorias — cenário exato do print do usuário",
       ["99999.99", 99999.99],
     ];
     for (const [banco, esperado] of casos) {
-      const r = [["F", "B", 2020, parseValorDecimalBanco(banco) ?? "", 10, ""]] as (string | number)[][];
+      const r = [["B", 2020, 10, parseValorDecimalBanco(banco) ?? ""]] as (string | number)[][];
       const wb = buildWorkbook(EXPORT_HEADERS, r);
       const ws = wb.Sheets["Dados"];
-      expect(ws["D2"].v).toBe(esperado);
+      expect(ws[valorCellRef(1)].v).toBe(esperado);
     }
   });
 });

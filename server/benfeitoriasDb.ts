@@ -15,6 +15,7 @@ export type BenfeitoriaWriteInput = {
   vidaUtil?: string;
   percentualAtividade?: number;
   localizacao?: string;
+  estado?: string;
   status?: "ativo" | "manutencao" | "inativo";
   dataInstalacao?: string;
   valorEstimado?: string;
@@ -52,6 +53,9 @@ export function toBenfeitoriaRow(
   const localizacao = data.localizacao?.trim();
   if (localizacao) row.localizacao = localizacao;
 
+  const estado = data.estado?.trim();
+  if (estado) row.estado = estado;
+
   const dataInstalacao = normalizeBenfeitoriaDate(data.dataInstalacao);
   if (dataInstalacao) row.dataInstalacao = dataInstalacao;
 
@@ -64,14 +68,52 @@ export function toBenfeitoriaRow(
   if (imagem2) row.imagem2 = imagem2;
   if (imagem3) row.imagem3 = imagem3;
 
-  return row;
+  return row as any;
 }
 
 export function toBenfeitoriaUpdateRow(
-  data: BenfeitoriaWriteInput,
+  data: Partial<BenfeitoriaWriteInput>,
   images: [string | null, string | null, string | null],
 ) {
-  const row = toBenfeitoriaRow(0, data, images);
-  const { userId: _userId, ...update } = row;
-  return update;
+  const [imagem1, imagem2, imagem3] = images;
+  const row: Record<string, unknown> = {};
+
+  if (data.fazendaId != null) row.fazendaId = data.fazendaId;
+
+  const nome = data.nome?.trim();
+  if (nome) row.nome = nome;
+
+  if (data.anoConstrucao != null) row.anoConstrucao = data.anoConstrucao;
+
+  const tipo = data.tipo?.trim();
+  if (tipo) row.tipo = tipo;
+
+  const vidaUtil = data.vidaUtil?.trim();
+  if (vidaUtil) row.vidaUtil = vidaUtil;
+
+  if (data.percentualAtividade != null) {
+    row.percentualAtividade = String(data.percentualAtividade);
+  }
+
+  const localizacao = data.localizacao?.trim();
+  if (localizacao) row.localizacao = localizacao;
+
+  const estado = data.estado?.trim();
+  if (estado) row.estado = estado;
+
+  if (data.status) row.status = data.status;
+
+  const dataInstalacao = normalizeBenfeitoriaDate(data.dataInstalacao);
+  if (dataInstalacao) row.dataInstalacao = dataInstalacao;
+
+  if (data.valorEstimado) row.valorEstimado = data.valorEstimado;
+
+  const observacoes = data.observacoes?.trim();
+  if (observacoes) row.observacoes = observacoes;
+
+  if (imagem1) row.imagem1 = imagem1;
+  if (imagem2) row.imagem2 = imagem2;
+  if (imagem3) row.imagem3 = imagem3;
+
+  return row as any;
 }

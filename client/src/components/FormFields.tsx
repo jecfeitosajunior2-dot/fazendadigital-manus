@@ -152,6 +152,7 @@ export function FormSelect({
   required,
   compact,
   displayValue,
+  triggerClassName,
   children,
 }: {
   value: string;
@@ -162,6 +163,7 @@ export function FormSelect({
   compact?: boolean;
   /** Texto exibido no trigger (útil quando o value é sigla/código). */
   displayValue?: string;
+  triggerClassName?: string;
   children: React.ReactNode;
 }) {
   // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
@@ -175,6 +177,7 @@ export function FormSelect({
           className={cn(
             compact ? inputClassCompact : inputClass,
             "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
+            triggerClassName,
           )}
         >
           {displayValue?.trim() ? (
