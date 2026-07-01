@@ -5,6 +5,7 @@
  * Rota: /rebanho/mapa-rebanho
  */
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearch } from "wouter";
 import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -706,16 +707,23 @@ type FazendaMapaRow = {
   totalAnimais: number;
 };
 
+function isSubdivisaoSuperlotada(sub: SubdivisaoInfo): boolean {
+  const cap = sub.capacidade != null && sub.capacidade > 0 ? sub.capacidade : null;
+  return cap !== null && sub.totalAnimais > cap;
+}
+
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function MapaRebanhoPage() {
-  // Lê fazendaId da URL (ex: /rebanho/mapa-rebanho?fazendaId=123 ou ?fazendaId=0 para limpar)
-  const urlFazendaId = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const val = params.get('fazendaId');
-    // '0' significa "sem fazenda" — limpar o filtro persistido
-    if (val === '0') return '__clear__';
-    return val || '';
-  }, []);
+  const searchString = useSearch();
+
+  const { urlFazendaId, urlSuperlotados } = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    const val = params.get("fazendaId");
+    return {
+      urlFazendaId: val === "0" ? "__clear__" : val || "",
+      urlSuperlotados: params.get("superlotados") === "true",
+    };
+  }, [searchString]);
 
   const initialFilters = useMemo(() => {
     if (urlFazendaId === '__clear__') return INITIAL_FILTERS;
@@ -777,34 +785,52 @@ export default function MapaRebanhoPage() {
 
   const isLoading = fazendaId ? isLoadingFazenda : isLoadingGeral;
 
-  // Auto-expandir todas as subdivisões quando os dados da fazenda específica carregam
-  useEffect(() => {
-    if (fazendaId && mapaData?.subdivisoes && mapaData.subdivisoes.length > 0) {
-      setExpandedSubdivisoes(new Set((mapaData.subdivisoes as SubdivisaoInfo[]).map(s => s.pastoId)));
-    }
-  }, [fazendaId, mapaData]);
-
-  // Na visão geral, abrir fazendas e subdivisões por padrão para ficar igual ao Manus.
-  useEffect(() => {
-    if (!fazendaId && mapaGeralData && mapaGeralData.length > 0) {
-      const fazendas = mapaGeralData as FazendaMapaRow[];
-      setExpandedFazendas(new Set(fazendas.map(f => f.fazendaId)));
-      setExpandedSubdivisoes(new Set(fazendas.flatMap(f => f.subdivisoes.map(s => s.pastoId))));
-    }
-  }, [fazendaId, mapaGeralData]);
-
   const subdivisoes: SubdivisaoInfo[] = (mapaData?.subdivisoes ?? []) as SubdivisaoInfo[];
   const semSubdivisao: LoteInfo[] = (mapaData?.semSubdivisao ?? []) as LoteInfo[];
   const fazendasGeral: FazendaMapaRow[] = (mapaGeralData ?? []) as FazendaMapaRow[];
 
+  const subdivisoesExibidas = useMemo(() => {
+    if (!urlSuperlotados) return subdivisoes;
+    return subdivisoes.filter(isSubdivisaoSuperlotada);
+  }, [subdivisoes, urlSuperlotados]);
+
+  const fazendasGeralExibidas = useMemo(() => {
+    if (!urlSuperlotados) return fazendasGeral;
+    return fazendasGeral
+      .map(fazenda => ({
+        ...fazenda,
+        subdivisoes: fazenda.subdivisoes.filter(isSubdivisaoSuperlotada),
+      }))
+      .filter(fazenda => fazenda.subdivisoes.length > 0);
+  }, [fazendasGeral, urlSuperlotados]);
+
+  // Auto-expandir subdivisões quando os dados carregam
+  useEffect(() => {
+    if (fazendaId && subdivisoes.length > 0) {
+      const alvo = urlSuperlotados
+        ? subdivisoes.filter(isSubdivisaoSuperlotada)
+        : subdivisoes;
+      setExpandedSubdivisoes(new Set(alvo.map(s => s.pastoId)));
+    }
+  }, [fazendaId, subdivisoes, urlSuperlotados]);
+
+  // Na visão geral, abrir fazendas e subdivisões por padrão para ficar igual ao Manus.
+  useEffect(() => {
+    if (!fazendaId && fazendasGeral.length > 0) {
+      const fazendas = urlSuperlotados ? fazendasGeralExibidas : fazendasGeral;
+      setExpandedFazendas(new Set(fazendas.map(f => f.fazendaId)));
+      setExpandedSubdivisoes(new Set(fazendas.flatMap(f => f.subdivisoes.map(s => s.pastoId))));
+    }
+  }, [fazendaId, fazendasGeral, fazendasGeralExibidas, urlSuperlotados]);
+
   const totalAnimais = useMemo(() => {
     if (fazendaId) {
-      const s = subdivisoes.reduce((acc, s) => acc + s.totalAnimais, 0);
-      const sem = semSubdivisao.reduce((acc, l) => acc + l.totalAnimais, 0);
+      const s = subdivisoesExibidas.reduce((acc, s) => acc + s.totalAnimais, 0);
+      const sem = urlSuperlotados ? 0 : semSubdivisao.reduce((acc, l) => acc + l.totalAnimais, 0);
       return s + sem;
     }
-    return fazendasGeral.reduce((acc, f) => acc + f.totalAnimais, 0);
-  }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral]);
+    return fazendasGeralExibidas.reduce((acc, f) => acc + f.totalAnimais, 0);
+  }, [fazendaId, subdivisoesExibidas, semSubdivisao, fazendasGeralExibidas, urlSuperlotados]);
 
   // Dados para exportação — coluna Fazenda só aparece na visão geral (todas as fazendas)
   const exportHeaders = fazendaId
@@ -981,6 +1007,15 @@ export default function MapaRebanhoPage() {
 
         </div>
 
+        {urlSuperlotados && (
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md">
+            <span className="material-icons text-[16px] text-red-600">warning</span>
+            <span className="text-[12px] font-medium text-red-700">
+              Exibindo apenas pastos com lotação acima da capacidade
+            </span>
+          </div>
+        )}
+
         {/* Conteúdo */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -988,18 +1023,22 @@ export default function MapaRebanhoPage() {
           </div>
         ) : fazendaId ? (
           /* ─── VISÃO ESPECÍFICA DA FAZENDA ─── */
-          (subdivisoes.length === 0 && semSubdivisao.length === 0) ? (
+          (subdivisoesExibidas.length === 0 && (urlSuperlotados || semSubdivisao.length === 0)) ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-300">
               <svg className="w-12 h-12 mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
                   d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
-              <p className="text-[13px] font-medium text-gray-400">Nenhum lote encontrado para esta fazenda</p>
+              <p className="text-[13px] font-medium text-gray-400">
+                {urlSuperlotados
+                  ? "Nenhum pasto superlotado encontrado para esta fazenda"
+                  : "Nenhum lote encontrado para esta fazenda"}
+              </p>
             </div>
           ) : (
             <TabelaMapa
-              subdivisoes={subdivisoes}
-              semSubdivisao={semSubdivisao}
+              subdivisoes={subdivisoesExibidas}
+              semSubdivisao={urlSuperlotados ? [] : semSubdivisao}
               fazendaId={fazendaId}
               totalAnimais={totalAnimais}
               expandedSubdivisoes={expandedSubdivisoes}
@@ -1014,13 +1053,17 @@ export default function MapaRebanhoPage() {
           )
         ) : (
           /* ─── VISÃO GERAL (TODAS AS FAZENDAS) ─── */
-          fazendasGeral.length === 0 ? (
+          fazendasGeralExibidas.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-300">
               <svg className="w-12 h-12 mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
                   d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
-              <p className="text-[13px] font-medium text-gray-400">Nenhuma fazenda cadastrada</p>
+              <p className="text-[13px] font-medium text-gray-400">
+                {urlSuperlotados
+                  ? "Nenhum pasto superlotado encontrado"
+                  : "Nenhuma fazenda cadastrada"}
+              </p>
             </div>
           ) : (
             <>
@@ -1028,7 +1071,7 @@ export default function MapaRebanhoPage() {
 
               {/* Tabela por fazenda */}
               <div className="space-y-3">
-                {fazendasGeral.map(fazenda => (
+                {fazendasGeralExibidas.map(fazenda => (
                   <div key={fazenda.fazendaId} className="border border-gray-200 rounded-md overflow-hidden">
                     {/* Cabeçalho da fazenda */}
                     <div

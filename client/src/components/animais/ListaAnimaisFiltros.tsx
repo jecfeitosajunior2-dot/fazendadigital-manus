@@ -5,6 +5,7 @@ import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 import type { AnimaisListFiltersState, FiltroAdicionalKey } from '@shared/animal-filter-types';
 import { FILTROS_ADICIONAIS_OPCOES } from '@shared/animal-filter-types';
+import { formatDateBR } from '@/lib/date-utils';
 
 const labelClass = 'block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1';
 const inputClass =
@@ -692,12 +693,43 @@ export default function ListaAnimaisFiltros({
 
           {/* Indicador de filtro Sem Lote ativo */}
           {value.apenasSemLote && (
-            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-md">
-              <span className="material-icons text-[14px] text-orange-600">folder_off</span>
-              <span className="text-[12px] font-medium text-orange-700">Filtrando apenas animais sem lote</span>
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
+              <span className="material-icons text-[14px] text-blue-600">folder_off</span>
+              <span className="text-[12px] font-medium text-blue-700">Filtrando apenas animais sem lote</span>
               <button
                 onClick={() => onChange(patch(value, { apenasSemLote: false }))}
+                className="ml-auto text-blue-500 hover:text-blue-700 transition-colors"
+              >
+                <span className="material-icons text-[14px]">close</span>
+              </button>
+            </div>
+          )}
+
+          {value.apenasSemPesagem && (
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-md">
+              <span className="material-icons text-[14px] text-orange-600">scale</span>
+              <span className="text-[12px] font-medium text-orange-700">Filtrando animais sem pesagem nos últimos 60 dias</span>
+              <button
+                onClick={() => onChange(patch(value, { apenasSemPesagem: false }))}
                 className="ml-auto text-orange-500 hover:text-orange-700 transition-colors"
+              >
+                <span className="material-icons text-[14px]">close</span>
+              </button>
+            </div>
+          )}
+
+          {(value.dataNascimentoInicial || value.dataNascimentoFinal) && (
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-md">
+              <span className="material-icons text-[14px] text-teal-700">cake</span>
+              <span className="text-[12px] font-medium text-teal-800">
+                Filtrando nascimentos de {formatDateBR(value.dataNascimentoInicial || value.dataNascimentoFinal)}
+                {value.dataNascimentoFinal && value.dataNascimentoInicial !== value.dataNascimentoFinal
+                  ? ` até ${formatDateBR(value.dataNascimentoFinal)}`
+                  : ""}
+              </span>
+              <button
+                onClick={() => onChange(patch(value, { dataNascimentoInicial: '', dataNascimentoFinal: '' }))}
+                className="ml-auto text-teal-600 hover:text-teal-800 transition-colors"
               >
                 <span className="material-icons text-[14px]">close</span>
               </button>

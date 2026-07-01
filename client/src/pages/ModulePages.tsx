@@ -30,6 +30,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { periodoMesAtual } from "@/lib/date-utils";
+import { useDeleteFazenda } from "@/hooks/useDeleteFazenda";
+import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 
 function areaUnitLabel(unidade?: string | null) {
   const value = String(unidade || "Hectare").toLowerCase();
@@ -120,12 +124,13 @@ function FarmRowActions({
 
 export function FarmsOverviewPage() {
   const [, setLocation] = useLocation();
-  const confirm = useConfirm();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const utils = trpc.useUtils();
+  const { handleDeleteFazenda, deleteBlocked, setDeleteBlocked } = useDeleteFazenda({
+    onSuccess: () => setSelectedId(null),
+  });
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
   const { data: allPastos = [] } = trpc.pastos.list.useQuery();
   const pastosPorFazenda = useMemo(() => {
@@ -133,25 +138,6 @@ export function FarmsOverviewPage() {
     allPastos.forEach(p => { map[p.fazendaId] = (map[p.fazendaId] || 0) + 1; });
     return map;
   }, [allPastos]);
-  const deleteMutation = trpc.fazendas.delete.useMutation({
-    onSuccess: () => {
-      utils.fazendas.list.invalidate();
-      toast.success("Fazenda excluída!");
-      setSelectedId(null);
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const handleDeleteFazenda = async (fazenda: { id: number; nome?: string | null }) => {
-    const ok = await confirm({
-      title: "Excluir fazenda",
-      description: `Tem certeza que deseja excluir a fazenda "${fazenda.nome ?? "selecionada"}"? Esta ação não pode ser desfeita.`,
-      confirmText: "Excluir",
-      cancelText: "Cancelar",
-      variant: "danger",
-    });
-    if (ok) deleteMutation.mutate({ id: fazenda.id });
-  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -177,6 +163,10 @@ export function FarmsOverviewPage() {
 
   return (
     <AppLayout>
+      <FazendaDeleteBlockedDialog
+        state={deleteBlocked}
+        onClose={() => setDeleteBlocked(null)}
+      />
       {/* Lista de fazendas — layout iRancho */}
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
@@ -293,9 +283,8 @@ export function FarmsOverviewPage() {
 
 export function FarmsListPage() {
   const [, setLocation] = useLocation();
-  const confirm = useConfirm();
   const [pastosFazenda, setPastosFazenda] = useState<any>(null);
-  const utils = trpc.useUtils();
+  const { handleDeleteFazenda, deleteBlocked, setDeleteBlocked } = useDeleteFazenda();
   const { data: fazendaList = [], isLoading } = trpc.fazendas.list.useQuery();
   const { data: allPastos = [] } = trpc.pastos.list.useQuery();
   const pastosPorFazenda = useMemo(() => {
@@ -303,21 +292,6 @@ export function FarmsListPage() {
     allPastos.forEach(p => { map[p.fazendaId] = (map[p.fazendaId] || 0) + 1; });
     return map;
   }, [allPastos]);
-  const deleteMutation = trpc.fazendas.delete.useMutation({
-    onSuccess: () => { utils.fazendas.list.invalidate(); toast.success("Fazenda excluída!"); },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const handleDeleteFazenda = async (fazenda: { id: number; nome?: string | null }) => {
-    const ok = await confirm({
-      title: "Excluir fazenda",
-      description: `Tem certeza que deseja excluir a fazenda "${fazenda.nome ?? "selecionada"}"? Esta ação não pode ser desfeita.`,
-      confirmText: "Excluir",
-      cancelText: "Cancelar",
-      variant: "danger",
-    });
-    if (ok) deleteMutation.mutate({ id: fazenda.id });
-  };
 
   const exportData = useMemo(
     () => fazendaList.map((f: { nome: string; cidade?: string | null; estado?: string | null; area?: string | null }) => [
@@ -330,6 +304,10 @@ export function FarmsListPage() {
   );
   return (
     <AppLayout>
+      <FazendaDeleteBlockedDialog
+        state={deleteBlocked}
+        onClose={() => setDeleteBlocked(null)}
+      />
       <FarmPastosSheet
         fazenda={pastosFazenda}
         open={!!pastosFazenda}
@@ -439,16 +417,11 @@ export function SubdivisionsPage() {
     <AppLayout>
       <div className="mb-4 flex items-center gap-3">
         <h1 className="text-[13px] font-semibold text-gray-800">Subdivisões</h1>
-        <select
+        <FazendaOverviewSelect
           value={fazendaId}
-          onChange={e => setFazendaId(e.target.value)}
-          className="h-8 text-[11px] border border-gray-200 rounded px-2 bg-white min-w-[200px]"
-        >
-          <option value="">Selecione uma fazenda</option>
-          {fazendas.map(f => (
-            <option key={f.id} value={String(f.id)}>{f.nome}</option>
-          ))}
-        </select>
+          onChange={setFazendaId}
+          fazendas={fazendas}
+        />
       </div>
       <FazendaSubdivisoesPanel fazenda={selectedFazenda} />
     </AppLayout>
@@ -459,53 +432,196 @@ export function SubdivisionsPage() {
 // MÓDULO REBANHO
 // ============================================================
 
+const REBANHO_OVERVIEW_FAZENDA_KEY = "fd-rebanho-overview-fazenda-id";
+
 function BarChart({ items, color }: { items: { label: string; value: number; pct: number }[]; color: string }) {
   if (!items.length) return <p className="text-[11px] text-gray-400">Sem dados</p>;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {items.map((item, i) => (
         <div key={i} className="flex items-center gap-2">
-          <span className="text-[11px] text-gray-600 truncate" style={{ minWidth: 80, maxWidth: 100 }}>{item.label}</span>
-          <div className="flex-1 h-3.5 bg-gray-100 rounded overflow-hidden">
+          <span className="text-[11px] text-gray-600 truncate" style={{ minWidth: 72, maxWidth: 96 }}>{item.label}</span>
+          <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full rounded transition-all duration-500"
-              style={{ width: `${Math.max(item.pct, 2)}%`, backgroundColor: color }}
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${Math.max(item.pct, item.value > 0 ? 4 : 0)}%`, backgroundColor: color, opacity: 0.85 }}
             />
           </div>
-          <span className="text-[11px] text-gray-700 font-semibold" style={{ minWidth: 28, textAlign: 'right' }}>{item.value}</span>
+          <span className="text-[11px] text-gray-700 font-semibold tabular-nums" style={{ minWidth: 24, textAlign: "right" }}>{item.value}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function AlertCard({ icon, label, value, color, onClick }: { icon: string; label: string; value: number; color: string; onClick?: () => void }) {
+type AlertLevel = "sanitary" | "cadastral" | "management" | "critical";
+
+function AlertCard({
+  icon,
+  label,
+  value,
+  hint,
+  level,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  hint: string;
+  level: AlertLevel;
+  onClick?: () => void;
+}) {
+  const neutral = {
+    color: "#6B7280",
+    card: "border-gray-100 hover:border-gray-200 hover:bg-gray-50/60",
+    iconBg: "#F3F4F6",
+    valueClass: "text-gray-700",
+  };
+
+  const activeStyles: Record<AlertLevel, typeof neutral> = {
+    sanitary: {
+      color: "#D97706",
+      card: "border-amber-200 hover:border-amber-300 hover:bg-amber-50/50",
+      iconBg: "#FEF3C7",
+      valueClass: "text-amber-700",
+    },
+    cadastral: {
+      color: "#2563EB",
+      card: "border-blue-200 hover:border-blue-300 hover:bg-blue-50/50",
+      iconBg: "#DBEAFE",
+      valueClass: "text-blue-700",
+    },
+    management: {
+      color: "#EA580C",
+      card: "border-orange-200 hover:border-orange-300 hover:bg-orange-50/50",
+      iconBg: "#FFEDD5",
+      valueClass: "text-orange-700",
+    },
+    critical: {
+      color: "#DC2626",
+      card: "border-red-300 hover:border-red-400 hover:bg-red-50/80 ring-1 ring-red-200/90",
+      iconBg: "#FECACA",
+      valueClass: "text-red-700",
+    },
+  };
+
+  const s = value > 0 ? activeStyles[level] : neutral;
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-3 bg-white rounded border p-3 text-left w-full h-[60px] transition hover:shadow-md ${
-        value > 0 ? 'border-orange-200' : 'border-gray-100'
-      }`}
+      className={cn(
+        "group flex flex-col gap-1.5 bg-white rounded-lg border p-3 text-left w-full min-h-[82px] transition-all",
+        "cursor-pointer hover:shadow-sm active:scale-[0.99]",
+        s.card,
+      )}
     >
-      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0`} style={{ backgroundColor: color + '22' }}>
-        <span className="material-icons text-[18px]" style={{ color }}>{icon}</span>
+      <div className="flex items-start gap-3 w-full">
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: s.iconBg }}
+        >
+          <span className="material-icons text-[18px]" style={{ color: s.color }}>{icon}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className={cn("text-[20px] font-bold leading-none tabular-nums", s.valueClass)}>{value}</div>
+          <div className="text-[11px] font-medium text-gray-700 leading-tight mt-1">{label}</div>
+        </div>
+        <span className="material-icons text-[16px] text-gray-300 group-hover:text-gray-500 transition-colors shrink-0">chevron_right</span>
       </div>
-      <div className="min-w-0">
-        <div className={`text-[17px] font-bold leading-tight ${value > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{value}</div>
-        <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
-      </div>
+      <p className="text-[10px] text-gray-500 leading-snug pl-12">{hint}</p>
     </button>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  icon,
+  color,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        "bg-white rounded-lg border border-gray-100 shadow-sm p-3 min-h-[68px] flex items-center transition",
+        onClick && "cursor-pointer hover:shadow-sm hover:border-gray-200 active:scale-[0.99]",
+      )}
+    >
+      <div className="flex items-center gap-2.5 w-full min-w-0">
+        <div
+          className={cn(
+            "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
+          )}
+          style={{
+            backgroundColor:
+              icon === "__scale__"
+                ? "#FFF2E5"
+                : icon === "__calf__"
+                  ? "transparent"
+                  : `${color}14`,
+          }}
+        >
+          {icon === "__cow__" ? (
+            <img src="/assets/icon-boi-nelore.webp" alt="" width={26} height={26} style={{ objectFit: "contain" }} />
+          ) : icon === "__scale__" ? (
+            <img
+              src="/assets/icon-peso-medio-figure.png"
+              alt=""
+              width={20}
+              height={20}
+              className="block shrink-0"
+              style={{ objectFit: "contain" }}
+              draggable={false}
+            />
+          ) : icon === "__calf__" ? (
+            <img src="/assets/icon-nascimentos.png" alt="" width={30} height={30} style={{ objectFit: "cover", borderRadius: "50%" }} />
+          ) : (
+            <span className="material-icons text-[19px]" style={{ color }}>{icon}</span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[17px] font-bold text-gray-800 leading-tight tabular-nums">{value}</div>
+          <div className="text-[10px] text-gray-500 leading-tight flex items-center gap-1">
+            {label}
+            {onClick && <span className="material-icons text-[10px] text-gray-400">open_in_new</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GmdRankBadge({ position }: { position: number }) {
+  const medals: Record<number, string> = { 1: "#2D5A5A", 2: "#64748B", 3: "#94A3B8" };
+  const bg = medals[position] ?? "#E2E8F0";
+  const text = position <= 3 ? "text-white" : "text-gray-600";
+  return (
+    <span
+      className={cn("inline-flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold shrink-0", text)}
+      style={{ backgroundColor: bg }}
+    >
+      {position}º
+    </span>
   );
 }
 
 export function HerdOverviewPage() {
   const [, setLocation] = useLocation();
   const [fazendaId, setFazendaId] = useState<number | undefined>(undefined);
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const { data: fazendaList } = trpc.fazendas.list.useQuery(undefined, { refetchOnWindowFocus: false });
-  const { data, isLoading } = trpc.rebanho.overview.useQuery(
-    fazendaId ? { fazendaId } : undefined,
-    { refetchOnWindowFocus: false }
+  const { data, isLoading, isError, refetch } = trpc.rebanho.overview.useQuery(
+    { fazendaId: fazendaId! },
+    { enabled: !!fazendaId, refetchOnWindowFocus: false },
   );
 
   const TEAL = "#2D5A5A";
@@ -515,14 +631,155 @@ export function HerdOverviewPage() {
   const AMBER = "#F59E0B";
   const PURPLE = "#8B5CF6";
 
+  const selectedFazenda = fazendaList?.find(f => f.id === fazendaId);
+
+  useEffect(() => {
+    if (!fazendaList || fazendaInitDone) return;
+
+    if (fazendaList.length === 1) {
+      const id = fazendaList[0].id;
+      setFazendaId(id);
+      try {
+        localStorage.setItem(REBANHO_OVERVIEW_FAZENDA_KEY, String(id));
+      } catch {
+        // ignora falha de gravação
+      }
+      setFazendaInitDone(true);
+      return;
+    }
+
+    if (fazendaList.length > 1) {
+      try {
+        const stored = localStorage.getItem(REBANHO_OVERVIEW_FAZENDA_KEY);
+        if (stored) {
+          const id = Number(stored);
+          if (fazendaList.some(f => f.id === id)) {
+            setFazendaId(id);
+          }
+        }
+      } catch {
+        // ignora falha de leitura
+      }
+    }
+
+    setFazendaInitDone(true);
+  }, [fazendaList, fazendaInitDone]);
+
+  const handleFazendaChange = (value: string) => {
+    const id = value ? Number(value) : undefined;
+    setFazendaId(id);
+    try {
+      if (id) localStorage.setItem(REBANHO_OVERVIEW_FAZENDA_KEY, String(id));
+      else localStorage.removeItem(REBANHO_OVERVIEW_FAZENDA_KEY);
+    } catch {
+      // ignora falha de gravação
+    }
+  };
+
+  const navigateAnimais = (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params);
+    if (fazendaId) qs.set("fazendaId", String(fazendaId));
+    setLocation(`/rebanho/lista-animais?${qs.toString()}`);
+  };
+
+  const headerBlock = (
+    <div className="mb-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[15px] font-semibold text-gray-800">Visão Geral do Rebanho</h1>
+          {!selectedFazenda && (
+            <p className="text-[11px] text-gray-500 mt-1 max-w-xl">
+              Selecione uma fazenda para visualizar os indicadores do rebanho.
+            </p>
+          )}
+        </div>
+        {fazendaList && fazendaList.length > 0 && (
+          <FazendaOverviewSelect
+            value={fazendaId != null ? String(fazendaId) : ""}
+            onChange={handleFazendaChange}
+            fazendas={fazendaList}
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  if (fazendaList && fazendaList.length === 0) {
+    return (
+      <AppLayout>
+        {headerBlock}
+        <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
+          <span className="material-icons text-[40px] text-gray-300 mb-3 block">agriculture</span>
+          <p className="text-[13px] font-semibold text-gray-800 mb-1">Nenhuma fazenda cadastrada</p>
+          <p className="text-[11px] text-gray-500">
+            Cadastre uma fazenda para acompanhar os indicadores do rebanho.
+          </p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (fazendaInitDone && !fazendaId && fazendaList && fazendaList.length > 1) {
+    return (
+      <AppLayout>
+        {headerBlock}
+        <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
+          <span className="material-icons text-[40px] text-gray-300 mb-3 block">agriculture</span>
+          <p className="text-[13px] font-semibold text-gray-800 mb-1">Escolha uma fazenda</p>
+          <p className="text-[11px] text-gray-500">
+            Use o seletor acima para carregar os indicadores, alertas e ranking desta propriedade.
+          </p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!fazendaId) {
+    return (
+      <AppLayout>
+        {headerBlock}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-lg border border-gray-100 p-3 h-[68px] animate-pulse" />
+          ))}
+        </div>
+      </AppLayout>
+    );
+  }
+
   if (isLoading) {
     return (
       <AppLayout>
-        <h1 className="text-[15px] font-medium text-gray-800 mb-4">Visão Geral do Rebanho</h1>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {headerBlock}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded shadow-sm border border-gray-100 p-4 h-20 animate-pulse" />
+            <div key={i} className="bg-white rounded-lg border border-gray-100 p-3 h-[68px] animate-pulse" />
           ))}
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!isLoading && !data) {
+    return (
+      <AppLayout>
+        {headerBlock}
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-5 text-center max-w-lg mx-auto mt-8">
+          <span className="material-icons text-[32px] text-amber-600 mb-2">cloud_off</span>
+          <p className="text-[13px] font-semibold text-gray-800 mb-1">Não foi possível carregar a visão geral</p>
+          <p className="text-[11px] text-gray-600 mb-4">
+            {isError
+              ? "Verifique se o MySQL está ligado (pnpm db:up) ou tente novamente."
+              : "Nenhum dado retornado para esta fazenda."}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-[11px] font-semibold uppercase tracking-wide px-4 py-2 rounded-full text-gray-900"
+            style={{ backgroundColor: "#4ECDC4" }}
+          >
+            Tentar novamente
+          </button>
         </div>
       </AppLayout>
     );
@@ -530,10 +787,8 @@ export function HerdOverviewPage() {
 
   if (!data) return null;
 
-  // Calcula o primeiro e último dia do mês atual para o filtro de Nascimentos no Mês
   const hoje = new Date();
-  const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
-  const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const { de: primeiroDiaMes, ate: ultimoDiaMes } = periodoMesAtual(hoje);
 
   const kpis = [
     { label: "Total de Animais", value: data.totalAnimais.toString(), icon: "__cow__", color: TEAL, onClick: undefined },
@@ -545,104 +800,48 @@ export function HerdOverviewPage() {
       label: "Nascimentos no Mês",
       value: (data.evolucaoEfetivo.nascimentosNoMes ?? 0).toString(),
       icon: "__calf__",
-      color: "#F59E0B",
-      onClick: () => {
-        const params = new URLSearchParams();
-        params.set('dataNascimentoDe', primeiroDiaMes);
-        params.set('dataNascimentoAte', ultimoDiaMes);
-        if (fazendaId) params.set('fazendaId', String(fazendaId));
-        setLocation(`/rebanho/lista-animais?${params.toString()}`);
-      },
+      color: AMBER,
+      onClick: () => navigateAnimais({
+        dataNascimentoDe: primeiroDiaMes,
+        dataNascimentoAte: ultimoDiaMes,
+      }),
     },
   ];
 
+  const ORDER_MACHOS = ["Bezerro", "Novilho", "Boi"];
+  const ORDER_FEMEAS = ["Bezerra", "Novilha", "Vaca"];
+
   return (
     <AppLayout>
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h1 className="text-[15px] font-medium text-gray-800">Visão Geral do Rebanho</h1>
-        {fazendaList && fazendaList.length > 1 && (
-          <select
-            value={fazendaId ?? ""}
-            onChange={e => setFazendaId(e.target.value ? Number(e.target.value) : undefined)}
-            className="text-[12px] border border-gray-200 rounded-md px-3 py-1.5 bg-white text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-          >
-            <option value="">Selecione uma fazenda</option>
-            {fazendaList.map(f => (
-              <option key={f.id} value={f.id}>{f.nome}</option>
-            ))}
-          </select>
-        )}
-      </div>
+      {headerBlock}
 
       {/* ── KPIs ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
         {kpis.map((kpi, i) => (
-          <div
-            key={i}
-            onClick={kpi.onClick}
-            className={`bg-white rounded-lg shadow-sm border border-gray-100 p-3 transition ${
-              kpi.onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 active:scale-[0.98]' : ''
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ backgroundColor: kpi.icon === '__calf__' ? 'transparent' : kpi.icon === '__scale__' ? '#4A90D918' : kpi.color + '18' }}>
-                {kpi.icon === '__cow__' ? (
-                  <img
-                    src="/assets/icon-boi-nelore.webp"
-                    alt="Boi Nelore"
-                    width="26"
-                    height="26"
-                    style={{ objectFit: 'contain' }}
-                  />
-                ) : kpi.icon === '__scale__' ? (
-                  <img
-                    src="/assets/icon-peso-medio.png"
-                    alt="Balança"
-                    width="32"
-                    height="32"
-                    style={{ objectFit: 'cover', borderRadius: '50%' }}
-                  />
-                ) : kpi.icon === '__calf__' ? (
-                  <img
-                    src="/assets/icon-nascimentos.png"
-                    alt="Vaca com bezerro"
-                    width="32"
-                    height="32"
-                    style={{ objectFit: 'cover', borderRadius: '50%' }}
-                  />
-                ) : (
-                  <span className="material-icons text-[18px]" style={{ color: kpi.color }}>{kpi.icon}</span>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="text-[17px] font-bold text-gray-800 leading-tight">{kpi.value}</div>
-                <div className="text-[10px] text-gray-500 leading-tight flex items-center gap-1">
-                  {kpi.label}
-                  {kpi.onClick && <span className="material-icons text-[10px] text-gray-400">open_in_new</span>}
-                </div>
-              </div>
-            </div>
-          </div>
+          <KpiCard key={i} {...kpi} />
         ))}
       </div>
 
       {/* ── Distribuições ── */}
-      {/* Linha 1: Machos | Fêmeas | Por Raça | Por Faixa de Peso */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: BLUE }}>
             <span className="material-icons text-[14px]">male</span> Machos
           </h2>
           {data.porCategoriaMachos.length > 0
-            ? <BarChart items={[...data.porCategoriaMachos].sort((a, b) => {
-                const ORDER_MACHOS = ['Bezerro', 'Novilho', 'Boi'];
-                const ia = ORDER_MACHOS.indexOf(a.label);
-                const ib = ORDER_MACHOS.indexOf(b.label);
-                if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, 'pt-BR');
-                if (ia === -1) return 1;
-                if (ib === -1) return -1;
-                return ia - ib;
-              })} color={BLUE} />
+            ? (
+              <BarChart
+                items={[...data.porCategoriaMachos].sort((a, b) => {
+                  const ia = ORDER_MACHOS.indexOf(a.label);
+                  const ib = ORDER_MACHOS.indexOf(b.label);
+                  if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, "pt-BR");
+                  if (ia === -1) return 1;
+                  if (ib === -1) return -1;
+                  return ia - ib;
+                })}
+                color={BLUE}
+              />
+            )
             : <p className="text-[11px] text-gray-400">Nenhum macho cadastrado</p>}
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
@@ -650,58 +849,109 @@ export function HerdOverviewPage() {
             <span className="material-icons text-[14px]">female</span> Fêmeas
           </h2>
           {data.porCategoriaFemeas.length > 0
-            ? <BarChart items={[...data.porCategoriaFemeas].sort((a, b) => {
-                const ORDER_FEMEAS = ['Bezerra', 'Novilha', 'Vaca'];
-                const ia = ORDER_FEMEAS.indexOf(a.label);
-                const ib = ORDER_FEMEAS.indexOf(b.label);
-                if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, 'pt-BR');
-                if (ia === -1) return 1;
-                if (ib === -1) return -1;
-                return ia - ib;
-              })} color={PINK} />
+            ? (
+              <BarChart
+                items={[...data.porCategoriaFemeas].sort((a, b) => {
+                  const ia = ORDER_FEMEAS.indexOf(a.label);
+                  const ib = ORDER_FEMEAS.indexOf(b.label);
+                  if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, "pt-BR");
+                  if (ia === -1) return 1;
+                  if (ib === -1) return -1;
+                  return ia - ib;
+                })}
+                color={PINK}
+              />
+            )
             : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
-          <BarChart items={data.porFaixaPeso} color={PURPLE} />
         </div>
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
           <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
           <BarChart items={data.porRaca} color={ORANGE} />
         </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
+          <BarChart items={data.porFaixaPeso} color={PURPLE} />
+        </div>
       </div>
 
-      {/* Linha 2: Tabela cruzada Faixa Etária × Categoria (largura total) */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 overflow-x-auto">
+      {/* ── Alertas ── */}
+      <div className="mb-5">
+        <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-3">Alertas e Pendências</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <AlertCard
+            icon="folder_off"
+            label="Sem Lote"
+            value={data.totalSemLote}
+            hint="Ver animais sem lote vinculado"
+            level="cadastral"
+            onClick={() => navigateAnimais({ apenasSemLote: "true" })}
+          />
+          <AlertCard
+            icon="medication"
+            label="Em Carência"
+            value={data.totalEmCarencia}
+            hint="Ver animais com período de carência ativo"
+            level="sanitary"
+            onClick={() => navigateAnimais({ apenasEmCarencia: "true" })}
+          />
+          <AlertCard
+            icon="scale"
+            label="Sem Pesagem (60d)"
+            value={data.totalSemPesagemRecente}
+            hint="Ver animais sem pesagem nos últimos 60 dias"
+            level="management"
+            onClick={() => navigateAnimais({ apenasSemPesagem: "true" })}
+          />
+          <AlertCard
+            icon="warning"
+            label="Pastos Superlotados"
+            value={data.totalLotesSuperLotados}
+            hint="Ver mapa do rebanho com lotação acima da capacidade"
+            level="critical"
+            onClick={() => {
+              const params = new URLSearchParams();
+              params.set("fazendaId", String(fazendaId));
+              params.set("superlotados", "true");
+              setLocation(`/rebanho/mapa-rebanho?${params.toString()}`);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ── Faixa etária ── */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-5 overflow-x-auto">
         <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Faixa Etária por Categoria</h2>
         {data.porFaixaEtariaCategoria.some(r => Object.values(r.categorias).some(v => v > 0)) ? (
           <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="bg-gray-50">
-                <th className="text-left py-1.5 px-2 font-semibold text-gray-600 border-b border-gray-200 w-28">Faixa</th>
-                {['Bezerro','Novilho','Boi','Bezerra','Novilha','Vaca'].map(cat => (
-                  <th key={cat} className="text-center py-1.5 px-2 font-semibold border-b border-gray-200"
-                    style={{ color: ['Bezerro','Novilho','Boi'].includes(cat) ? BLUE : PINK }}>
+                <th className="text-left py-2 px-2 font-semibold text-gray-600 border-b border-gray-200 w-28">Faixa</th>
+                {["Bezerro", "Novilho", "Boi", "Bezerra", "Novilha", "Vaca"].map(cat => (
+                  <th
+                    key={cat}
+                    className="text-center py-2 px-2 font-semibold border-b border-gray-200"
+                    style={{ color: ["Bezerro", "Novilho", "Boi"].includes(cat) ? BLUE : PINK }}
+                  >
                     {cat}
                   </th>
                 ))}
-                <th className="text-center py-1.5 px-2 font-semibold text-gray-600 border-b border-gray-200">Total</th>
+                <th className="text-center py-2 px-2 font-semibold text-gray-600 border-b border-gray-200">Total</th>
               </tr>
             </thead>
             <tbody>
               {data.porFaixaEtariaCategoria.map((row, i) => {
                 const rowTotal = Object.values(row.categorias).reduce((s, v) => s + v, 0);
                 return (
-                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                    <td className="py-1.5 px-2 font-medium text-gray-700">{row.faixa}</td>
-                    {['Bezerro','Novilho','Boi','Bezerra','Novilha','Vaca'].map(cat => (
-                      <td key={cat} className="text-center py-1.5 px-2 text-gray-600">
+                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                    <td className="py-2 px-2 font-medium text-gray-700">{row.faixa}</td>
+                    {["Bezerro", "Novilho", "Boi", "Bezerra", "Novilha", "Vaca"].map(cat => (
+                      <td key={cat} className="text-center py-2 px-2 text-gray-600">
                         {(row.categorias[cat] || 0) > 0
                           ? <span className="font-semibold">{row.categorias[cat]}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
                     ))}
-                    <td className="text-center py-1.5 px-2 font-semibold text-gray-700">
+                    <td className="text-center py-2 px-2 font-semibold text-gray-700">
                       {rowTotal > 0 ? rowTotal : <span className="text-gray-300">—</span>}
                     </td>
                   </tr>
@@ -714,64 +964,82 @@ export function HerdOverviewPage() {
         )}
       </div>
 
-      {/* ── Alertas ── */}
-      <div className="mb-4">
-        <h2 className="text-[12px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Alertas e Pendências</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <AlertCard icon="medication" label="Em Carência" value={data.totalEmCarencia} color={ORANGE} onClick={() => {
-            const params = new URLSearchParams();
-            params.set('apenasEmCarencia', 'true');
-            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
-            setLocation(`/rebanho/lista-animais?${params.toString()}`);
-          }} />
-          <AlertCard icon="folder_off" label="Sem Lote" value={data.totalSemLote} color={ORANGE} onClick={() => {
-            const params = new URLSearchParams();
-            params.set('apenasSemLote', 'true');
-            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
-            setLocation(`/rebanho/lista-animais?${params.toString()}`);
-          }} />
-          <AlertCard icon="scale" label="Sem Pesagem (60d)" value={data.totalSemPesagemRecente} color={ORANGE} onClick={() => {
-            const params = new URLSearchParams();
-            params.set('apenasSemPesagem', 'true');
-            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
-            setLocation(`/rebanho/lista-animais?${params.toString()}`);
-          }} />
-          <AlertCard icon="warning" label="Pastos Superlotados" value={data.totalLotesSuperLotados} color="#EF4444" onClick={() => {
-            const params = new URLSearchParams();
-            params.set('fazendaId', fazendaId ? String(fazendaId) : '0');
-            setLocation(`/rebanho/mapa-rebanho?${params.toString()}`);
-          }} />
-        </div>
-      </div>
-
       {/* ── Top 5 GMD ── */}
-      {data.top5Gmd.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Top 5 Animais por GMD (kg/dia)</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">#</th>
-                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Brinco</th>
-                  <th className="text-left py-1.5 pr-3 text-gray-500 font-medium">Categoria</th>
-                  <th className="text-right py-1.5 text-gray-500 font-medium">GMD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.top5Gmd.map((a, i) => (
-                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                    <td className="py-1.5 pr-3 text-gray-400 font-medium">{i + 1}</td>
-                    <td className="py-1.5 pr-3 font-semibold text-gray-800">{a.brinco || "—"}</td>
-                    <td className="py-1.5 pr-3 text-gray-600">{a.categoria || "—"}</td>
-                    <td className="py-1.5 text-right font-bold" style={{ color: TEAL }}>{a.gmd} kg/d</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 className="text-[12px] font-semibold text-gray-800">Top 5 Animais por GMD (kg/dia)</h2>
           </div>
+          <span className="material-icons text-[18px] text-gray-300">leaderboard</span>
         </div>
-      )}
+        {data.top5Gmd.length > 0 ? (
+          <>
+            <div
+              className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem_1rem] gap-x-2 sm:gap-x-3 px-3 pb-2 text-[10px] text-gray-500"
+              aria-hidden
+            >
+              <span />
+              <span>Brinco</span>
+              <span>Categoria</span>
+              <span className="text-right">GMD</span>
+              <span />
+            </div>
+            <div className="space-y-2">
+              {data.top5Gmd.map((a, i) => {
+                const position = i + 1;
+                const hasGmd = a.gmd != null && a.gmd !== "" && !Number.isNaN(Number(a.gmd));
+                const animalId = "animalId" in a ? a.animalId : undefined;
+                const canOpenAnimal = Boolean(animalId || a.brinco);
+                return (
+                  <button
+                    key={animalId ?? a.brinco ?? i}
+                    type="button"
+                    disabled={!canOpenAnimal}
+                    onClick={() => {
+                      if (animalId) {
+                        setLocation(`/rebanho/detalhes-animal?id=${animalId}`);
+                      } else if (a.brinco) {
+                        const qs = new URLSearchParams();
+                        qs.set("pesquisa", a.brinco);
+                        if (fazendaId) qs.set("fazendaId", String(fazendaId));
+                        setLocation(`/rebanho/lista-animais?${qs.toString()}`);
+                      }
+                    }}
+                    className={cn(
+                      "grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem_1rem] gap-x-2 sm:gap-x-3 items-center rounded-lg border px-3 py-2.5 w-full text-left transition",
+                      position === 1 ? "border-teal-100 bg-teal-50/40" : "border-gray-100 bg-gray-50/30",
+                      canOpenAnimal && "cursor-pointer hover:shadow-sm hover:border-gray-200 active:scale-[0.99]",
+                      !canOpenAnimal && "cursor-default",
+                    )}
+                  >
+                    <GmdRankBadge position={position} />
+                    <p className="text-[12px] font-semibold text-gray-800 truncate">{a.brinco || "—"}</p>
+                    <p className="text-[12px] text-gray-700 truncate">{a.categoria || "—"}</p>
+                    <p
+                      className="text-[13px] font-bold tabular-nums text-right"
+                      style={{ color: hasGmd ? TEAL : "#9CA3AF" }}
+                    >
+                      {hasGmd ? `${a.gmd} kg/d` : "—"}
+                    </p>
+                    {canOpenAnimal ? (
+                      <span className="material-icons text-[16px] text-gray-300">chevron_right</span>
+                    ) : (
+                      <span />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {data.top5Gmd.length < 5 && (
+              <p className="text-[10px] text-gray-400 mt-3 text-center">
+                Exibindo {data.top5Gmd.length} de até 5 animais com melhor GMD.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-[11px] text-gray-400 py-4 text-center">Sem dados de GMD suficientes para exibir o ranking</p>
+        )}
+      </div>
     </AppLayout>
   );
 }

@@ -176,6 +176,62 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
   };
 }
 
+/** Aplica filtros vindos da URL (ex.: Visão Geral do Rebanho). Retorna null se não houver params relevantes. */
+export function animaisFiltersFromSearchParams(search: string): AnimaisListFiltersState | null {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const dataEntradaDe = params.get('dataEntradaDe');
+  const dataEntradaAte = params.get('dataEntradaAte');
+  const dataNascimentoDe = params.get('dataNascimentoDe');
+  const dataNascimentoAte = params.get('dataNascimentoAte');
+  const fazendaId = params.get('fazendaId');
+  const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
+  const apenasSemLote = params.get('apenasSemLote') === 'true';
+  const apenasSemPesagem = params.get('apenasSemPesagem') === 'true';
+  const pesquisa = params.get('pesquisa');
+
+  const hasParams =
+    dataEntradaDe ||
+    dataEntradaAte ||
+    dataNascimentoDe ||
+    dataNascimentoAte ||
+    fazendaId ||
+    apenasEmCarencia ||
+    apenasSemLote ||
+    apenasSemPesagem ||
+    pesquisa;
+
+  if (!hasParams) return null;
+
+  const filtrosAdicionais: FiltroAdicionalKey[] = [];
+  if (dataEntradaDe || dataEntradaAte) filtrosAdicionais.push('dataEntrada');
+  if (dataNascimentoDe || dataNascimentoAte) filtrosAdicionais.push('dataNascimento');
+
+  return {
+    ...INITIAL_ANIMAIS_LIST_FILTERS,
+    ...(dataEntradaDe ? { dataEntradaDe } : {}),
+    ...(dataEntradaAte ? { dataEntradaAte } : {}),
+    ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
+    ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
+    ...(fazendaId && fazendaId !== '0' ? { fazendaId } : {}),
+    ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
+    ...(apenasSemLote ? { apenasSemLote: true } : {}),
+    ...(apenasSemPesagem ? { apenasSemPesagem: true } : {}),
+    ...(pesquisa ? { pesquisa } : {}),
+    maisFiltrosAbertos: filtrosAdicionais.length > 0 || Boolean(dataNascimentoDe || dataNascimentoAte),
+    filtrosAdicionaisSelecionados: filtrosAdicionais,
+  };
+}
+
+export function readPersistedAnimaisListFilters(): AnimaisListFiltersState {
+  try {
+    const raw = sessionStorage.getItem(ANIMAIS_LIST_FILTERS_STORAGE_KEY);
+    if (raw) return { ...INITIAL_ANIMAIS_LIST_FILTERS, ...JSON.parse(raw) as Partial<AnimaisListFiltersState> };
+  } catch {
+    // ignora JSON inválido
+  }
+  return INITIAL_ANIMAIS_LIST_FILTERS;
+}
+
 export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boolean {
   return (
     !!filters.fazendaId ||

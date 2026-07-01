@@ -6,6 +6,8 @@ import {
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import z from "zod";
 import { calcularIdadeMeses, faixaIdadeLote, FAIXAS_IDADE_LOTE } from "../../shared/lote-faixas-idade";
+import { isDatabaseUnavailable } from "../localFallbackStore";
+import { REBANHO_OVERVIEW_DEMO } from "../../shared/rebanhoOverviewDemo";
 
 // ─── Helper: dias entre data e hoje ──────────────────────────────────────────
 function diasDesde(dateStr: string | null | undefined): number | null {
@@ -21,6 +23,7 @@ export const rebanhoOverviewRouter = router({
   overview: protectedProcedure
     .input(z.object({ fazendaId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
+      try {
       const userId = ctx.user.id;
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
@@ -54,8 +57,8 @@ export const rebanhoOverviewRouter = router({
           porFaixaPeso: [] as { label: string; value: number; pct: number }[],
           porFaixaEtaria: [] as { label: string; value: number; pct: number }[],
           porFaixaEtariaCategoria: [] as { faixa: string; categorias: Record<string, number> }[],
-          top5Gmd: [] as { brinco: string | null; categoria: string | null; gmd: number }[],
-          evolucaoEfetivo: { entradas: 0, saidas: 0 },
+          top5Gmd: [] as { animalId: number; brinco: string | null; categoria: string | null; gmd: number }[],
+          evolucaoEfetivo: { entradas: 0, saidas: 0, nascimentosNoMes: 0 },
         };
       }
 
@@ -174,7 +177,7 @@ export const rebanhoOverviewRouter = router({
       let somaGmd = 0;
       let countComGmd = 0;
       let totalSemPesagemRecente = 0;
-      const top5Gmd: { brinco: string | null; categoria: string | null; gmd: number }[] = [];
+      const top5Gmd: { animalId: number; brinco: string | null; categoria: string | null; gmd: number }[] = [];
 
       const LIMITE_DIAS_SEM_PESAGEM = 60;
 
@@ -213,7 +216,7 @@ export const rebanhoOverviewRouter = router({
         if (gmd !== null && gmd > 0) {
           somaGmd += gmd;
           countComGmd++;
-          top5Gmd.push({ brinco: animal.brinco, categoria: animal.categoria, gmd });
+          top5Gmd.push({ animalId: animal.id, brinco: animal.brinco, categoria: animal.categoria, gmd });
         }
       }
 
@@ -385,5 +388,11 @@ export const rebanhoOverviewRouter = router({
         top5Gmd: top5,
         evolucaoEfetivo: { entradas, saidas: saidasCount, nascimentosNoMes },
       };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          return REBANHO_OVERVIEW_DEMO;
+        }
+        throw err;
+      }
     }),
 });

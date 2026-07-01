@@ -334,6 +334,7 @@ export const benfeitorias = mysqlTable("benfeitorias", {
   vidaUtil: varchar("vidaUtil", { length: 50 }),
   percentualAtividade: decimal("percentualAtividade", { precision: 5, scale: 2 }),
   localizacao: varchar("localizacao", { length: 200 }),
+  estado: varchar("estado", { length: 50 }),
   status: mysqlEnum("status", ["ativo", "manutencao", "inativo"]).default("ativo"),
   dataInstalacao: date("dataInstalacao"),
   valorEstimado: decimal("valorEstimado", { precision: 12, scale: 2 }),

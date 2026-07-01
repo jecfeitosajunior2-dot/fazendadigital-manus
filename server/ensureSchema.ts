@@ -114,6 +114,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "benfeitorias", "anoConstrucao", "int");
       await ensureColumn(pool, "benfeitorias", "vidaUtil", "varchar(50)");
       await ensureColumn(pool, "benfeitorias", "fazendaId", "int");
+      await ensureColumn(pool, "benfeitorias", "estado", "varchar(50)");
       await ensureColumn(pool, "benfeitorias", "percentualAtividade", "decimal(5,2)");
       await ensureColumn(pool, "benfeitorias", "valorEstimado", "decimal(12,2)");
       await ensureColumn(pool, "benfeitorias", "dataInstalacao", "date");

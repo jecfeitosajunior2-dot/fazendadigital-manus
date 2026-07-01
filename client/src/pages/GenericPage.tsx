@@ -11,11 +11,13 @@ import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { normalizarUnidade, nomeUnidadeExibicao } from '@/lib/produto-types';
 import { useDebounce } from '@/hooks/useDebounce';
-import { usePersistedState } from '@/hooks/usePersistedState';
 import {
   ANIMAIS_LIST_FILTERS_STORAGE_KEY,
   INITIAL_ANIMAIS_LIST_FILTERS,
+  animaisFiltersFromSearchParams,
   animaisFiltersToApiParams,
+  readPersistedAnimaisListFilters,
+  type AnimaisListFiltersState,
 } from '@shared/animal-filter-types';
 
 // Tipo das colunas ordenáveis
@@ -34,48 +36,29 @@ function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: Ani
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const [filters, setFilters] = usePersistedState(ANIMAIS_LIST_FILTERS_STORAGE_KEY, INITIAL_ANIMAIS_LIST_FILTERS);
+  const [filters, setFilters] = useState<AnimaisListFiltersState>(() => {
+    const fromUrl = animaisFiltersFromSearchParams(searchString);
+    if (fromUrl) return fromUrl;
+    return readPersistedAnimaisListFilters();
+  });
   const debouncedPesquisa = useDebounce(filters.pesquisa, 500);
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const [perPage, setPerPage] = useState(50);
 
-  // Lê parâmetros de URL para pré-aplicar filtros (ex: vindo da Visão Geral)
   useEffect(() => {
-    const params = new URLSearchParams(searchString);
-    const dataEntradaDe = params.get('dataEntradaDe');
-    const dataEntradaAte = params.get('dataEntradaAte');
-    const dataNascimentoDe = params.get('dataNascimentoDe');
-    const dataNascimentoAte = params.get('dataNascimentoAte');
-    const fazendaId = params.get('fazendaId');
-    const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
-    const apenasSemLote = params.get('apenasSemLote') === 'true';
-    const apenasSemPesagem = params.get('apenasSemPesagem') === 'true';
-    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia || apenasSemLote || apenasSemPesagem;
-    if (hasParams) {
-      // Reseta para o estado inicial para evitar que filtros antigos persistidos
-      // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
-      const filtrosAdicionais: import('@shared/animal-filter-types').FiltroAdicionalKey[] = [];
-      if (dataEntradaDe || dataEntradaAte) filtrosAdicionais.push('dataEntrada');
-      if (dataNascimentoDe || dataNascimentoAte) filtrosAdicionais.push('dataNascimento');
-      setFilters({
-        ...INITIAL_ANIMAIS_LIST_FILTERS,
-        ...(dataEntradaDe ? { dataEntradaDe } : {}),
-        ...(dataEntradaAte ? { dataEntradaAte } : {}),
-        ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
-        ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
-        // fazendaId='0' significa "limpar filtro de fazenda" (vindo de Visão Geral sem fazenda selecionada)
-        ...(fazendaId && fazendaId !== '0' ? { fazendaId } : {}),
-        ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
-        ...(apenasSemLote ? { apenasSemLote: true } : {}),
-        ...(apenasSemPesagem ? { apenasSemPesagem: true } : {}),
-        // Abre o painel de filtros adicionais e garante que os filtros relevantes estão visíveis
-        maisFiltrosAbertos: filtrosAdicionais.length > 0,
-        filtrosAdicionaisSelecionados: filtrosAdicionais,
-      });
+    try {
+      sessionStorage.setItem(ANIMAIS_LIST_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      // ignora quota excedida
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [filters]);
+
+  // Aplica filtros da URL ao navegar (ex.: clique nos cards da Visão Geral)
+  useEffect(() => {
+    const fromUrl = animaisFiltersFromSearchParams(searchString);
+    if (fromUrl) setFilters(fromUrl);
+  }, [searchString]);
 
   // Ordenação: padrão crescente por brinco
   const [sortKey, setSortKey] = useState<AnimaisSortKey>("brinco");
