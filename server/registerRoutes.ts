@@ -1,4 +1,4 @@
-import type { Application } from "express";
+import type { Application, Express } from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
@@ -12,7 +12,7 @@ export function registerRoutes(app: Application, databaseAvailable: { value: boo
   if (process.env.VERCEL === "1") {
     registerManusStorageProxy(app);
   } else {
-    mountLocalManusStorage(app);
+    mountLocalManusStorage(app as Express);
     registerManusStorageProxy(app);
   }
 

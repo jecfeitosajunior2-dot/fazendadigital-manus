@@ -1,9 +1,15 @@
 import { config } from "dotenv";
 import bcrypt from "bcryptjs";
-import mysql from "mysql2/promise";
+import { createMysqlPool } from "../server/_core/mysqlPool";
 
-config({ path: ".env.local" });
-config();
+function loadEnvFiles() {
+  if (process.env.DATABASE_URL) return;
+  config({ path: ".env.production.local" });
+  config({ path: ".env.local" });
+  config();
+}
+
+loadEnvFiles();
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -14,7 +20,8 @@ const email = process.env.ADMIN_EMAIL || "admin@fazendadigital.local";
 const password = process.env.ADMIN_PASSWORD || "admin123";
 const name = process.env.ADMIN_NAME || "Administrador";
 const passwordHash = await bcrypt.hash(password, 12);
-const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 1 });
+const openId = `local:${email.toLowerCase()}`;
+const pool = createMysqlPool(1);
 
 try {
   await pool.query(
@@ -28,7 +35,7 @@ try {
        passwordHash = VALUES(passwordHash),
        role = 'admin',
        updatedAt = CURRENT_TIMESTAMP`,
-    [email, name, email, passwordHash],
+    [openId, name, email, passwordHash],
   );
 
   console.log(`Usuário administrador pronto: ${email}`);

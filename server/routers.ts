@@ -40,6 +40,7 @@ import {
   updateLocalPasto,
   updateLocalBenfeitoria,
 } from "./localFallbackStore";
+import { tryDevLoginFallback } from "./_core/devLoginFallback";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -90,29 +91,11 @@ const authRouter = router({
       return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        const devUsers = [
-          { email: "pngomes1@gmail.com", password: "123456", name: "Paulo Gomes", id: 1 },
-          { email: "pngomes1@teste.com", password: "12345678", name: "Paulo Gomes", id: 1 },
-          { email: "demo@fazenda-digital.com", password: "demo123", name: "Paulo Gomes", id: 1 },
-          { email: "admin@fazendadigital.local", password: "admin123", name: "Administrador", id: 1 },
-        ];
-        const normalizedUsername = input.username.trim().toLowerCase();
-        const matchedDevUser = devUsers.find(
-          user => user.email.toLowerCase() === normalizedUsername && user.password === input.password
-        );
-        if (!matchedDevUser) {
-          throw new Error("Usuário não encontrado");
+        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res);
+        if (!fallback) {
+          throw new Error("Banco de dados indisponível. Tente novamente em instantes.");
         }
-        const fallbackUser = {
-          id: matchedDevUser.id,
-          openId: `local:${matchedDevUser.email}`,
-          name: matchedDevUser.name,
-          email: matchedDevUser.email,
-          role: "admin" as const,
-        };
-        const token = await createSession(fallbackUser);
-        setAuthCookie(ctx.res, token);
-        return { success: true, user: fallbackUser, localFallback: true };
+        return fallback;
       }
     }),
 

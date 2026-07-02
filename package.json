@@ -15,6 +15,8 @@
     "db:seed": "tsx scripts/seed.ts && tsx scripts/seed-manus-data.ts",
     "db:seed:manus": "tsx scripts/seed-manus-data.ts",
     "setup:local": "docker compose up -d mysql && drizzle-kit push && tsx scripts/seed.ts",
+    "user:create": "tsx scripts/create-user.ts",
+    "user:seed:production": "node scripts/seed-production-users.mjs",
     "test": "vitest run --configLoader runner",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite --host --configLoader runner",
