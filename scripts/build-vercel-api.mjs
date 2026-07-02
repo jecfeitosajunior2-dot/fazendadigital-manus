@@ -6,7 +6,7 @@ await build({
   platform: "node",
   target: "node20",
   format: "esm",
-  outfile: "api/index.js",
+  outfile: "api/server.js",
   packages: "external",
   logLevel: "info",
 });
