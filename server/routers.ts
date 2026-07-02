@@ -2377,12 +2377,18 @@ const maquinasRouter = router({
 
       // ── Busca dados dinâmicos do banco ──────────────────────────────────────
       // Fazendas do usuário logado
-      const fazendasUsuario = await db
-        .select({ nome: fazendas.nome })
-        .from(fazendas)
-        .where(eq(fazendas.userId, ctx.user.id))
-        .orderBy(fazendas.nome);
-      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+      let nomesFazendas: string[] = [];
+      try {
+        const fazendasUsuario = await db
+          .select({ nome: fazendas.nome })
+          .from(fazendas)
+          .where(eq(fazendas.userId, ctx.user.id))
+          .orderBy(fazendas.nome);
+        nomesFazendas = fazendasUsuario.map(f => f.nome);
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        nomesFazendas = ["Fazenda Volta Grande"];
+      }
 
       // Importa mapeamento centralizado Tipo → Marca (fonte única de verdade)
       const { MARCAS_POR_TIPO } = await import('../shared/maquina-types');
@@ -3367,6 +3373,38 @@ const nutricaoRouter = router({
 
 // ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
 
+async function listarFazendasParaImportacao(userId: number): Promise<{ id: number; nome: string }[]> {
+  try {
+    const rows = await db
+      .select({ id: fazendas.id, nome: fazendas.nome })
+      .from(fazendas)
+      .where(eq(fazendas.userId, userId));
+    const localRows = await listLocalFazendas(userId);
+    const dbIds = new Set(rows.map(row => row.id));
+    const localOnly = localRows
+      .filter(row => !dbIds.has(row.id))
+      .map(row => ({ id: row.id, nome: row.nome }));
+    return [...rows, ...localOnly];
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    const localRows = await listLocalFazendas(userId);
+    return localRows.map(row => ({ id: row.id, nome: row.nome }));
+  }
+}
+
+async function fazendaExisteParaImportacao(userId: number, fazendaId: number): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ id: fazendas.id })
+      .from(fazendas)
+      .where(and(eq(fazendas.id, fazendaId), eq(fazendas.userId, userId)));
+    if (row) return true;
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
+  return (await getLocalFazenda(userId, fazendaId)) != null;
+}
+
 /** Mesma estrutura do cadastro manual (create), sem imagens. */
 async function inserirBenfeitoriaImportada(
   userId: number,
@@ -3382,10 +3420,24 @@ async function inserirBenfeitoriaImportada(
     observacoes?: string;
   }
 ): Promise<number | undefined> {
-  const result = await db.insert(benfeitorias).values(
-    toBenfeitoriaRow(userId, data, [null, null, null]),
-  );
-  return (result as any)[0]?.insertId;
+  const row = toBenfeitoriaRow(userId, data, [null, null, null]);
+  try {
+    const result = await db.insert(benfeitorias).values(row);
+    const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+    if (Number.isFinite(id) && id > 0) {
+      try {
+        await updateLocalBenfeitoria(userId, id, row);
+      } catch (mirrorError) {
+        console.warn("[benfeitorias.importar] Espelho local não gravado:", mirrorError);
+      }
+      return id;
+    }
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    const result = await createLocalBenfeitoria(userId, row);
+    return result.id;
+  }
+  return undefined;
 }
 
 const benfeitoriasInputFields = {
@@ -3426,6 +3478,7 @@ const benfeitoriasRouter = router({
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
       const { COLUNAS_IMPORTACAO } = await import('../shared/importacaoBenfeitorias');
+      const { TIPOS_BENFEITORIA, ESTADOS_CONSERVACAO_BENFEITORIA } = await import('../shared/benfeitoria-types');
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Fazenda Digital';
       wb.created = new Date();
@@ -3435,12 +3488,19 @@ const benfeitoriasRouter = router({
       const COR_COL_BG = '2D5A5A';
       const COR_LINHA_ALT = 'F2F7F7';
 
-      const fazendasUsuario = await db
-        .select({ nome: fazendas.nome })
-        .from(fazendas)
-        .where(eq(fazendas.userId, ctx.user.id))
-        .orderBy(fazendas.nome);
-      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+      let nomesFazendas: string[] = [];
+      try {
+        const fazendasUsuario = await db
+          .select({ nome: fazendas.nome })
+          .from(fazendas)
+          .where(eq(fazendas.userId, ctx.user.id))
+          .orderBy(fazendas.nome);
+        nomesFazendas = fazendasUsuario.map(f => f.nome);
+      } catch (error) {
+        console.warn("[benfeitorias.gerarModeloPlanilha] Banco indisponível; usando fazendas locais no modelo:", error);
+        const fazendasLocais = await listLocalFazendas(ctx.user.id);
+        nomesFazendas = fazendasLocais.map(f => f.nome).filter(Boolean);
+      }
 
       const ws = wb.addWorksheet('Benfeitorias', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -3462,17 +3522,26 @@ const benfeitoriasRouter = router({
         ws.getColumn(idx + 1).width = col.largura;
       });
 
+      const { EXCEL_FMT_MOEDA_BRL } = await import('../shared/parseMoedaBr');
+      const colIdxValor = COLUNAS_IMPORTACAO.findIndex(c => c.key === 'valor') + 1;
+
       for (let r = 2; r <= 501; r++) {
         const row = ws.getRow(r);
         row.height = 18;
         COLUNAS_IMPORTACAO.forEach((col, idx) => {
           const cell = row.getCell(idx + 1);
           const isAlt = (r % 2 === 0);
+          const isValor = col.key === 'valor';
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
           cell.font = { name: 'Calibri', size: 10 };
-          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.alignment = { horizontal: isValor ? 'right' : 'left', vertical: 'middle' };
           cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+          if (isValor) cell.numFmt = EXCEL_FMT_MOEDA_BRL;
         });
+      }
+
+      if (colIdxValor > 0) {
+        ws.getColumn(colIdxValor).numFmt = EXCEL_FMT_MOEDA_BRL;
       }
 
       const wsListas = wb.addWorksheet('_Listas', {
@@ -3480,23 +3549,54 @@ const benfeitoriasRouter = router({
         properties: { tabColor: { argb: '888888' } },
       });
       nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
+      TIPOS_BENFEITORIA.forEach((tipo, i) => { wsListas.getCell(i + 1, 2).value = tipo; });
+      ESTADOS_CONSERVACAO_BENFEITORIA.forEach((estado, i) => { wsListas.getCell(i + 1, 3).value = estado; });
 
       const numFazendas = nomesFazendas.length;
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
       const colIdxFazenda = idxDe('fazendaNome');
-      const fazendaFormulae = numFazendas > 0
-        ? [`_Listas!$A$1:$A$${numFazendas}`]
-        : ['"(Nenhuma fazenda cadastrada)"'];
+      const colIdxTipo = idxDe('tipo');
+      const colIdxEstado = idxDe('estado');
+      const fazendaFormulae = [`_Listas!$A$1:$A$${numFazendas}`];
+      const tipoFormulae = [`_Listas!$B$1:$B$${TIPOS_BENFEITORIA.length}`];
+      const estadoFormulae = [`_Listas!$C$1:$C$${ESTADOS_CONSERVACAO_BENFEITORIA.length}`];
 
-      if (colIdxFazenda > 0) {
+      if (colIdxFazenda > 0 && numFazendas > 0) {
         for (let r = 2; r <= 501; r++) {
           ws.getRow(r).getCell(colIdxFazenda).dataValidation = {
-            type: 'list', allowBlank: true, formulae: fazendaFormulae,
+            type: 'list', allowBlank: false, formulae: fazendaFormulae,
             showErrorMessage: true, errorTitle: 'Fazenda inválida',
             error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
           };
         }
       }
+
+      [
+        {
+          colIdx: colIdxTipo,
+          formulae: tipoFormulae,
+          errorTitle: 'Tipo inválido',
+          error: 'Selecione um tipo de benfeitoria da lista.',
+        },
+        {
+          colIdx: colIdxEstado,
+          formulae: estadoFormulae,
+          errorTitle: 'Estado inválido',
+          error: 'Selecione um estado de conservação da lista.',
+        },
+      ].forEach(({ colIdx, formulae, errorTitle, error }) => {
+        if (colIdx <= 0) return;
+        for (let r = 2; r <= 501; r++) {
+          ws.getRow(r).getCell(colIdx).dataValidation = {
+            type: 'list',
+            allowBlank: false,
+            formulae,
+            showErrorMessage: true,
+            errorTitle,
+            error,
+          };
+        }
+      });
 
       const buf = await wb.xlsx.writeBuffer();
       const base64 = Buffer.from(buf).toString('base64');
@@ -3617,8 +3717,7 @@ const benfeitoriasRouter = router({
         .filter(l => !isLinhaExemplo(l))
         .filter(l => Object.values(l).some(v => (v || '').trim() !== ''));
 
-      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
-        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      const fazendasUsuario = await listarFazendasParaImportacao(ctx.user.id);
       const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
@@ -3640,6 +3739,16 @@ const benfeitoriasRouter = router({
         const nome = (linha.nome || '').trim();
         if (!nome) {
           errosLinha.push({ linha: numLinha, campo: 'Nome', mensagem: 'Nome da benfeitoria é obrigatório' });
+        }
+
+        const tipo = (linha.tipo || '').trim();
+        if (!tipo) {
+          errosLinha.push({ linha: numLinha, campo: 'Tipo de Benfeitoria', mensagem: 'Tipo de Benfeitoria é obrigatório' });
+        }
+
+        const estado = (linha.estado || '').trim();
+        if (!estado) {
+          errosLinha.push({ linha: numLinha, campo: 'Estado de Conservação', mensagem: 'Estado de Conservação é obrigatório' });
         }
 
         const anoRaw = (linha.anoConstrucao || '').trim();
@@ -3713,10 +3822,8 @@ const benfeitoriasRouter = router({
             continue;
           }
 
-          const [fazendaRow] = await db.select({ id: fazendas.id }).from(fazendas).where(
-            and(eq(fazendas.id, fazendaId), eq(fazendas.userId, ctx.user.id))
-          );
-          if (!fazendaRow) {
+          const fazendaValida = await fazendaExisteParaImportacao(ctx.user.id, fazendaId);
+          if (!fazendaValida) {
             rejeitados.push({ linha: numLinha, mensagem: 'A Fazenda informada não foi encontrada.' });
             continue;
           }
@@ -3724,6 +3831,18 @@ const benfeitoriasRouter = router({
           const nome = (linha.nome || '').trim();
           if (!nome) {
             rejeitados.push({ linha: numLinha, mensagem: 'O campo Nome é obrigatório.' });
+            continue;
+          }
+
+          const tipo = (linha.tipo || '').trim();
+          if (!tipo) {
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Tipo de Benfeitoria é obrigatório.' });
+            continue;
+          }
+
+          const estado = (linha.estado || '').trim();
+          if (!estado) {
+            rejeitados.push({ linha: numLinha, mensagem: 'O campo Estado de Conservação é obrigatório.' });
             continue;
           }
 
@@ -3744,6 +3863,8 @@ const benfeitoriasRouter = router({
             fazendaId,
             nome,
             anoConstrucao: anoNum,
+            tipo,
+            estado,
             valorEstimado: valorNum,
             vidaUtil: (linha.vidaUtil || '').trim() || undefined,
             observacoes: (linha.observacoes || '').trim() || undefined,

@@ -1,6 +1,7 @@
 /**
- * Importação/exportação de benfeitorias — alinhada à listagem e ao cadastro.
- * Ordem: Fazenda → Nome → Ano de Construção → Vida Útil → Valor → Observações
+ * Importação/exportação de benfeitorias.
+ * Importação segue a planilha padrão:
+ * Fazenda → Nome → Tipo → Estado → Ano → Valor → Vida útil → Observações.
  */
 
 import { BENFEITORIA_LISTAGEM_COLUNAS } from "./benfeitoriaCampos";
@@ -14,55 +15,71 @@ export interface ColunaImportacao {
   largura: number;
 }
 
-const COLUNA_FAZENDA: ColunaImportacao = {
-  key: "fazendaNome",
-  label: "Fazenda",
-  obrigatorio: true,
-  largura: 22,
-  descricao: "Nome exato da fazenda cadastrada no sistema",
-  exemplo: "Fazenda Volta Grande",
-};
-
-const COLUNA_OBSERVACOES: ColunaImportacao = {
-  key: "observacoes",
-  label: "Observações",
-  obrigatorio: false,
-  largura: 28,
-  descricao: "Observações adicionais",
-  exemplo: "",
-};
-
-const COLUNAS_DADOS: ColunaImportacao[] = BENFEITORIA_LISTAGEM_COLUNAS.map(col => ({
-  key: col.key,
-  label: col.label,
-  obrigatorio: col.key === "nome" || col.key === "anoConstrucao",
-  largura: col.key === "nome" ? 24 : col.key === "anoConstrucao" ? 14 : col.key === "valor" ? 14 : 12,
-  descricao:
-    col.key === "nome"
-      ? "Nome da benfeitoria"
-      : col.key === "anoConstrucao"
-        ? "Ano de construção (4 dígitos)"
-        : col.key === "vidaUtil"
-          ? "Vida útil estimada em anos"
-          : col.key === "valor"
-            ? "Valor estimado em reais"
-            : "",
-  exemplo:
-    col.key === "nome"
-      ? "Galpão de Máquinas"
-      : col.key === "anoConstrucao"
-        ? "2020"
-        : col.key === "vidaUtil"
-          ? "15"
-          : col.key === "valor"
-            ? "150.000,00"
-            : "",
-}));
-
 export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
-  COLUNA_FAZENDA,
-  ...COLUNAS_DADOS,
-  COLUNA_OBSERVACOES,
+  {
+    key: "fazendaNome",
+    label: "Fazenda",
+    obrigatorio: true,
+    largura: 22,
+    descricao: "Nome exato da fazenda cadastrada no sistema",
+    exemplo: "Fazenda Volta Grande",
+  },
+  {
+    key: "nome",
+    label: "Nome (Benfeitoria)",
+    obrigatorio: true,
+    largura: 24,
+    descricao: "Nome da benfeitoria",
+    exemplo: "Galpão de Máquinas",
+  },
+  {
+    key: "tipo",
+    label: "Tipo de Benfeitoria",
+    obrigatorio: true,
+    largura: 22,
+    descricao: "Tipo da benfeitoria",
+    exemplo: "Galpão",
+  },
+  {
+    key: "estado",
+    label: "Estado de Conservação",
+    obrigatorio: true,
+    largura: 24,
+    descricao: "Estado de conservação da benfeitoria",
+    exemplo: "Bom",
+  },
+  {
+    key: "anoConstrucao",
+    label: "Ano",
+    obrigatorio: true,
+    largura: 14,
+    descricao: "Ano de construção (4 dígitos)",
+    exemplo: "2020",
+  },
+  {
+    key: "valor",
+    label: "Valor (R$)",
+    obrigatorio: false,
+    largura: 16,
+    descricao: "Valor em reais no formato R$ 0,00 (igual ao cadastro)",
+    exemplo: "R$ 150.000,00",
+  },
+  {
+    key: "vidaUtil",
+    label: "Vida útil",
+    obrigatorio: false,
+    largura: 12,
+    descricao: "Vida útil estimada em anos",
+    exemplo: "15",
+  },
+  {
+    key: "observacoes",
+    label: "Observações",
+    obrigatorio: false,
+    largura: 28,
+    descricao: "Observações adicionais",
+    exemplo: "",
+  },
 ];
 
 export function normalizarCabecalho(texto: string): string {
@@ -88,6 +105,13 @@ export const CABECALHO_PARA_CHAVE: Record<string, string> = (() => {
     nomebenfeitoria: "nome",
     fazenda: "fazendaNome",
     fazendanome: "fazendaNome",
+    tipo: "tipo",
+    tipobenfeitoria: "tipo",
+    tipodebenfeitoria: "tipo",
+    estado: "estado",
+    conservacao: "estado",
+    estadoconservacao: "estado",
+    estadodeconservacao: "estado",
     anoconstrucao: "anoConstrucao",
     ano: "anoConstrucao",
     anodeconstrucao: "anoConstrucao",

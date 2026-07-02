@@ -10,6 +10,7 @@ type Props = {
   onChange: (value: string) => void;
   fazendas: FazendaOverviewOption[];
   emptyLabel?: string;
+  showEmptyOption?: boolean;
   className?: string;
   disabled?: boolean;
 };
@@ -19,6 +20,7 @@ export default function FazendaOverviewSelect({
   onChange,
   fazendas,
   emptyLabel = "Selecione uma fazenda",
+  showEmptyOption = true,
   className,
   disabled,
 }: Props) {
@@ -29,7 +31,7 @@ export default function FazendaOverviewSelect({
       onChange={e => onChange(e.target.value)}
       className={cn(FAZENDA_OVERVIEW_SELECT_CLASS, className)}
     >
-      <option value="">{emptyLabel}</option>
+      {showEmptyOption && <option value="">{emptyLabel}</option>}
       {fazendas.map(f => (
         <option key={f.id} value={String(f.id)}>
           {f.nome}

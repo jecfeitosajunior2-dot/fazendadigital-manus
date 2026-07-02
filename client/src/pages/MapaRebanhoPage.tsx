@@ -9,10 +9,9 @@ import { useSearch } from "wouter";
 import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
-import { usePersistedState } from "@/hooks/usePersistedState";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
-import ListExportButtons from "@/components/ListExportButtons";
+import ListExportButtons, { ExportMenuItem } from "@/components/ListExportButtons";
 import { exportMapaRebanhoPdf, exportMapaRebanhoXlsx, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
 import { FormDatePicker, FormLabel, FormNativeSelect, FieldBox, inputClass } from "@/components/FormFields";
 
@@ -1268,6 +1267,8 @@ function ExportarMapaButton({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
         className="flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-white rounded-sm transition hover:brightness-95 active:scale-[.97]"
         style={{ backgroundColor: "#2563eb" }}
       >
@@ -1277,29 +1278,27 @@ function ExportarMapaButton({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded shadow-lg z-50 overflow-hidden">
-          <button
-            type="button"
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden"
+        >
+          <ExportMenuItem
+            variant="spreadsheet"
+            label="Planilha Excel"
             onClick={() => {
               setOpen(false);
               exportMapaRebanhoXlsx(exportPdfData, { fazendaNome });
             }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
-          >
-            <span className="material-icons text-[18px] text-gray-500">table_chart</span>
-            Exportar Planilha
-          </button>
-          <button
-            type="button"
+          />
+          <div className="border-t border-gray-100" />
+          <ExportMenuItem
+            variant="pdf"
+            label="PDF"
             onClick={() => {
               setOpen(false);
               exportMapaRebanhoPdf(exportPdfData, { fazendaNome });
             }}
-            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition font-medium"
-          >
-            <span className="material-icons text-[18px] text-gray-500">picture_as_pdf</span>
-            PDF
-          </button>
+          />
         </div>
       )}
     </div>

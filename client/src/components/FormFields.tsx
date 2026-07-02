@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
-import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export const FD_PRIMARY = "#4ECDC4";
@@ -192,65 +192,52 @@ export function FormSelect({
   );
 }
 
-/** Campo de ano com ícone de calendário clicável — estilo iRancho. */
+const ANO_MINIMO_PADRAO = 1900;
+
+function listarAnos(minYear: number, maxYear: number): string[] {
+  const anos: string[] = [];
+  for (let ano = maxYear; ano >= minYear; ano--) anos.push(String(ano));
+  return anos;
+}
+
+/** Seletor de ano — lista suspensa sem dia/mês. */
 export function FormYearPicker({
   value,
   onChange,
-  placeholder = "Selecione o ano de construção",
+  placeholder = "Selecione o ano",
   required,
+  minYear = ANO_MINIMO_PADRAO,
+  maxYear = new Date().getFullYear() + 1,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   required?: boolean;
+  minYear?: number;
+  maxYear?: number;
 }) {
-  const dateRef = useRef<HTMLInputElement>(null);
-
-  const openPicker = () => {
-    const el = dateRef.current;
-    if (!el) return;
-    if (typeof el.showPicker === "function") el.showPicker();
-    else el.click();
-  };
-
-  const handleDatePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.value) return;
-    onChange(String(new Date(`${e.target.value}T12:00:00`).getFullYear()));
-  };
+  const anos = React.useMemo(() => listarAnos(minYear, maxYear), [minYear, maxYear]);
+  const opcoes = React.useMemo(() => {
+    const atual = String(value ?? "").trim();
+    if (atual && !anos.includes(atual)) return [atual, ...anos];
+    return anos;
+  }, [anos, value]);
 
   return (
-    <FieldBox required={required} variant="light">
-      <div className="relative flex items-center min-h-[42px]">
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={openPicker}
-          className="absolute left-2.5 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
-          aria-label="Abrir calendário"
-        >
-          <Calendar className="w-[18px] h-[18px]" strokeWidth={1.75} />
-        </button>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={value}
-          onChange={e => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          onFocus={openPicker}
-          placeholder={placeholder}
-          className={cn(inputClass, "pl-10 bg-white min-h-[42px] cursor-pointer")}
-          readOnly={false}
-        />
-        <input
-          ref={dateRef}
-          type="date"
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden
-          onChange={handleDatePick}
-          value={value && value.length === 4 ? `${value}-01-01` : ""}
-        />
-      </div>
-    </FieldBox>
+    <FormSelect
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      required={required}
+      displayValue={value}
+      triggerClassName="h-[42px] py-0"
+    >
+      {opcoes.map(ano => (
+        <SelectItem key={ano} value={ano} className="text-[13px]">
+          {ano}
+        </SelectItem>
+      ))}
+    </FormSelect>
   );
 }
 

@@ -1,102 +1,361 @@
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import {
+  buildExportSpreadsheetWorkbook,
+  type BuildExportSpreadsheetOptions,
+  type ExportColumnAlign,
+  type ExportSpreadsheetRow,
+} from "@shared/buildExportSpreadsheet";
+import { formatValorCelulaMoedaBrlExcel } from "@shared/parseMoedaBr";
 
-export type ExportRow = (string | number | null | undefined)[];
+export type ExportRow = ExportSpreadsheetRow;
+export type ExportSpreadsheetOptions = BuildExportSpreadsheetOptions;
+
+function downloadXlsxBuffer(buffer: ArrayBuffer, filename: string) {
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPdfBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportFilename(base: string) {
+  const agora = new Date();
+  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
+  return `${base}_${carimbo}.xlsx`;
+}
+
+function exportPdfFilename(title: string) {
+  const base = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "relatorio";
+  return exportFilename(base).replace(/\.xlsx$/, ".pdf");
+}
 
 /**
- * Exporta uma lista para um arquivo XLSX nativo (Excel real).
- *
- * Por que XLSX e não CSV:
- *  - Em CSV, o valor "100,00" (PT-BR) ou "100" pode ser reinterpretado pelo Excel
- *    de acordo com o locale do sistema (US lê vírgula como separador de milhar),
- *    inflando valores monetários (ex.: 100 → 100.000).
- *  - Em XLSX, cada célula carrega seu próprio TIPO. Números são gravados como
- *    número nativo (t:'n') com formato de exibição explícito (#,##0.00), de forma
- *    que o valor armazenado é EXATAMENTE o valor do banco, independente do locale.
- *
- * Regras de tipagem por célula:
- *  - number finito  → célula numérica (t:'n') com formato "#,##0.00"
- *  - demais valores → célula de texto (t:'s')
+ * Exporta uma lista para XLSX com tipagem correta, moeda BRL e alinhamento por coluna.
  */
-export function exportListSpreadsheet(
+export async function exportListSpreadsheet(
   headers: string[],
   rows: ExportRow[],
-  filename: string
+  filename: string,
+  options?: ExportSpreadsheetOptions,
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
     return;
   }
 
-  // Formato de número brasileiro: milhar com ponto, decimal com vírgula.
-  // O ExcelJS/SheetJS aplica o separador conforme o locale do Excel ao exibir,
-  // mas o VALOR armazenado permanece sendo o número puro (sem multiplicação).
-  const NUM_FMT = "#,##0.00";
-
-  const aoa: (string | number)[][] = [
-    headers,
-    ...rows.map(r => r.map(cell => (cell ?? "") as string | number)),
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Aplica o tipo correto célula a célula.
-  const range = XLSX.utils.decode_range(ws["!ref"] as string);
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      // Linha 0 é o cabeçalho — sempre texto.
-      if (R === 0) continue;
-      const original = rows[R - 1]?.[C];
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[addr];
-      if (!cell) continue;
-
-      if (typeof original === "number" && Number.isFinite(original)) {
-        cell.t = "n";
-        cell.v = original;
-        cell.z = NUM_FMT;
-      } else {
-        cell.t = "s";
-        cell.v = String(original ?? "");
-      }
-    }
+  try {
+    const wb = await buildExportSpreadsheetWorkbook(headers, rows, options);
+    const buffer = await wb.xlsx.writeBuffer();
+    downloadXlsxBuffer(buffer, exportFilename(filename));
+    toast.success("Planilha exportada!");
+  } catch (error) {
+    console.error("[exportListSpreadsheet]", error);
+    toast.error("Não foi possível exportar a planilha");
   }
-
-  // Largura automática aproximada das colunas (melhora a leitura no Excel).
-  ws["!cols"] = headers.map((h, c) => {
-    let max = String(h).length;
-    for (const r of rows) {
-      const v = r[c];
-      const len = v == null ? 0 : String(v).length;
-      if (len > max) max = len;
-    }
-    return { wch: Math.min(Math.max(max + 2, 10), 50) };
-  });
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Dados");
-
-  // Nome único com data E hora-minuto-segundo: evita colisão/confusão com
-  // arquivos antigos em cache (ex.: "Modelo Importação (Benfeitorias) (11).xlsx").
-  const agora = new Date();
-  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
-  const safeName = `${filename}_${carimbo}.xlsx`;
-  XLSX.writeFile(wb, safeName);
-  toast.success("Planilha exportada!");
 }
 
-export function exportListPdf(
+export type ExportPdfOptions = {
+  alignRightFrom?: number;
+  alignRightCols?: number[];
+  fazendaNome?: string;
+  periodo?: string;
+  groupByCol?: number[];
+  landscape?: boolean;
+  currencyColIndexes?: number[];
+  integerColIndexes?: number[];
+  columnAligns?: ExportColumnAlign[];
+  wrapColIndexes?: number[];
+};
+
+const PDF_SYMBOL_URL = "/assets/brand/fd-symbol-final-aligned.png";
+const FD_NAVY = [15, 23, 42] as const;
+const FD_TEAL = [120, 214, 207] as const;
+const PDF_BAND_H = 16;
+const PDF_TITLE_OFFSET = 8;
+const PDF_SUBTITLE_OFFSET = 14;
+const PDF_TABLE_GAP = 6;
+
+function pdfTableStartY(): number {
+  // Espaço extra abaixo do subtítulo para não encostar no cabeçalho da tabela.
+  return PDF_BAND_H + PDF_SUBTITLE_OFFSET + PDF_TABLE_GAP + 3;
+}
+
+function measureCanvasSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  letterSpacingPx: number,
+): number {
+  let width = 0;
+  for (let i = 0; i < text.length; i++) {
+    width += ctx.measureText(text[i]!).width;
+    if (i < text.length - 1) width += letterSpacingPx;
+  }
+  return width;
+}
+
+function fillCanvasSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  letterSpacingPx: number,
+) {
+  let cursorX = x;
+  for (let i = 0; i < text.length; i++) {
+    ctx.fillText(text[i]!, cursorX, y);
+    cursorX += ctx.measureText(text[i]!).width;
+    if (i < text.length - 1) cursorX += letterSpacingPx;
+  }
+}
+
+async function loadPdfAssetDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("FileReader failed"));
+      reader.readAsDataURL(blob);
+    });
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/** Renderiza a marca igual à sidebar (ícone + FAZENDA/DIGITAL centralizado). */
+async function renderPdfSidebarBrand(symbolDataUrl: string): Promise<string | null> {
+  try {
+    const symbol = await loadImageElement(symbolDataUrl);
+    const scale = 4;
+    const iconSize = 44;
+    const textWidth = 118;
+    const gap = 6;
+    const totalW = iconSize + gap + textWidth;
+    const totalH = 48;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = totalW * scale;
+    canvas.height = totalH * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.scale(scale, scale);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    const iconY = (totalH - iconSize) / 2;
+    ctx.drawImage(symbol, 0, iconY, iconSize, iconSize);
+
+    const textX = iconSize + gap;
+    const fazendaText = "FAZENDA";
+    const digitalText = "DIGITAL";
+    const fazendaLetterSp = 15 * 0.058;
+    const digitalLetterSp = 9 * 0.255;
+
+    ctx.font = "820 15px Inter, Arial, Helvetica, sans-serif";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textBaseline = "alphabetic";
+    const fazendaW = measureCanvasSpacedText(ctx, fazendaText, fazendaLetterSp);
+    fillCanvasSpacedText(ctx, fazendaText, textX + (textWidth - fazendaW) / 2, 18, fazendaLetterSp);
+
+    const digitalY = 34;
+    const lineW = 18;
+    const digitalRowWidth = 104;
+    const digitalRowLeft = textX + (textWidth - digitalRowWidth) / 2;
+    ctx.font = "800 9px Inter, Arial, Helvetica, sans-serif";
+    const digitalTextW = measureCanvasSpacedText(ctx, digitalText, digitalLetterSp);
+    const rowGap = 5;
+    const rowW = lineW + rowGap + digitalTextW + rowGap + lineW;
+    let rowX = digitalRowLeft + (digitalRowWidth - rowW) / 2;
+
+    ctx.strokeStyle = "rgba(120,214,207,0.64)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(rowX, digitalY);
+    ctx.lineTo(rowX + lineW, digitalY);
+    ctx.stroke();
+    rowX += lineW + rowGap;
+
+    ctx.fillStyle = "#78D6CF";
+    fillCanvasSpacedText(ctx, digitalText, rowX + 1, digitalY + 3, digitalLetterSp);
+    rowX += digitalTextW + rowGap;
+
+    ctx.beginPath();
+    ctx.moveTo(rowX, digitalY);
+    ctx.lineTo(rowX + lineW, digitalY);
+    ctx.stroke();
+
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
+function drawPdfPageChrome(
+  doc: {
+    setFillColor: (r: number, g: number, b: number) => void;
+    rect: (x: number, y: number, w: number, h: number, style?: string) => void;
+    addImage: (imageData: string, format: string, x: number, y: number, w: number, h: number) => void;
+    setFont: (font: string, style?: string) => void;
+    setFontSize: (size: number) => void;
+    setTextColor: (r: number, g?: number, b?: number) => void;
+    text: (text: string, x: number, y: number, options?: { align?: "left" | "center" | "right" }) => void;
+    setDrawColor: (r: number, g: number, b: number) => void;
+    setLineWidth: (width: number) => void;
+    line: (x1: number, y1: number, x2: number, y2: number) => void;
+    getNumberOfPages: () => number;
+  },
+  opts: {
+    pageWidth: number;
+    pageHeight: number;
+    marginX: number;
+    brandDataUrl: string | null;
+    fazendaNome: string;
+    periodo: string;
+    title: string;
+    rowsCount: number;
+    year: number;
+    dataFormatada: string;
+    horaFormatada: string;
+  },
+) {
+  const {
+    pageWidth,
+    pageHeight,
+    marginX,
+    brandDataUrl,
+    fazendaNome,
+    periodo,
+    title,
+    rowsCount,
+    year,
+    dataFormatada,
+    horaFormatada,
+  } = opts;
+
+  doc.setFillColor(FD_NAVY[0], FD_NAVY[1], FD_NAVY[2]);
+  doc.rect(0, 0, pageWidth, PDF_BAND_H, "F");
+
+  if (brandDataUrl) {
+    const brandH = 11;
+    const brandW = brandH * (168 / 48);
+    doc.addImage(brandDataUrl, "PNG", marginX, (PDF_BAND_H - brandH) / 2, brandW, brandH);
+  }
+
+  const metaCenterY = PDF_BAND_H / 2;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(FD_TEAL[0], FD_TEAL[1], FD_TEAL[2]);
+  doc.text(fazendaNome, pageWidth - marginX, metaCenterY - 1.2, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(180, 195, 195);
+  doc.text(periodo, pageWidth - marginX, metaCenterY + 2.8, { align: "right" });
+
+  doc.setDrawColor(FD_TEAL[0], FD_TEAL[1], FD_TEAL[2]);
+  doc.setLineWidth(0.35);
+  doc.line(0, PDF_BAND_H, pageWidth, PDF_BAND_H);
+
+  const titleY = PDF_BAND_H + PDF_TITLE_OFFSET;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(title, marginX, titleY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(90, 90, 90);
+  doc.text(
+    `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
+    marginX,
+    PDF_BAND_H + PDF_SUBTITLE_OFFSET,
+  );
+
+  const pageNumber = doc.getNumberOfPages();
+  doc.setDrawColor(224, 224, 224);
+  doc.setLineWidth(0.2);
+  doc.line(marginX, pageHeight - 11, pageWidth - marginX, pageHeight - 11);
+  doc.setFontSize(7);
+  doc.setTextColor(150, 150, 150);
+  doc.text(`Fazenda Digital © ${year} - Gestão Pecuária Inteligente`, marginX, pageHeight - 6);
+  doc.text(`${dataFormatada} ${horaFormatada} · Página ${pageNumber}`, pageWidth - marginX, pageHeight - 6, {
+    align: "right",
+  });
+}
+
+function pdfCellAlign(
+  colIdx: number,
+  options: {
+    alignRightFrom: number;
+    alignRightCols: number[];
+    columnAligns?: ExportColumnAlign[];
+  },
+): string {
+  const explicit = options.columnAligns?.[colIdx];
+  if (explicit) return explicit;
+  if (colIdx >= options.alignRightFrom || options.alignRightCols.includes(colIdx)) return "right";
+  return "left";
+}
+
+function formatPdfCell(
+  cell: unknown,
+  colIdx: number,
+  currencyCols: Set<number> | null,
+  integerCols: Set<number> | null,
+): string {
+  if (cell == null || cell === "") return "";
+
+  if (currencyCols?.has(colIdx)) {
+    return formatValorCelulaMoedaBrlExcel(cell as string | number);
+  }
+
+  if (typeof cell === "number" && Number.isFinite(cell)) {
+    if (integerCols?.has(colIdx)) return String(Math.round(cell));
+    return cell.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  if (integerCols?.has(colIdx) && typeof cell === "string" && /^\d+$/.test(cell.trim())) {
+    return cell.trim();
+  }
+
+  return String(cell);
+}
+
+export async function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: {
-    alignRightFrom?: number;
-    alignRightCols?: number[];
-    fazendaNome?: string;
-    periodo?: string;
-    groupByCol?: number[];
-    landscape?: boolean;
-  }
+  options?: ExportPdfOptions,
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
@@ -107,8 +366,10 @@ export function exportListPdf(
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
   const groupByCol = options?.groupByCol ?? [];
   const landscape = options?.landscape ?? false;
+  const currencyCols = options?.currencyColIndexes ? new Set(options.currencyColIndexes) : null;
+  const integerCols = options?.integerColIndexes ? new Set(options.integerColIndexes) : null;
+  const alignOpts = { alignRightFrom, alignRightCols, columnAligns: options?.columnAligns };
 
-  // Período: usa o fornecido ou gera automaticamente com a data atual
   const agora = new Date();
   const dataFormatada = agora.toLocaleDateString("pt-BR", {
     day: "2-digit",
@@ -118,206 +379,91 @@ export function exportListPdf(
   const horaFormatada = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const periodo = options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
 
-  // Logo do Fazenda Digital (URL pública usada na Sidebar)
-  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
+  try {
+    const [{ jsPDF }, autoTableModule] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = autoTableModule.default;
 
-  // Formata números no padrão brasileiro apenas para EXIBIÇÃO no PDF.
-  const fmtCell = (cell: unknown): string => {
-    if (typeof cell === "number" && Number.isFinite(cell)) {
-      return cell.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    return String(cell ?? "");
-  };
-
-  const head = headers
-    .map((h, i) =>
-      `<th style="text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}">${h}</th>`
-    )
-    .join("");
-  const body = rows
-    .map((r, idx) => {
-      const cells = r.map((cell, i) => {
-        // Suprimir valor se coluna está no grupo E o valor é igual à linha anterior
+    const tableRows = rows.map((r, idx) =>
+      r.map((cell, i) => {
         const suppress =
           groupByCol.includes(i) &&
           idx > 0 &&
           String(rows[idx - 1]?.[i] ?? "") === String(cell ?? "");
-        const display = suppress ? "" : fmtCell(cell);
-        const style = [
-          `text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}`,
-          suppress ? "color:#ccc" : "",
-        ]
-          .filter(Boolean)
-          .join(";");
-        return `<td style="${style}">${display}</td>`;
+        return suppress ? "" : formatPdfCell(cell, i, currencyCols, integerCols);
+      }),
+    );
+
+    const doc = new jsPDF({
+      orientation: landscape ? "landscape" : "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+    const symbolDataUrl = await loadPdfAssetDataUrl(PDF_SYMBOL_URL);
+    const brandDataUrl = symbolDataUrl ? await renderPdfSidebarBrand(symbolDataUrl) : null;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 10;
+    const tableStartY = pdfTableStartY();
+
+    const drawHeaderFooter = () => {
+      drawPdfPageChrome(doc, {
+        pageWidth,
+        pageHeight,
+        marginX,
+        brandDataUrl,
+        fazendaNome,
+        periodo,
+        title,
+        rowsCount: rows.length,
+        year: agora.getFullYear(),
+        dataFormatada,
+        horaFormatada,
       });
-      return `<tr class="${idx % 2 === 0 ? "row-even" : "row-odd"}">${cells.join("")}</tr>`;
-    })
-    .join("");
+    };
 
-  const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <style>
-    @page { margin: 14mm 12mm 12mm 12mm; ${landscape ? "size: A4 landscape;" : "size: A4 portrait;"} }
-    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @media screen { body { outline: none !important; border: none !important; } }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+    const columnStyles = headers.reduce<Record<number, { halign: "left" | "center" | "right" }>>((acc, _, i) => {
+      acc[i] = { halign: pdfCellAlign(i, alignOpts) as "left" | "center" | "right" };
+      return acc;
+    }, {});
 
-    /* ── Cabeçalho ── */
-    .report-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-bottom: 12px;
-      border-bottom: 2px solid #2D5A5A;
-      margin-bottom: 16px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .brand img {
-      width: 44px;
-      height: 44px;
-      object-fit: contain;
-    }
-    .brand-text {
-      display: flex;
-      flex-direction: column;
-      line-height: 1;
-    }
-    .brand-name {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: #0F172A;
-      text-transform: uppercase;
-    }
-    .brand-sub {
-      font-size: 8px;
-      font-weight: 600;
-      letter-spacing: 0.22em;
-      color: #2D5A5A;
-      text-transform: uppercase;
-      margin-top: 3px;
-    }
-    .report-meta {
-      text-align: right;
-    }
-    .report-meta .fazenda-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #888;
-      margin-bottom: 2px;
-    }
-    .report-meta .fazenda-nome {
-      font-size: 13px;
-      font-weight: 700;
-      color: #2D5A5A;
-    }
-    .report-meta .periodo {
-      font-size: 9px;
-      color: #999;
-      margin-top: 3px;
-    }
+    autoTable(doc, {
+      head: [headers],
+      body: tableRows,
+      startY: tableStartY,
+      margin: { top: tableStartY, right: marginX, bottom: 15, left: marginX },
+      theme: "grid",
+      styles: {
+        font: "helvetica",
+        fontSize: 7,
+        cellPadding: 1.6,
+        minCellHeight: 5,
+        overflow: "linebreak",
+        valign: "middle",
+        textColor: [34, 34, 34],
+        lineColor: [232, 237, 237],
+        lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: [45, 90, 90],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        halign: "center",
+      },
+      alternateRowStyles: { fillColor: [247, 250, 250] },
+      columnStyles,
+      didDrawPage: drawHeaderFooter,
+    });
 
-    /* ── Título do relatório ── */
-    .report-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #0F172A;
-      margin-bottom: 10px;
-    }
-    .report-count {
-      font-size: 10px;
-      color: #666;
-      margin-bottom: 12px;
-    }
-
-    /* ── Tabela ── */
-    table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    thead tr { background: #2D5A5A; color: #fff; }
-    thead th {
-      padding: 6px 8px;
-      font-weight: 600;
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-    }
-    tbody tr.row-even { background: #fff; }
-    tbody tr.row-odd  { background: #f7fafa; }
-    tbody td { padding: 5px 8px; border-bottom: 1px solid #e8eded; color: #222; }
-    tbody tr:last-child td { border-bottom: none; }
-
-    /* ── Rodapé ── */
-    .report-footer {
-      margin-top: 16px;
-      padding-top: 8px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      font-size: 9px;
-      color: #aaa;
-    }
-  </style>
-</head>
-<body>
-
-  <!-- Cabeçalho -->
-  <div class="report-header">
-    <div class="brand">
-      <img src="${LOGO_URL}" alt="Fazenda Digital" />
-      <div class="brand-text">
-        <span class="brand-name">Fazenda</span>
-        <span class="brand-sub">Digital</span>
-      </div>
-    </div>
-    <div class="report-meta">
-      <div class="fazenda-label">Fazenda</div>
-      <div class="fazenda-nome">${fazendaNome}</div>
-      <div class="periodo">${periodo}</div>
-    </div>
-  </div>
-
-  <!-- Título -->
-  <div class="report-title">${title}</div>
-  <div class="report-count">${rows.length} registro${rows.length !== 1 ? "s" : ""} encontrado${rows.length !== 1 ? "s" : ""}</div>
-
-  <!-- Tabela -->
-  <table>
-    <thead><tr>${head}</tr></thead>
-    <tbody>${body}</tbody>
-  </table>
-
-  <!-- Rodapé -->
-  <div class="report-footer">
-    <span>Fazenda Digital &copy; ${agora.getFullYear()} &mdash; Gestão Pecuária Inteligente</span>
-    <span>${dataFormatada} ${horaFormatada}</span>
-  </div>
-
-</body></html>`;
-
-  // Dimensões da janela: A4 portrait = 850×1160px, A4 landscape = 1200×820px
-  const W = landscape ? 1200 : 850;
-  const H = landscape ? 820 : 1160;
-  const left = Math.max(0, Math.round((screen.width - W) / 2));
-  const top = Math.max(0, Math.round((screen.height - H) / 2));
-  const win = window.open("", "_blank", `width=${W},height=${H},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`);
-  if (!win) {
-    toast.error("Permita pop-ups para exportar PDF");
-    return;
+    const blob = doc.output("blob");
+    downloadPdfBlob(blob, exportPdfFilename(title));
+    toast.success("PDF exportado!");
+  } catch (error) {
+    console.error("[exportListPdf]", error);
+    toast.error("Não foi possível exportar o PDF");
   }
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 500);
 }
 
 /**

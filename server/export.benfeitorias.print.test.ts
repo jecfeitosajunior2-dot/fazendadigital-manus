@@ -1,20 +1,10 @@
 import { describe, it, expect } from "vitest";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { EXPORT_HEADERS, EXPORT_VALOR_COL_INDEX } from "../shared/importacaoBenfeitorias";
+import { montarLinhaExportacaoBenfeitoria, montarLinhaPdfBenfeitoria, BENFEITORIA_EXPORT_COLUMN_ALIGNS, BENFEITORIA_EXPORT_INTEGER_COL_INDEXES, BENFEITORIA_PDF_HEADERS } from "../shared/benfeitoriaCampos";
+import { buildExportSpreadsheetWorkbook } from "../shared/buildExportSpreadsheet";
+import { formatMoedaBrlExcel } from "../shared/parseMoedaBr";
 
-/**
- * Regressão do bug reportado pelo usuário (prints de 08/06/2026):
- *  - Sistema mostra R$ 100,00 | Planilha exportada mostrava R$ 100.000,00.
- *
- * Causa histórica: valor exportado como STRING formatada PT-BR ("100,00"),
- * que o Excel com locale US interpretava como 100000 (×1000).
- *
- * Garantia atual: a célula de valor é NÚMERO nativo (t:'n') = 100, NUNCA 100000.
- * Este teste reproduz o fluxo real (parseValorDecimalBanco + montagem AOA + tipagem
- * célula a célula) e inspeciona o XLSX gerado.
- */
-
-// Réplica fiel de parseValorDecimalBanco (shared/parseMoedaBr.ts)
 function parseValorDecimalBanco(val: string | number | null | undefined): number | null {
   if (val == null || val === "") return null;
   if (typeof val === "number") return Number.isFinite(val) ? val : null;
@@ -22,84 +12,188 @@ function parseValorDecimalBanco(val: string | number | null | undefined): number
   return Number.isFinite(n) ? n : null;
 }
 
-// Réplica fiel de exportListSpreadsheet → gera o workbook em memória.
-function buildWorkbook(headers: string[], rows: (string | number)[][]) {
-  const NUM_FMT = "#,##0.00";
-  const aoa: (string | number)[][] = [headers, ...rows.map(r => r.map(c => (c ?? "") as string | number))];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const range = XLSX.utils.decode_range(ws["!ref"] as string);
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      if (R === 0) continue;
-      const original = rows[R - 1]?.[C];
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[addr];
-      if (!cell) continue;
-      if (typeof original === "number" && Number.isFinite(original)) {
-        cell.t = "n";
-        cell.v = original;
-        cell.z = NUM_FMT;
-      } else {
-        cell.t = "s";
-        cell.v = String(original ?? "");
-      }
-    }
-  }
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Dados");
-  return wb;
-}
-
 function valorCellRef(rowIndex: number): string {
-  return XLSX.utils.encode_cell({ r: rowIndex, c: EXPORT_VALOR_COL_INDEX });
+  const col = String.fromCharCode("A".charCodeAt(0) + EXPORT_VALOR_COL_INDEX);
+  return `${col}${rowIndex + 1}`;
 }
 
-describe("Exportação de benfeitorias — cenário exato do print do usuário", () => {
-  // Dados idênticos ao banco/print: valorEstimado vem como string decimal "100.00".
+describe("Exportação de benfeitorias — planilha formatada", () => {
   const benfeitorias = [
-    { fazenda: "Fazenda Volta Grande", nome: "Curral", ano: 2025, valorBanco: "100.00", vidaUtil: 15, obs: "Pedro" },
-    { fazenda: "Fazenda Volta Grande", nome: "Casa",   ano: 2025, valorBanco: "100.00", vidaUtil: 15, obs: "Pedro" },
+    {
+      nome: "Curral",
+      tipo: "Curral",
+      ano: 2025,
+      estado: "Bom",
+      valorBanco: "100.00",
+      vidaUtil: "15",
+      observacoes: "Poço artesiano",
+    },
+    {
+      nome: "Casa",
+      tipo: "Casa",
+      ano: 2026,
+      estado: "Ótimo",
+      valorBanco: "100.00",
+      vidaUtil: "25",
+      observacoes: "",
+    },
   ];
 
-  const rows = benfeitorias.map(b => [
-    b.nome,
-    b.ano,
-    b.vidaUtil,
-    parseValorDecimalBanco(b.valorBanco) ?? "",
-  ]) as (string | number)[][];
+  const rows = benfeitorias.map(b =>
+    montarLinhaExportacaoBenfeitoria(
+      {
+        nome: b.nome,
+        tipo: b.tipo,
+        anoConstrucao: b.ano,
+        vidaUtil: b.vidaUtil,
+        estado: b.estado,
+        valorEstimado: b.valorBanco,
+        observacoes: b.observacoes,
+      },
+      parseValorDecimalBanco,
+    ),
+  ) as (string | number)[][];
 
-  it("grava o valor como número 100 (não 100000) na célula", () => {
-    const wb = buildWorkbook(EXPORT_HEADERS, rows);
-    const ws = wb.Sheets["Dados"];
-    expect(ws[valorCellRef(1)].t).toBe("n");
-    expect(ws[valorCellRef(1)].v).toBe(100);
-    expect(ws[valorCellRef(1)].v).not.toBe(100000);
-    expect(ws[valorCellRef(2)].t).toBe("n");
-    expect(ws[valorCellRef(2)].v).toBe(100);
-    expect(ws[valorCellRef(2)].v).not.toBe(100000);
+  async function buildSheet() {
+    const wb = await buildExportSpreadsheetWorkbook(EXPORT_HEADERS, rows, {
+      currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
+      integerColIndexes: BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+      columnAligns: BENFEITORIA_EXPORT_COLUMN_ALIGNS,
+    });
+    return wb.getWorksheet("Dados")!;
+  }
+
+  it("grava o valor formatado como moeda BRL legível (R$ 100,00)", async () => {
+    const ws = await buildSheet();
+    expect(ws.getCell(valorCellRef(1)).type).toBe(ExcelJS.ValueType.String);
+    expect(ws.getCell(valorCellRef(1)).value).toBe("R$ 100,00");
+    expect(ws.getCell(valorCellRef(2)).value).toBe("R$ 100,00");
+    expect(String(ws.getCell(valorCellRef(1)).value)).toMatch(/^R\$ /);
   });
 
-  it("round-trip: ao reler o XLSX, o valor continua 100", () => {
-    const wb = buildWorkbook(EXPORT_HEADERS, rows);
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-    const wb2 = XLSX.read(buf, { type: "buffer" });
-    const ws2 = wb2.Sheets["Dados"];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws2);
-    expect(Number(json[0]["Valor"])).toBe(100);
-    expect(Number(json[1]["Valor"])).toBe(100);
+  it("ano de construção é exportado como número (sem aviso de texto no Excel)", async () => {
+    const ws = await buildSheet();
+    expect(ws.getCell("C2").type).toBe(ExcelJS.ValueType.Number);
+    expect(ws.getCell("C2").value).toBe(2025);
+    expect(ws.getCell("C3").value).toBe(2026);
+    expect(ws.getCell("C2").numFmt).toBe("0");
   });
 
-  it("não infla outros valores realistas (1500, 150000, 99999.99)", () => {
+  it("vida útil numérica é exportada como número", async () => {
+    const ws = await buildSheet();
+    expect(ws.getCell("D2").type).toBe(ExcelJS.ValueType.Number);
+    expect(ws.getCell("D2").value).toBe(15);
+    expect(ws.getCell("D3").value).toBe(25);
+  });
+
+  it("exporta todas as colunas incluindo Observações", () => {
+    expect(EXPORT_HEADERS).toEqual([
+      "Nome",
+      "Tipo",
+      "Ano de Construção",
+      "Vida Útil",
+      "Estado",
+      "Valor",
+      "Observações",
+    ]);
+    expect(rows[0]).toEqual(["Curral", "Curral", 2025, 15, "Bom", 100, "Poço artesiano"]);
+  });
+
+  it("valor alto exibe R$ 100.000,00 (não R$ 100000,000)", async () => {
+    const r = [
+      montarLinhaExportacaoBenfeitoria(
+        {
+          nome: "Galpão",
+          tipo: "Galpão",
+          anoConstrucao: 2020,
+          vidaUtil: "20",
+          estado: "Bom",
+          valorEstimado: "100000.00",
+        },
+        parseValorDecimalBanco,
+      ),
+    ] as (string | number)[][];
+    const wb = await buildExportSpreadsheetWorkbook(EXPORT_HEADERS, r, {
+      currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
+      integerColIndexes: BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+      columnAligns: BENFEITORIA_EXPORT_COLUMN_ALIGNS,
+    });
+    const ws = wb.getWorksheet("Dados")!;
+    expect(ws.getCell(valorCellRef(1)).value).toBe("R$ 100.000,00");
+  });
+
+  it("normaliza valor já em texto para R$ padronizado", async () => {
+    const r = [["Item", "", "2020", "", "Bom", "100.000,00", ""]] as (string | number)[][];
+    const wb = await buildExportSpreadsheetWorkbook(
+      ["Nome", "Tipo", "Ano de Construção", "Vida Útil", "Estado", "Valor", "Observações"],
+      r,
+      { currencyColIndexes: [5] },
+    );
+    const ws = wb.getWorksheet("Dados")!;
+    expect(ws.getCell("F2").value).toBe("R$ 100.000,00");
+  });
+
+  it("aplica alinhamento por coluna (nome esquerda, ano centro, valor direita)", async () => {
+    const ws = await buildSheet();
+    expect(ws.getCell("A2").alignment?.horizontal).toBe("left");
+    expect(ws.getCell("C2").alignment?.horizontal).toBe("center");
+    expect(ws.getCell(valorCellRef(1)).alignment?.horizontal).toBe("right");
+    expect(ws.getCell("A1").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("A1").font?.bold).toBe(true);
+  });
+
+  it("monta linha PDF com formatação igual à lista", () => {
+    const linha = montarLinhaPdfBenfeitoria(
+      {
+        nome: "Curral",
+        tipo: "Curral",
+        anoConstrucao: 2025,
+        vidaUtil: "15",
+        estado: "Bom",
+        valorEstimado: "100.00",
+        observacoes: "Poço artesiano",
+      },
+      parseValorDecimalBanco,
+    );
+    expect(linha.slice(0, 5)).toEqual(["Curral", "Curral", "2025", "15 anos", "Bom"]);
+    expect(linha[5].replace(/\u00A0/g, " ")).toBe("R$ 100,00");
+    expect(linha).toHaveLength(6);
+    expect(BENFEITORIA_PDF_HEADERS).toEqual([
+      "Nome",
+      "Tipo",
+      "Ano de Construção",
+      "Vida Útil",
+      "Estado",
+      "Valor",
+    ]);
+  });
+
+  it("não infla outros valores realistas (1500, 150000, 99999.99)", async () => {
     const casos: Array<[string, number]> = [
       ["1500.00", 1500],
       ["150000.00", 150000],
       ["99999.99", 99999.99],
     ];
     for (const [banco, esperado] of casos) {
-      const r = [["B", 2020, 10, parseValorDecimalBanco(banco) ?? ""]] as (string | number)[][];
-      const wb = buildWorkbook(EXPORT_HEADERS, r);
-      const ws = wb.Sheets["Dados"];
-      expect(ws[valorCellRef(1)].v).toBe(esperado);
+      const r = [
+        montarLinhaExportacaoBenfeitoria(
+          {
+            nome: "B",
+            tipo: "Galpão",
+            anoConstrucao: 2020,
+            vidaUtil: "10",
+            estado: "Bom",
+            valorEstimado: banco,
+          },
+          parseValorDecimalBanco,
+        ),
+      ] as (string | number)[][];
+      const wb = await buildExportSpreadsheetWorkbook(EXPORT_HEADERS, r, {
+        currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
+      });
+      const ws = wb.getWorksheet("Dados")!;
+      expect(ws.getCell(valorCellRef(1)).value).toBe(formatMoedaBrlExcel(esperado));
+      expect(String(ws.getCell(valorCellRef(1)).value)).not.toMatch(/^\$/);
     }
   });
 });

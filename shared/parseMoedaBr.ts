@@ -1,3 +1,40 @@
+/** Formato de célula Excel para moeda BRL (modelo de importação / ExcelJS). */
+export const EXCEL_FMT_MOEDA_BRL = '"R$" #.##0,00';
+
+/** Valor monetário formatado para exportação Excel (sempre "R$ 1.234,56"). */
+export function formatMoedaBrlExcel(val: number): string {
+  const signal = val < 0 ? "-" : "";
+  const amount = Math.abs(val).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${signal}R$ ${amount}`;
+}
+
+/** Converte célula de valor (número ou texto) para exportação monetária padronizada. */
+export function formatValorCelulaMoedaBrlExcel(
+  val: string | number | null | undefined,
+): string {
+  if (val == null || val === "") return "";
+  if (typeof val === "number") {
+    return Number.isFinite(val) ? formatMoedaBrlExcel(val) : "";
+  }
+  const texto = String(val).trim();
+  if (!texto) return "";
+
+  const fromBr = parseMoedaBr(texto);
+  if (fromBr) {
+    const n = parseFloat(fromBr);
+    if (Number.isFinite(n)) return formatMoedaBrlExcel(n);
+  }
+
+  const fromDb = parseValorDecimalBanco(texto);
+  if (fromDb != null) return formatMoedaBrlExcel(fromDb);
+
+  if (/^R\$\s*/i.test(texto)) return texto.replace(/^R\$\s*/i, "R$ ");
+  return texto;
+}
+
 /**
  * Converte valores monetários no padrão brasileiro para string decimal "1234.56".
  * Usado na importação de planilhas (benfeitorias, maquinários, etc.).

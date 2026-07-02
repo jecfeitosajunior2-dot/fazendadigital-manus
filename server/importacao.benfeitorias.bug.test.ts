@@ -58,7 +58,7 @@ function criarXlsxComValor(valor: number): Buffer {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
     headers,
-    ["Fazenda Volta Grande", "Curral", 2025, 15, valor, "Pedro"],
+    ["Fazenda Volta Grande", "Curral", "Curral", "Bom", 2025, valor, 15, "Pedro"],
   ]);
   const valorAddr = XLSX.utils.encode_cell({ r: 1, c: VALOR_COL_INDEX });
   ws[valorAddr].z = "#,##0.00";

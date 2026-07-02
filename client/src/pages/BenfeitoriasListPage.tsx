@@ -11,8 +11,19 @@ import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { FD_PRIMARY } from "@/components/FormFields";
 import { EditActionIcon, DeleteActionIcon } from "@/components/icons/FarmActionIcons";
-import { montarLinhaExportacaoBenfeitoria } from "@shared/benfeitoriaCampos";
+import {
+  montarLinhaExportacaoBenfeitoria,
+  montarLinhaPdfBenfeitoria,
+  BENFEITORIA_EXPORT_COLUMN_ALIGNS,
+  BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+  BENFEITORIA_PDF_HEADERS,
+  BENFEITORIA_PDF_COLUMN_ALIGNS,
+  formatVidaUtilListagem,
+  formatValorListagem,
+} from "@shared/benfeitoriaCampos";
+import { ESTADOS_CONSERVACAO_BENFEITORIA } from "@shared/benfeitoria-types";
 import { EXPORT_HEADERS, EXPORT_VALOR_COL_INDEX } from "@shared/importacaoBenfeitorias";
+import { EXCEL_FMT_MOEDA_BRL } from "@shared/parseMoedaBr";
 import { parseValorDecimalBanco } from "@shared/parseMoedaBr";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +61,53 @@ const LIST_ROUTE = "/fazendas/benfeitorias";
 const CADASTRO_ROUTE = "/fazendas/benfeitorias/cadastro";
 const BENFEITORIAS_LIST_FAZENDA_KEY = "fd-benfeitorias-list-fazenda-id";
 
+type SortOption =
+  | "mais-recentes"
+  | "mais-antigas"
+  | "maior-valor"
+  | "menor-valor"
+  | "nome-az";
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "mais-recentes", label: "Mais recentes" },
+  { value: "mais-antigas", label: "Mais antigas" },
+  { value: "maior-valor", label: "Maior valor" },
+  { value: "menor-valor", label: "Menor valor" },
+  { value: "nome-az", label: "Nome A-Z" },
+];
+
+const listControlClass =
+  "h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white text-gray-700 shrink-0 focus:outline-none focus:border-[#4ECDC4]";
+
+function compareBenfeitorias(a: BenfeitoriaRow, b: BenfeitoriaRow, sort: SortOption): number {
+  switch (sort) {
+    case "mais-recentes": {
+      const av = a.anoConstrucao ?? -Infinity;
+      const bv = b.anoConstrucao ?? -Infinity;
+      return bv - av;
+    }
+    case "mais-antigas": {
+      const av = a.anoConstrucao ?? Infinity;
+      const bv = b.anoConstrucao ?? Infinity;
+      return av - bv;
+    }
+    case "maior-valor": {
+      const av = parseValorDecimalBanco(a.valorEstimado) ?? -Infinity;
+      const bv = parseValorDecimalBanco(b.valorEstimado) ?? -Infinity;
+      return bv - av;
+    }
+    case "menor-valor": {
+      const av = parseValorDecimalBanco(a.valorEstimado) ?? Infinity;
+      const bv = parseValorDecimalBanco(b.valorEstimado) ?? Infinity;
+      return av - bv;
+    }
+    case "nome-az":
+      return a.nome.localeCompare(b.nome, "pt-BR");
+    default:
+      return 0;
+  }
+}
+
 function benfeitoriasListUrl(fazendaId?: string) {
   if (!fazendaId) return LIST_ROUTE;
   return `${LIST_ROUTE}?fazendaId=${encodeURIComponent(fazendaId)}`;
@@ -61,17 +119,11 @@ function cadastroUrl(fazendaId?: string) {
 }
 
 function formatVidaUtil(vidaUtil: string | null | undefined): string {
-  if (!vidaUtil?.trim()) return "—";
-  const raw = vidaUtil.trim();
-  if (/ano/i.test(raw)) return raw;
-  if (/^\d+$/.test(raw)) return `${raw} anos`;
-  return raw;
+  return formatVidaUtilListagem(vidaUtil);
 }
 
 function formatValor(valorEstimado: string | null | undefined): string {
-  const n = parseValorDecimalBanco(valorEstimado);
-  if (n == null) return "—";
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return formatValorListagem(valorEstimado, parseValorDecimalBanco);
 }
 
 function BenfeitoriaActionsCell({
@@ -163,6 +215,8 @@ export default function BenfeitoriasListPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [importarOpen, setImportarOpen] = useState(false);
+  const [estadoFilter, setEstadoFilter] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("mais-recentes");
 
   const { data: list = [], isLoading, refetch } = trpc.benfeitorias.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
@@ -175,12 +229,22 @@ export default function BenfeitoriasListPage() {
     onError: e => toast.error(e.message),
   });
 
-  const filtered = useMemo(() => {
+  const byFazenda = useMemo(() => {
     if (!fazendaFilter) return [];
     const id = Number(fazendaFilter);
     if (Number.isNaN(id)) return [];
     return list.filter(b => b.fazendaId === id);
   }, [list, fazendaFilter]);
+
+  const displayed = useMemo(() => {
+    let rows = byFazenda;
+
+    if (estadoFilter) {
+      rows = rows.filter(b => (b.estado || "") === estadoFilter);
+    }
+
+    return [...rows].sort((a, b) => compareBenfeitorias(a, b, sortBy));
+  }, [byFazenda, estadoFilter, sortBy]);
 
   const fazendaFilterNome = fazendaFilter
     ? fazendas.find(f => f.id === Number(fazendaFilter))?.nome ?? ""
@@ -188,6 +252,8 @@ export default function BenfeitoriasListPage() {
 
   const handleFazendaChange = (v: string) => {
     setFazendaFilter(v);
+    setEstadoFilter("");
+    setSortBy("mais-recentes");
     setPage(1);
     setLocation(benfeitoriasListUrl(v), { replace: true });
     try {
@@ -224,19 +290,31 @@ export default function BenfeitoriasListPage() {
       if (stored && fazendas.some(f => String(f.id) === stored)) {
         setFazendaFilter(stored);
         setLocation(benfeitoriasListUrl(stored), { replace: true });
+        setFazendaInitDone(true);
+        return;
       }
     } catch {
       // ignora falha de leitura
     }
 
+    const id = String(fazendas[0].id);
+    setFazendaFilter(id);
+    setLocation(benfeitoriasListUrl(id), { replace: true });
+    try {
+      localStorage.setItem(BENFEITORIAS_LIST_FAZENDA_KEY, id);
+    } catch {
+      // ignora falha de gravação
+    }
+
     setFazendaInitDone(true);
   }, [fazendas, fazendaFilter, fazendaInitDone, setLocation]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.max(1, Math.ceil(displayed.length / pageSize));
+  const pageItems = displayed.slice((page - 1) * pageSize, page * pageSize);
   const isEmpty = !isLoading && list.length === 0;
   const needsFazendaSelection = !isLoading && fazendas.length > 0 && !fazendaFilter;
-  const isFilteredEmpty = !isLoading && !!fazendaFilter && filtered.length === 0;
+  const isFazendaEmpty = !isLoading && !!fazendaFilter && byFazenda.length === 0;
+  const isFilterEmpty = !isLoading && !!fazendaFilter && byFazenda.length > 0 && displayed.length === 0;
   const hasFazendaFilter = !!fazendaFilter;
 
   useEffect(() => {
@@ -245,13 +323,18 @@ export default function BenfeitoriasListPage() {
 
   const exportData = useMemo(
     () =>
-      filtered.map(b =>
+      displayed.map(b =>
         montarLinhaExportacaoBenfeitoria(
           b,
           parseValorDecimalBanco,
         ),
       ),
-    [filtered],
+    [displayed],
+  );
+
+  const exportPdfData = useMemo(
+    () => displayed.map(b => montarLinhaPdfBenfeitoria(b, parseValorDecimalBanco)),
+    [displayed],
   );
 
   const openEdit = (b: BenfeitoriaRow) => {
@@ -302,7 +385,15 @@ export default function BenfeitoriasListPage() {
               filename="benfeitorias"
               headers={EXPORT_HEADERS}
               rows={exportData}
+              pdfHeaders={BENFEITORIA_PDF_HEADERS}
+              pdfRows={exportPdfData}
+              pdfColumnAligns={BENFEITORIA_PDF_COLUMN_ALIGNS}
+              pdfLandscape
               alignRightCols={[EXPORT_VALOR_COL_INDEX]}
+              spreadsheetCurrencyCols={[EXPORT_VALOR_COL_INDEX]}
+              spreadsheetCurrencyFormat={EXCEL_FMT_MOEDA_BRL}
+              spreadsheetIntegerCols={BENFEITORIA_EXPORT_INTEGER_COL_INDEXES}
+              spreadsheetColumnAligns={BENFEITORIA_EXPORT_COLUMN_ALIGNS}
               fazendaNome={fazendaFilterNome}
               disabled={!hasFazendaFilter}
               variant="secondary"
@@ -311,22 +402,65 @@ export default function BenfeitoriasListPage() {
         </div>
 
         {fazendas.length > 0 && (
-          <div className="px-4 py-3 flex justify-end border-b border-gray-50">
-            <FazendaOverviewSelect
-              value={fazendaFilter}
-              onChange={handleFazendaChange}
-              fazendas={fazendas}
-            />
+          <div className="px-4 py-3 border-b border-gray-50 flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[12px] text-gray-600 whitespace-nowrap">Exibindo:</span>
+              <FazendaOverviewSelect
+                value={fazendaFilter}
+                onChange={handleFazendaChange}
+                fazendas={fazendas}
+                showEmptyOption={fazendas.length > 1}
+                className={cn(listControlClass, "min-w-[160px] h-9 py-0")}
+              />
+            </div>
+
+            <select
+              value={estadoFilter}
+              onChange={e => {
+                setEstadoFilter(e.target.value);
+                setPage(1);
+              }}
+              disabled={!hasFazendaFilter}
+              className={listControlClass}
+              aria-label="Filtrar por estado de conservação"
+            >
+              <option value="">Todos os estados</option>
+              {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
+                <option key={estado} value={estado}>
+                  {estado}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] text-gray-500 whitespace-nowrap hidden sm:inline">Ordenar por:</span>
+              <select
+                value={sortBy}
+                onChange={e => {
+                  setSortBy(e.target.value as SortOption);
+                  setPage(1);
+                }}
+                disabled={!hasFazendaFilter}
+                className={listControlClass}
+                aria-label="Ordenar lista de benfeitorias"
+              >
+                {SORT_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
 
         <TableHorizontalScroll
           footer={
-            !isEmpty && hasFazendaFilter && filtered.length > 0 ? (
+            !isEmpty && hasFazendaFilter && displayed.length > 0 ? (
               <TablePaginationFooter
                 pageSize={pageSize}
                 page={page}
-                totalItems={filtered.length}
+                totalItems={displayed.length}
                 onPageChange={setPage}
                 onPageSizeChange={size => {
                   setPageSize(size);
@@ -378,35 +512,36 @@ export default function BenfeitoriasListPage() {
                 </tr>
               )}
 
-              {!isLoading && isFilteredEmpty && !isEmpty && (
-                <tr>
-                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-10 text-center text-gray-400 align-middle">
-                    {hasFazendaFilter
-                      ? `Nenhuma benfeitoria cadastrada em ${fazendaFilterNome}.`
-                      : "Nenhuma benfeitoria encontrada."}
-                  </td>
-                </tr>
-              )}
-
-              {!isLoading && isEmpty && hasFazendaFilter && (
+              {!isLoading && isFazendaEmpty && (
                 <tr>
                   <td colSpan={TABLE_COLUMNS.length} className="px-4 py-12 align-middle">
                     <div className="max-w-md mx-auto text-center">
-                      <p className="text-[13px] font-medium text-gray-700 mb-2">Nenhuma benfeitoria cadastrada.</p>
+                      <p className="text-[13px] font-medium text-gray-700 mb-2">
+                        Nenhuma benfeitoria cadastrada para esta fazenda.
+                      </p>
                       <p className="text-[11px] text-gray-500 leading-relaxed mb-4">
-                        Cadastre estruturas físicas da fazenda, como currais, galpões, cercas, caixas d&apos;água, poços,
-                        casas, estradas, pontes, bebedouros e sistemas de energia.
+                        Cadastre estruturas físicas como currais, galpões, poços, cercas, caixas d&apos;água, casas,
+                        estradas, pontes, bebedouros e sistemas de energia.
                       </p>
                       <button
                         type="button"
                         onClick={goCadastro}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition"
+                        disabled={!hasFazendaFilter}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition disabled:opacity-50"
                         style={{ backgroundColor: FD_PRIMARY }}
                       >
                         <span className="material-icons text-[16px]">add</span>
                         Cadastrar Benfeitoria
                       </button>
                     </div>
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && isFilterEmpty && (
+                <tr>
+                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-10 text-center text-gray-400 align-middle">
+                    Nenhuma benfeitoria encontrada com os filtros aplicados.
                   </td>
                 </tr>
               )}

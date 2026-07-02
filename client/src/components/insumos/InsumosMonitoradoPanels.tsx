@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { exportListPdf, exportListSpreadsheet } from "@/lib/exportList";
+import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
 import { nomeUnidadeExibicao, formatQuantidadeMov } from "@/lib/produto-types";
 
 type SortKey = "nome" | "unidade" | "qtdAtual" | "qtdMinima";
@@ -85,17 +86,17 @@ function MonitoradoPanel() {
             <button
               type="button"
               onClick={() => exportListSpreadsheet(exportHeaders, exportRows, "monitorado")}
-              className="flex items-center gap-1 hover:text-[#4ECDC4] font-medium"
+              className="group flex items-center gap-1.5 hover:text-[#4ECDC4] font-medium"
             >
-              <span className="material-icons text-[15px]">table_chart</span>
-              Exportar Planilha
+              <SpreadsheetExportIcon size={15} />
+              Planilha Excel
             </button>
             <button
               type="button"
               onClick={() => exportListPdf("Monitorado", exportHeaders, exportRows, { alignRightFrom: 2 })}
-              className="flex items-center gap-1 hover:text-[#4ECDC4] font-medium"
+              className="group flex items-center gap-1.5 hover:text-[#4ECDC4] font-medium"
             >
-              <span className="material-icons text-[15px]">picture_as_pdf</span>
+              <PdfExportIcon size={15} />
               PDF
             </button>
           </div>
@@ -215,17 +216,17 @@ function AbaixoDoLimitePanel() {
             <button
               type="button"
               onClick={() => exportListSpreadsheet(exportHeaders, exportRows, "abaixo-do-limite")}
-              className="flex items-center gap-1 hover:text-[#4ECDC4] font-medium"
+              className="group flex items-center gap-1.5 hover:text-[#4ECDC4] font-medium"
             >
-              <span className="material-icons text-[15px]">table_chart</span>
-              Exportar Planilha
+              <SpreadsheetExportIcon size={15} />
+              Planilha Excel
             </button>
             <button
               type="button"
               onClick={() => exportListPdf("Abaixo do Limite", exportHeaders, exportRows, { alignRightFrom: 1 })}
-              className="flex items-center gap-1 hover:text-[#4ECDC4] font-medium"
+              className="group flex items-center gap-1.5 hover:text-[#4ECDC4] font-medium"
             >
-              <span className="material-icons text-[15px]">picture_as_pdf</span>
+              <PdfExportIcon size={15} />
               PDF
             </button>
           </div>
