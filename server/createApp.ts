@@ -1,6 +1,8 @@
 import express, { type Request, type Response } from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { ensureSchema } from "./ensureSchema";
 import { registerRoutes } from "./registerRoutes";
 
@@ -22,20 +24,30 @@ export function getApp(): Promise<express.Express> {
 }
 
 async function createApiApp(): Promise<express.Express> {
-  await ensureSchema();
+  const databaseAvailable = { value: false };
+
+  try {
+    await ensureSchema();
+    databaseAvailable.value = true;
+  } catch (err) {
+    databaseAvailable.value = false;
+    console.error("[startup] Banco de dados indisponível:", err);
+  }
 
   const app = express();
   app.set("trust proxy", 1);
   app.use(cookieParser());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-  registerRoutes(app);
+  registerRoutes(app, databaseAvailable);
   return app;
 }
 
 async function createApp(): Promise<express.Express> {
   const app = await createApiApp();
-  const publicDir = path.join(process.cwd(), "dist/public");
+  const bundledPublicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
+  const sourcePublicDir = path.join(process.cwd(), "dist/public");
+  const publicDir = fs.existsSync(bundledPublicDir) ? bundledPublicDir : sourcePublicDir;
   app.use(express.static(publicDir));
   app.get("*", (_req: Request, res: Response) => {
     res.sendFile(path.join(publicDir, "index.html"));

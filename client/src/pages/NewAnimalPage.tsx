@@ -195,6 +195,12 @@ const AnimalFormPage: React.FC = () => {
     dataAlteracao: new Date().toISOString().split('T')[0],
   });
 
+  // Intercepta troca de brinco ao salvar: armazena o payload pendente e abre modal de motivo
+  const [pendingSavePayload, setPendingSavePayload] = useState<null | { id: number; payload: Record<string, unknown>; brincoAnterior: string | null }>(null);
+  const [showConfirmarTrocaModal, setShowConfirmarTrocaModal] = useState(false);
+  const [motivoTroca, setMotivoTroca] = useState<'perda' | 'danificado' | 'reidentificacao' | 'erro_cadastro' | 'outro'>('reidentificacao');
+  const [obsTroca, setObsTroca] = useState('');
+
   const { data: historicoBrincos, refetch: refetchHistorico } = trpc.brincos.list.useQuery(
     { animalId: animalId! },
     { enabled: isEditMode && !!animalId }
@@ -397,7 +403,20 @@ const AnimalFormPage: React.FC = () => {
   });
 
   const updateMutation = trpc.animais.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Se havia um registro de troca pendente, registra agora
+      if (pendingSavePayload) {
+        registrarBrincoMutation.mutate({
+          animalId: pendingSavePayload.id,
+          brincoAnterior: pendingSavePayload.brincoAnterior,
+          brincoNovo: String(variables.brinco ?? form.brinco),
+          motivo: motivoTroca,
+          observacoes: obsTroca.trim() || null,
+          dataAlteracao: new Date().toISOString().split('T')[0],
+        });
+        setPendingSavePayload(null);
+        setShowConfirmarTrocaModal(false);
+      }
       toast.success('Animal atualizado com sucesso!');
       utils.animais.list.invalidate();
       utils.animais.getById.invalidate({ id: animalId! });
@@ -437,6 +456,19 @@ const AnimalFormPage: React.FC = () => {
         mae: resolveStr(form.mae),
         observacoes: resolveStr(form.observacoes),
       };
+
+      // Detecta mudança de brinco: abre modal de motivo antes de salvar
+      const brincoOriginal = animal?.brinco ?? null;
+      const brincoNovo = form.brinco.trim();
+      if (brincoOriginal && brincoNovo && brincoNovo !== brincoOriginal) {
+        // Armazena payload e abre modal de confirmação de troca
+        setPendingSavePayload({ id: animalId!, payload: editPayload as Record<string, unknown>, brincoAnterior: brincoOriginal });
+        setMotivoTroca('reidentificacao');
+        setObsTroca('');
+        setShowConfirmarTrocaModal(true);
+        return; // Aguarda confirmação no modal
+      }
+
       updateMutation.mutate({ id: animalId!, ...editPayload });
     } else {
       createMutation.mutate(buildPayload(), {
@@ -1103,6 +1135,81 @@ const AnimalFormPage: React.FC = () => {
                   <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Salvando...</>
                 ) : (
                   <><Tag className="w-4 h-4 mr-1" /> Confirmar Troca</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Modal: Confirmar Troca de Brinco ao Salvar ───────────────────────────────────────────────────── */}
+      <Dialog open={showConfirmarTrocaModal} onOpenChange={(open) => { if (!open) { setShowConfirmarTrocaModal(false); setPendingSavePayload(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-amber-500" />
+              Troca de Brinco Detectada
+            </DialogTitle>
+            <DialogDescription>
+              O número do brinco foi alterado. Informe o motivo para registrar no histórico.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 space-y-4">
+            {/* Visualização da troca */}
+            <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+              <span className="text-sm font-mono bg-red-100 text-red-700 px-2 py-1 rounded border border-red-200">
+                {pendingSavePayload?.brincoAnterior ?? '—'}
+              </span>
+              <span className="text-amber-500 font-bold">→</span>
+              <span className="text-sm font-mono bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200">
+                {form.brinco.trim()}
+              </span>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Motivo da Troca *</label>
+              <select
+                value={motivoTroca}
+                onChange={(e) => setMotivoTroca(e.target.value as typeof motivoTroca)}
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
+              >
+                <option value="perda">Perda</option>
+                <option value="danificado">Danificado</option>
+                <option value="reidentificacao">Reidentificação</option>
+                <option value="erro_cadastro">Erro de Cadastro</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Observações (opcional)</label>
+              <textarea
+                value={obsTroca}
+                onChange={(e) => setObsTroca(e.target.value)}
+                rows={2}
+                placeholder="Detalhe o motivo da troca..."
+                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
+              />
+            </div>
+            <div className="flex gap-3 pt-2 border-t">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setShowConfirmarTrocaModal(false); setPendingSavePayload(null); }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1 text-white"
+                style={{ backgroundColor: '#4ECDC4' }}
+                disabled={updateMutation.isPending}
+                onClick={() => {
+                  if (!pendingSavePayload) return;
+                  updateMutation.mutate({ id: pendingSavePayload.id, ...(pendingSavePayload.payload as any) });
+                }}
+              >
+                {updateMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Salvando...</>
+                ) : (
+                  <><Save className="w-4 h-4 mr-1" /> Salvar e Registrar</>
                 )}
               </Button>
             </div>

@@ -278,6 +278,50 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Barra de rolagem horizontal inferior — tabelas com rodapé */
+.fd-table-scroll-wrap {
+  min-width: 0;
+}
+
+.fd-table-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.fd-table-scroll-x--hide-native {
+  scrollbar-width: none;
+}
+
+.fd-table-scroll-x--hide-native::-webkit-scrollbar {
+  display: none;
+}
+
+.fd-table-scroll-track {
+  height: 8px;
+  background: #f3f4f6;
+  border-radius: 999px;
+  position: relative;
+  user-select: none;
+  overflow: hidden;
+}
+
+.fd-table-scroll-thumb {
+  height: 100%;
+  background: #d1d5db;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+  will-change: transform;
+}
+
+.fd-table-scroll-thumb:hover {
+  background: #9ca3af;
+}
+
+.fd-table-scroll-thumb--idle {
+  background: #e5e7eb;
+  pointer-events: none;
+}
+
 /* Smooth transitions for sidebar */
 .sidebar-transition {
   transition: transform 0.25s cubic-bezier(0.23, 1, 0.32, 1), width 0.2s ease-out;

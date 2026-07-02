@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { exportListPdf, exportListSpreadsheet, type ExportRow } from "@/lib/exportList";
+import { cn } from "@/lib/utils";
 
 type Props = {
   title: string;
@@ -7,10 +8,13 @@ type Props = {
   headers: string[];
   rows: ExportRow[];
   alignRightFrom?: number;
+  alignRightCols?: number[];
   className?: string;
   fazendaNome?: string;
   groupByCol?: number[];
   landscape?: boolean;
+  disabled?: boolean;
+  variant?: "primary" | "secondary";
 };
 
 export default function ListExportButtons({
@@ -19,10 +23,13 @@ export default function ListExportButtons({
   headers,
   rows,
   alignRightFrom,
+  alignRightCols,
   className,
   fazendaNome,
   groupByCol,
   landscape,
+  disabled = false,
+  variant = "primary",
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -39,18 +46,36 @@ export default function ListExportButtons({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const isSecondary = variant === "secondary";
+
   return (
     <div ref={ref} className={`relative ${className ?? ""}`}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto"
-        style={{ backgroundColor: "#2563eb", minHeight: 44 }}
-        title="Exportar"
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen(v => !v);
+        }}
+        className={cn(
+          "flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto min-h-[44px]",
+          isSecondary
+            ? "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            : "text-white",
+          disabled && "opacity-50 cursor-not-allowed active:scale-100 hover:bg-white",
+        )}
+        style={isSecondary ? undefined : { backgroundColor: "#2563eb" }}
+        title={disabled ? "Selecione uma fazenda para exportar" : "Exportar"}
       >
-        <span className="material-icons text-[16px]">download</span>
+        <span className={cn("material-icons text-[16px]", isSecondary && "text-gray-500")}>download</span>
         Exportar
-        <span className="material-icons text-[16px] ml-0.5">{open ? "expand_less" : "expand_more"}</span>
+        <span className={cn("material-icons text-[16px] ml-0.5", isSecondary && "text-gray-500")}>
+          {open ? "expand_less" : "expand_more"}
+        </span>
       </button>
 
       {open && (
@@ -77,7 +102,7 @@ export default function ListExportButtons({
             type="button"
             onClick={() => {
               setOpen(false);
-              exportListPdf(title, headers, rows, { alignRightFrom, fazendaNome, groupByCol, landscape });
+              exportListPdf(title, headers, rows, { alignRightFrom, alignRightCols, fazendaNome, groupByCol, landscape });
             }}
             className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors font-medium"
           >

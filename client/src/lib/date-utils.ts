@@ -52,3 +52,18 @@ export function parseLocalDate(value: unknown): Date | null {
   const d = new Date(str);
   return Number.isNaN(d.getTime()) ? null : d;
 }
+
+/** Formata Date local como "YYYY-MM-DD" sem deslocamento UTC. */
+export function toLocalDateISO(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Retorna o 1º e o último dia do mês de referência (YYYY-MM-DD, horário local). */
+export function periodoMesAtual(reference = new Date()) {
+  const de = toLocalDateISO(new Date(reference.getFullYear(), reference.getMonth(), 1));
+  const ate = toLocalDateISO(new Date(reference.getFullYear(), reference.getMonth() + 1, 0));
+  return { de, ate };
+}

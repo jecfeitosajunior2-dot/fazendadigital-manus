@@ -29,7 +29,8 @@ export async function ensureSchema() {
         \`area\` decimal(10,2),
         \`incluirArea\` boolean DEFAULT true,
         \`capacidade\` int,
-        \`status\` enum('ativo','descanso','vazio') DEFAULT 'vazio',
+        \`status\` enum('ativo','descanso','vazio','reforma','interditado','reserva','sem_uso') DEFAULT 'ativo',
+        \`coordenadas\` text,
         \`observacoes\` text,
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -68,6 +69,24 @@ export async function ensureSchema() {
       )
     `);
 
+    const [fazendasTable] = await pool.query(`SHOW TABLES LIKE 'fazendas'`);
+    if ((fazendasTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "fazendas", "atividadePrincipal", "varchar(50)");
+      await ensureColumn(pool, "fazendas", "atividadeLeite", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "atividadeAgricultura", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "atividadeOutros", "boolean DEFAULT false");
+      await ensureColumn(pool, "fazendas", "quantidadeAnimais", "int");
+      await ensureColumn(pool, "fazendas", "numeroCar", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "matriculaImovel", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "matriculasImovel", "text");
+      await ensureColumn(pool, "fazendas", "tipoPosse", "varchar(50)");
+      await ensureColumn(pool, "fazendas", "fonteEnergia", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "fonteAgua", "varchar(80)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalNome", "varchar(200)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalTelefone", "varchar(40)");
+      await ensureColumn(pool, "fazendas", "responsavelOperacionalFuncao", "varchar(80)");
+    }
+
     const [lotesTable] = await pool.query(`SHOW TABLES LIKE 'lotes'`);
     if ((lotesTable as unknown[]).length > 0) {
       await ensureColumn(pool, "lotes", "fazendaId", "int");
@@ -83,6 +102,9 @@ export async function ensureSchema() {
       await ensureColumn(pool, "pastos", "tipoPastagem", "varchar(80)");
       await ensureColumn(pool, "pastos", "incluirArea", "boolean DEFAULT true");
       await ensureColumn(pool, "pastos", "coordenadas", "text");
+      await pool.query(
+        "ALTER TABLE `pastos` MODIFY COLUMN `status` enum('ativo','descanso','vazio','reforma','interditado','reserva','sem_uso') DEFAULT 'ativo'"
+      );
     }
     console.log("[schema] Tabelas de pastos verificadas");
 
@@ -92,12 +114,18 @@ export async function ensureSchema() {
       await ensureColumn(pool, "benfeitorias", "anoConstrucao", "int");
       await ensureColumn(pool, "benfeitorias", "vidaUtil", "varchar(50)");
       await ensureColumn(pool, "benfeitorias", "fazendaId", "int");
+      await ensureColumn(pool, "benfeitorias", "estado", "varchar(50)");
       await ensureColumn(pool, "benfeitorias", "percentualAtividade", "decimal(5,2)");
       await ensureColumn(pool, "benfeitorias", "valorEstimado", "decimal(12,2)");
       await ensureColumn(pool, "benfeitorias", "dataInstalacao", "date");
-      await ensureColumn(pool, "benfeitorias", "imagem1", "text");
-      await ensureColumn(pool, "benfeitorias", "imagem2", "text");
-      await ensureColumn(pool, "benfeitorias", "imagem3", "text");
+      await ensureColumn(pool, "benfeitorias", "imagem1", "longtext");
+      await ensureColumn(pool, "benfeitorias", "imagem2", "longtext");
+      await ensureColumn(pool, "benfeitorias", "imagem3", "longtext");
+      try {
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem1` longtext");
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem2` longtext");
+        await pool.query("ALTER TABLE `benfeitorias` MODIFY COLUMN `imagem3` longtext");
+      } catch { /* colunas ausentes */ }
       await ensureColumn(pool, "benfeitorias", "createdAt", "timestamp DEFAULT CURRENT_TIMESTAMP");
       await ensureColumn(pool, "benfeitorias", "updatedAt", "timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
       // Migra dados de colunas legadas (snake_case) se existirem
@@ -198,6 +226,24 @@ export async function ensureSchema() {
         \`valorTotal\` decimal(10,2) NOT NULL DEFAULT 0,
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(\`id\`)
+      )
+    `);
+
+    // Histórico de troca de brincos (funcionalidade lançada no commit a25457d5)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`historico_brincos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`animalId\` int NOT NULL,
+        \`brincoAnterior\` varchar(50),
+        \`brincoNovo\` varchar(50) NOT NULL,
+        \`motivo\` enum('perda','danificado','reidentificacao','erro_cadastro','outro') NOT NULL DEFAULT 'perda',
+        \`observacoes\` text,
+        \`dataAlteracao\` date NOT NULL,
+        \`usuarioNome\` varchar(200),
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        INDEX \`historico_brincos_animal_user_idx\` (\`animalId\`, \`userId\`)
       )
     `);
     // ── Animais: novas colunas fazendaId e pastoId ──────────────────────────────────────

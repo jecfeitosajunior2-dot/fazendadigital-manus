@@ -89,13 +89,21 @@ export function exportListPdf(
   title: string,
   headers: string[],
   rows: ExportRow[],
-  options?: { alignRightFrom?: number; fazendaNome?: string; periodo?: string; groupByCol?: number[]; landscape?: boolean }
+  options?: {
+    alignRightFrom?: number;
+    alignRightCols?: number[];
+    fazendaNome?: string;
+    periodo?: string;
+    groupByCol?: number[];
+    landscape?: boolean;
+  }
 ) {
   if (rows.length === 0) {
     toast.error("Nenhum dado para exportar");
     return;
   }
   const alignRightFrom = options?.alignRightFrom ?? headers.length;
+  const alignRightCols = options?.alignRightCols ?? [];
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
   const groupByCol = options?.groupByCol ?? [];
   const landscape = options?.landscape ?? false;
@@ -111,8 +119,7 @@ export function exportListPdf(
   const periodo = options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
 
   // Logo do Fazenda Digital (URL pública usada na Sidebar)
-  const LOGO_URL =
-    "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp";
+  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
 
   // Formata números no padrão brasileiro apenas para EXIBIÇÃO no PDF.
   const fmtCell = (cell: unknown): string => {
@@ -124,7 +131,7 @@ export function exportListPdf(
 
   const head = headers
     .map((h, i) =>
-      `<th style="text-align:${i >= alignRightFrom ? "right" : "left"}">${h}</th>`
+      `<th style="text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}">${h}</th>`
     )
     .join("");
   const body = rows
@@ -137,7 +144,7 @@ export function exportListPdf(
           String(rows[idx - 1]?.[i] ?? "") === String(cell ?? "");
         const display = suppress ? "" : fmtCell(cell);
         const style = [
-          `text-align:${i >= alignRightFrom ? "right" : "left"}`,
+          `text-align:${i >= alignRightFrom || alignRightCols.includes(i) ? "right" : "left"}`,
           suppress ? "color:#ccc" : "",
         ]
           .filter(Boolean)
@@ -515,8 +522,7 @@ export function exportMapaRebanhoPdf(
     options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
   const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
 
-  const LOGO_URL =
-    "https://d2xsxph8kpxj0f.cloudfront.net/310519663279574029/PysonEdborftbNjnGCsDJF/fd-logo-new-icon-hDRpA4ewivnQJS943anC5c.webp";
+  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
 
   const fmtNum = (v: number | null, decimals = 2): string =>
     v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : "—";

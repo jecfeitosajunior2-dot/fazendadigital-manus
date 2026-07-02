@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
+import { COLUNAS_IMPORTACAO } from "../shared/importacaoBenfeitorias";
 
 /**
  * Regressão do bug de IMPORTAÇÃO reportado pelo usuário (08/06/2026):
@@ -48,16 +49,21 @@ function parseMoedaBr(val: string | number): string {
   return Number.isFinite(n) ? n.toFixed(2) : '';
 }
 
+const VALOR_COL_INDEX = COLUNAS_IMPORTACAO.findIndex(c => c.key === "valor");
+const VALOR_HEADER = COLUNAS_IMPORTACAO[VALOR_COL_INDEX].label;
+
 /** Cria um XLSX com valor numérico + formato #,##0.00 (como ExcelJS gera) */
 function criarXlsxComValor(valor: number): Buffer {
+  const headers = COLUNAS_IMPORTACAO.map(c => c.label + (c.obrigatorio ? " *" : ""));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
-    ["Fazenda *", "Nome (Benfeitoria) *", "Ano *", "Valor (R$)", "Vida útil", "Observações"],
-    ["Fazenda Volta Grande", "Curral", 2025, valor, 15, "Pedro"],
+    headers,
+    ["Fazenda Volta Grande", "Curral", 2025, 15, valor, "Pedro"],
   ]);
-  ws["D2"].z = "#,##0.00";
-  ws["D2"].t = "n";
-  ws["D2"].v = valor;
+  const valorAddr = XLSX.utils.encode_cell({ r: 1, c: VALOR_COL_INDEX });
+  ws[valorAddr].z = "#,##0.00";
+  ws[valorAddr].t = "n";
+  ws[valorAddr].v = valor;
   XLSX.utils.book_append_sheet(wb, ws, "Benfeitorias");
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
@@ -68,7 +74,7 @@ describe("Bug de importação: R$ 100.000,00 → R$ 100,00", () => {
     const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
     const ws = wb.Sheets["Benfeitorias"];
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: false });
-    const valorStr = String(rows[0]["Valor (R$)"] ?? '').trim();
+    const valorStr = String(rows[0][VALOR_HEADER] ?? '').trim();
     // Documenta o bug: SheetJS com raw:false usa locale US → "100,000.00"
     expect(valorStr).toBe("100,000.00");
     // parseMoedaBr interpreta vírgula como milhar → 100.00 (ERRADO)
@@ -80,7 +86,7 @@ describe("Bug de importação: R$ 100.000,00 → R$ 100,00", () => {
     const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
     const ws = wb.Sheets["Benfeitorias"];
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: true });
-    const valorRaw = rows[0]["Valor (R$)"];
+    const valorRaw = rows[0][VALOR_HEADER];
     // Com raw:true, o valor chega como número 100000
     expect(typeof valorRaw).toBe("number");
     expect(valorRaw).toBe(100000);
@@ -99,7 +105,7 @@ describe("Bug de importação: R$ 100.000,00 → R$ 100,00", () => {
       const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
       const ws = wb.Sheets["Benfeitorias"];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', raw: true });
-      const valorRaw = rows[0]["Valor (R$)"];
+      const valorRaw = rows[0][VALOR_HEADER];
       expect(parseMoedaBr(String(valorRaw))).toBe(esperado);
     }
   });

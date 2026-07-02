@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { db } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
-import { createSession, sessionCookieOptions } from "./cookies";
+import { createSession, setAuthCookie } from "./cookies";
 import { env } from "./env";
 
 export function getLoginUrl(origin: string, returnPath?: string): string {
@@ -100,7 +100,7 @@ export async function handleOAuthCallback(req: Request, res: Response) {
       role: userRole,
     });
     
-    res.cookie("session", token, sessionCookieOptions());
+    setAuthCookie(res, token);
     
     return res.redirect(`${origin}${returnPath}`);
   } catch (err) {

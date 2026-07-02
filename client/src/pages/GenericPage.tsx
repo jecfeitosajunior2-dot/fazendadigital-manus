@@ -4,16 +4,20 @@ import ListExportButtons from "@/components/ListExportButtons";
 import MobileCard from "@/components/MobileCard";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
+import TableHorizontalScroll from "@/components/TableHorizontalScroll";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { normalizarUnidade, nomeUnidadeExibicao } from '@/lib/produto-types';
 import { useDebounce } from '@/hooks/useDebounce';
-import { usePersistedState } from '@/hooks/usePersistedState';
 import {
   ANIMAIS_LIST_FILTERS_STORAGE_KEY,
   INITIAL_ANIMAIS_LIST_FILTERS,
+  animaisFiltersFromSearchParams,
   animaisFiltersToApiParams,
+  readPersistedAnimaisListFilters,
+  type AnimaisListFiltersState,
 } from '@shared/animal-filter-types';
 
 // Tipo das colunas ordenáveis
@@ -32,48 +36,29 @@ function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: Ani
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const [filters, setFilters] = usePersistedState(ANIMAIS_LIST_FILTERS_STORAGE_KEY, INITIAL_ANIMAIS_LIST_FILTERS);
+  const [filters, setFilters] = useState<AnimaisListFiltersState>(() => {
+    const fromUrl = animaisFiltersFromSearchParams(searchString);
+    if (fromUrl) return fromUrl;
+    return readPersistedAnimaisListFilters();
+  });
   const debouncedPesquisa = useDebounce(filters.pesquisa, 500);
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const [perPage, setPerPage] = useState(50);
 
-  // Lê parâmetros de URL para pré-aplicar filtros (ex: vindo da Visão Geral)
   useEffect(() => {
-    const params = new URLSearchParams(searchString);
-    const dataEntradaDe = params.get('dataEntradaDe');
-    const dataEntradaAte = params.get('dataEntradaAte');
-    const dataNascimentoDe = params.get('dataNascimentoDe');
-    const dataNascimentoAte = params.get('dataNascimentoAte');
-    const fazendaId = params.get('fazendaId');
-    const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
-    const apenasSemLote = params.get('apenasSemLote') === 'true';
-    const apenasSemPesagem = params.get('apenasSemPesagem') === 'true';
-    const hasParams = dataEntradaDe || dataEntradaAte || dataNascimentoDe || dataNascimentoAte || fazendaId || apenasEmCarencia || apenasSemLote || apenasSemPesagem;
-    if (hasParams) {
-      // Reseta para o estado inicial para evitar que filtros antigos persistidos
-      // (loteId, pastoId, statusFiltro, etc.) contaminem a busca
-      const filtrosAdicionais: import('@shared/animal-filter-types').FiltroAdicionalKey[] = [];
-      if (dataEntradaDe || dataEntradaAte) filtrosAdicionais.push('dataEntrada');
-      if (dataNascimentoDe || dataNascimentoAte) filtrosAdicionais.push('dataNascimento');
-      setFilters({
-        ...INITIAL_ANIMAIS_LIST_FILTERS,
-        ...(dataEntradaDe ? { dataEntradaDe } : {}),
-        ...(dataEntradaAte ? { dataEntradaAte } : {}),
-        ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
-        ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
-        // fazendaId='0' significa "limpar filtro de fazenda" (vindo de Visão Geral sem fazenda selecionada)
-        ...(fazendaId && fazendaId !== '0' ? { fazendaId } : {}),
-        ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
-        ...(apenasSemLote ? { apenasSemLote: true } : {}),
-        ...(apenasSemPesagem ? { apenasSemPesagem: true } : {}),
-        // Abre o painel de filtros adicionais e garante que os filtros relevantes estão visíveis
-        maisFiltrosAbertos: filtrosAdicionais.length > 0,
-        filtrosAdicionaisSelecionados: filtrosAdicionais,
-      });
+    try {
+      sessionStorage.setItem(ANIMAIS_LIST_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      // ignora quota excedida
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [filters]);
+
+  // Aplica filtros da URL ao navegar (ex.: clique nos cards da Visão Geral)
+  useEffect(() => {
+    const fromUrl = animaisFiltersFromSearchParams(searchString);
+    if (fromUrl) setFilters(fromUrl);
+  }, [searchString]);
 
   // Ordenação: padrão crescente por brinco
   const [sortKey, setSortKey] = useState<AnimaisSortKey>("brinco");
@@ -143,7 +128,6 @@ export function AnimaisPage() {
     setPage(1);
   };
 
-  const totalPages = Math.max(1, Math.ceil(sortedAnimais.length / perPage));
   const paginated = sortedAnimais.slice((page - 1) * perPage, page * perPage);
 
   // Helper: formata idade
@@ -262,8 +246,22 @@ export function AnimaisPage() {
       </div>
 
       {/* Table no desktop */}
-      <div className="hidden lg:block bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="hidden lg:block bg-white rounded-lg border border-gray-200">
+        <TableHorizontalScroll
+          footer={
+            <TablePaginationFooter
+              pageSize={perPage}
+              page={page}
+              totalItems={sortedAnimais.length}
+              onPageChange={setPage}
+              onPageSizeChange={size => {
+                setPerPage(size);
+                setPage(1);
+              }}
+              itemLabel="animais"
+            />
+          }
+        >
           <table className="w-full text-[12px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
@@ -382,47 +380,7 @@ export function AnimaisPage() {
               ))}
             </tbody>
           </table>
-        </div>
-        {/* Rodapé: contagem + paginação */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
-          <select
-            value={perPage}
-            onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-            className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
-          >
-            <option value={10}>10 itens por página</option>
-            <option value={25}>25 itens por página</option>
-            <option value={50}>50 itens por página</option>
-            <option value={100}>100 itens por página</option>
-          </select>
-          <div className="flex items-center gap-3">
-            <span>Mostrando {sortedAnimais.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, sortedAnimais.length)} de {sortedAnimais.length} {sortedAnimais.length === 1 ? "animal" : "animais"}</span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage(p => p - 1)}
-                className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
-              </button>
-              <span
-                className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
-                style={{ backgroundColor: "#2D5A5A" }}
-              >
-                {page}
-              </span>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
-              >
-                <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        </TableHorizontalScroll>
       </div>
 
       {/* Modal de importação em massa */}

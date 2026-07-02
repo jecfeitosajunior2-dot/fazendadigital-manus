@@ -1,21 +1,26 @@
 import { trpc } from "@/lib/trpc";
-import { useLocation } from "wouter";
+import { clearLocalAuthSession, getLocalAuthUser } from "@/lib/localAuth";
 
 export function useAuth() {
+  const localUser = getLocalAuthUser();
   const { data: user, isLoading: loading, error } = trpc.auth.me.useQuery();
   const logoutMutation = trpc.auth.logout.useMutation();
-  const [, setLocation] = useLocation();
 
   const logout = async () => {
-    await logoutMutation.mutateAsync();
-    setLocation("/entrar");
+    clearLocalAuthSession();
+    try {
+      await logoutMutation.mutateAsync();
+    } catch {
+      // ignora — redirecionamento abaixo garante saída
+    }
+    window.location.href = "/api/auth/logout";
   };
 
   return {
-    user: user ?? null,
-    loading,
-    error,
-    isAuthenticated: !!user,
+    user: user ?? localUser ?? null,
+    loading: localUser ? false : loading,
+    error: localUser ? null : error,
+    isAuthenticated: !!user || !!localUser,
     logout,
   };
 }

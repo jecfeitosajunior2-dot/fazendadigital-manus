@@ -16,6 +16,33 @@ describe("formatImportDbError — benfeitorias", () => {
     expect(msg).toContain("estrutura do banco");
   });
 
+  it("não classifica erro a partir de base64 nos parâmetros do SQL", () => {
+    const msg = formatImportDbError(new Error(
+      "Failed query: insert into benfeitorias params: xenumyIncorrectTruncated",
+      {
+        cause: {
+          sqlMessage: "Data too long for column 'imagem1' at row 1",
+          errno: 1406,
+        },
+      } as ErrorOptions,
+    ));
+    expect(msg).toContain("foto");
+    expect(msg).not.toContain("informado possui");
+  });
+
+  it("não confunde coluna status na lista do SQL com erro real em valorEstimado", () => {
+    const msg = formatImportDbError(new Error(
+      "Failed query: insert into `benfeitorias` (`status`, `valorEstimado`) values (?, ?)",
+      {
+        cause: {
+          sqlMessage: "Incorrect decimal value: '100000.00' for column 'valorEstimado' at row 1",
+        },
+      } as ErrorOptions,
+    ));
+    expect(msg).toContain("Valor");
+    expect(msg).not.toContain("Status");
+  });
+
   it("não expõe SQL bruto em produção", () => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";

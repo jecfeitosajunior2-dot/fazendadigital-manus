@@ -252,33 +252,88 @@ export default function DashboardPage() {
   const temAlgumDado =
     rebanho.total > 0 || movimentacoes.length > 0 || produtos.length > 0 || fazendas.length > 0;
 
+  const periodoAtivo = PERIODOS.find(p => p.chave === periodo)?.label ?? "90 dias";
+  const primeiroAlerta =
+    alertas.estoqueBaixo[0] ??
+    alertas.validade[0] ??
+    alertas.sanidade[0] ??
+    alertas.partos[0] ??
+    alertas.manut[0] ??
+    alertas.pendentes[0];
+  const statusOperacao = alertas.total === 0
+    ? { label: "Tudo em ordem", detalhe: "Nenhuma pendência crítica", color: GREEN, icon: "check_circle" }
+    : alertas.estoqueBaixo.length > 0
+      ? { label: "Atenção no estoque", detalhe: `${alertas.estoqueBaixo.length} item(ns) abaixo do mínimo`, color: RED, icon: "warning" }
+      : { label: "Pendências abertas", detalhe: `${alertas.total} ponto(s) pedindo revisão`, color: GOLD, icon: "priority_high" };
+  const resumoOperacao = [
+    { label: "Status", value: statusOperacao.label, detail: statusOperacao.detalhe, icon: statusOperacao.icon, color: statusOperacao.color },
+    { label: "Próxima ação", value: primeiroAlerta?.texto ?? "Sem ação imediata", detail: primeiroAlerta?.detalhe ?? "Operação sem alerta prioritário", icon: "task_alt", color: primeiroAlerta ? RED : GREEN },
+    { label: "Período", value: periodoAtivo, detail: "Filtro aplicado ao financeiro", icon: "date_range", color: TEAL },
+    { label: "Base", value: `${num(fazendas.length)} fazenda${fazendas.length === 1 ? "" : "s"}`, detail: `${num(stats?.totalLotes ?? 0)} lotes · ${num(pastos.length)} pastos`, icon: "map", color: NAVY },
+  ];
+
   return (
     <AppLayout>
       {/* ── Cabeçalho ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
-        <div>
-          <p className="text-[12px] text-gray-400">{hojeBr.charAt(0).toUpperCase() + hojeBr.slice(1)}</p>
-          <h1 className="text-[22px] font-bold text-gray-800 leading-tight">
-            {saudacao}{me?.name ? `, ${me.name.split(" ")[0]}` : ""}
-          </h1>
-          <p className="text-[12px] text-gray-500 mt-0.5">
-            Painel de controle da sua operação{fazendas.length === 1 ? ` · ${fazendas[0].nome}` : fazendas.length > 1 ? ` · ${fazendas.length} fazendas` : ""}
-          </p>
+      <div className="relative overflow-hidden rounded-3xl border border-[#D7F4F1] bg-gradient-to-br from-[#0F3F46] via-[#12606A] to-[#0F766E] shadow-[0_22px_50px_rgba(15,79,89,0.22)] mb-5">
+        <div className="absolute -right-14 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute bottom-0 left-1/3 h-24 w-64 rounded-full bg-[#1BC5BD]/20 blur-3xl" />
+        <div className="relative p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[12px] text-teal-100/85">{hojeBr.charAt(0).toUpperCase() + hojeBr.slice(1)}</p>
+              <h1 className="text-[26px] sm:text-[30px] font-bold text-white leading-tight mt-1">
+                {saudacao}{me?.name ? `, ${me.name.split(" ")[0]}` : ""}
+              </h1>
+              <p className="text-[13px] text-teal-50/80 mt-1">
+                Painel de controle da sua operação{fazendas.length === 1 ? ` · ${fazendas[0].nome}` : fazendas.length > 1 ? ` · ${fazendas.length} fazendas` : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 bg-white/12 border border-white/15 rounded-xl p-1 backdrop-blur-sm">
+              {PERIODOS.map(p => (
+                <button
+                  key={p.chave}
+                  type="button"
+                  onClick={() => setPeriodo(p.chave)}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+                    periodo === p.chave ? "bg-white text-[#0F3F46] shadow-sm" : "text-white/80 hover:bg-white/10"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-5">
+            {resumoOperacao.map(item => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => {
+                  if (item.label === "Próxima ação") setLocation(primeiroAlerta ? "/insumos/visao-geral" : "/admin/overview");
+                  if (item.label === "Base") setLocation("/fazendas/visao-geral");
+                }}
+                className="text-left rounded-2xl border border-white/15 bg-white/12 p-3 backdrop-blur-sm hover:bg-white/18 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="material-icons rounded-xl p-2 text-[20px] bg-white/90" style={{ color: item.color }}>{item.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-wide text-teal-50/70">{item.label}</p>
+                    <p className="text-[14px] font-bold text-white truncate">{item.value}</p>
+                    <p className="text-[11px] text-teal-50/70 truncate">{item.detail}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
-          {PERIODOS.map(p => (
-            <button
-              key={p.chave}
-              type="button"
-              onClick={() => setPeriodo(p.chave)}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide transition-colors ${
-                periodo === p.chave ? "text-white" : "text-gray-500 hover:bg-gray-50"
-              }`}
-              style={periodo === p.chave ? { backgroundColor: TEAL } : undefined}
-            >
-              {p.label}
-            </button>
-          ))}
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Resumo executivo</p>
+          <h2 className="text-[16px] font-bold text-gray-800">Indicadores principais</h2>
         </div>
       </div>
 

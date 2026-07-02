@@ -1,26 +1,33 @@
 /** Tipos de divisão — espelho do iRancho */
 export const TIPOS_DIVISAO = [
+  "Pasto",
+  "Piquete",
+  "Curral",
+  "Confinamento",
+  "Retiro",
+  "Reserva",
+  "Área de manejo",
+  "Área agrícola",
+  "Sede",
   "Potreiro",
   "Invernada",
-  "Piquete",
-  "Pasto",
   "Baia de Confinamento",
-  "Integração",
   "Integração Lavoura - Pecuária",
   "Integração Lavoura - Pecuária - Floresta",
+  "Outro",
 ] as const;
 
 /** Tipos de pastagem — espelho do iRancho */
 export const TIPOS_PASTAGEM = [
   "Braquiária",
-  "Panicum",
+  "Mombaça",
+  "Massai",
+  "Tanzânia",
+  "Andropogon",
+  "Humidícola",
   "Tifton",
   "Coast-cross",
-  "Mombaça",
-  "Colonião",
-  "Andropogon",
-  "Capim-sudão",
-  "Natural",
+  "Nativo",
   "Outro",
 ] as const;
 

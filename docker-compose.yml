@@ -1,0 +1,22 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: fazenda-digital-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fazenda_digital
+      MYSQL_USER: fazenda
+      MYSQL_PASSWORD: fazenda
+      MYSQL_ROOT_PASSWORD: fazenda_root
+    ports:
+      - "3306:3306"
+    volumes:
+      - fazenda_digital_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ufazenda -pfazenda --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  fazenda_digital_mysql:

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,9 +9,15 @@ import {
   FormLabel,
   FormInput,
   FormNativeSelect,
+  FormSelect,
   FormTextarea,
   FormYearPicker,
 } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
+import {
+  ESTADOS_CONSERVACAO_BENFEITORIA,
+  TIPOS_BENFEITORIA,
+} from "@shared/benfeitoria-types";
 
 type ImageSlot =
   | { kind: "empty" }
@@ -21,15 +27,21 @@ type ImageSlot =
 type FormState = {
   fazendaId: string;
   nome: string;
+  tipo: string;
+  estado: string;
   anoConstrucao: string;
   valor: string;
   vidaUtil: string;
   observacoes: string;
 };
 
+type DirtyFields = Partial<Record<keyof FormState, true>>;
+
 const emptyForm = (): FormState => ({
   fazendaId: "",
   nome: "",
+  tipo: "",
+  estado: "",
   anoConstrucao: "",
   valor: "",
   vidaUtil: "",
@@ -119,13 +131,24 @@ export default function BenfeitoriaRegistrationPage() {
   const utils = trpc.useUtils();
   const searchParams = new URLSearchParams(window.location.search);
   const benfeitoriaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
+  const fazendaIdFromUrl = searchParams.get("fazendaId") || "";
   const isEdit = benfeitoriaId != null && !isNaN(benfeitoriaId);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: benfeitoria, isLoading: loadingBenfeitoria } = trpc.benfeitorias.get.useQuery(
+  const { data: benfeitoria, isLoading: loadingBenfeitoria, isFetching: fetchingBenfeitoria } = trpc.benfeitorias.get.useQuery(
     { id: benfeitoriaId! },
-    { enabled: isEdit }
+    { enabled: isEdit, staleTime: 0, refetchOnMount: "always" }
   );
+
+  const listUrl = useMemo(() => {
+    if (fazendaIdFromUrl) {
+      return `/fazendas/benfeitorias?fazendaId=${encodeURIComponent(fazendaIdFromUrl)}`;
+    }
+    if (isEdit && benfeitoria?.fazendaId) {
+      return `/fazendas/benfeitorias?fazendaId=${benfeitoria.fazendaId}`;
+    }
+    return "/fazendas/benfeitorias";
+  }, [fazendaIdFromUrl, isEdit, benfeitoria?.fazendaId]);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [imageSlots, setImageSlots] = useState<ImageSlot[]>([
@@ -134,12 +157,25 @@ export default function BenfeitoriaRegistrationPage() {
     { kind: "empty" },
   ]);
   const [initialized, setInitialized] = useState(false);
+  const [dirtyFields, setDirtyFields] = useState<DirtyFields>({});
+  const [imageSlotsDirty, setImageSlotsDirty] = useState(false);
 
   useEffect(() => {
-    if (isEdit && benfeitoria && !initialized) {
+    if (!isEdit && fazendaIdFromUrl && !initialized) {
+      setForm(f => ({ ...f, fazendaId: fazendaIdFromUrl }));
+      setInitialized(true);
+    }
+  }, [isEdit, fazendaIdFromUrl, initialized]);
+
+  useEffect(() => {
+    if (!isEdit || !benfeitoria || fetchingBenfeitoria) return;
+
+    if (!initialized) {
       setForm({
         fazendaId: benfeitoria.fazendaId ? String(benfeitoria.fazendaId) : "",
         nome: benfeitoria.nome || "",
+        tipo: benfeitoria.tipo || "",
+        estado: benfeitoria.estado || "",
         anoConstrucao: benfeitoria.anoConstrucao ? String(benfeitoria.anoConstrucao) : "",
         valor: benfeitoria.valorEstimado
           ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
@@ -147,6 +183,8 @@ export default function BenfeitoriaRegistrationPage() {
         vidaUtil: benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : "",
         observacoes: benfeitoria.observacoes || "",
       });
+      setDirtyFields({});
+      setImageSlotsDirty(false);
       setImageSlots(
         [benfeitoria.imagem1, benfeitoria.imagem2, benfeitoria.imagem3].map(path =>
           path
@@ -155,14 +193,30 @@ export default function BenfeitoriaRegistrationPage() {
         )
       );
       setInitialized(true);
+      return;
     }
-  }, [isEdit, benfeitoria, initialized]);
+
+    setForm(f => ({
+      fazendaId: dirtyFields.fazendaId ? f.fazendaId : (benfeitoria.fazendaId ? String(benfeitoria.fazendaId) : ""),
+      nome: dirtyFields.nome ? f.nome : (benfeitoria.nome || ""),
+      tipo: dirtyFields.tipo ? f.tipo : (benfeitoria.tipo || ""),
+      estado: dirtyFields.estado ? f.estado : (benfeitoria.estado || ""),
+      anoConstrucao: dirtyFields.anoConstrucao ? f.anoConstrucao : (benfeitoria.anoConstrucao ? String(benfeitoria.anoConstrucao) : ""),
+      valor: dirtyFields.valor
+        ? f.valor
+        : (benfeitoria.valorEstimado
+            ? formatCurrencyBrl(String(Math.round(parseFloat(String(benfeitoria.valorEstimado)) * 100)))
+            : ""),
+      vidaUtil: dirtyFields.vidaUtil ? f.vidaUtil : (benfeitoria.vidaUtil ? String(benfeitoria.vidaUtil) : ""),
+      observacoes: dirtyFields.observacoes ? f.observacoes : (benfeitoria.observacoes || ""),
+    }));
+  }, [isEdit, benfeitoria, initialized, fetchingBenfeitoria, dirtyFields]);
 
   const createMutation = trpc.benfeitorias.create.useMutation({
     onSuccess: () => {
       utils.benfeitorias.list.invalidate();
       toast.success("Benfeitoria cadastrada!");
-      setLocation("/fazendas/benfeitorias");
+      setLocation(listUrl);
     },
     onError: e => toast.error(e.message),
   });
@@ -171,15 +225,17 @@ export default function BenfeitoriaRegistrationPage() {
     onSuccess: () => {
       utils.benfeitorias.list.invalidate();
       toast.success("Benfeitoria atualizada!");
-      setLocation("/fazendas/benfeitorias");
+      setLocation(listUrl);
     },
     onError: e => toast.error(e.message),
   });
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
+    setDirtyFields(f => ({ ...f, [key]: true }));
+  };
 
   const setImageAt = (index: number, file: File) => {
     const previewUrl = URL.createObjectURL(file);
@@ -190,6 +246,7 @@ export default function BenfeitoriaRegistrationPage() {
       next[index] = { kind: "file", file, previewUrl };
       return next;
     });
+    setImageSlotsDirty(true);
   };
 
   const removeImageAt = (index: number) => {
@@ -200,6 +257,7 @@ export default function BenfeitoriaRegistrationPage() {
       next[index] = { kind: "empty" };
       return next;
     });
+    setImageSlotsDirty(true);
   };
 
   const buildImageSlotsPayload = async () => {
@@ -232,11 +290,15 @@ export default function BenfeitoriaRegistrationPage() {
     e.preventDefault();
     if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
     if (!form.nome.trim()) { toast.error("Nome da benfeitoria é obrigatório"); return; }
+    if (!form.tipo.trim()) { toast.error("Tipo de Benfeitoria é obrigatório"); return; }
+    if (!form.estado.trim()) { toast.error("Estado de Conservação é obrigatório"); return; }
     if (!form.anoConstrucao.trim()) { toast.error("Ano de construção é obrigatório"); return; }
 
     const payload = {
       fazendaId: parseInt(form.fazendaId),
       nome: form.nome.trim(),
+      tipo: form.tipo.trim(),
+      estado: form.estado.trim(),
       anoConstrucao: parseInt(form.anoConstrucao),
       vidaUtil: form.vidaUtil.trim() || undefined,
       valorEstimado: parseCurrencyBrl(form.valor) || undefined,
@@ -244,11 +306,31 @@ export default function BenfeitoriaRegistrationPage() {
       imageSlots: await buildImageSlotsPayload(),
     };
 
-    if (isEdit && benfeitoriaId) updateMutation.mutate({ id: benfeitoriaId, ...payload });
-    else createMutation.mutate(payload);
+    if (isEdit && benfeitoriaId) {
+      const updatePayload: { id: number } & Partial<typeof payload> = { id: benfeitoriaId };
+
+      if (dirtyFields.fazendaId) updatePayload.fazendaId = payload.fazendaId;
+      if (dirtyFields.nome) updatePayload.nome = payload.nome;
+      if (dirtyFields.tipo) updatePayload.tipo = payload.tipo;
+      if (dirtyFields.estado) updatePayload.estado = payload.estado;
+      if (dirtyFields.anoConstrucao) updatePayload.anoConstrucao = payload.anoConstrucao;
+      if (dirtyFields.vidaUtil) updatePayload.vidaUtil = payload.vidaUtil;
+      if (dirtyFields.valor) updatePayload.valorEstimado = payload.valorEstimado;
+      if (dirtyFields.observacoes) updatePayload.observacoes = payload.observacoes;
+      if (imageSlotsDirty) updatePayload.imageSlots = payload.imageSlots;
+
+      if (Object.keys(updatePayload).length === 1) {
+        toast.info("Nenhuma alteração para salvar.");
+        return;
+      }
+
+      updateMutation.mutate(updatePayload);
+    } else {
+      createMutation.mutate(payload);
+    }
   };
 
-  if (isEdit && loadingBenfeitoria) {
+  if (isEdit && (loadingBenfeitoria || fetchingBenfeitoria || !initialized)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
@@ -264,7 +346,7 @@ export default function BenfeitoriaRegistrationPage() {
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            {isEdit ? "Editar benfeitoria" : "Cadastro de benfeitoria"}
+            {isEdit ? "Editar Benfeitoria" : "Cadastro de Benfeitoria"}
           </h1>
 
           <div className="mb-6">
@@ -285,6 +367,15 @@ export default function BenfeitoriaRegistrationPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
+              <FormLabel required>Nome</FormLabel>
+              <FormInput
+                value={form.nome}
+                onChange={v => set("nome", v)}
+                placeholder="Digite um nome para a benfeitoria"
+                required
+              />
+            </div>
+            <div>
               <FormLabel required>Fazenda</FormLabel>
               <FormNativeSelect
                 value={form.fazendaId}
@@ -294,20 +385,48 @@ export default function BenfeitoriaRegistrationPage() {
                 options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <FormLabel required>Nome</FormLabel>
-              <FormInput
-                value={form.nome}
-                onChange={v => set("nome", v)}
-                placeholder="Digite um nome para a benfeitoria"
+              <FormLabel required>Tipo de Benfeitoria</FormLabel>
+              <FormSelect
+                value={form.tipo}
+                onChange={v => set("tipo", v)}
+                placeholder="Selecione o tipo"
                 required
-              />
+                displayValue={form.tipo}
+                triggerClassName="h-[42px] py-0"
+              >
+                {TIPOS_BENFEITORIA.map(tipo => (
+                  <SelectItem key={tipo} value={tipo} className="text-[13px]">
+                    {tipo}
+                  </SelectItem>
+                ))}
+              </FormSelect>
+            </div>
+            <div>
+              <FormLabel required>Estado de Conservação</FormLabel>
+              <FormSelect
+                value={form.estado}
+                onChange={v => set("estado", v)}
+                placeholder="Selecione o estado"
+                required
+                displayValue={form.estado}
+                triggerClassName="h-[42px] py-0"
+              >
+                {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
+                  <SelectItem key={estado} value={estado} className="text-[13px]">
+                    {estado}
+                  </SelectItem>
+                ))}
+              </FormSelect>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <FormLabel required>Ano</FormLabel>
+              <FormLabel required>Ano de Construção</FormLabel>
               <FormYearPicker
                 value={form.anoConstrucao}
                 onChange={v => set("anoConstrucao", v)}
@@ -316,19 +435,19 @@ export default function BenfeitoriaRegistrationPage() {
               />
             </div>
             <div>
+              <FormLabel>Vida Útil</FormLabel>
+              <FormInput
+                value={form.vidaUtil}
+                onChange={v => set("vidaUtil", v)}
+                placeholder="Ex: 10 anos"
+              />
+            </div>
+            <div>
               <FormLabel>Valor</FormLabel>
               <FormInput
                 value={form.valor}
                 onChange={v => set("valor", formatCurrencyBrl(v))}
                 placeholder="R$ 0,00"
-              />
-            </div>
-            <div>
-              <FormLabel>Vida útil</FormLabel>
-              <FormInput
-                value={form.vidaUtil}
-                onChange={v => set("vidaUtil", v)}
-                placeholder="Ex: 10 anos"
               />
             </div>
           </div>
@@ -346,7 +465,7 @@ export default function BenfeitoriaRegistrationPage() {
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => setLocation("/fazendas/benfeitorias")}
+              onClick={() => setLocation(listUrl)}
               className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
             >
               Voltar

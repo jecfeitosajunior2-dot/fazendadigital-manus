@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, ChevronDown } from "lucide-react";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
@@ -56,16 +56,20 @@ export const inputClassCompact =
 export function FormInput({
   value,
   onChange,
+  onBlur,
   placeholder,
   type = "text",
+  inputMode,
   required,
   compact,
   className,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: (v: string) => void;
   placeholder?: string;
   type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   required?: boolean;
   compact?: boolean;
   className?: string;
@@ -74,8 +78,10 @@ export function FormInput({
     <FieldBox required={required}>
       <input
         type={type}
+        inputMode={inputMode}
         value={value}
         onChange={e => onChange(e.target.value)}
+        onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
         placeholder={placeholder}
         className={cn(compact ? inputClassCompact : inputClass, className)}
       />
@@ -100,27 +106,40 @@ export function FormNativeSelect({
   compact?: boolean;
   options: readonly { value: string; label: string }[];
 }) {
+  const mergedOptions = React.useMemo(() => {
+    const current = String(value ?? "").trim();
+    if (!current) return options;
+    if (options.some(o => o.value === current)) return options;
+    return [{ value: current, label: current }, ...options];
+  }, [value, options]);
+
   return (
     <FieldBox required={required}>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-        className={cn(
-          compact ? inputClassCompact : inputClass,
-          "appearance-none cursor-pointer w-full min-h-[42px]"
-        )}
-        required={required}
-      >
-        <option value="" disabled={!!value}>
-          {placeholder}
-        </option>
-        {options.map(o => (
-          <option key={o.value} value={o.value}>
-            {o.label}
+      <div className="relative">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={e => onChange(e.target.value)}
+          className={cn(
+            compact ? inputClassCompact : inputClass,
+            "appearance-none cursor-pointer w-full min-h-[42px] pr-10",
+          )}
+          required={required}
+        >
+          <option value="" disabled={!!value}>
+            {placeholder}
           </option>
-        ))}
-      </select>
+          {mergedOptions.map(o => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 opacity-70"
+          aria-hidden
+        />
+      </div>
     </FieldBox>
   );
 }
@@ -133,6 +152,7 @@ export function FormSelect({
   required,
   compact,
   displayValue,
+  triggerClassName,
   children,
 }: {
   value: string;
@@ -143,6 +163,7 @@ export function FormSelect({
   compact?: boolean;
   /** Texto exibido no trigger (útil quando o value é sigla/código). */
   displayValue?: string;
+  triggerClassName?: string;
   children: React.ReactNode;
 }) {
   // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
@@ -155,7 +176,8 @@ export function FormSelect({
         <SelectTrigger
           className={cn(
             compact ? inputClassCompact : inputClass,
-            "w-full shadow-none rounded-none border-0 focus:ring-0 [&>svg]:opacity-60"
+            "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
+            triggerClassName,
           )}
         >
           {displayValue?.trim() ? (

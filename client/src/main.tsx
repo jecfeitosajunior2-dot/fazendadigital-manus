@@ -18,8 +18,15 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
-        return globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
+      async fetch(input, init) {
+        const response = await globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          throw new Error(
+            "A API do Fazenda Digital não respondeu. O backend/banco local não está ativo; reinicie o servidor completo e confirme o banco de dados."
+          );
+        }
+        return response;
       },
     }),
   ],
