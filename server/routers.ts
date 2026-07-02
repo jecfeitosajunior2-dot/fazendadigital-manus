@@ -11,7 +11,7 @@ import {
   historicoBrincos
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
-import { createSession, clearAuthCookie } from "./_core/cookies";
+import { createSession, clearAuthCookie, sessionCookieOptions } from "./_core/cookies";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
@@ -44,7 +44,7 @@ const authRouter = router({
       }
       if (!valid) throw new Error("Senha incorreta");
       const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
-      ctx.res.cookie("session", token, { httpOnly: true, sameSite: "lax", maxAge: 30 * 24 * 60 * 60 * 1000 });
+      ctx.res.cookie("session", token, sessionCookieOptions());
       return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
     }),
 
