@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import { env } from "./_core/env";
+import { createMysqlPool } from "./_core/mysqlPool";
 
 async function ensureColumn(
   pool: mysql.Pool,
@@ -15,7 +15,7 @@ async function ensureColumn(
 }
 
 export async function ensureSchema() {
-  const pool = mysql.createPool({ uri: env.DATABASE_URL, connectionLimit: 1 });
+  const pool = createMysqlPool(1);
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`pastos\` (
