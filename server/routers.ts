@@ -26,19 +26,25 @@ import {
   createLocalFazenda,
   createLocalPasto,
   createLocalBenfeitoria,
+  createLocalAnimal,
   deleteLocalFazenda,
   deleteLocalPasto,
   deleteLocalBenfeitoria,
+  deleteLocalAnimal,
   getLocalFazenda,
   getLocalBenfeitoria,
+  getLocalAnimal,
   isDatabaseUnavailable,
   listLocalFazendas,
   listLocalPastos,
   listLocalPastosByFazenda,
   listLocalBenfeitorias,
+  listLocalAnimais,
+  listLocalAnimaisEnriched,
   updateLocalFazenda,
   updateLocalPasto,
   updateLocalBenfeitoria,
+  updateLocalAnimal,
 } from "./localFallbackStore";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
 
@@ -133,6 +139,76 @@ const animaisListInput = z.object({
   apenasSemPesagem: z.boolean().optional(),
 }).optional();
 
+function buildAnimalInsertRow(userId: number, input: {
+  brinco?: string;
+  brincoEletronico?: string;
+  nome?: string;
+  raca?: string;
+  sexo: "macho" | "femea";
+  dataNascimento?: string | null;
+  pesoAtual?: string;
+  loteId?: number;
+  categoria?: string;
+  observacoes?: string;
+  pelagem?: string;
+  marca?: string;
+  dataDesmama?: string | null;
+  castrado?: boolean;
+  dataEntrada?: string | null;
+  pesoEntrada?: string;
+  produtorOrigem?: string;
+  precoKg?: string;
+  frete?: string;
+  sisbov?: string;
+  dataRnd?: string | null;
+  rgn?: string;
+  rgd?: string;
+  rastreadoNascimento?: boolean;
+  pai?: string;
+  mae?: string;
+  fazendaId?: number;
+  pastoId?: number;
+}) {
+  return {
+    userId,
+    brinco: input.brinco,
+    brincoEletronico: input.brincoEletronico,
+    nome: input.nome,
+    raca: input.raca,
+    sexo: input.sexo,
+    dataNascimento: input.dataNascimento || undefined,
+    pesoAtual: input.pesoAtual,
+    loteId: input.loteId,
+    categoria: input.categoria,
+    observacoes: input.observacoes,
+    pelagem: input.pelagem,
+    marca: input.marca,
+    dataDesmama: input.dataDesmama || undefined,
+    castrado: input.castrado,
+    dataEntrada: input.dataEntrada || undefined,
+    pesoEntrada: input.pesoEntrada,
+    produtorOrigem: input.produtorOrigem,
+    precoKg: input.precoKg,
+    frete: input.frete,
+    sisbov: input.sisbov,
+    dataRnd: input.dataRnd || undefined,
+    rgn: input.rgn,
+    rgd: input.rgd,
+    rastreadoNascimento: input.rastreadoNascimento,
+    pai: input.pai,
+    mae: input.mae,
+    fazendaId: input.fazendaId,
+    pastoId: input.pastoId,
+  };
+}
+
+function enrichLocalAnimal(animal: Record<string, any>) {
+  const diasNaFazenda = animal.createdAt
+    ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  return { ...animal, loteNome: null, diasNaFazenda };
+}
+
 const animaisRouter = router({
   historicoPastos: protectedProcedure
     .input(z.object({ animalId: z.number() }))
@@ -177,6 +253,7 @@ const animaisRouter = router({
   list: protectedProcedure
     .input(animaisListInput)
     .query(async ({ ctx, input }) => {
+      try {
       const conditions = [eq(animais.userId, ctx.user.id)];
       if (input?.sexo && input.sexo !== '') conditions.push(eq(animais.sexo, input.sexo as any));
       if (input?.status && input.status !== '') conditions.push(eq(animais.status, input.status as any));
@@ -405,27 +482,34 @@ const animaisRouter = router({
       }
 
       return filtered;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return listLocalAnimaisEnriched(ctx.user.id, input as Record<string, unknown> | undefined);
+      }
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [animal] = await db.select().from(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id))).limit(1);
-      if (!animal) return null;
-
-      // Busca nome do lote
-      let loteNome: string | null = null;
-      if (animal.loteId) {
-        const [lote] = await db.select({ nome: lotes.nome }).from(lotes).where(eq(lotes.id, animal.loteId)).limit(1);
-        loteNome = lote?.nome ?? null;
+      try {
+        const [animal] = await db.select().from(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id))).limit(1);
+        if (animal) {
+          let loteNome: string | null = null;
+          if (animal.loteId) {
+            const [lote] = await db.select({ nome: lotes.nome }).from(lotes).where(eq(lotes.id, animal.loteId)).limit(1);
+            loteNome = lote?.nome ?? null;
+          }
+          const diasNaFazenda = animal.createdAt
+            ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+            : null;
+          return { ...animal, loteNome, diasNaFazenda };
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
       }
 
-      // Calcula dias na fazenda
-      const diasNaFazenda = animal.createdAt
-        ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-        : null;
-
-      return { ...animal, loteNome, diasNaFazenda };
+      const animal = await getLocalAnimal(ctx.user.id, input.id);
+      return animal ? enrichLocalAnimal(animal) : null;
     }),
 
   create: protectedProcedure
@@ -464,38 +548,26 @@ const animaisRouter = router({
       pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(animais).values({
-        userId: ctx.user.id,
-        brinco: input.brinco,
-        brincoEletronico: input.brincoEletronico,
-        nome: input.nome,
-        raca: input.raca,
-        sexo: input.sexo,
-        dataNascimento: input.dataNascimento || undefined,
-        pesoAtual: input.pesoAtual,
-        loteId: input.loteId,
-        categoria: input.categoria,
-        observacoes: input.observacoes,
-        pelagem: input.pelagem,
-        marca: input.marca,
-        dataDesmama: input.dataDesmama || undefined,
-        castrado: input.castrado,
-        dataEntrada: input.dataEntrada || undefined,
-        pesoEntrada: input.pesoEntrada,
-        produtorOrigem: input.produtorOrigem,
-        precoKg: input.precoKg,
-        frete: input.frete,
-        sisbov: input.sisbov,
-        dataRnd: input.dataRnd || undefined,
-        rgn: input.rgn,
-        rgd: input.rgd,
-        rastreadoNascimento: input.rastreadoNascimento,
-        pai: input.pai,
-        mae: input.mae,
-        fazendaId: input.fazendaId,
-        pastoId: input.pastoId,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      const row = buildAnimalInsertRow(ctx.user.id, input);
+      try {
+        const result = await db.insert(animais).values(row);
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await updateLocalAnimal(ctx.user.id, id, row);
+          } catch (mirrorError) {
+            console.warn("[animais.create] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          const result = await createLocalAnimal(ctx.user.id, row);
+          return { success: true, id: result.id, localFallback: true };
+        }
+        console.error("[animais.create]", err);
+        throw err;
+      }
     }),
 
   update: protectedProcedure
@@ -586,15 +658,36 @@ const animaisRouter = router({
       if (loteId !== undefined) setData.loteId = loteId;
       if (pastoId !== undefined) setData.pastoId = pastoId;
       if (fazendaId !== undefined) setData.fazendaId = fazendaId;
-      await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
+        try {
+          await updateLocalAnimal(ctx.user.id, id, setData);
+        } catch (mirrorError) {
+          console.warn("[animais.update] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          await updateLocalAnimal(ctx.user.id, id, setData);
+          return { success: true, localFallback: true };
+        }
+        throw err;
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          await deleteLocalAnimal(ctx.user.id, input.id);
+          return { success: true, localFallback: true };
+        }
+        throw error;
+      }
     }),
 
   // ── Gera planilha modelo para download ──────────────────────────────────────

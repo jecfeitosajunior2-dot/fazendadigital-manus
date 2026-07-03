@@ -5,6 +5,7 @@ const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
 const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
+const animaisFile = path.join(dataDir, "animais.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
   const parts: string[] = [];
@@ -289,4 +290,209 @@ export async function deleteLocalBenfeitoria(userId: number, id: number): Promis
     return;
   }
   await writeBenfeitorias(remaining);
+}
+
+export type LocalAnimal = Record<string, any> & {
+  id: number;
+  userId: number;
+  sexo: "macho" | "femea";
+  status: "ativo" | "vendido" | "morto" | "transferido";
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readAnimais(): Promise<LocalAnimal[]> {
+  return readJsonFile<LocalAnimal[]>(animaisFile, []);
+}
+
+async function writeAnimais(rows: LocalAnimal[]): Promise<void> {
+  await writeJsonFile(animaisFile, rows);
+}
+
+export async function listLocalAnimais(userId: number): Promise<LocalAnimal[]> {
+  const rows = await readAnimais();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function getLocalAnimal(userId: number, id: number): Promise<LocalAnimal | null> {
+  const rows = await readAnimais();
+  return rows.find(row => row.userId === userId && row.id === id)
+    ?? rows.find(row => row.id === id)
+    ?? null;
+}
+
+export async function createLocalAnimal(
+  userId: number,
+  input: Record<string, any>,
+): Promise<{ id: number }> {
+  const rows = await readAnimais();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    status: "ativo",
+    ...input,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeAnimais(rows);
+  return { id };
+}
+
+export async function updateLocalAnimal(
+  userId: number,
+  id: number,
+  input: Record<string, any>,
+): Promise<void> {
+  const rows = await readAnimais();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const now = new Date().toISOString();
+  if (index === -1) {
+    rows.push({
+      id,
+      userId,
+      sexo: input.sexo ?? "macho",
+      status: input.status ?? "ativo",
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    rows[index] = {
+      ...rows[index],
+      ...input,
+      updatedAt: now,
+    };
+  }
+  await writeAnimais(rows);
+}
+
+export async function deleteLocalAnimal(userId: number, id: number): Promise<void> {
+  const rows = await readAnimais();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeAnimais(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeAnimais(remaining);
+}
+
+export async function listLocalAnimaisEnriched(
+  userId: number,
+  input?: Record<string, unknown>,
+): Promise<Record<string, unknown>[]> {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  let lista = await listLocalAnimais(userId);
+
+  if (input?.sexo && input.sexo !== "") {
+    lista = lista.filter(a => a.sexo === input.sexo);
+  }
+  if (input?.status && input.status !== "") {
+    lista = lista.filter(a => a.status === input.status);
+  }
+  if (input?.loteId) lista = lista.filter(a => a.loteId === input.loteId);
+  if (input?.raca && input.raca !== "") lista = lista.filter(a => a.raca === input.raca);
+  if (input?.categoria && input.categoria !== "") lista = lista.filter(a => a.categoria === input.categoria);
+  if (input?.fazendaId) lista = lista.filter(a => a.fazendaId === input.fazendaId);
+  if (input?.dataNascimentoInicio) {
+    lista = lista.filter(a => a.dataNascimento && a.dataNascimento >= String(input.dataNascimentoInicio));
+  }
+  if (input?.dataNascimentoFim) {
+    lista = lista.filter(a => a.dataNascimento && a.dataNascimento <= String(input.dataNascimentoFim));
+  }
+  if (input?.dataEntradaDe) {
+    lista = lista.filter(a => a.dataEntrada && a.dataEntrada >= String(input.dataEntradaDe));
+  }
+  if (input?.dataEntradaAte) {
+    lista = lista.filter(a => a.dataEntrada && a.dataEntrada <= String(input.dataEntradaAte));
+  }
+  if (input?.somenteSisbov) lista = lista.filter(a => !!a.sisbov?.trim());
+  if (input?.marcadores && Array.isArray(input.marcadores) && input.marcadores.length > 0) {
+    const marcas = new Set(input.marcadores as string[]);
+    lista = lista.filter(a => a.marca && marcas.has(a.marca));
+  }
+  if (input?.search && String(input.search).trim()) {
+    const q = String(input.search).trim().toLowerCase();
+    lista = lista.filter(a =>
+      (a.brinco ?? "").toLowerCase().includes(q) ||
+      (a.brincoEletronico ?? "").toLowerCase().includes(q) ||
+      (a.nome ?? "").toLowerCase().includes(q) ||
+      (a.raca ?? "").toLowerCase().includes(q) ||
+      (a.sisbov ?? "").toLowerCase().includes(q),
+    );
+  }
+  if (input?.brincoEletronico && String(input.brincoEletronico).trim()) {
+    const q = String(input.brincoEletronico).trim().toLowerCase();
+    lista = lista.filter(a => (a.brincoEletronico ?? "").toLowerCase().includes(q));
+  }
+  if (input?.rgn && String(input.rgn).trim()) {
+    const q = String(input.rgn).trim().toLowerCase();
+    lista = lista.filter(a => (a.rgn ?? "").toLowerCase().includes(q));
+  }
+  if (input?.rgd && String(input.rgd).trim()) {
+    const q = String(input.rgd).trim().toLowerCase();
+    lista = lista.filter(a => (a.rgd ?? "").toLowerCase().includes(q));
+  }
+
+  const resultado = lista.map(animal => {
+    let idadeMeses: number | null = null;
+    if (animal.dataNascimento) {
+      const nasc = new Date(animal.dataNascimento);
+      idadeMeses = Math.floor((hoje.getTime() - nasc.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+    }
+
+    let diasNaFazenda: number | null = null;
+    if (animal.dataNascimento) {
+      const nasc = new Date(animal.dataNascimento);
+      diasNaFazenda = Math.floor((hoje.getTime() - nasc.getTime()) / (1000 * 60 * 60 * 24));
+    } else if (animal.dataEntrada) {
+      const entrada = new Date(animal.dataEntrada);
+      diasNaFazenda = Math.floor((hoje.getTime() - entrada.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    const ultimoPeso = animal.pesoAtual
+      ? Number(animal.pesoAtual)
+      : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
+
+    return {
+      ...animal,
+      loteNome: null,
+      pastoNome: null,
+      idadeMeses,
+      diasNaFazenda,
+      ultimoPeso,
+      ganhoKg: null,
+      gmd: null,
+      emCarencia: false,
+    };
+  });
+
+  let filtered = resultado;
+  if (input?.apenasEmCarencia) filtered = filtered.filter(a => a.emCarencia === true);
+  if (input?.apenasSemLote) filtered = filtered.filter(a => !a.loteId);
+  if (input?.apenasSemPesagem) filtered = filtered.filter(a => a.ultimoPeso === null);
+  if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
+    filtered = filtered.filter(a => {
+      const peso = a.ultimoPeso;
+      if (peso === null || peso === undefined) return false;
+      if (input!.pesoMin !== undefined && peso < Number(input!.pesoMin)) return false;
+      if (input!.pesoMax !== undefined && peso > Number(input!.pesoMax)) return false;
+      return true;
+    });
+  }
+  if (input?.idadeMesesMin !== undefined || input?.idadeMesesMax !== undefined) {
+    filtered = filtered.filter(a => {
+      if (a.idadeMeses === null || a.idadeMeses === undefined) return false;
+      if (input!.idadeMesesMin !== undefined && a.idadeMeses < Number(input!.idadeMesesMin)) return false;
+      if (input!.idadeMesesMax !== undefined && a.idadeMeses > Number(input!.idadeMesesMax)) return false;
+      return true;
+    });
+  }
+
+  return filtered;
 }
