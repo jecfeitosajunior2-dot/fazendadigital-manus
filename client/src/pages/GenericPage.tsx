@@ -16,6 +16,7 @@ import {
   INITIAL_ANIMAIS_LIST_FILTERS,
   animaisFiltersFromSearchParams,
   animaisFiltersToApiParams,
+  hasActiveAnimaisFilters,
   readPersistedAnimaisListFilters,
   type AnimaisListFiltersState,
 } from '@shared/animal-filter-types';
@@ -29,6 +30,84 @@ function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: Ani
     <span className="material-icons text-[13px] text-gray-400 ml-0.5 align-middle leading-none">
       {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
     </span>
+  );
+}
+
+const LOTE_BADGE_PALETTE = [
+  "bg-slate-100 text-slate-700",
+  "bg-teal-50 text-teal-800",
+  "bg-blue-50 text-blue-800",
+  "bg-amber-50 text-amber-800",
+  "bg-violet-50 text-violet-800",
+];
+
+function categoriaBadgeClass(categoria: string): string {
+  const map: Record<string, string> = {
+    Bezerro: "bg-amber-50 text-amber-800",
+    Bezerra: "bg-amber-50 text-amber-800",
+    Novilho: "bg-sky-50 text-sky-800",
+    Novilha: "bg-sky-50 text-sky-800",
+    Boi: "bg-slate-100 text-slate-700",
+    Vaca: "bg-violet-50 text-violet-800",
+    Touro: "bg-indigo-50 text-indigo-800",
+    Matriz: "bg-teal-50 text-teal-800",
+  };
+  return map[categoria] ?? "bg-gray-100 text-gray-700";
+}
+
+function loteBadgeClass(nome: string): string {
+  let h = 0;
+  for (let i = 0; i < nome.length; i++) h = (h + nome.charCodeAt(i) * 17) % LOTE_BADGE_PALETTE.length;
+  return LOTE_BADGE_PALETTE[h];
+}
+
+function AnimaisListEmptyState({
+  hasActiveFilters,
+  onNovoAnimal,
+  onLimparFiltros,
+  compact,
+}: {
+  hasActiveFilters: boolean;
+  onNovoAnimal: () => void;
+  onLimparFiltros: () => void;
+  compact?: boolean;
+}) {
+  if (hasActiveFilters) {
+    return (
+      <div className={compact ? "py-8 px-4 text-center" : "py-10 px-4 text-center"}>
+        <p className="text-gray-600 text-[13px] leading-relaxed">
+          Nenhum animal encontrado com os filtros selecionados.
+          <br />
+          Tente ajustar ou limpar os filtros.
+        </p>
+        <button
+          type="button"
+          onClick={onLimparFiltros}
+          className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-[12px] font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Limpar filtros
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={compact ? "py-8 px-4 text-center" : "py-10 px-4 text-center"}>
+      <p className="text-gray-600 text-[13px] leading-relaxed">
+        Nenhum animal cadastrado ainda.
+        <br />
+        Cadastre o primeiro animal do rebanho para começar o controle.
+      </p>
+      <button
+        type="button"
+        onClick={onNovoAnimal}
+        className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[12px] font-semibold transition-colors"
+        style={{ backgroundColor: "#2D5A5A" }}
+      >
+        <span className="material-icons text-[16px]">add</span>
+        Novo Animal
+      </button>
+    </div>
   );
 }
 
@@ -162,10 +241,13 @@ export function AnimaisPage() {
     a.emCarencia ? "Sim" : "Não",
   ]);
 
+  const hasActiveFilters = hasActiveAnimaisFilters(filters);
+  const isEmptyList = !isLoading && sortedAnimais.length === 0;
+
   return (
     <AppLayout>
       <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Lista de Animais</h1>
+        <h1 className="text-[16px] font-semibold text-gray-900">Lista de Animais</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <ListExportButtons
             title="Lista de Animais"
@@ -213,8 +295,12 @@ export function AnimaisPage() {
       <div className="lg:hidden space-y-3">
         {isLoading ? (
           <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
-        ) : paginated.length === 0 ? (
-          <div className="py-10 text-center text-gray-400 text-[13px]">Nenhum animal encontrado.</div>
+        ) : isEmptyList ? (
+          <AnimaisListEmptyState
+            hasActiveFilters={hasActiveFilters}
+            onNovoAnimal={() => setLocation("/rebanho/novo-animal")}
+            onLimparFiltros={limparFiltros}
+          />
         ) : paginated.map(animal => (
           <MobileCard
             key={animal.id}
@@ -278,29 +364,40 @@ export function AnimaisPage() {
                   { key: "ganhoKg",     label: "Ganho (kg)",     align: "center" },
                   { key: "gmd",         label: "GMD (kg/dia)",   align: "center" },
                   { key: "emCarencia",  label: "Em Carência",    align: "center" },
-                ] as { key: AnimaisSortKey; label: string; align: string }[]).map(col => (
+                ] as { key: AnimaisSortKey; label: string; align: string }[]).map((col, idx) => (
                   <th
                     key={col.key}
                     onClick={() => toggleSort(col.key)}
-                    className={`px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align}`}
+                    className={`px-3 py-2 font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${
+                      idx === 0 ? "sticky left-0 z-[3] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                    }`}
                   >
                     {col.label}
                     <SortIcon col={col.key} sortKey={sortKey} sortAsc={sortAsc} />
                   </th>
                 ))}
-                {/* Coluna Ações: sem ordenação */}
-                <th className="text-center px-3 py-2.5 font-semibold text-gray-600 whitespace-nowrap">Ações</th>
+                {/* Coluna Ações: sem ordenação, fixa à direita */}
+                <th className="text-center px-3 py-2 font-semibold text-gray-600 whitespace-nowrap sticky right-0 z-[3] bg-gray-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]">Ações</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={12} className="text-center py-8 text-gray-400">Carregando...</td></tr>
-              ) : paginated.length === 0 ? (
-                <tr><td colSpan={12} className="text-center py-8 text-gray-400">Nenhum animal encontrado.</td></tr>
+              ) : isEmptyList ? (
+                <tr>
+                  <td colSpan={12}>
+                    <AnimaisListEmptyState
+                      hasActiveFilters={hasActiveFilters}
+                      onNovoAnimal={() => setLocation("/rebanho/novo-animal")}
+                      onLimparFiltros={limparFiltros}
+                      compact
+                    />
+                  </td>
+                </tr>
               ) : paginated.map((animal) => (
-                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  {/* Brinco */}
-                  <td className="px-3 py-2 text-center">
+                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
+                  {/* Brinco — fixo à esquerda */}
+                  <td className="px-3 py-2 text-center sticky left-0 z-[1] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-gray-50">
                     <div className="flex items-center justify-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
                       <span className="font-semibold text-gray-800">{animal.brinco || "-"}</span>
@@ -311,13 +408,13 @@ export function AnimaisPage() {
                   {/* Categoria */}
                   <td className="px-3 py-2 text-center">
                     {animal.categoria ? (
-                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium text-[11px]">{animal.categoria}</span>
+                      <span className={`px-2 py-0.5 rounded font-medium text-[11px] ${categoriaBadgeClass(animal.categoria)}`}>{animal.categoria}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Lote */}
                   <td className="px-3 py-2 text-center">
                     {animal.loteNome ? (
-                      <span className="px-2 py-0.5 rounded bg-[#2D5A5A]/10 text-[#2D5A5A] font-medium text-[11px]">{animal.loteNome}</span>
+                      <span className={`px-2 py-0.5 rounded font-medium text-[11px] ${loteBadgeClass(animal.loteNome)}`}>{animal.loteNome}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Sexo */}
@@ -362,17 +459,14 @@ export function AnimaisPage() {
                       <span className="text-gray-400 text-[11px]">Não</span>
                     )}
                   </td>
-                  {/* Ações */}
-                  <td className="px-3 py-2">
+                  {/* Ações — fixo à direita */}
+                  <td className="px-3 py-2 sticky right-0 z-[1] bg-white shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-gray-50">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors" title="Ver detalhes">
+                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors cursor-pointer" title="Visualizar animal">
                         <span className="material-icons text-[16px]">visibility</span>
                       </button>
-                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors" title="Editar">
+                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors cursor-pointer" title="Editar animal">
                         <span className="material-icons text-[16px]">edit</span>
-                      </button>
-                      <button onClick={() => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); }} className="p-1 text-gray-400 hover:text-red-600 transition-colors" title="Remover">
-                        <span className="material-icons text-[16px]">delete</span>
                       </button>
                     </div>
                   </td>
