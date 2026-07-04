@@ -13,10 +13,12 @@ const selectClass =
   'w-full h-[32px] px-2.5 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 focus:outline-none focus:border-[#0d9488] appearance-none transition-colors duration-150 cursor-pointer';
 
 /** Card de filtro principal com ícone e underline style */
-function PrimaryFilterCard({ label, icon, children, active, customIcon }: { label: string; icon: string; children: ReactNode; active?: boolean; customIcon?: string }) {
+function PrimaryFilterCard({ label, icon, children, active, customIcon, embedded }: { label: string; icon: string; children: ReactNode; active?: boolean; customIcon?: string; embedded?: boolean }) {
   return (
-    <div className={`relative bg-white rounded-md px-3 pt-2 pb-1.5 flex flex-col h-full border transition-all duration-150 ${
-      active ? 'border-[#0d9488] shadow-[0_0_0_2px_rgba(13,148,136,0.08)]' : 'border-gray-200 hover:border-gray-300'
+    <div className={`relative flex flex-col h-full transition-all duration-150 ${
+      embedded
+        ? `rounded px-2.5 pt-1.5 pb-1 ${active ? 'bg-teal-50/60' : 'bg-gray-50/50'}`
+        : `bg-white rounded-md px-3 pt-2 pb-1.5 border ${active ? 'border-[#0d9488] shadow-[0_0_0_2px_rgba(13,148,136,0.08)]' : 'border-gray-200 hover:border-gray-300'}`
     }`}>
       <div className="flex items-center gap-1 mb-0.5">
         {customIcon ? (
@@ -52,6 +54,8 @@ type Props = {
   lotes: LoteOption[];
   pastos: PastoOption[];
   marcadoresDisponiveis: string[];
+  /** Dentro do quadro único da página — sem borda externa própria */
+  embedded?: boolean;
 };
 
 function patch(value: AnimaisListFiltersState, partial: Partial<AnimaisListFiltersState>): AnimaisListFiltersState {
@@ -229,6 +233,7 @@ export default function ListaAnimaisFiltros({
   lotes,
   pastos,
   marcadoresDisponiveis,
+  embedded = false,
 }: Props) {
   const categorias = value.sexo
     ? getCategoriasPorSexo(value.sexo === 'macho' ? 'Macho' : 'Fêmea')
@@ -255,14 +260,14 @@ export default function ListaAnimaisFiltros({
     sel.length > 0;
 
   return (
-    <div className="mb-2 border border-gray-200 rounded-lg bg-white overflow-hidden">
-      <div className="px-3 py-2">
+    <div className={embedded ? 'border-b border-gray-100' : 'mb-2 border border-gray-200 rounded-lg bg-white overflow-hidden'}>
+      <div className={embedded ? 'px-3 py-2' : 'px-3 py-2'}>
         {/* ── Filtros principais — linha compacta ── */}
         <div className="flex flex-wrap gap-2 items-stretch">
 
           {/* Fazenda */}
           <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/assets/icon-fazenda.png">
+            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/assets/icon-fazenda.png" embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.fazendaId}
@@ -281,7 +286,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Número do Brinco */}
           <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Número do Brinco" icon="tag" active={!!value.pesquisa.trim()}>
+            <PrimaryFilterCard label="Número do Brinco" icon="tag" active={!!value.pesquisa.trim()} embedded={embedded}>
               <div className="relative">
                 <input
                   type="text"
@@ -305,7 +310,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Sexo */}
           <div className="flex-1 min-w-[130px]">
-            <PrimaryFilterCard label="Sexo" icon="wc" active={!!value.sexo}>
+            <PrimaryFilterCard label="Sexo" icon="wc" active={!!value.sexo} embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.sexo}
@@ -323,7 +328,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Categoria */}
           <div className="flex-1 min-w-[140px]">
-            <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria}>
+            <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria} embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.categoria}
@@ -342,7 +347,7 @@ export default function ListaAnimaisFiltros({
 
           {/* Lote */}
           <div className="flex-1 min-w-[140px]">
-            <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId}>
+            <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId} embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.loteId}
@@ -380,7 +385,7 @@ export default function ListaAnimaisFiltros({
 
       {/* Painel de filtros secundários — fechado por padrão */}
       {value.maisFiltrosAbertos && (
-        <div className="border-t border-gray-100 bg-gray-50/70 px-3 py-2.5 space-y-2.5">
+        <div className={`border-t px-3 py-2.5 space-y-2.5 ${embedded ? 'border-gray-100 bg-gray-50/40' : 'border-gray-100 bg-gray-50/70'}`}>
 
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Filtros adicionais</span>

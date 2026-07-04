@@ -109,7 +109,7 @@ export default function TableHorizontalScroll({
         <div className="inline-block w-max min-w-full">{children}</div>
       </div>
 
-      <div className="px-4 pt-2 pb-1 border-t border-gray-100">
+      <div className="px-4 pt-2 pb-1 border-t border-gray-100 bg-white">
         <div
           ref={trackRef}
           className={cn(

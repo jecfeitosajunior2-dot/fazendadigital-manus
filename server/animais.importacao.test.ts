@@ -3,6 +3,11 @@
  * Valida: campos obrigatórios, brincos duplicados, datas (multi-formato), status/sexo inválidos.
  */
 import { describe, it, expect } from 'vitest';
+import {
+  normalizeBrincoKey,
+  resolveEffectiveStatus,
+  validarBrincoAtivoImportacao,
+} from '../shared/brincoAtivo';
 
 // ─── Lógica de validação extraída (espelha o backend) ─────────────────────────
 
@@ -47,12 +52,12 @@ function parseDateBR(raw: string): string | null {
 
 function validarLinhas(
   linhas: LinhaAnimal[],
-  brincosBancoSet: Set<string> = new Set(),
+  brincosAtivosBancoSet: Set<string> = new Set(),
   loteNomeParaId: Map<string, number> = new Map()
 ): { validos: LinhaAnimal[]; erros: Erro[] } {
   const erros: Erro[] = [];
   const validos: LinhaAnimal[] = [];
-  const brincosNaPlanilha = new Set<string>();
+  const brincosAtivosNaPlanilha = new Set<string>();
 
   for (let i = 0; i < linhas.length; i++) {
     const linha = { ...linhas[i] }; // cópia para não mutar o original
@@ -60,16 +65,19 @@ function validarLinhas(
     const errosLinha: Erro[] = [];
 
     // Brinco obrigatório
+    const statusEfetivo = resolveEffectiveStatus((linha.status || '').trim().toLowerCase() || null);
     const brinco = (linha.brinco || '').trim();
     if (!brinco) {
       errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: 'Brinco é obrigatório' });
-    } else {
-      if (brincosNaPlanilha.has(brinco.toLowerCase())) {
-        errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" duplicado na planilha` });
-      } else if (brincosBancoSet.has(brinco.toLowerCase())) {
-        errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" já existe no banco de dados` });
-      } else {
-        brincosNaPlanilha.add(brinco.toLowerCase());
+    } else if (!linha.status || STATUS_VALIDOS.includes(statusEfetivo)) {
+      const brincoErro = validarBrincoAtivoImportacao({
+        brinco,
+        statusEfetivo,
+        brincosAtivosBanco: brincosAtivosBancoSet,
+        brincosAtivosPlanilha: brincosAtivosNaPlanilha,
+      });
+      if (brincoErro) {
+        errosLinha.push({ linha: numLinha, campo: brincoErro.campo, mensagem: brincoErro.mensagem });
       }
     }
 
@@ -170,18 +178,34 @@ describe('Importação em Massa de Animais — Validação', () => {
     expect(erros[0].mensagem).toContain('Sexo inválido');
   });
 
-  it('rejeita brinco duplicado dentro da planilha', () => {
+  it('rejeita brinco duplicado entre animais ativos na planilha', () => {
     const { erros } = validarLinhas([
       { brinco: 'BR-004', sexo: 'macho' },
       { brinco: 'BR-004', sexo: 'femea' },
     ]);
-    expect(erros.some(e => e.mensagem.includes('duplicado na planilha'))).toBe(true);
+    expect(erros.some(e => e.mensagem.includes('duplicado entre animais ativos'))).toBe(true);
   });
 
-  it('rejeita brinco já existente no banco', () => {
-    const banco = new Set(['br-005']);
+  it('permite brinco duplicado na planilha quando um animal é inativo', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-004', sexo: 'macho', status: 'vendido' },
+      { brinco: 'BR-004', sexo: 'femea', status: 'ativo' },
+    ]);
+    expect(validos).toHaveLength(2);
+    expect(erros).toHaveLength(0);
+  });
+
+  it('rejeita brinco já usado por animal ativo no banco', () => {
+    const banco = new Set([normalizeBrincoKey('BR-005')]);
     const { erros } = validarLinhas([{ brinco: 'BR-005', sexo: 'macho' }], banco);
-    expect(erros.some(e => e.mensagem.includes('já existe no banco'))).toBe(true);
+    expect(erros.some(e => e.mensagem.includes('já está sendo usado por outro animal ativo'))).toBe(true);
+  });
+
+  it('permite brinco de animal inativo no banco para novo animal ativo', () => {
+    const banco = new Set<string>(); // brinco inativo não entra no set de ativos
+    const { validos, erros } = validarLinhas([{ brinco: 'BR-005', sexo: 'macho' }], banco);
+    expect(validos).toHaveLength(1);
+    expect(erros).toHaveLength(0);
   });
 
   it('rejeita data de nascimento inválida (formato desconhecido)', () => {

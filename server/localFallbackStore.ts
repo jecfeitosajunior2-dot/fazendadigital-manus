@@ -6,6 +6,7 @@ const fazendasFile = path.join(dataDir, "fazendas.json");
 const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
 const animaisFile = path.join(dataDir, "animais.json");
+const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
   const parts: string[] = [];
@@ -495,4 +496,75 @@ export async function listLocalAnimaisEnriched(
   }
 
   return filtered;
+}
+
+export type LocalHistoricoBrinco = Record<string, any> & {
+  id: number;
+  userId: number;
+  animalId: number;
+  brincoNovo: string;
+  motivo: "perda" | "danificado" | "reidentificacao" | "erro_cadastro" | "outro";
+  dataAlteracao: string;
+  createdAt: string;
+};
+
+async function readHistoricoBrincos(): Promise<LocalHistoricoBrinco[]> {
+  return readJsonFile<LocalHistoricoBrinco[]>(historicoBrincosFile, []);
+}
+
+async function writeHistoricoBrincos(rows: LocalHistoricoBrinco[]): Promise<void> {
+  await writeJsonFile(historicoBrincosFile, rows);
+}
+
+export async function listLocalHistoricoBrincos(
+  userId: number,
+  animalId: number,
+): Promise<LocalHistoricoBrinco[]> {
+  const rows = await readHistoricoBrincos();
+  const matched = rows.filter(row => row.userId === userId && row.animalId === animalId);
+  const visible = matched.length > 0
+    ? matched
+    : rows.filter(row => row.animalId === animalId);
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function createLocalHistoricoBrinco(
+  userId: number,
+  input: Record<string, any>,
+): Promise<{ id: number }> {
+  const rows = await readHistoricoBrincos();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    ...input,
+    createdAt: now,
+  });
+  await writeHistoricoBrincos(rows);
+  return { id };
+}
+
+export async function deleteLocalHistoricoBrinco(userId: number, id: number): Promise<void> {
+  const rows = await readHistoricoBrincos();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeHistoricoBrincos(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeHistoricoBrincos(remaining);
+}
+
+export function mergeHistoricoBrincosLists(
+  dbRows: LocalHistoricoBrinco[],
+  localRows: LocalHistoricoBrinco[],
+): LocalHistoricoBrinco[] {
+  const byId = new Map<number, LocalHistoricoBrinco>();
+  for (const row of dbRows) byId.set(row.id, row);
+  for (const row of localRows) {
+    if (!byId.has(row.id)) byId.set(row.id, row);
+  }
+  return [...byId.values()].sort((a, b) =>
+    String(b.createdAt).localeCompare(String(a.createdAt)),
+  );
 }

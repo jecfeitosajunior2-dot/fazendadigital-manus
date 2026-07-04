@@ -45,8 +45,21 @@ import {
   updateLocalPasto,
   updateLocalBenfeitoria,
   updateLocalAnimal,
+  listLocalHistoricoBrincos,
+  createLocalHistoricoBrinco,
+  deleteLocalHistoricoBrinco,
+  mergeHistoricoBrincosLists,
 } from "./localFallbackStore";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
+import {
+  assertBrincoUnicoEntreAtivos,
+  assertBrincoUnicoEntreAtivosDb,
+  loadActiveBrincoKeysFromDb,
+} from "./brincoAtivoValidation";
+import {
+  resolveEffectiveStatus,
+  validarBrincoAtivoImportacao,
+} from "../shared/brincoAtivo";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -550,6 +563,7 @@ const animaisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const row = buildAnimalInsertRow(ctx.user.id, input);
       try {
+        await assertBrincoUnicoEntreAtivosDb(ctx.user.id, row.brinco, "ativo");
         const result = await db.insert(animais).values(row);
         const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
         if (Number.isFinite(id) && id > 0) {
@@ -561,7 +575,9 @@ const animaisRouter = router({
         }
         return { success: true, id };
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
         if (isDatabaseUnavailable(err)) {
+          await assertBrincoUnicoEntreAtivos(ctx.user.id, row.brinco, "ativo", undefined, true);
           const result = await createLocalAnimal(ctx.user.id, row);
           return { success: true, id: result.id, localFallback: true };
         }
@@ -659,6 +675,27 @@ const animaisRouter = router({
       if (pastoId !== undefined) setData.pastoId = pastoId;
       if (fazendaId !== undefined) setData.fazendaId = fazendaId;
       try {
+        const [current] = await db
+          .select({ brinco: animais.brinco, status: animais.status })
+          .from(animais)
+          .where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)))
+          .limit(1);
+        if (!current) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
+        }
+
+        const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
+        const effectiveStatus = resolveEffectiveStatus(
+          (rest as { status?: string }).status,
+          current.status,
+        );
+        await assertBrincoUnicoEntreAtivosDb(
+          ctx.user.id,
+          effectiveBrinco,
+          effectiveStatus,
+          id,
+        );
+
         await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
         try {
           await updateLocalAnimal(ctx.user.id, id, setData);
@@ -667,7 +704,24 @@ const animaisRouter = router({
         }
         return { success: true };
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
         if (isDatabaseUnavailable(err)) {
+          const current = await getLocalAnimal(ctx.user.id, id);
+          if (!current) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
+          }
+          const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
+          const effectiveStatus = resolveEffectiveStatus(
+            (rest as { status?: string }).status,
+            current.status,
+          );
+          await assertBrincoUnicoEntreAtivos(
+            ctx.user.id,
+            effectiveBrinco,
+            effectiveStatus,
+            id,
+            true,
+          );
           await updateLocalAnimal(ctx.user.id, id, setData);
           return { success: true, localFallback: true };
         }
@@ -946,14 +1000,12 @@ const animaisRouter = router({
         todosLotes.filter(l => !l.ativo).map(l => l.nome.toLowerCase().trim())
       );
 
-      // Busca brincos já existentes no banco
-      const brincosBanco = await db.select({ brinco: animais.brinco })
-        .from(animais).where(eq(animais.userId, ctx.user.id));
-      const brincosBancoSet = new Set(brincosBanco.map(a => (a.brinco || '').toLowerCase().trim()));
+      // Brincos em uso por animais ativos (inativos podem reutilizar número)
+      const brincosAtivosBancoSet = await loadActiveBrincoKeysFromDb(ctx.user.id);
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
       const validos: typeof input.linhas = [];
-      const brincosNaPlanilha = new Set<string>();
+      const brincosAtivosNaPlanilha = new Set<string>();
 
       for (let i = 0; i < input.linhas.length; i++) {
         const linha = input.linhas[i];
@@ -968,17 +1020,23 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
         }
 
-        // Brinco obrigatório
+        // Brinco obrigatório (unicidade apenas entre animais ativos)
+        const statusRawBrinco = (linha.status || '').trim();
+        const statusNormBrinco = statusRawBrinco ? normalizarStatus(statusRawBrinco) : 'ativo';
+        const statusValidoBrinco = !statusRawBrinco || STATUS_VALIDOS.includes(statusNormBrinco);
+
         const brinco = (linha.brinco || '').trim();
         if (!brinco) {
           errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: 'Brinco é obrigatório' });
-        } else {
-          if (brincosNaPlanilha.has(brinco.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" duplicado na planilha` });
-          } else if (brincosBancoSet.has(brinco.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: `Brinco "${brinco}" já existe no banco de dados` });
-          } else {
-            brincosNaPlanilha.add(brinco.toLowerCase());
+        } else if (statusValidoBrinco) {
+          const brincoErro = validarBrincoAtivoImportacao({
+            brinco,
+            statusEfetivo: statusNormBrinco,
+            brincosAtivosBanco: brincosAtivosBancoSet,
+            brincosAtivosPlanilha: brincosAtivosNaPlanilha,
+          });
+          if (brincoErro) {
+            errosLinha.push({ linha: numLinha, campo: brincoErro.campo, mensagem: brincoErro.mensagem });
           }
         }
 
@@ -1127,6 +1185,8 @@ const animaisRouter = router({
         return undefined;
       };
 
+      const brincosAtivosReservados = await loadActiveBrincoKeysFromDb(ctx.user.id);
+
       for (let i = 0; i < input.linhas.length; i++) {
         // Normaliza cabeçalhos PT-BR → chaves internas
         const linha = normalizarLinha(input.linhas[i]);
@@ -1138,6 +1198,21 @@ const animaisRouter = router({
         try {
           const brinco = (linha.brinco || '').trim();
           const sexo = normalizarSexo(linha.sexo || '') as 'macho' | 'femea';
+          const statusImport = (() => {
+            const st = normalizarStatus(linha.status || '');
+            return ['ativo', 'vendido', 'morto', 'transferido'].includes(st) ? st : 'ativo';
+          })();
+
+          const brincoErro = validarBrincoAtivoImportacao({
+            brinco,
+            statusEfetivo: statusImport,
+            brincosAtivosBanco: brincosAtivosReservados,
+            brincosAtivosPlanilha: brincosAtivosReservados,
+          });
+          if (brincoErro) {
+            rejeitados.push({ linha: numLinha, mensagem: brincoErro.mensagem });
+            continue;
+          }
 
           // Resolve loteId
           const loteNome = (linha.lote || '').trim().toLowerCase();
@@ -1188,10 +1263,7 @@ const animaisRouter = router({
             rastreadoNascimento: toBool(linha.rastreadoNascimento),
             pai: (linha.pai || '').trim() || undefined,
             mae: (linha.mae || '').trim() || undefined,
-            status: (() => {
-              const st = normalizarStatus(linha.status || '');
-              return ['ativo','vendido','morto','transferido'].includes(st) ? (st as any) : 'ativo';
-            })(),
+            status: statusImport as 'ativo' | 'vendido' | 'morto' | 'transferido',
           });
           importados.push((result as any)[0]?.insertId);
         } catch (err: any) {
@@ -4876,16 +4948,25 @@ const brincosRouter = router({
   list: protectedProcedure
     .input(z.object({ animalId: z.number() }))
     .query(async ({ ctx, input }) => {
-      return db
-        .select()
-        .from(historicoBrincos)
-        .where(
-          and(
-            eq(historicoBrincos.animalId, input.animalId),
-            eq(historicoBrincos.userId, ctx.user.id)
+      try {
+        const dbRows = await db
+          .select()
+          .from(historicoBrincos)
+          .where(
+            and(
+              eq(historicoBrincos.animalId, input.animalId),
+              eq(historicoBrincos.userId, ctx.user.id)
+            )
           )
-        )
-        .orderBy(desc(historicoBrincos.createdAt));
+          .orderBy(desc(historicoBrincos.createdAt));
+        const localRows = await listLocalHistoricoBrincos(ctx.user.id, input.animalId);
+        return mergeHistoricoBrincosLists(dbRows, localRows);
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          return listLocalHistoricoBrincos(ctx.user.id, input.animalId);
+        }
+        throw err;
+      }
     }),
 
   registrar: protectedProcedure
@@ -4900,7 +4981,7 @@ const brincosRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(historicoBrincos).values({
+      const row = {
         userId: ctx.user.id,
         animalId: input.animalId,
         brincoAnterior: input.brincoAnterior ?? null,
@@ -4909,22 +4990,48 @@ const brincosRouter = router({
         observacoes: input.observacoes ?? null,
         dataAlteracao: input.dataAlteracao,
         usuarioNome: ctx.user.name ?? null,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      };
+      try {
+        const result = await db.insert(historicoBrincos).values(row);
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await createLocalHistoricoBrinco(ctx.user.id, { id, ...row });
+          } catch (mirrorError) {
+            console.warn("[brincos.registrar] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          const result = await createLocalHistoricoBrinco(ctx.user.id, row);
+          return { success: true, id: result.id, localFallback: true };
+        }
+        console.error("[brincos.registrar]", err);
+        throw err;
+      }
     }),
 
   deletar: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db
-        .delete(historicoBrincos)
-        .where(
-          and(
-            eq(historicoBrincos.id, input.id),
-            eq(historicoBrincos.userId, ctx.user.id)
-          )
-        );
-      return { success: true };
+      try {
+        await db
+          .delete(historicoBrincos)
+          .where(
+            and(
+              eq(historicoBrincos.id, input.id),
+              eq(historicoBrincos.userId, ctx.user.id)
+            )
+          );
+        return { success: true };
+      } catch (err) {
+        if (isDatabaseUnavailable(err)) {
+          await deleteLocalHistoricoBrinco(ctx.user.id, input.id);
+          return { success: true, localFallback: true };
+        }
+        throw err;
+      }
     }),
 });
 

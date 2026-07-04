@@ -15,7 +15,7 @@ import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Plus, AlertCircle, Save, History, Tag, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Loader2, Plus, AlertCircle, Save, History, Tag, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -94,15 +94,52 @@ const SectionCard: React.FC<{
   title: string;
   hint?: string;
   children: React.ReactNode;
-}> = ({ title, hint, children }) => (
-  <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-    <div className="flex items-center justify-between mb-5">
-      <h2 className="text-base font-bold text-gray-800">{title}</h2>
+  compact?: boolean;
+}> = ({ title, hint, children, compact }) => (
+  <div className={cn('bg-white rounded-lg shadow-sm border border-gray-100', compact ? 'p-4' : 'p-5')}>
+    <div className={cn('flex items-center justify-between', compact ? 'mb-3' : 'mb-4')}>
+      <h2 className="text-sm font-bold text-gray-800">{title}</h2>
       {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
     </div>
     {children}
   </div>
 );
+
+const CollapsibleSectionCard: React.FC<{
+  title: string;
+  subtitle?: string;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}> = ({ title, subtitle, hint, defaultOpen = false, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-gray-50/80 transition-colors"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-gray-800">{title}</h2>
+          {!open && subtitle && (
+            <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{subtitle}</p>
+          )}
+          {open && hint && (
+            <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{hint}</p>
+          )}
+        </div>
+        <ChevronDown
+          className={cn('w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200', open && 'rotate-180')}
+        />
+      </button>
+      <div className={cn('px-5 pb-5 pt-1 border-t border-gray-50', !open && 'hidden')}>
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const FieldInput: React.FC<{
   value: string;
@@ -162,13 +199,116 @@ const Checkbox: React.FC<{
 );
 
 // ─── Constantes de motivo de troca de brinco ────────────────────────────────
-const MOTIVO_LABELS: Record<string, string> = {
-  perda: 'Perda',
-  danificado: 'Danificado',
-  reidentificacao: 'Reidentificação',
-  erro_cadastro: 'Erro de Cadastro',
-  outro: 'Outro',
+type MotivoTroca = 'perda' | 'danificado' | 'reidentificacao' | 'erro_cadastro' | 'outro';
+
+const MOTIVO_OPCOES: { value: MotivoTroca; label: string }[] = [
+  { value: 'perda', label: 'Perda do brinco' },
+  { value: 'danificado', label: 'Brinco danificado' },
+  { value: 'reidentificacao', label: 'Reidentificação' },
+  { value: 'erro_cadastro', label: 'Erro de cadastro' },
+  { value: 'outro', label: 'Outro' },
+];
+
+const MOTIVO_LABELS: Record<MotivoTroca, string> = Object.fromEntries(
+  MOTIVO_OPCOES.map(o => [o.value, o.label]),
+) as Record<MotivoTroca, string>;
+
+function formatHistoricoDataHora(reg: { dataAlteracao: string; createdAt?: Date | string | null }) {
+  if (reg.createdAt) {
+    const d = new Date(reg.createdAt);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    }
+  }
+  if (!reg.dataAlteracao) return '—';
+  const [y, m, day] = reg.dataAlteracao.split('-');
+  if (y && m && day) return `${day}/${m}/${y}`;
+  return reg.dataAlteracao;
+}
+
+type HistoricoBrincoRegistro = {
+  id: number;
+  brincoAnterior: string | null;
+  brincoNovo: string;
+  motivo: MotivoTroca;
+  observacoes?: string | null;
+  dataAlteracao: string;
+  usuarioNome?: string | null;
+  createdAt?: Date | string | null;
 };
+
+function HistoricoMetaField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium text-gray-500">{label}:</dt>
+      <dd className="mt-0.5 text-[13px] text-gray-800 break-words">{value}</dd>
+    </div>
+  );
+}
+
+function HistoricoBrincoCard({ reg }: { reg: HistoricoBrincoRegistro }) {
+  return (
+    <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {reg.brincoAnterior ? (
+          <>
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-gray-500">De:</span>
+              <span className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[13px] font-semibold text-gray-700">
+                {reg.brincoAnterior}
+              </span>
+            </div>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-gray-500">Para:</span>
+              <span className="rounded border border-[#4ECDC4]/40 bg-[#4ECDC4]/10 px-2 py-0.5 font-mono text-[13px] font-semibold text-[#2D5A5A]">
+                {reg.brincoNovo}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="inline-flex items-center gap-1.5">
+            <span className="text-[11px] font-medium text-gray-500">Para:</span>
+            <span className="rounded border border-[#4ECDC4]/40 bg-[#4ECDC4]/10 px-2 py-0.5 font-mono text-[13px] font-semibold text-[#2D5A5A]">
+              {reg.brincoNovo}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <dl className="mt-3 space-y-2.5 border-t border-gray-100 pt-3">
+        <HistoricoMetaField label="Data" value={formatHistoricoDataHora(reg)} />
+        <HistoricoMetaField label="Motivo" value={MOTIVO_LABELS[reg.motivo] ?? reg.motivo} />
+        <HistoricoMetaField label="Registrado por" value={reg.usuarioNome?.trim() || '—'} />
+        {reg.observacoes?.trim() && (
+          <HistoricoMetaField label="Observação" value={reg.observacoes.trim()} />
+        )}
+      </dl>
+    </article>
+  );
+}
+
+function MotivoSelect({
+  value,
+  onChange,
+  className,
+}: {
+  value: MotivoTroca;
+  onChange: (v: MotivoTroca) => void;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value as MotivoTroca)}
+      className={className}
+    >
+      {MOTIVO_OPCOES.map(op => (
+        <option key={op.value} value={op.value}>{op.label}</option>
+      ))}
+    </select>
+  );
+}
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
@@ -186,20 +326,28 @@ const AnimalFormPage: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [populated, setPopulated] = useState(false); // evita sobrescrever após populate
 
-  // ── Histórico de Brincos ──
+  // ── Histórico de Trocas de Brinco (consulta) ──
   const [showHistoricoModal, setShowHistoricoModal] = useState(false);
-  const [showRegistrarModal, setShowRegistrarModal] = useState(false);
-  const [novoRegistro, setNovoRegistro] = useState({
-    motivo: 'perda' as 'perda' | 'danificado' | 'reidentificacao' | 'erro_cadastro' | 'outro',
-    observacoes: '',
-    dataAlteracao: new Date().toISOString().split('T')[0],
-  });
 
   // Intercepta troca de brinco ao salvar: armazena o payload pendente e abre modal de motivo
   const [pendingSavePayload, setPendingSavePayload] = useState<null | { id: number; payload: Record<string, unknown>; brincoAnterior: string | null }>(null);
   const [showConfirmarTrocaModal, setShowConfirmarTrocaModal] = useState(false);
-  const [motivoTroca, setMotivoTroca] = useState<'perda' | 'danificado' | 'reidentificacao' | 'erro_cadastro' | 'outro'>('reidentificacao');
+  const [motivoTroca, setMotivoTroca] = useState<MotivoTroca>('reidentificacao');
   const [obsTroca, setObsTroca] = useState('');
+  const [obsTrocaError, setObsTrocaError] = useState('');
+
+  const podeConfirmarTrocaBrinco = motivoTroca !== 'outro' || obsTroca.trim().length > 0;
+
+  const cancelarTrocaBrinco = () => {
+    if (pendingSavePayload) {
+      set('brinco', pendingSavePayload.brincoAnterior ?? animal?.brinco ?? '');
+      setPendingSavePayload(null);
+    }
+    setShowConfirmarTrocaModal(false);
+    setMotivoTroca('reidentificacao');
+    setObsTroca('');
+    setObsTrocaError('');
+  };
 
   const { data: historicoBrincos, refetch: refetchHistorico } = trpc.brincos.list.useQuery(
     { animalId: animalId! },
@@ -208,15 +356,8 @@ const AnimalFormPage: React.FC = () => {
 
   const registrarBrincoMutation = trpc.brincos.registrar.useMutation({
     onSuccess: () => {
-      toast.success('Troca de brinco registrada!');
       refetchHistorico();
-      setShowRegistrarModal(false);
     },
-    onError: (err) => toast.error(`Erro: ${err.message}`),
-  });
-
-  const deletarBrincoMutation = trpc.brincos.deletar.useMutation({
-    onSuccess: () => { toast.success('Registro removido.'); refetchHistorico(); },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
 
@@ -339,8 +480,28 @@ const AnimalFormPage: React.FC = () => {
   };
 
   // ── Validação ──
-  // Campos mínimos obrigatórios para habilitar o cadastro
-  const canSubmit = !!fazendaId && !!form.brinco.trim() && !!form.sexo && !!form.categoria;
+  const hasDataReferencia = !!(form.dataNascimento.trim() || form.dataEntrada.trim());
+  const canSubmit =
+    !!fazendaId &&
+    !!form.brinco.trim() &&
+    !!form.sexo &&
+    !!form.categoria &&
+    hasDataReferencia;
+
+  const essentialFieldsHint = isEditMode
+    ? 'Para salvar, preencha: Fazenda, Número do Brinco, Sexo, Categoria e Data de Nascimento ou Data de Entrada.'
+    : 'Para cadastrar, preencha: Fazenda, Número do Brinco, Sexo, Categoria e Data de Nascimento ou Data de Entrada.';
+
+  const clearDataReferenciaErrors = (nascimento: string, entrada: string) => {
+    if (nascimento.trim() || entrada.trim()) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.dataNascimento;
+        delete next.dataEntrada;
+        return next;
+      });
+    }
+  };
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -348,9 +509,10 @@ const AnimalFormPage: React.FC = () => {
     if (!form.brinco.trim()) e.brinco = 'Número do brinco é obrigatório';
     if (!form.sexo) e.sexo = 'Sexo é obrigatório';
     if (!form.categoria) e.categoria = 'Categoria é obrigatória';
-    // Animal sem data de nascimento = comprado fora → data de entrada obrigatória
-    if (!form.dataNascimento && !form.dataEntrada) {
-      e.dataEntrada = 'Data de entrada obrigatória para animais sem data de nascimento';
+    if (!hasDataReferencia) {
+      const msg = 'Informe Data de Nascimento ou Data de Entrada';
+      e.dataNascimento = msg;
+      e.dataEntrada = msg;
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -403,29 +565,45 @@ const AnimalFormPage: React.FC = () => {
   });
 
   const updateMutation = trpc.animais.update.useMutation({
-    onSuccess: (_data, variables) => {
-      // Se havia um registro de troca pendente, registra agora
-      if (pendingSavePayload) {
-        registrarBrincoMutation.mutate({
-          animalId: pendingSavePayload.id,
-          brincoAnterior: pendingSavePayload.brincoAnterior,
-          brincoNovo: String(variables.brinco ?? form.brinco),
-          motivo: motivoTroca,
-          observacoes: obsTroca.trim() || null,
-          dataAlteracao: new Date().toISOString().split('T')[0],
-        });
-        setPendingSavePayload(null);
-        setShowConfirmarTrocaModal(false);
-      }
-      toast.success('Animal atualizado com sucesso!');
-      utils.animais.list.invalidate();
-      utils.animais.getById.invalidate({ id: animalId! });
-      setLocation('/rebanho/lista-animais');
-    },
     onError: (err) => toast.error(`Erro ao atualizar animal: ${err.message}`),
   });
 
-  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+  const confirmarTrocaBrinco = async () => {
+    if (!pendingSavePayload) return;
+    if (motivoTroca === 'outro' && !obsTroca.trim()) {
+      setObsTrocaError('Informe o motivo da troca nas observações.');
+      return;
+    }
+    setObsTrocaError('');
+    const { id, payload, brincoAnterior } = pendingSavePayload;
+    const brincoNovo = String((payload as { brinco?: string }).brinco ?? form.brinco);
+    const confirmadoEm = new Date();
+    try {
+      await updateMutation.mutateAsync({ id, ...(payload as Record<string, unknown>) });
+      await registrarBrincoMutation.mutateAsync({
+        animalId: id,
+        brincoAnterior,
+        brincoNovo,
+        motivo: motivoTroca,
+        observacoes: obsTroca.trim() || null,
+        dataAlteracao: confirmadoEm.toISOString().split('T')[0],
+      });
+      setPendingSavePayload(null);
+      setShowConfirmarTrocaModal(false);
+      setMotivoTroca('reidentificacao');
+      setObsTroca('');
+      toast.success('Animal atualizado e troca de brinco registrada!');
+      utils.animais.list.invalidate();
+      utils.animais.getById.invalidate({ id: animalId! });
+      await refetchHistorico();
+      setLocation('/rebanho/lista-animais');
+    } catch (err) {
+      toast.error(`Erro: ${err instanceof Error ? err.message : 'Falha ao salvar'}`);
+    }
+  };
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending
+    || registrarBrincoMutation.isPending;
 
   const handleSave = (novo = false) => {
     if (!validate()) {
@@ -465,23 +643,36 @@ const AnimalFormPage: React.FC = () => {
         setPendingSavePayload({ id: animalId!, payload: editPayload as Record<string, unknown>, brincoAnterior: brincoOriginal });
         setMotivoTroca('reidentificacao');
         setObsTroca('');
+        setObsTrocaError('');
         setShowConfirmarTrocaModal(true);
         return; // Aguarda confirmação no modal
       }
 
-      updateMutation.mutate({ id: animalId!, ...editPayload });
+      updateMutation.mutate({ id: animalId!, ...editPayload }, {
+        onSuccess: () => {
+          toast.success('Animal atualizado com sucesso!');
+          utils.animais.list.invalidate();
+          utils.animais.getById.invalidate({ id: animalId! });
+          setLocation('/rebanho/lista-animais');
+        },
+      });
     } else {
       createMutation.mutate(buildPayload(), {
         onSuccess: () => {
           toast.success('Animal cadastrado com sucesso!');
           utils.animais.list.invalidate();
           if (novo) {
-            // Preserva fazenda, raça, pelagem e marca; limpa subdivisão e demais campos
-            const keepRaca = form.raca;
-            const keepPelagem = form.pelagem;
-            const keepMarca = form.marca;
-            setForm({ ...INITIAL, raca: keepRaca, pelagem: keepPelagem, marca: keepMarca });
-            setPastoId('');
+            // Preserva contexto do lote/rebanho; limpa identificação e dados por animal
+            setForm({
+              ...INITIAL,
+              sexo: form.sexo,
+              categoria: form.categoria,
+              loteId: form.loteId,
+              raca: form.raca,
+              pelagem: form.pelagem,
+              marca: form.marca,
+              produtorOrigem: form.produtorOrigem,
+            });
             setErrors({});
             window.scrollTo({ top: 0, behavior: 'smooth' });
           } else {
@@ -539,7 +730,7 @@ const AnimalFormPage: React.FC = () => {
     : 'Cadastro de Animal';
   const pageSubtitle = isEditMode
     ? 'Atualize as informações do animal'
-    : 'Preencha as informações completas para registro no sistema';
+    : 'Preencha os dados principais do animal. Informações avançadas podem ser completadas depois.';
 
   return (
     <AppLayout>
@@ -554,43 +745,48 @@ const AnimalFormPage: React.FC = () => {
           <span className="text-[13px]">Voltar</span>
         </button>
 
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
-            <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
-          </div>
-          <div className="min-w-[220px]">
-            <FormLabel required>Fazenda</FormLabel>
-            <FieldBox required>
-              <select
-                value={fazendaId}
-                onChange={e => { setFazendaId(e.target.value); set('loteId', ''); setPastoId(''); }}
-                className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]')}
-              >
-                <option value="">Selecione uma Fazenda</option>
-                {fazendas?.map(f => (
-                  <option key={f.id} value={String(f.id)}>{f.nome}</option>
-                ))}
-              </select>
-            </FieldBox>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
+          <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
         </div>
 
         <form
           onSubmit={e => { e.preventDefault(); handleSave(false); }}
-          className="space-y-5"
+          className="space-y-4"
         >
           {/* ── Identificação Principal ── */}
           <SectionCard title="Identificação Principal" hint="Campos obrigatórios em destaque">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <FormLabel required>Número do Brinco</FormLabel>
-                  {isEditMode && (
-                    <div className="flex gap-1">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FormLabel required>Fazenda</FormLabel>
+                  <FieldBox required className={cn(errors.fazenda && 'border-l-red-500')}>
+                    <select
+                      value={fazendaId}
+                      onChange={e => {
+                        setFazendaId(e.target.value);
+                        set('loteId', '');
+                        setPastoId('');
+                        if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
+                      }}
+                      className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', errors.fazenda && 'text-red-600')}
+                    >
+                      <option value="">Selecione uma Fazenda</option>
+                      {fazendas?.map(f => (
+                        <option key={f.id} value={String(f.id)}>{f.nome}</option>
+                      ))}
+                    </select>
+                  </FieldBox>
+                  {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <FormLabel required>Número do Brinco</FormLabel>
+                    {isEditMode && (
                       <button
                         type="button"
                         onClick={() => setShowHistoricoModal(true)}
+                        title="Histórico de Trocas de Brinco"
                         className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#4ECDC4] transition-colors px-2 py-0.5 rounded border border-gray-200 hover:border-[#4ECDC4] bg-white"
                       >
                         <History className="w-3 h-3" />
@@ -601,83 +797,76 @@ const AnimalFormPage: React.FC = () => {
                           </span>
                         )}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNovoRegistro(prev => ({ ...prev, dataAlteracao: new Date().toISOString().split('T')[0] }));
-                          setShowRegistrarModal(true);
-                        }}
-                        className="flex items-center gap-1 text-[11px] text-white bg-[#4ECDC4] hover:bg-[#3dbdb5] transition-colors px-2 py-0.5 rounded"
-                      >
-                        <Tag className="w-3 h-3" />
-                        Registrar Troca
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                  <FieldInput
+                    value={form.brinco}
+                    onChange={v => set('brinco', v)}
+                    placeholder="ex: BR-12345"
+                    required
+                    error={!!errors.brinco}
+                  />
+                  {errors.brinco && <p className="text-xs text-red-600 mt-1">{errors.brinco}</p>}
                 </div>
-                <FieldInput
-                  value={form.brinco}
-                  onChange={v => set('brinco', v)}
-                  placeholder="ex: BR-12345"
-                  required
-                  error={!!errors.brinco}
-                />
-                {errors.brinco && <p className="text-xs text-red-600 mt-1">{errors.brinco}</p>}
               </div>
-              <div>
-                <FormLabel required>Sexo</FormLabel>
-                <FieldSelect
-                  value={form.sexo}
-                  onChange={v => { set('sexo', v); set('categoria', ''); }}
-                  required
-                  error={!!errors.sexo}
-                >
-                  <option value="">Selecione</option>
-                  <option value="Macho">Macho</option>
-                  <option value="Fêmea">Fêmea</option>
-                </FieldSelect>
-                {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FormLabel required>Sexo</FormLabel>
+                  <FieldSelect
+                    value={form.sexo}
+                    onChange={v => { set('sexo', v); set('categoria', ''); }}
+                    required
+                    error={!!errors.sexo}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="Macho">Macho</option>
+                    <option value="Fêmea">Fêmea</option>
+                  </FieldSelect>
+                  {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
+                </div>
+                <div>
+                  <FormLabel required>Categoria</FormLabel>
+                  <FieldSelect value={form.categoria} onChange={v => set('categoria', v)} required error={!!errors.categoria}>
+                    <option value="">Selecione</option>
+                    {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </FieldSelect>
+                  {errors.categoria && <p className="text-xs text-red-600 mt-1">{errors.categoria}</p>}
+                </div>
               </div>
-              <div>
-                <FormLabel required>Categoria</FormLabel>
-                <FieldSelect value={form.categoria} onChange={v => set('categoria', v)} required>
-                  <option value="">Selecione</option>
-                  {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </FieldSelect>
-              </div>
-              <div>
-                <FormLabel>Lote</FormLabel>
-                <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
-                  <option value="">Sem lote</option>
-                  {lotesFiltrados.map(l => (
-                    <option key={l.id} value={l.id}>{l.nome}</option>
-                  ))}
-                </FieldSelect>
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* ── Brinco Eletrônico ── */}
-          <SectionCard title="Brinco Eletrônico / RFID">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FormLabel>Código do Brinco Eletrônico</FormLabel>
-                <FieldInput
-                  value={form.brincoEletronico}
-                  onChange={v => set('brincoEletronico', v)}
-                  placeholder="ex: 076000000000001 ou código RFID"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FormLabel>Lote</FormLabel>
+                  <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
+                    <option value="">Sem lote</option>
+                    {lotesFiltrados.map(l => (
+                      <option key={l.id} value={l.id}>{l.nome}</option>
+                    ))}
+                  </FieldSelect>
+                </div>
+                <div>
+                  <FormLabel>Subdivisão</FormLabel>
+                  <FieldBox>
+                    <select
+                      value={pastoId}
+                      onChange={e => setPastoId(e.target.value)}
+                      disabled={!fazendaId}
+                      className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', !fazendaId && 'opacity-50 cursor-not-allowed')}
+                    >
+                      <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
+                      {(pastos ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' })).map(p => (
+                        <option key={p.id} value={String(p.id)}>{p.nome}</option>
+                      ))}
+                    </select>
+                  </FieldBox>
+                </div>
               </div>
             </div>
           </SectionCard>
 
-          {/* ── Dados Zootécnicos ── */}
-          <SectionCard title="Dados Zootécnicos">
+          {/* ── Dados Zootécnicos Básicos ── */}
+          <SectionCard title="Dados Zootécnicos Básicos" compact>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <FormLabel>Raça</FormLabel>
@@ -695,28 +884,25 @@ const AnimalFormPage: React.FC = () => {
                 <FieldInput value={form.marca} onChange={v => set('marca', v)} placeholder="ex: Marca a fogo" />
               </div>
               <div>
-                <FormLabel>Subdivisão</FormLabel>
-                <FieldBox>
-                  <select
-                    value={pastoId}
-                    onChange={e => setPastoId(e.target.value)}
-                    disabled={!fazendaId}
-                    className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', !fazendaId && 'opacity-50 cursor-not-allowed')}
-                  >
-                    <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
-                    {(pastos ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' })).map(p => (
-                      <option key={p.id} value={String(p.id)}>{p.nome}</option>
-                    ))}
-                  </select>
-                </FieldBox>
-              </div>
-              <div>
-                <FormLabel>Data de Nascimento</FormLabel>
-                <FormDatePicker
-                  value={form.dataNascimento}
-                  onChange={v => set('dataNascimento', v)}
-                  placeholder="dd/mm/aaaa"
-                />
+                <FormLabel required={!form.dataEntrada}>
+                  Data de Nascimento
+                  {!form.dataEntrada && (
+                    <span className="ml-1 text-[11px] text-gray-400 font-normal">(ou Data de Entrada)</span>
+                  )}
+                </FormLabel>
+                <div className={cn(errors.dataNascimento && 'ring-1 ring-red-400 rounded-sm')}>
+                  <FormDatePicker
+                    value={form.dataNascimento}
+                    onChange={v => {
+                      set('dataNascimento', v);
+                      clearDataReferenciaErrors(v, form.dataEntrada);
+                    }}
+                    placeholder="dd/mm/aaaa"
+                  />
+                </div>
+                {errors.dataNascimento && (
+                  <p className="mt-1 text-[11px] text-red-500">{errors.dataNascimento}</p>
+                )}
               </div>
               <div>
                 <FormLabel>Data de Desmama</FormLabel>
@@ -732,22 +918,24 @@ const AnimalFormPage: React.FC = () => {
             </div>
           </SectionCard>
 
-          {/* ── Entrada / Aquisição ── */}
-          <SectionCard title="Entrada / Aquisição">
+          {/* ── Entrada do Animal ── */}
+          <SectionCard title="Entrada do Animal" compact>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <FormLabel required={!form.dataNascimento}>
                   Data de Entrada
                   {!form.dataNascimento && (
-                    <span className="ml-1 text-[11px] text-gray-400 font-normal">(obrigatória sem data de nascimento)</span>
+                    <span className="ml-1 text-[11px] text-gray-400 font-normal">(ou Data de Nascimento)</span>
                   )}
                 </FormLabel>
                 <div className={cn(errors.dataEntrada && 'ring-1 ring-red-400 rounded-sm')}>
                   <FormDatePicker
                     value={form.dataEntrada}
-                    onChange={v => { set('dataEntrada', v); if (v) setErrors(prev => { const next = { ...prev }; delete next.dataEntrada; return next; }); }}
+                    onChange={v => {
+                      set('dataEntrada', v);
+                      clearDataReferenciaErrors(form.dataNascimento, v);
+                    }}
                     placeholder="dd/mm/aaaa"
-                    required={!form.dataNascimento}
                   />
                 </div>
                 {errors.dataEntrada && (
@@ -769,6 +957,35 @@ const AnimalFormPage: React.FC = () => {
                 <FormLabel>Produtor de Origem</FormLabel>
                 <FieldInput value={form.produtorOrigem} onChange={v => set('produtorOrigem', v)} placeholder="Nome do produtor" />
               </div>
+            </div>
+          </SectionCard>
+
+          {/* ── Brinco Eletrônico / RFID (recolhível) ── */}
+          <CollapsibleSectionCard
+            title="Brinco Eletrônico / RFID — opcional"
+            subtitle="Informe o código RFID ou transponder eletrônico, se houver."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
+              <div>
+                <FormLabel>Código do Brinco Eletrônico</FormLabel>
+                <FieldInput
+                  value={form.brincoEletronico}
+                  onChange={v => set('brincoEletronico', v)}
+                  placeholder="ex: 076000000000001 ou código RFID"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
+                </p>
+              </div>
+            </div>
+          </CollapsibleSectionCard>
+
+          {/* ── Dados comerciais da aquisição (recolhível) ── */}
+          <CollapsibleSectionCard
+            title="Dados comerciais da aquisição"
+            subtitle="Informe preço e frete quando o animal tiver sido comprado."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
               <div>
                 <FormLabel>Preço (R$/kg)</FormLabel>
                 <FieldInput
@@ -792,11 +1009,14 @@ const AnimalFormPage: React.FC = () => {
                 />
               </div>
             </div>
-          </SectionCard>
+          </CollapsibleSectionCard>
 
-          {/* ── Rastreabilidade e Registros Oficiais ── */}
-          <SectionCard title="Rastreabilidade e Registros Oficiais">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* ── Rastreabilidade (recolhível) ── */}
+          <CollapsibleSectionCard
+            title="Rastreabilidade e Registros Oficiais"
+            subtitle="SISBOV, RGN, RGD e demais registros oficiais."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
               <div>
                 <FormLabel>SISBOV</FormLabel>
                 <FieldInput value={form.sisbov} onChange={v => set('sisbov', v)} placeholder="ex: 076000000000001" />
@@ -821,11 +1041,14 @@ const AnimalFormPage: React.FC = () => {
                 />
               </div>
             </div>
-          </SectionCard>
+          </CollapsibleSectionCard>
 
-          {/* ── Genealogia ── */}
-          <SectionCard title="Genealogia">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* ── Genealogia (recolhível) ── */}
+          <CollapsibleSectionCard
+            title="Genealogia"
+            subtitle="Pai e mãe do animal, quando conhecidos."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
               <div>
                 <FormLabel>Pai (Reprodutor)</FormLabel>
                 <FieldInput value={form.pai} onChange={v => set('pai', v)} placeholder="Nome / brinco do pai" />
@@ -835,13 +1058,13 @@ const AnimalFormPage: React.FC = () => {
                 <FieldInput value={form.mae} onChange={v => set('mae', v)} placeholder="Nome / brinco da mãe" />
               </div>
             </div>
-          </SectionCard>
+          </CollapsibleSectionCard>
 
-          {/* ── Status (exibido em ambos os modos) ── */}
-          <SectionCard title="Status do Animal">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FormLabel>Status</FormLabel>
+          {/* ── Status ── */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 px-4 py-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <h2 className="text-sm font-bold text-gray-800 shrink-0">Status do Animal</h2>
+              <div className="w-full sm:max-w-[200px]">
                 <FieldSelect value={form.status} onChange={v => set('status', v)}>
                   <option value="ativo">Ativo</option>
                   <option value="vendido">Vendido</option>
@@ -850,47 +1073,56 @@ const AnimalFormPage: React.FC = () => {
                 </FieldSelect>
               </div>
             </div>
-          </SectionCard>
+          </div>
 
           {/* ── Observações Gerais ── */}
-          <SectionCard title="Observações Gerais">
+          <SectionCard title="Observações Gerais" compact>
             <FieldBox>
               <textarea
                 value={form.observacoes}
                 onChange={e => set('observacoes', e.target.value)}
                 placeholder="Digite informações adicionais relevantes..."
-                rows={4}
-                className={cn(inputClass, 'resize-y min-h-[100px]')}
+                rows={3}
+                className={cn(inputClass, 'resize-y min-h-[80px]')}
               />
             </FieldBox>
           </SectionCard>
 
           {/* ── Ações ── */}
-          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-            <p className={`text-[11px] ${!canSubmit ? 'text-amber-500 font-medium' : 'text-gray-400'}`}>
-              {!canSubmit
-                ? '* Preencha Fazenda, Número do Brinco, Sexo e Categoria para habilitar o cadastro.'
-                : '* Campos obrigatórios preenchidos. Pronto para salvar.'
-              }
-            </p>
-            <div className="flex gap-3 justify-end">
+          <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {!canSubmit ? (
+                <p className="flex items-center gap-1.5 text-[11px] text-amber-700/90 sm:max-w-md">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500" aria-hidden />
+                  <span>{essentialFieldsHint}</span>
+                </p>
+              ) : (
+                <span className="hidden sm:block" aria-hidden />
+              )}
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 sm:gap-3 shrink-0">
               <Button
                 type="button"
+                variant="outline"
                 onClick={() => setLocation('/rebanho/lista-animais')}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800"
                 disabled={isSubmitting}
+                className={cn(
+                  'min-h-[44px] bg-white border-[#CBD5E1] text-[#1E293B] hover:bg-slate-50 hover:text-[#1E293B]',
+                  isSubmitting && 'opacity-60 cursor-not-allowed hover:bg-white',
+                )}
               >
                 Cancelar
               </Button>
 
-              {/* Botão "Salvar e Novo" — apenas no modo criação */}
               {!isEditMode && (
                 <Button
                   type="button"
                   onClick={() => handleSave(true)}
-                  className="bg-green-700 hover:bg-green-800 text-white"
                   disabled={isSubmitting || !canSubmit}
-                  title={!canSubmit ? 'Preencha Fazenda, Número do Brinco e Sexo para salvar' : undefined}
+                  className={cn(
+                    'min-h-[44px] bg-white border-[#4ECDC4] text-[#159A91] hover:bg-[rgba(78,205,196,0.08)]',
+                    (isSubmitting || !canSubmit) &&
+                      'border-[#4ECDC4]/45 text-[#159A91]/45 cursor-not-allowed hover:bg-white',
+                  )}
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   Salvar e Novo
@@ -899,14 +1131,18 @@ const AnimalFormPage: React.FC = () => {
 
               <Button
                 type="submit"
-                className="text-white"
-                style={{ backgroundColor: '#2D5A5A', opacity: canSubmit ? 1 : 0.5 }}
                 disabled={isSubmitting || !canSubmit}
-                title={!canSubmit ? 'Preencha Fazenda, Número do Brinco e Sexo para salvar' : undefined}
+                className={cn(
+                  'min-h-[44px] text-white border border-transparent',
+                  canSubmit && !isSubmitting
+                    ? 'bg-[#4ECDC4] hover:bg-[#38BDB4]'
+                    : 'bg-[#B8E8E4] text-white/75 cursor-not-allowed hover:bg-[#B8E8E4]',
+                )}
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {isEditMode ? 'Salvar Alterações' : 'Cadastrar Animal'}
               </Button>
+              </div>
             </div>
           </div>
         </form>
@@ -964,77 +1200,37 @@ const AnimalFormPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Modal: Histórico de Brincos ──────────────────────────────────────────────────────────── */}
+      {/* ─── Modal: Histórico de Trocas de Brinco ─────────────────────────────────────────────────── */}
       <Dialog open={showHistoricoModal} onOpenChange={setShowHistoricoModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="w-5 h-5 text-[#4ECDC4]" />
-              Histórico de Brincos
+              Histórico de Trocas de Brinco
             </DialogTitle>
           </DialogHeader>
           <div className="mt-2">
             {!historicoBrincos || historicoBrincos.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <Tag className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">Nenhuma troca de brinco registrada.</p>
-                <button
-                  type="button"
-                  onClick={() => { setShowHistoricoModal(false); setShowRegistrarModal(true); }}
-                  className="mt-3 text-xs text-[#4ECDC4] hover:underline"
-                >
-                  Registrar primeira troca
-                </button>
+                <p className="text-sm text-gray-600">
+                  Nenhuma troca de brinco registrada para este animal.
+                </p>
+                <p className="mt-2 text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                  Quando o número do brinco for alterado na edição do animal, o histórico será registrado automaticamente.
+                </p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
                 {historicoBrincos.map((reg) => (
-                  <div key={reg.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {reg.brincoAnterior && (
-                          <>
-                            <span className="text-xs font-mono bg-red-50 text-red-700 px-2 py-0.5 rounded border border-red-200">
-                              {reg.brincoAnterior}
-                            </span>
-                            <span className="text-gray-400 text-xs">→</span>
-                          </>
-                        )}
-                        <span className="text-xs font-mono bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-200">
-                          {reg.brincoNovo}
-                        </span>
-                        <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">
-                          {MOTIVO_LABELS[reg.motivo] ?? reg.motivo}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-3 text-[11px] text-gray-400">
-                        <span>{reg.dataAlteracao}</span>
-                        {reg.usuarioNome && <span>por {reg.usuarioNome}</span>}
-                      </div>
-                      {reg.observacoes && (
-                        <p className="mt-1 text-xs text-gray-500 italic">{reg.observacoes}</p>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => deletarBrincoMutation.mutate({ id: reg.id })}
-                      className="ml-2 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
-                      title="Remover registro"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <HistoricoBrincoCard
+                    key={reg.id}
+                    reg={reg as HistoricoBrincoRegistro}
+                  />
                 ))}
               </div>
             )}
-            <div className="mt-4 flex justify-between items-center border-t pt-3">
-              <button
-                type="button"
-                onClick={() => { setShowHistoricoModal(false); setShowRegistrarModal(true); }}
-                className="text-xs text-[#4ECDC4] hover:underline flex items-center gap-1"
-              >
-                <Tag className="w-3.5 h-3.5" /> Registrar nova troca
-              </button>
+            <div className="mt-4 flex justify-end border-t pt-3">
               <Button variant="outline" size="sm" onClick={() => setShowHistoricoModal(false)}>
                 Fechar
               </Button>
@@ -1043,107 +1239,13 @@ const AnimalFormPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Modal: Registrar Troca de Brinco ─────────────────────────────────────────────────── */}
-      <Dialog open={showRegistrarModal} onOpenChange={setShowRegistrarModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Tag className="w-5 h-5 text-[#4ECDC4]" />
-              Registrar Troca de Brinco
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-2 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Brinco Anterior</label>
-                <input
-                  type="text"
-                  value={animal?.brinco ?? ''}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-200 rounded text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
-                  placeholder="(não informado)"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Brinco Novo *</label>
-                <input
-                  type="text"
-                  value={form.brinco}
-                  readOnly
-                  className="w-full px-3 py-2 border border-[#4ECDC4] rounded text-sm bg-green-50 font-medium text-green-800"
-                  placeholder="Preencha o campo acima"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Motivo *</label>
-              <select
-                value={novoRegistro.motivo}
-                onChange={(e) => setNovoRegistro(prev => ({ ...prev, motivo: e.target.value as typeof prev.motivo }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              >
-                <option value="perda">Perda</option>
-                <option value="danificado">Danificado</option>
-                <option value="reidentificacao">Reidentificação</option>
-                <option value="erro_cadastro">Erro de Cadastro</option>
-                <option value="outro">Outro</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Data da Alteração *</label>
-              <input
-                type="date"
-                value={novoRegistro.dataAlteracao}
-                onChange={(e) => setNovoRegistro(prev => ({ ...prev, dataAlteracao: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>
-              <textarea
-                value={novoRegistro.observacoes}
-                onChange={(e) => setNovoRegistro(prev => ({ ...prev, observacoes: e.target.value }))}
-                rows={2}
-                placeholder="Detalhe o motivo da troca..."
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              />
-            </div>
-            <div className="flex gap-3 pt-2 border-t">
-              <Button variant="outline" className="flex-1" onClick={() => setShowRegistrarModal(false)}>
-                Cancelar
-              </Button>
-              <Button
-                className="flex-1 text-white"
-                style={{ backgroundColor: '#4ECDC4' }}
-                disabled={!form.brinco.trim() || registrarBrincoMutation.isPending}
-                onClick={() => {
-                  if (!form.brinco.trim()) {
-                    toast.error('Preencha o campo Número do Brinco antes de registrar.');
-                    return;
-                  }
-                  registrarBrincoMutation.mutate({
-                    animalId: animalId!,
-                    brincoAnterior: animal?.brinco ?? null,
-                    brincoNovo: form.brinco.trim(),
-                    motivo: novoRegistro.motivo,
-                    observacoes: novoRegistro.observacoes.trim() || null,
-                    dataAlteracao: novoRegistro.dataAlteracao,
-                  });
-                }}
-              >
-                {registrarBrincoMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Salvando...</>
-                ) : (
-                  <><Tag className="w-4 h-4 mr-1" /> Confirmar Troca</>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* ─── Modal: Confirmar Troca de Brinco ao Salvar ───────────────────────────────────────────────────── */}
-      <Dialog open={showConfirmarTrocaModal} onOpenChange={(open) => { if (!open) { setShowConfirmarTrocaModal(false); setPendingSavePayload(null); } }}>
+      <Dialog
+        open={showConfirmarTrocaModal}
+        onOpenChange={open => {
+          if (!open) cancelarTrocaBrinco();
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1167,49 +1269,55 @@ const AnimalFormPage: React.FC = () => {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Motivo da Troca *</label>
-              <select
+              <MotivoSelect
                 value={motivoTroca}
-                onChange={(e) => setMotivoTroca(e.target.value as typeof motivoTroca)}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              >
-                <option value="perda">Perda</option>
-                <option value="danificado">Danificado</option>
-                <option value="reidentificacao">Reidentificação</option>
-                <option value="erro_cadastro">Erro de Cadastro</option>
-                <option value="outro">Outro</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Observações (opcional)</label>
-              <textarea
-                value={obsTroca}
-                onChange={(e) => setObsTroca(e.target.value)}
-                rows={2}
-                placeholder="Detalhe o motivo da troca..."
+                onChange={motivo => {
+                  setMotivoTroca(motivo);
+                  if (motivo !== 'outro') setObsTrocaError('');
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Observações{motivoTroca === 'outro' ? ' *' : ' (opcional)'}
+              </label>
+              <textarea
+                value={obsTroca}
+                onChange={e => {
+                  setObsTroca(e.target.value);
+                  if (e.target.value.trim()) setObsTrocaError('');
+                }}
+                rows={2}
+                placeholder="Detalhe o motivo da troca..."
+                className={cn(
+                  'w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]',
+                  obsTrocaError ? 'border-red-400' : 'border-gray-300',
+                )}
+              />
+              {obsTrocaError && (
+                <p className="mt-1 text-[11px] text-red-500">{obsTrocaError}</p>
+              )}
             </div>
             <div className="flex gap-3 pt-2 border-t">
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => { setShowConfirmarTrocaModal(false); setPendingSavePayload(null); }}
+                onClick={cancelarTrocaBrinco}
+                disabled={isSubmitting}
               >
                 Cancelar
               </Button>
               <Button
                 className="flex-1 text-white"
                 style={{ backgroundColor: '#4ECDC4' }}
-                disabled={updateMutation.isPending}
-                onClick={() => {
-                  if (!pendingSavePayload) return;
-                  updateMutation.mutate({ id: pendingSavePayload.id, ...(pendingSavePayload.payload as any) });
-                }}
+                disabled={isSubmitting || !podeConfirmarTrocaBrinco}
+                onClick={confirmarTrocaBrinco}
               >
-                {updateMutation.isPending ? (
+                {isSubmitting ? (
                   <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Salvando...</>
                 ) : (
-                  <><Save className="w-4 h-4 mr-1" /> Salvar e Registrar</>
+                  <><Save className="w-4 h-4 mr-1" /> Salvar e Registrar Troca</>
                 )}
               </Button>
             </div>

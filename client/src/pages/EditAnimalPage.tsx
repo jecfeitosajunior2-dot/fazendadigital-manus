@@ -3,6 +3,6 @@
  *
  * O AnimalFormPage (NewAnimalPage.tsx) detecta automaticamente o modo de edição
  * pelo parâmetro ?id= na URL, exibindo o mesmo layout rico do cadastro com os
- * botões de Histórico e Registrar Troca de Brinco disponíveis no modo edição.
+ * botão de Histórico de Trocas de Brinco disponível no modo edição (somente consulta).
  */
 export { EditAnimalPage } from "./NewAnimalPage";

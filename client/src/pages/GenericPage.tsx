@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
-import MobileCard from "@/components/MobileCard";
+import { FD_PRIMARY } from "@/components/FormFields";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
@@ -35,25 +35,11 @@ function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: Ani
 
 const LOTE_BADGE_PALETTE = [
   "bg-slate-100 text-slate-700",
+  "bg-sky-50 text-sky-800",
   "bg-teal-50 text-teal-800",
   "bg-blue-50 text-blue-800",
-  "bg-amber-50 text-amber-800",
-  "bg-violet-50 text-violet-800",
+  "bg-gray-100 text-gray-700",
 ];
-
-function categoriaBadgeClass(categoria: string): string {
-  const map: Record<string, string> = {
-    Bezerro: "bg-amber-50 text-amber-800",
-    Bezerra: "bg-amber-50 text-amber-800",
-    Novilho: "bg-sky-50 text-sky-800",
-    Novilha: "bg-sky-50 text-sky-800",
-    Boi: "bg-slate-100 text-slate-700",
-    Vaca: "bg-violet-50 text-violet-800",
-    Touro: "bg-indigo-50 text-indigo-800",
-    Matriz: "bg-teal-50 text-teal-800",
-  };
-  return map[categoria] ?? "bg-gray-100 text-gray-700";
-}
 
 function loteBadgeClass(nome: string): string {
   let h = 0;
@@ -162,7 +148,6 @@ export function AnimaisPage() {
   const { data: fazendasData } = trpc.fazendas.list.useQuery();
   const { data: marcasDistintas = [] } = trpc.animais.marcasDistintas.useQuery();
   const { data: pastosData } = trpc.pastos.list.useQuery();
-  const deleteMutation = trpc.animais.delete.useMutation({ onSuccess: () => { toast.success("Animal removido!"); refetch(); } });
 
   const filtrosKey = JSON.stringify(apiParams);
   useEffect(() => {
@@ -246,9 +231,28 @@ export function AnimaisPage() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-[16px] font-semibold text-gray-900">Lista de Animais</h1>
-        <div className="flex items-center gap-3 flex-wrap">
+      {/* Cabeçalho — fora do quadro da lista */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de Animais</h1>
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={() => setLocation("/rebanho/novo-animal")}
+            className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            <span className="material-icons text-[16px]">add</span>
+            <span className="hidden sm:inline">Novo Animal</span>
+            <span className="sm:hidden">Novo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportarOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+          >
+            <span className="material-icons text-[16px] text-gray-500">upload_file</span>
+            Importar
+          </button>
           <ListExportButtons
             title="Lista de Animais"
             filename="animais"
@@ -257,19 +261,8 @@ export function AnimaisPage() {
             alignRightFrom={6}
             fazendaNome={fazendaNomePdf}
             landscape
+            variant="secondary"
           />
-          <button
-            onClick={() => setImportarOpen(true)}
-            className="flex items-center justify-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto"
-            style={{ backgroundColor: "#0ea5e9", minHeight: 44 }}
-          >
-            <span className="material-icons text-[16px]">upload_file</span>
-            Importar
-          </button>
-          <button onClick={() => setLocation("/rebanho/novo-animal")} className="flex items-center justify-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto" style={{ backgroundColor: "#2D5A5A", minHeight: 44 }}>
-            <span className="material-icons text-[16px]">add</span>
-            Novo Animal
-          </button>
         </div>
       </div>
 
@@ -291,66 +284,28 @@ export function AnimaisPage() {
         marcadoresDisponiveis={marcasDistintas}
       />
 
-      {/* Cards no mobile */}
-      <div className="lg:hidden space-y-3">
-        {isLoading ? (
-          <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
-        ) : isEmptyList ? (
-          <AnimaisListEmptyState
-            hasActiveFilters={hasActiveFilters}
-            onNovoAnimal={() => setLocation("/rebanho/novo-animal")}
-            onLimparFiltros={limparFiltros}
-          />
-        ) : paginated.map(animal => (
-          <MobileCard
-            key={animal.id}
-            title={animal.brinco || animal.nome || "—"}
-            subtitle={[animal.loteNome, animal.raca].filter(Boolean).join(" · ") || undefined}
-            badge={
-              <div className="flex flex-col items-end gap-1">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${animal.sexo === "macho" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
-                  {animal.sexo === "macho" ? "Macho" : "Fêmea"}
-                </span>
-                {animal.emCarencia && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">Carência</span>
-                )}
-              </div>
-            }
-            fields={[
-              { label: "Idade", value: formatIdade(animal.idadeMeses ?? null) },
-              { label: "Dias Fazenda", value: animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? String(animal.diasNaFazenda) : "-" },
-              { label: "Últ. Peso", value: animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? `${Number(animal.ultimoPeso).toFixed(1)} kg` : "-" },
-              { label: "GMD", value: animal.gmd !== null && animal.gmd !== undefined ? `${Number(animal.gmd).toFixed(3)} kg/d` : "-" },
-            ]}
-            actions={[
-              { icon: "visibility", label: "Detalhes", onClick: () => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`) },
-              { icon: "edit", label: "Editar", onClick: () => setLocation(`/rebanho/editar-animal?id=${animal.id}`) },
-              { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Remover animal?")) deleteMutation.mutate({ id: animal.id }); } },
-            ]}
-          />
-        ))}
-      </div>
-
-      {/* Table no desktop */}
-      <div className="hidden lg:block bg-white rounded-lg border border-gray-200">
+      {/* Quadro único — tabela de animais */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <TableHorizontalScroll
           footer={
-            <TablePaginationFooter
-              pageSize={perPage}
-              page={page}
-              totalItems={sortedAnimais.length}
-              onPageChange={setPage}
-              onPageSizeChange={size => {
-                setPerPage(size);
-                setPage(1);
-              }}
-              itemLabel="animais"
-            />
+            <div className="border-t border-gray-100">
+              <TablePaginationFooter
+                pageSize={perPage}
+                page={page}
+                totalItems={sortedAnimais.length}
+                onPageChange={setPage}
+                onPageSizeChange={size => {
+                  setPerPage(size);
+                  setPage(1);
+                }}
+                itemLabel="animais"
+              />
+            </div>
           }
         >
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
+          <table className="w-full min-w-[1100px] text-[12px] border-collapse">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
                 {/* Cabeçalhos ordensáveis */}
                 {([
                   { key: "brinco",      label: "Brinco",         align: "center" },
@@ -368,7 +323,7 @@ export function AnimaisPage() {
                   <th
                     key={col.key}
                     onClick={() => toggleSort(col.key)}
-                    className={`px-3 py-2 font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${
+                    className={`px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${
                       idx === 0 ? "sticky left-0 z-[3] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     }`}
                   >
@@ -377,7 +332,7 @@ export function AnimaisPage() {
                   </th>
                 ))}
                 {/* Coluna Ações: sem ordenação, fixa à direita */}
-                <th className="text-center px-3 py-2 font-semibold text-gray-600 whitespace-nowrap sticky right-0 z-[3] bg-gray-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]">Ações</th>
+                <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap sticky right-0 z-[3] bg-gray-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -406,13 +361,13 @@ export function AnimaisPage() {
                   {/* Nº RFID */}
                   <td className="px-3 py-2 text-center text-gray-800 font-mono text-[11px]">{animal.brincoEletronico || <span className="text-gray-300">—</span>}</td>
                   {/* Categoria */}
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-2.5 text-center">
                     {animal.categoria ? (
-                      <span className={`px-2 py-0.5 rounded font-medium text-[11px] ${categoriaBadgeClass(animal.categoria)}`}>{animal.categoria}</span>
+                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium text-[11px]">{animal.categoria}</span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Lote */}
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-2.5 text-center">
                     {animal.loteNome ? (
                       <span className={`px-2 py-0.5 rounded font-medium text-[11px] ${loteBadgeClass(animal.loteNome)}`}>{animal.loteNome}</span>
                     ) : <span className="text-gray-300">—</span>}
@@ -444,7 +399,7 @@ export function AnimaisPage() {
                   {/* GMD */}
                   <td className="px-3 py-2 text-center tabular-nums">
                     {animal.gmd !== null && animal.gmd !== undefined ? (
-                      <span className={Number(animal.gmd) >= 0.8 ? "text-green-600" : Number(animal.gmd) >= 0.4 ? "text-amber-600" : "text-red-500"}>
+                      <span className={Number(animal.gmd) >= 0 ? "text-green-600 font-medium" : "text-red-500"}>
                         {Number(animal.gmd).toFixed(3)}
                       </span>
                     ) : <span className="text-gray-300">—</span>}
@@ -488,7 +443,6 @@ export function AnimaisPage() {
 }
 
 // ─── Lista de Produtos (iRancho fiel) ────────────────────────────────────────
-const FD_PRIMARY = "#4ECDC4";
 
 type SortKeyEstoque =
   | "nome" | "categoria" | "situacao" | "fabricante" | "identificadorUnico"
