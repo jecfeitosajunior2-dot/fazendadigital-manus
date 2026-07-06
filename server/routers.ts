@@ -55,6 +55,7 @@ import {
   assertBrincoUnicoEntreAtivos,
   assertBrincoUnicoEntreAtivosDb,
   loadActiveBrincoKeysFromDb,
+  loadActiveBrincoKeysLocal,
 } from "./brincoAtivoValidation";
 import {
   resolveEffectiveStatus,
@@ -300,6 +301,53 @@ async function loadDadosDropdownModeloAnimais(userId: number): Promise<{
   }
 
   return { nomesFazendas, nomesLotes, pastosPorFazendaNome };
+}
+
+async function loadLotesUsuarioParaOperacao(userId: number): Promise<{
+  loteNomeParaId: Map<string, number>;
+  loteInativoSet: Set<string>;
+}> {
+  try {
+    const lotesUsuario = await db
+      .select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
+      .from(lotes)
+      .where(and(eq(lotes.userId, userId), eq(lotes.ativo, true)));
+    const todosLotes = await db
+      .select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
+      .from(lotes)
+      .where(eq(lotes.userId, userId));
+
+    const loteNomeParaId = new Map(
+      lotesUsuario.map(l => [String(l.nome || '').toLowerCase().trim(), l.id]),
+    );
+    const loteInativoSet = new Set(
+      todosLotes
+        .filter(l => !l.ativo)
+        .map(l => String(l.nome || '').toLowerCase().trim())
+        .filter(Boolean),
+    );
+    return { loteNomeParaId, loteInativoSet };
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return { loteNomeParaId: new Map(), loteInativoSet: new Set() };
+    }
+    throw error;
+  }
+}
+
+async function loadBrincosAtivosParaOperacao(userId: number): Promise<Set<string>> {
+  const localFazendas = await listLocalFazendas(userId);
+  if (localFazendas.length > 0) {
+    return loadActiveBrincoKeysLocal(userId);
+  }
+  try {
+    return await loadActiveBrincoKeysFromDb(userId);
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) {
+      return loadActiveBrincoKeysLocal(userId);
+    }
+    throw error;
+  }
 }
 
 const animaisRouter = router({
@@ -1016,7 +1064,15 @@ const animaisRouter = router({
       linhas: z.array(z.record(z.string(), z.string())),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, isLinhaExemplo, MENSAGEM_DATA_REFERENCIA_OBRIGATORIA, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
+      const {
+        normalizarLinha,
+        normalizarSexo,
+        normalizarStatus,
+        isLinhaExemplo,
+        mensagemDataReferenciaLinha,
+        possuiDataReferenciaImportacao,
+        montarMensagemValidacaoImportacao,
+      } = await import('../shared/importacaoAnimais');
       const { CATEGORIAS_POR_SEXO, isCategoriaValidaParaSexo, todasAsCategorias } = await import('../shared/animal-types');
       const SEXOS_VALIDOS = ['macho', 'femea'];
       const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
@@ -1026,6 +1082,7 @@ const animaisRouter = router({
       ];
       const CATEGORIAS_VALIDAS = todasAsCategorias(); // Boi, Novilho, Bezerro, Vaca, Novilha, Bezerra
 
+      try {
       // Normaliza cabeçalhos PT-BR → chaves internas para TODAS as linhas
       // (a planilha do usuário usa rótulos em português como "Brinco", "Data de Nascimento")
       // e DESCARTA a linha de EXEMPLO ilustrativa (defesa redundante do backend).
@@ -1040,19 +1097,10 @@ const animaisRouter = router({
       const pastosUsuario = await loadPastosUsuarioParaOperacao(ctx.user.id);
       const pastoNomeParaId = new Map(pastosUsuario.map(p => [p.nome.toLowerCase().trim(), p.id]));
 
-      // Busca apenas lotes ATIVOS do usuário
-      const lotesUsuario = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
-        .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
-      const loteNomeParaId = new Map(lotesUsuario.map(l => [l.nome.toLowerCase().trim(), l.id]));
-      // Mapa de todos os lotes (ativos + inativos) para detectar lotes inativos
-      const todosLotes = await db.select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
-        .from(lotes).where(eq(lotes.userId, ctx.user.id));
-      const loteInativoSet = new Set(
-        todosLotes.filter(l => !l.ativo).map(l => l.nome.toLowerCase().trim())
-      );
+      const { loteNomeParaId, loteInativoSet } = await loadLotesUsuarioParaOperacao(ctx.user.id);
 
       // Brincos em uso por animais ativos (inativos podem reutilizar número)
-      const brincosAtivosBancoSet = await loadActiveBrincoKeysFromDb(ctx.user.id);
+      const brincosAtivosBancoSet = await loadBrincosAtivosParaOperacao(ctx.user.id);
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
       const validos: typeof input.linhas = [];
@@ -1178,8 +1226,11 @@ const animaisRouter = router({
         }
 
         if (!possuiDataReferenciaImportacao(linha)) {
-          errosLinha.push({ linha: numLinha, campo: 'dataNascimento', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
-          errosLinha.push({ linha: numLinha, campo: 'dataEntrada', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+          errosLinha.push({
+            linha: numLinha,
+            campo: 'Data de Nascimento',
+            mensagem: mensagemDataReferenciaLinha(numLinha),
+          });
         }
 
         // Lote (opcional, mas se informado deve ser ativo e existir)
@@ -1199,15 +1250,28 @@ const animaisRouter = router({
         }
       }
 
+      const { mensagemPrincipal, mensagemDetalhada } = montarMensagemValidacaoImportacao(erros);
+
       return {
         total: input.linhas.length,
         validos: validos.length,
         invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
         erros,
+        mensagemPrincipal: erros.length > 0 ? mensagemPrincipal : undefined,
+        mensagemDetalhada: erros.length > 0 ? mensagemDetalhada : undefined,
         loteNomeParaId: Object.fromEntries(loteNomeParaId),
         fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
         pastoNomeParaId: Object.fromEntries(pastoNomeParaId),
       };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error('[animais.validarImportacao]', error);
+        const { MENSAGEM_VALIDACAO_PLANILHA_GENERICA } = await import('../shared/importacaoAnimais');
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: MENSAGEM_VALIDACAO_PLANILHA_GENERICA,
+        });
+      }
     }),
 
   // ── Importa animais em lote ──────────────────────────────────────────────────
@@ -1219,7 +1283,7 @@ const animaisRouter = router({
       pastoNomeParaId: z.record(z.string(), z.number()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo, MENSAGEM_DATA_REFERENCIA_OBRIGATORIA, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo, mensagemDataReferenciaLinha, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
@@ -1241,7 +1305,7 @@ const animaisRouter = router({
         return undefined;
       };
 
-      const brincosAtivosReservados = await loadActiveBrincoKeysFromDb(ctx.user.id);
+      const brincosAtivosReservados = await loadBrincosAtivosParaOperacao(ctx.user.id);
 
       for (let i = 0; i < input.linhas.length; i++) {
         // Normaliza cabeçalhos PT-BR → chaves internas
@@ -1271,7 +1335,7 @@ const animaisRouter = router({
           }
 
           if (!possuiDataReferenciaImportacao(linha)) {
-            rejeitados.push({ linha: numLinha, mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+            rejeitados.push({ linha: numLinha, mensagem: mensagemDataReferenciaLinha(numLinha) });
             continue;
           }
 

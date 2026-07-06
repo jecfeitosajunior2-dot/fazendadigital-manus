@@ -10,7 +10,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { normalizarLinha, isLinhaExemplo } from '@shared/importacaoAnimais';
+import { normalizarLinha, isLinhaExemplo, mensagemErroTecnicoImportacao } from '@shared/importacaoAnimais';
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,8 @@ type ResultadoValidacao = {
   validos: number;
   invalidos: number;
   erros: ErroValidacao[];
+  mensagemPrincipal?: string;
+  mensagemDetalhada?: string;
   loteNomeParaId: Record<string, number>;
   fazendaNomeParaId?: Record<string, number>;
   pastoNomeParaId?: Record<string, number>;
@@ -196,8 +198,12 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
       onSuccess: (res) => {
         setValidacao(res);
         setEtapa('validacao');
+        if (res.erros.length > 0) {
+          setMostrarErros(true);
+          toast.error(res.mensagemPrincipal || 'Corrija os erros na planilha antes de importar.');
+        }
       },
-      onError: (err) => toast.error(`Erro na validação: ${err.message}`),
+      onError: (err) => toast.error(mensagemErroTecnicoImportacao(err.message)),
     });
   };
 
@@ -222,7 +228,7 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
           utils.animais.list.invalidate();
           onImportado?.();
         },
-        onError: (err) => toast.error(`Erro na importação: ${err.message}`),
+        onError: (err) => toast.error(mensagemErroTecnicoImportacao(err.message)),
       }
     );
   };
@@ -239,7 +245,7 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
             <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
             <p className="text-xs text-blue-700 mb-3">
               Planilha profissional com as 27 colunas do cadastro, abas de Instruções e Dicionário,
-              listas suspensas e exemplos. Campos obrigatórios: <strong>Fazenda</strong>, <strong>Brinco</strong>, <strong>Sexo</strong>, <strong>Categoria</strong> e ao menos uma entre <strong>Data de Nascimento</strong> ou <strong>Data da Entrada</strong>. Datas no formato <strong>DD/MM/AAAA</strong>.
+              listas suspensas e exemplos. Campos obrigatórios: <strong>Fazenda</strong>, <strong>Brinco</strong>, <strong>Sexo</strong>, <strong>Categoria</strong> e pelo menos uma entre <strong>Data de Nascimento</strong> ou <strong>Data da Entrada</strong>. Datas devem estar no formato <strong>DD/MM/AAAA</strong>.
             </p>
             <Button
               type="button"
@@ -381,14 +387,19 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
             </p>
           </div>
         ) : (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+            <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm text-amber-800 font-medium">
-                {validacao.invalidos} registro(s) com erro serão ignorados.
+              <p className="text-sm text-red-800 font-medium whitespace-pre-line">
+                {validacao.mensagemPrincipal || 'Corrija os erros na planilha antes de importar.'}
               </p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Apenas os {validacao.validos} registros válidos serão importados.
+              {validacao.mensagemDetalhada && (
+                <p className="text-xs text-red-700 mt-2 whitespace-pre-line">
+                  {validacao.mensagemDetalhada}
+                </p>
+              )}
+              <p className="text-xs text-red-700 mt-2">
+                A importação só pode continuar depois que todos os registros estiverem válidos.
               </p>
             </div>
           </div>
@@ -437,7 +448,7 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
             <Button type="button" onClick={handleClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800">
               Cancelar
             </Button>
-            {validacao.validos > 0 && (
+            {!temErros && (
               <Button
                 type="button"
                 onClick={handleImportar}

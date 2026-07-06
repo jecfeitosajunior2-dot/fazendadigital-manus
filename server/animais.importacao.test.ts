@@ -9,8 +9,9 @@ import {
   validarBrincoAtivoImportacao,
 } from '../shared/brincoAtivo';
 import {
-  MENSAGEM_DATA_REFERENCIA_OBRIGATORIA,
+  mensagemDataReferenciaLinha,
   possuiDataReferenciaImportacao,
+  montarMensagemValidacaoImportacao,
 } from '../shared/importacaoAnimais';
 
 // ─── Lógica de validação extraída (espelha o backend) ─────────────────────────
@@ -135,8 +136,11 @@ function validarLinhas(
     }
 
     if (!possuiDataReferenciaImportacao(linha)) {
-      errosLinha.push({ linha: numLinha, campo: 'dataNascimento', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
-      errosLinha.push({ linha: numLinha, campo: 'dataEntrada', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+      errosLinha.push({
+        linha: numLinha,
+        campo: 'Data de Nascimento',
+        mensagem: mensagemDataReferenciaLinha(numLinha),
+      });
     }
 
     // Lote opcional mas deve existir
@@ -320,8 +324,7 @@ describe('Importação em Massa de Animais — Validação', () => {
       { brinco: 'BR-REF-1', sexo: 'macho' },
     ]);
     expect(validos).toHaveLength(0);
-    expect(erros.some(e => e.campo === 'dataNascimento' && e.mensagem === MENSAGEM_DATA_REFERENCIA_OBRIGATORIA)).toBe(true);
-    expect(erros.some(e => e.campo === 'dataEntrada' && e.mensagem === MENSAGEM_DATA_REFERENCIA_OBRIGATORIA)).toBe(true);
+    expect(erros.some(e => e.mensagem === mensagemDataReferenciaLinha(2))).toBe(true);
   });
 
   it('aceita linha só com data de entrada', () => {
@@ -340,6 +343,23 @@ describe('Importação em Massa de Animais — Validação', () => {
     expect(erros).toHaveLength(0);
     expect(validos).toHaveLength(1);
     expect(validos[0].dataNascimento).toBe('2023-03-10');
+  });
+
+  it('monta mensagem principal para uma linha sem data de referência', () => {
+    const { mensagemPrincipal } = montarMensagemValidacaoImportacao([
+      { linha: 3, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(3) },
+    ]);
+    expect(mensagemPrincipal).toBe(mensagemDataReferenciaLinha(3));
+  });
+
+  it('monta mensagem principal para várias linhas sem data de referência', () => {
+    const { mensagemPrincipal, mensagemDetalhada } = montarMensagemValidacaoImportacao([
+      { linha: 3, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(3) },
+      { linha: 7, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(7) },
+    ]);
+    expect(mensagemPrincipal).toContain('sem Data de Nascimento e sem Data de Entrada');
+    expect(mensagemDetalhada).toContain('Linha 3');
+    expect(mensagemDetalhada).toContain('Linha 7');
   });
 
   // ─── Outros testes ────────────────────────────────────────────────────────

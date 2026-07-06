@@ -31,13 +31,85 @@ export interface ColunaImportacao {
  * Data de Nascimento ou Data da Entrada (mesma regra do cadastro individual).
  */
 export const MENSAGEM_DATA_REFERENCIA_OBRIGATORIA =
-  'Informe Data de Nascimento ou Data da Entrada';
+  'Informe Data de Nascimento ou Data de Entrada';
+
+export const MENSAGEM_DATA_REFERENCIA_PLANILHA =
+  'Não foi possível importar a planilha. Existem animais sem Data de Nascimento e sem Data de Entrada. Preencha pelo menos uma dessas datas em cada linha e tente novamente.';
+
+export const MENSAGEM_VALIDACAO_PLANILHA_GENERICA =
+  'Não foi possível validar a planilha. Verifique os dados informados e tente novamente.';
+
+export function mensagemDataReferenciaLinha(numLinha: number): string {
+  return `Linha ${numLinha}: informe Data de Nascimento ou Data de Entrada. Pelo menos uma dessas datas é obrigatória para cadastrar o animal.`;
+}
 
 export function possuiDataReferenciaImportacao(
   linha: Record<string, string | undefined | null>,
 ): boolean {
   return !!(linha.dataNascimento ?? '').toString().trim()
     || !!(linha.dataEntrada ?? '').toString().trim();
+}
+
+export function isErroDataReferenciaImportacao(erro: {
+  campo?: string;
+  mensagem?: string;
+}): boolean {
+  const msg = erro.mensagem ?? '';
+  return erro.campo === 'dataNascimento'
+    || erro.campo === 'dataEntrada'
+    || msg.includes('Data de Nascimento ou Data de Entrada');
+}
+
+export function linhasComErroDataReferencia(
+  erros: Array<{ linha: number; campo: string; mensagem: string }>,
+): number[] {
+  const linhas = new Set<number>();
+  for (const erro of erros) {
+    if (isErroDataReferenciaImportacao(erro)) linhas.add(erro.linha);
+  }
+  return [...linhas].sort((a, b) => a - b);
+}
+
+export function formatarResumoErrosDataReferencia(linhas: number[]): string {
+  if (linhas.length === 0) return '';
+  if (linhas.length === 1) return mensagemDataReferenciaLinha(linhas[0]);
+  const lista = linhas
+    .map(numLinha => `Linha ${numLinha}: informe Data de Nascimento ou Data de Entrada.`)
+    .join('\n');
+  return `Corrija as seguintes linhas antes de importar:\n${lista}`;
+}
+
+export function montarMensagemValidacaoImportacao(
+  erros: Array<{ linha: number; campo: string; mensagem: string }>,
+): { mensagemPrincipal: string; mensagemDetalhada?: string } {
+  const linhasData = linhasComErroDataReferencia(erros);
+
+  if (linhasData.length > 0) {
+    if (linhasData.length === 1) {
+      return { mensagemPrincipal: mensagemDataReferenciaLinha(linhasData[0]) };
+    }
+    return {
+      mensagemPrincipal: MENSAGEM_DATA_REFERENCIA_PLANILHA,
+      mensagemDetalhada: formatarResumoErrosDataReferencia(linhasData),
+    };
+  }
+
+  if (erros.length === 0) {
+    return { mensagemPrincipal: '' };
+  }
+
+  return {
+    mensagemPrincipal: 'Corrija os erros na planilha antes de importar.',
+    mensagemDetalhada: erros
+      .slice(0, 20)
+      .map(erro => `Linha ${erro.linha}: ${erro.mensagem}`)
+      .join('\n'),
+  };
+}
+
+export function mensagemErroTecnicoImportacao(mensagem: string): string {
+  const tecnica = /failed query|select\s+[`'"]|params:|ECONNREFUSED|drizzle|stack trace|TRPCError/i.test(mensagem);
+  return tecnica ? MENSAGEM_VALIDACAO_PLANILHA_GENERICA : mensagem;
 }
 
 export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
