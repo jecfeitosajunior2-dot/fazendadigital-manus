@@ -10,11 +10,12 @@ import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { FD_PRIMARY } from "@/components/FormFields";
-import { EditActionIcon, DeleteActionIcon } from "@/components/icons/FarmActionIcons";
+import { FarmRowActionButtons } from "@/components/icons/FarmActionIcons";
 import {
   montarLinhaExportacaoBenfeitoria,
   montarLinhaPdfBenfeitoria,
   BENFEITORIA_EXPORT_COLUMN_ALIGNS,
+  BENFEITORIA_EXPORT_COLUMN_NUM_FMTS,
   BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
   BENFEITORIA_PDF_HEADERS,
   BENFEITORIA_PDF_COLUMN_ALIGNS,
@@ -134,28 +135,9 @@ function BenfeitoriaActionsCell({
   onDelete: () => void;
 }) {
   return (
-    <td data-col-key="acoes" className="px-2 py-2.5 align-middle text-center">
-      <div className="inline-flex w-[58px] items-center justify-center gap-0.5">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="grid place-items-center rounded hover:bg-gray-100 text-gray-400 active:scale-95 transition"
-          style={{ minWidth: 24, minHeight: 28 }}
-          title="Editar"
-          aria-label="Editar"
-        >
-          <EditActionIcon size={16} />
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="grid place-items-center rounded hover:bg-red-50 text-red-400 active:scale-95 transition"
-          style={{ minWidth: 24, minHeight: 28 }}
-          title="Excluir"
-          aria-label="Excluir"
-        >
-          <DeleteActionIcon size={16} />
-        </button>
+    <td data-col-key="acoes" className="px-3 py-2.5 align-middle text-center whitespace-nowrap">
+      <div className="flex justify-center">
+        <FarmRowActionButtons onEdit={onEdit} onDelete={onDelete} />
       </div>
     </td>
   );
@@ -360,7 +342,7 @@ export default function BenfeitoriasListPage() {
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de Benfeitorias</h1>
+          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Benfeitorias</h1>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
@@ -389,10 +371,10 @@ export default function BenfeitoriasListPage() {
               pdfRows={exportPdfData}
               pdfColumnAligns={BENFEITORIA_PDF_COLUMN_ALIGNS}
               pdfLandscape
-              alignRightCols={[EXPORT_VALOR_COL_INDEX]}
               spreadsheetCurrencyCols={[EXPORT_VALOR_COL_INDEX]}
               spreadsheetCurrencyFormat={EXCEL_FMT_MOEDA_BRL}
               spreadsheetIntegerCols={BENFEITORIA_EXPORT_INTEGER_COL_INDEXES}
+              spreadsheetColumnNumFmts={BENFEITORIA_EXPORT_COLUMN_NUM_FMTS}
               spreadsheetColumnAligns={BENFEITORIA_EXPORT_COLUMN_ALIGNS}
               fazendaNome={fazendaFilterNome}
               disabled={!hasFazendaFilter}

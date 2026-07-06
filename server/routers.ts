@@ -41,10 +41,15 @@ import {
   listLocalBenfeitorias,
   listLocalAnimais,
   listLocalAnimaisEnriched,
+  listLocalLotes,
+  listLocalLotesGerenciamento,
+  createLocalLote,
+  enrichLocalLote,
   updateLocalFazenda,
   updateLocalPasto,
   updateLocalBenfeitoria,
   updateLocalAnimal,
+  enrichLocalAnimal,
   listLocalHistoricoBrincos,
   createLocalHistoricoBrinco,
   deleteLocalHistoricoBrinco,
@@ -214,13 +219,6 @@ function buildAnimalInsertRow(userId: number, input: {
     fazendaId: input.fazendaId,
     pastoId: input.pastoId,
   };
-}
-
-function enrichLocalAnimal(animal: Record<string, any>) {
-  const diasNaFazenda = animal.createdAt
-    ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-    : null;
-  return { ...animal, loteNome: null, diasNaFazenda };
 }
 
 /** Usa o espelho local quando existir — evita listas de seed antigas do MySQL no modelo/validação. */
@@ -650,7 +648,7 @@ const animaisRouter = router({
       }
 
       const animal = await getLocalAnimal(ctx.user.id, input.id);
-      return animal ? enrichLocalAnimal(animal) : null;
+      return animal ? await enrichLocalAnimal(ctx.user.id, animal) : null;
     }),
 
   create: protectedProcedure
@@ -1070,6 +1068,7 @@ const animaisRouter = router({
         normalizarStatus,
         isLinhaExemplo,
         mensagemDataReferenciaLinha,
+        MENSAGEM_DATA_REFERENCIA_DETALHE,
         possuiDataReferenciaImportacao,
         montarMensagemValidacaoImportacao,
       } = await import('../shared/importacaoAnimais');
@@ -1228,8 +1227,8 @@ const animaisRouter = router({
         if (!possuiDataReferenciaImportacao(linha)) {
           errosLinha.push({
             linha: numLinha,
-            campo: 'Data de Nascimento',
-            mensagem: mensagemDataReferenciaLinha(numLinha),
+            campo: 'dataReferencia',
+            mensagem: MENSAGEM_DATA_REFERENCIA_DETALHE,
           });
         }
 
@@ -1358,40 +1357,69 @@ const animaisRouter = router({
           // Converte castrado/rastreadoNascimento (aceita Sim/Não em PT-BR)
           const toBool = normalizarBooleano;
 
-          const result = await db.insert(animais).values({
-            userId: ctx.user.id,
-            brinco: brinco || undefined,
-            brincoEletronico: (linha.brincoEletronico || '').trim() || undefined,
-            nome: (linha.nome || '').trim() || brinco || undefined,
-            raca: (linha.raca || '').trim() || undefined,
-            sexo,
-            dataNascimento: parseData(linha.dataNascimento),
-            pesoAtual: (linha.pesoEntrada || '').trim() || undefined,
-            loteId: loteId || undefined,
-            fazendaId: fazendaId || undefined,
-            pastoId: pastoId || undefined,
-            categoria: (linha.categoria || '').trim() || undefined,
-            observacoes: (linha.observacoes || '').trim() || undefined,
-            pelagem: (linha.pelagem || '').trim() || undefined,
-            marca: (linha.marca || '').trim() || undefined,
-            dataDesmama: parseData(linha.dataDesmama),
-            castrado: toBool(linha.castrado),
-            dataEntrada: parseData(linha.dataEntrada),
-            pesoEntrada: (linha.pesoEntrada || '').trim() || undefined,
-            produtorOrigem: (linha.produtorOrigem || '').trim() || undefined,
-            precoKg: (linha.precoKg || '').trim() || undefined,
-            frete: (linha.frete || '').trim() || undefined,
-            sisbov: (linha.sisbov || '').trim() || undefined,
-            dataRnd: parseData(linha.dataRnd),
-            rgn: (linha.rgn || '').trim() || undefined,
-            rgd: (linha.rgd || '').trim() || undefined,
-            rastreadoNascimento: toBool(linha.rastreadoNascimento),
-            pai: (linha.pai || '').trim() || undefined,
-            mae: (linha.mae || '').trim() || undefined,
+          const animalRow = {
+            ...buildAnimalInsertRow(ctx.user.id, {
+              brinco: brinco || undefined,
+              brincoEletronico: (linha.brincoEletronico || '').trim() || undefined,
+              nome: (linha.nome || '').trim() || brinco || undefined,
+              raca: (linha.raca || '').trim() || undefined,
+              sexo,
+              dataNascimento: parseData(linha.dataNascimento) ?? null,
+              pesoAtual: (linha.pesoEntrada || '').trim() || undefined,
+              loteId: loteId || undefined,
+              fazendaId: fazendaId || undefined,
+              pastoId: pastoId || undefined,
+              categoria: (linha.categoria || '').trim() || undefined,
+              observacoes: (linha.observacoes || '').trim() || undefined,
+              pelagem: (linha.pelagem || '').trim() || undefined,
+              marca: (linha.marca || '').trim() || undefined,
+              dataDesmama: parseData(linha.dataDesmama) ?? null,
+              castrado: toBool(linha.castrado),
+              dataEntrada: parseData(linha.dataEntrada) ?? null,
+              pesoEntrada: (linha.pesoEntrada || '').trim() || undefined,
+              produtorOrigem: (linha.produtorOrigem || '').trim() || undefined,
+              precoKg: (linha.precoKg || '').trim() || undefined,
+              frete: (linha.frete || '').trim() || undefined,
+              sisbov: (linha.sisbov || '').trim() || undefined,
+              dataRnd: parseData(linha.dataRnd) ?? null,
+              rgn: (linha.rgn || '').trim() || undefined,
+              rgd: (linha.rgd || '').trim() || undefined,
+              rastreadoNascimento: toBool(linha.rastreadoNascimento),
+              pai: (linha.pai || '').trim() || undefined,
+              mae: (linha.mae || '').trim() || undefined,
+            }),
             status: statusImport as 'ativo' | 'vendido' | 'morto' | 'transferido',
-          });
-          importados.push((result as any)[0]?.insertId);
+          };
+
+          try {
+            const result = await db.insert(animais).values(animalRow);
+            const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+            if (Number.isFinite(id) && id > 0) {
+              try {
+                await updateLocalAnimal(ctx.user.id, id, animalRow);
+              } catch (mirrorError) {
+                console.warn("[animais.importar] Espelho local não gravado:", mirrorError);
+              }
+              importados.push(id);
+            }
+          } catch (err: any) {
+            if (err instanceof TRPCError) throw err;
+            if (isDatabaseUnavailable(err)) {
+              await assertBrincoUnicoEntreAtivos(
+                ctx.user.id,
+                animalRow.brinco,
+                statusImport,
+                undefined,
+                true,
+              );
+              const { id } = await createLocalAnimal(ctx.user.id, animalRow);
+              importados.push(id);
+            } else {
+              rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
+            }
+          }
         } catch (err: any) {
+          if (err instanceof TRPCError) throw err;
           rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
         }
       }
@@ -1460,6 +1488,7 @@ const lotesRouter = router({
       search: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
+      try {
       const {
         calcularIdadeMeses,
         adicionarAnimalAoResumo,
@@ -1556,6 +1585,10 @@ const lotesRouter = router({
       }
 
       return resultado;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return listLocalLotesGerenciamento(ctx.user.id, input ?? undefined);
+      }
     }),
 
   mapaRebanho: protectedProcedure
@@ -1680,8 +1713,14 @@ const lotesRouter = router({
     }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
-    const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
-    return Promise.all(lotesList.map(enrichLote));
+    try {
+      const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
+      return Promise.all(lotesList.map(enrichLote));
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      const lotesList = await listLocalLotes(ctx.user.id);
+      return Promise.all(lotesList.map(lote => enrichLocalLote(lote, ctx.user.id)));
+    }
   }),
 
   listByPasto: protectedProcedure
@@ -1822,15 +1861,31 @@ const lotesRouter = router({
       descricao: z.string().optional(),
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),
-      fazendaId: z.number().optional(),
+      fazendaId: z.number({ required_error: "Selecione uma fazenda." }),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(lotes).values({
-        userId: ctx.user.id,
+      const payload = {
         ...input,
+        sigla: input.sigla?.trim() || undefined,
         dataCriacao: input.dataCriacao || hojeISO(),
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      };
+      try {
+        const result = await db.insert(lotes).values({
+          userId: ctx.user.id,
+          ...payload,
+        });
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        return { success: true, id };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          const result = await createLocalLote(ctx.user.id, payload);
+          return { success: true, id: result.id, localFallback: true };
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Não foi possível criar o lote. Verifique a conexão com o banco ou tente novamente.",
+        });
+      }
     }),
 
   update: protectedProcedure

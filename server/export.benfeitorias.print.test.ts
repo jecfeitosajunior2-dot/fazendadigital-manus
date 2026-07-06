@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
 import { EXPORT_HEADERS, EXPORT_VALOR_COL_INDEX } from "../shared/importacaoBenfeitorias";
-import { montarLinhaExportacaoBenfeitoria, montarLinhaPdfBenfeitoria, BENFEITORIA_EXPORT_COLUMN_ALIGNS, BENFEITORIA_EXPORT_INTEGER_COL_INDEXES, BENFEITORIA_PDF_HEADERS } from "../shared/benfeitoriaCampos";
-import { buildExportSpreadsheetWorkbook } from "../shared/buildExportSpreadsheet";
+import { montarLinhaExportacaoBenfeitoria, montarLinhaPdfBenfeitoria, BENFEITORIA_EXPORT_COLUMN_ALIGNS, BENFEITORIA_EXPORT_COLUMN_NUM_FMTS, BENFEITORIA_EXPORT_INTEGER_COL_INDEXES, BENFEITORIA_EXPORT_VIDA_UTIL_NUM_FMT, BENFEITORIA_PDF_HEADERS, formatVidaUtilListagem } from "../shared/benfeitoriaCampos";
+import { buildExportSpreadsheetWorkbook, buildExportSpreadsheetBuffer } from "../shared/buildExportSpreadsheet";
 import { formatMoedaBrlExcel } from "../shared/parseMoedaBr";
 
 function parseValorDecimalBanco(val: string | number | null | undefined): number | null {
@@ -58,6 +58,7 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
     const wb = await buildExportSpreadsheetWorkbook(EXPORT_HEADERS, rows, {
       currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
       integerColIndexes: BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+      columnNumFmts: BENFEITORIA_EXPORT_COLUMN_NUM_FMTS,
       columnAligns: BENFEITORIA_EXPORT_COLUMN_ALIGNS,
     });
     return wb.getWorksheet("Dados")!;
@@ -79,11 +80,42 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
     expect(ws.getCell("C2").numFmt).toBe("0");
   });
 
-  it("vida útil numérica é exportada como número", async () => {
+  it("vida útil numérica é exportada como número com sufixo anos", async () => {
     const ws = await buildSheet();
     expect(ws.getCell("D2").type).toBe(ExcelJS.ValueType.Number);
     expect(ws.getCell("D2").value).toBe(15);
+    expect(ws.getCell("D2").numFmt).toBe(BENFEITORIA_EXPORT_VIDA_UTIL_NUM_FMT);
     expect(ws.getCell("D3").value).toBe(25);
+  });
+
+  it("vida útil 1 usa formato singular (1 ano) na planilha", async () => {
+    const r = [
+      montarLinhaExportacaoBenfeitoria(
+        {
+          nome: "Galinheiro",
+          tipo: "Galpão",
+          anoConstrucao: 2024,
+          vidaUtil: "1",
+          estado: "Ruim",
+          valorEstimado: "15000.00",
+        },
+        parseValorDecimalBanco,
+      ),
+    ] as (string | number)[][];
+    const wb = await buildExportSpreadsheetWorkbook(EXPORT_HEADERS, r, {
+      currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
+      integerColIndexes: BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+      columnNumFmts: BENFEITORIA_EXPORT_COLUMN_NUM_FMTS,
+    });
+    const ws = wb.getWorksheet("Dados")!;
+    expect(ws.getCell("D2").value).toBe(1);
+    expect(ws.getCell("D2").numFmt).toBe('[=1]0 " ano";0 " anos"');
+  });
+
+  it("formatVidaUtilListagem: 1 ano no singular, 2+ no plural", () => {
+    expect(formatVidaUtilListagem("1")).toBe("1 ano");
+    expect(formatVidaUtilListagem("2")).toBe("2 anos");
+    expect(formatVidaUtilListagem("10")).toBe("10 anos");
   });
 
   it("exporta todas as colunas incluindo Observações", () => {
@@ -133,11 +165,39 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
     expect(ws.getCell("F2").value).toBe("R$ 100.000,00");
   });
 
-  it("aplica alinhamento por coluna (nome esquerda, ano centro, valor direita)", async () => {
+  it("round-trip: valor permanece texto R$ 100.000,00 (não número formatado)", async () => {
+    const r = [
+      montarLinhaExportacaoBenfeitoria(
+        {
+          nome: "Galpão",
+          tipo: "Galpão",
+          anoConstrucao: 2020,
+          vidaUtil: "20",
+          estado: "Bom",
+          valorEstimado: "100000.00",
+        },
+        parseValorDecimalBanco,
+      ),
+    ] as (string | number)[][];
+    const buffer = await buildExportSpreadsheetBuffer(EXPORT_HEADERS, r, {
+      currencyColIndexes: [EXPORT_VALOR_COL_INDEX],
+      integerColIndexes: BENFEITORIA_EXPORT_INTEGER_COL_INDEXES,
+      columnAligns: BENFEITORIA_EXPORT_COLUMN_ALIGNS,
+    });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.getWorksheet("Dados")!;
+    expect(ws.getCell(valorCellRef(1)).type).toBe(ExcelJS.ValueType.String);
+    expect(ws.getCell(valorCellRef(1)).value).toBe("R$ 100.000,00");
+    expect(ws.getCell(valorCellRef(1)).numFmt).toBe("@");
+  });
+
+  it("aplica alinhamento centralizado em todas as colunas", async () => {
     const ws = await buildSheet();
-    expect(ws.getCell("A2").alignment?.horizontal).toBe("left");
+    expect(ws.getCell("A2").alignment?.horizontal).toBe("center");
     expect(ws.getCell("C2").alignment?.horizontal).toBe("center");
-    expect(ws.getCell(valorCellRef(1)).alignment?.horizontal).toBe("right");
+    expect(ws.getCell(valorCellRef(1)).alignment?.horizontal).toBe("center");
+    expect(ws.getCell("G2").alignment?.horizontal).toBe("center");
     expect(ws.getCell("A1").alignment?.horizontal).toBe("center");
     expect(ws.getCell("A1").font?.bold).toBe(true);
   });

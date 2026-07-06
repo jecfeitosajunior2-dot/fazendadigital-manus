@@ -95,6 +95,28 @@ export type AnimaisListFiltersState = {
 
 export const ANIMAIS_LIST_FILTERS_STORAGE_KEY = 'fd:lista-animais-filtros';
 
+/** Fazenda escolhida na Visão Geral do Rebanho — compartilhada com a Lista de Animais. */
+export const REBANHO_FAZENDA_STORAGE_KEY = 'fd-rebanho-overview-fazenda-id';
+
+export function readPersistedRebanhoFazendaId(fazendaIds: readonly number[]): string {
+  try {
+    const stored = localStorage.getItem(REBANHO_FAZENDA_STORAGE_KEY);
+    if (stored && fazendaIds.some(id => String(id) === stored)) return stored;
+  } catch {
+    // ignora falha de leitura
+  }
+  return '';
+}
+
+export function persistRebanhoFazendaId(fazendaId: string): void {
+  try {
+    if (fazendaId) localStorage.setItem(REBANHO_FAZENDA_STORAGE_KEY, fazendaId);
+    else localStorage.removeItem(REBANHO_FAZENDA_STORAGE_KEY);
+  } catch {
+    // ignora falha de gravação
+  }
+}
+
 export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   fazendaId: '',
   raca: '',
@@ -269,4 +291,33 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     filters.apenasSemLote ||
     filters.apenasSemPesagem
   );
+}
+
+/** Indica se algum filtro avançado do painel “Mais Filtros” está ativo. */
+export function hasActiveMaisFiltrosAvancados(filters: AnimaisListFiltersState): boolean {
+  return (
+    !!filters.raca ||
+    !!filters.pesoInicial.trim() ||
+    !!filters.pesoFinal.trim() ||
+    !!filters.idadeMesesMin.trim() ||
+    !!filters.idadeMesesMax.trim() ||
+    !!filters.rfid ||
+    !!filters.statusFiltro ||
+    !!filters.dataEntradaDe ||
+    !!filters.dataEntradaAte ||
+    filters.apenasEmCarencia ||
+    filters.apenasSemPesagem ||
+    filters.apenasSemLote
+  );
+}
+
+/** Simula “Limpar filtros” preservando fazenda e painel aberto/fechado. */
+export function clearAnimaisListFilters(
+  current: AnimaisListFiltersState,
+): AnimaisListFiltersState {
+  return {
+    ...INITIAL_ANIMAIS_LIST_FILTERS,
+    fazendaId: current.fazendaId,
+    maisFiltrosAbertos: current.maisFiltrosAbertos,
+  };
 }

@@ -4,6 +4,8 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { FD_PRIMARY } from "@/components/FormFields";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { ViewEditDeleteRowActionButtons } from "@/components/icons/FarmActionIcons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
@@ -16,21 +18,38 @@ import {
   INITIAL_ANIMAIS_LIST_FILTERS,
   animaisFiltersFromSearchParams,
   animaisFiltersToApiParams,
+  clearAnimaisListFilters,
   hasActiveAnimaisFilters,
+  persistRebanhoFazendaId,
   readPersistedAnimaisListFilters,
+  readPersistedRebanhoFazendaId,
   type AnimaisListFiltersState,
 } from '@shared/animal-filter-types';
+import {
+  EM_CARENCIA_NAO_TEXT_CLASS,
+  EM_CARENCIA_SIM_BADGE_CLASS,
+  formatUltimoPesoKg,
+} from "@/lib/listaAnimaisTable";
 
 // Tipo das colunas ordenáveis
 type AnimaisSortKey = "brinco" | "rfid" | "categoria" | "lote" | "sexo" | "idade" | "diasFazenda" | "ultimoPeso" | "ganhoKg" | "gmd" | "emCarencia";
 
-// Ícone de ordenação (igual ao padrão usado em LoteAnimaisTable)
+// Ícone de ordenação — visível apenas na coluna ativa
 function SortIcon({ col, sortKey, sortAsc }: { col: AnimaisSortKey; sortKey: AnimaisSortKey; sortAsc: boolean }) {
+  if (sortKey !== col) return null;
   return (
-    <span className="material-icons text-[13px] text-gray-400 ml-0.5 align-middle leading-none">
-      {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
+    <span className="material-icons text-[12px] text-gray-400 ml-0.5 align-middle leading-none" aria-hidden="true">
+      {sortAsc ? "arrow_drop_up" : "arrow_drop_down"}
     </span>
   );
+}
+
+/** Em Carência — destaque discreto apenas quando Sim (alerta sanitário) */
+function EmCarenciaCell({ emCarencia }: { emCarencia: boolean }) {
+  if (!emCarencia) {
+    return <span className={EM_CARENCIA_NAO_TEXT_CLASS}>Não</span>;
+  }
+  return <span className={EM_CARENCIA_SIM_BADGE_CLASS}>Sim</span>;
 }
 
 const LOTE_BADGE_PALETTE = [
@@ -100,6 +119,7 @@ function AnimaisListEmptyState({
 // --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const searchString = useSearch();
   const [filters, setFilters] = useState<AnimaisListFiltersState>(() => {
     const fromUrl = animaisFiltersFromSearchParams(searchString);
@@ -110,6 +130,7 @@ export function AnimaisPage() {
   const [page, setPage] = useState(1);
   const [importarOpen, setImportarOpen] = useState(false);
   const [perPage, setPerPage] = useState(50);
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
 
   useEffect(() => {
     try {
@@ -138,16 +159,65 @@ export function AnimaisPage() {
     }
   };
 
+  const handleDeleteAnimal = async (animal: { id: number; brinco?: string | null }) => {
+    const label = animal.brinco?.trim() || `#${animal.id}`;
+    const ok = await confirm({
+      title: "Excluir animal",
+      description: `Tem certeza que deseja excluir o animal "${label}"? Esta ação não pode ser desfeita.`,
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) deleteMutation.mutate({ id: animal.id });
+  };
+
   const apiParams = useMemo(
     () => animaisFiltersToApiParams(filters, debouncedPesquisa),
     [filters, debouncedPesquisa],
   );
 
   const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery(apiParams);
+  const utils = trpc.useUtils();
+  const deleteMutation = trpc.animais.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Animal excluído com sucesso!");
+      utils.animais.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
+  });
   const { data: lotesData } = trpc.lotes.list.useQuery();
   const { data: fazendasData } = trpc.fazendas.list.useQuery();
   const { data: marcasDistintas = [] } = trpc.animais.marcasDistintas.useQuery();
   const { data: pastosData } = trpc.pastos.list.useQuery();
+
+  useEffect(() => {
+    if (!fazendasData?.length || fazendaInitDone) return;
+
+    if (filters.fazendaId) {
+      setFazendaInitDone(true);
+      return;
+    }
+
+    const ids = fazendasData.map((f: { id: number }) => f.id);
+    const fromStorage = readPersistedRebanhoFazendaId(ids);
+    const resolved =
+      fromStorage ||
+      (fazendasData.length === 1 ? String(fazendasData[0].id) : '');
+
+    if (resolved) {
+      setFilters(prev => ({ ...prev, fazendaId: resolved }));
+      persistRebanhoFazendaId(resolved);
+    }
+
+    setFazendaInitDone(true);
+  }, [fazendasData, fazendaInitDone, filters.fazendaId]);
+
+  const handleFiltersChange = (next: AnimaisListFiltersState) => {
+    if (next.fazendaId !== filters.fazendaId) {
+      persistRebanhoFazendaId(next.fazendaId);
+    }
+    setFilters(next);
+  };
 
   const filtrosKey = JSON.stringify(apiParams);
   useEffect(() => {
@@ -188,7 +258,7 @@ export function AnimaisPage() {
   }, [filteredAnimais, sortKey, sortAsc]);
 
   const limparFiltros = () => {
-    setFilters({ ...INITIAL_ANIMAIS_LIST_FILTERS, maisFiltrosAbertos: filters.maisFiltrosAbertos });
+    setFilters(clearAnimaisListFilters(filters));
     setPage(1);
   };
 
@@ -212,6 +282,7 @@ export function AnimaisPage() {
   }, [filters.fazendaId, fazendasData]);
 
   const exportHeaders = ["Brinco", "Nº RFID", "Categoria", "Lote", "Sexo", "Idade", "Dias na Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência"];
+  const exportColumnAligns = exportHeaders.map(() => "center" as const);
   const exportData = sortedAnimais.map(a => [
     a.brinco || "",
     a.brincoEletronico || "",
@@ -219,10 +290,10 @@ export function AnimaisPage() {
     a.loteNome || "",
     a.sexo === "macho" ? "Macho" : "Fêmea",
     formatIdade(a.idadeMeses ?? null),
-    a.diasNaFazenda !== null && a.diasNaFazenda !== undefined ? String(a.diasNaFazenda) : "",
-    a.ultimoPeso !== null && a.ultimoPeso !== undefined ? Number(a.ultimoPeso).toFixed(1) : "",
-    a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg).toFixed(2) : "",
-    a.gmd !== null && a.gmd !== undefined ? Number(a.gmd).toFixed(3) : "",
+    a.diasNaFazenda !== null && a.diasNaFazenda !== undefined ? a.diasNaFazenda : "",
+    a.ultimoPeso !== null && a.ultimoPeso !== undefined ? Number(a.ultimoPeso) : "",
+    a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg) : "",
+    a.gmd !== null && a.gmd !== undefined ? Number(a.gmd) : "",
     a.emCarencia ? "Sim" : "Não",
   ]);
 
@@ -233,7 +304,7 @@ export function AnimaisPage() {
     <AppLayout>
       {/* Cabeçalho — fora do quadro da lista */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de Animais</h1>
+        <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Animais</h1>
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           <button
             type="button"
@@ -259,33 +330,37 @@ export function AnimaisPage() {
             headers={exportHeaders}
             rows={exportData}
             alignRightFrom={6}
+            pdfColumnAligns={exportColumnAligns}
+            spreadsheetColumnAligns={exportColumnAligns}
             fazendaNome={fazendaNomePdf}
             landscape
             variant="secondary"
+            spreadsheetIntegerCols={[6]}
+            spreadsheetTextCols={[0, 1]}
+            spreadsheetColumnNumFmts={{ 7: "0.0", 8: "0.00", 9: "0.000" }}
           />
         </div>
       </div>
 
-      <ListaAnimaisFiltros
-        value={filters}
-        onChange={setFilters}
-        onClear={limparFiltros}
-        fazendas={(fazendasData || []).map((f: { id: number; nome: string }) => ({ id: f.id, nome: f.nome }))}
-        lotes={(lotesData || []).map((l: { id: number; nome: string; fazendaId?: number | null }) => ({
-          id: l.id,
-          nome: l.nome,
-          fazendaId: l.fazendaId,
-        }))}
-        pastos={(pastosData || []).map((p: { id: number; nome: string; fazendaId?: number | null }) => ({
-          id: p.id,
-          nome: p.nome,
-          fazendaId: p.fazendaId,
-        }))}
-        marcadoresDisponiveis={marcasDistintas}
-      />
-
-      {/* Quadro único — tabela de animais */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <ListaAnimaisFiltros
+          value={filters}
+          onChange={handleFiltersChange}
+          onClear={limparFiltros}
+          fazendas={(fazendasData || []).map((f: { id: number; nome: string }) => ({ id: f.id, nome: f.nome }))}
+          lotes={(lotesData || []).map((l: { id: number; nome: string; fazendaId?: number | null }) => ({
+            id: l.id,
+            nome: l.nome,
+            fazendaId: l.fazendaId,
+          }))}
+          pastos={(pastosData || []).map((p: { id: number; nome: string; fazendaId?: number | null }) => ({
+            id: p.id,
+            nome: p.nome,
+            fazendaId: p.fazendaId,
+          }))}
+          marcadoresDisponiveis={marcasDistintas}
+          embedded
+        />
         <TableHorizontalScroll
           footer={
             <div className="border-t border-gray-100">
@@ -303,27 +378,27 @@ export function AnimaisPage() {
             </div>
           }
         >
-          <table className="w-full min-w-[1100px] text-[12px] border-collapse">
+          <table className="w-full min-w-[1180px] text-[12px] border-collapse">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 {/* Cabeçalhos ordensáveis */}
                 {([
-                  { key: "brinco",      label: "Brinco",         align: "center" },
-                  { key: "rfid",        label: "Nº RFID",        align: "center" },
-                  { key: "categoria",   label: "Categoria",      align: "center" },
-                  { key: "lote",        label: "Lote",           align: "center" },
-                  { key: "sexo",        label: "Sexo",           align: "center" },
-                  { key: "idade",       label: "Idade",          align: "center" },
-                  { key: "diasFazenda", label: "Dias na Fazenda",align: "center" },
-                  { key: "ultimoPeso",  label: "Últ. Peso (kg)", align: "center" },
-                  { key: "ganhoKg",     label: "Ganho (kg)",     align: "center" },
-                  { key: "gmd",         label: "GMD (kg/dia)",   align: "center" },
-                  { key: "emCarencia",  label: "Em Carência",    align: "center" },
-                ] as { key: AnimaisSortKey; label: string; align: string }[]).map((col, idx) => (
+                  { key: "brinco",      label: "Brinco",          align: "center", minW: "min-w-[72px]" },
+                  { key: "rfid",        label: "Nº RFID",         align: "center", minW: "min-w-[80px]" },
+                  { key: "categoria",   label: "Categoria",       align: "center", minW: "min-w-[88px]" },
+                  { key: "lote",        label: "Lote",            align: "center", minW: "min-w-[88px]" },
+                  { key: "sexo",        label: "Sexo",            align: "center", minW: "min-w-[72px]" },
+                  { key: "idade",       label: "Idade",           align: "center", minW: "min-w-[64px]" },
+                  { key: "diasFazenda", label: "Dias na Fazenda", align: "center", minW: "min-w-[88px]" },
+                  { key: "ultimoPeso",  label: "Últ. Peso (kg)",  align: "center", minW: "min-w-[96px]" },
+                  { key: "ganhoKg",     label: "Ganho (kg)",      align: "center", minW: "min-w-[80px]" },
+                  { key: "gmd",         label: "GMD (kg/dia)",    align: "center", minW: "min-w-[88px]" },
+                  { key: "emCarencia",  label: "Em Carência",     align: "center", minW: "min-w-[88px]" },
+                ] as { key: AnimaisSortKey; label: string; align: string; minW: string }[]).map((col, idx) => (
                   <th
                     key={col.key}
                     onClick={() => toggleSort(col.key)}
-                    className={`px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${
+                    className={`px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${col.minW} ${
                       idx === 0 ? "sticky left-0 z-[3] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     }`}
                   >
@@ -331,8 +406,8 @@ export function AnimaisPage() {
                     <SortIcon col={col.key} sortKey={sortKey} sortAsc={sortAsc} />
                   </th>
                 ))}
-                {/* Coluna Ações: sem ordenação, fixa à direita */}
-                <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap sticky right-0 z-[3] bg-gray-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)]">Ações</th>
+                {/* Coluna Ações */}
+                <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -367,10 +442,12 @@ export function AnimaisPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Lote */}
-                  <td className="px-3 py-2.5 text-center">
+                  <td className="px-3 py-2.5 text-center min-w-[88px]">
                     {animal.loteNome ? (
                       <span className={`px-2 py-0.5 rounded font-medium text-[11px] ${loteBadgeClass(animal.loteNome)}`}>{animal.loteNome}</span>
-                    ) : <span className="text-gray-300">—</span>}
+                    ) : (
+                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-medium text-[11px]">Sem lote</span>
+                    )}
                   </td>
                   {/* Sexo */}
                   <td className="px-3 py-2 text-center">
@@ -385,11 +462,15 @@ export function AnimaisPage() {
                     {animal.diasNaFazenda !== null && animal.diasNaFazenda !== undefined ? animal.diasNaFazenda : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Último Peso */}
-                  <td className="px-3 py-2 text-center tabular-nums font-medium text-gray-800">
-                    {animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? Number(animal.ultimoPeso).toFixed(1) : <span className="text-gray-300">—</span>}
+                  <td className="px-3 py-2 text-center tabular-nums font-medium text-gray-800 min-w-[96px] whitespace-nowrap">
+                    {animal.ultimoPeso !== null && animal.ultimoPeso !== undefined ? (
+                      formatUltimoPesoKg(animal.ultimoPeso)
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
                   </td>
                   {/* Ganho KG */}
-                  <td className="px-3 py-2 text-center tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums whitespace-nowrap">
                     {animal.ganhoKg !== null && animal.ganhoKg !== undefined ? (
                       <span className={Number(animal.ganhoKg) >= 0 ? "text-green-600" : "text-red-500"}>
                         {Number(animal.ganhoKg) >= 0 ? "+" : ""}{Number(animal.ganhoKg).toFixed(2)}
@@ -397,7 +478,7 @@ export function AnimaisPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* GMD */}
-                  <td className="px-3 py-2 text-center tabular-nums">
+                  <td className="px-3 py-2 text-center tabular-nums whitespace-nowrap">
                     {animal.gmd !== null && animal.gmd !== undefined ? (
                       <span className={Number(animal.gmd) >= 0 ? "text-green-600 font-medium" : "text-red-500"}>
                         {Number(animal.gmd).toFixed(3)}
@@ -405,24 +486,20 @@ export function AnimaisPage() {
                     ) : <span className="text-gray-300">—</span>}
                   </td>
                   {/* Em Carência */}
-                  <td className="px-3 py-2 text-center">
-                    {animal.emCarencia ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-[11px] font-medium">
-                        <span className="material-icons text-[12px]">warning</span>Sim
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 text-[11px]">Não</span>
-                    )}
+                  <td className="px-3 py-2 text-center align-middle">
+                    <EmCarenciaCell emCarencia={!!animal.emCarencia} />
                   </td>
-                  {/* Ações — fixo à direita */}
-                  <td className="px-3 py-2 sticky right-0 z-[1] bg-white shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-gray-50">
-                    <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-[#2D5A5A] transition-colors cursor-pointer" title="Visualizar animal">
-                        <span className="material-icons text-[16px]">visibility</span>
-                      </button>
-                      <button onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors cursor-pointer" title="Editar animal">
-                        <span className="material-icons text-[16px]">edit</span>
-                      </button>
+                  {/* Ações */}
+                  <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
+                    <div className="flex justify-center">
+                      <ViewEditDeleteRowActionButtons
+                        viewLabel="Visualizar animal"
+                        editLabel="Editar animal"
+                        deleteLabel="Excluir animal"
+                        onView={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)}
+                        onEdit={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
+                        onDelete={() => void handleDeleteAnimal(animal)}
+                      />
                     </div>
                   </td>
                 </tr>

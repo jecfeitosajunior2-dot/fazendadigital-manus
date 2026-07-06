@@ -2,12 +2,13 @@
  * Formulário de Novo Lote — padrão iRancho
  * Rota: /rebanho/novo-lote
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { FormLabel, FormInput, FormDatePicker } from "@/components/FormFields";
+import { FormLabel, FormInput, FormDatePicker, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 
 const IRANCHO_BTN_GREEN = "#2D5A5A";
 
@@ -33,10 +34,16 @@ function lotesListUrl(fazendaId?: string) {
 
 export function NewLotePage() {
   const [, setLocation] = useLocation();
-  const fazendaId = new URLSearchParams(window.location.search).get("fazendaId") || "";
+  const fazendaIdParam = new URLSearchParams(window.location.search).get("fazendaId") || "";
+  const [fazendaId, setFazendaId] = useState(fazendaIdParam);
   const [form, setForm] = useState<FormState>(INITIAL);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+
+  useEffect(() => {
+    if (fazendaIdParam) setFazendaId(fazendaIdParam);
+  }, [fazendaIdParam]);
+
   const fazendaSelecionada = useMemo(
     () => fazendas.find(f => String(f.id) === fazendaId),
     [fazendas, fazendaId],
@@ -58,6 +65,10 @@ export function NewLotePage() {
   };
 
   const handleSubmit = () => {
+    if (!fazendaId) {
+      toast.error("Selecione uma fazenda antes de criar o lote.");
+      return;
+    }
     if (!form.nome.trim()) {
       toast.error("Nome do Lote é obrigatório");
       return;
@@ -71,11 +82,12 @@ export function NewLotePage() {
       nome: form.nome.trim(),
       sigla: form.sigla.trim() || undefined,
       dataCriacao: form.dataCriacao,
-      fazendaId: fazendaId ? Number(fazendaId) : undefined,
+      fazendaId: Number(fazendaId),
     });
   };
 
   const isBusy = createMutation.isPending;
+  const camposLoteDesabilitados = !fazendaId;
 
   return (
     <AppLayout>
@@ -83,21 +95,36 @@ export function NewLotePage() {
         <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h1 className="text-[15px] font-semibold text-gray-900">Novo Lote</h1>
-            {fazendaSelecionada && (
-              <p className="text-[11px] text-gray-500 mt-1">
-                Fazenda: <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>
-              </p>
-            )}
+            <p className="text-[11px] text-gray-500 mt-1">
+              Selecione a fazenda e informe os dados do lote.
+            </p>
           </div>
 
           <div className="px-6 py-5 space-y-4">
+            <div>
+              <FormLabel required>Fazenda</FormLabel>
+              <FormSelect
+                value={fazendaId}
+                onChange={setFazendaId}
+                placeholder="Selecione a fazenda"
+                required
+              >
+                {fazendas.map(f => (
+                  <SelectItem key={f.id} value={String(f.id)} className="text-[13px]">
+                    {f.nome}
+                  </SelectItem>
+                ))}
+              </FormSelect>
+            </div>
+
             <div>
               <FormLabel required>Nome do Lote</FormLabel>
               <FormInput
                 value={form.nome}
                 onChange={v => set("nome", v)}
-                placeholder="Ex. Lote de prenhas"
+                placeholder={camposLoteDesabilitados ? "Selecione uma fazenda primeiro" : "Ex. Lote de prenhas"}
                 required
+                disabled={camposLoteDesabilitados}
               />
             </div>
 
@@ -107,6 +134,7 @@ export function NewLotePage() {
                 value={form.sigla}
                 onChange={v => set("sigla", v)}
                 placeholder="Ex. LdP1"
+                disabled={camposLoteDesabilitados}
               />
             </div>
 
@@ -116,8 +144,16 @@ export function NewLotePage() {
                 value={form.dataCriacao}
                 onChange={v => set("dataCriacao", v)}
                 required
+                disabled={camposLoteDesabilitados}
               />
             </div>
+
+            {fazendaSelecionada && (
+              <p className="text-[11px] text-gray-500">
+                O lote será vinculado à fazenda{" "}
+                <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>.
+              </p>
+            )}
           </div>
 
           <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
@@ -132,7 +168,7 @@ export function NewLotePage() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isBusy}
+              disabled={isBusy || camposLoteDesabilitados}
               className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 disabled:opacity-50 transition"
               style={{ backgroundColor: IRANCHO_BTN_GREEN }}
             >

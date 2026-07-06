@@ -19,6 +19,8 @@ type Props = {
   spreadsheetCurrencyCols?: number[];
   spreadsheetCurrencyFormat?: string;
   spreadsheetIntegerCols?: number[];
+  spreadsheetTextCols?: number[];
+  spreadsheetColumnNumFmts?: Partial<Record<number, string>>;
   spreadsheetColumnAligns?: ("left" | "center" | "right")[];
   pdfHeaders?: string[];
   pdfRows?: ExportRow[];
@@ -66,6 +68,8 @@ export default function ListExportButtons({
   spreadsheetCurrencyCols,
   spreadsheetCurrencyFormat,
   spreadsheetIntegerCols,
+  spreadsheetTextCols,
+  spreadsheetColumnNumFmts,
   spreadsheetColumnAligns,
   pdfHeaders,
   pdfRows,
@@ -146,6 +150,8 @@ export default function ListExportButtons({
                 currencyColIndexes: spreadsheetCurrencyCols,
                 currencyNumFmt: spreadsheetCurrencyFormat,
                 integerColIndexes: spreadsheetIntegerCols,
+                textColIndexes: spreadsheetTextCols,
+                columnNumFmts: spreadsheetColumnNumFmts,
                 columnAligns: spreadsheetColumnAligns,
               });
             }}

@@ -95,6 +95,27 @@ export function parseValorDecimalBanco(val: string | number | null | undefined):
   return Number.isFinite(n) ? n : null;
 }
 
+/** Converte célula de exportação para número monetário (tipo numérico no Excel). */
+export function parseExportMoedaNumber(val: string | number | null | undefined): number | null {
+  if (val == null || val === '') return null;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : null;
+  const fromBr = parseMoedaBr(String(val).trim());
+  if (fromBr) {
+    const n = parseFloat(fromBr);
+    if (Number.isFinite(n)) return n;
+  }
+  return parseValorDecimalBanco(val);
+}
+
+/** Converte ano, vida útil etc. para inteiro na exportação Excel. */
+export function parseExportInteger(val: string | number | null | undefined): number | null {
+  if (val == null || val === '') return null;
+  if (typeof val === 'number' && Number.isFinite(val)) return Math.trunc(val);
+  const s = String(val).trim();
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  return null;
+}
+
 /**
  * Formata valor do banco para célula de planilha PT-BR ("150,00").
  * Usar na exportação CSV — nunca retornar "150.00" (ponto), pois o Excel BR

@@ -10,7 +10,15 @@ import React, { useRef, useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { normalizarLinha, isLinhaExemplo, mensagemErroTecnicoImportacao } from '@shared/importacaoAnimais';
+import {
+  normalizarLinha,
+  isLinhaExemplo,
+  mensagemErroTecnicoImportacao,
+  isErroDataReferenciaImportacao,
+  linhasComErroDataReferencia,
+  resumoLinhasDataReferencia,
+  somenteErrosDataReferencia,
+} from '@shared/importacaoAnimais';
 import {
   Dialog,
   DialogContent,
@@ -352,6 +360,10 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
       return acc;
     }, {});
     const linhasComErro = Object.keys(errosPorLinha).map(Number).sort((a, b) => a - b);
+    const linhasDataRef = linhasComErroDataReferencia(validacao.erros);
+    const exibirListaDetalhada = !(
+      linhasComErro.length === 1 && somenteErrosDataReferencia(validacao.erros)
+    );
 
     return (
       <div className="space-y-5">
@@ -393,7 +405,7 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
               <p className="text-sm text-red-800 font-medium whitespace-pre-line">
                 {validacao.mensagemPrincipal || 'Corrija os erros na planilha antes de importar.'}
               </p>
-              {validacao.mensagemDetalhada && (
+              {validacao.mensagemDetalhada && !somenteErrosDataReferencia(validacao.erros) && (
                 <p className="text-xs text-red-700 mt-2 whitespace-pre-line">
                   {validacao.mensagemDetalhada}
                 </p>
@@ -406,8 +418,13 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
         )}
 
         {/* Erros detalhados */}
-        {temErros && (
+        {temErros && exibirListaDetalhada && (
           <div>
+            {linhasDataRef.length >= 2 && (
+              <p className="text-sm font-medium text-red-800 mb-2">
+                {resumoLinhasDataReferencia(linhasDataRef.length)}
+              </p>
+            )}
             <button
               type="button"
               onClick={() => setMostrarErros(v => !v)}
@@ -424,7 +441,9 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
                     <p className="text-xs font-bold text-red-800 mb-1">Linha {numLinha}</p>
                     {errosPorLinha[numLinha].map((e, idx) => (
                       <p key={idx} className="text-xs text-red-700">
-                        • <span className="font-semibold">{e.campo}:</span> {e.mensagem}
+                        {isErroDataReferenciaImportacao(e)
+                          ? `• ${e.mensagem}`
+                          : <>• <span className="font-semibold">{e.campo}:</span> {e.mensagem}</>}
                       </p>
                     ))}
                   </div>

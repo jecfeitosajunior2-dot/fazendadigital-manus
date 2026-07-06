@@ -32,6 +32,7 @@ import {
   inputClass,
 } from '@/components/FormFields';
 import { cn } from '@/lib/utils';
+import { filtrarLotesPorFazenda } from '@/lib/loteFazendaFilter';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -381,10 +382,9 @@ const AnimalFormPage: React.FC = () => {
 
   // ── Lotes (filtrados por fazenda se selecionada) ──
   const { data: todosLotes } = trpc.lotes.list.useQuery();
-  const lotesFiltrados = (fazendaId
-    ? (todosLotes ?? []).filter(l => l.fazendaId != null && String(l.fazendaId) === fazendaId)
-    : (todosLotes ?? [])
-  ).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+  const lotesFiltrados = filtrarLotesPorFazenda(todosLotes ?? [], fazendaId || null)
+    .slice()
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
 
   // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
   useEffect(() => {
@@ -463,9 +463,14 @@ const AnimalFormPage: React.FC = () => {
 
   const handleCriarLote = () => {
     const nome = novoLoteNome.trim();
+    if (!fazendaId) { toast.error('Selecione uma fazenda antes de criar o lote.'); return; }
     if (!nome) { toast.error('Informe o nome do lote.'); return; }
     createLoteMutation.mutate(
-      { nome, descricao: novoLoteDescricao.trim() || undefined },
+      {
+        nome,
+        descricao: novoLoteDescricao.trim() || undefined,
+        fazendaId: fazendaId ? Number(fazendaId) : undefined,
+      },
       {
         onSuccess: async (res) => {
           toast.success('Lote criado com sucesso!');

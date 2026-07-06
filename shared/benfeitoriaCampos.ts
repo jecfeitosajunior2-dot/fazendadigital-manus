@@ -15,7 +15,7 @@ export const BENFEITORIA_TABELA_COLUNAS = [
 export const BENFEITORIA_RELATORIO_COLUNAS = [...BENFEITORIA_TABELA_COLUNAS] as const;
 
 export const BENFEITORIA_PDF_HEADERS = BENFEITORIA_RELATORIO_COLUNAS.map(c => c.label);
-export const BENFEITORIA_PDF_COLUMN_ALIGNS = BENFEITORIA_RELATORIO_COLUNAS.map(c => c.align);
+export const BENFEITORIA_PDF_COLUMN_ALIGNS = BENFEITORIA_RELATORIO_COLUNAS.map(() => "center" as const);
 export const BENFEITORIA_PDF_VALOR_COL_INDEX = BENFEITORIA_RELATORIO_COLUNAS.findIndex(c => c.key === "valor");
 
 /** Colunas da planilha Excel (valor alinhado à direita). */
@@ -29,7 +29,7 @@ export const BENFEITORIA_LISTAGEM_COLUNAS = [
   { key: "observacoes", label: "Observações", align: "left" as const },
 ];
 
-export const BENFEITORIA_EXPORT_COLUMN_ALIGNS = BENFEITORIA_LISTAGEM_COLUNAS.map(c => c.align);
+export const BENFEITORIA_EXPORT_COLUMN_ALIGNS = BENFEITORIA_LISTAGEM_COLUNAS.map(() => "center" as const);
 
 export const BENFEITORIA_EXPORT_ANO_COL_INDEX = BENFEITORIA_LISTAGEM_COLUNAS.findIndex(
   c => c.key === "anoConstrucao",
@@ -42,6 +42,13 @@ export const BENFEITORIA_EXPORT_INTEGER_COL_INDEXES = [
   BENFEITORIA_EXPORT_VIDA_UTIL_COL_INDEX,
 ];
 
+/** Formato Excel: "1 ano" ou "N anos" (valor numérico preservado). */
+export const BENFEITORIA_EXPORT_VIDA_UTIL_NUM_FMT = '[=1]0 " ano";0 " anos"';
+
+export const BENFEITORIA_EXPORT_COLUMN_NUM_FMTS: Partial<Record<number, string>> = {
+  [BENFEITORIA_EXPORT_VIDA_UTIL_COL_INDEX]: BENFEITORIA_EXPORT_VIDA_UTIL_NUM_FMT,
+};
+
 export type BenfeitoriaExportRowInput = {
   nome: string;
   tipo?: string | null;
@@ -51,6 +58,10 @@ export type BenfeitoriaExportRowInput = {
   valorEstimado?: string | number | null;
   observacoes?: string | null;
 };
+
+function formatVidaUtilAnosLabel(anos: number): string {
+  return anos === 1 ? "1 ano" : `${anos} anos`;
+}
 
 function formatVidaUtilExport(vidaUtil: string | null | undefined): string | number {
   if (!vidaUtil?.trim()) return "";
@@ -65,7 +76,7 @@ export function formatVidaUtilListagem(vidaUtil: string | null | undefined): str
   if (!vidaUtil?.trim()) return "—";
   const raw = vidaUtil.trim();
   if (/ano/i.test(raw)) return raw;
-  if (/^\d+$/.test(raw)) return `${raw} anos`;
+  if (/^\d+$/.test(raw)) return formatVidaUtilAnosLabel(parseInt(raw, 10));
   return raw;
 }
 

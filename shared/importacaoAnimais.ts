@@ -39,6 +39,10 @@ export const MENSAGEM_DATA_REFERENCIA_PLANILHA =
 export const MENSAGEM_VALIDACAO_PLANILHA_GENERICA =
   'Não foi possível validar a planilha. Verifique os dados informados e tente novamente.';
 
+/** Texto curto para exibir dentro do bloco de uma linha (sem repetir o número da linha). */
+export const MENSAGEM_DATA_REFERENCIA_DETALHE =
+  'Informe Data de Nascimento ou Data de Entrada. Pelo menos uma dessas datas é obrigatória para cadastrar o animal.';
+
 export function mensagemDataReferenciaLinha(numLinha: number): string {
   return `Linha ${numLinha}: informe Data de Nascimento ou Data de Entrada. Pelo menos uma dessas datas é obrigatória para cadastrar o animal.`;
 }
@@ -55,8 +59,10 @@ export function isErroDataReferenciaImportacao(erro: {
   mensagem?: string;
 }): boolean {
   const msg = erro.mensagem ?? '';
-  return erro.campo === 'dataNascimento'
+  return erro.campo === 'dataReferencia'
+    || erro.campo === 'dataNascimento'
     || erro.campo === 'dataEntrada'
+    || erro.campo === 'Data de Nascimento'
     || msg.includes('Data de Nascimento ou Data de Entrada');
 }
 
@@ -79,6 +85,20 @@ export function formatarResumoErrosDataReferencia(linhas: number[]): string {
   return `Corrija as seguintes linhas antes de importar:\n${lista}`;
 }
 
+export function resumoLinhasDataReferencia(quantidade: number): string {
+  if (quantidade <= 0) return '';
+  if (quantidade === 1) {
+    return '1 linha precisa de Data de Nascimento ou Data de Entrada.';
+  }
+  return `${quantidade} linhas precisam de Data de Nascimento ou Data de Entrada.`;
+}
+
+export function somenteErrosDataReferencia(
+  erros: Array<{ linha: number; campo: string; mensagem: string }>,
+): boolean {
+  return erros.length > 0 && erros.every(isErroDataReferenciaImportacao);
+}
+
 export function montarMensagemValidacaoImportacao(
   erros: Array<{ linha: number; campo: string; mensagem: string }>,
 ): { mensagemPrincipal: string; mensagemDetalhada?: string } {
@@ -88,10 +108,7 @@ export function montarMensagemValidacaoImportacao(
     if (linhasData.length === 1) {
       return { mensagemPrincipal: mensagemDataReferenciaLinha(linhasData[0]) };
     }
-    return {
-      mensagemPrincipal: MENSAGEM_DATA_REFERENCIA_PLANILHA,
-      mensagemDetalhada: formatarResumoErrosDataReferencia(linhasData),
-    };
+    return { mensagemPrincipal: MENSAGEM_DATA_REFERENCIA_PLANILHA };
   }
 
   if (erros.length === 0) {

@@ -25,7 +25,7 @@ import { FazendaSubdivisaoMapaModal } from "@/components/FazendaSubdivisaoMapaMo
 import { useConfirm } from "@/components/ConfirmDialog";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
-import { DeleteActionIcon, EditActionIcon } from "@/components/icons/FarmActionIcons";
+import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import SemCoordenadasIcon from "@/components/icons/SemCoordenadasIcon";
 import { Map } from "lucide-react";
 const FD_PRIMARY = "#4ECDC4";
@@ -575,30 +575,16 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 </td>
                 <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
                   <div className="inline-flex items-center justify-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(s)}
-                      title="Editar"
-                      aria-label="Editar"
-                      className={cn(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent",
-                        "text-[#586168] hover:text-[#434A54] hover:bg-slate-100/90 transition-all duration-150 active:scale-[0.96]",
-                      )}
-                    >
+                    <TableIconButton label="Editar" onClick={() => startEdit(s)} tone="neutral">
                       <EditActionIcon size={17} />
-                    </button>
-                    <button
-                      type="button"
+                    </TableIconButton>
+                    <TableIconButton
+                      label="Excluir"
                       onClick={() => void handleDeleteSubdivisao({ id: s.id, nome: s.nome })}
-                      title="Excluir"
-                      aria-label="Excluir"
-                      className={cn(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent",
-                        "text-[#E28484] hover:text-[#D46B6B] hover:bg-rose-50 transition-all duration-150 active:scale-[0.96]",
-                      )}
+                      tone="danger"
                     >
                       <DeleteActionIcon size={17} />
-                    </button>
+                    </TableIconButton>
                     <button
                       type="button"
                       onClick={() => {

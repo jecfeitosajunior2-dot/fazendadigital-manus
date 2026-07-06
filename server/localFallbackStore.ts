@@ -5,6 +5,7 @@ const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
 const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
+const lotesFile = path.join(dataDir, "lotes.json");
 const animaisFile = path.join(dataDir, "animais.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
 
@@ -293,6 +294,170 @@ export async function deleteLocalBenfeitoria(userId: number, id: number): Promis
   await writeBenfeitorias(remaining);
 }
 
+export type LocalLote = Record<string, any> & {
+  id: number;
+  userId: number;
+  nome: string;
+  ativo: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readLotes(): Promise<LocalLote[]> {
+  return readJsonFile<LocalLote[]>(lotesFile, []);
+}
+
+async function writeLotes(rows: LocalLote[]): Promise<void> {
+  await writeJsonFile(lotesFile, rows);
+}
+
+export async function listLocalLotes(userId: number): Promise<LocalLote[]> {
+  const rows = await readLotes();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+async function buildLocalLoteNomeMap(userId: number): Promise<Map<number, string>> {
+  const lotes = await listLocalLotes(userId);
+  return new Map(lotes.map(l => [l.id, String(l.nome)]));
+}
+
+export async function enrichLocalAnimal(
+  userId: number,
+  animal: Record<string, any>,
+): Promise<Record<string, unknown>> {
+  const loteNomeMap = await buildLocalLoteNomeMap(userId);
+  const loteId = animal.loteId != null ? Number(animal.loteId) : null;
+
+  let diasNaFazenda: number | null = null;
+  if (animal.dataNascimento) {
+    const nasc = new Date(animal.dataNascimento);
+    diasNaFazenda = Math.floor((Date.now() - nasc.getTime()) / (1000 * 60 * 60 * 24));
+  } else if (animal.dataEntrada) {
+    const entrada = new Date(animal.dataEntrada);
+    diasNaFazenda = Math.floor((Date.now() - entrada.getTime()) / (1000 * 60 * 60 * 24));
+  } else if (animal.createdAt) {
+    diasNaFazenda = Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  return {
+    ...animal,
+    loteNome: loteId ? (loteNomeMap.get(loteId) ?? null) : null,
+    pastoNome: null,
+    diasNaFazenda,
+  };
+}
+
+export async function createLocalLote(
+  userId: number,
+  input: Record<string, any> & { nome: string },
+): Promise<{ id: number }> {
+  const rows = await readLotes();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  const sigla = typeof input.sigla === "string" && input.sigla.trim() ? input.sigla.trim() : null;
+  rows.push({
+    id,
+    userId,
+    nome: input.nome,
+    sigla,
+    dataCriacao: input.dataCriacao ?? now.slice(0, 10),
+    descricao: input.descricao ?? null,
+    localizacao: input.localizacao ?? null,
+    capacidade: input.capacidade ?? null,
+    fazendaId: input.fazendaId ?? null,
+    pastoAtualId: input.pastoAtualId ?? null,
+    dataEntradaPasto: input.dataEntradaPasto ?? null,
+    ativo: input.ativo ?? true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeLotes(rows);
+  return { id };
+}
+
+export async function enrichLocalLote(lote: LocalLote, userId: number) {
+  const animais = await listLocalAnimais(userId);
+  const fazendas = await listLocalFazendas(userId);
+  const qtdAnimais = animais.filter(a => a.loteId === lote.id && a.status === "ativo").length;
+  const fazendaNome = lote.fazendaId
+    ? (fazendas.find(f => f.id === lote.fazendaId)?.nome ?? null)
+    : null;
+  return {
+    ...lote,
+    qtdAnimais,
+    pastoNome: null,
+    pastoCapacidade: null,
+    fazendaNome,
+    diasNoPasto: null,
+  };
+}
+
+export async function listLocalLotesGerenciamento(
+  userId: number,
+  input?: { fazendaId?: number; search?: string },
+) {
+  const {
+    calcularIdadeMeses,
+    adicionarAnimalAoResumo,
+    criarResumoSexoFaixa,
+  } = await import("../shared/lote-faixas-idade");
+
+  const lotesList = await listLocalLotes(userId);
+  const fazendas = await listLocalFazendas(userId);
+  const fazendaNomeMap = new Map(fazendas.map(f => [f.id, f.nome]));
+  const animaisAtivos = (await listLocalAnimais(userId)).filter(a => a.status === "ativo" && a.loteId);
+
+  const resumoPorLote = new Map<number, ReturnType<typeof criarResumoSexoFaixa>>();
+  const totalPorLote = new Map<number, number>();
+  const hoje = new Date();
+
+  for (const animal of animaisAtivos) {
+    if (!animal.loteId) continue;
+    const idade = calcularIdadeMeses(animal.dataNascimento, hoje);
+    const atual = resumoPorLote.get(animal.loteId) ?? criarResumoSexoFaixa();
+    resumoPorLote.set(animal.loteId, adicionarAnimalAoResumo(atual, animal.sexo, idade));
+    totalPorLote.set(animal.loteId, (totalPorLote.get(animal.loteId) ?? 0) + 1);
+  }
+
+  let resultado = lotesList.map(lote => {
+    const fazendaId = lote.fazendaId ?? null;
+    const resumo = resumoPorLote.get(lote.id) ?? criarResumoSexoFaixa();
+    const totalAnimaisLote = totalPorLote.get(lote.id) ?? 0;
+    const capacidade = lote.capacidade ?? null;
+    const pctOcupacao = capacidade && capacidade > 0
+      ? Math.round((totalAnimaisLote / capacidade) * 100)
+      : null;
+    const superlotado = capacidade !== null && capacidade > 0 && totalAnimaisLote > capacidade;
+    return {
+      id: lote.id,
+      nome: lote.nome,
+      fazendaId,
+      fazendaNome: fazendaId ? (fazendaNomeMap.get(fazendaId) ?? null) : null,
+      ativo: lote.ativo ?? true,
+      machos: resumo.machos,
+      femeas: resumo.femeas,
+      machosSemIdade: resumo.machosSemIdade,
+      femeasSemIdade: resumo.femeasSemIdade,
+      capacidade,
+      totalAnimais: totalAnimaisLote,
+      pctOcupacao,
+      superlotado,
+    };
+  });
+
+  if (input?.fazendaId) {
+    resultado = resultado.filter(l => l.fazendaId === input.fazendaId);
+  }
+  if (input?.search?.trim()) {
+    const q = input.search.trim().toLowerCase();
+    resultado = resultado.filter(l => l.nome.toLowerCase().includes(q));
+  }
+
+  return resultado;
+}
+
 export type LocalAnimal = Record<string, any> & {
   id: number;
   userId: number;
@@ -440,6 +605,8 @@ export async function listLocalAnimaisEnriched(
     lista = lista.filter(a => (a.rgd ?? "").toLowerCase().includes(q));
   }
 
+  const loteNomeMap = await buildLocalLoteNomeMap(userId);
+
   const resultado = lista.map(animal => {
     let idadeMeses: number | null = null;
     if (animal.dataNascimento) {
@@ -460,9 +627,11 @@ export async function listLocalAnimaisEnriched(
       ? Number(animal.pesoAtual)
       : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
 
+    const loteId = animal.loteId != null ? Number(animal.loteId) : null;
+
     return {
       ...animal,
-      loteNome: null,
+      loteNome: loteId ? (loteNomeMap.get(loteId) ?? null) : null,
       pastoNome: null,
       idadeMeses,
       diasNaFazenda,

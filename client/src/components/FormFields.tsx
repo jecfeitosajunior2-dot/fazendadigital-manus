@@ -4,6 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 
 export const FD_PRIMARY = "#4ECDC4";
+/** Fundo suave para estado ativo/selecionado (~8% opacidade). */
+export const FD_PRIMARY_SUBTLE_BG = `${FD_PRIMARY}14`;
 
 export function FormLabel({
   children,

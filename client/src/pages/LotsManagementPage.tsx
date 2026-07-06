@@ -321,7 +321,13 @@ export default function LotsManagementPage() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <button
           type="button"
-          onClick={() => setLocation(novoLoteUrl(fazendaFilter))}
+          onClick={() => {
+            if (!fazendaFilter) {
+              toast.error("Selecione uma fazenda antes de criar um lote.");
+              return;
+            }
+            setLocation(novoLoteUrl(fazendaFilter));
+          }}
           className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:brightness-95 transition"
           style={{ backgroundColor: IRANCHO_BTN_GREEN, minHeight: 40 }}
         >

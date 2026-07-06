@@ -171,7 +171,7 @@ export function FarmsOverviewPage() {
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <h1 className="text-[13px] font-semibold text-gray-800 leading-none">Lista de Fazendas</h1>
+            <h1 className="text-[15px] font-semibold text-gray-800 leading-none">Lista de Fazendas</h1>
             <button
               type="button"
               onClick={() => setLocation("/fazendas/cadastro")}
@@ -432,7 +432,7 @@ export function SubdivisionsPage() {
 // MÓDULO REBANHO
 // ============================================================
 
-const REBANHO_OVERVIEW_FAZENDA_KEY = "fd-rebanho-overview-fazenda-id";
+import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
 
 function BarChart({ items, color }: { items: { label: string; value: number; pct: number }[]; color: string }) {
   if (!items.length) return <p className="text-[11px] text-gray-400">Sem dados</p>;
@@ -639,27 +639,14 @@ export function HerdOverviewPage() {
     if (fazendaList.length === 1) {
       const id = fazendaList[0].id;
       setFazendaId(id);
-      try {
-        localStorage.setItem(REBANHO_OVERVIEW_FAZENDA_KEY, String(id));
-      } catch {
-        // ignora falha de gravação
-      }
+      persistRebanhoFazendaId(String(id));
       setFazendaInitDone(true);
       return;
     }
 
     if (fazendaList.length > 1) {
-      try {
-        const stored = localStorage.getItem(REBANHO_OVERVIEW_FAZENDA_KEY);
-        if (stored) {
-          const id = Number(stored);
-          if (fazendaList.some(f => f.id === id)) {
-            setFazendaId(id);
-          }
-        }
-      } catch {
-        // ignora falha de leitura
-      }
+      const stored = readPersistedRebanhoFazendaId(fazendaList.map(f => f.id));
+      if (stored) setFazendaId(Number(stored));
     }
 
     setFazendaInitDone(true);
@@ -668,12 +655,7 @@ export function HerdOverviewPage() {
   const handleFazendaChange = (value: string) => {
     const id = value ? Number(value) : undefined;
     setFazendaId(id);
-    try {
-      if (id) localStorage.setItem(REBANHO_OVERVIEW_FAZENDA_KEY, String(id));
-      else localStorage.removeItem(REBANHO_OVERVIEW_FAZENDA_KEY);
-    } catch {
-      // ignora falha de gravação
-    }
+    persistRebanhoFazendaId(value);
   };
 
   const navigateAnimais = (params: Record<string, string>) => {

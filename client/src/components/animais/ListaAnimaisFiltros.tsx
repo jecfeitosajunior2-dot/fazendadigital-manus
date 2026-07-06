@@ -1,34 +1,97 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { type ReactNode } from 'react';
 import { Switch } from '@/components/ui/switch';
+import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG } from '@/components/FormFields';
 import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
-import type { AnimaisListFiltersState, FiltroAdicionalKey } from '@shared/animal-filter-types';
-import { FILTROS_ADICIONAIS_OPCOES } from '@shared/animal-filter-types';
+import type { AnimaisListFiltersState } from '@shared/animal-filter-types';
+import { hasActiveMaisFiltrosAvancados } from '@shared/animal-filter-types';
+import FazendaLandIcon from '@/components/icons/FazendaLandIcon';
+import BrincoIcon from '@/components/icons/BrincoIcon';
+import SexoIcon from '@/components/icons/SexoIcon';
+import { filtrarLotesPorFazenda } from '@/lib/loteFazendaFilter';
 
-const labelClass = 'block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5';
+const labelClass = 'block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0 leading-none';
+/** Tamanho uniforme dos ícones da barra principal de filtros (16px). */
+const PRIMARY_FILTER_ICON_BOX = 'inline-flex items-center justify-center w-4 h-4 shrink-0 overflow-hidden';
+const PRIMARY_FILTER_ICON_INNER = 'flex items-center justify-center w-full h-full';
+const primaryFilterIconColor = (active?: boolean) => (active ? 'text-[#4ECDC4]' : 'text-gray-400');
+/** Switches do painel Mais Filtros — off mais visível, on em FD_PRIMARY (+ Novo Animal). */
+const advancedFilterSwitchClass =
+  'scale-90 border data-[state=unchecked]:bg-gray-300 data-[state=unchecked]:border-gray-400/55';
+
+function AdvancedFilterSwitch({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <Switch
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+      className={advancedFilterSwitchClass}
+      style={checked ? { backgroundColor: FD_PRIMARY, borderColor: FD_PRIMARY } : undefined}
+    />
+  );
+}
 const inputClass =
-  'w-full h-[32px] px-2.5 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 placeholder:text-gray-300 focus:outline-none focus:border-[#0d9488] transition-colors duration-150';
+  'w-full h-[28px] px-2 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#4ECDC4] transition-colors duration-150';
 const selectClass =
-  'w-full h-[32px] px-2.5 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 focus:outline-none focus:border-[#0d9488] appearance-none transition-colors duration-150 cursor-pointer';
+  'w-full h-[28px] px-2 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 focus:outline-none focus:border-[#4ECDC4] appearance-none transition-colors duration-150 cursor-pointer';
 
 /** Card de filtro principal com ícone e underline style */
-function PrimaryFilterCard({ label, icon, children, active, customIcon, embedded }: { label: string; icon: string; children: ReactNode; active?: boolean; customIcon?: string; embedded?: boolean }) {
+function PrimaryFilterCard({
+  label,
+  icon,
+  children,
+  active,
+  customIcon,
+  iconNode,
+  iconOpticalScale = 1,
+  embedded,
+}: {
+  label: string;
+  icon: string;
+  children: ReactNode;
+  active?: boolean;
+  customIcon?: string;
+  iconNode?: ReactNode;
+  /** Ajuste fino de escala para equilibrar peso visual entre ícones diferentes. */
+  iconOpticalScale?: number;
+  embedded?: boolean;
+}) {
+  const iconInnerStyle = iconOpticalScale !== 1 ? { transform: `scale(${iconOpticalScale})` } : undefined;
+
+  const renderIcon = (node: ReactNode) => (
+    <span className={PRIMARY_FILTER_ICON_INNER} style={iconInnerStyle}>
+      {node}
+    </span>
+  );
+
   return (
-    <div className={`relative flex flex-col h-full transition-all duration-150 ${
+    <div className={`relative flex flex-col transition-all duration-150 ${
       embedded
-        ? `rounded px-2.5 pt-1.5 pb-1 ${active ? 'bg-teal-50/60' : 'bg-gray-50/50'}`
-        : `bg-white rounded-md px-3 pt-2 pb-1.5 border ${active ? 'border-[#0d9488] shadow-[0_0_0_2px_rgba(13,148,136,0.08)]' : 'border-gray-200 hover:border-gray-300'}`
+        ? `rounded px-2 pt-1 pb-0.5 ${active ? 'bg-[#4ECDC4]/10' : 'bg-gray-50/50'}`
+        : `bg-white rounded px-2 pt-1 pb-0.5 border ${active ? 'border-[#4ECDC4] shadow-[0_0_0_1px_rgba(78,205,196,0.12)]' : 'border-gray-200 hover:border-gray-300'}`
     }`}>
-      <div className="flex items-center gap-1 mb-0.5">
-        {customIcon ? (
-          <img src={customIcon} alt={label} className="w-[14px] h-[14px] object-contain" style={{ filter: active ? 'none' : 'grayscale(0.4) opacity(0.6)' }} />
+      <div className="flex items-center gap-1 mb-0.5 h-4">
+        {iconNode ? (
+          <span className={`${PRIMARY_FILTER_ICON_BOX} ${primaryFilterIconColor(active)}`}>{renderIcon(iconNode)}</span>
+        ) : customIcon ? (
+          <span className={PRIMARY_FILTER_ICON_BOX}>
+            {renderIcon(
+              <img src={customIcon} alt={label} className="w-full h-full object-contain" style={{ filter: active ? 'none' : 'grayscale(0.4) opacity(0.6)' }} />
+            )}
+          </span>
         ) : (
-          <span className={`material-icons text-[14px] ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{icon}</span>
+          <span className={`${PRIMARY_FILTER_ICON_BOX} ${primaryFilterIconColor(active)}`}>
+            {renderIcon(<span className="material-icons text-[14px] leading-none">{icon}</span>)}
+          </span>
         )}
-        <label className={`text-[10px] font-semibold uppercase tracking-wider ${active ? 'text-[#0d9488]' : 'text-gray-400'}`}>{label}</label>
+        <label className={`text-[9px] font-semibold uppercase tracking-wider leading-none truncate ${primaryFilterIconColor(active)}`}>{label}</label>
       </div>
-      <div className="flex-1">{children}</div>
+      <div>{children}</div>
     </div>
   );
 }
@@ -62,219 +125,48 @@ function patch(value: AnimaisListFiltersState, partial: Partial<AnimaisListFilte
   return { ...value, ...partial };
 }
 
-/** Dropdown multi-select de marcadores */
-function MarcadoresMultiSelect({
-  value,
-  options,
-  onChange,
-}: {
-  value: string[];
-  options: string[];
-  onChange: (marcadores: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const toggle = (marca: string) => {
-    onChange(value.includes(marca) ? value.filter(m => m !== marca) : [...value, marca]);
-  };
-
-  const label =
-    value.length === 0 ? 'Selecione marcadores' : value.length === 1 ? value[0] : `${value.length} marcadores`;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className={`${selectClass} text-left flex items-center justify-between gap-2`}
-      >
-        <span className={value.length === 0 ? 'text-gray-400 truncate' : 'truncate'}>{label}</span>
-        <span className="material-icons text-[16px] text-gray-400 shrink-0">
-          {open ? 'expand_less' : 'expand_more'}
-        </span>
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-md py-1">
-          {options.length === 0 ? (
-            <p className="px-3 py-2 text-[11px] text-gray-400">Nenhum marcador cadastrado</p>
-          ) : (
-            options.map(marca => (
-              <label
-                key={marca}
-                className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={value.includes(marca)}
-                  onChange={() => toggle(marca)}
-                  className="rounded border-gray-300 text-[#8ab83d] focus:ring-[#8ab83d]"
-                />
-                <span className="truncate">{marca}</span>
-              </label>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Dropdown de seleção de filtros adicionais (igual ao modal de Alocação) */
-function FiltrosAdicionaisDropdown({
-  selecionados,
-  onChange,
-}: {
-  selecionados: FiltroAdicionalKey[];
-  onChange: (keys: FiltroAdicionalKey[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
-
-  // Calcula a posição do menu com base no botão gatilho (posição fixa na viewport)
-  const updateCoords = () => {
-    const el = triggerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-  };
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    updateCoords();
-    window.addEventListener('scroll', updateCoords, true);
-    window.addEventListener('resize', updateCoords);
-    return () => {
-      window.removeEventListener('scroll', updateCoords, true);
-      window.removeEventListener('resize', updateCoords);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (ref.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
-
-  const toggle = (key: FiltroAdicionalKey) => {
-    onChange(selecionados.includes(key) ? selecionados.filter(k => k !== key) : [...selecionados, key]);
-  };
-
-  return (
-    <div ref={ref} className="relative">
-      {/* Cabeçalho do card */}
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">
-        Filtros Adicionais
-      </div>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className={`w-full h-[36px] px-3 text-[12px] border rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none text-left flex items-center justify-between gap-2 transition-colors ${
-          open ? 'border-[#2D5A5A] ring-1 ring-[#2D5A5A]/20' : 'border-gray-200 hover:border-[#2D5A5A]/50'
-        }`}
-      >
-        <span className={`truncate ${open ? 'text-[#2D5A5A] font-medium' : 'text-gray-400'}`}>Adicionar Filtros</span>
-        <span className={`material-icons text-[16px] shrink-0 ${open ? 'text-[#2D5A5A]' : 'text-gray-400'}`}>
-          {open ? 'expand_less' : 'expand_more'}
-        </span>
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 99999 }}
-            className="max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-sm shadow-xl py-1"
-          >
-            {FILTROS_ADICIONAIS_OPCOES.map(opcao => (
-              <label
-                key={opcao.key}
-                className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
-              >
-                <input
-                  type="checkbox"
-                  checked={selecionados.includes(opcao.key)}
-                  onChange={() => toggle(opcao.key)}
-                  className="rounded border-gray-300 text-[#2D5A5A] focus:ring-[#2D5A5A] accent-[#2D5A5A] shrink-0"
-                />
-                <span>{opcao.label}</span>
-              </label>
-            ))}
-          </div>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
 export default function ListaAnimaisFiltros({
   value,
   onChange,
   onClear,
   fazendas,
   lotes,
-  pastos,
-  marcadoresDisponiveis,
+  pastos: _pastos,
+  marcadoresDisponiveis: _marcadoresDisponiveis,
   embedded = false,
 }: Props) {
   const categorias = value.sexo
     ? getCategoriasPorSexo(value.sexo === 'macho' ? 'Macho' : 'Fêmea')
     : todasAsCategorias();
 
-  const lotesFiltrados = value.fazendaId ? lotes.filter(l => l.fazendaId === Number(value.fazendaId)) : lotes;
-  const pastosFiltrados = value.fazendaId ? pastos.filter(p => p.fazendaId === Number(value.fazendaId)) : pastos;
+  const lotesFiltrados = filtrarLotesPorFazenda(lotes, value.fazendaId || null);
 
-  const sel = value.filtrosAdicionaisSelecionados;
-  const has = (key: FiltroAdicionalKey) => sel.includes(key);
-  const maisFiltrosAtivos =
-    !!value.raca ||
-    !!value.pesoInicial.trim() ||
-    !!value.pesoFinal.trim() ||
-    !!value.idadeMesesMin.trim() ||
-    !!value.idadeMesesMax.trim() ||
-    !!value.rfid ||
-    !!value.statusFiltro ||
-    !!value.dataEntradaDe ||
-    !!value.dataEntradaAte ||
-    value.apenasEmCarencia ||
-    value.apenasSemPesagem ||
-    value.apenasSemLote ||
-    sel.length > 0;
+  const maisFiltrosDestacado =
+    value.maisFiltrosAbertos || hasActiveMaisFiltrosAvancados(value);
 
   return (
     <div className={embedded ? 'border-b border-gray-100' : 'mb-2 border border-gray-200 rounded-lg bg-white overflow-hidden'}>
-      <div className={embedded ? 'px-3 py-2' : 'px-3 py-2'}>
-        {/* ── Filtros principais — linha compacta ── */}
-        <div className="flex flex-wrap gap-2 items-stretch">
+      <div className={embedded ? 'px-2 py-1.5' : 'px-2 py-1.5'}>
+        {/* ── Filtros principais — barra compacta ── */}
+        <div className="flex flex-wrap gap-1.5 items-end">
 
           {/* Fazenda */}
-          <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Fazenda" icon="agriculture" active={!!value.fazendaId} customIcon="/assets/icon-fazenda.png" embedded={embedded}>
+          <div className="flex-1 min-w-[130px] max-w-[200px] sm:max-w-none">
+            <PrimaryFilterCard
+              label="Fazenda"
+              icon="agriculture"
+              active={!!value.fazendaId}
+              iconNode={<FazendaLandIcon className="w-full h-full" />}
+              iconOpticalScale={1.3}
+              embedded={embedded}
+            >
               <div className="relative">
                 <select
                   value={value.fazendaId}
                   onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
                   className={`${selectClass} pr-7`}
                 >
-                  <option value="">Selecione uma fazenda</option>
+                  <option value="">Selecione</option>
                   {fazendas.map(f => (
                     <option key={f.id} value={String(f.id)}>{f.nome}</option>
                   ))}
@@ -285,14 +177,21 @@ export default function ListaAnimaisFiltros({
           </div>
 
           {/* Número do Brinco */}
-          <div className="flex-1 min-w-[150px]">
-            <PrimaryFilterCard label="Número do Brinco" icon="tag" active={!!value.pesquisa.trim()} embedded={embedded}>
+          <div className="flex-1 min-w-[120px] max-w-[180px] sm:max-w-none">
+            <PrimaryFilterCard
+              label="Brinco"
+              icon="tag"
+              active={!!value.pesquisa.trim()}
+              iconNode={<BrincoIcon className="w-full h-full" />}
+              iconOpticalScale={1}
+              embedded={embedded}
+            >
               <div className="relative">
                 <input
                   type="text"
                   value={value.pesquisa}
                   onChange={e => onChange(patch(value, { pesquisa: e.target.value }))}
-                  placeholder="Digite o nº do brinco"
+                  placeholder="Brinco"
                   className={`${inputClass} pr-7`}
                 />
                 {value.pesquisa && (
@@ -309,8 +208,15 @@ export default function ListaAnimaisFiltros({
           </div>
 
           {/* Sexo */}
-          <div className="flex-1 min-w-[130px]">
-            <PrimaryFilterCard label="Sexo" icon="wc" active={!!value.sexo} embedded={embedded}>
+          <div className="flex-1 min-w-[110px] max-w-[150px] sm:max-w-none">
+            <PrimaryFilterCard
+              label="Sexo"
+              icon="wc"
+              active={!!value.sexo}
+              iconNode={<SexoIcon className="w-full h-full" />}
+              iconOpticalScale={1.45}
+              embedded={embedded}
+            >
               <div className="relative">
                 <select
                   value={value.sexo}
@@ -327,8 +233,8 @@ export default function ListaAnimaisFiltros({
           </div>
 
           {/* Categoria */}
-          <div className="flex-1 min-w-[140px]">
-            <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria} embedded={embedded}>
+          <div className="flex-1 min-w-[120px] max-w-[160px] sm:max-w-none">
+            <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria} iconOpticalScale={0.7} embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.categoria}
@@ -346,15 +252,15 @@ export default function ListaAnimaisFiltros({
           </div>
 
           {/* Lote */}
-          <div className="flex-1 min-w-[140px]">
-            <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId} embedded={embedded}>
+          <div className="flex-1 min-w-[120px] max-w-[160px] sm:max-w-none">
+            <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId} iconOpticalScale={0.7} embedded={embedded}>
               <div className="relative">
                 <select
                   value={value.loteId}
                   onChange={e => onChange(patch(value, { loteId: e.target.value }))}
                   className={`${selectClass} pr-7`}
                 >
-                  <option value="">Todos os lotes</option>
+                  <option value="">Todos</option>
                   {lotesFiltrados.map(l => (
                     <option key={l.id} value={String(l.id)}>{l.nome}</option>
                   ))}
@@ -365,17 +271,26 @@ export default function ListaAnimaisFiltros({
           </div>
 
           {/* Botão Mais Filtros */}
-          <div className="flex items-stretch">
+          <div className="shrink-0">
             <button
               type="button"
               onClick={() => onChange(patch(value, { maisFiltrosAbertos: !value.maisFiltrosAbertos }))}
-              className={`min-h-[52px] px-3 py-1.5 flex flex-col items-center justify-center gap-0.5 rounded-md border text-[9px] font-semibold uppercase tracking-wide transition-all duration-150 whitespace-nowrap ${
-                value.maisFiltrosAbertos || maisFiltrosAtivos
-                  ? 'bg-[#0d9488]/10 text-[#0d9488] border-[#0d9488]/40'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#0d9488]/50 hover:text-[#0d9488]'
+              className={`h-[46px] px-2.5 flex flex-row items-center justify-center gap-1 rounded border text-[10px] font-semibold uppercase tracking-wide transition-all duration-150 whitespace-nowrap ${
+                maisFiltrosDestacado
+                  ? 'text-[#4ECDC4] border-[#4ECDC4]/40'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-600'
               }`}
+              style={
+                maisFiltrosDestacado
+                  ? { backgroundColor: FD_PRIMARY_SUBTLE_BG }
+                  : undefined
+              }
             >
-              <span className="material-icons text-[16px]">tune</span>
+              <span className={`${PRIMARY_FILTER_ICON_BOX} ${maisFiltrosDestacado ? 'text-[#4ECDC4]' : 'text-gray-400'}`}>
+                <span className={PRIMARY_FILTER_ICON_INNER} style={{ transform: 'scale(0.92)' }}>
+                  <span className="material-icons text-[14px] leading-none">tune</span>
+                </span>
+              </span>
               <span>Mais Filtros</span>
             </button>
           </div>
@@ -383,51 +298,46 @@ export default function ListaAnimaisFiltros({
         </div>
       </div>
 
-      {/* Painel de filtros secundários — fechado por padrão */}
+      {/* Painel fixo de filtros avançados — fechado por padrão */}
       {value.maisFiltrosAbertos && (
-        <div className={`border-t px-3 py-2.5 space-y-2.5 ${embedded ? 'border-gray-100 bg-gray-50/40' : 'border-gray-100 bg-gray-50/70'}`}>
+        <div className={`border-t px-2 py-2 space-y-2 ${embedded ? 'border-gray-100 bg-gray-50/40' : 'border-gray-100 bg-gray-50/70'}`}>
 
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Filtros adicionais</span>
+          {/* Linha 1: atalhos + limpar */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <AdvancedFilterSwitch
+                  checked={value.apenasEmCarencia}
+                  onCheckedChange={checked => onChange(patch(value, { apenasEmCarencia: checked }))}
+                />
+                <span className="text-[11px] text-gray-700">Em Carência</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <AdvancedFilterSwitch
+                  checked={value.apenasSemPesagem}
+                  onCheckedChange={checked => onChange(patch(value, { apenasSemPesagem: checked }))}
+                />
+                <span className="text-[11px] text-gray-700">Sem Pesagem</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <AdvancedFilterSwitch
+                  checked={value.apenasSemLote}
+                  onCheckedChange={checked => onChange(patch(value, { apenasSemLote: checked }))}
+                />
+                <span className="text-[11px] text-gray-700">Sem Lote</span>
+              </label>
+            </div>
             <button
               type="button"
               onClick={onClear}
-              className="text-[11px] font-medium text-[#2D5A5A] hover:underline shrink-0"
+              className="text-[11px] font-medium text-[#2D5A5A] hover:underline shrink-0 ml-auto"
             >
               Limpar filtros
             </button>
           </div>
 
-          {/* Atalhos rápidos */}
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Switch
-                checked={value.apenasEmCarencia}
-                onCheckedChange={checked => onChange(patch(value, { apenasEmCarencia: checked }))}
-                className="data-[state=checked]:bg-[#2D5A5A] scale-90"
-              />
-              <span className="text-[11px] text-gray-700">Em Carência</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Switch
-                checked={value.apenasSemPesagem}
-                onCheckedChange={checked => onChange(patch(value, { apenasSemPesagem: checked }))}
-                className="data-[state=checked]:bg-[#2D5A5A] scale-90"
-              />
-              <span className="text-[11px] text-gray-700">Sem Pesagem</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Switch
-                checked={value.apenasSemLote}
-                onCheckedChange={checked => onChange(patch(value, { apenasSemLote: checked }))}
-                className="data-[state=checked]:bg-[#2D5A5A] scale-90"
-              />
-              <span className="text-[11px] text-gray-700">Sem Lote</span>
-            </label>
-          </div>
-
-          {/* Filtros secundários principais */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+          {/* Linha 2: Raça, Peso, Idade */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <FilterCard label="Raça">
               <select
                 value={value.raca}
@@ -486,8 +396,11 @@ export default function ListaAnimaisFiltros({
                 />
               </div>
             </FilterCard>
+          </div>
 
-            <FilterCard label="Nº RFID">
+          {/* Linha 3: RFID, Status, Data de Entrada */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <FilterCard label="RFID">
               <input
                 type="text"
                 value={value.rfid}
@@ -527,198 +440,6 @@ export default function ListaAnimaisFiltros({
               </div>
             </FilterCard>
           </div>
-
-          {/* Filtros avançados opcionais */}
-          <div className="pt-1 border-t border-gray-200/80">
-            <div className="max-w-xs">
-              <FiltrosAdicionaisDropdown
-                selecionados={sel}
-                onChange={keys => onChange(patch(value, { filtrosAdicionaisSelecionados: keys }))}
-              />
-            </div>
-          </div>
-
-          {sel.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-              {/* Pelagem */}
-              {has('pelagem') && (
-                <FilterCard label="Pelagem">
-                  <input
-                    type="text"
-                    value={value.pelagem}
-                    onChange={e => onChange(patch(value, { pelagem: e.target.value }))}
-                    placeholder="ex: Branca, Vermelha..."
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* Marca */}
-              {has('marca') && (
-                <FilterCard label="Marca">
-                  <input
-                    type="text"
-                    value={value.marca}
-                    onChange={e => onChange(patch(value, { marca: e.target.value }))}
-                    placeholder="ex: Marca a fogo"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* Subdivisão */}
-              {has('subdivisao') && (
-                <FilterCard label="Subdivisão">
-                  <select
-                    value={value.pastoId}
-                    onChange={e => onChange(patch(value, { pastoId: e.target.value }))}
-                    className={selectClass}
-                    disabled={!value.fazendaId}
-                  >
-                    <option value="">{value.fazendaId ? 'Todos os pastos' : 'Selecione uma fazenda primeiro'}</option>
-                    {pastosFiltrados.map(p => (
-                      <option key={p.id} value={String(p.id)}>{p.nome}</option>
-                    ))}
-                  </select>
-                </FilterCard>
-              )}
-
-              {/* Data de Nascimento */}
-              {has('dataNascimento') && (
-                <FilterCard label="Período de Nascimento">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="date"
-                      value={value.dataNascimentoInicial}
-                      onChange={e => onChange(patch(value, { dataNascimentoInicial: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="date"
-                      value={value.dataNascimentoFinal}
-                      onChange={e => onChange(patch(value, { dataNascimentoFinal: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
-
-              {/* Data de Desmama */}
-              {has('dataDesmama') && (
-                <FilterCard label="Período de Desmama">
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="date"
-                      value={value.dataDesmamaDe}
-                      onChange={e => onChange(patch(value, { dataDesmamaDe: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                    <span className="text-gray-400 text-[11px] shrink-0">–</span>
-                    <input
-                      type="date"
-                      value={value.dataDesmamAte}
-                      onChange={e => onChange(patch(value, { dataDesmamAte: e.target.value }))}
-                      className={`${inputClass} flex-1 min-w-0`}
-                    />
-                  </div>
-                </FilterCard>
-              )}
-
-              {/* Castrado */}
-              {has('castrado') && (
-                <FilterCard label="Castrado">
-                  <select
-                    value={value.castrado}
-                    onChange={e => onChange(patch(value, { castrado: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    <option value="sim">Sim</option>
-                    <option value="nao">Não</option>
-                  </select>
-                </FilterCard>
-              )}
-
-              {/* Produtor de Origem */}
-              {has('produtorOrigem') && (
-                <FilterCard label="Produtor de Origem">
-                  <input
-                    type="text"
-                    value={value.produtorOrigem}
-                    onChange={e => onChange(patch(value, { produtorOrigem: e.target.value }))}
-                    placeholder="Nome do produtor"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* SISBOV */}
-              {has('animalComSisbov') && (
-                <div className="bg-white border border-gray-200 rounded-sm p-3 flex items-center gap-3">
-                  <Switch
-                    checked={value.animalComSisbov}
-                    onCheckedChange={checked => onChange(patch(value, { animalComSisbov: checked }))}
-                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
-                  />
-                  <span className="text-[12px] text-gray-700">Animal com SISBOV</span>
-                </div>
-              )}
-
-              {/* RGN */}
-              {has('rgn') && (
-                <FilterCard label="Registro Geral de Nascimento (RGN)">
-                  <input
-                    type="text"
-                    value={value.rgn}
-                    onChange={e => onChange(patch(value, { rgn: e.target.value }))}
-                    placeholder="Digite o RGN"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* RGD */}
-              {has('rgd') && (
-                <FilterCard label="Registro Genealógico Definitivo (RGD)">
-                  <input
-                    type="text"
-                    value={value.rgd}
-                    onChange={e => onChange(patch(value, { rgd: e.target.value }))}
-                    placeholder="Digite o RGD"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* Pai (Reprodutor) */}
-              {has('pai') && (
-                <FilterCard label="Pai (Reprodutor)">
-                  <input
-                    type="text"
-                    value={value.pai}
-                    onChange={e => onChange(patch(value, { pai: e.target.value }))}
-                    placeholder="Nº brinco do pai"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-              {/* Mãe (Matriz) */}
-              {has('mae') && (
-                <FilterCard label="Mãe (Matriz)">
-                  <input
-                    type="text"
-                    value={value.mae}
-                    onChange={e => onChange(patch(value, { mae: e.target.value }))}
-                    placeholder="Nº brinco da mãe"
-                    className={inputClass}
-                  />
-                </FilterCard>
-              )}
-
-            </div>
-          )}
 
         </div>
       )}

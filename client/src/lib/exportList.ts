@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
-  buildExportSpreadsheetWorkbook,
+  buildExportSpreadsheetBuffer,
   type BuildExportSpreadsheetOptions,
   type ExportColumnAlign,
   type ExportSpreadsheetRow,
@@ -63,8 +63,7 @@ export async function exportListSpreadsheet(
   }
 
   try {
-    const wb = await buildExportSpreadsheetWorkbook(headers, rows, options);
-    const buffer = await wb.xlsx.writeBuffer();
+    const buffer = await buildExportSpreadsheetBuffer(headers, rows, options);
     downloadXlsxBuffer(buffer, exportFilename(filename));
     toast.success("Planilha exportada!");
   } catch (error) {
@@ -90,6 +89,8 @@ const PDF_SYMBOL_URL = "/assets/brand/fd-symbol-final-aligned.png";
 const FD_NAVY = [15, 23, 42] as const;
 const FD_TEAL = [120, 214, 207] as const;
 const PDF_BAND_H = 16;
+const PDF_TITLE_FONT_SIZE = 13;
+const PDF_SUBTITLE_FONT_SIZE = 9;
 const PDF_TITLE_OFFSET = 8;
 const PDF_SUBTITLE_OFFSET = 14;
 const PDF_TABLE_GAP = 6;
@@ -289,11 +290,11 @@ function drawPdfPageChrome(
 
   const titleY = PDF_BAND_H + PDF_TITLE_OFFSET;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(PDF_TITLE_FONT_SIZE);
   doc.setTextColor(15, 23, 42);
   doc.text(title, marginX, titleY);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(PDF_SUBTITLE_FONT_SIZE);
   doc.setTextColor(90, 90, 90);
   doc.text(
     `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,

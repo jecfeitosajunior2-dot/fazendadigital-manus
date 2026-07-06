@@ -1,5 +1,9 @@
 import ExcelJS from "exceljs";
-import { formatValorCelulaMoedaBrlExcel } from "./parseMoedaBr";
+import { formatValorCelulaMoedaBrlExcel, parseExportInteger } from "./parseMoedaBr";
+import {
+  exportDataColRange,
+  patchXlsxIgnoreNumberStoredAsText,
+} from "./patchXlsxIgnoredErrors";
 
 export type ExportColumnAlign = "left" | "center" | "right";
 
@@ -7,6 +11,10 @@ export type BuildExportSpreadsheetOptions = {
   currencyColIndexes?: number[];
   currencyNumFmt?: string;
   integerColIndexes?: number[];
+  /** Colunas texto (@) — ex.: brinco/RFID com zero à esquerda. */
+  textColIndexes?: number[];
+  /** numFmt por coluna (ex.: { 7: "0.0" } para peso). */
+  columnNumFmts?: Partial<Record<number, string>>;
   columnAligns?: ExportColumnAlign[];
   sheetName?: string;
 };
@@ -21,21 +29,6 @@ function columnWidth(headers: string[], rows: ExportSpreadsheetRow[], colIndex: 
     if (len > max) max = len;
   }
   return Math.min(Math.max(max + 2, 10), 50);
-}
-
-function resolveExportCellValue(
-  cell: string | number | null | undefined,
-  colIdx: number,
-  currencyCols: Set<number> | null,
-): string | number {
-  if (cell == null || cell === "") return "";
-  if (currencyCols?.has(colIdx)) {
-    return formatValorCelulaMoedaBrlExcel(cell);
-  }
-  if (typeof cell === "number" && Number.isFinite(cell)) {
-    return cell;
-  }
-  return String(cell);
 }
 
 /** Monta workbook XLSX com alinhamento por coluna e cabeçalho formatado. */
@@ -58,10 +51,13 @@ export async function buildExportSpreadsheetWorkbook(
   const integerCols = options?.integerColIndexes
     ? new Set(options.integerColIndexes)
     : null;
+  const textCols = options?.textColIndexes ? new Set(options.textColIndexes) : null;
+  const columnNumFmts = options?.columnNumFmts ?? null;
 
   if (currencyCols) {
     for (const colIdx of currencyCols) {
-      ws.getColumn(colIdx + 1).alignment = { horizontal: "right", vertical: "middle" };
+      const horizontal = options?.columnAligns?.[colIdx] ?? "right";
+      ws.getColumn(colIdx + 1).alignment = { horizontal, vertical: "middle" };
     }
   }
 
@@ -75,18 +71,17 @@ export async function buildExportSpreadsheetWorkbook(
   });
 
   for (const row of rows) {
-    const resolvedRow = row.map((cell, colIdx) =>
-      resolveExportCellValue(cell, colIdx, currencyCols),
-    );
-    const excelRow = ws.addRow(resolvedRow);
+    const excelRow = ws.addRow(new Array(headers.length).fill(null));
     excelRow.height = 18;
 
-    resolvedRow.forEach((cell, colIdx) => {
+    row.forEach((rawCell, colIdx) => {
       const excelCell = excelRow.getCell(colIdx + 1);
       const horizontal = options?.columnAligns?.[colIdx] ?? "left";
       const isObservacoes = headers[colIdx]?.toLowerCase().includes("observa");
       const isCurrency = currencyCols?.has(colIdx) ?? false;
       const isInteger = integerCols?.has(colIdx) ?? false;
+      const isText = textCols?.has(colIdx) ?? false;
+      const colNumFmt = columnNumFmts?.[colIdx];
 
       excelCell.font = { name: "Calibri", size: 10 };
       excelCell.alignment = {
@@ -95,16 +90,29 @@ export async function buildExportSpreadsheetWorkbook(
         wrapText: isObservacoes,
       };
 
-      if (cell === "") {
+      if (rawCell == null || rawCell === "") {
         excelCell.value = "";
-      } else if (typeof cell === "number" && Number.isFinite(cell)) {
-        excelCell.value = cell;
-        if (isInteger) excelCell.numFmt = "0";
       } else if (isCurrency) {
-        excelCell.value = String(cell);
+        excelCell.value = formatValorCelulaMoedaBrlExcel(rawCell);
+        excelCell.numFmt = "@";
+      } else if (isInteger) {
+        const n = parseExportInteger(rawCell);
+        if (n != null) {
+          excelCell.value = n;
+          excelCell.numFmt = colNumFmt ?? "0";
+        } else {
+          excelCell.value = String(rawCell);
+        }
+      } else if (typeof rawCell === "number" && Number.isFinite(rawCell)) {
+        excelCell.value = rawCell;
+        if (colNumFmt) {
+          excelCell.numFmt = colNumFmt;
+        }
+      } else if (isText) {
+        excelCell.value = String(rawCell);
         excelCell.numFmt = "@";
       } else {
-        excelCell.value = String(cell);
+        excelCell.value = String(rawCell);
       }
     });
   }
@@ -127,4 +135,26 @@ export async function buildExportSpreadsheetWorkbook(
   });
 
   return wb;
+}
+
+/** Gera buffer XLSX pronto para download, com ignoredErrors em colunas texto. */
+export async function buildExportSpreadsheetBuffer(
+  headers: string[],
+  rows: ExportSpreadsheetRow[],
+  options?: BuildExportSpreadsheetOptions,
+): Promise<ArrayBuffer> {
+  const wb = await buildExportSpreadsheetWorkbook(headers, rows, options);
+  let buffer = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+
+  if (options?.textColIndexes?.length && rows.length > 0) {
+    const sqrefs = options.textColIndexes.map(colIdx => exportDataColRange(colIdx, rows.length));
+    buffer = await patchXlsxIgnoreNumberStoredAsText(buffer, sqrefs);
+  }
+
+  if (options?.currencyColIndexes?.length && rows.length > 0) {
+    const sqrefs = options.currencyColIndexes.map(colIdx => exportDataColRange(colIdx, rows.length));
+    buffer = await patchXlsxIgnoreNumberStoredAsText(buffer, sqrefs);
+  }
+
+  return buffer;
 }

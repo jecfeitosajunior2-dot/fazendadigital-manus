@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils";
-import { SquarePen, Trash2 } from "lucide-react";
+import { Eye, SquarePen, Trash2 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 export const FD_EDIT_ACTION_COLOR = "#586168";
+export const FD_VIEW_ACTION_COLOR = "#586168";
+export const FD_VIEW_ACTION_HOVER_COLOR = "#2D5A5A";
 export const FD_DELETE_ACTION_COLOR = "#E28484";
-
 const ICON_STROKE = 1.75;
 
 type IconProps = {
@@ -13,6 +14,18 @@ type IconProps = {
   style?: CSSProperties;
 };
 
+/** Visualizar — ícone profissional (Lucide Eye) */
+export function ViewActionIcon({ size = 17, className = "", style }: IconProps) {
+  return (
+    <Eye
+      size={size}
+      strokeWidth={ICON_STROKE}
+      className={cn("shrink-0 text-inherit", className)}
+      style={style}
+      aria-hidden
+    />
+  );
+}
 /** Editar — ícone profissional (Lucide SquarePen) */
 export function EditActionIcon({ size = 17, className = "", style }: IconProps) {
   return (
@@ -43,10 +56,16 @@ type TableIconButtonProps = {
   label: string;
   onClick: () => void;
   children: ReactNode;
-  tone?: "neutral" | "danger";
+  tone?: "neutral" | "view" | "danger";
+  compact?: boolean;
 };
-
-function TableIconButton({ label, onClick, children, tone = "neutral" }: TableIconButtonProps) {
+export function TableIconButton({
+  label,
+  onClick,
+  children,
+  tone = "neutral",
+  compact = false,
+}: TableIconButtonProps) {
   return (
     <button
       type="button"
@@ -54,16 +73,26 @@ function TableIconButton({ label, onClick, children, tone = "neutral" }: TableIc
       title={label}
       aria-label={label}
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent",
-        "transition-all duration-150 ease-out",
+        "transition-all duration-150 ease-out cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1",
-        "active:scale-[0.96]",
+        compact
+          ? "grid place-items-center rounded active:scale-95 h-7 w-6"
+          : "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent active:scale-[0.96]",
         tone === "neutral" && [
-          "text-[#586168] hover:text-[#434A54] hover:bg-slate-100/90",
+          compact ? "hover:bg-gray-100" : "text-[#586168] hover:text-[#434A54] hover:bg-slate-100/90",
           "focus-visible:ring-slate-300",
         ],
+        tone === "view" && [
+          compact
+            ? "text-[#586168] hover:text-[#2D5A5A] hover:bg-[#4ECDC414] active:bg-[#4ECDC426]"
+            : [
+                "text-[#586168] hover:text-[#2D5A5A]",
+                "hover:bg-[#4ECDC414] active:bg-[#4ECDC426]",
+              ],
+          "focus-visible:ring-[#4ECDC4]/30",
+        ],
         tone === "danger" && [
-          "text-[#E28484] hover:text-[#D46B6B] hover:bg-rose-50",
+          compact ? "hover:bg-red-50" : "text-[#E28484] hover:text-[#D46B6B] hover:bg-rose-50",
           "focus-visible:ring-rose-200",
         ],
       )}
@@ -93,6 +122,73 @@ export function FarmRowActionButtons({
         <EditActionIcon size={iconSize} />
       </TableIconButton>
       <TableIconButton label="Excluir" onClick={onDelete} tone="danger">
+        <DeleteActionIcon size={iconSize} />
+      </TableIconButton>
+    </div>
+  );
+}
+
+type ViewEditRowActionButtonsProps = {
+  onView: () => void;
+  onEdit: () => void;
+  iconSize?: number;
+  className?: string;
+  viewLabel?: string;
+  editLabel?: string;
+};
+
+/** Botões Visualizar + Editar — mesmo padrão das demais listas */
+export function ViewEditRowActionButtons({
+  onView,
+  onEdit,
+  iconSize = 17,
+  className = "",
+  viewLabel = "Visualizar",
+  editLabel = "Editar",
+}: ViewEditRowActionButtonsProps) {
+  return (
+    <div className={cn("inline-flex items-center justify-center gap-1", className)}>
+      <TableIconButton label={viewLabel} onClick={onView} tone="view">
+        <ViewActionIcon size={iconSize} />
+      </TableIconButton>
+      <TableIconButton label={editLabel} onClick={onEdit} tone="neutral">
+        <EditActionIcon size={iconSize} />
+      </TableIconButton>
+    </div>
+  );
+}
+
+type ViewEditDeleteRowActionButtonsProps = {
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  iconSize?: number;
+  className?: string;
+  viewLabel?: string;
+  editLabel?: string;
+  deleteLabel?: string;
+};
+
+/** Botões Visualizar + Editar + Excluir — padrão da Lista de Animais */
+export function ViewEditDeleteRowActionButtons({
+  onView,
+  onEdit,
+  onDelete,
+  iconSize = 17,
+  className = "",
+  viewLabel = "Visualizar",
+  editLabel = "Editar",
+  deleteLabel = "Excluir",
+}: ViewEditDeleteRowActionButtonsProps) {
+  return (
+    <div className={cn("inline-flex items-center justify-center gap-1", className)}>
+      <TableIconButton label={viewLabel} onClick={onView} tone="view">
+        <ViewActionIcon size={iconSize} />
+      </TableIconButton>
+      <TableIconButton label={editLabel} onClick={onEdit} tone="neutral">
+        <EditActionIcon size={iconSize} />
+      </TableIconButton>
+      <TableIconButton label={deleteLabel} onClick={onDelete} tone="danger">
         <DeleteActionIcon size={iconSize} />
       </TableIconButton>
     </div>

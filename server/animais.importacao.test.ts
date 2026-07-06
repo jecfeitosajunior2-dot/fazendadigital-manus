@@ -9,9 +9,11 @@ import {
   validarBrincoAtivoImportacao,
 } from '../shared/brincoAtivo';
 import {
+  MENSAGEM_DATA_REFERENCIA_DETALHE,
   mensagemDataReferenciaLinha,
   possuiDataReferenciaImportacao,
   montarMensagemValidacaoImportacao,
+  resumoLinhasDataReferencia,
 } from '../shared/importacaoAnimais';
 
 // ─── Lógica de validação extraída (espelha o backend) ─────────────────────────
@@ -138,8 +140,8 @@ function validarLinhas(
     if (!possuiDataReferenciaImportacao(linha)) {
       errosLinha.push({
         linha: numLinha,
-        campo: 'Data de Nascimento',
-        mensagem: mensagemDataReferenciaLinha(numLinha),
+        campo: 'dataReferencia',
+        mensagem: MENSAGEM_DATA_REFERENCIA_DETALHE,
       });
     }
 
@@ -324,7 +326,7 @@ describe('Importação em Massa de Animais — Validação', () => {
       { brinco: 'BR-REF-1', sexo: 'macho' },
     ]);
     expect(validos).toHaveLength(0);
-    expect(erros.some(e => e.mensagem === mensagemDataReferenciaLinha(2))).toBe(true);
+    expect(erros.some(e => e.mensagem === MENSAGEM_DATA_REFERENCIA_DETALHE)).toBe(true);
   });
 
   it('aceita linha só com data de entrada', () => {
@@ -347,19 +349,23 @@ describe('Importação em Massa de Animais — Validação', () => {
 
   it('monta mensagem principal para uma linha sem data de referência', () => {
     const { mensagemPrincipal } = montarMensagemValidacaoImportacao([
-      { linha: 3, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(3) },
+      { linha: 3, campo: 'dataReferencia', mensagem: MENSAGEM_DATA_REFERENCIA_DETALHE },
     ]);
     expect(mensagemPrincipal).toBe(mensagemDataReferenciaLinha(3));
   });
 
   it('monta mensagem principal para várias linhas sem data de referência', () => {
     const { mensagemPrincipal, mensagemDetalhada } = montarMensagemValidacaoImportacao([
-      { linha: 3, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(3) },
-      { linha: 7, campo: 'Data de Nascimento', mensagem: mensagemDataReferenciaLinha(7) },
+      { linha: 3, campo: 'dataReferencia', mensagem: MENSAGEM_DATA_REFERENCIA_DETALHE },
+      { linha: 7, campo: 'dataReferencia', mensagem: MENSAGEM_DATA_REFERENCIA_DETALHE },
     ]);
     expect(mensagemPrincipal).toContain('sem Data de Nascimento e sem Data de Entrada');
-    expect(mensagemDetalhada).toContain('Linha 3');
-    expect(mensagemDetalhada).toContain('Linha 7');
+    expect(mensagemDetalhada).toBeUndefined();
+  });
+
+  it('resume quantidade de linhas sem data de referência', () => {
+    expect(resumoLinhasDataReferencia(1)).toBe('1 linha precisa de Data de Nascimento ou Data de Entrada.');
+    expect(resumoLinhasDataReferencia(20)).toBe('20 linhas precisam de Data de Nascimento ou Data de Entrada.');
   });
 
   // ─── Outros testes ────────────────────────────────────────────────────────

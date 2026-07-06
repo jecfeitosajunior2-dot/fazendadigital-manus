@@ -114,7 +114,7 @@ export default function MaquinasListPage() {
         style={{ maxHeight: "calc(100vh - 200px)" }}
       >
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[13px] font-semibold text-gray-800 shrink-0">Lista de maquinário</h1>
+          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de maquinário</h1>
           <ListExportButtons
             title="Lista de Maquinário"
             filename="maquinario"
