@@ -807,43 +807,58 @@ const animaisRouter = router({
         });
       }
 
-      // Busca fazendas do usuário para dropdown dinâmico
-      const fazendasUsuario = await db.select({ nome: fazendas.nome })
-        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
-      const nomesFazendas = fazendasUsuario.map(f => f.nome);
+      // Busca fazendas, lotes e pastos para listas suspensas (com fallback local se MySQL offline)
+      let nomesFazendas: string[] = [];
+      let nomesLotes: string[] = [];
+      const pastosPorFazendaNome = new Map<string, string[]>();
+
+      try {
+        const fazendasUsuario = await db.select({ nome: fazendas.nome })
+          .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+        nomesFazendas = fazendasUsuario.map(f => f.nome);
+
+        const lotesAtivos = await db.select({ nome: lotes.nome })
+          .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
+        nomesLotes = lotesAtivos.map(l => l.nome);
+
+        const pastosUsuario = await db.select({ nome: pastos.nome, fazendaId: pastos.fazendaId })
+          .from(pastos).where(eq(pastos.userId, ctx.user.id));
+        const pastosPorFazendaId = new Map<number, string[]>();
+        pastosUsuario.forEach(p => {
+          if (!p.fazendaId) return;
+          const lista = pastosPorFazendaId.get(p.fazendaId) ?? [];
+          lista.push(p.nome);
+          pastosPorFazendaId.set(p.fazendaId, lista);
+        });
+        const fazendasComPastos = await db.select({ id: fazendas.id, nome: fazendas.nome })
+          .from(fazendas)
+          .where(and(eq(fazendas.userId, ctx.user.id)));
+        fazendasComPastos.forEach(f => {
+          pastosPorFazendaNome.set(f.nome, pastosPorFazendaId.get(f.id) ?? []);
+        });
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        console.warn("[animais.gerarModeloPlanilha] Banco indisponível; usando fazendas e pastos locais:", error);
+        const fazendasLocais = await listLocalFazendas(ctx.user.id);
+        const pastosLocais = await listLocalPastos(ctx.user.id);
+        nomesFazendas = fazendasLocais.map(f => f.nome).filter(Boolean);
+        nomesLotes = [];
+        for (const f of fazendasLocais) {
+          const pastosDaFazenda = pastosLocais
+            .filter(p => p.fazendaId === f.id)
+            .map(p => p.nome)
+            .filter(Boolean);
+          pastosPorFazendaNome.set(f.nome, pastosDaFazenda);
+        }
+      }
+
       const fazendasFormulae = nomesFazendas.length > 0
         ? [`"${nomesFazendas.join(',')}"`]
         : ['"(Nenhuma fazenda cadastrada)"'];
 
-      // Busca lotes ativos do usuário para dropdown dinâmico
-      const lotesAtivos = await db.select({ nome: lotes.nome })
-        .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
-      const nomesLotes = lotesAtivos.map(l => l.nome);
       const lotesFormulae = nomesLotes.length > 0
         ? [`"${nomesLotes.join(',')}"`]
         : ['"(Nenhum lote cadastrado)"'];
-
-      // Busca pastos (subdivisões) do usuário agrupados por fazenda para dropdown dinâmico
-      const pastosUsuario = await db.select({ nome: pastos.nome, fazendaId: pastos.fazendaId })
-        .from(pastos).where(eq(pastos.userId, ctx.user.id));
-      // Mapeia fazendaId → nomes dos pastos
-      const pastosPorFazendaId = new Map<number, string[]>();
-      pastosUsuario.forEach(p => {
-        if (!p.fazendaId) return;
-        const lista = pastosPorFazendaId.get(p.fazendaId) ?? [];
-        lista.push(p.nome);
-        pastosPorFazendaId.set(p.fazendaId, lista);
-      });
-      // Busca nomes das fazendas para montar os Named Ranges
-      const fazendasComPastos = await db.select({ id: fazendas.id, nome: fazendas.nome })
-        .from(fazendas)
-        .where(and(eq(fazendas.userId, ctx.user.id)));
-      // Mapa fazendaNome → pastos (para Named Ranges)
-      const pastosPorFazendaNome = new Map<string, string[]>();
-      fazendasComPastos.forEach(f => {
-        const pastosDaFazenda = pastosPorFazendaId.get(f.id) ?? [];
-        pastosPorFazendaNome.set(f.nome, pastosDaFazenda);
-      });
 
       // Dropdowns de validação — Fazenda, Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote, Subdivisão
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
