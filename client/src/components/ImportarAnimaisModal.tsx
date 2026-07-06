@@ -239,7 +239,7 @@ export const ImportarAnimaisModal: React.FC<Props> = ({ open, onClose, onImporta
             <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
             <p className="text-xs text-blue-700 mb-3">
               Planilha profissional com as 27 colunas do cadastro, abas de Instruções e Dicionário,
-              listas suspensas e exemplos. Campos obrigatórios: <strong>Fazenda</strong>, <strong>Brinco</strong>, <strong>Sexo</strong> e <strong>Categoria</strong>. Datas no formato <strong>DD/MM/AAAA</strong>.
+              listas suspensas e exemplos. Campos obrigatórios: <strong>Fazenda</strong>, <strong>Brinco</strong>, <strong>Sexo</strong>, <strong>Categoria</strong> e ao menos uma entre <strong>Data de Nascimento</strong> ou <strong>Data da Entrada</strong>. Datas no formato <strong>DD/MM/AAAA</strong>.
             </p>
             <Button
               type="button"

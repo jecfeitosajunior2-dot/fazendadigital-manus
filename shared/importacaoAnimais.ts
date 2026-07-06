@@ -27,8 +27,19 @@ export interface ColunaImportacao {
 /**
  * Ordem e definição EXATAS conforme a planilha oficial — 27 colunas em português.
  *
- * Campos obrigatórios: Fazenda, Brinco, Sexo, Categoria.
+ * Campos obrigatórios: Fazenda, Brinco, Sexo, Categoria e ao menos uma entre
+ * Data de Nascimento ou Data da Entrada (mesma regra do cadastro individual).
  */
+export const MENSAGEM_DATA_REFERENCIA_OBRIGATORIA =
+  'Informe Data de Nascimento ou Data da Entrada';
+
+export function possuiDataReferenciaImportacao(
+  linha: Record<string, string | undefined | null>,
+): boolean {
+  return !!(linha.dataNascimento ?? '').toString().trim()
+    || !!(linha.dataEntrada ?? '').toString().trim();
+}
+
 export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
   { key: 'fazendaNome',          label: 'Fazenda',                    obrigatorio: true,  largura: 24, descricao: 'Nome exato da fazenda cadastrada no sistema',                              exemplo: 'Fazenda Volta Grande' },
   { key: 'brinco',               label: 'Brinco',                     obrigatorio: true,  largura: 14, descricao: 'Identificação visual do animal (brinco físico)',                          exemplo: 'BR-001' },

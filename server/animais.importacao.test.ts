@@ -8,6 +8,10 @@ import {
   resolveEffectiveStatus,
   validarBrincoAtivoImportacao,
 } from '../shared/brincoAtivo';
+import {
+  MENSAGEM_DATA_REFERENCIA_OBRIGATORIA,
+  possuiDataReferenciaImportacao,
+} from '../shared/importacaoAnimais';
 
 // ─── Lógica de validação extraída (espelha o backend) ─────────────────────────
 
@@ -26,6 +30,9 @@ const CATEGORIAS_VALIDAS = [
 
 type LinhaAnimal = Record<string, string>;
 type Erro = { linha: number; campo: string; mensagem: string };
+
+/** Data mínima para linhas que devem passar na validação (regra do cadastro individual). */
+const COM_DATA_REF: LinhaAnimal = { dataNascimento: '01/01/2020' };
 
 /**
  * Converte data nos formatos DD/MM/AAAA, DD/MM/AA ou AAAA-MM-DD para AAAA-MM-DD.
@@ -127,6 +134,11 @@ function validarLinhas(
       }
     }
 
+    if (!possuiDataReferenciaImportacao(linha)) {
+      errosLinha.push({ linha: numLinha, campo: 'dataNascimento', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+      errosLinha.push({ linha: numLinha, campo: 'dataEntrada', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+    }
+
     // Lote opcional mas deve existir
     const loteNome = (linha.lote || '').trim();
     if (loteNome && !loteNomeParaId.has(loteNome.toLowerCase())) {
@@ -148,7 +160,7 @@ function validarLinhas(
 describe('Importação em Massa de Animais — Validação', () => {
   it('aceita linha com brinco e sexo válidos', () => {
     const { validos, erros } = validarLinhas([
-      { brinco: 'BR-001', sexo: 'femea' },
+      { brinco: 'BR-001', sexo: 'femea', ...COM_DATA_REF },
     ]);
     expect(validos).toHaveLength(1);
     expect(erros).toHaveLength(0);
@@ -188,8 +200,8 @@ describe('Importação em Massa de Animais — Validação', () => {
 
   it('permite brinco duplicado na planilha quando um animal é inativo', () => {
     const { validos, erros } = validarLinhas([
-      { brinco: 'BR-004', sexo: 'macho', status: 'vendido' },
-      { brinco: 'BR-004', sexo: 'femea', status: 'ativo' },
+      { brinco: 'BR-004', sexo: 'macho', status: 'vendido', ...COM_DATA_REF },
+      { brinco: 'BR-004', sexo: 'femea', status: 'ativo', ...COM_DATA_REF },
     ]);
     expect(validos).toHaveLength(2);
     expect(erros).toHaveLength(0);
@@ -203,7 +215,7 @@ describe('Importação em Massa de Animais — Validação', () => {
 
   it('permite brinco de animal inativo no banco para novo animal ativo', () => {
     const banco = new Set<string>(); // brinco inativo não entra no set de ativos
-    const { validos, erros } = validarLinhas([{ brinco: 'BR-005', sexo: 'macho' }], banco);
+    const { validos, erros } = validarLinhas([{ brinco: 'BR-005', sexo: 'macho', ...COM_DATA_REF }], banco);
     expect(validos).toHaveLength(1);
     expect(erros).toHaveLength(0);
   });
@@ -259,7 +271,7 @@ describe('Importação em Massa de Animais — Validação', () => {
 
   it('aceita data 12/1/25 (D/M/YY sem zero à esquerda)', () => {
     const { validos, erros } = validarLinhas([
-      { brinco: 'BR-D5', sexo: 'macho', dataDesmama: '12/1/25' },
+      { brinco: 'BR-D5', sexo: 'macho', dataDesmama: '12/1/25', ...COM_DATA_REF },
     ]);
     expect(erros).toHaveLength(0);
     expect(validos[0].dataDesmama).toBe('2025-01-12');
@@ -303,32 +315,59 @@ describe('Importação em Massa de Animais — Validação', () => {
     expect(validos[0].dataRnd).toBe('2023-06-10');
   });
 
+  it('rejeita linha sem data de nascimento nem data de entrada', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-REF-1', sexo: 'macho' },
+    ]);
+    expect(validos).toHaveLength(0);
+    expect(erros.some(e => e.campo === 'dataNascimento' && e.mensagem === MENSAGEM_DATA_REFERENCIA_OBRIGATORIA)).toBe(true);
+    expect(erros.some(e => e.campo === 'dataEntrada' && e.mensagem === MENSAGEM_DATA_REFERENCIA_OBRIGATORIA)).toBe(true);
+  });
+
+  it('aceita linha só com data de entrada', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-REF-2', sexo: 'femea', dataEntrada: '15/06/2024' },
+    ]);
+    expect(erros).toHaveLength(0);
+    expect(validos).toHaveLength(1);
+    expect(validos[0].dataEntrada).toBe('2024-06-15');
+  });
+
+  it('aceita linha só com data de nascimento', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-REF-3', sexo: 'macho', dataNascimento: '10/03/2023' },
+    ]);
+    expect(erros).toHaveLength(0);
+    expect(validos).toHaveLength(1);
+    expect(validos[0].dataNascimento).toBe('2023-03-10');
+  });
+
   // ─── Outros testes ────────────────────────────────────────────────────────
 
   it('rejeita raça não cadastrada', () => {
     const { erros } = validarLinhas([
-      { brinco: 'BR-008', sexo: 'femea', raca: 'Unicórnio' },
+      { brinco: 'BR-008', sexo: 'femea', raca: 'Unicórnio', ...COM_DATA_REF },
     ]);
     expect(erros.some(e => e.campo === 'raca')).toBe(true);
   });
 
   it('aceita raça cadastrada', () => {
     const { validos } = validarLinhas([
-      { brinco: 'BR-009', sexo: 'macho', raca: 'Nelore' },
+      { brinco: 'BR-009', sexo: 'macho', raca: 'Nelore', ...COM_DATA_REF },
     ]);
     expect(validos).toHaveLength(1);
   });
 
   it('rejeita status inválido', () => {
     const { erros } = validarLinhas([
-      { brinco: 'BR-010', sexo: 'femea', status: 'perdido' },
+      { brinco: 'BR-010', sexo: 'femea', status: 'perdido', ...COM_DATA_REF },
     ]);
     expect(erros.some(e => e.campo === 'status')).toBe(true);
   });
 
   it('aceita status válido', () => {
     const { validos } = validarLinhas([
-      { brinco: 'BR-011', sexo: 'macho', status: 'ativo' },
+      { brinco: 'BR-011', sexo: 'macho', status: 'ativo', ...COM_DATA_REF },
     ]);
     expect(validos).toHaveLength(1);
   });
@@ -336,7 +375,7 @@ describe('Importação em Massa de Animais — Validação', () => {
   it('rejeita lote inexistente', () => {
     const lotes = new Map([['lote a', 1]]);
     const { erros } = validarLinhas([
-      { brinco: 'BR-012', sexo: 'femea', lote: 'Lote Inexistente' },
+      { brinco: 'BR-012', sexo: 'femea', lote: 'Lote Inexistente', ...COM_DATA_REF },
     ], new Set(), lotes);
     expect(erros.some(e => e.campo === 'lote')).toBe(true);
   });
@@ -344,7 +383,7 @@ describe('Importação em Massa de Animais — Validação', () => {
   it('aceita lote existente (case insensitive)', () => {
     const lotes = new Map([['lote a', 1]]);
     const { validos } = validarLinhas([
-      { brinco: 'BR-013', sexo: 'macho', lote: 'Lote A' },
+      { brinco: 'BR-013', sexo: 'macho', lote: 'Lote A', ...COM_DATA_REF },
     ], new Set(), lotes);
     expect(validos).toHaveLength(1);
   });
@@ -353,7 +392,7 @@ describe('Importação em Massa de Animais — Validação', () => {
     const linhas: LinhaAnimal[] = [];
     for (let i = 1; i <= 100; i++) {
       const brinco = i <= 95 ? `BR-${String(i).padStart(3, '0')}` : `BR-${String(i - 5).padStart(3, '0')}`;
-      linhas.push({ brinco, sexo: 'macho' });
+      linhas.push({ brinco, sexo: 'macho', ...COM_DATA_REF });
     }
     const { validos, erros } = validarLinhas(linhas);
     expect(validos).toHaveLength(95);
@@ -362,7 +401,7 @@ describe('Importação em Massa de Animais — Validação', () => {
 
   it('rejeita categoria inválida', () => {
     const { erros } = validarLinhas([
-      { brinco: 'BR-200', sexo: 'macho', categoria: 'Dragão' },
+      { brinco: 'BR-200', sexo: 'macho', categoria: 'Dragão', ...COM_DATA_REF },
     ]);
     expect(erros.some(e => e.campo === 'categoria')).toBe(true);
   });

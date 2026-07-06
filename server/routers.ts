@@ -222,6 +222,86 @@ function enrichLocalAnimal(animal: Record<string, any>) {
   return { ...animal, loteNome: null, diasNaFazenda };
 }
 
+/** Usa o espelho local quando existir — evita listas de seed antigas do MySQL no modelo/validação. */
+async function loadFazendasUsuarioParaOperacao(userId: number): Promise<Array<{ id: number; nome: string }>> {
+  const localFazendas = await listLocalFazendas(userId);
+  if (localFazendas.length > 0) {
+    return localFazendas
+      .map(f => ({ id: f.id, nome: String(f.nome || "").trim() }))
+      .filter(f => f.nome);
+  }
+  try {
+    const rows = await db
+      .select({ id: fazendas.id, nome: fazendas.nome })
+      .from(fazendas)
+      .where(eq(fazendas.userId, userId));
+    return rows
+      .map(f => ({ id: f.id, nome: String(f.nome || "").trim() }))
+      .filter(f => f.nome);
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) return [];
+    throw error;
+  }
+}
+
+async function loadPastosUsuarioParaOperacao(
+  userId: number,
+): Promise<Array<{ id: number; nome: string; fazendaId: number | null }>> {
+  const localFazendas = await listLocalFazendas(userId);
+  const usarLocal = localFazendas.length > 0;
+  if (usarLocal) {
+    const localPastos = await listLocalPastos(userId);
+    return localPastos
+      .map(p => ({ id: p.id, nome: String(p.nome || "").trim(), fazendaId: p.fazendaId ?? null }))
+      .filter(p => p.nome);
+  }
+  try {
+    const rows = await db
+      .select({ id: pastos.id, nome: pastos.nome, fazendaId: pastos.fazendaId })
+      .from(pastos)
+      .where(eq(pastos.userId, userId));
+    return rows
+      .map(p => ({ id: p.id, nome: String(p.nome || "").trim(), fazendaId: p.fazendaId ?? null }))
+      .filter(p => p.nome);
+  } catch (error) {
+    if (isDatabaseUnavailable(error)) return [];
+    throw error;
+  }
+}
+
+async function loadDadosDropdownModeloAnimais(userId: number): Promise<{
+  nomesFazendas: string[];
+  nomesLotes: string[];
+  pastosPorFazendaNome: Map<string, string[]>;
+}> {
+  const fazendasUsuario = await loadFazendasUsuarioParaOperacao(userId);
+  const pastosUsuario = await loadPastosUsuarioParaOperacao(userId);
+
+  const nomesFazendas = fazendasUsuario.map(f => f.nome);
+  const pastosPorFazendaNome = new Map<string, string[]>();
+  for (const f of fazendasUsuario) {
+    pastosPorFazendaNome.set(
+      f.nome,
+      pastosUsuario
+        .filter(p => p.fazendaId === f.id)
+        .map(p => p.nome),
+    );
+  }
+
+  let nomesLotes: string[] = [];
+  try {
+    const lotesAtivos = await db
+      .select({ nome: lotes.nome })
+      .from(lotes)
+      .where(and(eq(lotes.userId, userId), eq(lotes.ativo, true)));
+    nomesLotes = lotesAtivos.map(l => String(l.nome || "").trim()).filter(Boolean);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
+
+  return { nomesFazendas, nomesLotes, pastosPorFazendaNome };
+}
+
 const animaisRouter = router({
   historicoPastos: protectedProcedure
     .input(z.object({ animalId: z.number() }))
@@ -807,50 +887,9 @@ const animaisRouter = router({
         });
       }
 
-      // Busca fazendas, lotes e pastos para listas suspensas (com fallback local se MySQL offline)
-      let nomesFazendas: string[] = [];
-      let nomesLotes: string[] = [];
-      const pastosPorFazendaNome = new Map<string, string[]>();
-
-      try {
-        const fazendasUsuario = await db.select({ nome: fazendas.nome })
-          .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
-        nomesFazendas = fazendasUsuario.map(f => f.nome);
-
-        const lotesAtivos = await db.select({ nome: lotes.nome })
-          .from(lotes).where(and(eq(lotes.userId, ctx.user.id), eq(lotes.ativo, true)));
-        nomesLotes = lotesAtivos.map(l => l.nome);
-
-        const pastosUsuario = await db.select({ nome: pastos.nome, fazendaId: pastos.fazendaId })
-          .from(pastos).where(eq(pastos.userId, ctx.user.id));
-        const pastosPorFazendaId = new Map<number, string[]>();
-        pastosUsuario.forEach(p => {
-          if (!p.fazendaId) return;
-          const lista = pastosPorFazendaId.get(p.fazendaId) ?? [];
-          lista.push(p.nome);
-          pastosPorFazendaId.set(p.fazendaId, lista);
-        });
-        const fazendasComPastos = await db.select({ id: fazendas.id, nome: fazendas.nome })
-          .from(fazendas)
-          .where(and(eq(fazendas.userId, ctx.user.id)));
-        fazendasComPastos.forEach(f => {
-          pastosPorFazendaNome.set(f.nome, pastosPorFazendaId.get(f.id) ?? []);
-        });
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        console.warn("[animais.gerarModeloPlanilha] Banco indisponível; usando fazendas e pastos locais:", error);
-        const fazendasLocais = await listLocalFazendas(ctx.user.id);
-        const pastosLocais = await listLocalPastos(ctx.user.id);
-        nomesFazendas = fazendasLocais.map(f => f.nome).filter(Boolean);
-        nomesLotes = [];
-        for (const f of fazendasLocais) {
-          const pastosDaFazenda = pastosLocais
-            .filter(p => p.fazendaId === f.id)
-            .map(p => p.nome)
-            .filter(Boolean);
-          pastosPorFazendaNome.set(f.nome, pastosDaFazenda);
-        }
-      }
+      // Fazendas, lotes e pastos reais do usuário (espelho local tem prioridade)
+      const { nomesFazendas, nomesLotes, pastosPorFazendaNome } =
+        await loadDadosDropdownModeloAnimais(ctx.user.id);
 
       const fazendasFormulae = nomesFazendas.length > 0
         ? [`"${nomesFazendas.join(',')}"`]
@@ -977,7 +1016,7 @@ const animaisRouter = router({
       linhas: z.array(z.record(z.string(), z.string())),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, isLinhaExemplo } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, isLinhaExemplo, MENSAGEM_DATA_REFERENCIA_OBRIGATORIA, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
       const { CATEGORIAS_POR_SEXO, isCategoriaValidaParaSexo, todasAsCategorias } = await import('../shared/animal-types');
       const SEXOS_VALIDOS = ['macho', 'femea'];
       const STATUS_VALIDOS = ['ativo', 'vendido', 'morto', 'transferido'];
@@ -994,14 +1033,11 @@ const animaisRouter = router({
         .map(l => normalizarLinha(l))
         .filter(l => !isLinhaExemplo(l));
 
-      // Busca fazendas do usuário para validação
-      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
-        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
+      // Busca fazendas e pastos do usuário (espelho local tem prioridade)
+      const fazendasUsuario = await loadFazendasUsuarioParaOperacao(ctx.user.id);
       const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
 
-      // Busca pastos do usuário para validação
-      const pastosUsuario = await db.select({ id: pastos.id, nome: pastos.nome })
-        .from(pastos).where(eq(pastos.userId, ctx.user.id));
+      const pastosUsuario = await loadPastosUsuarioParaOperacao(ctx.user.id);
       const pastoNomeParaId = new Map(pastosUsuario.map(p => [p.nome.toLowerCase().trim(), p.id]));
 
       // Busca apenas lotes ATIVOS do usuário
@@ -1141,6 +1177,11 @@ const animaisRouter = router({
           }
         }
 
+        if (!possuiDataReferenciaImportacao(linha)) {
+          errosLinha.push({ linha: numLinha, campo: 'dataNascimento', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+          errosLinha.push({ linha: numLinha, campo: 'dataEntrada', mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
+        }
+
         // Lote (opcional, mas se informado deve ser ativo e existir)
         const loteNome = (linha.lote || '').trim();
         if (loteNome) {
@@ -1178,7 +1219,7 @@ const animaisRouter = router({
       pastoNomeParaId: z.record(z.string(), z.number()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo, MENSAGEM_DATA_REFERENCIA_OBRIGATORIA, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
@@ -1226,6 +1267,11 @@ const animaisRouter = router({
           });
           if (brincoErro) {
             rejeitados.push({ linha: numLinha, mensagem: brincoErro.mensagem });
+            continue;
+          }
+
+          if (!possuiDataReferenciaImportacao(linha)) {
+            rejeitados.push({ linha: numLinha, mensagem: MENSAGEM_DATA_REFERENCIA_OBRIGATORIA });
             continue;
           }
 
