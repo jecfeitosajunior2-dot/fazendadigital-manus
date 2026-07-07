@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -7,15 +7,119 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, DollarSign, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, Plus } from 'lucide-react';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  computeResumoPeso,
+  EM_CARENCIA_SIM_BADGE_CLASS,
+  calcFimCarenciaFromDias,
+  carenciaDiasToProximaDataISO,
+  formatTipoSanitarioTabelaDisplay,
+  getCarenciaRegistroLinhas,
+  computeCustoSanitarioResumo,
+  formatCustoRegistroDisplay,
+  formatGanhoDisplay,
+  formatGmdDisplay,
+  formatIdadeResumo,
+  formatPesoAtualDisplay,
+  ganhoToneClass,
+  sortPesagensDesc,
+  statusAccentClass,
+  statusBadgeClass,
+  statusLabel,
+} from '@/lib/fichaAnimalDisplay';
+import { DeleteActionIcon, TableIconButton } from '@/components/icons/FarmActionIcons';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
+import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
+import {
+  calcPrevisaoParto283,
+  getReproRelacionadoLabel,
+  getReproRelacionadoPlaceholder,
+  getReproResultadoOptions,
+  getReproTipoOptions,
+  shouldCalcPrevisaoParto,
+  shouldShowPrevisaoPartoForm,
+  unpackReproObservacoes,
+} from '@shared/reproRegistroMeta';
+
+const FD_ACTION = '#4ECDC4';
+
+const EMPTY_SAUDE_FORM = {
+  tipo: '',
+  descricao: '',
+  medicamento: '',
+  dosagem: '',
+  veterinario: '',
+  custo: '',
+  dataRegistro: new Date().toISOString().split('T')[0],
+  carenciaDias: '',
+  observacoes: '',
+};
+
+const EMPTY_REPRO_FORM = {
+  tipo: '',
+  data: new Date().toISOString().split('T')[0],
+  resultado: '',
+  reprodutorSemen: '',
+  previsaoParto: '',
+  responsavel: '',
+  observacoes: '',
+};
+
+const TAB_TRIGGER_CLASS =
+  'rounded-md border border-transparent px-2 py-2 text-[12px] font-medium text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#2D5A5A] data-[state=active]:shadow-sm data-[state=active]:border-[#4ECDC4]/35';
+
+function getReproEmptyStateMessage(sexo: string | null | undefined): { titulo: string; orientacao: string } {
+  if (sexo === 'femea') {
+    return {
+      titulo: 'Nenhum registro reprodutivo para esta fêmea.',
+      orientacao: 'Registre cio, cobertura, inseminação, diagnóstico de prenhez, parto ou aborto.',
+    };
+  }
+  if (sexo === 'macho') {
+    return {
+      titulo: 'Nenhum registro reprodutivo para este macho.',
+      orientacao: 'Registre coberturas realizadas, exame andrológico, coleta de sêmen ou uso como reprodutor.',
+    };
+  }
+  return {
+    titulo: 'Nenhum registro reprodutivo para este animal.',
+    orientacao: 'Registre coberturas, inseminações, diagnósticos de prenhez, partos e ocorrências reprodutivas.',
+  };
+}
+
+function ResumoField({
+  label,
+  value,
+  mono,
+  truncate,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+  truncate?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+      <p
+        className={`mt-0.5 text-[13px] font-semibold text-gray-800 ${mono ? 'font-mono text-[12px]' : ''} ${truncate ? 'truncate' : ''}`}
+        title={typeof value === 'string' && truncate ? value : undefined}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export const CattleDetailPageExpanded: React.FC = () => {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('pesagens');
   const utils = trpc.useUtils();
+  const confirm = useConfirm();
 
   // Get animal ID from URL
   const urlParams = new URLSearchParams(window.location.search);
@@ -59,6 +163,13 @@ export const CattleDetailPageExpanded: React.FC = () => {
     { enabled: !!animalId }
   );
 
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: !!animalId });
+
+  const { data: animalListRow } = trpc.animais.list.useQuery(undefined, {
+    enabled: !!animalId,
+    select: rows => rows.find(r => r.id === animalId),
+  });
+
   // Filter reproduction records for this animal
   const animalRepro = reproducaoRegistros?.filter(
     r => r.femeaId === animalId || r.machoId === animalId
@@ -67,46 +178,101 @@ export const CattleDetailPageExpanded: React.FC = () => {
   // ─── Mutations ────────────────────────────────────────────────────────────
   const deleteSaudeMutation = trpc.saude.delete.useMutation({
     onSuccess: () => {
-      toast.success('Registro de saúde removido!');
+      toast.success('Registro sanitário removido!');
       utils.saude.list.invalidate({ animalId: animalId! });
+      utils.animais.list.invalidate();
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
+
+  const handleDeleteSaude = async (reg: {
+    id: number;
+    tipo: string;
+    medicamento: string | null;
+    dataRegistro: Date | string | null;
+  }) => {
+    const detalhe = reg.medicamento
+      ? `${reg.tipo} — ${reg.medicamento} (${formatDateBR(reg.dataRegistro)})`
+      : `${reg.tipo} (${formatDateBR(reg.dataRegistro)})`;
+    const ok = await confirm({
+      title: 'Excluir registro sanitário',
+      description: `Tem certeza que deseja excluir este registro sanitário${detalhe ? ` (${detalhe})` : ''}? Essa ação pode afetar o controle de carência do animal.`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (ok) deleteSaudeMutation.mutate({ id: reg.id });
+  };
 
   const deletePesagemMutation = trpc.pesagens.delete.useMutation({
     onSuccess: () => {
       toast.success('Pesagem removida!');
       utils.pesagens.list.invalidate({ animalId: animalId! });
+      utils.animais.getById.invalidate({ id: animalId! });
+      utils.animais.list.invalidate();
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
 
+  const handleDeletePesagem = async (pesagem: { id: number; peso: string | null; data: Date | string | null }) => {
+    const pesoFmt = formatUltimoPesoKg(parseFloat(pesagem.peso || ''));
+    const dataFmt = formatDateBR(pesagem.data);
+    const detalhe = pesoFmt ? `${pesoFmt} kg em ${dataFmt}` : `registrada em ${dataFmt}`;
+    const ok = await confirm({
+      title: 'Excluir pesagem',
+      description: `Tem certeza que deseja excluir a pesagem de ${detalhe}? Esta ação não pode ser desfeita.`,
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (ok) deletePesagemMutation.mutate({ id: pesagem.id });
+  };
+
+  const deleteReproMutation = trpc.reproducao.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Registro reprodutivo removido!');
+      utils.reproducao.list.invalidate();
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  const handleDeleteRepro = async (reg: { id: number }) => {
+    const ok = await confirm({
+      title: 'Excluir registro reprodutivo',
+      description: 'Tem certeza que deseja excluir este registro reprodutivo? Esta ação não pode ser desfeita.',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (ok) deleteReproMutation.mutate({ id: reg.id });
+  };
+
   // ─── Add Saúde Form ───────────────────────────────────────────────────────
   const [showSaudeForm, setShowSaudeForm] = useState(false);
-  const [saudeForm, setSaudeForm] = useState({
-    tipo: '',
-    descricao: '',
-    medicamento: '',
-    dosagem: '',
-    veterinario: '',
-    custo: '',
-    dataRegistro: new Date().toISOString().split('T')[0],
-    proximaData: '',
-    observacoes: '',
-  });
+  const [saudeForm, setSaudeForm] = useState({ ...EMPTY_SAUDE_FORM });
+
+  const fimCarenciaPreview = (() => {
+    const dias = parseInt(saudeForm.carenciaDias, 10);
+    if (!saudeForm.dataRegistro || !Number.isFinite(dias) || dias <= 0) return null;
+    return calcFimCarenciaFromDias(saudeForm.dataRegistro, dias);
+  })();
 
   const createSaudeMutation = trpc.saude.create.useMutation({
     onSuccess: () => {
-      toast.success('Registro de saúde criado!');
+      toast.success('Registro sanitário criado!');
       setShowSaudeForm(false);
-      setSaudeForm({ tipo: '', descricao: '', medicamento: '', dosagem: '', veterinario: '', custo: '', dataRegistro: new Date().toISOString().split('T')[0], proximaData: '', observacoes: '' });
+      setSaudeForm({ ...EMPTY_SAUDE_FORM, dataRegistro: new Date().toISOString().split('T')[0] });
       utils.saude.list.invalidate({ animalId: animalId! });
+      utils.animais.list.invalidate();
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
 
   // ─── Add Pesagem Form ─────────────────────────────────────────────────────
   const [showPesagemForm, setShowPesagemForm] = useState(false);
+  const [showReproForm, setShowReproForm] = useState(false);
+  const [reproForm, setReproForm] = useState({ ...EMPTY_REPRO_FORM });
+  const [previsaoPartoManual, setPrevisaoPartoManual] = useState(false);
   const [pesagemForm, setPesagemForm] = useState({
     peso: '',
     data: new Date().toISOString().split('T')[0],
@@ -120,31 +286,41 @@ export const CattleDetailPageExpanded: React.FC = () => {
       setPesagemForm({ peso: '', data: new Date().toISOString().split('T')[0], observacoes: '' });
       utils.pesagens.list.invalidate({ animalId: animalId! });
       utils.animais.getById.invalidate({ id: animalId! });
+      utils.animais.list.invalidate();
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
 
+  const createReproMutation = trpc.reproducao.create.useMutation({
+    onSuccess: () => {
+      toast.success('Registro reprodutivo criado!');
+      setShowReproForm(false);
+      setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
+      setPrevisaoPartoManual(false);
+      utils.reproducao.list.invalidate();
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  const animalSexo = animal?.sexo as string | null | undefined;
+
+  useEffect(() => {
+    if (previsaoPartoManual || !shouldShowPrevisaoPartoForm(animalSexo)) {
+      if (!shouldShowPrevisaoPartoForm(animalSexo)) {
+        setReproForm(p => (p.previsaoParto ? { ...p, previsaoParto: '' } : p));
+      }
+      return;
+    }
+    if (shouldCalcPrevisaoParto(reproForm.tipo, animalSexo) && reproForm.data) {
+      const calc = calcPrevisaoParto283(reproForm.data);
+      setReproForm(p => ({ ...p, previsaoParto: calc ?? '' }));
+    } else {
+      setReproForm(p => ({ ...p, previsaoParto: '' }));
+    }
+  }, [reproForm.tipo, reproForm.data, previsaoPartoManual, animalSexo]);
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
   const formatDate = (date: Date | string | null | undefined) => formatDateBR(date);
-
-  const calculateAge = (birthDate: Date | string | null | undefined) => {
-    if (!birthDate) return '—';
-    const birth = new Date(birthDate);
-    const today = new Date();
-    const ageInMonths = (today.getFullYear() - birth.getFullYear()) * 12 + (today.getMonth() - birth.getMonth());
-    const years = Math.floor(ageInMonths / 12);
-    const months = ageInMonths % 12;
-    if (years === 0) return `${months} meses`;
-    return `${years} anos e ${months} meses`;
-  };
-
-  const calculateWeightGain = () => {
-    if (!pesagens || pesagens.length < 2) return 0;
-    const sorted = [...pesagens].sort((a, b) => (parseLocalDate(b.data)?.getTime() ?? 0) - (parseLocalDate(a.data)?.getTime() ?? 0));
-    const latest = parseFloat(sorted[0].peso || '0');
-    const oldest = parseFloat(sorted[sorted.length - 1].peso || '0');
-    return latest - oldest;
-  };
 
   // ─── Loading / Error States ───────────────────────────────────────────────
   if (!animalId) {
@@ -190,8 +366,89 @@ export const CattleDetailPageExpanded: React.FC = () => {
     );
   }
 
-  const sortedPesagens = pesagens ? [...pesagens].sort((a, b) => (parseLocalDate(b.data)?.getTime() ?? 0) - (parseLocalDate(a.data)?.getTime() ?? 0)) : [];
-  const latestWeight = sortedPesagens[0]?.peso || animal.pesoAtual || '—';
+  const sortedPesagens = pesagens ? sortPesagensDesc(pesagens) : [];
+
+  const sortedSaude = saudeRegistros
+    ? [...saudeRegistros].sort(
+        (a, b) =>
+          (parseLocalDate(b.dataRegistro)?.getTime() ?? 0) -
+          (parseLocalDate(a.dataRegistro)?.getTime() ?? 0),
+      )
+    : [];
+
+  const custoSanitarioResumo = computeCustoSanitarioResumo(sortedSaude);
+
+  const sortedAnimalRepro = [...animalRepro].sort(
+    (a, b) =>
+      (parseLocalDate(b.dataCobertura)?.getTime() ?? 0) -
+      (parseLocalDate(a.dataCobertura)?.getTime() ?? 0),
+  );
+
+  const reproEmptyState = getReproEmptyStateMessage(animal.sexo);
+  const reproTipoOptions = getReproTipoOptions(animal.sexo);
+  const reproResultadoOptions = getReproResultadoOptions(animal.sexo);
+  const reproRelacionadoLabel = getReproRelacionadoLabel(animal.sexo);
+  const reproRelacionadoPlaceholder = getReproRelacionadoPlaceholder(animal.sexo);
+  const showPrevisaoPartoForm = shouldShowPrevisaoPartoForm(animal.sexo);
+  const isReproMacho = animal.sexo === 'macho';
+  const reproFormValid = Boolean(reproForm.tipo && reproForm.data);
+
+  const carenciaResumo = (() => {
+    const ateLista = (animalListRow as { fimCarenciaAte?: string | null } | undefined)?.fimCarenciaAte;
+    if (animalListRow?.emCarencia && ateLista) {
+      return { ativo: true, ate: ateLista };
+    }
+    if (!animalId) {
+      return { ativo: false, ate: null as string | null };
+    }
+    const fimMap = buildFimCarenciaPorAnimal(
+      sortedSaude.map(reg => ({
+        animalId: animalId,
+        medicamento: reg.medicamento,
+        dataRegistro: reg.dataRegistro,
+        proximaData: reg.proximaData,
+      })),
+      new Map(),
+    );
+    const fim = fimMap.get(animalId);
+    if (!fim) {
+      return { ativo: !!animalListRow?.emCarencia, ate: ateLista ?? null };
+    }
+    return { ativo: true, ate: toDateOnlyISO(fim) };
+  })();
+
+  const resumoPeso = computeResumoPeso(pesagens, animal);
+  const ganhoExibicao = animalListRow?.ganhoKg ?? resumoPeso.ganhoKg;
+  const gmdExibicao = animalListRow?.gmd ?? resumoPeso.gmd;
+  const emCarencia = carenciaResumo.ativo;
+
+  const fazendaNome = animal.fazendaId
+    ? (fazendas.find(f => f.id === animal.fazendaId)?.nome ?? null)
+    : null;
+
+  const loteNome =
+    (animal as { loteNome?: string | null }).loteNome ||
+    (animal.loteId ? `#${animal.loteId}` : null);
+
+  const histPastos = historicoPastos as { pastoDestinoNome?: string | null; pastoOrigemNome?: string | null }[];
+  const subdivisaoAtual =
+    histPastos.length > 0
+      ? (histPastos[0].pastoDestinoNome || histPastos[0].pastoOrigemNome || null)
+      : (animalListRow?.pastoNome ?? null);
+
+  const idadeMesesAnimal =
+    animalListRow?.idadeMeses != null
+      ? animalListRow.idadeMeses
+      : animal.dataNascimento
+        ? Math.floor(
+            (Date.now() - new Date(animal.dataNascimento).getTime()) / (1000 * 60 * 60 * 24 * 30.44),
+          )
+        : null;
+
+  const diasNaFazenda =
+    (animal as { diasNaFazenda?: number | null }).diasNaFazenda ??
+    animalListRow?.diasNaFazenda ??
+    null;
 
   return (
     <AppLayout>
@@ -210,115 +467,132 @@ export const CattleDetailPageExpanded: React.FC = () => {
           <span className="text-[13px]">Voltar</span>
         </button>
 
-        {/* Header Card */}
-        <Card className="mb-6 overflow-hidden border border-gray-200 shadow-sm">
-          {/* Faixa de status superior */}
-          <div className={`h-1 w-full ${animal.status === 'ativo' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+        {/* Card principal — ficha gerencial */}
+        <Card className="mb-5 overflow-hidden border border-gray-200 shadow-sm">
+          <div className={`h-1 w-full ${statusAccentClass(animal.status)}`} />
           <div className="p-5">
-            <div className="flex flex-col md:flex-row md:items-start gap-5">
-              {/* Número grande + identificação */}
-              <div className="flex-shrink-0">
-                <div className="text-5xl font-black text-gray-800 leading-none tracking-tight">
-                  {animal.nome || animal.brinco || `#${animal.id}`}
+            <div className="flex flex-col xl:flex-row xl:items-start gap-5">
+              {/* Brinco + status */}
+              <div className="shrink-0">
+                <div className="text-5xl font-black text-gray-800 leading-none tracking-tight tabular-nums">
+                  {animal.brinco || `#${animal.id}`}
                 </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    animal.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  }`}>{animal.status}</span>
-                </div>
-              </div>
-
-              {/* Campos em grid */}
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Brinco</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{animal.brinco || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">N° RFID</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{animal.brincoEletronico || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Sexo</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{animal.sexo === 'macho' ? 'Macho' : 'Fêmea'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Categoria</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{animal.categoria || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Lote</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{(animal as any).loteNome || (animal.loteId ? `#${animal.loteId}` : '—')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Idade</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{calculateAge(animal.dataNascimento)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Dias na Fazenda</p>
-                  <p className="font-semibold text-gray-800 mt-0.5">{(animal as any).diasNaFazenda != null ? `${(animal as any).diasNaFazenda}d` : '—'}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${statusBadgeClass(animal.status)}`}>
+                    {statusLabel(animal.status)}
+                  </span>
+                  {emCarencia && (
+                    <div className="inline-flex flex-col items-start gap-0.5">
+                      <span className={EM_CARENCIA_SIM_BADGE_CLASS}>Em carência</span>
+                      {carenciaResumo.ate && (
+                        <span className="text-[10px] font-medium text-amber-700/90 tabular-nums pl-0.5">
+                          Até {formatDateBR(carenciaResumo.ate)}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Métricas de peso + ação */}
-              <div className="flex-shrink-0 flex flex-col gap-2 min-w-[160px]">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-400">Peso Atual</p>
-                    <p className="text-xl font-bold text-gray-800">{latestWeight}kg</p>
+              {/* Dados principais */}
+              <div className="flex-1 min-w-0 space-y-3">
+                <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Localização</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <ResumoField label="Fazenda" value={fazendaNome || '—'} truncate />
+                    <ResumoField label="Lote" value={loteNome || 'Sem lote'} truncate />
+                    <ResumoField label="Subdivisão atual" value={subdivisaoAtual || '—'} truncate />
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-400">Ganho</p>
-                    <p className={`text-xl font-bold ${calculateWeightGain() >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {calculateWeightGain() >= 0 ? '+' : ''}{calculateWeightGain().toFixed(1)}kg
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+                  <ResumoField label="Nº RFID" value={animal.brincoEletronico || '—'} mono />
+                  <ResumoField label="Sexo" value={animal.sexo === 'macho' ? 'Macho' : 'Fêmea'} />
+                  <ResumoField label="Categoria" value={animal.categoria || '—'} />
+                  <ResumoField label="Idade" value={formatIdadeResumo(idadeMesesAnimal)} />
+                  <ResumoField
+                    label="Dias na Fazenda"
+                    value={diasNaFazenda != null ? `${diasNaFazenda} dias` : '—'}
+                  />
+                </div>
+              </div>
+
+              {/* Métricas + ação */}
+              <div className="shrink-0 flex flex-col gap-1.5 w-full xl:w-[188px]">
+                <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-2.5 py-2 text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Peso atual</p>
+                  <p className={`mt-0.5 text-lg font-bold tabular-nums leading-tight ${resumoPeso.pesoAtual != null ? 'text-gray-800' : 'text-gray-500 text-[15px] font-medium'}`}>
+                    {formatPesoAtualDisplay(resumoPeso.pesoAtual)}
+                  </p>
+                  {resumoPeso.ultimaPesagemData && resumoPeso.pesoAtual != null && (
+                    <p className="mt-0.5 text-[10px] text-gray-400 leading-snug">
+                      Última pesagem: {formatDate(resumoPeso.ultimaPesagemData)}
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Ganho</p>
+                    <p className={`mt-0.5 text-[13px] font-bold tabular-nums leading-tight ${ganhoToneClass(ganhoExibicao)}`}>
+                      {formatGanhoDisplay(ganhoExibicao)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-2 py-2 text-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">GMD</p>
+                    <p className="mt-0.5 text-[13px] font-bold tabular-nums leading-tight text-gray-800">
+                      {formatGmdDisplay(gmdExibicao)}
                     </p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
-                  className="w-full text-white text-sm font-medium"
-                  style={{ backgroundColor: '#4ECDC4' }}
-                >
-                  Editar Animal
-                </Button>
+                <div className="flex justify-end pt-0.5">
+                  <Button
+                    size="sm"
+                    onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
+                    className="w-auto px-5 text-white text-[12px] font-semibold min-h-[36px] hover:brightness-95"
+                    style={{ backgroundColor: FD_ACTION }}
+                  >
+                    Editar Animal
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         </Card>
 
-        {/* Tabs */}
+        {/* Abas de histórico */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-6">
-            <TabsTrigger value="pesagens">Pesagens</TabsTrigger>
-            <TabsTrigger value="saude">Sanitário</TabsTrigger>
-            <TabsTrigger value="reproducao">Reprodução</TabsTrigger>
-            <TabsTrigger value="pastos">Subdivisão</TabsTrigger>
-            <TabsTrigger value="observacoes">Observações</TabsTrigger>
+          <TabsList className="grid w-full h-auto grid-cols-5 mb-4 gap-1 rounded-lg border border-gray-200 bg-gray-50/80 p-1">
+            <TabsTrigger value="pesagens" className={TAB_TRIGGER_CLASS}>Pesagens</TabsTrigger>
+            <TabsTrigger value="saude" className={TAB_TRIGGER_CLASS}>Sanitário</TabsTrigger>
+            <TabsTrigger value="reproducao" className={TAB_TRIGGER_CLASS}>Reprodução</TabsTrigger>
+            <TabsTrigger value="pastos" className={TAB_TRIGGER_CLASS}>Subdivisão</TabsTrigger>
+            <TabsTrigger value="observacoes" className={TAB_TRIGGER_CLASS}>Observações</TabsTrigger>
           </TabsList>
 
-          {/* ─── Saúde Tab ─────────────────────────────────────────────────── */}
+          {/* ─── Sanitário Tab ─────────────────────────────────────────────── */}
           <TabsContent value="saude">
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-gray-800 flex items-center">
                   <Syringe className="w-5 h-5 mr-2 text-red-600" />
-                  Registros de Saúde
+                  Registros Sanitários
                 </h2>
-                <Button
-                  size="sm"
-                  onClick={() => setShowSaudeForm(!showSaudeForm)}
-                  className="text-white text-xs"
-                  style={{ backgroundColor: '#4ECDC4' }}
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Novo Registro
-                </Button>
+                {!loadingSaude && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowSaudeForm(!showSaudeForm)}
+                    className="text-white text-xs shrink-0"
+                    style={{ backgroundColor: FD_ACTION }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Novo Registro
+                  </Button>
+                )}
               </div>
 
               {showSaudeForm && (
                 <div className="mb-6 p-4 bg-gray-50 rounded border">
-                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro de Saúde</h3>
+                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro Sanitário</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo</FormLabel>
@@ -331,10 +605,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           <option value="">Selecione</option>
                           <option value="Vacinação">Vacinação</option>
                           <option value="Vermifugação">Vermifugação</option>
-                          <option value="Tratamento">Tratamento</option>
+                          <option value="Medicação">Medicação</option>
+                          <option value="Tratamento clínico">Tratamento clínico</option>
                           <option value="Exame">Exame</option>
-                          <option value="Cirurgia">Cirurgia</option>
-                          <option value="Preventivo">Preventivo</option>
+                          <option value="Procedimento sanitário">Procedimento sanitário</option>
+                          <option value="Outro">Outro</option>
                         </select>
                       </FieldBox>
                     </div>
@@ -350,32 +625,57 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       </FieldBox>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Medicamento</label>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Produto / Medicamento</label>
                       <input
                         type="text"
                         value={saudeForm.medicamento}
                         onChange={e => setSaudeForm(p => ({ ...p, medicamento: e.target.value }))}
-                        placeholder="ex: Ivermectina"
+                        placeholder="Ex: Ivermectina, vacina, vermífugo..."
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Dosagem</label>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Dose</label>
                       <input
                         type="text"
                         value={saudeForm.dosagem}
                         onChange={e => setSaudeForm(p => ({ ...p, dosagem: e.target.value }))}
-                        placeholder="ex: 5ml"
+                        placeholder="Ex: 5 ml, 10 ml, 1 dose"
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Veterinário</label>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Carência (dias)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={saudeForm.carenciaDias}
+                        onChange={e => setSaudeForm(p => ({ ...p, carenciaDias: e.target.value }))}
+                        placeholder="Ex: 30"
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Fim da carência</label>
+                      <div
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm bg-gray-50 text-gray-700 min-h-[34px] flex items-center cursor-default select-none"
+                        aria-readonly
+                      >
+                        {fimCarenciaPreview ? (
+                          <span className="font-semibold tabular-nums">{formatDateBR(fimCarenciaPreview)}</span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">Preencha Data e Carência (dias)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
                       <input
                         type="text"
                         value={saudeForm.veterinario}
                         onChange={e => setSaudeForm(p => ({ ...p, veterinario: e.target.value }))}
-                        placeholder="ex: Dr. João Silva"
+                        placeholder="Ex: Paulo Gomes"
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                       />
                     </div>
@@ -383,9 +683,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       <label className="block text-xs font-medium text-gray-700 mb-1">Custo (R$)</label>
                       <input
                         type="number"
+                        min="0"
+                        step="0.01"
                         value={saudeForm.custo}
                         onChange={e => setSaudeForm(p => ({ ...p, custo: e.target.value }))}
-                        placeholder="ex: 150.00"
+                        placeholder="Ex: 150,00"
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                       />
                     </div>
@@ -395,7 +697,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                         type="text"
                         value={saudeForm.descricao}
                         onChange={e => setSaudeForm(p => ({ ...p, descricao: e.target.value }))}
-                        placeholder="Descrição do procedimento"
+                        placeholder="Descreva o procedimento, observações ou motivo do registro..."
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                       />
                     </div>
@@ -408,6 +710,10 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           toast.error('Tipo e data são obrigatórios');
                           return;
                         }
+                        const proximaData = carenciaDiasToProximaDataISO(
+                          saudeForm.dataRegistro,
+                          saudeForm.carenciaDias,
+                        );
                         createSaudeMutation.mutate({
                           animalId: animalId!,
                           tipo: saudeForm.tipo,
@@ -417,7 +723,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           veterinario: saudeForm.veterinario || undefined,
                           custo: saudeForm.custo || undefined,
                           dataRegistro: saudeForm.dataRegistro,
-                          proximaData: saudeForm.proximaData || undefined,
+                          proximaData,
                           observacoes: saudeForm.observacoes || undefined,
                         });
                       }}
@@ -436,80 +742,422 @@ export const CattleDetailPageExpanded: React.FC = () => {
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
                 </div>
-              ) : !saudeRegistros || saudeRegistros.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+              ) : sortedSaude.length === 0 && !showSaudeForm ? (
+                <div className="text-center py-10 px-4 text-gray-500">
                   <Syringe className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>Nenhum registro de saúde encontrado.</p>
-                  <p className="text-xs mt-1">Clique em "Novo Registro" para adicionar.</p>
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    Nenhum registro sanitário para este animal.
+                    <br />
+                    Registre vacinas, medicamentos, tratamentos, vermífugos e períodos de carência.
+                  </p>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {saudeRegistros.map((reg) => (
-                    <div key={reg.id} className="border-l-4 border-red-400 pl-4 py-2 flex justify-between items-start">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">{reg.tipo} — {formatDate(reg.dataRegistro)}</p>
-                        {reg.descricao && <p className="text-xs text-gray-600">{reg.descricao}</p>}
-                        {reg.medicamento && <p className="text-xs text-gray-500">Medicamento: {reg.medicamento} {reg.dosagem ? `(${reg.dosagem})` : ''}</p>}
-                        {reg.veterinario && <p className="text-xs text-gray-500">Veterinário: {reg.veterinario}</p>}
-                        {reg.custo && <p className="text-xs text-gray-500">Custo: R$ {reg.custo}</p>}
-                      </div>
-                      <button
-                        onClick={() => deleteSaudeMutation.mutate({ id: reg.id })}
-                        className="text-red-400 hover:text-red-600 ml-4"
-                        title="Remover"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ) : sortedSaude.length > 0 && !showSaudeForm ? (
+                <>
+                  <p className="mb-3 text-[11px] text-gray-500">
+                    {sortedSaude.length} registro{sortedSaude.length !== 1 ? 's' : ''} sanitário{sortedSaude.length !== 1 ? 's' : ''}
+                    <span className="text-gray-400"> · mais recente primeiro</span>
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full table-fixed border-collapse text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                      <colgroup>
+                        <col style={{ width: '13%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '21%' }} />
+                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '20%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '13%' }} />
+                      </colgroup>
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Data
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Tipo
+                          </th>
+                          <th className="!pl-3 !pr-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Produto
+                          </th>
+                          <th className="!px-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Dose
+                          </th>
+                          <th className="!pl-1 !pr-3 text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Carência
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Custo
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Ações
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedSaude.map(reg => {
+                          const carenciaLinhas = getCarenciaRegistroLinhas(
+                            reg.dataRegistro,
+                            reg.proximaData,
+                          );
+                          const tipoDisplay = formatTipoSanitarioTabelaDisplay(reg.tipo);
+                          return (
+                            <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                              <td className="text-gray-800 tabular-nums whitespace-nowrap">
+                                {formatDate(reg.dataRegistro)}
+                              </td>
+                              <td>
+                                <span
+                                  className="inline-block px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-red-50 text-red-700 border border-red-100 whitespace-nowrap"
+                                  title={tipoDisplay.tituloCompleto !== '—' ? tipoDisplay.tituloCompleto : undefined}
+                                >
+                                  {tipoDisplay.label}
+                                </span>
+                              </td>
+                              <td className="!pl-3 !pr-1 max-w-0">
+                                <span
+                                  className="block truncate max-w-full text-gray-800 font-medium"
+                                  title={reg.medicamento || reg.descricao || undefined}
+                                >
+                                  {reg.medicamento || reg.descricao || '—'}
+                                </span>
+                              </td>
+                              <td className="!px-2 text-gray-600 whitespace-nowrap tabular-nums">
+                                <span className="inline-block max-w-full truncate" title={reg.dosagem || undefined}>
+                                  {reg.dosagem || '—'}
+                                </span>
+                              </td>
+                              <td className="!pl-1 !pr-3 text-gray-600 text-[11px] leading-snug">
+                                {carenciaLinhas ? (
+                                  <div className="mx-auto inline-flex flex-col items-center gap-0.5">
+                                    {carenciaLinhas.diasLabel && (
+                                      <span className="font-medium tabular-nums text-gray-700 whitespace-nowrap">
+                                        {carenciaLinhas.diasLabel}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] tabular-nums text-gray-500 whitespace-nowrap">
+                                      {carenciaLinhas.ateLabel}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className="text-gray-800 tabular-nums whitespace-nowrap">
+                                {formatCustoRegistroDisplay(reg.custo)}
+                              </td>
+                              <td>
+                                <TableIconButton
+                                  label="Remover registro"
+                                  onClick={() => void handleDeleteSaude(reg)}
+                                  tone="danger"
+                                >
+                                  <DeleteActionIcon size={17} />
+                                </TableIconButton>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 flex flex-col items-end gap-0.5 text-right">
+                    <p className="text-[12px] text-gray-700">
+                      <span className="font-medium text-gray-600">Total em custos sanitários: </span>
+                      <span className="font-semibold tabular-nums text-gray-800">
+                        {custoSanitarioResumo.totalFormatado}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      {custoSanitarioResumo.comCusto === 0
+                        ? 'Nenhum registro com custo informado'
+                        : `${custoSanitarioResumo.comCusto} de ${custoSanitarioResumo.totalRegistros} registro${custoSanitarioResumo.totalRegistros !== 1 ? 's' : ''} com custo informado`}
+                    </p>
+                  </div>
+                </>
+              ) : null}
             </Card>
           </TabsContent>
 
           {/* ─── Reprodução Tab ────────────────────────────────────────────── */}
           <TabsContent value="reproducao">
             <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                <Heart className="w-5 h-5 mr-2 text-pink-600" />
-                Histórico Reprodutivo
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-800 flex items-center">
+                  <Heart className="w-5 h-5 mr-2 text-pink-600" />
+                  Histórico Reprodutivo
+                </h2>
+                {!loadingRepro && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowReproForm(!showReproForm)}
+                    className="text-white text-xs shrink-0"
+                    style={{ backgroundColor: FD_ACTION }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Novo Registro
+                  </Button>
+                )}
+              </div>
+
+              {showReproForm && (
+                <div className="mb-6 p-4 bg-gray-50 rounded border">
+                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro Reprodutivo</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo de Registro</FormLabel>
+                      <FieldBox required>
+                        <select
+                          value={reproForm.tipo}
+                          onChange={e => {
+                            setPrevisaoPartoManual(false);
+                            setReproForm(p => ({ ...p, tipo: e.target.value }));
+                          }}
+                          className={inputClassCompact}
+                        >
+                          <option value="">Selecione</option>
+                          {reproTipoOptions.map(tipo => (
+                            <option key={tipo} value={tipo}>{tipo}</option>
+                          ))}
+                        </select>
+                      </FieldBox>
+                    </div>
+                    <div>
+                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
+                      <FieldBox required>
+                        <input
+                          type="date"
+                          value={reproForm.data}
+                          onChange={e => {
+                            setPrevisaoPartoManual(false);
+                            setReproForm(p => ({ ...p, data: e.target.value }));
+                          }}
+                          className={inputClassCompact}
+                        />
+                      </FieldBox>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Resultado / Status</label>
+                      <select
+                        value={reproForm.resultado}
+                        onChange={e => setReproForm(p => ({ ...p, resultado: e.target.value }))}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      >
+                        <option value="">Selecione (opcional)</option>
+                        {reproResultadoOptions.map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{reproRelacionadoLabel}</label>
+                      <input
+                        type="text"
+                        value={reproForm.reprodutorSemen}
+                        onChange={e => setReproForm(p => ({ ...p, reprodutorSemen: e.target.value }))}
+                        placeholder={reproRelacionadoPlaceholder}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    {showPrevisaoPartoForm ? (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Previsão de Parto</label>
+                          <input
+                            type="date"
+                            value={reproForm.previsaoParto}
+                            onChange={e => {
+                              setPrevisaoPartoManual(true);
+                              setReproForm(p => ({ ...p, previsaoParto: e.target.value }));
+                            }}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
+                          <input
+                            type="text"
+                            value={reproForm.responsavel}
+                            onChange={e => setReproForm(p => ({ ...p, responsavel: e.target.value }))}
+                            placeholder="Ex: Paulo Gomes"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
+                        <input
+                          type="text"
+                          value={reproForm.responsavel}
+                          onChange={e => setReproForm(p => ({ ...p, responsavel: e.target.value }))}
+                          placeholder="Ex: Paulo Gomes"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        />
+                      </div>
+                    )}
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Observações</label>
+                      <textarea
+                        value={reproForm.observacoes}
+                        onChange={e => setReproForm(p => ({ ...p, observacoes: e.target.value }))}
+                        placeholder="Descreva detalhes do registro reprodutivo..."
+                        rows={3}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-y"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!reproFormValid) {
+                          toast.error('Preencha Tipo de Registro e Data.');
+                          return;
+                        }
+                        createReproMutation.mutate({
+                          femeaId: animalId!,
+                          machoId: isReproMacho ? animalId! : undefined,
+                          tipo: reproForm.tipo,
+                          dataCobertura: reproForm.data,
+                          dataPrevistoParto: showPrevisaoPartoForm && reproForm.previsaoParto ? reproForm.previsaoParto : undefined,
+                          resultado: reproForm.resultado || undefined,
+                          reprodutorSemen: reproForm.reprodutorSemen || undefined,
+                          responsavel: reproForm.responsavel || undefined,
+                          observacoes: reproForm.observacoes || undefined,
+                        });
+                      }}
+                      disabled={!reproFormValid || createReproMutation.isPending}
+                      className="text-white text-xs"
+                      style={{ backgroundColor: FD_ACTION }}
+                    >
+                      {createReproMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Salvar'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setShowReproForm(false);
+                        setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
+                        setPrevisaoPartoManual(false);
+                      }}
+                      className="text-xs"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {loadingRepro ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
                 </div>
-              ) : animalRepro.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+              ) : sortedAnimalRepro.length === 0 && !showReproForm ? (
+                <div className="text-center py-10 px-4 text-gray-500">
                   <Heart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>Nenhum registro reprodutivo encontrado para este animal.</p>
-                  <p className="text-xs mt-1">Acesse o módulo de Reprodução para registrar eventos.</p>
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    {reproEmptyState.titulo}
+                    <br />
+                    {reproEmptyState.orientacao}
+                  </p>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Tipo</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Resultado</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Prev. Parto</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Observações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {animalRepro.map((reg) => (
-                        <tr key={reg.id} className="border-b hover:bg-gray-50">
-                          <td className="px-4 py-2 text-gray-800">{formatDate(reg.dataCobertura)}</td>
-                          <td className="px-4 py-2"><span className="px-2 py-1 rounded text-xs bg-pink-100 text-pink-800">{reg.tipo}</span></td>
-                          <td className="px-4 py-2 text-gray-600">{reg.resultado || '—'}</td>
-                          <td className="px-4 py-2 text-gray-600">{formatDate(reg.dataPrevistoParto)}</td>
-                          <td className="px-4 py-2 text-gray-500 text-xs">{reg.observacoes || '—'}</td>
+              ) : sortedAnimalRepro.length > 0 && !showReproForm ? (
+                <>
+                  <p className="mb-3 text-[11px] text-gray-500">
+                    {sortedAnimalRepro.length} registro{sortedAnimalRepro.length !== 1 ? 's' : ''} reprodutivo{sortedAnimalRepro.length !== 1 ? 's' : ''}
+                    <span className="text-gray-400"> · mais recente primeiro</span>
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full table-fixed border-collapse text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                      <colgroup>
+                        <col style={{ width: '11%' }} />
+                        <col style={{ width: '14%' }} />
+                        <col style={{ width: '12%' }} />
+                        <col style={{ width: '16%' }} />
+                        <col style={{ width: '11%' }} />
+                        <col style={{ width: '24%' }} />
+                        <col style={{ width: '12%' }} />
+                      </colgroup>
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Data
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Tipo
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Resultado
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Relacionado
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Previsão
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Observações
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Ações
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {sortedAnimalRepro.map(reg => {
+                          const meta = unpackReproObservacoes(reg.observacoes);
+                          return (
+                          <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                            <td className="text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatDate(reg.dataCobertura)}
+                            </td>
+                            <td>
+                              <span
+                                className="inline-block px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-pink-50 text-pink-700 border border-pink-100 whitespace-nowrap"
+                                title={reg.tipo}
+                              >
+                                {reg.tipo}
+                              </span>
+                            </td>
+                            <td className="text-gray-600 whitespace-nowrap">
+                              {reg.resultado || '—'}
+                            </td>
+                            <td className="max-w-0">
+                              <span
+                                className="block truncate max-w-full text-gray-600 text-[11px]"
+                                title={meta.reprodutorSemen || undefined}
+                              >
+                                {meta.reprodutorSemen || '—'}
+                              </span>
+                            </td>
+                            <td className="text-gray-600 tabular-nums whitespace-nowrap">
+                              {!isReproMacho && reg.dataPrevistoParto ? formatDate(reg.dataPrevistoParto) : '—'}
+                            </td>
+                            <td className="max-w-0">
+                              <span
+                                className="block truncate max-w-full text-gray-600 text-[11px]"
+                                title={meta.observacoes || undefined}
+                              >
+                                {meta.observacoes || '—'}
+                              </span>
+                            </td>
+                            <td>
+                              <TableIconButton
+                                label="Remover registro"
+                                onClick={() => void handleDeleteRepro(reg)}
+                                tone="danger"
+                              >
+                                <DeleteActionIcon size={17} />
+                              </TableIconButton>
+                            </td>
+                          </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : null}
             </Card>
           </TabsContent>
 
@@ -521,15 +1169,17 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <Weight className="w-5 h-5 mr-2 text-blue-600" />
                   Histórico de Pesagens
                 </h2>
-                <Button
-                  size="sm"
-                  onClick={() => setShowPesagemForm(!showPesagemForm)}
-                  className="text-white text-xs"
-                  style={{ backgroundColor: '#4ECDC4' }}
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Nova Pesagem
-                </Button>
+                {!loadingPesagens && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowPesagemForm(!showPesagemForm)}
+                    className="text-white text-xs shrink-0"
+                    style={{ backgroundColor: FD_ACTION }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Nova Pesagem
+                  </Button>
+                )}
               </div>
 
               {showPesagemForm && (
@@ -603,54 +1253,99 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
                 </div>
               ) : sortedPesagens.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-10 px-4 text-gray-500">
                   <Weight className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>Nenhuma pesagem registrada.</p>
-                  <p className="text-xs mt-1">Clique em "Nova Pesagem" para registrar.</p>
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    Nenhuma pesagem registrada para este animal.
+                    <br />
+                    Registre a primeira pesagem para acompanhar peso, ganho e GMD.
+                  </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Data</th>
-                        <th className="px-4 py-2 text-right font-medium text-gray-700">Peso (kg)</th>
-                        <th className="px-4 py-2 text-right font-medium text-gray-700">Variação</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-700">Observações</th>
-                        <th className="px-4 py-2 text-center font-medium text-gray-700">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedPesagens.map((pesagem, idx) => {
-                        const prev = sortedPesagens[idx + 1];
-                        const variation = prev ? parseFloat(pesagem.peso || '0') - parseFloat(prev.peso || '0') : null;
-                        return (
-                          <tr key={pesagem.id} className="border-b hover:bg-gray-50">
-                            <td className="px-4 py-2 text-gray-800">{formatDate(pesagem.data)}</td>
-                            <td className="px-4 py-2 text-right font-semibold text-gray-800">{pesagem.peso}kg</td>
-                            <td className="px-4 py-2 text-right">
-                              {variation !== null ? (
-                                <span className={`font-semibold ${variation >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  {variation >= 0 ? '+' : ''}{variation.toFixed(1)}kg
+                <>
+                  <p className="mb-3 text-[11px] text-gray-500">
+                    {sortedPesagens.length} pesagem{sortedPesagens.length !== 1 ? 's' : ''} registrada{sortedPesagens.length !== 1 ? 's' : ''}
+                    <span className="text-gray-400"> · mais recente primeiro</span>
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full table-fixed border-collapse text-[12px]">
+                      <colgroup>
+                        <col style={{ width: '20%' }} />
+                        <col style={{ width: '20%' }} />
+                        <col style={{ width: '20%' }} />
+                        <col style={{ width: '28%' }} />
+                        <col style={{ width: '12%' }} />
+                      </colgroup>
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-2.5 text-center align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Data
+                          </th>
+                          <th className="px-4 py-2.5 text-center align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Peso (kg)
+                          </th>
+                          <th className="px-4 py-2.5 text-center align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Variação (kg)
+                          </th>
+                          <th className="px-4 py-2.5 text-center align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Observações
+                          </th>
+                          <th className="px-4 py-2.5 text-center align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Ações
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedPesagens.map((pesagem, idx) => {
+                          const prev = sortedPesagens[idx + 1];
+                          const variation = prev
+                            ? parseFloat(pesagem.peso || '0') - parseFloat(prev.peso || '0')
+                            : null;
+                          const pesoFmt = formatUltimoPesoKg(parseFloat(pesagem.peso || ''));
+                          return (
+                            <tr key={pesagem.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                              <td className="px-4 py-2.5 align-middle text-center text-gray-800 tabular-nums whitespace-nowrap">
+                                {formatDate(pesagem.data)}
+                              </td>
+                              <td className="px-4 py-2.5 align-middle text-center font-semibold text-gray-800 tabular-nums whitespace-nowrap">
+                                {pesoFmt || '—'}
+                              </td>
+                              <td className="px-4 py-2.5 align-middle text-center tabular-nums whitespace-nowrap">
+                                {variation !== null ? (
+                                  <span className={`font-semibold ${variation >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                    {variation >= 0 ? '+' : ''}
+                                    {variation.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 align-middle text-center">
+                                <span
+                                  className="block truncate text-gray-500 text-[11px] mx-auto max-w-full"
+                                  title={pesagem.observacoes || undefined}
+                                >
+                                  {pesagem.observacoes || '—'}
                                 </span>
-                              ) : <span className="text-gray-400">—</span>}
-                            </td>
-                            <td className="px-4 py-2 text-gray-500 text-xs">{pesagem.observacoes || '—'}</td>
-                            <td className="px-4 py-2 text-center">
-                              <button
-                                onClick={() => deletePesagemMutation.mutate({ id: pesagem.id })}
-                                className="text-red-400 hover:text-red-600"
-                                title="Remover"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              </td>
+                              <td className="px-4 py-2.5 align-middle text-center">
+                                <div className="inline-flex items-center justify-center">
+                                  <TableIconButton
+                                    label="Remover pesagem"
+                                    onClick={() => void handleDeletePesagem(pesagem)}
+                                    tone="danger"
+                                  >
+                                    <DeleteActionIcon size={17} />
+                                  </TableIconButton>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </Card>
           </TabsContent>
@@ -664,13 +1359,13 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   {animal.observacoes}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <p>Nenhuma observação registrada.</p>
+                <div className="text-center py-10 text-gray-500">
+                  <p className="text-[13px] text-gray-600">Nenhuma observação registrada.</p>
                   <Button
                     size="sm"
                     onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
-                    className="mt-3 text-white text-xs"
-                    style={{ backgroundColor: '#4ECDC4' }}
+                    className="mt-4 text-white text-xs"
+                    style={{ backgroundColor: FD_ACTION }}
                   >
                     Editar Animal para Adicionar Observações
                   </Button>
@@ -689,9 +1384,8 @@ export const CattleDetailPageExpanded: React.FC = () => {
               {loadingPastos ? (
                 <div className="flex justify-center py-8"><Loader2 className="animate-spin w-6 h-6 text-gray-400" /></div>
               ) : historicoPastos.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-sm">Nenhuma movimentação de pasto registrada para este animal.</p>
-                  <p className="text-xs text-gray-400 mt-1">Mova o lote do animal em <strong>Rebanho &gt; Lotes</strong> para registrar.</p>
+                <div className="text-center py-10 text-gray-500">
+                  <p className="text-[13px] text-gray-600">Nenhuma movimentação de subdivisão registrada.</p>
                 </div>
               ) : (
                 <div className="space-y-3">

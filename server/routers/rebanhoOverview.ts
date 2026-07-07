@@ -8,6 +8,7 @@ import z from "zod";
 import { calcularIdadeMeses, faixaIdadeLote, FAIXAS_IDADE_LOTE } from "../../shared/lote-faixas-idade";
 import { isDatabaseUnavailable } from "../localFallbackStore";
 import { REBANHO_OVERVIEW_DEMO } from "../../shared/rebanhoOverviewDemo";
+import { buildFimCarenciaPorAnimal } from "../../shared/carenciaAnimal";
 
 // ─── Helper: dias entre data e hoje ──────────────────────────────────────────
 function diasDesde(dateStr: string | null | undefined): number | null {
@@ -82,6 +83,7 @@ export const rebanhoOverviewRouter = router({
         animalId: saudeRegistros.animalId,
         medicamento: saudeRegistros.medicamento,
         dataRegistro: saudeRegistros.dataRegistro,
+        proximaData: saudeRegistros.proximaData,
       })
         .from(saudeRegistros)
         .where(and(eq(saudeRegistros.userId, userId), inArray(saudeRegistros.animalId, animalIds)))
@@ -96,21 +98,8 @@ export const rebanhoOverviewRouter = router({
         medicamentosCarencia.map(m => [m.nome.toLowerCase().trim(), m.carenciaAbateDias || 0])
       );
 
-      const emCarenciaSet = new Set<number>();
-      const saudeVistos = new Set<string>();
-      for (const s of saudeAll) {
-        const chave = `${s.animalId}-${s.medicamento}`;
-        if (saudeVistos.has(chave)) continue;
-        saudeVistos.add(chave);
-        const med = (s.medicamento || "").toLowerCase().trim();
-        const diasCarencia = medCarenciaMap.get(med);
-        if (diasCarencia && diasCarencia > 0 && s.dataRegistro) {
-          const dataAplicacao = new Date(s.dataRegistro);
-          const fimCarencia = new Date(dataAplicacao);
-          fimCarencia.setDate(fimCarencia.getDate() + diasCarencia);
-          if (fimCarencia >= hoje) emCarenciaSet.add(s.animalId);
-        }
-      }
+      const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(saudeAll, medCarenciaMap, hoje);
+      const emCarenciaSet = new Set(fimCarenciaPorAnimal.keys());
 
       // ── 4. Lotes com atividade ────────────────────────────────────────────
       const lotesRows = loteIds.length

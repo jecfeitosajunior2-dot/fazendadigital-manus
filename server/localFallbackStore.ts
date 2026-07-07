@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
@@ -7,6 +8,9 @@ const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
 const lotesFile = path.join(dataDir, "lotes.json");
 const animaisFile = path.join(dataDir, "animais.json");
+const pesagensFile = path.join(dataDir, "pesagens.json");
+const saudeRegistrosFile = path.join(dataDir, "saude-registros.json");
+const reproducaoRegistrosFile = path.join(dataDir, "reproducao-registros.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
@@ -546,6 +550,182 @@ export async function deleteLocalAnimal(userId: number, id: number): Promise<voi
   await writeAnimais(remaining);
 }
 
+export type LocalPesagem = {
+  id: number;
+  userId: number;
+  animalId: number;
+  peso: string;
+  data: string;
+  observacoes?: string | null;
+  createdAt: string;
+};
+
+async function readPesagens(): Promise<LocalPesagem[]> {
+  return readJsonFile<LocalPesagem[]>(pesagensFile, []);
+}
+
+async function writePesagens(rows: LocalPesagem[]): Promise<void> {
+  await writeJsonFile(pesagensFile, rows);
+}
+
+function normalizePesagemData(data: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(data)) return data;
+  const parsed = new Date(data);
+  if (Number.isNaN(parsed.getTime())) return data.slice(0, 10);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export async function listLocalPesagens(
+  userId: number,
+  animalId?: number,
+): Promise<LocalPesagem[]> {
+  const rows = await readPesagens();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  const filtered = animalId ? visible.filter(row => row.animalId === animalId) : visible;
+  return filtered.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function createLocalPesagem(
+  userId: number,
+  input: { animalId: number; peso: string; data: string; observacoes?: string },
+): Promise<{ id: number }> {
+  const rows = await readPesagens();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    animalId: input.animalId,
+    peso: input.peso,
+    data: normalizePesagemData(input.data),
+    observacoes: input.observacoes ?? null,
+    createdAt: now,
+  });
+  await writePesagens(rows);
+  await updateLocalAnimal(userId, input.animalId, { pesoAtual: input.peso });
+  return { id };
+}
+
+export async function deleteLocalPesagem(userId: number, id: number): Promise<void> {
+  const rows = await readPesagens();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writePesagens(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writePesagens(remaining);
+}
+
+export type LocalSaudeRegistro = {
+  id: number;
+  userId: number;
+  animalId: number;
+  tipo: string;
+  descricao?: string | null;
+  medicamento?: string | null;
+  dosagem?: string | null;
+  veterinario?: string | null;
+  custo?: string | null;
+  dataRegistro: string;
+  proximaData?: string | null;
+  observacoes?: string | null;
+  createdAt: string;
+};
+
+async function readSaudeRegistros(): Promise<LocalSaudeRegistro[]> {
+  return readJsonFile<LocalSaudeRegistro[]>(saudeRegistrosFile, []);
+}
+
+async function writeSaudeRegistros(rows: LocalSaudeRegistro[]): Promise<void> {
+  await writeJsonFile(saudeRegistrosFile, rows);
+}
+
+function normalizeLocalDateField(data: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(data)) return data;
+  const parsed = new Date(data);
+  if (Number.isNaN(parsed.getTime())) return data.slice(0, 10);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export async function listLocalSaudeRegistros(
+  userId: number,
+  animalId?: number,
+): Promise<LocalSaudeRegistro[]> {
+  const rows = await readSaudeRegistros();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  const filtered = animalId ? visible.filter(row => row.animalId === animalId) : visible;
+  return filtered.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function createLocalSaudeRegistro(
+  userId: number,
+  input: {
+    animalId: number;
+    tipo: string;
+    descricao?: string;
+    medicamento?: string;
+    dosagem?: string;
+    veterinario?: string;
+    custo?: string;
+    dataRegistro: string;
+    proximaData?: string;
+    observacoes?: string;
+  },
+): Promise<{ id: number }> {
+  const rows = await readSaudeRegistros();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    animalId: input.animalId,
+    tipo: input.tipo,
+    descricao: input.descricao ?? null,
+    medicamento: input.medicamento ?? null,
+    dosagem: input.dosagem ?? null,
+    veterinario: input.veterinario ?? null,
+    custo: input.custo ?? null,
+    dataRegistro: normalizeLocalDateField(input.dataRegistro),
+    proximaData: input.proximaData ? normalizeLocalDateField(input.proximaData) : null,
+    observacoes: input.observacoes ?? null,
+    createdAt: now,
+  });
+  await writeSaudeRegistros(rows);
+  return { id };
+}
+
+export async function deleteLocalSaudeRegistro(userId: number, id: number): Promise<void> {
+  const rows = await readSaudeRegistros();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeSaudeRegistros(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeSaudeRegistros(remaining);
+}
+
+function buildLocalPesagensPorAnimal(
+  pesagensList: LocalPesagem[],
+): Map<number, LocalPesagem[]> {
+  const map = new Map<number, LocalPesagem[]>();
+  for (const p of pesagensList) {
+    if (!map.has(p.animalId)) map.set(p.animalId, []);
+    map.get(p.animalId)!.push(p);
+  }
+  for (const pesos of map.values()) {
+    pesos.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  }
+  return map;
+}
+
 export async function listLocalAnimaisEnriched(
   userId: number,
   input?: Record<string, unknown>,
@@ -606,6 +786,18 @@ export async function listLocalAnimaisEnriched(
   }
 
   const loteNomeMap = await buildLocalLoteNomeMap(userId);
+  const pesagensPorAnimal = buildLocalPesagensPorAnimal(await listLocalPesagens(userId));
+  const localSaude = await listLocalSaudeRegistros(userId);
+  const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(
+    localSaude.map(s => ({
+      animalId: s.animalId,
+      medicamento: s.medicamento,
+      dataRegistro: s.dataRegistro,
+      proximaData: s.proximaData,
+    })),
+    new Map(),
+    hoje,
+  );
 
   const resultado = lista.map(animal => {
     let idadeMeses: number | null = null;
@@ -623,9 +815,34 @@ export async function listLocalAnimaisEnriched(
       diasNaFazenda = Math.floor((hoje.getTime() - entrada.getTime()) / (1000 * 60 * 60 * 24));
     }
 
-    const ultimoPeso = animal.pesoAtual
-      ? Number(animal.pesoAtual)
-      : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
+    const pesos = pesagensPorAnimal.get(animal.id) || [];
+    const ultimoPeso =
+      pesos.length > 0
+        ? Number(pesos[pesos.length - 1].peso)
+        : animal.pesoAtual
+          ? Number(animal.pesoAtual)
+          : animal.pesoEntrada
+            ? Number(animal.pesoEntrada)
+            : null;
+    const primeiroPeso =
+      pesos.length > 0 ? Number(pesos[0].peso) : animal.pesoEntrada ? Number(animal.pesoEntrada) : null;
+
+    let ganhoKg: number | null = null;
+    if (ultimoPeso !== null && primeiroPeso !== null && ultimoPeso !== primeiroPeso) {
+      ganhoKg = Math.round((ultimoPeso - primeiroPeso) * 100) / 100;
+    }
+
+    let gmd: number | null = null;
+    if (pesos.length >= 2) {
+      const p1 = pesos[0];
+      const p2 = pesos[pesos.length - 1];
+      const d1 = new Date(p1.data);
+      const d2 = new Date(p2.data);
+      const dias = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+      gmd = Math.round(((Number(p2.peso) - Number(p1.peso)) / dias) * 1000) / 1000;
+    } else if (diasNaFazenda && diasNaFazenda > 0 && ganhoKg !== null) {
+      gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
+    }
 
     const loteId = animal.loteId != null ? Number(animal.loteId) : null;
 
@@ -636,9 +853,12 @@ export async function listLocalAnimaisEnriched(
       idadeMeses,
       diasNaFazenda,
       ultimoPeso,
-      ganhoKg: null,
-      gmd: null,
-      emCarencia: false,
+      ganhoKg,
+      gmd,
+      emCarencia: fimCarenciaPorAnimal.has(animal.id),
+      fimCarenciaAte: fimCarenciaPorAnimal.has(animal.id)
+        ? toDateOnlyISO(fimCarenciaPorAnimal.get(animal.id)!)
+        : null,
     };
   });
 
@@ -736,4 +956,77 @@ export function mergeHistoricoBrincosLists(
   return [...byId.values()].sort((a, b) =>
     String(b.createdAt).localeCompare(String(a.createdAt)),
   );
+}
+
+export type LocalReproducaoRegistro = {
+  id: number;
+  userId: number;
+  femeaId: number;
+  machoId?: number | null;
+  tipo: string;
+  dataCobertura: string;
+  dataPrevistoParto?: string | null;
+  dataPartoReal?: string | null;
+  resultado?: string | null;
+  filhotes?: number | null;
+  observacoes?: string | null;
+  createdAt: string;
+};
+
+async function readReproducaoRegistros(): Promise<LocalReproducaoRegistro[]> {
+  return readJsonFile<LocalReproducaoRegistro[]>(reproducaoRegistrosFile, []);
+}
+
+async function writeReproducaoRegistros(rows: LocalReproducaoRegistro[]): Promise<void> {
+  await writeJsonFile(reproducaoRegistrosFile, rows);
+}
+
+export async function listLocalReproducaoRegistros(userId: number): Promise<LocalReproducaoRegistro[]> {
+  const rows = await readReproducaoRegistros();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function createLocalReproducaoRegistro(
+  userId: number,
+  input: {
+    femeaId: number;
+    machoId?: number;
+    tipo: string;
+    dataCobertura: string;
+    dataPrevistoParto?: string;
+    resultado?: string;
+    observacoes?: string;
+  },
+): Promise<{ id: number }> {
+  const rows = await readReproducaoRegistros();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    femeaId: input.femeaId,
+    machoId: input.machoId ?? null,
+    tipo: input.tipo,
+    dataCobertura: normalizeLocalDateField(input.dataCobertura),
+    dataPrevistoParto: input.dataPrevistoParto
+      ? normalizeLocalDateField(input.dataPrevistoParto)
+      : null,
+    resultado: input.resultado ?? null,
+    observacoes: input.observacoes ?? null,
+    createdAt: now,
+  });
+  await writeReproducaoRegistros(rows);
+  return { id };
+}
+
+export async function deleteLocalReproducaoRegistro(userId: number, id: number): Promise<void> {
+  const rows = await readReproducaoRegistros();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeReproducaoRegistros(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeReproducaoRegistros(remaining);
 }

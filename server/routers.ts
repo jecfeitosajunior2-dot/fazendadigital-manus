@@ -43,7 +43,16 @@ import {
   listLocalAnimaisEnriched,
   listLocalLotes,
   listLocalLotesGerenciamento,
+  listLocalPesagens,
   createLocalLote,
+  createLocalPesagem,
+  deleteLocalPesagem,
+  listLocalSaudeRegistros,
+  createLocalSaudeRegistro,
+  deleteLocalSaudeRegistro,
+  listLocalReproducaoRegistros,
+  createLocalReproducaoRegistro,
+  deleteLocalReproducaoRegistro,
   enrichLocalLote,
   updateLocalFazenda,
   updateLocalPasto,
@@ -55,6 +64,8 @@ import {
   deleteLocalHistoricoBrinco,
   mergeHistoricoBrincosLists,
 } from "./localFallbackStore";
+import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
+import { packReproObservacoes } from "../shared/reproRegistroMeta";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
 import {
   assertBrincoUnicoEntreAtivos,
@@ -479,6 +490,7 @@ const animaisRouter = router({
         animalId: saudeRegistros.animalId,
         medicamento: saudeRegistros.medicamento,
         dataRegistro: saudeRegistros.dataRegistro,
+        proximaData: saudeRegistros.proximaData,
       })
         .from(saudeRegistros)
         .where(and(eq(saudeRegistros.userId, ctx.user.id), inArray(saudeRegistros.animalId, animalIds)))
@@ -493,29 +505,9 @@ const animaisRouter = router({
       }).from(estoque).where(eq(estoque.possuiCarencia, true));
       const medCarenciaMap = new Map(medicamentosCarencia.map(m => [m.nome.toLowerCase().trim(), m.carenciaAbateDias || 0]));
 
-      // Para cada animal, calcula "em carência" = se existe registro de saúde recente com medicamento de carencia
-      // cuja data de fim da carencia ainda não passou
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-
-      const emCarenciaPorAnimal = new Map<number, boolean>();
-      // Agrupa por animal (pega o mais recente de cada medicamento)
-      const saudeVistos = new Set<string>();
-      for (const s of saudeAll) {
-        const chave = `${s.animalId}-${s.medicamento}`;
-        if (saudeVistos.has(chave)) continue;
-        saudeVistos.add(chave);
-        const med = (s.medicamento || '').toLowerCase().trim();
-        const diasCarencia = medCarenciaMap.get(med);
-        if (diasCarencia && diasCarencia > 0 && s.dataRegistro) {
-          const dataAplicacao = new Date(s.dataRegistro);
-          const fimCarencia = new Date(dataAplicacao);
-          fimCarencia.setDate(fimCarencia.getDate() + diasCarencia);
-          if (fimCarencia >= hoje) {
-            emCarenciaPorAnimal.set(s.animalId, true);
-          }
-        }
-      }
+      const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(saudeAll, medCarenciaMap, hoje);
 
       // Monta resultado enriquecido
       const resultado = lista.map(animal => {
@@ -579,7 +571,10 @@ const animaisRouter = router({
           ultimoPeso,
           ganhoKg,
           gmd,
-          emCarencia: emCarenciaPorAnimal.get(animal.id) || false,
+          emCarencia: fimCarenciaPorAnimal.has(animal.id),
+          fimCarenciaAte: fimCarenciaPorAnimal.has(animal.id)
+            ? toDateOnlyISO(fimCarenciaPorAnimal.get(animal.id)!)
+            : null,
         };
       });
 
@@ -2586,9 +2581,19 @@ const saudeRouter = router({
   list: protectedProcedure
     .input(z.object({ animalId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(saudeRegistros.userId, ctx.user.id)];
-      if (input?.animalId) conditions.push(eq(saudeRegistros.animalId, input.animalId));
-      return db.select().from(saudeRegistros).where(and(...conditions)).orderBy(desc(saudeRegistros.createdAt));
+      try {
+        const conditions = [eq(saudeRegistros.userId, ctx.user.id)];
+        if (input?.animalId) conditions.push(eq(saudeRegistros.animalId, input.animalId));
+        const rows = await db
+          .select()
+          .from(saudeRegistros)
+          .where(and(...conditions))
+          .orderBy(desc(saudeRegistros.createdAt));
+        if (rows.length > 0) return rows;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      return listLocalSaudeRegistros(ctx.user.id, input?.animalId);
     }),
 
   create: protectedProcedure
@@ -2605,28 +2610,50 @@ const saudeRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { dataRegistro, proximaData, ...rest } = input;
-      const result = await db.insert(saudeRegistros).values({
-        userId: ctx.user.id,
-        ...rest,
-        dataRegistro: new Date(dataRegistro),
-        proximaData: proximaData ? new Date(proximaData) : undefined,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      try {
+        const { dataRegistro, proximaData, ...rest } = input;
+        const result = await db.insert(saudeRegistros).values({
+          userId: ctx.user.id,
+          ...rest,
+          dataRegistro: new Date(dataRegistro),
+          proximaData: proximaData ? new Date(proximaData) : undefined,
+        });
+        return { success: true, id: (result as any)[0]?.insertId };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = await createLocalSaudeRegistro(ctx.user.id, input);
+        return { success: true, id: result.id, localFallback: true };
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(saudeRegistros).where(and(eq(saudeRegistros.id, input.id), eq(saudeRegistros.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(saudeRegistros).where(and(eq(saudeRegistros.id, input.id), eq(saudeRegistros.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        await deleteLocalSaudeRegistro(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
     }),
 });
 
 // ─── REPRODUCAO ROUTER ────────────────────────────────────────────────────────
 const reproducaoRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(reproducaoRegistros).where(eq(reproducaoRegistros.userId, ctx.user.id)).orderBy(desc(reproducaoRegistros.createdAt));
+    try {
+      const rows = await db
+        .select()
+        .from(reproducaoRegistros)
+        .where(eq(reproducaoRegistros.userId, ctx.user.id))
+        .orderBy(desc(reproducaoRegistros.createdAt));
+      if (rows.length > 0) return rows;
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+    }
+    return listLocalReproducaoRegistros(ctx.user.id);
   }),
 
   create: protectedProcedure
@@ -2637,17 +2664,35 @@ const reproducaoRouter = router({
       dataCobertura: z.string(),
       dataPrevistoParto: z.string().optional(),
       resultado: z.string().optional(),
+      reprodutorSemen: z.string().optional(),
+      responsavel: z.string().optional(),
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { dataCobertura, dataPrevistoParto, ...rest } = input;
-      const result = await db.insert(reproducaoRegistros).values({
+      const { dataCobertura, dataPrevistoParto, reprodutorSemen, responsavel, observacoes, ...rest } = input;
+      const payload = {
         userId: ctx.user.id,
         ...rest,
+        observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
         dataCobertura: new Date(dataCobertura),
         dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : undefined,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      };
+      try {
+        const result = await db.insert(reproducaoRegistros).values(payload);
+        return { success: true, id: (result as any)[0]?.insertId };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = await createLocalReproducaoRegistro(ctx.user.id, {
+          femeaId: input.femeaId,
+          machoId: input.machoId,
+          tipo: input.tipo,
+          dataCobertura: input.dataCobertura,
+          dataPrevistoParto: input.dataPrevistoParto,
+          resultado: input.resultado,
+          observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
+        });
+        return { success: true, id: result.id, localFallback: true };
+      }
     }),
 
   update: protectedProcedure
@@ -2670,8 +2715,14 @@ const reproducaoRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(reproducaoRegistros).where(and(eq(reproducaoRegistros.id, input.id), eq(reproducaoRegistros.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(reproducaoRegistros).where(and(eq(reproducaoRegistros.id, input.id), eq(reproducaoRegistros.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        await deleteLocalReproducaoRegistro(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
     }),
 });
 
@@ -3653,9 +3704,19 @@ const pesagensRouter = router({
   list: protectedProcedure
     .input(z.object({ animalId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(pesagens.userId, ctx.user.id)];
-      if (input?.animalId) conditions.push(eq(pesagens.animalId, input.animalId));
-      return db.select().from(pesagens).where(and(...conditions)).orderBy(desc(pesagens.createdAt));
+      try {
+        const conditions = [eq(pesagens.userId, ctx.user.id)];
+        if (input?.animalId) conditions.push(eq(pesagens.animalId, input.animalId));
+        const rows = await db
+          .select()
+          .from(pesagens)
+          .where(and(...conditions))
+          .orderBy(desc(pesagens.createdAt));
+        if (rows.length > 0) return rows;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      return listLocalPesagens(ctx.user.id, input?.animalId);
     }),
 
   create: protectedProcedure
@@ -3666,22 +3727,33 @@ const pesagensRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { data, ...rest } = input;
-      const result = await db.insert(pesagens).values({
-        userId: ctx.user.id,
-        ...rest,
-        data: new Date(data),
-      });
-      // Update animal's current weight
-      await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
-      return { success: true, id: (result as any)[0]?.insertId };
+      try {
+        const { data, ...rest } = input;
+        const result = await db.insert(pesagens).values({
+          userId: ctx.user.id,
+          ...rest,
+          data: new Date(data),
+        });
+        await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
+        return { success: true, id: (result as any)[0]?.insertId };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = await createLocalPesagem(ctx.user.id, input);
+        return { success: true, id: result.id, localFallback: true };
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(pesagens).where(and(eq(pesagens.id, input.id), eq(pesagens.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        await db.delete(pesagens).where(and(eq(pesagens.id, input.id), eq(pesagens.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        await deleteLocalPesagem(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
     }),
 });
 
