@@ -1021,6 +1021,34 @@ export async function createLocalReproducaoRegistro(
   return { id };
 }
 
+export async function updateLocalReproducaoRegistro(
+  userId: number,
+  id: number,
+  input: {
+    tipo: string;
+    dataCobertura: string;
+    dataPrevistoParto?: string | null;
+    resultado?: string;
+    observacoes?: string;
+  },
+): Promise<void> {
+  const rows = await readReproducaoRegistros();
+  const idx = rows.findIndex(row => row.userId === userId && row.id === id);
+  const targetIdx = idx !== -1 ? idx : rows.findIndex(row => row.id === id);
+  if (targetIdx === -1) throw new Error("Registro reprodutivo não encontrado");
+  rows[targetIdx] = {
+    ...rows[targetIdx],
+    tipo: input.tipo,
+    dataCobertura: normalizeLocalDateField(input.dataCobertura),
+    dataPrevistoParto: input.dataPrevistoParto
+      ? normalizeLocalDateField(input.dataPrevistoParto)
+      : null,
+    resultado: input.resultado ?? null,
+    observacoes: input.observacoes ?? null,
+  };
+  await writeReproducaoRegistros(rows);
+}
+
 export async function deleteLocalReproducaoRegistro(userId: number, id: number): Promise<void> {
   const rows = await readReproducaoRegistros();
   const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
@@ -1029,4 +1057,190 @@ export async function deleteLocalReproducaoRegistro(userId: number, id: number):
     return;
   }
   await writeReproducaoRegistros(remaining);
+}
+
+type MapaLoteRow = {
+  loteId: number;
+  loteNome: string;
+  loteSigla: string | null;
+  dataEntradaPasto: string | null;
+  totalAnimais: number;
+};
+
+type MapaSubdivisaoRow = {
+  pastoId: number;
+  pastoNome: string;
+  pastoSigla: string | null;
+  pastoStatus: string;
+  areaHa: string | null;
+  capacidade: number | null;
+  taxaLotacao: number | null;
+  totalAnimais: number;
+  diasVazio: number | null;
+  lotes: MapaLoteRow[];
+};
+
+function buildMapaSubdivisoesFromLocal(
+  pastosList: LocalPasto[],
+  lotesList: LocalLote[],
+  totalPorLote: Map<number, number>,
+  q: string,
+  pastoIdFilter?: number,
+): { subdivisoes: MapaSubdivisaoRow[]; semSubdivisao: MapaLoteRow[] } {
+  const porPasto = new Map<number, LocalLote[]>();
+  const semSubdivisaoLotes: LocalLote[] = [];
+
+  for (const lote of lotesList) {
+    const pastoAtualId = lote.pastoAtualId != null ? Number(lote.pastoAtualId) : null;
+    if (pastoAtualId) {
+      const arr = porPasto.get(pastoAtualId) ?? [];
+      arr.push(lote);
+      porPasto.set(pastoAtualId, arr);
+    } else {
+      semSubdivisaoLotes.push(lote);
+    }
+  }
+
+  const pastosComLote = new Set(porPasto.keys());
+
+  const subdivisoes = [...porPasto.entries()]
+    .map(([pastoId, lotesGrupo]) => {
+      const pasto = pastosList.find(p => p.id === pastoId);
+      if (!pasto) return null;
+      const totalAnimais = lotesGrupo.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
+      const areaNum = pasto.area != null && pasto.area !== '' ? Number(pasto.area) : null;
+      const taxaLotacao = areaNum && areaNum > 0
+        ? Math.round((totalAnimais / areaNum) * 100) / 100
+        : null;
+      return {
+        pastoId,
+        pastoNome: pasto.nome,
+        pastoSigla: pasto.sigla ?? null,
+        pastoStatus: totalAnimais > 0 ? 'ativo' : 'vazio',
+        areaHa: pasto.area != null ? String(pasto.area) : null,
+        capacidade: pasto.capacidade ?? null,
+        taxaLotacao,
+        totalAnimais,
+        diasVazio: null as number | null,
+        lotes: lotesGrupo.map(l => ({
+          loteId: l.id,
+          loteNome: l.nome,
+          loteSigla: l.sigla ?? null,
+          dataEntradaPasto: l.dataEntradaPasto ?? null,
+          totalAnimais: totalPorLote.get(l.id) ?? 0,
+        })),
+      };
+    })
+    .filter((s): s is MapaSubdivisaoRow => s != null)
+    .filter(s => !q || s.pastoNome.toLowerCase().includes(q) || s.lotes.some(l => l.loteNome.toLowerCase().includes(q)))
+    .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
+
+  const pastosVazios = pastosList
+    .filter(p => !pastosComLote.has(p.id))
+    .filter(p => !pastoIdFilter || p.id === pastoIdFilter)
+    .filter(p => !q || p.nome.toLowerCase().includes(q))
+    .map(p => ({
+      pastoId: p.id,
+      pastoNome: p.nome,
+      pastoSigla: p.sigla ?? null,
+      pastoStatus: 'vazio' as const,
+      areaHa: p.area != null ? String(p.area) : null,
+      capacidade: p.capacidade ?? null,
+      taxaLotacao: 0,
+      totalAnimais: 0,
+      diasVazio: null as number | null,
+      lotes: [] as MapaLoteRow[],
+    }));
+
+  const semSubdivisao = semSubdivisaoLotes
+    .filter(l => !q || l.nome.toLowerCase().includes(q))
+    .map(l => ({
+      loteId: l.id,
+      loteNome: l.nome,
+      loteSigla: l.sigla ?? null,
+      dataEntradaPasto: l.dataEntradaPasto ?? null,
+      totalAnimais: totalPorLote.get(l.id) ?? 0,
+    }));
+
+  return {
+    subdivisoes: [...subdivisoes, ...pastosVazios].sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR')),
+    semSubdivisao,
+  };
+}
+
+async function buildLocalTotalPorLote(userId: number, loteIds: number[]): Promise<Map<number, number>> {
+  const totalPorLote = new Map<number, number>();
+  if (loteIds.length === 0) return totalPorLote;
+  const loteIdSet = new Set(loteIds);
+  const animaisAtivos = (await listLocalAnimais(userId)).filter(
+    a => a.status === 'ativo' && a.loteId != null && loteIdSet.has(Number(a.loteId)),
+  );
+  for (const a of animaisAtivos) {
+    const loteId = Number(a.loteId);
+    totalPorLote.set(loteId, (totalPorLote.get(loteId) ?? 0) + 1);
+  }
+  return totalPorLote;
+}
+
+export async function buildLocalMapaRebanhoV2(
+  userId: number,
+  input: { fazendaId: number; pastoId?: number; search?: string },
+): Promise<{ subdivisoes: MapaSubdivisaoRow[]; semSubdivisao: MapaLoteRow[] }> {
+  const fazendas = await listLocalFazendas(userId);
+  if (!fazendas.some(f => f.id === input.fazendaId)) {
+    return { subdivisoes: [], semSubdivisao: [] };
+  }
+
+  const pastosList = await listLocalPastosByFazenda(userId, input.fazendaId);
+  let lotesList = (await listLocalLotes(userId)).filter(l => l.fazendaId === input.fazendaId);
+  if (input.pastoId) {
+    lotesList = lotesList.filter(l => Number(l.pastoAtualId) === input.pastoId);
+  }
+
+  if (lotesList.length === 0 && pastosList.length === 0) {
+    return { subdivisoes: [], semSubdivisao: [] };
+  }
+
+  const totalPorLote = await buildLocalTotalPorLote(userId, lotesList.map(l => l.id));
+  const q = input.search?.trim().toLowerCase() ?? '';
+  return buildMapaSubdivisoesFromLocal(pastosList, lotesList, totalPorLote, q, input.pastoId);
+}
+
+export async function buildLocalMapaRebanhoGeral(
+  userId: number,
+  input?: { search?: string },
+): Promise<{
+  fazendaId: number;
+  fazendaNome: string;
+  subdivisoes: MapaSubdivisaoRow[];
+  semSubdivisao: MapaLoteRow[];
+  totalAnimais: number;
+}[]> {
+  const fazendasList = await listLocalFazendas(userId);
+  if (fazendasList.length === 0) return [];
+
+  const pastosList = await listLocalPastos(userId);
+  const lotesList = await listLocalLotes(userId);
+  const totalPorLote = await buildLocalTotalPorLote(userId, lotesList.map(l => l.id));
+  const q = input?.search?.trim().toLowerCase() ?? '';
+
+  const resultadoPorFazenda = fazendasList.map(fazenda => {
+    const lotesF = lotesList.filter(l => l.fazendaId === fazenda.id);
+    const pastosF = pastosList.filter(p => p.fazendaId === fazenda.id);
+    const { subdivisoes, semSubdivisao } = buildMapaSubdivisoesFromLocal(pastosF, lotesF, totalPorLote, q);
+    const totalAnimais = lotesF.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
+    return {
+      fazendaId: fazenda.id,
+      fazendaNome: fazenda.nome,
+      subdivisoes,
+      semSubdivisao,
+      totalAnimais,
+    };
+  });
+
+  return q
+    ? resultadoPorFazenda.filter(
+      f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q),
+    )
+    : resultadoPorFazenda;
 }

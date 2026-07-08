@@ -52,6 +52,7 @@ import {
   deleteLocalSaudeRegistro,
   listLocalReproducaoRegistros,
   createLocalReproducaoRegistro,
+  updateLocalReproducaoRegistro,
   deleteLocalReproducaoRegistro,
   enrichLocalLote,
   updateLocalFazenda,
@@ -63,6 +64,8 @@ import {
   createLocalHistoricoBrinco,
   deleteLocalHistoricoBrinco,
   mergeHistoricoBrincosLists,
+  buildLocalMapaRebanhoV2,
+  buildLocalMapaRebanhoGeral,
 } from "./localFallbackStore";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import { packReproObservacoes } from "../shared/reproRegistroMeta";
@@ -2231,6 +2234,7 @@ const lotesRouter = router({
       search: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
+      try {
       const [fazenda] = await db.select({ id: fazendas.id, nome: fazendas.nome })
         .from(fazendas)
         .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)))
@@ -2370,6 +2374,10 @@ const lotesRouter = router({
         }));
 
       return { subdivisoes: [...subdivisoes, ...pastosVazios].sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR')), semSubdivisao };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) return buildLocalMapaRebanhoV2(ctx.user.id, input);
+        throw error;
+      }
     }),
 
   mapaRebanhoHistorico: protectedProcedure
@@ -2380,6 +2388,7 @@ const lotesRouter = router({
       limit: z.number().default(50),
     }))
     .query(async ({ ctx, input }) => {
+      try {
       const lotesFazenda = await db.select({ id: lotes.id, nome: lotes.nome })
         .from(lotes)
         .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
@@ -2427,12 +2436,17 @@ const lotesRouter = router({
         qtdAnimais: r.qtdAnimais ?? null,
         observacoes: r.observacoes ?? null,
       }));
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) return [];
+        throw error;
+      }
     }),
 
   // ─── Mapa do Rebanho Geral (todas as fazendas) ───────────────────────────
   mapaRebanhoGeral: protectedProcedure
     .input(z.object({ search: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
+      try {
       // Busca todas as fazendas do usuário
       const fazendasList = await db.select().from(fazendas)
         .where(eq(fazendas.userId, ctx.user.id));
@@ -2548,6 +2562,10 @@ const lotesRouter = router({
       return q
         ? resultadoPorFazenda.filter(f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q))
         : resultadoPorFazenda;
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) return buildLocalMapaRebanhoGeral(ctx.user.id, input ?? undefined);
+        throw error;
+      }
     }),
 
   excluirMovimentacao: protectedProcedure
@@ -2698,18 +2716,48 @@ const reproducaoRouter = router({
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
+      tipo: z.string(),
+      dataCobertura: z.string(),
+      dataPrevistoParto: z.string().nullable().optional(),
       resultado: z.string().optional(),
-      dataPartoReal: z.string().optional(),
-      filhotes: z.number().optional(),
+      reprodutorSemen: z.string().optional(),
+      responsavel: z.string().optional(),
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataPartoReal, ...rest } = input;
-      await db.update(reproducaoRegistros).set({
-        ...rest,
-        dataPartoReal: dataPartoReal ? new Date(dataPartoReal) : undefined,
-      }).where(and(eq(reproducaoRegistros.id, id), eq(reproducaoRegistros.userId, ctx.user.id)));
-      return { success: true };
+      const {
+        id,
+        dataCobertura,
+        dataPrevistoParto,
+        reprodutorSemen,
+        responsavel,
+        observacoes,
+        tipo,
+        resultado,
+      } = input;
+      const payload = {
+        tipo,
+        resultado: resultado ?? null,
+        observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel) ?? null,
+        dataCobertura: new Date(dataCobertura),
+        dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : null,
+      };
+      try {
+        await db.update(reproducaoRegistros).set(payload).where(
+          and(eq(reproducaoRegistros.id, id), eq(reproducaoRegistros.userId, ctx.user.id)),
+        );
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        await updateLocalReproducaoRegistro(ctx.user.id, id, {
+          tipo,
+          dataCobertura,
+          dataPrevistoParto: dataPrevistoParto ?? null,
+          resultado,
+          observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
+        });
+        return { success: true, localFallback: true };
+      }
     }),
 
   delete: protectedProcedure

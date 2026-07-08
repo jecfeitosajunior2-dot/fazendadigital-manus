@@ -7,7 +7,7 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, Plus } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, Plus, MapPin } from 'lucide-react';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,17 +30,22 @@ import {
   statusBadgeClass,
   statusLabel,
 } from '@/lib/fichaAnimalDisplay';
-import { DeleteActionIcon, TableIconButton } from '@/components/icons/FarmActionIcons';
+import { DeleteActionIcon, EditActionIcon, TableIconButton } from '@/components/icons/FarmActionIcons';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
 import {
   calcPrevisaoParto283,
+  formatTipoReproTabelaDisplay,
   getReproRelacionadoLabel,
   getReproRelacionadoPlaceholder,
+  getReproRelacionadoTabelaHeader,
   getReproResultadoOptions,
   getReproTipoOptions,
+  isReproResultadoValidForTipo,
+  reproRegistroToFormValues,
   shouldCalcPrevisaoParto,
+  shouldShowPrevisaoColumn,
   shouldShowPrevisaoPartoForm,
   unpackReproObservacoes,
 } from '@shared/reproRegistroMeta';
@@ -72,6 +77,21 @@ const EMPTY_REPRO_FORM = {
 const TAB_TRIGGER_CLASS =
   'rounded-md border border-transparent px-2 py-2 text-[12px] font-medium text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#2D5A5A] data-[state=active]:shadow-sm data-[state=active]:border-[#4ECDC4]/35';
 
+type HistoricoSubdivisaoRow = {
+  id: number;
+  dataEntrada?: string | null;
+  pastoOrigemNome?: string | null;
+  pastoDestinoNome?: string | null;
+  motivo?: string | null;
+  responsavel?: string | null;
+  observacoes?: string | null;
+};
+
+function historicoSubdivisaoTexto(value: string | null | undefined): string {
+  const texto = value?.trim();
+  return texto || '—';
+}
+
 function getReproEmptyStateMessage(sexo: string | null | undefined): { titulo: string; orientacao: string } {
   if (sexo === 'femea') {
     return {
@@ -82,7 +102,8 @@ function getReproEmptyStateMessage(sexo: string | null | undefined): { titulo: s
   if (sexo === 'macho') {
     return {
       titulo: 'Nenhum registro reprodutivo para este macho.',
-      orientacao: 'Registre coberturas realizadas, exame andrológico, coleta de sêmen ou uso como reprodutor.',
+      orientacao:
+        'Registre coberturas realizadas, exame andrológico, coleta de sêmen ou uso como reprodutor.',
     };
   }
   return {
@@ -271,6 +292,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
   // ─── Add Pesagem Form ─────────────────────────────────────────────────────
   const [showPesagemForm, setShowPesagemForm] = useState(false);
   const [showReproForm, setShowReproForm] = useState(false);
+  const [editingReproId, setEditingReproId] = useState<number | null>(null);
   const [reproForm, setReproForm] = useState({ ...EMPTY_REPRO_FORM });
   const [previsaoPartoManual, setPrevisaoPartoManual] = useState(false);
   const [pesagemForm, setPesagemForm] = useState({
@@ -291,12 +313,48 @@ export const CattleDetailPageExpanded: React.FC = () => {
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
 
+  const resetReproFormState = () => {
+    setShowReproForm(false);
+    setEditingReproId(null);
+    setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
+    setPrevisaoPartoManual(false);
+  };
+
+  const openNewReproForm = () => {
+    setEditingReproId(null);
+    setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
+    setPrevisaoPartoManual(false);
+    setShowReproForm(true);
+  };
+
+  const handleEditRepro = (reg: {
+    id: number;
+    tipo: string;
+    dataCobertura: Date | string | null;
+    dataPrevistoParto?: Date | string | null;
+    resultado?: string | null;
+    observacoes?: string | null;
+  }) => {
+    const values = reproRegistroToFormValues(reg);
+    setEditingReproId(reg.id);
+    setReproForm(values);
+    setPrevisaoPartoManual(Boolean(values.previsaoParto));
+    setShowReproForm(true);
+  };
+
   const createReproMutation = trpc.reproducao.create.useMutation({
     onSuccess: () => {
       toast.success('Registro reprodutivo criado!');
-      setShowReproForm(false);
-      setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
-      setPrevisaoPartoManual(false);
+      resetReproFormState();
+      utils.reproducao.list.invalidate();
+    },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+
+  const updateReproMutation = trpc.reproducao.update.useMutation({
+    onSuccess: () => {
+      toast.success('Registro reprodutivo atualizado!');
+      resetReproFormState();
       utils.reproducao.list.invalidate();
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
@@ -386,12 +444,20 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const reproEmptyState = getReproEmptyStateMessage(animal.sexo);
   const reproTipoOptions = getReproTipoOptions(animal.sexo);
-  const reproResultadoOptions = getReproResultadoOptions(animal.sexo);
+  const reproResultadoOptions = getReproResultadoOptions(
+    animal.sexo,
+    reproForm.tipo,
+    reproForm.resultado,
+  );
   const reproRelacionadoLabel = getReproRelacionadoLabel(animal.sexo);
   const reproRelacionadoPlaceholder = getReproRelacionadoPlaceholder(animal.sexo);
+  const reproRelacionadoTabelaHeader = getReproRelacionadoTabelaHeader(animal.sexo);
   const showPrevisaoPartoForm = shouldShowPrevisaoPartoForm(animal.sexo);
   const isReproMacho = animal.sexo === 'macho';
+  const showPrevisaoColumn = shouldShowPrevisaoColumn(animal.sexo, sortedAnimalRepro);
   const reproFormValid = Boolean(reproForm.tipo && reproForm.data);
+  const isEditingRepro = editingReproId != null;
+  const reproFormPending = createReproMutation.isPending || updateReproMutation.isPending;
 
   const carenciaResumo = (() => {
     const ateLista = (animalListRow as { fimCarenciaAte?: string | null } | undefined)?.fimCarenciaAte;
@@ -430,7 +496,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
     (animal as { loteNome?: string | null }).loteNome ||
     (animal.loteId ? `#${animal.loteId}` : null);
 
-  const histPastos = historicoPastos as { pastoDestinoNome?: string | null; pastoOrigemNome?: string | null }[];
+  const histPastos = historicoPastos as HistoricoSubdivisaoRow[];
   const subdivisaoAtual =
     histPastos.length > 0
       ? (histPastos[0].pastoDestinoNome || histPastos[0].pastoOrigemNome || null)
@@ -886,10 +952,10 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <Heart className="w-5 h-5 mr-2 text-pink-600" />
                   Histórico Reprodutivo
                 </h2>
-                {!loadingRepro && (
+                {!loadingRepro && !showReproForm && (
                   <Button
                     size="sm"
-                    onClick={() => setShowReproForm(!showReproForm)}
+                    onClick={openNewReproForm}
                     className="text-white text-xs shrink-0"
                     style={{ backgroundColor: FD_ACTION }}
                   >
@@ -901,7 +967,9 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
               {showReproForm && (
                 <div className="mb-6 p-4 bg-gray-50 rounded border">
-                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro Reprodutivo</h3>
+                  <h3 className="font-semibold text-gray-700 mb-3">
+                    {isEditingRepro ? 'Editar Registro Reprodutivo' : 'Novo Registro Reprodutivo'}
+                  </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo de Registro</FormLabel>
@@ -909,8 +977,18 @@ export const CattleDetailPageExpanded: React.FC = () => {
                         <select
                           value={reproForm.tipo}
                           onChange={e => {
+                            const newTipo = e.target.value;
                             setPrevisaoPartoManual(false);
-                            setReproForm(p => ({ ...p, tipo: e.target.value }));
+                            setReproForm(p => {
+                              const resultado = isReproResultadoValidForTipo(
+                                animal.sexo,
+                                newTipo,
+                                p.resultado,
+                              )
+                                ? p.resultado
+                                : '';
+                              return { ...p, tipo: newTipo, resultado };
+                            });
                           }}
                           className={inputClassCompact}
                         >
@@ -1014,32 +1092,49 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           toast.error('Preencha Tipo de Registro e Data.');
                           return;
                         }
-                        createReproMutation.mutate({
-                          femeaId: animalId!,
-                          machoId: isReproMacho ? animalId! : undefined,
+                        const commonPayload = {
                           tipo: reproForm.tipo,
                           dataCobertura: reproForm.data,
-                          dataPrevistoParto: showPrevisaoPartoForm && reproForm.previsaoParto ? reproForm.previsaoParto : undefined,
                           resultado: reproForm.resultado || undefined,
                           reprodutorSemen: reproForm.reprodutorSemen || undefined,
                           responsavel: reproForm.responsavel || undefined,
                           observacoes: reproForm.observacoes || undefined,
-                        });
+                        };
+                        if (isEditingRepro) {
+                          updateReproMutation.mutate({
+                            id: editingReproId,
+                            ...commonPayload,
+                            dataPrevistoParto: showPrevisaoPartoForm && reproForm.previsaoParto
+                              ? reproForm.previsaoParto
+                              : null,
+                          });
+                        } else {
+                          createReproMutation.mutate({
+                            femeaId: animalId!,
+                            machoId: isReproMacho ? animalId! : undefined,
+                            ...commonPayload,
+                            dataPrevistoParto: showPrevisaoPartoForm && reproForm.previsaoParto
+                              ? reproForm.previsaoParto
+                              : undefined,
+                          });
+                        }
                       }}
-                      disabled={!reproFormValid || createReproMutation.isPending}
+                      disabled={!reproFormValid || reproFormPending}
                       className="text-white text-xs"
                       style={{ backgroundColor: FD_ACTION }}
                     >
-                      {createReproMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Salvar'}
+                      {reproFormPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : isEditingRepro ? (
+                        'Salvar Alterações'
+                      ) : (
+                        'Salvar'
+                      )}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        setShowReproForm(false);
-                        setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
-                        setPrevisaoPartoManual(false);
-                      }}
+                      onClick={resetReproFormState}
                       className="text-xs"
                     >
                       Cancelar
@@ -1068,15 +1163,28 @@ export const CattleDetailPageExpanded: React.FC = () => {
                     <span className="text-gray-400"> · mais recente primeiro</span>
                   </p>
                   <div className="overflow-x-auto rounded-lg border border-gray-100">
-                    <table className="w-full table-fixed border-collapse text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
                       <colgroup>
-                        <col style={{ width: '11%' }} />
-                        <col style={{ width: '14%' }} />
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '16%' }} />
-                        <col style={{ width: '11%' }} />
-                        <col style={{ width: '24%' }} />
-                        <col style={{ width: '12%' }} />
+                        {showPrevisaoColumn ? (
+                          <>
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '16%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '15%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '23%' }} />
+                            <col style={{ width: '12%' }} />
+                          </>
+                        ) : (
+                          <>
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '18%' }} />
+                            <col style={{ width: '13%' }} />
+                            <col style={{ width: '22%' }} />
+                            <col style={{ width: '23%' }} />
+                            <col style={{ width: '12%' }} />
+                          </>
+                        )}
                       </colgroup>
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
@@ -1090,11 +1198,13 @@ export const CattleDetailPageExpanded: React.FC = () => {
                             Resultado
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                            Relacionado
+                            {reproRelacionadoTabelaHeader}
                           </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Previsão
-                          </th>
+                          {showPrevisaoColumn && (
+                            <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                              Previsão
+                            </th>
+                          )}
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                             Observações
                           </th>
@@ -1106,17 +1216,18 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       <tbody>
                         {sortedAnimalRepro.map(reg => {
                           const meta = unpackReproObservacoes(reg.observacoes);
+                          const tipoDisplay = formatTipoReproTabelaDisplay(reg.tipo);
                           return (
                           <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
                             <td className="text-gray-800 tabular-nums whitespace-nowrap">
                               {formatDate(reg.dataCobertura)}
                             </td>
-                            <td>
+                            <td className="overflow-hidden">
                               <span
-                                className="inline-block px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-pink-50 text-pink-700 border border-pink-100 whitespace-nowrap"
-                                title={reg.tipo}
+                                className="inline-block max-w-full truncate px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-pink-50 text-pink-700 border border-pink-100"
+                                title={tipoDisplay.tituloCompleto}
                               >
-                                {reg.tipo}
+                                {tipoDisplay.label}
                               </span>
                             </td>
                             <td className="text-gray-600 whitespace-nowrap">
@@ -1130,9 +1241,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                                 {meta.reprodutorSemen || '—'}
                               </span>
                             </td>
-                            <td className="text-gray-600 tabular-nums whitespace-nowrap">
-                              {!isReproMacho && reg.dataPrevistoParto ? formatDate(reg.dataPrevistoParto) : '—'}
-                            </td>
+                            {showPrevisaoColumn && (
+                              <td className="text-gray-600 tabular-nums whitespace-nowrap">
+                                {reg.dataPrevistoParto ? formatDate(reg.dataPrevistoParto) : '—'}
+                              </td>
+                            )}
                             <td className="max-w-0">
                               <span
                                 className="block truncate max-w-full text-gray-600 text-[11px]"
@@ -1142,13 +1255,22 @@ export const CattleDetailPageExpanded: React.FC = () => {
                               </span>
                             </td>
                             <td>
-                              <TableIconButton
-                                label="Remover registro"
-                                onClick={() => void handleDeleteRepro(reg)}
-                                tone="danger"
-                              >
-                                <DeleteActionIcon size={17} />
-                              </TableIconButton>
+                              <div className="inline-flex items-center justify-center gap-1">
+                                <TableIconButton
+                                  label="Editar registro reprodutivo"
+                                  onClick={() => handleEditRepro(reg)}
+                                  tone="neutral"
+                                >
+                                  <EditActionIcon size={17} />
+                                </TableIconButton>
+                                <TableIconButton
+                                  label="Excluir registro reprodutivo"
+                                  onClick={() => void handleDeleteRepro(reg)}
+                                  tone="danger"
+                                >
+                                  <DeleteActionIcon size={17} />
+                                </TableIconButton>
+                              </div>
                             </td>
                           </tr>
                           );
@@ -1353,22 +1475,29 @@ export const CattleDetailPageExpanded: React.FC = () => {
           {/* ─── Observações Tab ───────────────────────────────────────────── */}
           <TabsContent value="observacoes">
             <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">Observações do Animal</h2>
-              {animal.observacoes ? (
-                <div className="p-4 bg-gray-50 rounded border text-sm text-gray-700 whitespace-pre-wrap">
-                  {animal.observacoes}
+              <div className="flex items-center justify-between mb-4 gap-3">
+                <h2 className="text-lg font-bold text-gray-800">Observações do Animal</h2>
+                <Button
+                  size="sm"
+                  onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
+                  className="text-white text-xs shrink-0"
+                  style={{ backgroundColor: FD_ACTION }}
+                >
+                  Editar Observações
+                </Button>
+              </div>
+              {animal.observacoes?.trim() ? (
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 text-[13px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {animal.observacoes.trim()}
                 </div>
               ) : (
-                <div className="text-center py-10 text-gray-500">
-                  <p className="text-[13px] text-gray-600">Nenhuma observação registrada.</p>
-                  <Button
-                    size="sm"
-                    onClick={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
-                    className="mt-4 text-white text-xs"
-                    style={{ backgroundColor: FD_ACTION }}
-                  >
-                    Editar Animal para Adicionar Observações
-                  </Button>
+                <div className="text-center py-10 px-4">
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    Nenhuma observação registrada para este animal.
+                  </p>
+                  <p className="text-[13px] text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
+                    Use este espaço para anotar informações gerais, comportamento, manejo ou detalhes importantes.
+                  </p>
                 </div>
               )}
             </Card>
@@ -1382,35 +1511,102 @@ export const CattleDetailPageExpanded: React.FC = () => {
                 Histórico de Subdivisões
               </h2>
               {loadingPastos ? (
-                <div className="flex justify-center py-8"><Loader2 className="animate-spin w-6 h-6 text-gray-400" /></div>
-              ) : historicoPastos.length === 0 ? (
-                <div className="text-center py-10 text-gray-500">
-                  <p className="text-[13px] text-gray-600">Nenhuma movimentação de subdivisão registrada.</p>
+                <div className="flex justify-center py-8">
+                  <Loader2 className="animate-spin w-6 h-6 text-[#7CB342]" />
+                </div>
+              ) : histPastos.length === 0 ? (
+                <div className="text-center py-10 px-4">
+                  <MapPin className="w-12 h-12 mx-auto mb-3 text-[#7CB342]/40" />
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    Nenhuma movimentação de subdivisão registrada para este animal.
+                  </p>
+                  <p className="text-[13px] text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
+                    Quando o animal for movimentado entre pastos, piquetes, currais ou áreas de manejo, o histórico aparecerá aqui.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {(historicoPastos as any[]).map((m: any, idx: number) => (
-                    <div key={m.id} className="border rounded-lg p-4 text-sm flex items-start gap-3">
-                      <div className="mt-0.5 w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: idx === 0 ? '#7CB342' : '#9E9E9E', marginTop: 6 }} />
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-800">
-                          {m.pastoOrigemNome ? (
-                            <span>{m.pastoOrigemNome} <span className="text-gray-400 font-normal">→</span> {m.pastoDestinoNome || '—'}</span>
-                          ) : (
-                            <span>Entrada em {m.pastoDestinoNome || '—'}</span>
-                          )}
-                          {idx === 0 && <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: '#7CB342' }}>Atual</span>}
-                        </div>
-                        <div className="text-gray-500 text-xs mt-1 flex flex-wrap gap-3">
-                          <span>Entrada: {m.dataEntrada ? new Date(m.dataEntrada).toLocaleDateString('pt-BR') : '—'}</span>
-                          {m.dataSaida && <span>Saída: {new Date(m.dataSaida).toLocaleDateString('pt-BR')}</span>}
-                          {m.diasNoPasto != null && <span>{m.diasNoPasto} dias</span>}
-                          {m.qtdAnimais > 0 && <span>{m.qtdAnimais} cabeças no lote</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <p className="mb-3 text-[11px] text-gray-500">
+                    {histPastos.length} movimenta{histPastos.length !== 1 ? 'ções' : 'ção'} registrada{histPastos.length !== 1 ? 's' : ''}
+                    <span className="text-gray-400"> · mais recente primeiro</span>
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                      <colgroup>
+                        <col style={{ width: '12%' }} />
+                        <col style={{ width: '16%' }} />
+                        <col style={{ width: '16%' }} />
+                        <col style={{ width: '16%' }} />
+                        <col style={{ width: '16%' }} />
+                        <col style={{ width: '24%' }} />
+                      </colgroup>
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Data
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Origem
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Destino
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Motivo
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            Responsável
+                          </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                            Observações
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {histPastos.map(m => {
+                          const origem = historicoSubdivisaoTexto(m.pastoOrigemNome);
+                          const destino = historicoSubdivisaoTexto(m.pastoDestinoNome);
+                          const motivo = historicoSubdivisaoTexto(m.motivo);
+                          const responsavel = historicoSubdivisaoTexto(m.responsavel);
+                          const observacoes = historicoSubdivisaoTexto(m.observacoes);
+                          return (
+                            <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                              <td className="text-gray-800 tabular-nums whitespace-nowrap font-medium">
+                                {m.dataEntrada ? formatDate(m.dataEntrada) : '—'}
+                              </td>
+                              <td className="max-w-0">
+                                <span className="block truncate max-w-full text-gray-700" title={origem !== '—' ? origem : undefined}>
+                                  {origem}
+                                </span>
+                              </td>
+                              <td className="max-w-0">
+                                <span className="block truncate max-w-full text-gray-700" title={destino !== '—' ? destino : undefined}>
+                                  {destino}
+                                </span>
+                              </td>
+                              <td className="text-gray-600 whitespace-nowrap">
+                                {motivo}
+                              </td>
+                              <td className="max-w-0">
+                                <span className="block truncate max-w-full text-gray-600" title={responsavel !== '—' ? responsavel : undefined}>
+                                  {responsavel}
+                                </span>
+                              </td>
+                              <td className="max-w-0">
+                                <span
+                                  className="block truncate max-w-full text-gray-600 text-[11px]"
+                                  title={observacoes !== '—' ? observacoes : undefined}
+                                >
+                                  {observacoes}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </Card>
           </TabsContent>
