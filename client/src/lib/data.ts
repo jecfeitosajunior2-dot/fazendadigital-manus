@@ -138,7 +138,7 @@ export const herdByAge = [
   { age: "0-8", male: 25, female: 25 },
   { age: "9-12", male: 14, female: 15 },
   { age: "13-24", male: 0, female: 0 },
-  { age: "25-36", male: 0, female: 0 },
+  { age: "25-35", male: 0, female: 0 },
   { age: "36+", male: 69, female: 95 },
 ];
 

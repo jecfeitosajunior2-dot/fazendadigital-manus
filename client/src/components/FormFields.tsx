@@ -317,7 +317,7 @@ export function FormDatePicker({
           type="button"
           tabIndex={-1}
           onClick={openPicker}
-          className="absolute left-2.5 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
+          className="absolute left-3 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
           aria-label="Abrir calendário"
         >
           <Calendar className="w-[18px] h-[18px]" strokeWidth={1.75} />
@@ -330,7 +330,7 @@ export function FormDatePicker({
           onFocus={() => { setFocused(true); setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : ""); }}
           onBlur={handleBlur}
           placeholder={placeholder}
-          className={cn(inputClass, "pl-10 bg-white min-h-[42px]")}
+          className={cn(inputClass, "pl-12 bg-white min-h-[42px]")}
         />
         <input
           ref={dateRef}

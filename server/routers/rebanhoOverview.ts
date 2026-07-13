@@ -289,8 +289,8 @@ export const rebanhoOverviewRouter = router({
         '0-8': '0–8 meses',
         '9-12': '9–12 meses',
         '13-24': '13–24 meses',
-        '25-36': '25–36 meses',
-        '36+': '> 36 meses',
+        '25-35': '25–35 meses',
+        '36+': '36+ meses',
       };
       const totalComIdade = total - semIdadeCount;
       const porFaixaEtaria = FAIXAS_IDADE_LOTE.map(f => {

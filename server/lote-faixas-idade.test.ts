@@ -13,7 +13,8 @@ describe('lote-faixas-idade', () => {
     expect(faixaIdadeLote(9)).toBe('9-12');
     expect(faixaIdadeLote(12)).toBe('9-12');
     expect(faixaIdadeLote(13)).toBe('13-24');
-    expect(faixaIdadeLote(36)).toBe('25-36');
+    expect(faixaIdadeLote(36)).toBe('36+');
+    expect(faixaIdadeLote(35)).toBe('25-35');
     expect(faixaIdadeLote(37)).toBe('36+');
   });
 

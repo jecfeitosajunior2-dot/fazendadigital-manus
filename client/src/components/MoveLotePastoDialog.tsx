@@ -72,7 +72,7 @@ export function MoveLotePastoDialog({
 
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
     onSuccess: () => {
-      toast.success("Lote movido com sucesso!");
+      toast.success("Subdivisão do lote atualizada.");
       utils.lotes.list.invalidate();
       utils.pastos.list.invalidate();
       utils.pastos.listWithDetails.invalidate();
@@ -97,7 +97,7 @@ export function MoveLotePastoDialog({
 
   const handleRemove = () => {
     if (!lote) return;
-    if (!confirm("Remover lote do pasto atual?")) return;
+    if (!confirm("Remover a subdivisão de referência deste lote?")) return;
     moveMutation.mutate({ loteId: lote.id, pastoId: null });
   };
 
@@ -105,13 +105,18 @@ export function MoveLotePastoDialog({
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-[14px]">Mover Lote — {lote?.nome}</DialogTitle>
+          <DialogTitle className="text-[14px]">
+            {lote?.pastoAtualId ? "Alterar subdivisão" : "Definir subdivisão"} — {lote?.nome}
+          </DialogTitle>
         </DialogHeader>
         {lote?.pastoNome && (
           <p className="text-[11px] text-gray-500 -mt-2">
-            Atualmente em: <span className="font-medium text-gray-700">{lote.pastoNome}</span>
+            Subdivisão atual do lote: <span className="font-medium text-gray-700">{lote.pastoNome}</span>
           </p>
         )}
+        <p className="text-[11px] text-amber-800/90 bg-amber-50 border border-amber-100 rounded px-2.5 py-2">
+          Esta ação altera apenas a subdivisão de referência do lote. As subdivisões individuais dos animais não serão modificadas.
+        </p>
         <div className="space-y-3">
           <div>
             <Label className="text-[10px]">Fazenda</Label>
@@ -145,7 +150,7 @@ export function MoveLotePastoDialog({
           <div className="flex gap-2 pt-1">
             {lote?.pastoAtualId && (
               <Button type="button" variant="outline" onClick={handleRemove} className="h-8 text-[11px] text-red-600">
-                Remover do pasto
+                Remover subdivisão
               </Button>
             )}
             <Button
@@ -163,7 +168,7 @@ export function MoveLotePastoDialog({
               className="h-8 text-[11px] flex-1"
               style={{ backgroundColor: "#2D5A5A", color: "#fff", opacity: moveMutation.isPending || !pastoId ? 0.5 : 1 }}
             >
-              {moveMutation.isPending ? "Movendo..." : "Mover"}
+              {moveMutation.isPending ? "Salvando..." : "Confirmar"}
             </Button>
           </div>
         </div>

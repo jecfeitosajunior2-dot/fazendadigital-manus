@@ -66,6 +66,8 @@ export type AnimaisListFiltersState = {
   apenasInativos: boolean;
   idadeMesesMin: string;
   idadeMesesMax: string;
+  /** Animais sem data de nascimento (idade desconhecida). */
+  semDataNascimento: boolean;
   rgn: string;
   rgd: string;
   animalComSisbov: boolean;
@@ -136,6 +138,7 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   apenasInativos: false,
   idadeMesesMin: '',
   idadeMesesMax: '',
+  semDataNascimento: false,
   rgn: '',
   rgd: '',
   animalComSisbov: false,
@@ -180,8 +183,9 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     pastoId: filters.pastoId ? Number(filters.pastoId) : undefined,
     brincoEletronico: filters.rfid || undefined,
     status: filters.statusFiltro || (filters.apenasInativos ? 'inativo' : undefined),
-    idadeMesesMin: idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
-    idadeMesesMax: idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
+    idadeMesesMin: !filters.semDataNascimento && idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
+    idadeMesesMax: !filters.semDataNascimento && idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
+    semDataNascimento: filters.semDataNascimento || undefined,
     rgn: filters.rgn || undefined,
     rgd: filters.rgd || undefined,
     pelagem: filters.pelagem || undefined,
@@ -198,7 +202,7 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
   };
 }
 
-/** Aplica filtros vindos da URL (ex.: Visão Geral do Rebanho). Retorna null se não houver params relevantes. */
+/** Aplica filtros vindos da URL (ex.: Visão Geral do Rebanho / Gerenciamento de Lotes). Retorna null se não houver params relevantes. */
 export function animaisFiltersFromSearchParams(search: string): AnimaisListFiltersState | null {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const dataEntradaDe = params.get('dataEntradaDe');
@@ -206,6 +210,11 @@ export function animaisFiltersFromSearchParams(search: string): AnimaisListFilte
   const dataNascimentoDe = params.get('dataNascimentoDe');
   const dataNascimentoAte = params.get('dataNascimentoAte');
   const fazendaId = params.get('fazendaId');
+  const loteId = params.get('loteId');
+  const sexo = params.get('sexo');
+  const idadeMesesMin = params.get('idadeMesesMin');
+  const idadeMesesMax = params.get('idadeMesesMax');
+  const semDataNascimento = params.get('semDataNascimento') === 'true';
   const apenasEmCarencia = params.get('apenasEmCarencia') === 'true';
   const apenasSemLote = params.get('apenasSemLote') === 'true';
   const apenasSemPesagem = params.get('apenasSemPesagem') === 'true';
@@ -217,6 +226,11 @@ export function animaisFiltersFromSearchParams(search: string): AnimaisListFilte
     dataNascimentoDe ||
     dataNascimentoAte ||
     fazendaId ||
+    loteId ||
+    sexo ||
+    idadeMesesMin ||
+    idadeMesesMax ||
+    semDataNascimento ||
     apenasEmCarencia ||
     apenasSemLote ||
     apenasSemPesagem ||
@@ -227,6 +241,7 @@ export function animaisFiltersFromSearchParams(search: string): AnimaisListFilte
   const filtrosAdicionais: FiltroAdicionalKey[] = [];
   if (dataEntradaDe || dataEntradaAte) filtrosAdicionais.push('dataEntrada');
   if (dataNascimentoDe || dataNascimentoAte) filtrosAdicionais.push('dataNascimento');
+  if (idadeMesesMin || idadeMesesMax || semDataNascimento) filtrosAdicionais.push('idadeMeses');
 
   return {
     ...INITIAL_ANIMAIS_LIST_FILTERS,
@@ -235,11 +250,16 @@ export function animaisFiltersFromSearchParams(search: string): AnimaisListFilte
     ...(dataNascimentoDe ? { dataNascimentoInicial: dataNascimentoDe } : {}),
     ...(dataNascimentoAte ? { dataNascimentoFinal: dataNascimentoAte } : {}),
     ...(fazendaId && fazendaId !== '0' ? { fazendaId } : {}),
+    ...(loteId ? { loteId } : {}),
+    ...(sexo === 'macho' || sexo === 'femea' ? { sexo } : {}),
+    ...(idadeMesesMin ? { idadeMesesMin } : {}),
+    ...(idadeMesesMax ? { idadeMesesMax } : {}),
+    ...(semDataNascimento ? { semDataNascimento: true } : {}),
     ...(apenasEmCarencia ? { apenasEmCarencia: true } : {}),
     ...(apenasSemLote ? { apenasSemLote: true } : {}),
     ...(apenasSemPesagem ? { apenasSemPesagem: true } : {}),
     ...(pesquisa ? { pesquisa } : {}),
-    maisFiltrosAbertos: filtrosAdicionais.length > 0 || Boolean(dataNascimentoDe || dataNascimentoAte),
+    maisFiltrosAbertos: filtrosAdicionais.length > 0 || Boolean(dataNascimentoDe || dataNascimentoAte || idadeMesesMin || idadeMesesMax || semDataNascimento),
     filtrosAdicionaisSelecionados: filtrosAdicionais,
   };
 }
@@ -273,6 +293,7 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     filters.apenasInativos ||
     !!filters.idadeMesesMin.trim() ||
     !!filters.idadeMesesMax.trim() ||
+    filters.semDataNascimento ||
     !!filters.rgn ||
     !!filters.rgd ||
     filters.animalComSisbov ||

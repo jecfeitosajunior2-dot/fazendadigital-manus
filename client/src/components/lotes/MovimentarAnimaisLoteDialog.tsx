@@ -93,7 +93,12 @@ export default function MovimentarAnimaisLoteDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={v => {
+        if (!v && !movimentarMutation.isPending) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-lg p-0 gap-0" onOpenAutoFocus={e => e.preventDefault()}>
         <DialogHeader className="px-6 py-4 border-b border-gray-100">
           <DialogTitle className="text-[15px] font-semibold text-gray-900">Movimentação</DialogTitle>

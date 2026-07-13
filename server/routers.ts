@@ -45,6 +45,7 @@ import {
   listLocalLotesGerenciamento,
   listLocalPesagens,
   createLocalLote,
+  getLocalLote,
   createLocalPesagem,
   deleteLocalPesagem,
   listLocalSaudeRegistros,
@@ -165,6 +166,7 @@ const animaisListInput = z.object({
   rgd: z.string().optional(),
   idadeMesesMin: z.number().optional(),
   idadeMesesMax: z.number().optional(),
+  semDataNascimento: z.boolean().optional(),
   dataEntradaDe: z.string().optional(),
   dataEntradaAte: z.string().optional(),
   apenasEmCarencia: z.boolean().optional(),
@@ -616,6 +618,9 @@ const animaisRouter = router({
           if (input!.idadeMesesMax !== undefined && animal.idadeMeses > input!.idadeMesesMax) return false;
           return true;
         });
+      }
+      if (input?.semDataNascimento) {
+        filtered = filtered.filter(animal => !animal.dataNascimento);
       }
 
       return filtered;
@@ -1842,13 +1847,20 @@ const lotesRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [lote] = await db.select().from(lotes)
-        .where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-      if (!lote) {
+      try {
+        const [lote] = await db.select().from(lotes)
+          .where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (lote) return lote;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+
+      const local = await getLocalLote(ctx.user.id, input.id);
+      if (!local) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
       }
-      return lote;
+      return enrichLocalLote(local, ctx.user.id);
     }),
 
   create: protectedProcedure
@@ -1905,20 +1917,39 @@ const lotesRouter = router({
         ...rest,
         sigla: rest.sigla !== undefined ? (rest.sigla.trim() === '' ? null : rest.sigla.trim()) : undefined,
       };
-      await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
 
-      // Sincroniza pastoId de todos os animais do lote quando pastoAtualId é alterado
-      if (rest.pastoAtualId !== undefined) {
-        await db.update(animais)
-          .set({ pastoId: rest.pastoAtualId })
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            eq(animais.loteId, id),
-            eq(animais.status, 'ativo'),
-          ));
+      try {
+        const [existing] = await db.select({ id: lotes.id }).from(lotes)
+          .where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+        }
+
+        await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
+
+        // Sincroniza pastoId de todos os animais do lote quando pastoAtualId é alterado
+        if (rest.pastoAtualId !== undefined) {
+          await db.update(animais)
+            .set({ pastoId: rest.pastoAtualId })
+            .where(and(
+              eq(animais.userId, ctx.user.id),
+              eq(animais.loteId, id),
+              eq(animais.status, 'ativo'),
+            ));
+        }
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: "Banco indisponível. Não é possível salvar alterações no servidor agora.",
+          });
+        }
+        throw error;
       }
-
-      return { success: true };
     }),
 
   incluirAnimais: protectedProcedure

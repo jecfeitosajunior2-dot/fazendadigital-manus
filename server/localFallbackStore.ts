@@ -302,6 +302,14 @@ export type LocalLote = Record<string, any> & {
   id: number;
   userId: number;
   nome: string;
+  sigla?: string | null;
+  dataCriacao?: string | null;
+  descricao?: string | null;
+  localizacao?: string | null;
+  capacidade?: number | null;
+  fazendaId?: number | null;
+  pastoAtualId?: number | null;
+  dataEntradaPasto?: string | null;
   ativo: boolean;
   createdAt: string;
   updatedAt: string;
@@ -320,6 +328,11 @@ export async function listLocalLotes(userId: number): Promise<LocalLote[]> {
   const matched = rows.filter(row => row.userId === userId);
   const visible = matched.length > 0 ? matched : rows;
   return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function getLocalLote(userId: number, id: number): Promise<LocalLote | null> {
+  const rows = await listLocalLotes(userId);
+  return rows.find(row => row.id === id) ?? null;
 }
 
 async function buildLocalLoteNomeMap(userId: number): Promise<Map<number, string>> {
@@ -882,6 +895,9 @@ export async function listLocalAnimaisEnriched(
       if (input!.idadeMesesMax !== undefined && a.idadeMeses > Number(input!.idadeMesesMax)) return false;
       return true;
     });
+  }
+  if (input?.semDataNascimento) {
+    filtered = filtered.filter(a => !a.dataNascimento);
   }
 
   return filtered;

@@ -1,6 +1,9 @@
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatDateBR } from "@/lib/date-utils";
+import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG } from "@/components/FormFields";
+import TablePaginationFooter, { type TablePageSize } from "@/components/TablePaginationFooter";
+import { cn } from "@/lib/utils";
 
 export type LoteAnimalRow = {
   id: number;
@@ -31,12 +34,23 @@ type Props = {
   onPerPageChange?: (perPage: number) => void;
 };
 
+/** Checkbox compacto (size-4) com a cor primária do Fazenda Digital (FD_PRIMARY). */
+const LOTE_TABLE_CHECKBOX_CLASS = cn(
+  "size-4 min-h-4 min-w-4 max-h-4 max-w-4 shrink-0",
+  "data-[state=checked]:bg-[var(--fd-checkbox)] data-[state=checked]:border-[var(--fd-checkbox)] data-[state=checked]:text-white",
+);
+
+const LOTE_TABLE_CHECKBOX_HEADER_CLASS = cn(
+  LOTE_TABLE_CHECKBOX_CLASS,
+  "data-[state=indeterminate]:bg-[var(--fd-checkbox)] data-[state=indeterminate]:border-[var(--fd-checkbox)] data-[state=indeterminate]:text-white",
+);
+
 function displayBrinco(animal: LoteAnimalRow) {
   return animal.brinco?.trim() || animal.nome?.trim() || String(animal.id);
 }
 
 function displaySexo(sexo: LoteAnimalRow["sexo"]) {
-  return sexo === "macho" ? "macho" : "fêmea";
+  return sexo === "macho" ? "Macho" : "Fêmea";
 }
 
 function SortIcon({ col, sortKey, sortAsc }: { col: LoteAnimaisSortKey; sortKey: LoteAnimaisSortKey; sortAsc: boolean }) {
@@ -44,6 +58,31 @@ function SortIcon({ col, sortKey, sortAsc }: { col: LoteAnimaisSortKey; sortKey:
     <span className="material-icons text-[14px] text-gray-400 ml-0.5 align-middle leading-none">
       {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
     </span>
+  );
+}
+
+/**
+ * Célula com área de clique ~44px; o Checkbox visual permanece size-4 (igual Gerenciamento).
+ * Clique na área vazia também alterna a seleção.
+ */
+function CheckboxHitCell({
+  children,
+  onActivate,
+}: {
+  children: ReactNode;
+  onActivate?: () => void;
+}) {
+  return (
+    <div
+      className="mx-auto flex h-11 w-11 items-center justify-center cursor-pointer"
+      onClick={e => {
+        if (!onActivate) return;
+        if (e.target !== e.currentTarget) return;
+        onActivate();
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -107,126 +146,115 @@ export default function LoteAnimaisTable({
   const pageSafe = Math.min(page, totalPages);
   const paginated = sorted.slice((pageSafe - 1) * perPage, pageSafe * perPage);
   const paginatedIds = paginated.map(a => a.id);
-  const allPageSelected = paginated.length > 0 && paginated.every(a => selected.has(a.id));
+  const selectedOnPage = paginatedIds.filter(id => selected.has(id)).length;
+  // 0/N → vazio | k/N (0<k<N) → traço | N/N (inclui 1/1) → check
+  const allPageSelected = paginated.length > 0 && selectedOnPage === paginated.length;
+  const somePageSelected = selectedOnPage > 0 && !allPageSelected;
+  const headerChecked: boolean | "indeterminate" = allPageSelected
+    ? true
+    : somePageSelected
+      ? "indeterminate"
+      : false;
+
+  const handleHeaderToggle = () => {
+    if (paginatedIds.length === 0) return;
+    onToggleSelectAll(paginatedIds);
+  };
 
   const thClass =
-    "px-3 py-2.5 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center whitespace-nowrap cursor-pointer select-none border-r border-gray-200 last:border-r-0";
-
-  const inicio = total === 0 ? 0 : (pageSafe - 1) * perPage + 1;
-  const fim = Math.min(pageSafe * perPage, total);
+    "px-3 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center whitespace-nowrap border-r border-gray-200 last:border-r-0";
+  const thSortClass = cn(thClass, "cursor-pointer select-none");
 
   return (
-    <div className="border border-gray-200 rounded overflow-hidden">
+    <div
+      className="overflow-hidden"
+      style={{ ["--fd-checkbox" as string]: FD_PRIMARY }}
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-[12px] min-w-[640px]">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="w-10 px-2 py-2 border-r border-gray-200 align-middle">
-                <div className="flex items-center justify-center">
+                <CheckboxHitCell onActivate={handleHeaderToggle}>
                   <Checkbox
-                    checked={allPageSelected}
-                    onCheckedChange={() => onToggleSelectAll(paginatedIds)}
-                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
+                    checked={headerChecked}
+                    disabled={paginated.length === 0 || isLoading}
+                    onCheckedChange={handleHeaderToggle}
+                    aria-label={allPageSelected ? "Desmarcar todos da página" : "Selecionar todos da página"}
+                    className={LOTE_TABLE_CHECKBOX_HEADER_CLASS}
                   />
-                </div>
+                </CheckboxHitCell>
               </th>
-              <th className={thClass} onClick={() => onSort("brinco")}>
+              <th className={thSortClass} onClick={() => onSort("brinco")}>
                 Brinco <SortIcon col="brinco" sortKey={sortKey} sortAsc={sortAsc} />
               </th>
-              <th className={thClass} onClick={() => onSort("categoria")}>
-                Categoria <SortIcon col="categoria" sortKey={sortKey} sortAsc={sortAsc} />
-              </th>
-              <th className={thClass} onClick={() => onSort("sexo")}>
-                Sexo <SortIcon col="sexo" sortKey={sortKey} sortAsc={sortAsc} />
-              </th>
-              <th className={thClass} onClick={() => onSort("raca")}>
-                Raça <SortIcon col="raca" sortKey={sortKey} sortAsc={sortAsc} />
-              </th>
-              <th className={`${thClass} border-r-0`} onClick={() => onSort("pasto")}>
-                Subdivisão <SortIcon col="pasto" sortKey={sortKey} sortAsc={sortAsc} />
-              </th>
+              <th className={thClass}>Categoria</th>
+              <th className={thClass}>Sexo</th>
+              <th className={thClass}>Raça</th>
+              <th className={`${thClass} border-r-0`}>Subdivisão do animal</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-gray-400">Carregando...</td>
+                <td colSpan={6} className="text-center py-8 text-gray-400">Carregando...</td>
               </tr>
             ) : paginated.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-gray-400">
+                <td colSpan={6} className="text-center py-8 text-gray-400">
                   {search.trim() ? "Nenhum animal encontrado para a busca." : "Nenhum animal neste lote."}
                 </td>
               </tr>
             ) : (
-              paginated.map((animal, idx) => (
-                <tr
-                  key={animal.id}
-                  className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"} hover:bg-gray-50`}
-                >
-                  <td className="px-2 py-2 border-r border-gray-100 align-middle">
-                    <div className="flex items-center justify-center">
-                      <Checkbox
-                        checked={selected.has(animal.id)}
-                        onCheckedChange={() => onToggleSelect(animal.id)}
-                        className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
-                      />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-gray-800 font-medium border-r border-gray-100 text-center">{displayBrinco(animal)}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{animal.categoria || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{displaySexo(animal.sexo)}</td>
-                  <td className="px-3 py-2 text-gray-600 border-r border-gray-100 text-center">{animal.raca || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 text-center">{animal.pastoNome || "—"}</td>
-                </tr>
-              ))
+              paginated.map(animal => {
+                const isSelected = selected.has(animal.id);
+                return (
+                  <tr
+                    key={animal.id}
+                    aria-selected={isSelected ? "true" : "false"}
+                    className={cn(
+                      "border-b border-gray-100 hover:bg-gray-50/80",
+                      !isSelected && "bg-white",
+                    )}
+                    style={isSelected ? { backgroundColor: FD_PRIMARY_SUBTLE_BG } : undefined}
+                  >
+                    <td className="px-2 py-2 text-center border-r border-gray-100 align-middle">
+                      <CheckboxHitCell onActivate={() => onToggleSelect(animal.id)}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => onToggleSelect(animal.id)}
+                          aria-label={`Selecionar animal ${displayBrinco(animal)}`}
+                          className={LOTE_TABLE_CHECKBOX_CLASS}
+                        />
+                      </CheckboxHitCell>
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-800 font-medium border-r border-gray-100 text-center">{displayBrinco(animal)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{animal.categoria || "—"}</td>
+                    <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{displaySexo(animal.sexo)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{animal.raca || "—"}</td>
+                    <td className="px-3 py-1.5 text-gray-600 text-center">{animal.pastoNome || "—"}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-200 bg-white text-[11px] text-gray-500">
-        {onPerPageChange ? (
-          <select
-            value={perPage}
-            onChange={e => { onPerPageChange(Number(e.target.value)); onPageChange(1); }}
-            className="h-8 px-2 border border-gray-200 rounded-sm bg-white text-[11px] focus:outline-none focus:border-[#2D5A5A]"
-          >
-            <option value={10}>10 itens por página</option>
-            <option value={25}>25 itens por página</option>
-            <option value={50}>50 itens por página</option>
-            <option value={100}>100 itens por página</option>
-          </select>
-        ) : (
-          <span>{perPage} itens por página</span>
-        )}
-        <div className="flex items-center gap-3">
-          <span>Mostrando {total === 0 ? 0 : inicio}–{fim} de {total} {total === 1 ? "item" : "itens"}</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled={pageSafe <= 1}
-              onClick={() => onPageChange(pageSafe - 1)}
-              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
-            >
-              <span className="material-icons text-[16px] text-gray-500">chevron_left</span>
-            </button>
-            <span
-              className="w-7 h-7 flex items-center justify-center rounded text-[11px] font-semibold text-white"
-              style={{ backgroundColor: "#2D5A5A" }}
-            >
-              {pageSafe}
-            </span>
-            <button
-              type="button"
-              disabled={pageSafe >= totalPages}
-              onClick={() => onPageChange(pageSafe + 1)}
-              className="w-7 h-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 transition-colors"
-            >
-              <span className="material-icons text-[16px] text-gray-500">chevron_right</span>
-            </button>
-          </div>
-        </div>
+      <div className="border-t border-gray-100">
+        <TablePaginationFooter
+          pageSize={perPage}
+          page={pageSafe}
+          totalItems={total}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPerPageChange
+            ? size => {
+                onPerPageChange(size as TablePageSize);
+                onPageChange(1);
+              }
+            : undefined}
+          itemLabel={total === 1 ? "animal" : "animais"}
+        />
       </div>
     </div>
   );

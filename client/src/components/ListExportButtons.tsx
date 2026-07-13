@@ -16,6 +16,8 @@ type Props = {
   landscape?: boolean;
   disabled?: boolean;
   variant?: "primary" | "secondary";
+  /** Texto do botão (padrão: "Exportar") */
+  buttonLabel?: string;
   spreadsheetCurrencyCols?: number[];
   spreadsheetCurrencyFormat?: string;
   spreadsheetIntegerCols?: number[];
@@ -65,6 +67,7 @@ export default function ListExportButtons({
   landscape,
   disabled = false,
   variant = "primary",
+  buttonLabel = "Exportar",
   spreadsheetCurrencyCols,
   spreadsheetCurrencyFormat,
   spreadsheetIntegerCols,
@@ -123,10 +126,10 @@ export default function ListExportButtons({
           disabled && "opacity-50 cursor-not-allowed active:scale-100 hover:bg-white",
         )}
         style={isSecondary ? undefined : { backgroundColor: "#2563eb" }}
-        title={disabled ? "Selecione uma fazenda para exportar" : "Exportar"}
+        title={disabled ? "Selecione uma fazenda para exportar" : buttonLabel}
       >
         <span className={cn("material-icons text-[16px]", isSecondary && "text-gray-500")}>download</span>
-        Exportar
+        {buttonLabel}
         <span className={cn("material-icons text-[16px] ml-0.5", isSecondary && "text-gray-500")}>
           {open ? "expand_less" : "expand_more"}
         </span>

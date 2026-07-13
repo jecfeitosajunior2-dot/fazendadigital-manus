@@ -182,9 +182,11 @@
    Target: iOS/Android (≤ 767px)
    ============================================================ */
 
-/* 1. Tap-target mínimo de 44px (Apple HIG / WCAG 2.5.5) */
+/* 1. Tap-target mínimo de 44px (Apple HIG / WCAG 2.5.5)
+   Exclui checkboxes (Radix/shadcn renderizam como <button>): o visual
+   deve permanecer compacto (~16–20px); a área extra fica no wrapper/célula. */
 @media (max-width: 767px) {
-  button,
+  button:not([data-slot="checkbox"]),
   [role="button"],
   a[href],
   select,
