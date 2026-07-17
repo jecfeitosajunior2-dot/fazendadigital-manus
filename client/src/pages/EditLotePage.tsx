@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, AlertCircle, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -16,9 +16,15 @@ import {
   inputClassCompact,
 } from "@/components/FormFields";
 import { cn } from "@/lib/utils";
-import LoteAnimaisTable, { type LoteAnimalRow, type LoteAnimaisSortKey } from "@/components/lotes/LoteAnimaisTable";
+import LoteAnimaisTable, {
+  displayLoteAnimalBrinco,
+  orderLoteAnimaisForTable,
+  type LoteAnimalRow,
+  type LoteAnimaisSortKey,
+} from "@/components/lotes/LoteAnimaisTable";
 import IncluirAnimaisLoteDialog from "@/components/lotes/IncluirAnimaisLoteDialog";
 import MovimentarAnimaisLoteDialog from "@/components/lotes/MovimentarAnimaisLoteDialog";
+import { LoteExclusaoBloqueadaMessage } from "@/components/lotes/LoteExclusaoBloqueadaMessage";
 import { MoveLotePastoDialog } from "@/components/MoveLotePastoDialog";
 import ListExportButtons from "@/components/ListExportButtons";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -30,6 +36,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  mensagemExclusaoLoteSucesso,
+  parseExclusaoLoteBloqueada,
+  textoConfirmacaoExclusaoLote,
+} from "@shared/loteExclusaoBloqueada";
+import {
+  avaliacaoParaDeleteBlocked,
+  avaliacaoParaDeleteConfirm,
+  type DeleteBlockedState,
+  type DeleteConfirmState,
+} from "@/lib/loteExclusaoFlow";
 
 /** Limites alinhados ao schema (drizzle/schema.ts — lotes.nome / lotes.sigla). */
 const NOME_MAX = 100;
@@ -90,6 +107,8 @@ function formsEqual(a: FormState, b: FormState) {
 export default function EditLotePage() {
   const [, setLocation] = useLocation();
   const loteId = Number(new URLSearchParams(window.location.search).get("id"));
+  const utils = trpc.useUtils();
+  const animaisSectionRef = useRef<HTMLElement>(null);
 
   const [form, setForm] = useState<FormState>({ nome: "", sigla: "", dataCriacao: hojeISOLocal() });
   const [savedForm, setSavedForm] = useState<FormState | null>(null);
@@ -98,13 +117,13 @@ export default function EditLotePage() {
   const [incluirOpen, setIncluirOpen] = useState(false);
   const [movimentarOpen, setMovimentarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteBlocked, setDeleteBlocked] = useState<{ qtdAnimais: number } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
+  const [deleteBlocked, setDeleteBlocked] = useState<DeleteBlockedState | null>(null);
 
   const tableStorageKey = loteId > 0 ? `fd:editar-lote-tabela:${loteId}` : "fd:editar-lote-tabela";
   const [tableState, setTableState] = usePersistedState(tableStorageKey, INITIAL_TABLE);
   const [perPage, setPerPage] = useState(50);
 
-  const utils = trpc.useUtils();
   const { data: lote, isLoading: loteLoading, error: loteError } = trpc.lotes.getById.useQuery(
     { id: loteId },
     { enabled: loteId > 0 },
@@ -136,8 +155,9 @@ export default function EditLotePage() {
 
   const excluirMutation = trpc.lotes.excluir.useMutation({
     onSuccess: data => {
-      toast.success(`Lote "${data.nomeLote}" excluído com sucesso.`);
+      toast.success(mensagemExclusaoLoteSucesso(data.nomeLote));
       setDeleteOpen(false);
+      setDeleteConfirm(null);
       utils.lotes.list.invalidate();
       utils.lotes.gerenciamento.invalidate();
       setLocation("/rebanho/lotes");
@@ -145,8 +165,14 @@ export default function EditLotePage() {
     onError: e => {
       if (e.data?.code === "PRECONDITION_FAILED") {
         setDeleteOpen(false);
-        const match = e.message.match(/(\d+) animal/);
-        setDeleteBlocked({ qtdAnimais: match ? Number(match[1]) : animais.length });
+        setDeleteConfirm(null);
+        const parsed = parseExclusaoLoteBloqueada(e.message);
+        setDeleteBlocked({
+          loteId,
+          nomeLote: parsed?.nomeLote ?? lote?.nome ?? "—",
+          qtdAnimais: parsed?.qtdAnimais ?? animais.length,
+          fazendaId: lote?.fazendaId ?? null,
+        });
         return;
       }
       toast.error(e.message);
@@ -175,11 +201,16 @@ export default function EditLotePage() {
     setSelected(new Set());
   }, [loteId]);
 
+  useEffect(() => {
+    if (window.location.hash !== "#animais-do-lote") return;
+    if (loteLoading || !lote) return;
+    animaisSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loteId, animais.length, loteLoading, lote]);
+
   const { data: pastosData = [] } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId: lote?.fazendaId ?? 0 },
     { enabled: !!lote?.fazendaId },
   );
-  const pastoMap = useMemo(() => new Map(pastosData.map(p => [p.id, p.nome])), [pastosData]);
 
   const { data: fazendasData = [] } = trpc.fazendas.list.useQuery();
   const fazendaNome = useMemo(() => {
@@ -196,7 +227,6 @@ export default function EditLotePage() {
       raca: string | null;
       dataNascimento: string | null;
       categoria?: string | null;
-      pastoId?: number | null;
     }>).map(a => ({
       id: a.id,
       nome: a.nome,
@@ -205,9 +235,8 @@ export default function EditLotePage() {
       raca: a.raca,
       dataNascimento: a.dataNascimento,
       categoria: a.categoria ?? null,
-      pastoNome: a.pastoId ? (pastoMap.get(a.pastoId) ?? null) : null,
     }));
-  }, [animais, pastoMap]);
+  }, [animais]);
 
   // Mantém seleção apenas para animais ainda presentes na tabela.
   useEffect(() => {
@@ -222,27 +251,68 @@ export default function EditLotePage() {
   }, [animalRows]);
 
   const selectedIds = useMemo(() => [...selected], [selected]);
+  /** Mesma sequência da tabela na tela Editar Lote (ordenação por brinco). */
+  const selectedAnimaisBrincos = useMemo(() => {
+    return orderLoteAnimaisForTable(animalRows, { sortAsc: tableState.sortAsc })
+      .filter(a => selected.has(a.id))
+      .map(a => displayLoteAnimalBrinco(a));
+  }, [animalRows, selected, tableState.sortAsc]);
   const qtdAnimais = animais.length;
   const hasAnimais = qtdAnimais > 0;
+  const pastoNomeAtual = lote?.pastoAtualId
+    ? (pastosData.find(p => p.id === lote.pastoAtualId)?.nome ?? "Subdivisão")
+    : null;
 
   const isDirty = savedForm != null && !formsEqual(form, savedForm);
   const nomeValido = form.nome.trim().length > 0;
   const dataValida = Boolean(form.dataCriacao);
   const canSave = isDirty && nomeValido && dataValida && !updateMutation.isPending;
 
-  const exportHeaders = ["Brinco", "Categoria", "Sexo", "Raça", "Subdivisão do animal"];
-  const exportRows = useMemo(
-    () => animalRows.map(a => [
-      a.brinco?.trim() || a.nome?.trim() || String(a.id),
+  const exportHeaders = ["Brinco", "Categoria", "Sexo", "Raça"];
+  const exportRows = useMemo(() => {
+    const naturalCompare = (sa: string, sb: string) =>
+      sa.localeCompare(sb, undefined, { numeric: true, sensitivity: "base" });
+    const displayBrinco = (a: LoteAnimalRow) =>
+      a.brinco?.trim() || a.nome?.trim() || String(a.id);
+
+    // Mesma ordem da tabela na tela (crescente/decrescente por brinco).
+    const ordered = [...animalRows].sort((a, b) => {
+      const cmp = naturalCompare(displayBrinco(a), displayBrinco(b));
+      return tableState.sortAsc ? cmp : -cmp;
+    });
+
+    return ordered.map(a => [
+      displayBrinco(a),
       a.categoria || "—",
       a.sexo === "macho" ? "Macho" : "Fêmea",
       a.raca || "—",
-      a.pastoNome || "—",
-    ]),
-    [animalRows],
-  );
-  const exportTitle = `Animais do lote — ${form.nome || "Lote"}`;
-  const exportFilename = `animais-lote-${(form.nome || "lote").toLowerCase().replace(/\s+/g, "-")}`;
+    ]);
+  }, [animalRows, tableState.sortAsc]);
+  const exportTitle = (() => {
+    const nome = form.nome.trim() || "Lote";
+    const sigla = form.sigla.trim();
+    return sigla
+      ? `Animais do Lote — ${nome} (${sigla})`
+      : `Animais do Lote — ${nome}`;
+  })();
+  const exportFilenameBase = useMemo(() => {
+    const slug = (form.nome || "lote")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "lote";
+    return `animais-lote-${slug}`;
+  }, [form.nome]);
+
+  const buildExportIdentityLine = () => {
+    const fazenda = fazendaNome || "Fazenda não informada";
+    const nome = form.nome.trim() || "Lote";
+    const sigla = form.sigla.trim();
+    return sigla
+      ? `${fazenda} — Lote: ${nome} (${sigla})`
+      : `${fazenda} — Lote: ${nome}`;
+  };
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -259,7 +329,7 @@ export default function EditLotePage() {
       return;
     }
     if (!form.dataCriacao) {
-      toast.error("Data de formação do lote é obrigatória");
+      toast.error("Data de formação do Lote é obrigatória");
       return;
     }
 
@@ -271,12 +341,24 @@ export default function EditLotePage() {
     });
   };
 
-  const handleExcluirRequest = () => {
-    if (hasAnimais) {
-      setDeleteBlocked({ qtdAnimais });
-      return;
+  const handleExcluirRequest = async () => {
+    if (isBusy || !lote) return;
+    try {
+      const avaliacao = await utils.lotes.verificarExclusao.fetch({ id: loteId });
+      if (avaliacao.situacao === "bloqueado_animais") {
+        setDeleteBlocked(avaliacaoParaDeleteBlocked(avaliacao));
+        return;
+      }
+      setDeleteConfirm(avaliacaoParaDeleteConfirm(avaliacao));
+      setDeleteOpen(true);
+    } catch {
+      toast.error("Não foi possível verificar a situação do Lote.");
     }
-    setDeleteOpen(true);
+  };
+
+  const handleGerenciarAnimaisBloqueio = () => {
+    setDeleteBlocked(null);
+    animaisSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleTransferirAnimais = () => {
@@ -341,15 +423,12 @@ export default function EditLotePage() {
   };
 
   const isBusy = updateMutation.isPending || excluirMutation.isPending;
-  const pastoNomeAtual = lote?.pastoAtualId
-    ? (pastosData.find(p => p.id === lote.pastoAtualId)?.nome ?? "Subdivisão")
-    : null;
 
   if (!loteId || loteId <= 0 || Number.isNaN(loteId)) {
     return (
       <AppLayout>
         <div className="py-16 text-center space-y-3">
-          <p className="text-gray-400 text-[13px]">ID do lote inválido.</p>
+          <p className="text-gray-400 text-[13px]">ID do Lote inválido.</p>
           <button
             type="button"
             onClick={() => setLocation("/rebanho/lotes")}
@@ -376,7 +455,7 @@ export default function EditLotePage() {
         <div className="py-16 text-center space-y-3">
           <p className="text-gray-500 text-[13px]">Lote não encontrado.</p>
           <p className="text-gray-400 text-[11px] max-w-sm mx-auto">
-            Confira se o link está correto ou volte à lista e abra o lote novamente.
+            Confira se o link está correto ou volte à lista e abra o Lote novamente.
           </p>
           <button
             type="button"
@@ -394,7 +473,9 @@ export default function EditLotePage() {
     <AppLayout>
       <IncluirAnimaisLoteDialog
         loteId={loteId}
+        loteNome={lote.nome}
         fazendaId={lote.fazendaId ?? null}
+        fazendaNome={fazendaNome}
         open={incluirOpen}
         onClose={() => setIncluirOpen(false)}
         onSuccess={() => {
@@ -405,8 +486,12 @@ export default function EditLotePage() {
 
       <MovimentarAnimaisLoteDialog
         loteOrigemId={loteId}
+        loteOrigemNome={lote.nome}
+        subdivisaoOrigemNome={pastoNomeAtual ?? "Sem subdivisão"}
         fazendaId={lote.fazendaId}
+        fazendaNome={fazendaNome}
         animalIds={selectedIds}
+        animaisBrincos={selectedAnimaisBrincos}
         open={movimentarOpen}
         onClose={() => setMovimentarOpen(false)}
         onSuccess={handleMovimentacaoSuccess}
@@ -433,18 +518,21 @@ export default function EditLotePage() {
         }}
       />
 
-      <Dialog open={deleteOpen} onOpenChange={v => !v && setDeleteOpen(false)}>
+      <Dialog open={deleteOpen} onOpenChange={v => !v && (setDeleteOpen(false), setDeleteConfirm(null))}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-1">
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
-              <DialogTitle className="text-gray-900">Excluir lote</DialogTitle>
+              <DialogTitle className="text-gray-900">Excluir Lote</DialogTitle>
             </div>
             <DialogDescription className="text-gray-600 leading-relaxed">
-              Tem certeza que deseja excluir o lote{" "}
-              <span className="font-semibold text-gray-900">&quot;{lote.nome}&quot;</span>?
+              {deleteConfirm
+                ? textoConfirmacaoExclusaoLote(deleteConfirm.nomeLote, deleteConfirm.fazendaNome)
+                : lote
+                  ? textoConfirmacaoExclusaoLote(lote.nome, fazendaNome)
+                  : null}
               <br />
               <span className="text-red-600 font-medium">Esta ação não poderá ser desfeita.</span>
             </DialogDescription>
@@ -473,7 +561,7 @@ export default function EditLotePage() {
                   Excluindo…
                 </>
               ) : (
-                "Excluir lote"
+                "Excluir Lote"
               )}
             </button>
           </DialogFooter>
@@ -483,23 +571,38 @@ export default function EditLotePage() {
       <Dialog open={!!deleteBlocked} onOpenChange={v => !v && setDeleteBlocked(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-gray-900">Não é possível excluir</DialogTitle>
-            <DialogDescription className="text-gray-600 leading-relaxed">
-              Este lote possui{" "}
-              <span className="font-semibold text-amber-700">
-                {deleteBlocked?.qtdAnimais}{" "}
-                {deleteBlocked?.qtdAnimais === 1 ? "animal" : "animais"}
-              </span>
-              . Transfira ou remova os animais antes de excluir o lote.
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900 text-left">
+                Não é possível excluir o Lote
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed text-left">
+              {deleteBlocked ? (
+                <LoteExclusaoBloqueadaMessage
+                  nomeLote={deleteBlocked.nomeLote}
+                  qtdAnimais={deleteBlocked.qtdAnimais}
+                />
+              ) : null}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-2 sm:justify-end">
             <button
               type="button"
               onClick={() => setDeleteBlocked(null)}
-              className="w-full px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#8ab83d] text-white"
+              className="px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#F0F0F0] text-gray-700 hover:bg-[#E8E8E8]"
             >
-              Entendi
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={handleGerenciarAnimaisBloqueio}
+              className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900 hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Gerenciar animais
             </button>
           </DialogFooter>
         </DialogContent>
@@ -507,46 +610,48 @@ export default function EditLotePage() {
 
       <div className="w-full space-y-3">
         {/* Cabeçalho compacto */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setLocation("/rebanho/lotes")}
-            className="flex items-center gap-1 text-[12px] text-gray-500 hover:text-[#2D5A5A] transition group shrink-0"
-          >
-            <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-            <span>Voltar</span>
-          </button>
-          <h1 className="text-[15px] font-semibold text-gray-900">Editar lote</h1>
-          <button
-            type="button"
-            onClick={() => handleSalvar()}
-            disabled={!canSave}
-            className={cn(
-              "inline-flex items-center justify-center ml-auto px-4 py-2 rounded-lg text-[11px] font-semibold uppercase tracking-wide min-h-[40px] shrink-0 transition",
-              canSave
-                ? "text-gray-900 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40"
-                : "text-gray-500 opacity-55 cursor-not-allowed",
-            )}
-            style={{ backgroundColor: canSave ? FD_PRIMARY : "#E5E7EB" }}
-          >
-            {updateMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
-                Salvando...
-              </>
-            ) : (
-              "Salvar alterações"
-            )}
-          </button>
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setLocation("/rebanho/lotes")}
+              className="flex items-center gap-1 text-[12px] text-gray-500 hover:text-[#2D5A5A] transition group shrink-0"
+            >
+              <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+              <span>Voltar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSalvar()}
+              disabled={!canSave}
+              className={cn(
+                "inline-flex items-center justify-center ml-auto px-4 py-2 rounded-lg text-[11px] font-semibold uppercase tracking-wide min-h-[40px] shrink-0 transition",
+                canSave
+                  ? "text-gray-900 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40"
+                  : "text-gray-500 opacity-55 cursor-not-allowed",
+              )}
+              style={{ backgroundColor: canSave ? FD_PRIMARY : "#E5E7EB" }}
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar alterações"
+              )}
+            </button>
+          </div>
+          <h1 className="text-[15px] font-semibold text-gray-900">Editar Lote</h1>
         </div>
 
         {/* Bloco 1 — informações do lote */}
         <section className="bg-white border border-gray-200 rounded-md px-4 py-3 space-y-2.5">
           <form
             onSubmit={handleSalvar}
-            className="flex flex-wrap gap-2.5 items-end"
+            className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_7.5rem_11rem] gap-x-3 gap-y-2.5 items-end w-full"
           >
-            <div className="flex-1 min-w-[160px]">
+            <div className="min-w-0">
               <FormLabel required className="mb-1">Nome do Lote</FormLabel>
               <FieldBox required variant="light">
                 <input
@@ -560,8 +665,8 @@ export default function EditLotePage() {
                 />
               </FieldBox>
             </div>
-            <div className="w-[7.5rem]">
-              <FormLabel className="mb-1">Sigla do Lote (opcional)</FormLabel>
+            <div className="min-w-0">
+              <FormLabel className="mb-1">Sigla (opcional)</FormLabel>
               <FieldBox variant="light">
                 <input
                   type="text"
@@ -575,11 +680,13 @@ export default function EditLotePage() {
                   autoCapitalize="characters"
                   autoComplete="off"
                   className={cn(inputClassCompact, "bg-white")}
+                  title="Sigla do Lote (opcional)"
+                  aria-label="Sigla do Lote (opcional)"
                 />
               </FieldBox>
             </div>
-            <div className="w-40">
-              <FormLabel required className="mb-1">Data de formação do lote</FormLabel>
+            <div className="min-w-0">
+              <FormLabel required className="mb-1">Data de formação</FormLabel>
               <FormDatePicker
                 value={form.dataCriacao}
                 onChange={v => setField("dataCriacao", v)}
@@ -588,12 +695,16 @@ export default function EditLotePage() {
             </div>
           </form>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 border-t border-gray-100">
-            <p className="text-[12px] text-gray-600">
-              <span className="text-gray-500">Subdivisão do lote:</span>{" "}
-              <span className="font-medium text-gray-800">
-                {pastoNomeAtual || "Sem subdivisão"}
-              </span>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-2 border-t border-gray-100">
+            <p className="text-[12px] text-gray-600 flex flex-wrap items-center gap-1.5 min-w-0">
+              <span className="text-gray-500 shrink-0">Subdivisão do Lote:</span>
+              {pastoNomeAtual ? (
+                <span className="font-medium text-gray-800">{pastoNomeAtual}</span>
+              ) : (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-100">
+                  Sem subdivisão
+                </span>
+              )}
               {fazendaNome ? (
                 <span className="text-gray-400"> · {fazendaNome}</span>
               ) : null}
@@ -602,19 +713,31 @@ export default function EditLotePage() {
               type="button"
               onClick={() => setMoverSubdivisaoOpen(true)}
               disabled={isBusy}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#2D5A5A] hover:underline disabled:opacity-50 shrink-0"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-8 px-3 rounded-md shrink-0",
+                "bg-white border border-[#4ECDC4] text-[11px] font-semibold text-[#0F766E]",
+                "hover:bg-[rgba(78,205,196,0.12)] hover:border-[#3DBDB5]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/35",
+                "disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+              )}
             >
-              <span className="material-icons text-[15px]" aria-hidden>swap_horiz</span>
-              {lote.pastoAtualId ? "Alterar subdivisão" : "Definir subdivisão"}
+              <span className="material-icons text-[14px] leading-none" aria-hidden>
+                location_on
+              </span>
+              {lote.pastoAtualId ? "Alterar subdivisão do Lote" : "Definir subdivisão do Lote"}
             </button>
           </div>
         </section>
 
         {/* Bloco 2 — animais do lote */}
-        <section className="bg-white border border-gray-200 rounded-md overflow-hidden">
+        <section
+          id="animais-do-lote"
+          ref={animaisSectionRef}
+          className="bg-white border border-gray-200 rounded-md overflow-hidden scroll-mt-4"
+        >
           <div className="px-3 py-2.5 flex flex-wrap items-center gap-2 border-b border-gray-100">
             <div className="flex items-center gap-2 shrink-0">
-              <h2 className="text-[13px] font-semibold text-gray-800">Animais do lote</h2>
+              <h2 className="text-[13px] font-semibold text-gray-800">Animais do Lote</h2>
               <span className="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600 tabular-nums">
                 {qtdAnimais}
               </span>
@@ -645,13 +768,21 @@ export default function EditLotePage() {
 
             <ListExportButtons
               title={exportTitle}
-              filename={exportFilename}
+              filename={exportFilenameBase}
               headers={exportHeaders}
               rows={exportRows}
               fazendaNome={fazendaNome}
               variant="secondary"
               buttonLabel="Exportar"
               className="shrink-0 [&_button]:min-h-9 [&_button]:h-9"
+              spreadsheetSheetName="Animais do Lote"
+              spreadsheetReportTitle={buildExportIdentityLine}
+              spreadsheetAllowEmpty
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0]}
+              spreadsheetColumnAligns={["center", "center", "center", "center"]}
             />
           </div>
 
@@ -666,7 +797,7 @@ export default function EditLotePage() {
                 type="button"
                 onClick={handleTransferirAnimais}
                 disabled={isBusy || movimentarOpen}
-                className="inline-flex items-center gap-1.5 px-3 h-8 min-h-8 rounded-lg text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 hover:opacity-90 transition"
+                className="inline-flex items-center gap-1.5 px-3 h-8 min-h-8 rounded-lg text-[11px] font-semibold tracking-wide text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 hover:opacity-90 transition"
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 {movimentarOpen ? (
@@ -696,7 +827,7 @@ export default function EditLotePage() {
             animais={animalRows}
             isLoading={animaisLoading}
             search={tableState.search}
-            sortKey={tableState.sortKey}
+            sortKey="brinco"
             sortAsc={tableState.sortAsc}
             onSort={handleSort}
             selected={selected}
@@ -714,19 +845,19 @@ export default function EditLotePage() {
           <button
             type="button"
             onClick={handleExcluirRequest}
-            disabled={isBusy || hasAnimais}
+            disabled={isBusy}
             className="text-[12px] text-red-600 hover:text-red-700 hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
             title={
               hasAnimais
-                ? `Remova ou transfira os ${qtdAnimais} ${qtdAnimais === 1 ? "animal" : "animais"} antes de excluir o lote.`
-                : "Excluir este lote"
+                ? `Transfira os ${qtdAnimais} ${qtdAnimais === 1 ? "animal" : "animais"} para outro Lote antes de excluir o Lote.`
+                : "Excluir este Lote"
             }
           >
-            Excluir lote
+            Excluir Lote
           </button>
           {hasAnimais && (
             <span className="text-[11px] text-gray-400">
-              Remova ou transfira os {qtdAnimais} {qtdAnimais === 1 ? "animal" : "animais"} antes de excluir o lote.
+              Transfira os {qtdAnimais} {qtdAnimais === 1 ? "animal" : "animais"} para outro Lote antes de excluir o Lote.
             </span>
           )}
         </div>

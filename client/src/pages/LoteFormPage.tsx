@@ -81,7 +81,7 @@ export function NewLotePage() {
       setLocation(lotesListUrl(fazendaId));
     },
     onError: e => {
-      const msg = e.message || "Não foi possível criar o lote. Tente novamente.";
+      const msg = e.message || "Não foi possível criar o Lote. Tente novamente.";
       toast.error(msg);
     },
   });
@@ -95,7 +95,7 @@ export function NewLotePage() {
     if (createMutation.isPending) return;
 
     if (!fazendaId) {
-      toast.error("Selecione uma fazenda antes de criar o lote.");
+      toast.error("Selecione uma fazenda antes de criar o Lote.");
       return;
     }
 
@@ -133,8 +133,8 @@ export function NewLotePage() {
             <h1 className="text-[15px] font-semibold text-gray-900">Novo Lote</h1>
             <p className="text-[11px] text-gray-500 mt-1">
               {fazendaLocked
-                ? "Informe os dados do novo lote."
-                : "Selecione a fazenda e informe os dados do lote."}
+                ? "Informe os dados do novo Lote."
+                : "Selecione a fazenda e informe os dados do Lote."}
             </p>
           </div>
 

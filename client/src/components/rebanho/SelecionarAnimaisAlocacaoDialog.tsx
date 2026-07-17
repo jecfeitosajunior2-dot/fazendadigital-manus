@@ -401,7 +401,7 @@ export default function SelecionarAnimaisAlocacaoDialog({
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
-  const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
+  const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true }, { enabled: open });
   const { data: marcadoresDisponiveis = [] } = trpc.animais.marcasDistintas.useQuery(undefined, { enabled: open });
   const fazendaDraftNum = draftFilters.fazendaId ? Number(draftFilters.fazendaId) : 0;
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(

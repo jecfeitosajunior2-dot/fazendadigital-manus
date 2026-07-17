@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
+import { mensagemExclusaoLoteBloqueada } from "../shared/loteExclusaoBloqueada";
+import type { AvaliacaoExclusaoLote } from "../shared/loteExclusaoBloqueada";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
@@ -12,6 +14,7 @@ const pesagensFile = path.join(dataDir, "pesagens.json");
 const saudeRegistrosFile = path.join(dataDir, "saude-registros.json");
 const reproducaoRegistrosFile = path.join(dataDir, "reproducao-registros.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
+const animalLoteMovimentacoesFile = path.join(dataDir, "animal-lote-movimentacoes.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
   const parts: string[] = [];
@@ -394,18 +397,209 @@ export async function createLocalLote(
   return { id };
 }
 
+/** Move/define subdivisão do lote no armazenamento local (quando o MySQL está offline). */
+export async function moveLocalLoteToPasto(
+  userId: number,
+  input: { loteId: number; pastoId: number | null; dataEntrada?: string },
+): Promise<{ success: true; localFallback: true }> {
+  const rows = await readLotes();
+  const byUser = rows.filter(row => row.userId === userId);
+  const searchPool = byUser.length > 0 ? byUser : rows;
+  const lote = searchPool.find(row => row.id === input.loteId);
+  if (!lote) throw new Error("Lote não encontrado");
+
+  const index = rows.findIndex(row => row.id === lote.id);
+  if (index < 0) throw new Error("Lote não encontrado");
+
+  const hoje = input.dataEntrada ?? new Date().toISOString().slice(0, 10);
+  const pastoOrigemId = lote.pastoAtualId ?? null;
+
+  if (input.pastoId === pastoOrigemId) {
+    return { success: true, localFallback: true };
+  }
+
+  if (input.pastoId === null) {
+    rows[index] = {
+      ...rows[index],
+      pastoAtualId: null,
+      dataEntradaPasto: null,
+      fazendaId: null,
+      localizacao: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeLotes(rows);
+    return { success: true, localFallback: true };
+  }
+
+  const pastos = await listLocalPastos(userId);
+  const pasto = pastos.find(p => p.id === input.pastoId);
+  if (!pasto) throw new Error("Pasto não encontrado");
+
+  rows[index] = {
+    ...rows[index],
+    pastoAtualId: input.pastoId,
+    fazendaId: pasto.fazendaId,
+    dataEntradaPasto: hoje,
+    localizacao: pasto.nome,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeLotes(rows);
+
+  // Marca o pasto como ativo (espelha o comportamento do MySQL)
+  try {
+    await updateLocalPasto(userId, input.pastoId, { status: "ativo" });
+  } catch {
+    // Pasto pode não existir no arquivo local com o mesmo userId — lote já foi atualizado.
+  }
+
+  return { success: true, localFallback: true };
+}
+
+export async function avaliarExclusaoLocalLote(
+  userId: number,
+  loteId: number,
+): Promise<AvaliacaoExclusaoLote> {
+  const lote = await getLocalLote(userId, loteId);
+  if (!lote) throw new Error("Lote não encontrado.");
+
+  const animais = await readAnimais();
+  const byUser = animais.filter(row => row.userId === userId);
+  const searchPool = byUser.length > 0 ? byUser : animais;
+  const qtdAnimais = searchPool.filter(a => Number(a.loteId) === loteId).length;
+
+  let fazendaNome: string | null = null;
+  if (lote.fazendaId) {
+    const fazendas = await listLocalFazendas(userId);
+    fazendaNome = fazendas.find(f => f.id === lote.fazendaId)?.nome ?? null;
+  }
+
+  if (qtdAnimais > 0) {
+    return {
+      situacao: "bloqueado_animais",
+      loteId,
+      nomeLote: String(lote.nome),
+      fazendaId: lote.fazendaId ?? null,
+      fazendaNome,
+      qtdAnimais,
+    };
+  }
+
+  return {
+    situacao: "pode_excluir",
+    loteId,
+    nomeLote: String(lote.nome),
+    fazendaId: lote.fazendaId ?? null,
+    fazendaNome,
+    qtdAnimais: 0,
+  };
+}
+
+export async function excluirLocalLote(
+  userId: number,
+  id: number,
+): Promise<{ success: true; nomeLote: string; localFallback: true }> {
+  const lote = await getLocalLote(userId, id);
+  if (!lote) throw new Error("Lote não encontrado.");
+
+  const avaliacao = await avaliarExclusaoLocalLote(userId, id);
+  if (avaliacao.situacao === "bloqueado_animais") {
+    throw new Error(mensagemExclusaoLoteBloqueada(String(lote.nome), avaliacao.qtdAnimais));
+  }
+
+  const rows = await readLotes();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    const fallbackRemaining = rows.filter(row => row.id !== id);
+    await writeLotes(fallbackRemaining);
+    return { success: true, nomeLote: String(lote.nome), localFallback: true };
+  }
+  await writeLotes(remaining);
+  return { success: true, nomeLote: String(lote.nome), localFallback: true };
+}
+
+export async function inativarLocalLote(
+  userId: number,
+  id: number,
+): Promise<{ success: true; nomeLote: string; localFallback: true }> {
+  const avaliacao = await avaliarExclusaoLocalLote(userId, id);
+  if (avaliacao.situacao === "bloqueado_animais") {
+    throw new Error(mensagemExclusaoLoteBloqueada(avaliacao.nomeLote, avaliacao.qtdAnimais));
+  }
+
+  const result = await updateLocalLote(userId, id, { ativo: false });
+  if (!result.success) throw new Error("Não foi possível inativar o Lote.");
+  return { success: true, nomeLote: avaliacao.nomeLote, localFallback: true };
+}
+
+export async function updateLocalLote(
+  userId: number,
+  id: number,
+  input: {
+    nome?: string;
+    sigla?: string | null;
+    dataCriacao?: string;
+    descricao?: string;
+    localizacao?: string;
+    capacidade?: number;
+    ativo?: boolean;
+    pastoAtualId?: number | null;
+  },
+): Promise<{ success: true; localFallback: true }> {
+  const rows = await readLotes();
+  const byUser = rows.filter(row => row.userId === userId);
+  const searchPool = byUser.length > 0 ? byUser : rows;
+  const lote = searchPool.find(row => row.id === id);
+  if (!lote) throw new Error("Lote não encontrado.");
+
+  const index = rows.findIndex(row => row.id === lote.id);
+  if (index < 0) throw new Error("Lote não encontrado.");
+
+  const patch: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (input.nome !== undefined) patch.nome = input.nome;
+  if (input.sigla !== undefined) patch.sigla = input.sigla;
+  if (input.dataCriacao !== undefined) patch.dataCriacao = input.dataCriacao;
+  if (input.descricao !== undefined) patch.descricao = input.descricao;
+  if (input.localizacao !== undefined) patch.localizacao = input.localizacao;
+  if (input.capacidade !== undefined) patch.capacidade = input.capacidade;
+  if (input.ativo !== undefined) patch.ativo = input.ativo;
+  if (input.pastoAtualId !== undefined) patch.pastoAtualId = input.pastoAtualId;
+
+  rows[index] = { ...rows[index], ...patch };
+  await writeLotes(rows);
+
+  if (input.pastoAtualId !== undefined) {
+    const animais = await readAnimais();
+    let changed = false;
+    for (let i = 0; i < animais.length; i++) {
+      const a = animais[i];
+      const sameUser = a.userId === userId || byUser.length === 0;
+      if (sameUser && a.loteId === id && a.status === "ativo") {
+        animais[i] = { ...a, pastoId: input.pastoAtualId, updatedAt: new Date().toISOString() };
+        changed = true;
+      }
+    }
+    if (changed) await writeAnimais(animais);
+  }
+
+  return { success: true, localFallback: true };
+}
+
 export async function enrichLocalLote(lote: LocalLote, userId: number) {
   const animais = await listLocalAnimais(userId);
   const fazendas = await listLocalFazendas(userId);
+  const pastosRows = await listLocalPastos(userId);
   const qtdAnimais = animais.filter(a => a.loteId === lote.id && a.status === "ativo").length;
   const fazendaNome = lote.fazendaId
     ? (fazendas.find(f => f.id === lote.fazendaId)?.nome ?? null)
     : null;
+  const pasto = lote.pastoAtualId
+    ? pastosRows.find(p => p.id === lote.pastoAtualId)
+    : null;
   return {
     ...lote,
     qtdAnimais,
-    pastoNome: null,
-    pastoCapacidade: null,
+    pastoNome: pasto?.nome ?? null,
+    pastoCapacidade: pasto?.capacidade ?? null,
     fazendaNome,
     diasNoPasto: null,
   };
@@ -551,6 +745,185 @@ export async function updateLocalAnimal(
     };
   }
   await writeAnimais(rows);
+}
+
+export type LocalAnimalLoteMovimentacao = {
+  id: number;
+  userId: number;
+  animalId: number;
+  loteOrigemId: number;
+  loteDestinoId: number;
+  pastoOrigemId: number | null;
+  pastoDestinoId: number | null;
+  fazendaId: number | null;
+  dataMovimentacao: string;
+  usuarioNome: string;
+  createdAt: string;
+};
+
+async function readAnimalLoteMovimentacoes(): Promise<LocalAnimalLoteMovimentacao[]> {
+  return readJsonFile<LocalAnimalLoteMovimentacao[]>(animalLoteMovimentacoesFile, []);
+}
+
+async function writeAnimalLoteMovimentacoes(rows: LocalAnimalLoteMovimentacao[]): Promise<void> {
+  await writeJsonFile(animalLoteMovimentacoesFile, rows);
+}
+
+/** Transfere animais entre lotes da mesma fazenda (MySQL offline). */
+export async function movimentarAnimaisLocalLote(
+  userId: number,
+  input: {
+    loteOrigemId: number;
+    loteDestinoId: number;
+    animalIds: number[];
+    dataMovimentacao: string;
+  },
+  usuarioNome: string,
+): Promise<{ success: true; count: number; loteDestinoNome: string; localFallback: true }> {
+  if (input.loteOrigemId === input.loteDestinoId) {
+    throw new Error("O lote de destino deve ser diferente do lote de origem.");
+  }
+
+  const hoje = new Date();
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  if (input.dataMovimentacao > hojeISO) {
+    throw new Error("A data da movimentação não pode ser futura.");
+  }
+
+  const loteOrigem = await getLocalLote(userId, input.loteOrigemId);
+  if (!loteOrigem) throw new Error("Lote de origem não encontrado.");
+
+  const loteDestino = await getLocalLote(userId, input.loteDestinoId);
+  if (!loteDestino) throw new Error("Lote de destino não encontrado.");
+  if (loteDestino.ativo === false) {
+    throw new Error("O lote de destino não está ativo.");
+  }
+  if (
+    loteOrigem.fazendaId != null
+    && loteDestino.fazendaId != null
+    && Number(loteOrigem.fazendaId) !== Number(loteDestino.fazendaId)
+  ) {
+    throw new Error("A transferência entre lotes só é permitida dentro da mesma fazenda.");
+  }
+
+  const rows = await readAnimais();
+  const byUser = rows.filter(row => row.userId === userId);
+  const searchPool = byUser.length > 0 ? byUser : rows;
+  const wanted = new Set(input.animalIds);
+  const valid = searchPool.filter(
+    a => wanted.has(a.id) && Number(a.loteId) === Number(input.loteOrigemId),
+  );
+  if (valid.length === 0) {
+    throw new Error("Nenhum animal selecionado pertence ao lote de origem.");
+  }
+
+  const validIds = new Set(valid.map(a => a.id));
+  const pastoDestinoId = loteDestino.pastoAtualId ?? null;
+  const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? null;
+  const now = new Date().toISOString();
+
+  for (let i = 0; i < rows.length; i++) {
+    if (!validIds.has(rows[i].id)) continue;
+    rows[i] = {
+      ...rows[i],
+      loteId: input.loteDestinoId,
+      pastoId: pastoDestinoId,
+      // fazendaId NÃO muda neste fluxo
+      updatedAt: now,
+    };
+  }
+  await writeAnimais(rows);
+
+  const historico = await readAnimalLoteMovimentacoes();
+  let nextId = historico.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  for (const animalId of validIds) {
+    historico.push({
+      id: nextId++,
+      userId,
+      animalId,
+      loteOrigemId: input.loteOrigemId,
+      loteDestinoId: input.loteDestinoId,
+      pastoOrigemId: loteOrigem.pastoAtualId ?? null,
+      pastoDestinoId,
+      fazendaId: fazendaIdHistorico,
+      dataMovimentacao: input.dataMovimentacao,
+      usuarioNome,
+      createdAt: now,
+    });
+  }
+  await writeAnimalLoteMovimentacoes(historico);
+
+  return {
+    success: true,
+    count: validIds.size,
+    loteDestinoNome: loteDestino.nome,
+    localFallback: true,
+  };
+}
+
+/** Associa animais sem lote a um lote da mesma fazenda (MySQL offline). */
+export async function incluirAnimaisLocalLote(
+  userId: number,
+  input: { loteId: number; animalIds: number[] },
+): Promise<{ success: true; count: number; localFallback: true }> {
+  const lote = await getLocalLote(userId, input.loteId);
+  if (!lote) throw new Error("Lote não encontrado.");
+  if (lote.ativo === false) {
+    throw new Error("Este Lote está inativo e não aceita novos animais.");
+  }
+  if (!lote.fazendaId) {
+    throw new Error("Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.");
+  }
+
+  const rows = await readAnimais();
+  const byUser = rows.filter(row => row.userId === userId);
+  const searchPool = byUser.length > 0 ? byUser : rows;
+  const wanted = new Set(input.animalIds);
+  const found = searchPool.filter(a => wanted.has(a.id));
+  if (found.length === 0) {
+    throw new Error("Nenhum animal válido foi encontrado para inclusão.");
+  }
+
+  const validos: number[] = [];
+  let erroAmigavel: string | null = null;
+  for (const animal of found) {
+    if (animal.status && animal.status !== "ativo") {
+      if (!erroAmigavel) erroAmigavel = "Só é possível adicionar animais ativos ao lote.";
+      continue;
+    }
+    if (Number(animal.fazendaId) !== Number(lote.fazendaId)) {
+      if (!erroAmigavel) {
+        erroAmigavel = "Este animal pertence a outra fazenda e não pode ser incluído neste lote.";
+      }
+      continue;
+    }
+    if (animal.loteId != null) {
+      if (!erroAmigavel) {
+        erroAmigavel = "Este animal já pertence a outro lote. Use a transferência entre lotes para movimentá-lo.";
+      }
+      continue;
+    }
+    validos.push(animal.id);
+  }
+
+  if (validos.length === 0) {
+    throw new Error(erroAmigavel || "Nenhum animal válido para inclusão neste lote.");
+  }
+
+  const validIds = new Set(validos);
+  const now = new Date().toISOString();
+  for (let i = 0; i < rows.length; i++) {
+    if (!validIds.has(rows[i].id)) continue;
+    rows[i] = {
+      ...rows[i],
+      loteId: input.loteId,
+      pastoId: lote.pastoAtualId ?? null,
+      // fazendaId NÃO muda neste fluxo
+      updatedAt: now,
+    };
+  }
+  await writeAnimais(rows);
+  return { success: true, count: validos.length, localFallback: true };
 }
 
 export async function deleteLocalAnimal(userId: number, id: number): Promise<void> {

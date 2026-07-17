@@ -4,7 +4,6 @@ import { trpc } from "@/lib/trpc";
 import { getLocalAuthUser } from "@/lib/localAuth";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import BottomNav from "./BottomNav";
 
 const LayoutShellContext = createContext(false);
 
@@ -46,22 +45,14 @@ export function AppShell({ children }: AppLayoutProps) {
 
   return (
     <LayoutShellContext.Provider value={true}>
-      <div
-        className="flex h-screen"
-        style={{
-          backgroundColor: "#F5F5F5",
-          // Altura do conteúdo da BottomNav (minHeight dos botões), sem safe-area.
-          ["--bottom-navigation-height" as string]: "56px",
-        }}
-      >
+      <div className="flex h-screen" style={{ backgroundColor: "#F5F5F5" }}>
         <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />
-          <main className="flex-1 overflow-y-auto p-4 pb-[calc(var(--bottom-navigation-height)+env(safe-area-inset-bottom,0px)+16px)] lg:pb-4">
+          <main className="flex-1 overflow-y-auto p-4">
             {children}
           </main>
         </div>
-        <BottomNav onOpenMenu={() => setMobileOpen(o => !o)} menuOpen={mobileOpen} />
       </div>
     </LayoutShellContext.Provider>
   );

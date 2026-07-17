@@ -381,7 +381,7 @@ const AnimalFormPage: React.FC = () => {
   );
 
   // ── Lotes (filtrados por fazenda se selecionada) ──
-  const { data: todosLotes } = trpc.lotes.list.useQuery();
+  const { data: todosLotes } = trpc.lotes.list.useQuery({ somenteAtivos: true });
   const lotesFiltrados = filtrarLotesPorFazenda(todosLotes ?? [], fazendaId || null)
     .slice()
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));

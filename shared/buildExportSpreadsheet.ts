@@ -7,6 +7,11 @@ import {
 
 export type ExportColumnAlign = "left" | "center" | "right";
 
+export type ExportReportInfoLine = {
+  label: string;
+  value: string;
+};
+
 export type BuildExportSpreadsheetOptions = {
   currencyColIndexes?: number[];
   currencyNumFmt?: string;
@@ -17,9 +22,31 @@ export type BuildExportSpreadsheetOptions = {
   columnNumFmts?: Partial<Record<number, string>>;
   columnAligns?: ExportColumnAlign[];
   sheetName?: string;
+  /** Título do relatório (mesclado sobre a largura da tabela). */
+  reportTitle?: string;
+  /** Linhas compactas de contexto (texto corrido, mesclado), após o título. */
+  reportSubtitles?: string[];
+  /** Linhas de contexto label/valor antes da tabela (legado). */
+  reportInfo?: ExportReportInfoLine[];
+  /** Linha em branco após o meta (padrão: true). */
+  blankAfterMeta?: boolean;
+  /** Filtro automático na tabela (padrão: true). */
+  autoFilter?: boolean;
+  /** Cabeçalho discreto: negrito + bordas leves, sem preenchimento colorido. */
+  plainHeader?: boolean;
+  /** Permite exportar com 0 linhas de dados (mantém cabeçalho/tabela vazia). */
+  allowEmpty?: boolean;
 };
 
 export type ExportSpreadsheetRow = (string | number | null | undefined)[];
+
+const FONT = "Calibri";
+const BORDER_COLOR = "FFD1D5DB";
+const HEADER_FILL = "FFF4F6F6";
+const HEADER_BORDER = "FF2D5A5A";
+/** Cinza claro neutro para cabeçalho operacional (#F2F2F2). */
+const PLAIN_HEADER_FILL = "FFF2F2F2";
+const PLAIN_HEADER_BOTTOM = "FFD0D0D0";
 
 function columnWidth(headers: string[], rows: ExportSpreadsheetRow[], colIndex: number): number {
   let max = String(headers[colIndex] ?? "").length;
@@ -29,6 +56,20 @@ function columnWidth(headers: string[], rows: ExportSpreadsheetRow[], colIndex: 
     if (len > max) max = len;
   }
   return Math.min(Math.max(max + 2, 10), 50);
+}
+
+function thinBorder(): Partial<ExcelJS.Borders> {
+  const edge: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORDER_COLOR } };
+  return { top: edge, left: edge, bottom: edge, right: edge };
+}
+
+function reportMetaRowCount(options?: BuildExportSpreadsheetOptions): number {
+  const title = options?.reportTitle ? 1 : 0;
+  const subs = options?.reportSubtitles?.length ?? 0;
+  const info = options?.reportInfo?.length ?? 0;
+  const meta = title + subs + info;
+  const blank = meta > 0 && options?.blankAfterMeta !== false ? 1 : 0;
+  return meta + blank;
 }
 
 /** Monta workbook XLSX com alinhamento por coluna e cabeçalho formatado. */
@@ -41,8 +82,20 @@ export async function buildExportSpreadsheetWorkbook(
   wb.creator = "Fazenda Digital";
   wb.created = new Date();
 
+  const colCount = Math.max(headers.length, 1);
+  const metaRows = reportMetaRowCount(options);
+  const hasMeta = Boolean(
+    options?.reportTitle
+    || (options?.reportSubtitles?.length ?? 0) > 0
+    || (options?.reportInfo?.length ?? 0) > 0,
+  );
+  const blankAfterMeta = hasMeta && options?.blankAfterMeta !== false;
+  const headerExcelRow = metaRows + 1;
+  const plainHeader = options?.plainHeader === true;
+  const enableAutoFilter = options?.autoFilter !== false;
+
   const ws = wb.addWorksheet(options?.sheetName ?? "Dados", {
-    views: [{ state: "frozen", ySplit: 1 }],
+    views: [{ state: "frozen", ySplit: headerExcelRow }],
   });
 
   const currencyCols = options?.currencyColIndexes
@@ -61,13 +114,79 @@ export async function buildExportSpreadsheetWorkbook(
     }
   }
 
+  if (options?.reportTitle) {
+    const titleRow = ws.addRow([options.reportTitle]);
+    titleRow.height = plainHeader ? 20 : 24;
+    ws.mergeCells(titleRow.number, 1, titleRow.number, colCount);
+    const titleCell = titleRow.getCell(1);
+    titleCell.font = {
+      name: FONT,
+      size: plainHeader ? 11 : 13,
+      bold: true,
+      color: { argb: "FF0F172A" },
+    };
+    titleCell.alignment = {
+      horizontal: "left",
+      vertical: "middle",
+      indent: 0,
+    };
+  }
+
+  if (options?.reportSubtitles?.length) {
+    for (const line of options.reportSubtitles) {
+      const subRow = ws.addRow([line]);
+      subRow.height = 17;
+      ws.mergeCells(subRow.number, 1, subRow.number, colCount);
+      const subCell = subRow.getCell(1);
+      subCell.font = { name: FONT, size: 10, color: { argb: "FF6B7280" } };
+      subCell.alignment = { horizontal: "left", vertical: "middle" };
+    }
+  }
+
+  if (options?.reportInfo?.length) {
+    for (const line of options.reportInfo) {
+      const infoRow = ws.addRow([line.label, line.value]);
+      infoRow.height = 18;
+      const labelCell = infoRow.getCell(1);
+      labelCell.font = { name: FONT, size: 10, bold: true, color: { argb: "FF374151" } };
+      labelCell.alignment = { horizontal: "left", vertical: "middle" };
+
+      if (colCount > 2) {
+        ws.mergeCells(infoRow.number, 2, infoRow.number, colCount);
+      }
+      const valueCell = infoRow.getCell(2);
+      valueCell.font = { name: FONT, size: 10, color: { argb: "FF111827" } };
+      valueCell.alignment = { horizontal: "left", vertical: "middle" };
+    }
+  }
+
+  if (blankAfterMeta) {
+    ws.addRow([]);
+  }
+
   const headerRow = ws.addRow(headers);
   headerRow.height = 22;
   headerRow.eachCell(cell => {
-    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF1A1A1A" } };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F6F6" } };
-    cell.border = { bottom: { style: "thin", color: { argb: "FF2D5A5A" } } };
+    cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
+    cell.alignment = {
+      horizontal: "center",
+      vertical: "middle",
+    };
+    if (plainHeader) {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
+      cell.border = {
+        top: { style: "thin", color: { argb: BORDER_COLOR } },
+        left: { style: "thin", color: { argb: BORDER_COLOR } },
+        right: { style: "thin", color: { argb: BORDER_COLOR } },
+        bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
+      };
+    } else {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+      cell.border = {
+        ...thinBorder(),
+        bottom: { style: "thin", color: { argb: HEADER_BORDER } },
+      };
+    }
   });
 
   for (const row of rows) {
@@ -83,12 +202,13 @@ export async function buildExportSpreadsheetWorkbook(
       const isText = textCols?.has(colIdx) ?? false;
       const colNumFmt = columnNumFmts?.[colIdx];
 
-      excelCell.font = { name: "Calibri", size: 10 };
+      excelCell.font = { name: FONT, size: 10 };
       excelCell.alignment = {
         horizontal,
         vertical: "middle",
         wrapText: isObservacoes,
       };
+      excelCell.border = thinBorder();
 
       if (rawCell == null || rawCell === "") {
         excelCell.value = "";
@@ -117,6 +237,15 @@ export async function buildExportSpreadsheetWorkbook(
     });
   }
 
+  if (enableAutoFilter) {
+    const lastDataExcelRow = headerExcelRow + Math.max(rows.length, 0);
+    const filterEndRow = Math.max(lastDataExcelRow, headerExcelRow);
+    ws.autoFilter = {
+      from: { row: headerExcelRow, column: 1 },
+      to: { row: filterEndRow, column: colCount },
+    };
+  }
+
   if (currencyCols) {
     headers.forEach((_, colIdx) => {
       if (!currencyCols.has(colIdx)) return;
@@ -131,7 +260,11 @@ export async function buildExportSpreadsheetWorkbook(
 
   headers.forEach((_, colIdx) => {
     if (currencyCols?.has(colIdx)) return;
-    ws.getColumn(colIdx + 1).width = columnWidth(headers, rows, colIdx);
+    const width = columnWidth(headers, rows, colIdx);
+    // plainHeader (export operacional do lote): um pouco mais de folga para não cortar texto.
+    ws.getColumn(colIdx + 1).width = plainHeader
+      ? Math.min(Math.max(width + 2, 14), 50)
+      : width;
   });
 
   return wb;
@@ -146,13 +279,20 @@ export async function buildExportSpreadsheetBuffer(
   const wb = await buildExportSpreadsheetWorkbook(headers, rows, options);
   let buffer = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
 
+  const headerExcelRow = reportMetaRowCount(options) + 1;
+  const dataStartRow = headerExcelRow + 1;
+
   if (options?.textColIndexes?.length && rows.length > 0) {
-    const sqrefs = options.textColIndexes.map(colIdx => exportDataColRange(colIdx, rows.length));
+    const sqrefs = options.textColIndexes.map(colIdx =>
+      exportDataColRange(colIdx, rows.length, dataStartRow),
+    );
     buffer = await patchXlsxIgnoreNumberStoredAsText(buffer, sqrefs);
   }
 
   if (options?.currencyColIndexes?.length && rows.length > 0) {
-    const sqrefs = options.currencyColIndexes.map(colIdx => exportDataColRange(colIdx, rows.length));
+    const sqrefs = options.currencyColIndexes.map(colIdx =>
+      exportDataColRange(colIdx, rows.length, dataStartRow),
+    );
     buffer = await patchXlsxIgnoreNumberStoredAsText(buffer, sqrefs);
   }
 

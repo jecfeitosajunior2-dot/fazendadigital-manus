@@ -25,6 +25,19 @@ import {
   type ContagemPorFaixa,
   type FaixaIdadeLote,
 } from "@shared/lote-faixas-idade";
+import {
+  editarLoteAnimaisUrl,
+  mensagemExclusaoLoteSucesso,
+  parseExclusaoLoteBloqueada,
+  textoConfirmacaoExclusaoLote,
+} from "@shared/loteExclusaoBloqueada";
+import { LoteExclusaoBloqueadaMessage } from "@/components/lotes/LoteExclusaoBloqueadaMessage";
+import {
+  avaliacaoParaDeleteBlocked,
+  avaliacaoParaDeleteConfirm,
+  type DeleteBlockedState,
+  type DeleteConfirmState,
+} from "@/lib/loteExclusaoFlow";
 
 interface LoteItem {
   id: number;
@@ -38,6 +51,7 @@ interface LoteItem {
   pastoNome?: string | null;
   pastoCapacidade?: number | null;
   fazendaNome?: string | null;
+  fazendaId?: number | null;
 }
 
 type LoteGerenciamento = {
@@ -55,9 +69,6 @@ type LoteGerenciamento = {
   pctOcupacao: number | null;
   superlotado: boolean;
 };
-
-interface DeleteConfirmState { lote: LoteItem }
-interface DeleteBlockedState { nomeLote: string; qtdAnimais: number }
 
 function lotesListUrl(fazendaId?: string) {
   return fazendaId ? `/rebanho/lotes?fazendaId=${fazendaId}` : "/rebanho/lotes";
@@ -145,11 +156,6 @@ export default function LotsManagementPage() {
     isLoading,
     refetch,
   } = trpc.lotes.gerenciamento.useQuery(queryInput, { enabled: fazendaReady });
-  const { data: lotesFull = [] } = trpc.lotes.list.useQuery(undefined, { enabled: fazendaReady });
-  const loteById = useMemo(
-    () => new Map((lotesFull as LoteItem[]).map(l => [l.id, l])),
-    [lotesFull],
-  );
 
   const sorted = useMemo(() => {
     let lista = [...(gerenciamento as LoteGerenciamento[])];
@@ -190,36 +196,44 @@ export default function LotsManagementPage() {
     setLocation(`/rebanho/lista-animais?${qs.toString()}`);
   };
 
+  const utils = trpc.useUtils();
+
   const excluirMutation = trpc.lotes.excluir.useMutation({
     onSuccess: (data) => {
-      toast.success(`Lote "${data.nomeLote}" excluído com sucesso.`);
+      toast.success(mensagemExclusaoLoteSucesso(data.nomeLote));
       setDeleteConfirm(null);
       refetch();
+      utils.lotes.list.invalidate();
     },
     onError: (err) => {
-      const loteAtual = deleteConfirm?.lote;
+      const loteAtual = deleteConfirm;
       setDeleteConfirm(null);
       if (err.data?.code === "PRECONDITION_FAILED") {
-        const match = err.message.match(/Existem (\d+) animal/);
-        const qtd = match ? parseInt(match[1], 10) : (loteAtual?.qtdAnimais ?? 1);
-        setDeleteBlocked({ nomeLote: loteAtual?.nome ?? "—", qtdAnimais: qtd });
+        const parsed = parseExclusaoLoteBloqueada(err.message);
+        const fazendaId = loteAtual?.fazendaId ?? (fazendaFilter ? Number(fazendaFilter) : null);
+        setDeleteBlocked({
+          loteId: loteAtual?.loteId ?? 0,
+          nomeLote: parsed?.nomeLote ?? loteAtual?.nomeLote ?? "—",
+          qtdAnimais: parsed?.qtdAnimais ?? 1,
+          fazendaId,
+        });
       } else {
-        toast.error(err.message || "Erro ao excluir o lote.");
+        toast.error(err.message || "Erro ao excluir o Lote.");
       }
     },
   });
 
-  const handleDeleteRequest = (row: LoteGerenciamento) => {
-    const lote = loteById.get(row.id);
-    if (!lote) return;
-    if ((lote.qtdAnimais ?? 0) > 0 || row.totalAnimais > 0) {
-      setDeleteBlocked({
-        nomeLote: lote.nome,
-        qtdAnimais: lote.qtdAnimais ?? row.totalAnimais ?? 1,
-      });
-      return;
+  const handleDeleteRequest = async (row: LoteGerenciamento) => {
+    try {
+      const avaliacao = await utils.lotes.verificarExclusao.fetch({ id: row.id });
+      if (avaliacao.situacao === "bloqueado_animais") {
+        setDeleteBlocked(avaliacaoParaDeleteBlocked(avaliacao));
+        return;
+      }
+      setDeleteConfirm(avaliacaoParaDeleteConfirm(avaliacao));
+    } catch {
+      toast.error("Não foi possível verificar a situação do Lote.");
     }
-    setDeleteConfirm({ lote });
   };
 
   const toggleSelect = (id: number) => {
@@ -285,7 +299,7 @@ export default function LotsManagementPage() {
     const idadeTxt = range.max != null
       ? `${range.min} a ${range.max} meses`
       : `${range.min} ou mais meses`;
-    return `Ver ${qtd} ${sexoLabel} de ${idadeTxt} do lote ${nomeLote}`;
+    return `Ver ${qtd} ${sexoLabel} de ${idadeTxt} do Lote ${nomeLote}`;
   };
 
   return (
@@ -297,11 +311,12 @@ export default function LotsManagementPage() {
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
-              <DialogTitle className="text-gray-900">Excluir lote</DialogTitle>
+              <DialogTitle className="text-gray-900">Excluir Lote</DialogTitle>
             </div>
             <DialogDescription className="text-gray-600 leading-relaxed">
-              Tem certeza que deseja excluir o lote{" "}
-              <span className="font-semibold text-gray-900">&quot;{deleteConfirm?.lote.nome}&quot;</span>?
+              {deleteConfirm
+                ? textoConfirmacaoExclusaoLote(deleteConfirm.nomeLote, deleteConfirm.fazendaNome)
+                : null}
               <br />
               <span className="text-red-600 font-medium">Esta ação não poderá ser desfeita.</span>
             </DialogDescription>
@@ -312,7 +327,7 @@ export default function LotsManagementPage() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => deleteConfirm && excluirMutation.mutate({ id: deleteConfirm.lote.id })}
+              onClick={() => deleteConfirm && excluirMutation.mutate({ id: deleteConfirm.loteId })}
               disabled={excluirMutation.isPending}
             >
               {excluirMutation.isPending ? "Excluindo…" : "Excluir Lote"}
@@ -328,17 +343,43 @@ export default function LotsManagementPage() {
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
                 <AlertCircle className="w-5 h-5 text-amber-600" />
               </div>
-              <DialogTitle className="text-gray-900">Não é possível excluir</DialogTitle>
+              <DialogTitle className="text-gray-900 text-left">
+                Não é possível excluir o Lote
+              </DialogTitle>
             </div>
-            <DialogDescription className="text-gray-600 leading-relaxed">
-              O lote <span className="font-semibold text-gray-900">&quot;{deleteBlocked?.nomeLote}&quot;</span> possui{" "}
-              <span className="font-semibold text-amber-700">
-                {deleteBlocked?.qtdAnimais} {deleteBlocked?.qtdAnimais === 1 ? "animal vinculado" : "animais vinculados"}
-              </span>.
+            <DialogDescription className="text-gray-600 leading-relaxed text-left">
+              {deleteBlocked ? (
+                <LoteExclusaoBloqueadaMessage
+                  nomeLote={deleteBlocked.nomeLote}
+                  qtdAnimais={deleteBlocked.qtdAnimais}
+                />
+              ) : null}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setDeleteBlocked(null)} className="w-full">Entendi</Button>
+          <DialogFooter className="gap-2 sm:gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setDeleteBlocked(null)}
+              className="px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#F0F0F0] text-gray-700 hover:bg-[#E8E8E8]"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!deleteBlocked?.loteId) return;
+                const destino = editarLoteAnimaisUrl(
+                  deleteBlocked.loteId,
+                  deleteBlocked.fazendaId,
+                );
+                setDeleteBlocked(null);
+                setLocation(destino);
+              }}
+              className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900 hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Gerenciar animais
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -374,8 +415,8 @@ export default function LotsManagementPage() {
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
           <span className="material-icons text-[16px] text-red-500">warning</span>
           <span className="font-medium">
-            Exibindo apenas lotes superlotados
-            {qtdSuperlotados > 0 ? ` (${qtdSuperlotados} ${qtdSuperlotados === 1 ? "lote" : "lotes"})` : ""}
+            Exibindo apenas Lotes superlotados
+            {qtdSuperlotados > 0 ? ` (${qtdSuperlotados} ${qtdSuperlotados === 1 ? "Lote" : "Lotes"})` : ""}
           </span>
           <button
             type="button"
@@ -423,8 +464,8 @@ export default function LotsManagementPage() {
               type="text"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Buscar lote"
-              aria-label="Buscar lote"
+              placeholder="Buscar Lote"
+              aria-label="Buscar Lote"
               className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#2D5A5A]"
             />
           </div>
@@ -516,7 +557,7 @@ export default function LotsManagementPage() {
               {!isLoading && fazendaReady && !loadingFazendas && paginated.length === 0 && (
                 <tr>
                   <td colSpan={COL_COUNT} className="px-4 py-10 text-center text-gray-400">
-                    {apenasSuperlotados ? "Nenhum lote superlotado encontrado" : "Nenhum lote encontrado"}
+                    {apenasSuperlotados ? "Nenhum Lote superlotado encontrado" : "Nenhum Lote encontrado"}
                   </td>
                 </tr>
               )}
@@ -555,8 +596,8 @@ export default function LotsManagementPage() {
                             semDataNascimento: true,
                           })}
                           className="mt-0.5 block text-[10px] text-amber-700 hover:underline"
-                          title="Ver animais sem data de nascimento neste lote"
-                          aria-label={`Ver ${semNasc} animal${semNasc === 1 ? "" : "is"} sem data de nascimento do lote ${lote.nome}`}
+                          title="Ver animais sem data de nascimento neste Lote"
+                          aria-label={`Ver ${semNasc} animal${semNasc === 1 ? "" : "is"} sem data de nascimento do Lote ${lote.nome}`}
                         >
                           Sem data nasc.: {semNasc}
                           {(lote.machosSemIdade > 0 || lote.femeasSemIdade > 0) && (
@@ -604,7 +645,7 @@ export default function LotsManagementPage() {
                     <td className="px-2 py-2 text-center border-l border-r border-gray-200 bg-gray-50/60">
                       <ContagemCell
                         value={totalGeral}
-                        label={`Ver todos os ${totalGeral} animais do lote ${lote.nome}`}
+                        label={`Ver todos os ${totalGeral} animais do Lote ${lote.nome}`}
                         onClick={() => goAnimais({
                           loteId: lote.id,
                           fazendaId: lote.fazendaId,
@@ -643,7 +684,7 @@ export default function LotsManagementPage() {
               setPerPage(size);
               setPage(1);
             }}
-            itemLabel="lotes"
+            itemLabel="Lotes"
           />
         </div>
       </div>

@@ -549,14 +549,6 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   <p className="mt-2 mx-auto max-w-xl text-[11px] leading-relaxed text-gray-500">
                     Cadastre os pastos, piquetes, currais, reservas e áreas de manejo para organizar a estrutura física da propriedade.
                   </p>
-                  <button
-                    type="button"
-                    onClick={openNovaSubdivisaoForm}
-                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded border border-gray-300 bg-white text-[11px] font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <span className="text-[14px] leading-none font-bold text-[#4ECDC4]">+</span>
-                    Nova Subdivisão
-                  </button>
                 </td>
               </tr>
             )}

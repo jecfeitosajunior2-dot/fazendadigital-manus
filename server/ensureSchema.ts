@@ -62,12 +62,22 @@ export async function ensureSchema() {
         \`animalId\` int NOT NULL,
         \`loteOrigemId\` int NOT NULL,
         \`loteDestinoId\` int NOT NULL,
+        \`pastoOrigemId\` int,
+        \`pastoDestinoId\` int,
+        \`fazendaId\` int,
         \`dataMovimentacao\` date NOT NULL,
         \`usuarioNome\` varchar(200),
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(\`id\`)
       )
     `);
+
+    const [animalLoteMovTable] = await pool.query(`SHOW TABLES LIKE 'animal_lote_movimentacoes'`);
+    if ((animalLoteMovTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "animal_lote_movimentacoes", "pastoOrigemId", "int");
+      await ensureColumn(pool, "animal_lote_movimentacoes", "pastoDestinoId", "int");
+      await ensureColumn(pool, "animal_lote_movimentacoes", "fazendaId", "int");
+    }
 
     const [fazendasTable] = await pool.query(`SHOW TABLES LIKE 'fazendas'`);
     if ((fazendasTable as unknown[]).length > 0) {

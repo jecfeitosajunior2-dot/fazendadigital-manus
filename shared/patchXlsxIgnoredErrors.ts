@@ -12,11 +12,17 @@ export function exportColLetter(colIndex: number): string {
   return s;
 }
 
-/** Intervalo de células de dados (linha 2 até última linha, cabeçalho na 1). */
-export function exportDataColRange(colIndex: number, dataRowCount: number): string {
+/** Intervalo de células de dados.
+ *  @param dataStartRow linha Excel 1-based da primeira linha de dados (padrão 2 = após cabeçalho na linha 1).
+ */
+export function exportDataColRange(
+  colIndex: number,
+  dataRowCount: number,
+  dataStartRow = 2,
+): string {
   const col = exportColLetter(colIndex);
-  const lastRow = dataRowCount + 1;
-  return `${col}2:${col}${lastRow}`;
+  const lastRow = dataStartRow + dataRowCount - 1;
+  return `${col}${dataStartRow}:${col}${lastRow}`;
 }
 
 /**

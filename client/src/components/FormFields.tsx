@@ -249,11 +249,14 @@ export function FormDatePicker({
   onChange,
   placeholder = "DD/MM/AAAA",
   required,
+  max,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   required?: boolean;
+  /** Limite superior YYYY-MM-DD (ex.: hoje). */
+  max?: string;
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
   const [inputText, setInputText] = React.useState("");
@@ -312,15 +315,15 @@ export function FormDatePicker({
 
   return (
     <FieldBox required={required} variant="light">
-      <div className="relative flex items-center min-h-[42px]">
+      <div className="flex w-full items-center justify-start gap-0.5 min-h-[34px] pl-1.5 pr-2">
         <button
           type="button"
           tabIndex={-1}
           onClick={openPicker}
-          className="absolute left-3 z-10 flex items-center justify-center text-gray-500 hover:text-[#4ECDC4] transition-colors"
+          className="shrink-0 inline-flex items-center justify-center text-[#4ECDC4] hover:text-[#0F766E] transition-colors"
           aria-label="Abrir calendário"
         >
-          <Calendar className="w-[18px] h-[18px]" strokeWidth={1.75} />
+          <Calendar className="w-4 h-4" strokeWidth={1.75} />
         </button>
         <input
           type="text"
@@ -330,7 +333,8 @@ export function FormDatePicker({
           onFocus={() => { setFocused(true); setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : ""); }}
           onBlur={handleBlur}
           placeholder={placeholder}
-          className={cn(inputClass, "pl-12 bg-white min-h-[42px]")}
+          className="w-full min-w-0 flex-1 bg-transparent border-0 outline-none py-1.5 text-[12px] leading-none text-left text-gray-800 placeholder:text-gray-400"
+          style={{ textAlign: "left", paddingLeft: 0, marginLeft: 0 }}
         />
         <input
           ref={dateRef}
@@ -339,7 +343,11 @@ export function FormDatePicker({
           tabIndex={-1}
           aria-hidden
           value={value}
-          onChange={e => { onChange(e.target.value); setFocused(false); }}
+          max={max}
+          onChange={e => {
+            onChange(e.target.value);
+            setFocused(false);
+          }}
         />
       </div>
     </FieldBox>

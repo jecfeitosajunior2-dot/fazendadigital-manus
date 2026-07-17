@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { FD_PRIMARY } from "@/components/FormFields";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +73,7 @@ export function MoveLotePastoDialog({
 
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
     onSuccess: () => {
-      toast.success("Subdivisão do lote atualizada.");
+      toast.success("Subdivisão do Lote atualizada.");
       utils.lotes.list.invalidate();
       utils.pastos.list.invalidate();
       utils.pastos.listWithDetails.invalidate();
@@ -86,42 +87,67 @@ export function MoveLotePastoDialog({
   useEffect(() => {
     if (!open) return;
     setFazendaId(defaultFazendaId ? String(defaultFazendaId) : "");
-    setPastoId(defaultPastoId ? String(defaultPastoId) : "");
+    // Sempre inicia sem seleção na lista — o usuário escolhe a subdivisão do lote.
+    setPastoId("");
   }, [open, defaultFazendaId, defaultPastoId]);
 
   const handleMove = () => {
     if (!lote) return;
-    if (!pastoId) { toast.error("Selecione o pasto de destino"); return; }
-    moveMutation.mutate({ loteId: lote.id, pastoId: parseInt(pastoId) });
+    if (!pastoId) { toast.error("Selecione a subdivisão do Lote"); return; }
+    const novoPastoId = parseInt(pastoId, 10);
+    if (lote.pastoAtualId != null && novoPastoId === lote.pastoAtualId) {
+      toast.error("Selecione uma subdivisão diferente da atual");
+      return;
+    }
+    moveMutation.mutate({ loteId: lote.id, pastoId: novoPastoId });
   };
 
-  const handleRemove = () => {
-    if (!lote) return;
-    if (!confirm("Remover a subdivisão de referência deste lote?")) return;
-    moveMutation.mutate({ loteId: lote.id, pastoId: null });
-  };
+  const temSubdivisaoAtual = Boolean(lote?.pastoAtualId);
+  const pastosDisponiveis = useMemo(() => {
+    const lista = temSubdivisaoAtual && lote?.pastoAtualId != null
+      ? pastos.filter(p => p.id !== lote.pastoAtualId)
+      : pastos;
+    return lista
+      .slice()
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }));
+  }, [pastos, temSubdivisaoAtual, lote?.pastoAtualId]);
+
+  const pastoSelecionadoNum = pastoId ? parseInt(pastoId, 10) : null;
+  const mesmaSubdivisaoAtual =
+    temSubdivisaoAtual &&
+    pastoSelecionadoNum != null &&
+    pastoSelecionadoNum === lote?.pastoAtualId;
+  const podeConfirmar =
+    Boolean(pastoId) &&
+    pastosDisponiveis.some(p => p.id === pastoSelecionadoNum) &&
+    !mesmaSubdivisaoAtual &&
+    !moveMutation.isPending;
+  // Quando a fazenda já vem do lote, o campo é só leitura.
+  const fazendaSomenteLeitura = Boolean(defaultFazendaId);
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onOpenAutoFocus={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="text-[14px]">
-            {lote?.pastoAtualId ? "Alterar subdivisão" : "Definir subdivisão"} — {lote?.nome}
+            {temSubdivisaoAtual ? "Alterar subdivisão do Lote" : "Definir subdivisão do Lote"}
+            {lote?.nome ? ` — ${lote.nome}` : ""}
           </DialogTitle>
         </DialogHeader>
-        {lote?.pastoNome && (
-          <p className="text-[11px] text-gray-500 -mt-2">
-            Subdivisão atual do lote: <span className="font-medium text-gray-700">{lote.pastoNome}</span>
-          </p>
-        )}
         <p className="text-[11px] text-amber-800/90 bg-amber-50 border border-amber-100 rounded px-2.5 py-2">
-          Esta ação altera apenas a subdivisão de referência do lote. As subdivisões individuais dos animais não serão modificadas.
+          Define a localização operacional deste Lote. Os animais continuam no Lote; a subdivisão é do Lote, não de cada animal.
         </p>
         <div className="space-y-3">
           <div>
             <Label className="text-[10px]">Fazenda</Label>
-            <Select value={fazendaId} onValueChange={v => { setFazendaId(v); setPastoId(""); }}>
-              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione uma fazenda" /></SelectTrigger>
+            <Select
+              value={fazendaId || undefined}
+              onValueChange={v => { setFazendaId(v); setPastoId(""); }}
+              disabled={fazendaSomenteLeitura}
+            >
+              <SelectTrigger className="h-8 text-[12px] w-full">
+                <SelectValue placeholder="Selecione uma fazenda" />
+              </SelectTrigger>
               <SelectContent>
                 {fazendas.map(f => (
                   <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">{f.nome}</SelectItem>
@@ -129,34 +155,52 @@ export function MoveLotePastoDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {temSubdivisaoAtual && lote?.pastoNome ? (
+            <p className="text-[12px] text-gray-600">
+              Subdivisão atual:{" "}
+              <span className="font-medium text-gray-800">{lote.pastoNome}</span>
+            </p>
+          ) : null}
+
           <div>
-            <Label className="text-[10px]">Subdivisão Destino</Label>
-            <Select value={pastoId} onValueChange={setPastoId} disabled={!fazendaId}>
-              <SelectTrigger className="h-8 text-[12px]">
+            <Label className="text-[10px]">
+              {temSubdivisaoAtual ? "Nova subdivisão do Lote" : "Subdivisão do Lote"}
+            </Label>
+            <Select
+              value={pastoId || undefined}
+              onValueChange={setPastoId}
+              disabled={!fazendaId || pastosDisponiveis.length === 0}
+            >
+              <SelectTrigger className="h-8 text-[12px] w-full">
                 <SelectValue placeholder="Selecione a subdivisão" />
               </SelectTrigger>
               <SelectContent>
-                {pastos
-                  .slice()
-                  .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }))
-                  .map(p => (
-                    <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
-                      {p.nome}{p.capacidade ? ` (${p.capacidade} UA)` : ""}
-                    </SelectItem>
-                  ))}
+                {pastosDisponiveis.map(p => (
+                  <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
+                    {p.nome}{p.capacidade ? ` (${p.capacidade} UA)` : ""}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {fazendaId && pastos.length === 0 ? (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Nenhuma subdivisão cadastrada para esta fazenda.
+              </p>
+            ) : null}
+            {fazendaId && pastos.length > 0 && pastosDisponiveis.length === 0 ? (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Nenhuma outra subdivisão disponível.
+              </p>
+            ) : null}
           </div>
+
           <div className="flex gap-2 pt-1">
-            {lote?.pastoAtualId && (
-              <Button type="button" variant="outline" onClick={handleRemove} className="h-8 text-[11px] text-red-600">
-                Remover subdivisão
-              </Button>
-            )}
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
+              disabled={moveMutation.isPending}
               className="h-8 text-[11px] flex-1 bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               Cancelar
@@ -164,11 +208,15 @@ export function MoveLotePastoDialog({
             <Button
               type="button"
               onClick={handleMove}
-              disabled={moveMutation.isPending || !pastoId}
-              className="h-8 text-[11px] flex-1"
-              style={{ backgroundColor: "#2D5A5A", color: "#fff", opacity: moveMutation.isPending || !pastoId ? 0.5 : 1 }}
+              disabled={!podeConfirmar}
+              className="h-8 text-[11px] flex-1 font-semibold text-gray-900 hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY, opacity: podeConfirmar ? 1 : 0.5 }}
             >
-              {moveMutation.isPending ? "Salvando..." : "Confirmar"}
+              {moveMutation.isPending
+                ? "Salvando..."
+                : temSubdivisaoAtual
+                  ? "Alterar subdivisão"
+                  : "Definir subdivisão"}
             </Button>
           </div>
         </div>
@@ -194,7 +242,7 @@ export function AssignLotePastoDialog({
 }) {
   const utils = trpc.useUtils();
   const [loteId, setLoteId] = useState("");
-  const { data: lotes = [] } = trpc.lotes.list.useQuery(undefined, { enabled: open });
+  const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true }, { enabled: open });
   const disponiveis = useMemo(
     () => lotes.filter(l => l.pastoAtualId !== pastoId),
     [lotes, pastoId]
@@ -216,13 +264,13 @@ export function AssignLotePastoDialog({
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-[14px]">Alocar lote — {pastoNome}</DialogTitle>
+          <DialogTitle className="text-[14px]">Alocar Lote — {pastoNome}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label className="text-[10px]">Lote</Label>
             <Select value={loteId} onValueChange={setLoteId}>
-              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione o lote" /></SelectTrigger>
+              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione o Lote" /></SelectTrigger>
               <SelectContent>
                 {disponiveis.map(l => (
                   <SelectItem key={l.id} value={String(l.id)} className="text-[12px]">

@@ -34,7 +34,8 @@ function downloadPdfBlob(blob: Blob, filename: string) {
 
 function exportFilename(base: string) {
   const agora = new Date();
-  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const carimbo = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}_${pad(agora.getHours())}-${pad(agora.getMinutes())}-${pad(agora.getSeconds())}`;
   return `${base}_${carimbo}.xlsx`;
 }
 
@@ -57,7 +58,7 @@ export async function exportListSpreadsheet(
   filename: string,
   options?: ExportSpreadsheetOptions,
 ) {
-  if (rows.length === 0) {
+  if (rows.length === 0 && !options?.allowEmpty) {
     toast.error("Nenhum dado para exportar");
     return;
   }

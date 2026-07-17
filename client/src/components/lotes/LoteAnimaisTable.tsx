@@ -13,10 +13,9 @@ export type LoteAnimalRow = {
   raca: string | null;
   dataNascimento: string | null;
   categoria: string | null;
-  pastoNome: string | null;
 };
 
-export type LoteAnimaisSortKey = "brinco" | "categoria" | "sexo" | "raca" | "pasto";
+export type LoteAnimaisSortKey = "brinco";
 
 type Props = {
   animais: LoteAnimalRow[];
@@ -45,18 +44,46 @@ const LOTE_TABLE_CHECKBOX_HEADER_CLASS = cn(
   "data-[state=indeterminate]:bg-[var(--fd-checkbox)] data-[state=indeterminate]:border-[var(--fd-checkbox)] data-[state=indeterminate]:text-white",
 );
 
-function displayBrinco(animal: LoteAnimalRow) {
+export function displayLoteAnimalBrinco(animal: LoteAnimalRow) {
   return animal.brinco?.trim() || animal.nome?.trim() || String(animal.id);
+}
+
+/** Filtra/ordena como a tabela de animais do Lote (mesma sequência da tela). */
+export function orderLoteAnimaisForTable(
+  animais: LoteAnimalRow[],
+  opts: { search?: string; sortAsc: boolean },
+): LoteAnimalRow[] {
+  const q = opts.search?.trim().toLowerCase() ?? "";
+  const filtered = q
+    ? animais.filter(a =>
+      (a.brinco || "").toLowerCase().includes(q) ||
+      (a.nome || "").toLowerCase().includes(q) ||
+      (a.categoria || "").toLowerCase().includes(q) ||
+      (a.raca || "").toLowerCase().includes(q)
+    )
+    : animais;
+
+  const naturalCompare = (sa: string, sb: string) =>
+    sa.localeCompare(sb, undefined, { numeric: true, sensitivity: "base" });
+
+  return [...filtered].sort((a, b) => {
+    const cmp = naturalCompare(displayLoteAnimalBrinco(a), displayLoteAnimalBrinco(b));
+    return opts.sortAsc ? cmp : -cmp;
+  });
+}
+
+function displayBrinco(animal: LoteAnimalRow) {
+  return displayLoteAnimalBrinco(animal);
 }
 
 function displaySexo(sexo: LoteAnimalRow["sexo"]) {
   return sexo === "macho" ? "Macho" : "Fêmea";
 }
 
-function SortIcon({ col, sortKey, sortAsc }: { col: LoteAnimaisSortKey; sortKey: LoteAnimaisSortKey; sortAsc: boolean }) {
+function SortIcon({ sortAsc }: { sortAsc: boolean }) {
   return (
     <span className="material-icons text-[14px] text-gray-400 ml-0.5 align-middle leading-none">
-      {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
+      {sortAsc ? "arrow_drop_up" : "arrow_drop_down"}
     </span>
   );
 }
@@ -101,45 +128,10 @@ export default function LoteAnimaisTable({
   onPageChange,
   onPerPageChange,
 }: Props) {
-  const filtered = useMemo(() => {
-    if (!search.trim()) return animais;
-    const q = search.toLowerCase();
-    return animais.filter(a =>
-      (a.brinco || "").toLowerCase().includes(q) ||
-      (a.nome || "").toLowerCase().includes(q) ||
-      (a.categoria || "").toLowerCase().includes(q) ||
-      (a.raca || "").toLowerCase().includes(q) ||
-      (a.pastoNome || "").toLowerCase().includes(q)
-    );
-  }, [animais, search]);
-
-  const sorted = useMemo(() => {
-    const rows = [...filtered];
-    const naturalCompare = (sa: string, sb: string) =>
-      sa.localeCompare(sb, undefined, { numeric: true, sensitivity: "base" });
-    rows.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "brinco":
-          cmp = naturalCompare(displayBrinco(a), displayBrinco(b));
-          break;
-        case "categoria":
-          cmp = naturalCompare(a.categoria || "", b.categoria || "");
-          break;
-        case "sexo":
-          cmp = a.sexo.localeCompare(b.sexo);
-          break;
-        case "raca":
-          cmp = naturalCompare(a.raca || "", b.raca || "");
-          break;
-        case "pasto":
-          cmp = naturalCompare(a.pastoNome || "", b.pastoNome || "");
-          break;
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-    return rows;
-  }, [filtered, sortKey, sortAsc]);
+  const sorted = useMemo(
+    () => orderLoteAnimaisForTable(animais, { search, sortAsc }),
+    [animais, search, sortKey, sortAsc],
+  );
 
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -171,7 +163,7 @@ export default function LoteAnimaisTable({
       style={{ ["--fd-checkbox" as string]: FD_PRIMARY }}
     >
       <div className="overflow-x-auto">
-        <table className="w-full text-[12px] min-w-[640px]">
+        <table className="w-full text-[12px] min-w-[520px]">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="w-10 px-2 py-2 border-r border-gray-200 align-middle">
@@ -186,23 +178,22 @@ export default function LoteAnimaisTable({
                 </CheckboxHitCell>
               </th>
               <th className={thSortClass} onClick={() => onSort("brinco")}>
-                Brinco <SortIcon col="brinco" sortKey={sortKey} sortAsc={sortAsc} />
+                Brinco <SortIcon sortAsc={sortAsc} />
               </th>
               <th className={thClass}>Categoria</th>
               <th className={thClass}>Sexo</th>
-              <th className={thClass}>Raça</th>
-              <th className={`${thClass} border-r-0`}>Subdivisão do animal</th>
+              <th className={`${thClass} border-r-0`}>Raça</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-gray-400">Carregando...</td>
+                <td colSpan={5} className="text-center py-8 text-gray-400">Carregando...</td>
               </tr>
             ) : paginated.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-gray-400">
-                  {search.trim() ? "Nenhum animal encontrado para a busca." : "Nenhum animal neste lote."}
+                <td colSpan={5} className="text-center py-8 text-gray-400">
+                  {search.trim() ? "Nenhum animal encontrado para a busca." : "Nenhum animal neste Lote."}
                 </td>
               </tr>
             ) : (
@@ -231,8 +222,7 @@ export default function LoteAnimaisTable({
                     <td className="px-3 py-1.5 text-gray-800 font-medium border-r border-gray-100 text-center">{displayBrinco(animal)}</td>
                     <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{animal.categoria || "—"}</td>
                     <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{displaySexo(animal.sexo)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">{animal.raca || "—"}</td>
-                    <td className="px-3 py-1.5 text-gray-600 text-center">{animal.pastoNome || "—"}</td>
+                    <td className="px-3 py-1.5 text-gray-600 text-center">{animal.raca || "—"}</td>
                   </tr>
                 );
               })

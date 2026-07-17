@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { exportListPdf, exportListSpreadsheet, type ExportRow } from "@/lib/exportList";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
 import { cn } from "@/lib/utils";
+import type { ExportReportInfoLine } from "@shared/buildExportSpreadsheet";
 
 type Props = {
   title: string;
@@ -24,6 +25,22 @@ type Props = {
   spreadsheetTextCols?: number[];
   spreadsheetColumnNumFmts?: Partial<Record<number, string>>;
   spreadsheetColumnAligns?: ("left" | "center" | "right")[];
+  /** Nome da aba do Excel. */
+  spreadsheetSheetName?: string;
+  /** Título mesclado no topo da planilha. */
+  spreadsheetReportTitle?: string | (() => string);
+  /** Linhas compactas de contexto (texto corrido). */
+  spreadsheetReportSubtitles?: string[] | (() => string[]);
+  /** Linhas de contexto label/valor (legado). */
+  spreadsheetReportInfo?: ExportReportInfoLine[] | (() => ExportReportInfoLine[]);
+  /** Permite Excel com 0 linhas de dados. */
+  spreadsheetAllowEmpty?: boolean;
+  /** Linha em branco após identificação (padrão true). */
+  spreadsheetBlankAfterMeta?: boolean;
+  /** Filtro automático (padrão true). */
+  spreadsheetAutoFilter?: boolean;
+  /** Cabeçalho discreto sem preenchimento colorido. */
+  spreadsheetPlainHeader?: boolean;
   pdfHeaders?: string[];
   pdfRows?: ExportRow[];
   pdfColumnAligns?: ("left" | "center" | "right")[];
@@ -74,6 +91,14 @@ export default function ListExportButtons({
   spreadsheetTextCols,
   spreadsheetColumnNumFmts,
   spreadsheetColumnAligns,
+  spreadsheetSheetName,
+  spreadsheetReportTitle,
+  spreadsheetReportSubtitles,
+  spreadsheetReportInfo,
+  spreadsheetAllowEmpty,
+  spreadsheetBlankAfterMeta,
+  spreadsheetAutoFilter,
+  spreadsheetPlainHeader,
   pdfHeaders,
   pdfRows,
   pdfColumnAligns,
@@ -156,6 +181,20 @@ export default function ListExportButtons({
                 textColIndexes: spreadsheetTextCols,
                 columnNumFmts: spreadsheetColumnNumFmts,
                 columnAligns: spreadsheetColumnAligns,
+                sheetName: spreadsheetSheetName,
+                reportTitle: typeof spreadsheetReportTitle === "function"
+                  ? spreadsheetReportTitle()
+                  : spreadsheetReportTitle,
+                reportSubtitles: typeof spreadsheetReportSubtitles === "function"
+                  ? spreadsheetReportSubtitles()
+                  : spreadsheetReportSubtitles,
+                reportInfo: typeof spreadsheetReportInfo === "function"
+                  ? spreadsheetReportInfo()
+                  : spreadsheetReportInfo,
+                allowEmpty: spreadsheetAllowEmpty,
+                blankAfterMeta: spreadsheetBlankAfterMeta,
+                autoFilter: spreadsheetAutoFilter,
+                plainHeader: spreadsheetPlainHeader,
               });
             }}
           />

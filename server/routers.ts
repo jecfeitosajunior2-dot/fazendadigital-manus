@@ -46,6 +46,11 @@ import {
   listLocalPesagens,
   createLocalLote,
   getLocalLote,
+  moveLocalLoteToPasto,
+  updateLocalLote,
+  excluirLocalLote,
+  incluirAnimaisLocalLote,
+  movimentarAnimaisLocalLote,
   createLocalPesagem,
   deleteLocalPesagem,
   listLocalSaudeRegistros,
@@ -69,6 +74,16 @@ import {
   buildLocalMapaRebanhoGeral,
 } from "./localFallbackStore";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
+import {
+  mensagemExclusaoLoteBloqueada,
+  mensagemInativacaoLoteSucesso,
+  mensagemLotePossuiHistorico,
+} from "../shared/loteExclusaoBloqueada";
+import {
+  avaliarExclusaoLote,
+  executarExclusaoLote,
+  executarInativacaoLote,
+} from "./loteExclusaoCheck";
 import { packReproObservacoes } from "../shared/reproRegistroMeta";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
 import {
@@ -1715,16 +1730,26 @@ const lotesRouter = router({
       return { rows, totalAnimaisSubdivisao };
     }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      const lotesList = await db.select().from(lotes).where(eq(lotes.userId, ctx.user.id)).orderBy(desc(lotes.createdAt));
-      return Promise.all(lotesList.map(enrichLote));
-    } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-      const lotesList = await listLocalLotes(ctx.user.id);
-      return Promise.all(lotesList.map(lote => enrichLocalLote(lote, ctx.user.id)));
-    }
-  }),
+  list: protectedProcedure
+    .input(z.object({ somenteAtivos: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const somenteAtivos = input?.somenteAtivos ?? false;
+      try {
+        const conditions = [eq(lotes.userId, ctx.user.id)];
+        if (somenteAtivos) conditions.push(eq(lotes.ativo, true));
+        const lotesList = await db.select().from(lotes)
+          .where(and(...conditions))
+          .orderBy(desc(lotes.createdAt));
+        return Promise.all(lotesList.map(enrichLote));
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        let lotesList = await listLocalLotes(ctx.user.id);
+        if (somenteAtivos) {
+          lotesList = lotesList.filter(l => l.ativo !== false);
+        }
+        return Promise.all(lotesList.map(lote => enrichLocalLote(lote, ctx.user.id)));
+      }
+    }),
 
   listByPasto: protectedProcedure
     .input(z.object({ pastoId: z.number() }))
@@ -1762,86 +1787,102 @@ const lotesRouter = router({
       dataEntrada: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const [lote] = await db.select().from(lotes).where(
-        and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id))
-      ).limit(1);
-      if (!lote) throw new Error("Lote não encontrado");
-
-      // Data efetiva da movimentação: usa a informada pelo usuário ou hoje
-      const hoje = input.dataEntrada ?? hojeISO();
-      const qtdAnimais = await countAnimaisLote(lote.id);
-      const pastoOrigemId = lote.pastoAtualId ?? null;
-
-      if (input.pastoId === pastoOrigemId) {
-        return { success: true };
-      }
-
-      // Fecha estadia anterior
-      if (pastoOrigemId) {
-        const [aberta] = await db.select().from(lotePastoMovimentacoes).where(
-          and(
-            eq(lotePastoMovimentacoes.loteId, lote.id),
-            eq(lotePastoMovimentacoes.pastoDestinoId, pastoOrigemId),
-            isNull(lotePastoMovimentacoes.dataSaida),
-          )
+      try {
+        const [lote] = await db.select().from(lotes).where(
+          and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id))
         ).limit(1);
+        if (!lote) throw new Error("Lote não encontrado");
 
-        const dataEntrada = aberta?.dataEntrada ?? lote.dataEntradaPasto ?? hoje;
-        const dias = diasEntre(dataEntrada, hoje);
+        // Data efetiva da movimentação: usa a informada pelo usuário ou hoje
+        const hoje = input.dataEntrada ?? hojeISO();
+        const qtdAnimais = await countAnimaisLote(lote.id);
+        const pastoOrigemId = lote.pastoAtualId ?? null;
 
-        if (aberta) {
-          await db.update(lotePastoMovimentacoes).set({ dataSaida: hoje, diasNoPasto: dias })
-            .where(eq(lotePastoMovimentacoes.id, aberta.id));
-        } else {
-          await db.insert(lotePastoMovimentacoes).values({
-            userId: ctx.user.id,
-            loteId: lote.id,
-            pastoOrigemId: null,
-            pastoDestinoId: pastoOrigemId,
-            dataEntrada,
-            dataSaida: hoje,
-            diasNoPasto: dias,
-            qtdAnimais,
+        if (input.pastoId === pastoOrigemId) {
+          return { success: true };
+        }
+
+        // Fecha estadia anterior
+        if (pastoOrigemId) {
+          const [aberta] = await db.select().from(lotePastoMovimentacoes).where(
+            and(
+              eq(lotePastoMovimentacoes.loteId, lote.id),
+              eq(lotePastoMovimentacoes.pastoDestinoId, pastoOrigemId),
+              isNull(lotePastoMovimentacoes.dataSaida),
+            )
+          ).limit(1);
+
+          const dataEntrada = aberta?.dataEntrada ?? lote.dataEntradaPasto ?? hoje;
+          const dias = diasEntre(dataEntrada, hoje);
+
+          if (aberta) {
+            await db.update(lotePastoMovimentacoes).set({ dataSaida: hoje, diasNoPasto: dias })
+              .where(eq(lotePastoMovimentacoes.id, aberta.id));
+          } else {
+            await db.insert(lotePastoMovimentacoes).values({
+              userId: ctx.user.id,
+              loteId: lote.id,
+              pastoOrigemId: null,
+              pastoDestinoId: pastoOrigemId,
+              dataEntrada,
+              dataSaida: hoje,
+              diasNoPasto: dias,
+              qtdAnimais,
+            });
+          }
+          await syncPastoStatus(pastoOrigemId, ctx.user.id);
+        }
+
+        if (input.pastoId === null) {
+          await db.update(lotes).set({
+            pastoAtualId: null,
+            dataEntradaPasto: null,
+            fazendaId: null,
+          }).where(eq(lotes.id, lote.id));
+          return { success: true };
+        }
+
+        const [pasto] = await db.select().from(pastos).where(
+          and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id))
+        ).limit(1);
+        if (!pasto) throw new Error("Pasto não encontrado");
+
+        await db.insert(lotePastoMovimentacoes).values({
+          userId: ctx.user.id,
+          loteId: lote.id,
+          pastoOrigemId,
+          pastoDestinoId: input.pastoId,
+          dataEntrada: hoje,
+          qtdAnimais,
+          observacoes: input.observacoes,
+        });
+
+        await db.update(lotes).set({
+          pastoAtualId: input.pastoId,
+          fazendaId: pasto.fazendaId,
+          dataEntradaPasto: hoje,
+          localizacao: pasto.nome,
+        }).where(eq(lotes.id, lote.id));
+
+        await db.update(pastos).set({ status: "ativo" })
+          .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id)));
+
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          return await moveLocalLoteToPasto(ctx.user.id, {
+            loteId: input.loteId,
+            pastoId: input.pastoId,
+            dataEntrada: input.dataEntrada,
+          });
+        } catch (localError) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: localError instanceof Error ? localError.message : "Lote ou pasto não encontrado.",
           });
         }
-        await syncPastoStatus(pastoOrigemId, ctx.user.id);
       }
-
-      if (input.pastoId === null) {
-        await db.update(lotes).set({
-          pastoAtualId: null,
-          dataEntradaPasto: null,
-          fazendaId: null,
-        }).where(eq(lotes.id, lote.id));
-        return { success: true };
-      }
-
-      const [pasto] = await db.select().from(pastos).where(
-        and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id))
-      ).limit(1);
-      if (!pasto) throw new Error("Pasto não encontrado");
-
-      await db.insert(lotePastoMovimentacoes).values({
-        userId: ctx.user.id,
-        loteId: lote.id,
-        pastoOrigemId,
-        pastoDestinoId: input.pastoId,
-        dataEntrada: hoje,
-        qtdAnimais,
-        observacoes: input.observacoes,
-      });
-
-      await db.update(lotes).set({
-        pastoAtualId: input.pastoId,
-        fazendaId: pasto.fazendaId,
-        dataEntradaPasto: hoje,
-        localizacao: pasto.nome,
-      }).where(eq(lotes.id, lote.id));
-
-      await db.update(pastos).set({ status: "ativo" })
-        .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id)));
-
-      return { success: true };
     }),
 
   getById: protectedProcedure
@@ -1943,10 +1984,14 @@ const lotesRouter = router({
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
-          throw new TRPCError({
-            code: "SERVICE_UNAVAILABLE",
-            message: "Banco indisponível. Não é possível salvar alterações no servidor agora.",
-          });
+          try {
+            return await updateLocalLote(ctx.user.id, id, updateData);
+          } catch (localError) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: localError instanceof Error ? localError.message : "Lote não encontrado.",
+            });
+          }
         }
         throw error;
       }
@@ -1958,33 +2003,105 @@ const lotesRouter = router({
       animalIds: z.array(z.number()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const [lote] = await db.select({ id: lotes.id })
-        .from(lotes)
-        .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-      if (!lote) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      try {
+        const [lote] = await db.select({
+          id: lotes.id,
+          fazendaId: lotes.fazendaId,
+          pastoAtualId: lotes.pastoAtualId,
+          ativo: lotes.ativo,
+        })
+          .from(lotes)
+          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (!lote) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+        }
+        if (lote.ativo === false) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Este Lote está inativo e não aceita novos animais.",
+          });
+        }
+        if (!lote.fazendaId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.",
+          });
+        }
+
+        const animaisRows = await db.select({
+          id: animais.id,
+          fazendaId: animais.fazendaId,
+          loteId: animais.loteId,
+          status: animais.status,
+        })
+          .from(animais)
+          .where(and(
+            eq(animais.userId, ctx.user.id),
+            inArray(animais.id, input.animalIds),
+          ));
+
+        if (animaisRows.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Nenhum animal válido foi encontrado para inclusão.",
+          });
+        }
+
+        const validos: number[] = [];
+        let erroAmigavel: string | null = null;
+        for (const animal of animaisRows) {
+          if (animal.status !== "ativo") {
+            if (!erroAmigavel) erroAmigavel = "Só é possível adicionar animais ativos ao lote.";
+            continue;
+          }
+          if (animal.fazendaId !== lote.fazendaId) {
+            if (!erroAmigavel) {
+              erroAmigavel = "Este animal pertence a outra fazenda e não pode ser incluído neste lote.";
+            }
+            continue;
+          }
+          if (animal.loteId != null) {
+            if (!erroAmigavel) {
+              erroAmigavel = "Este animal já pertence a outro lote. Use a transferência entre lotes para movimentá-lo.";
+            }
+            continue;
+          }
+          validos.push(animal.id);
+        }
+
+        if (validos.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: erroAmigavel || "Nenhum animal válido para inclusão neste lote.",
+          });
+        }
+
+        // Mantém a fazenda do animal; atualiza lote e localização operacional (subdivisão do lote).
+        await db.update(animais)
+          .set({
+            loteId: input.loteId,
+            pastoId: lote.pastoAtualId ?? null,
+          })
+          .where(and(
+            eq(animais.userId, ctx.user.id),
+            inArray(animais.id, validos),
+          ));
+
+        return { success: true, count: validos.length };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          return await incluirAnimaisLocalLote(ctx.user.id, input);
+        } catch (localError) {
+          const message = localError instanceof Error ? localError.message : "Não foi possível incluir os animais.";
+          throw new TRPCError({
+            code: message.includes("não encontrado") ? "NOT_FOUND" : "BAD_REQUEST",
+            message,
+          });
+        }
       }
-
-      const animaisRows = await db.select({ id: animais.id })
-        .from(animais)
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      if (animaisRows.length !== input.animalIds.length) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Um ou mais animais não foram encontrados." });
-      }
-
-      await db.update(animais)
-        .set({ loteId: input.loteId })
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      return { success: true, count: input.animalIds.length };
     }),
 
   movimentarAnimais: protectedProcedure
@@ -1999,62 +2116,107 @@ const lotesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino deve ser diferente do lote de origem." });
       }
 
-      const [loteOrigem] = await db.select().from(lotes)
-        .where(and(eq(lotes.id, input.loteOrigemId), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-      if (!loteOrigem) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de origem não encontrado." });
+      const hoje = new Date();
+      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+      if (input.dataMovimentacao > hojeISO) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A data da movimentação não pode ser futura.",
+        });
       }
 
-      const [loteDestino] = await db.select().from(lotes)
-        .where(and(eq(lotes.id, input.loteDestinoId), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-      if (!loteDestino) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
-      }
-      if (loteDestino.ativo === false) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
-      }
-
-      const animaisRows = await db.select({ id: animais.id })
-        .from(animais)
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          eq(animais.loteId, input.loteOrigemId),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      if (animaisRows.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence ao lote de origem." });
-      }
-
-      const animalIds = animaisRows.map(a => a.id);
       const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
 
-      await db.update(animais)
-        .set({ loteId: input.loteDestinoId })
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          eq(animais.loteId, input.loteOrigemId),
-          inArray(animais.id, animalIds),
-        ));
+      try {
+        const [loteOrigem] = await db.select().from(lotes)
+          .where(and(eq(lotes.id, input.loteOrigemId), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (!loteOrigem) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote de origem não encontrado." });
+        }
 
-      await db.insert(animalLoteMovimentacoes).values(
-        animalIds.map(animalId => ({
-          userId: ctx.user.id,
-          animalId,
-          loteOrigemId: input.loteOrigemId,
-          loteDestinoId: input.loteDestinoId,
-          dataMovimentacao: input.dataMovimentacao,
-          usuarioNome,
-        })),
-      );
+        const [loteDestino] = await db.select().from(lotes)
+          .where(and(eq(lotes.id, input.loteDestinoId), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (!loteDestino) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
+        }
+        if (loteDestino.ativo === false) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
+        }
+        if (
+          loteOrigem.fazendaId != null
+          && loteDestino.fazendaId != null
+          && loteOrigem.fazendaId !== loteDestino.fazendaId
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A transferência entre lotes só é permitida dentro da mesma fazenda.",
+          });
+        }
 
-      return {
-        success: true,
-        count: animalIds.length,
-        loteDestinoNome: loteDestino.nome,
-      };
+        const animaisRows = await db.select({ id: animais.id })
+          .from(animais)
+          .where(and(
+            eq(animais.userId, ctx.user.id),
+            eq(animais.loteId, input.loteOrigemId),
+            inArray(animais.id, input.animalIds),
+          ));
+
+        if (animaisRows.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence ao lote de origem." });
+        }
+
+        const animalIds = animaisRows.map(a => a.id);
+        const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? null;
+        const pastoDestinoId = loteDestino.pastoAtualId ?? null;
+
+        // Mantém a fazenda do animal; atualiza lote e localização (subdivisão do destino).
+        await db.update(animais)
+          .set({
+            loteId: input.loteDestinoId,
+            pastoId: pastoDestinoId,
+          })
+          .where(and(
+            eq(animais.userId, ctx.user.id),
+            eq(animais.loteId, input.loteOrigemId),
+            inArray(animais.id, animalIds),
+          ));
+
+        await db.insert(animalLoteMovimentacoes).values(
+          animalIds.map(animalId => ({
+            userId: ctx.user.id,
+            animalId,
+            loteOrigemId: input.loteOrigemId,
+            loteDestinoId: input.loteDestinoId,
+            pastoOrigemId: loteOrigem.pastoAtualId ?? null,
+            pastoDestinoId,
+            fazendaId: fazendaIdHistorico,
+            dataMovimentacao: input.dataMovimentacao,
+            usuarioNome,
+          })),
+        );
+
+        return {
+          success: true,
+          count: animalIds.length,
+          loteDestinoNome: loteDestino.nome,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          return await movimentarAnimaisLocalLote(ctx.user.id, input, usuarioNome);
+        } catch (localError) {
+          const message = localError instanceof Error
+            ? localError.message
+            : "Não foi possível transferir os animais.";
+          throw new TRPCError({
+            code: message.includes("não encontrado") ? "NOT_FOUND" : "BAD_REQUEST",
+            message,
+          });
+        }
+      }
     }),
 
   ultimaMovimentacaoPorAnimais: protectedProcedure
@@ -2131,7 +2293,11 @@ const lotesRouter = router({
       const animalIds = toMove.map(a => a.id);
 
       await db.update(animais)
-        .set({ loteId: input.loteDestinoId })
+        .set({
+          loteId: input.loteDestinoId,
+          fazendaId: input.fazendaDestinoId,
+          pastoId: input.pastoDestinoId,
+        })
         .where(and(
           eq(animais.userId, ctx.user.id),
           inArray(animais.id, animalIds),
@@ -2224,37 +2390,52 @@ const lotesRouter = router({
       return { success: true, count: animaisRows.length };
     }),
 
+  verificarExclusao: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await avaliarExclusaoLote(ctx.user.id, input.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Não foi possível verificar o Lote.";
+        throw new TRPCError({ code: "NOT_FOUND", message });
+      }
+    }),
+
   excluir: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Verifica se o lote pertence ao usuário
-      const [lote] = await db
-        .select({ id: lotes.id, nome: lotes.nome })
-        .from(lotes)
-        .where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-
-      if (!lote) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
-      }
-
-      // Conta animais vinculados (independente de status)
-      const [countRow] = await db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(animais)
-        .where(and(eq(animais.loteId, input.id), eq(animais.userId, ctx.user.id)));
-
-      const qtdAnimais = Number(countRow?.count ?? 0);
-
-      if (qtdAnimais > 0) {
+      try {
+        const result = await executarExclusaoLote(ctx.user.id, input.id);
+        return { success: true, nomeLote: result.nomeLote };
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Não foi possível excluir o Lote.";
+        const isBlocked = message.includes("possui") && message.includes("animal")
+          || message.includes("movimentações registradas");
         throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `Não é possível excluir o lote "${lote.nome}". Existem ${qtdAnimais} animal(is) vinculado(s) a este lote. Mova ou remova os animais primeiro.`,
+          code: isBlocked ? "PRECONDITION_FAILED" : "BAD_REQUEST",
+          message,
         });
       }
+    }),
 
-      await db.delete(lotes).where(and(eq(lotes.id, input.id), eq(lotes.userId, ctx.user.id)));
-      return { success: true, nomeLote: lote.nome };
+  inativar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await executarInativacaoLote(ctx.user.id, input.id);
+        return { success: true, nomeLote: result.nomeLote };
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : "Não foi possível inativar o Lote.";
+        const isBlocked = message.includes("possui") && message.includes("animal");
+        throw new TRPCError({
+          code: isBlocked ? "PRECONDITION_FAILED" : "BAD_REQUEST",
+          message,
+        });
+      }
     }),
 
   // ─── Mapa do Rebanho V2 (agrupado por Subdivisão) ──────────────────────────────
