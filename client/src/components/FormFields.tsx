@@ -65,6 +65,9 @@ export function FormInput({
   required,
   compact,
   className,
+  variant = "default",
+  min,
+  step,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -75,9 +78,12 @@ export function FormInput({
   required?: boolean;
   compact?: boolean;
   className?: string;
+  variant?: "default" | "light";
+  min?: string | number;
+  step?: string | number;
 }) {
   return (
-    <FieldBox required={required}>
+    <FieldBox required={required} variant={variant}>
       <input
         type={type}
         inputMode={inputMode}
@@ -85,7 +91,13 @@ export function FormInput({
         onChange={e => onChange(e.target.value)}
         onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
         placeholder={placeholder}
-        className={cn(compact ? inputClassCompact : inputClass, className)}
+        min={min}
+        step={step}
+        className={cn(
+          compact ? inputClassCompact : inputClass,
+          variant === "light" && "bg-white",
+          className,
+        )}
       />
     </FieldBox>
   );
@@ -99,6 +111,7 @@ export function FormNativeSelect({
   required,
   compact,
   options,
+  variant = "default",
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -107,6 +120,7 @@ export function FormNativeSelect({
   required?: boolean;
   compact?: boolean;
   options: readonly { value: string; label: string }[];
+  variant?: "default" | "light";
 }) {
   const mergedOptions = React.useMemo(() => {
     const current = String(value ?? "").trim();
@@ -116,7 +130,7 @@ export function FormNativeSelect({
   }, [value, options]);
 
   return (
-    <FieldBox required={required}>
+    <FieldBox required={required} variant={variant}>
       <div className="relative">
         <select
           value={value}
@@ -124,6 +138,7 @@ export function FormNativeSelect({
           onChange={e => onChange(e.target.value)}
           className={cn(
             compact ? inputClassCompact : inputClass,
+            variant === "light" && "bg-white",
             "appearance-none cursor-pointer w-full min-h-[42px] pr-10",
           )}
           required={required}
@@ -361,6 +376,7 @@ export function FormTextarea({
   rows = 4,
   required,
   className,
+  variant = "default",
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -368,15 +384,16 @@ export function FormTextarea({
   rows?: number;
   required?: boolean;
   className?: string;
+  variant?: "default" | "light";
 }) {
   return (
-    <FieldBox required={required}>
+    <FieldBox required={required} variant={variant}>
       <textarea
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className={cn(inputClass, "resize-y min-h-[80px]", className)}
+        className={cn(inputClassCompact, "resize-y min-h-[80px]", className)}
       />
     </FieldBox>
   );

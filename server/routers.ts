@@ -72,6 +72,8 @@ import {
   mergeHistoricoBrincosLists,
   buildLocalMapaRebanhoV2,
   buildLocalMapaRebanhoGeral,
+  listLocalMapaRebanhoHistorico,
+  excluirLocalLotePastoMovimentacao,
 } from "./localFallbackStore";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import {
@@ -1875,6 +1877,7 @@ const lotesRouter = router({
             loteId: input.loteId,
             pastoId: input.pastoId,
             dataEntrada: input.dataEntrada,
+            observacoes: input.observacoes,
           });
         } catch (localError) {
           throw new TRPCError({
@@ -2601,18 +2604,28 @@ const lotesRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       try {
-      const lotesFazenda = await db.select({ id: lotes.id, nome: lotes.nome })
-        .from(lotes)
-        .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
-      if (lotesFazenda.length === 0) return [];
-      const loteIds = lotesFazenda.map(l => l.id);
-      const loteNomeMap = new Map(lotesFazenda.map(l => [l.id, l.nome]));
-
+      const loteNomeMap = new Map<number, string>();
       const conditions: Parameters<typeof and>[0][] = [
         eq(lotePastoMovimentacoes.userId, ctx.user.id),
-        inArray(lotePastoMovimentacoes.loteId, loteIds),
       ];
-      if (input.loteId) conditions.push(eq(lotePastoMovimentacoes.loteId, input.loteId));
+
+      if (input.loteId) {
+        const [lote] = await db.select({ id: lotes.id, nome: lotes.nome })
+          .from(lotes)
+          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
+          .limit(1);
+        if (!lote) return [];
+        loteNomeMap.set(lote.id, lote.nome);
+        conditions.push(eq(lotePastoMovimentacoes.loteId, input.loteId));
+      } else {
+        const lotesFazenda = await db.select({ id: lotes.id, nome: lotes.nome })
+          .from(lotes)
+          .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
+        if (lotesFazenda.length === 0) return [];
+        lotesFazenda.forEach(l => loteNomeMap.set(l.id, l.nome));
+        conditions.push(inArray(lotePastoMovimentacoes.loteId, lotesFazenda.map(l => l.id)));
+      }
+
       if (input.pastoId) {
         conditions.push(
           sql`(${lotePastoMovimentacoes.pastoOrigemId} = ${input.pastoId} OR ${lotePastoMovimentacoes.pastoDestinoId} = ${input.pastoId})`
@@ -2634,6 +2647,15 @@ const lotesRouter = router({
         pastosRows.forEach(p => { pastoNomeMap[p.id] = p.nome; });
       }
 
+      // Nomes de lotes que aparecem no histórico mas não estavam no mapa inicial
+      const missingLoteIds = [...new Set(rows.map(r => r.loteId))].filter(id => !loteNomeMap.has(id));
+      if (missingLoteIds.length) {
+        const extraLotes = await db.select({ id: lotes.id, nome: lotes.nome })
+          .from(lotes)
+          .where(and(eq(lotes.userId, ctx.user.id), inArray(lotes.id, missingLoteIds)));
+        extraLotes.forEach(l => loteNomeMap.set(l.id, l.nome));
+      }
+
       return rows.map(r => ({
         id: r.id,
         loteId: r.loteId,
@@ -2649,7 +2671,9 @@ const lotesRouter = router({
         observacoes: r.observacoes ?? null,
       }));
       } catch (error) {
-        if (isDatabaseUnavailable(error)) return [];
+        if (isDatabaseUnavailable(error)) {
+          return listLocalMapaRebanhoHistorico(ctx.user.id, input);
+        }
         throw error;
       }
     }),
@@ -2783,6 +2807,7 @@ const lotesRouter = router({
   excluirMovimentacao: protectedProcedure
     .input(z.object({ movimentacaoId: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      try {
       // Busca a movimentação e valida que pertence ao usuário
       const [mov] = await db.select().from(lotePastoMovimentacoes)
         .where(and(
@@ -2805,6 +2830,17 @@ const lotesRouter = router({
       await db.delete(lotePastoMovimentacoes)
         .where(eq(lotePastoMovimentacoes.id, input.movimentacaoId));
       return { ok: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          return await excluirLocalLotePastoMovimentacao(ctx.user.id, input.movimentacaoId);
+        } catch (localError) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: localError instanceof Error ? localError.message : "Movimentação não encontrada.",
+          });
+        }
+      }
     }),
 });
 const saudeRouter = router({

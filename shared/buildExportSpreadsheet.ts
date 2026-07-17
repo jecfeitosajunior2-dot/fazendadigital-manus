@@ -12,6 +12,17 @@ export type ExportReportInfoLine = {
   value: string;
 };
 
+export type GroupedTableHeaderCell = {
+  text: string;
+  colSpan?: number;
+  rowSpan?: number;
+};
+
+export type GroupedTableHeader = {
+  topRow: GroupedTableHeaderCell[];
+  bottomRow: string[];
+};
+
 export type BuildExportSpreadsheetOptions = {
   currencyColIndexes?: number[];
   currencyNumFmt?: string;
@@ -36,6 +47,8 @@ export type BuildExportSpreadsheetOptions = {
   plainHeader?: boolean;
   /** Permite exportar com 0 linhas de dados (mantém cabeçalho/tabela vazia). */
   allowEmpty?: boolean;
+  /** Cabeçalho em duas linhas (agrupado), como o quadro de Gerenciamento de Lotes. */
+  groupedTableHeader?: GroupedTableHeader;
 };
 
 export type ExportSpreadsheetRow = (string | number | null | undefined)[];
@@ -61,6 +74,85 @@ function columnWidth(headers: string[], rows: ExportSpreadsheetRow[], colIndex: 
 function thinBorder(): Partial<ExcelJS.Borders> {
   const edge: Partial<ExcelJS.Border> = { style: "thin", color: { argb: BORDER_COLOR } };
   return { top: edge, left: edge, bottom: edge, right: edge };
+}
+
+function applyHeaderCellStyle(
+  cell: ExcelJS.Cell,
+  plainHeader: boolean,
+  horizontal: "left" | "center" | "right" = "center",
+) {
+  cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
+  cell.alignment = { horizontal, vertical: "middle" };
+  if (plainHeader) {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
+    cell.border = {
+      top: { style: "thin", color: { argb: BORDER_COLOR } },
+      left: { style: "thin", color: { argb: BORDER_COLOR } },
+      right: { style: "thin", color: { argb: BORDER_COLOR } },
+      bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
+    };
+  } else {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+    cell.border = {
+      ...thinBorder(),
+      bottom: { style: "thin", color: { argb: HEADER_BORDER } },
+    };
+  }
+}
+
+function addGroupedTableHeader(
+  ws: ExcelJS.Worksheet,
+  grouped: GroupedTableHeader,
+  plainHeader: boolean,
+): number {
+  const totalCols = grouped.topRow.reduce((sum, cell) => sum + (cell.colSpan ?? 1), 0);
+  const topValues = Array.from({ length: totalCols }, () => "");
+
+  const groupRow = ws.addRow(topValues);
+  groupRow.height = 22;
+
+  let col = 1;
+  for (const cellDef of grouped.topRow) {
+    const colSpan = cellDef.colSpan ?? 1;
+    const rowSpan = cellDef.rowSpan ?? 1;
+    const cell = groupRow.getCell(col);
+    cell.value = cellDef.text;
+    applyHeaderCellStyle(cell, plainHeader, "center");
+    if (colSpan > 1 || rowSpan > 1) {
+      ws.mergeCells(
+        groupRow.number,
+        col,
+        groupRow.number + rowSpan - 1,
+        col + colSpan - 1,
+      );
+    }
+    col += colSpan;
+  }
+
+  const bottomValues = Array.from({ length: totalCols }, () => "");
+  let bottomIdx = 0;
+  col = 1;
+  for (const cellDef of grouped.topRow) {
+    const colSpan = cellDef.colSpan ?? 1;
+    const rowSpan = cellDef.rowSpan ?? 1;
+    if (rowSpan > 1) {
+      col += colSpan;
+      continue;
+    }
+    for (let i = 0; i < colSpan; i++) {
+      bottomValues[col - 1 + i] = grouped.bottomRow[bottomIdx] ?? "";
+      bottomIdx += 1;
+    }
+    col += colSpan;
+  }
+
+  const subHeaderRow = ws.addRow(bottomValues);
+  subHeaderRow.height = 20;
+  subHeaderRow.eachCell({ includeEmpty: false }, cell => {
+    applyHeaderCellStyle(cell, plainHeader, "center");
+  });
+
+  return subHeaderRow.number;
 }
 
 function reportMetaRowCount(options?: BuildExportSpreadsheetOptions): number {
@@ -90,7 +182,9 @@ export async function buildExportSpreadsheetWorkbook(
     || (options?.reportInfo?.length ?? 0) > 0,
   );
   const blankAfterMeta = hasMeta && options?.blankAfterMeta !== false;
-  const headerExcelRow = metaRows + 1;
+  const groupedHeader = options?.groupedTableHeader;
+  const headerRowCount = groupedHeader ? 2 : 1;
+  let headerExcelRow = metaRows + headerRowCount;
   const plainHeader = options?.plainHeader === true;
   const enableAutoFilter = options?.autoFilter !== false;
 
@@ -126,10 +220,13 @@ export async function buildExportSpreadsheetWorkbook(
       color: { argb: "FF0F172A" },
     };
     titleCell.alignment = {
-      horizontal: "left",
+      horizontal: plainHeader ? "center" : "left",
       vertical: "middle",
       indent: 0,
     };
+    if (plainHeader) {
+      titleCell.border = thinBorder();
+    }
   }
 
   if (options?.reportSubtitles?.length) {
@@ -164,30 +261,36 @@ export async function buildExportSpreadsheetWorkbook(
     ws.addRow([]);
   }
 
-  const headerRow = ws.addRow(headers);
-  headerRow.height = 22;
-  headerRow.eachCell(cell => {
-    cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
-    cell.alignment = {
-      horizontal: "center",
-      vertical: "middle",
-    };
-    if (plainHeader) {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
-      cell.border = {
-        top: { style: "thin", color: { argb: BORDER_COLOR } },
-        left: { style: "thin", color: { argb: BORDER_COLOR } },
-        right: { style: "thin", color: { argb: BORDER_COLOR } },
-        bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
+  if (groupedHeader) {
+    headerExcelRow = addGroupedTableHeader(ws, groupedHeader, plainHeader);
+    ws.views = [{ state: "frozen", ySplit: headerExcelRow }];
+  } else {
+    const headerRow = ws.addRow(headers);
+    headerRow.height = 22;
+    headerRow.eachCell(cell => {
+      cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
+      cell.alignment = {
+        horizontal: "center",
+        vertical: "middle",
       };
-    } else {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
-      cell.border = {
-        ...thinBorder(),
-        bottom: { style: "thin", color: { argb: HEADER_BORDER } },
-      };
-    }
-  });
+      if (plainHeader) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
+        cell.border = {
+          top: { style: "thin", color: { argb: BORDER_COLOR } },
+          left: { style: "thin", color: { argb: BORDER_COLOR } },
+          right: { style: "thin", color: { argb: BORDER_COLOR } },
+          bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
+        };
+      } else {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
+        cell.border = {
+          ...thinBorder(),
+          bottom: { style: "thin", color: { argb: HEADER_BORDER } },
+        };
+      }
+    });
+    headerExcelRow = headerRow.number;
+  }
 
   for (const row of rows) {
     const excelRow = ws.addRow(new Array(headers.length).fill(null));

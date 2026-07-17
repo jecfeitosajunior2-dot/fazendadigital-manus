@@ -18,6 +18,14 @@ import { FD_PRIMARY } from "@/components/FormFields";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { toast } from "sonner";
 import {
+  buildLoteGerenciamentoExportRows,
+  loteGerenciamentoGroupedTableHeader,
+  loteGerenciamentoPdfHeadRows,
+  LOTE_GERENCIAMENTO_COLUMN_ALIGNS,
+  LOTE_GERENCIAMENTO_FLAT_HEADERS,
+  LOTE_GERENCIAMENTO_INTEGER_COLS,
+} from "@shared/loteGerenciamentoExport";
+import {
   FAIXAS_IDADE_LOTE,
   FAIXA_IDADE_LOTE_LABELS,
   faixaIdadeLoteRange,
@@ -253,34 +261,18 @@ export default function LotsManagementPage() {
     }
   };
 
-  const exportHeaders = [
-    "Nome do Lote",
-    ...FAIXAS_IDADE_LOTE.map(f => `Machos ${FAIXA_IDADE_LOTE_LABELS[f]} meses`),
-    "Machos sem data nasc.",
-    ...FAIXAS_IDADE_LOTE.map(f => `Fêmeas ${FAIXA_IDADE_LOTE_LABELS[f]} meses`),
-    "Fêmeas sem data nasc.",
-    "Total",
-    "Machos",
-    "Fêmeas",
-  ];
+  const exportHeaders = [...LOTE_GERENCIAMENTO_FLAT_HEADERS];
 
   const exportData = useMemo(
-    () => sorted.map(l => {
-      const totalMachos = totalPorSexoFaixas(l.machos, l.machosSemIdade ?? 0);
-      const totalFemeas = totalPorSexoFaixas(l.femeas, l.femeasSemIdade ?? 0);
-      return [
-        l.nome,
-        ...FAIXAS_IDADE_LOTE.map(f => l.machos[f] || 0),
-        l.machosSemIdade || 0,
-        ...FAIXAS_IDADE_LOTE.map(f => l.femeas[f] || 0),
-        l.femeasSemIdade || 0,
-        totalMachos + totalFemeas,
-        totalMachos,
-        totalFemeas,
-      ];
-    }),
+    () => buildLoteGerenciamentoExportRows(sorted),
     [sorted],
   );
+
+  const exportFazendaNome = fazendaFilter
+    ? fazendasList.find(f => f.id === Number(fazendaFilter))?.nome ?? "Todas as fazendas"
+    : "Todas as fazendas";
+
+  const buildExportIdentityLine = () => `${exportFazendaNome} — Gerenciamento de Lotes`;
 
   const qtdSuperlotados = (gerenciamento as LoteGerenciamento[]).filter(l => l.superlotado).length;
 
@@ -403,10 +395,21 @@ export default function LotsManagementPage() {
             headers={exportHeaders}
             rows={exportData}
             alignRightFrom={1}
-            fazendaNome={fazendaFilter
-              ? fazendasList.find(f => f.id === Number(fazendaFilter))?.nome ?? "Todas as fazendas"
-              : "Todas as fazendas"}
+            landscape
+            pdfLandscape
+            fazendaNome={exportFazendaNome}
             variant="secondary"
+            spreadsheetSheetName="Gerenciamento de Lotes"
+            spreadsheetReportTitle={buildExportIdentityLine}
+            spreadsheetGroupedTableHeader={loteGerenciamentoGroupedTableHeader()}
+            spreadsheetAllowEmpty
+            spreadsheetBlankAfterMeta={false}
+            spreadsheetAutoFilter={false}
+            spreadsheetIntegerCols={LOTE_GERENCIAMENTO_INTEGER_COLS}
+            spreadsheetColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
+            spreadsheetPlainHeader
+            pdfHeadRows={loteGerenciamentoPdfHeadRows()}
+            pdfColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
           />
         </div>
       </div>
@@ -489,12 +492,12 @@ export default function LotsManagementPage() {
                 </th>
                 <th
                   rowSpan={2}
-                  className="sticky top-0 left-10 z-30 px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50 min-w-[180px]"
+                  className="sticky top-0 left-10 z-30 px-3 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50 min-w-[180px]"
                 >
                   <button
                     type="button"
                     onClick={() => setSortAsc(v => !v)}
-                    className="inline-flex items-center gap-1 hover:text-gray-900"
+                    className="inline-flex items-center gap-1 hover:text-gray-900 mx-auto"
                   >
                     Nome do Lote
                     <span className="material-icons text-[14px] text-gray-400">
@@ -579,11 +582,11 @@ export default function LotsManagementPage() {
                         className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
                       />
                     </td>
-                    <td className="sticky left-10 z-10 px-3 py-2 border-r border-gray-50 bg-white group-hover:bg-gray-50 min-w-[180px]">
+                    <td className="sticky left-10 z-10 px-3 py-2 text-center border-r border-gray-50 bg-white group-hover:bg-gray-50 min-w-[180px]">
                       <button
                         type="button"
                         onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)}
-                        className="text-left font-medium text-gray-800 hover:underline"
+                        className="text-center font-medium text-gray-800 hover:underline"
                       >
                         {lote.nome}
                       </button>
@@ -595,7 +598,7 @@ export default function LotsManagementPage() {
                             fazendaId: lote.fazendaId,
                             semDataNascimento: true,
                           })}
-                          className="mt-0.5 block text-[10px] text-amber-700 hover:underline"
+                          className="mt-0.5 block text-[10px] text-amber-700 hover:underline text-center"
                           title="Ver animais sem data de nascimento neste Lote"
                           aria-label={`Ver ${semNasc} animal${semNasc === 1 ? "" : "is"} sem data de nascimento do Lote ${lote.nome}`}
                         >

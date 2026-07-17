@@ -15,6 +15,7 @@ const saudeRegistrosFile = path.join(dataDir, "saude-registros.json");
 const reproducaoRegistrosFile = path.join(dataDir, "reproducao-registros.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
 const animalLoteMovimentacoesFile = path.join(dataDir, "animal-lote-movimentacoes.json");
+const lotePastoMovimentacoesFile = path.join(dataDir, "lote-pasto-movimentacoes.json");
 
 export function isDatabaseUnavailable(error: unknown): boolean {
   const parts: string[] = [];
@@ -397,10 +398,49 @@ export async function createLocalLote(
   return { id };
 }
 
+export type LocalLotePastoMovimentacao = {
+  id: number;
+  userId: number;
+  loteId: number;
+  pastoOrigemId: number | null;
+  pastoDestinoId: number | null;
+  dataEntrada: string;
+  dataSaida: string | null;
+  diasNoPasto: number | null;
+  qtdAnimais: number | null;
+  observacoes: string | null;
+  createdAt: string;
+};
+
+function diasEntrePasto(inicio: string, fim: string): number {
+  const a = new Date(`${inicio.slice(0, 10)}T12:00:00`);
+  const b = new Date(`${fim.slice(0, 10)}T12:00:00`);
+  return Math.max(0, Math.floor((b.getTime() - a.getTime()) / 86400000));
+}
+
+function nextLocalRowId(rows: { id: number }[]): number {
+  return rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+}
+
+async function readLotePastoMovimentacoes(): Promise<LocalLotePastoMovimentacao[]> {
+  return readJsonFile<LocalLotePastoMovimentacao[]>(lotePastoMovimentacoesFile, []);
+}
+
+async function writeLotePastoMovimentacoes(rows: LocalLotePastoMovimentacao[]): Promise<void> {
+  await writeJsonFile(lotePastoMovimentacoesFile, rows);
+}
+
+async function countLocalAnimaisNoLote(userId: number, loteId: number): Promise<number> {
+  const animais = await readAnimais();
+  const byUser = animais.filter(row => row.userId === userId);
+  const pool = byUser.length > 0 ? byUser : animais;
+  return pool.filter(a => Number(a.loteId) === loteId).length;
+}
+
 /** Move/define subdivisão do lote no armazenamento local (quando o MySQL está offline). */
 export async function moveLocalLoteToPasto(
   userId: number,
-  input: { loteId: number; pastoId: number | null; dataEntrada?: string },
+  input: { loteId: number; pastoId: number | null; dataEntrada?: string; observacoes?: string },
 ): Promise<{ success: true; localFallback: true }> {
   const rows = await readLotes();
   const byUser = rows.filter(row => row.userId === userId);
@@ -413,19 +453,60 @@ export async function moveLocalLoteToPasto(
 
   const hoje = input.dataEntrada ?? new Date().toISOString().slice(0, 10);
   const pastoOrigemId = lote.pastoAtualId ?? null;
+  const qtdAnimais = await countLocalAnimaisNoLote(userId, lote.id);
+  const movs = await readLotePastoMovimentacoes();
+  const now = new Date().toISOString();
 
   if (input.pastoId === pastoOrigemId) {
     return { success: true, localFallback: true };
   }
 
+  const fecharEstadiaAnterior = () => {
+    if (!pastoOrigemId) return;
+    const abertaIdx = movs.findIndex(
+      m =>
+        m.loteId === lote.id
+        && m.pastoDestinoId === pastoOrigemId
+        && m.dataSaida == null,
+    );
+    const dataEntrada = abertaIdx >= 0
+      ? movs[abertaIdx].dataEntrada
+      : (lote.dataEntradaPasto ?? hoje);
+    const dias = diasEntrePasto(dataEntrada, hoje);
+
+    if (abertaIdx >= 0) {
+      movs[abertaIdx] = {
+        ...movs[abertaIdx],
+        dataSaida: hoje,
+        diasNoPasto: dias,
+      };
+    } else {
+      movs.push({
+        id: nextLocalRowId(movs),
+        userId,
+        loteId: lote.id,
+        pastoOrigemId: null,
+        pastoDestinoId: pastoOrigemId,
+        dataEntrada,
+        dataSaida: hoje,
+        diasNoPasto: dias,
+        qtdAnimais,
+        observacoes: null,
+        createdAt: now,
+      });
+    }
+  };
+
   if (input.pastoId === null) {
+    fecharEstadiaAnterior();
+    await writeLotePastoMovimentacoes(movs);
     rows[index] = {
       ...rows[index],
       pastoAtualId: null,
       dataEntradaPasto: null,
       fazendaId: null,
       localizacao: null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
     await writeLotes(rows);
     return { success: true, localFallback: true };
@@ -435,17 +516,33 @@ export async function moveLocalLoteToPasto(
   const pasto = pastos.find(p => p.id === input.pastoId);
   if (!pasto) throw new Error("Pasto não encontrado");
 
+  fecharEstadiaAnterior();
+
+  movs.push({
+    id: nextLocalRowId(movs),
+    userId,
+    loteId: lote.id,
+    pastoOrigemId,
+    pastoDestinoId: input.pastoId,
+    dataEntrada: hoje,
+    dataSaida: null,
+    diasNoPasto: null,
+    qtdAnimais,
+    observacoes: input.observacoes ?? null,
+    createdAt: now,
+  });
+  await writeLotePastoMovimentacoes(movs);
+
   rows[index] = {
     ...rows[index],
     pastoAtualId: input.pastoId,
     fazendaId: pasto.fazendaId,
     dataEntradaPasto: hoje,
     localizacao: pasto.nome,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
   await writeLotes(rows);
 
-  // Marca o pasto como ativo (espelha o comportamento do MySQL)
   try {
     await updateLocalPasto(userId, input.pastoId, { status: "ativo" });
   } catch {
@@ -453,6 +550,115 @@ export async function moveLocalLoteToPasto(
   }
 
   return { success: true, localFallback: true };
+}
+
+export async function listLocalMapaRebanhoHistorico(
+  userId: number,
+  input: { fazendaId: number; loteId?: number; pastoId?: number; limit?: number },
+) {
+  const limit = input.limit ?? 50;
+  const lotes = await listLocalLotes(userId);
+  const loteNomeMap = new Map(lotes.map(l => [l.id, String(l.nome)]));
+  const pastos = await listLocalPastos(userId);
+  const pastoNomeMap = new Map(pastos.map(p => [p.id, String(p.nome)]));
+
+  let movs = await readLotePastoMovimentacoes();
+  movs = movs.filter(m => m.userId === userId);
+
+  if (input.loteId) {
+    const lote = lotes.find(l => l.id === input.loteId);
+    if (!lote) return [];
+    movs = movs.filter(m => m.loteId === input.loteId);
+  } else {
+    const loteIdsFazenda = new Set(
+      lotes.filter(l => Number(l.fazendaId) === input.fazendaId).map(l => l.id),
+    );
+    if (loteIdsFazenda.size === 0) return [];
+    movs = movs.filter(m => loteIdsFazenda.has(m.loteId));
+  }
+
+  if (input.pastoId) {
+    movs = movs.filter(
+      m => m.pastoOrigemId === input.pastoId || m.pastoDestinoId === input.pastoId,
+    );
+  }
+
+  movs.sort((a, b) => b.dataEntrada.localeCompare(a.dataEntrada));
+
+  const mapped = movs.slice(0, limit).map(r => ({
+    id: r.id,
+    loteId: r.loteId,
+    loteNome: loteNomeMap.get(r.loteId) ?? "—",
+    pastoOrigemId: r.pastoOrigemId,
+    pastoOrigemNome: r.pastoOrigemId ? (pastoNomeMap.get(r.pastoOrigemId) ?? "—") : null,
+    pastoDestinoId: r.pastoDestinoId,
+    pastoDestinoNome: r.pastoDestinoId ? (pastoNomeMap.get(r.pastoDestinoId) ?? "—") : null,
+    dataEntrada: r.dataEntrada,
+    dataSaida: r.dataSaida,
+    diasNoPasto: r.diasNoPasto,
+    qtdAnimais: r.qtdAnimais,
+    observacoes: r.observacoes,
+  }));
+
+  // Estadia atual sem registro (movimentações feitas antes da correção do histórico local)
+  if (mapped.length === 0 && input.loteId) {
+    const lote = lotes.find(l => l.id === input.loteId);
+    if (lote?.pastoAtualId && lote.dataEntradaPasto) {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const qtd = await countLocalAnimaisNoLote(userId, lote.id);
+      mapped.push({
+        id: 0,
+        loteId: lote.id,
+        loteNome: loteNomeMap.get(lote.id) ?? String(lote.nome),
+        pastoOrigemId: null,
+        pastoOrigemNome: null,
+        pastoDestinoId: lote.pastoAtualId,
+        pastoDestinoNome: pastoNomeMap.get(lote.pastoAtualId) ?? "—",
+        dataEntrada: lote.dataEntradaPasto,
+        dataSaida: null,
+        diasNoPasto: diasEntrePasto(lote.dataEntradaPasto, hoje),
+        qtdAnimais: qtd,
+        observacoes: null,
+      });
+    }
+  }
+
+  return mapped;
+}
+
+export async function excluirLocalLotePastoMovimentacao(
+  userId: number,
+  movimentacaoId: number,
+): Promise<{ ok: true }> {
+  const movs = await readLotePastoMovimentacoes();
+  const idx = movs.findIndex(m => m.id === movimentacaoId && m.userId === userId);
+  if (idx < 0) throw new Error("Movimentação não encontrada.");
+
+  const mov = movs[idx];
+  if (!mov.dataSaida) {
+    const lotes = await readLotes();
+    const loteIdx = lotes.findIndex(l => l.id === mov.loteId);
+    if (loteIdx >= 0) {
+      lotes[loteIdx] = {
+        ...lotes[loteIdx],
+        pastoAtualId: null,
+        dataEntradaPasto: null,
+        updatedAt: new Date().toISOString(),
+      };
+      await writeLotes(lotes);
+    }
+    if (mov.pastoDestinoId) {
+      try {
+        await updateLocalPasto(userId, mov.pastoDestinoId, { status: "vazio" });
+      } catch {
+        // ignora se pasto não existir localmente
+      }
+    }
+  }
+
+  movs.splice(idx, 1);
+  await writeLotePastoMovimentacoes(movs);
+  return { ok: true };
 }
 
 export async function avaliarExclusaoLocalLote(

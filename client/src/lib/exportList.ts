@@ -84,7 +84,11 @@ export type ExportPdfOptions = {
   integerColIndexes?: number[];
   columnAligns?: ExportColumnAlign[];
   wrapColIndexes?: number[];
+  /** Cabeçalho em múltiplas linhas (ex.: Machos / Fêmeas agrupados). */
+  headRows?: PdfHeadCell[][];
 };
+
+export type PdfHeadCell = string | { content: string; colSpan?: number; rowSpan?: number };
 
 const PDF_SYMBOL_URL = "/assets/brand/fd-symbol-final-aligned.png";
 const FD_NAVY = [15, 23, 42] as const;
@@ -343,6 +347,7 @@ function formatPdfCell(
 
   if (typeof cell === "number" && Number.isFinite(cell)) {
     if (integerCols?.has(colIdx)) return String(Math.round(cell));
+    if (cell === 0) return "0";
     return cell.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
@@ -371,6 +376,8 @@ export async function exportListPdf(
   const currencyCols = options?.currencyColIndexes ? new Set(options.currencyColIndexes) : null;
   const integerCols = options?.integerColIndexes ? new Set(options.integerColIndexes) : null;
   const alignOpts = { alignRightFrom, alignRightCols, columnAligns: options?.columnAligns };
+  const headRows = options?.headRows;
+  const columnCount = headers.length;
 
   const agora = new Date();
   const dataFormatada = agora.toLocaleDateString("pt-BR", {
@@ -426,13 +433,15 @@ export async function exportListPdf(
       });
     };
 
-    const columnStyles = headers.reduce<Record<number, { halign: "left" | "center" | "right" }>>((acc, _, i) => {
+    const columnStyles = Array.from({ length: columnCount }, (_, i) => i).reduce<
+      Record<number, { halign: "left" | "center" | "right" }>
+    >((acc, i) => {
       acc[i] = { halign: pdfCellAlign(i, alignOpts) as "left" | "center" | "right" };
       return acc;
     }, {});
 
     autoTable(doc, {
-      head: [headers],
+      head: headRows ?? [headers],
       body: tableRows,
       startY: tableStartY,
       margin: { top: tableStartY, right: marginX, bottom: 15, left: marginX },

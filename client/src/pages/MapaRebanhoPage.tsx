@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import ListExportButtons, { ExportMenuItem } from "@/components/ListExportButtons";
 import { exportMapaRebanhoPdf, exportMapaRebanhoXlsx, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
 import { FormDatePicker, FormLabel, FormNativeSelect, FieldBox, inputClass } from "@/components/FormFields";
+import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 
 const GREEN = "#2D5A5A";
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
@@ -67,6 +68,117 @@ function calcDiasNoPasto(dataEntradaPasto: string | null): number | null {
   const diffMs = hoje.getTime() - entrada.getTime();
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
+function formatDiasNoPasto(dias: number): string {
+  return `${dias} dia${dias !== 1 ? "s" : ""} no pasto`;
+}
+
+/** Entrada no pasto — linha de subdivisão */
+function EntradaPastoSubdivisao({ sub }: { sub: SubdivisaoInfo }) {
+  if (sub.totalAnimais === 0) {
+    if (sub.diasVazio != null) {
+      return (
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="text-[12px] text-gray-600">Sem animais</span>
+          <span className="text-[10px] text-amber-600 font-medium">{sub.diasVazio}d vazio</span>
+        </div>
+      );
+    }
+    return <span className="text-[12px] text-gray-600">Sem animais</span>;
+  }
+  return <span className="text-[12px] text-gray-400">—</span>;
+}
+
+/** Entrada no pasto — linha de lote */
+function EntradaPastoLote({ dataEntradaPasto }: { dataEntradaPasto: string | null }) {
+  if (!dataEntradaPasto) {
+    return <span className="text-[12px] text-gray-500 italic">Sem histórico</span>;
+  }
+  const dias = calcDiasNoPasto(dataEntradaPasto);
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[12px] text-gray-700 tabular-nums">{formatDate(dataEntradaPasto)}</span>
+      {dias !== null && (
+        <span className="text-[10px] text-gray-500">{formatDiasNoPasto(dias)}</span>
+      )}
+    </div>
+  );
+}
+
+const MAPA_TABLE_HEADERS = (
+  <>
+    <th
+      className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wide"
+      title="Subdivisão e lotes vinculados"
+    >
+      Subdivisão e Lotes
+    </th>
+    <th
+      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-24"
+      title="Total de animais"
+    >
+      Animais
+    </th>
+    <th
+      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-24"
+      title="Área (ha)"
+    >
+      Área
+    </th>
+    <th
+      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28"
+      title="Taxa de lotação (UA/ha)"
+    >
+      Lotação
+    </th>
+    <th
+      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28"
+      title="Entrada no pasto"
+    >
+      Entrada
+    </th>
+    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-44">
+      Ações
+    </th>
+  </>
+);
+
+const MAPA_TABLE_HEADERS_LIGHT = (
+  <>
+    <th
+      className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+      title="Subdivisão e lotes vinculados"
+    >
+      Subdivisão e Lotes
+    </th>
+    <th
+      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24"
+      title="Total de animais"
+    >
+      Animais
+    </th>
+    <th
+      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24"
+      title="Área (ha)"
+    >
+      Área
+    </th>
+    <th
+      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28"
+      title="Taxa de lotação (UA/ha)"
+    >
+      Lotação
+    </th>
+    <th
+      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28"
+      title="Entrada no pasto"
+    >
+      Entrada
+    </th>
+    <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-44">
+      Ações
+    </th>
+  </>
+);
 
 function statusBadge(status: string | null) {
   if (!status) return null;
@@ -197,10 +309,17 @@ function ModalMoverLote({
 // ─── Modal Histórico ───────────────────────────────────────────────────────────
 type HistoricoRow = {
   id: number; loteId: number; loteNome: string;
-  pastoOrigemNome: string | null; pastoDestinoNome: string | null;
+  pastoOrigemId?: number | null;
+  pastoOrigemNome: string | null;
+  pastoDestinoId?: number | null;
+  pastoDestinoNome: string | null;
   dataEntrada: string; dataSaida: string | null;
   diasNoPasto: number | null; qtdAnimais: number | null; observacoes: string | null;
 };
+
+function temOrigemRegistrada(row: HistoricoRow): boolean {
+  return row.pastoOrigemId != null || !!row.pastoOrigemNome?.trim();
+}
 
 function TimelineCard({
   row, isFirst, confirmandoId, onConfirmar, onCancelar, onExcluir, isPending,
@@ -216,6 +335,8 @@ function TimelineCard({
   const isAtual = !row.dataSaida;
   const dias = row.diasNoPasto;
   const diasLabel = dias != null ? `${dias}d no pasto` : null;
+  const comOrigem = temOrigemRegistrada(row);
+  const destinoNome = row.pastoDestinoNome?.trim() || "—";
 
   return (
     <div className="flex gap-3">
@@ -269,8 +390,8 @@ function TimelineCard({
               </span>
             )}
           </div>
-          {/* Botão excluir (todas as movimentações) */}
-          {true && (
+          {/* Botão excluir (registros persistidos apenas) */}
+          {row.id > 0 && (
             confirmandoId === row.id ? (
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button
@@ -290,49 +411,57 @@ function TimelineCard({
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                title="Excluir movimentação"
+              <TableIconButton
+                label="Excluir movimentação"
                 onClick={() => onConfirmar(row.id)}
-                className="p-1 text-gray-400 hover:text-red-600 transition-colors flex-shrink-0"
+                tone="danger"
+                compact
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+                <DeleteActionIcon size={16} />
+              </TableIconButton>
             )
           )}
         </div>
 
-        {/* Rota DE → PARA */}
-        <div className="flex items-center gap-2 mt-2">
-          <div
-            style={{
-              fontSize: 11, color: "#6b7280",
-              backgroundColor: "#f9fafb", borderRadius: 3,
-              padding: "2px 8px", border: "1px solid #e5e7eb",
-              maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}
-            title={row.pastoOrigemNome ?? "Entrada inicial"}
-          >
-            {row.pastoOrigemNome ?? <span style={{ color: "#d1d5db" }}>Entrada inicial</span>}
+        {/* Rota ou registro inicial */}
+        {comOrigem ? (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <div
+              style={{
+                fontSize: 11, color: "#6b7280",
+                backgroundColor: "#f9fafb", borderRadius: 3,
+                padding: "2px 8px", border: "1px solid #e5e7eb",
+                maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}
+              title={row.pastoOrigemNome ?? undefined}
+            >
+              <span style={{ fontWeight: 600, color: "#9ca3af", marginRight: 4 }}>Origem:</span>
+              {row.pastoOrigemNome}
+            </div>
+            <svg style={{ width: 14, height: 14, color: "#9ca3af", flexShrink: 0 }} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+            <div
+              style={{
+                fontSize: 11, fontWeight: 600, color: "#2D5A5A",
+                backgroundColor: "#f0fdf4", borderRadius: 3,
+                padding: "2px 8px", border: "1px solid #bbf7d0",
+                maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}
+              title={destinoNome}
+            >
+              <span style={{ fontWeight: 600, color: "#6b7280", marginRight: 4 }}>Destino:</span>
+              {destinoNome}
+            </div>
           </div>
-          <svg style={{ width: 14, height: 14, color: "#9ca3af", flexShrink: 0 }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-          </svg>
-          <div
-            style={{
-              fontSize: 11, fontWeight: 600, color: "#2D5A5A",
-              backgroundColor: "#f0fdf4", borderRadius: 3,
-              padding: "2px 8px", border: "1px solid #bbf7d0",
-              maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}
-            title={row.pastoDestinoNome ?? "—"}
+        ) : (
+          <p
+            className="mt-2 text-[12px] font-semibold text-[#2D5A5A] leading-snug"
+            title="Primeiro registro conhecido no sistema — origem anterior não registrada"
           >
-            {row.pastoDestinoNome ?? "—"}
-          </div>
-        </div>
+            Registro inicial no {destinoNome}
+          </p>
+        )}
 
         {/* Datas e metadados */}
         <div className="flex items-center gap-4 mt-2 flex-wrap">
@@ -516,38 +645,39 @@ function LoteRow({
 
   return (
     <>
-      <tr className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors">
-        <td className="pl-10 pr-3 py-2.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-gray-300">└</span>
-            <span className="text-[12px] font-medium text-gray-700">{lote.loteNome}</span>
+      <tr className="border-b border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
+        <td className="pl-12 pr-3 py-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[12px] text-[#4ECDC4]/80 shrink-0" aria-hidden>└</span>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">LOTE</span>
+            <span className="text-[12px] font-normal text-gray-700 truncate">{lote.loteNome}</span>
           </div>
         </td>
-        <td className="px-3 py-2.5 text-center">
-          <span className="text-[12px] font-semibold text-gray-800">{lote.totalAnimais}</span>
+        <td className="px-3 py-2 text-center">
+          <span className="text-[12px] font-medium text-gray-700 tabular-nums">{lote.totalAnimais}</span>
         </td>
-        <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-        <td className="px-3 py-2.5 text-center">
+        <td className="px-3 py-2 text-center text-[12px] text-gray-400">—</td>
+        <td className="px-3 py-2 text-center">
           {taxaProporcional !== null ? (
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[12px] text-gray-600">{formatTaxa(taxaProporcional)} UA/ha</span>
-              <span className="text-[10px] text-gray-400">contribuição</span>
+              <span className="text-[12px] text-gray-600 tabular-nums">{formatTaxa(taxaProporcional)} UA/ha</span>
+              <span
+                className="text-[10px] text-gray-400 cursor-help underline decoration-dotted decoration-gray-300 underline-offset-2"
+                title="Contribuição deste lote na taxa de lotação da subdivisão."
+              >
+                contribuição
+              </span>
             </div>
           ) : <span className="text-[12px] text-gray-400">—</span>}
         </td>
-        <td className="px-3 py-2.5 text-center">
-          {lote.dataEntradaPasto ? (
-            <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[12px] text-gray-500">{formatDate(lote.dataEntradaPasto)}</span>
-              {(() => { const dias = calcDiasNoPasto(lote.dataEntradaPasto); return dias !== null ? <span className="text-[10px] text-gray-400">{dias}d no pasto</span> : null; })()}
-            </div>
-          ) : <span className="text-[12px] text-gray-400">—</span>}
+        <td className="px-3 py-2 text-center">
+          <EntradaPastoLote dataEntradaPasto={lote.dataEntradaPasto} />
         </td>
-        <td className="px-3 py-2.5">
+        <td className="px-3 py-2">
           <div className="flex items-center justify-center gap-1.5">
             <button type="button" onClick={() => setModalHistorico(true)}
-              title="Ver histórico de movimentação"
-              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition">
+              title="Histórico do lote"
+              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
               Histórico
             </button>
             <button type="button" onClick={() => setModalMoverLote(true)}
@@ -556,7 +686,6 @@ function LoteRow({
               style={{ backgroundColor: GREEN }}>
               Mover Lote
             </button>
-
           </div>
         </td>
       </tr>
@@ -588,21 +717,28 @@ function SubdivisaoRow({
   return (
     <>
       <tr
-        className="border-b border-gray-200 cursor-pointer select-none"
+        className="border-b border-gray-200 cursor-pointer select-none hover:brightness-[0.99] transition-colors"
         style={(() => {
           const sup = sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
-          return { backgroundColor: sup ? "#fff5f5" : "#f0f5f5" };
+          return { backgroundColor: sup ? "#fff5f5" : "#eef4f4" };
         })()}
         onClick={onToggle}
       >
         <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-400 transition-transform" style={{ display: "inline-block", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-            <div>
-              <span className="text-[13px] font-semibold text-gray-800">{sub.pastoNome}</span>
-              {sub.pastoSigla && <span className="ml-1.5 text-[10px] text-gray-400">({sub.pastoSigla})</span>}
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="text-[13px] text-[#2D5A5A] shrink-0 w-4 text-center leading-none"
+              aria-hidden
+            >
+              {expanded ? "▾" : "▸"}
+            </span>
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <span className="text-[13px] font-semibold text-gray-900">{sub.pastoNome}</span>
+              {sub.pastoSigla && (
+                <span className="text-[10px] font-medium text-gray-400">({sub.pastoSigla})</span>
+              )}
+              {statusBadge(sub.pastoStatus)}
             </div>
-            {statusBadge(sub.pastoStatus)}
           </div>
         </td>
         <td className="px-3 py-3 text-center">
@@ -657,25 +793,21 @@ function SubdivisaoRow({
             );
           })()}
         </td>
-        <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatArea(sub.areaHa)} ha</td>
-        <td className="px-3 py-3 text-center text-[12px] text-gray-700">{formatTaxa(sub.taxaLotacao)} UA/ha</td>
+        <td className="px-3 py-3 text-center text-[12px] text-gray-700 tabular-nums">
+          {sub.areaHa ? `${formatArea(sub.areaHa)} ha` : <span className="text-gray-400">—</span>}
+        </td>
+        <td className="px-3 py-3 text-center text-[12px] font-medium text-gray-700 tabular-nums">
+          {sub.taxaLotacao != null ? `${formatTaxa(sub.taxaLotacao)} UA/ha` : <span className="text-gray-400 font-normal">—</span>}
+        </td>
         <td className="px-3 py-3 text-center">
-          {sub.totalAnimais === 0 && sub.diasVazio != null ? (
-            <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[12px] font-semibold text-amber-600">{sub.diasVazio}d vazio</span>
-              <span className="text-[10px] text-amber-500">em descanso</span>
-            </div>
-          ) : sub.totalAnimais === 0 ? (
-            <span className="text-[11px] text-gray-400 italic">sem histórico</span>
-          ) : (
-            <span className="text-[12px] text-gray-400">—</span>
-          )}
+          <EntradaPastoSubdivisao sub={sub} />
         </td>
         <td className="px-3 py-3">
           <div className="flex items-center justify-center">
             <button type="button"
+              title="Histórico da subdivisão"
               onClick={e => { e.stopPropagation(); setModalHistorico(true); }}
-              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
+              className="px-2 py-1 text-[10px] font-medium text-gray-600 border border-gray-200 rounded hover:bg-white transition bg-white/80">
               Histórico
             </button>
           </div>
@@ -972,6 +1104,20 @@ export default function MapaRebanhoPage() {
 
           </div>
           <div className="flex items-center gap-2">
+            {fazendaId && (
+              <button
+                type="button"
+                onClick={() => setModalHistoricoGeral(true)}
+                title="Histórico de movimentação de todos os lotes da fazenda"
+                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold text-[#2D5A5A] border border-[#2D5A5A]/25 rounded-sm bg-white hover:bg-[#eef4f4] transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Histórico Geral
+              </button>
+            )}
             <ExportarMapaButton
               exportPdfData={exportPdfData}
               exportHeaders={exportHeaders}
@@ -1048,7 +1194,6 @@ export default function MapaRebanhoPage() {
               onExpandAll={expandAll}
               onCollapseAll={collapseAll}
               onRefresh={handleRefresh}
-              onHistoricoGeral={() => setModalHistoricoGeral(true)}
             />
           )
         ) : (
@@ -1079,11 +1224,23 @@ export default function MapaRebanhoPage() {
                       style={{ backgroundColor: GREEN }}
                       onClick={() => toggleFazenda(fazenda.fazendaId)}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-white/70 transition-transform" style={{ display: "inline-block", transform: expandedFazendas.has(fazenda.fazendaId) ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-                        <span className="text-[14px] font-bold text-white">{fazenda.fazendaNome}</span>
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          className="text-[11px] text-white/70 shrink-0 transition-transform"
+                          style={{
+                            display: "inline-block",
+                            transform: expandedFazendas.has(fazenda.fazendaId) ? "rotate(90deg)" : "rotate(0deg)",
+                          }}
+                          aria-hidden
+                        >
+                          ▶
+                        </span>
+                        <span className="text-[14px] font-bold text-white truncate">
+                          {fazenda.fazendaNome}
+                          <span className="font-semibold text-white/90"> — </span>
+                          {fazenda.totalAnimais} animais
+                        </span>
                       </div>
-                      <span className="text-[13px] font-bold text-white">{fazenda.totalAnimais} animais</span>
                     </div>
 
                     {/* Tabela da fazenda (expandida) */}
@@ -1091,12 +1248,7 @@ export default function MapaRebanhoPage() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-gray-200 bg-gray-50">
-                            <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Subdivisão / Lote</th>
-                            <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28">Total Animais</th>
-                            <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28">Área (ha)</th>
-                            <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-32">Taxa Lotação</th>
-                            <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-32">Entrada no Pasto</th>
-                            <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-48">Ações</th>
+                            {MAPA_TABLE_HEADERS_LIGHT}
                           </tr>
                         </thead>
                         <tbody>
@@ -1112,16 +1264,25 @@ export default function MapaRebanhoPage() {
                           ))}
                           {fazenda.semSubdivisao.length > 0 && (
                             <>
-                              <tr className="border-b border-gray-200" style={{ backgroundColor: "#f7f7f7" }}>
-                                <td className="px-4 py-2.5">
-                                  <span className="text-[12px] font-semibold text-gray-500 italic">Sem Subdivisão</span>
-                                  <span className="ml-2 text-[10px] text-gray-400">{fazenda.semSubdivisao.length} lote(s)</span>
+                              <tr
+                                className="border-b border-amber-100 cursor-default"
+                                style={{ backgroundColor: "#fffbeb" }}
+                              >
+                                <td className="px-4 py-2.5 border-l-[3px] border-l-amber-300">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[13px] font-semibold italic text-amber-900">Sem Subdivisão</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                                      {fazenda.semSubdivisao.length} lote{fazenda.semSubdivisao.length !== 1 ? "s" : ""}
+                                    </span>
+                                  </div>
                                 </td>
-                                <td className="px-3 py-2.5 text-center text-[12px] font-bold text-gray-800">{fazenda.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</td>
+                                <td className="px-3 py-2.5 text-center text-[12px] font-bold text-gray-800 tabular-nums">
+                                  {fazenda.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}
+                                </td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
                                 <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-                                <td className="px-3 py-2.5" />
+                                <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
                               </tr>
                               {fazenda.semSubdivisao.map(lote => (
                                 <LoteRow key={lote.loteId} lote={lote} fazendaId={fazenda.fazendaId}
@@ -1155,7 +1316,7 @@ export default function MapaRebanhoPage() {
 function TabelaMapa({
   subdivisoes, semSubdivisao, fazendaId, totalAnimais,
   expandedSubdivisoes, semSubdivisaoExpanded,
-  onToggleSubdivisao, onToggleSemSubdivisao, onExpandAll, onCollapseAll, onRefresh, onHistoricoGeral,
+  onToggleSubdivisao, onToggleSemSubdivisao, onExpandAll, onCollapseAll, onRefresh,
 }: {
   subdivisoes: SubdivisaoInfo[];
   semSubdivisao: LoteInfo[];
@@ -1168,7 +1329,6 @@ function TabelaMapa({
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onRefresh: () => void;
-  onHistoricoGeral: () => void;
 }) {
   return (
     <>
@@ -1176,24 +1336,7 @@ function TabelaMapa({
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200" style={{ backgroundColor: GREEN }}>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wide">Subdivisão / Lote</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28">Total Animais</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28">Área (ha)</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">Taxa Lotação</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-32">Entrada no Pasto</th>
-              <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-48">
-                <div className="flex flex-col items-center gap-1">
-                  <button type="button" onClick={onHistoricoGeral}
-                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-white/90 border border-white/30 rounded hover:bg-white/20 transition whitespace-nowrap">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Histórico Geral
-                  </button>
-                  <span>Ações</span>
-                </div>
-              </th>
+              {MAPA_TABLE_HEADERS}
             </tr>
           </thead>
           <tbody>
@@ -1210,22 +1353,33 @@ function TabelaMapa({
             {semSubdivisao.length > 0 && (
               <>
                 <tr
-                  className="border-b border-gray-200 cursor-pointer select-none"
-                  style={{ backgroundColor: "#f7f7f7" }}
+                  className="border-b border-amber-100 cursor-pointer select-none hover:bg-amber-50/80 transition-colors"
+                  style={{ backgroundColor: "#fffbeb" }}
                   onClick={onToggleSemSubdivisao}
                 >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-gray-400" style={{ display: "inline-block", transform: semSubdivisaoExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-                      <span className="text-[13px] font-semibold text-gray-500 italic">Sem Subdivisão</span>
-                      <span className="text-[10px] text-gray-400">{semSubdivisao.length} lote{semSubdivisao.length !== 1 ? "s" : ""}</span>
+                  <td className="px-4 py-3 border-l-[3px] border-l-amber-300">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span
+                        className="text-[13px] text-amber-700 shrink-0 w-4 text-center leading-none"
+                        aria-hidden
+                      >
+                        {semSubdivisaoExpanded ? "▾" : "▸"}
+                      </span>
+                      <span className="text-[13px] font-semibold italic text-amber-900">Sem Subdivisão</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                        {semSubdivisao.length} lote{semSubdivisao.length !== 1 ? "s" : ""}
+                      </span>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-center"><span className="text-[13px] font-bold text-gray-800">{semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}</span></td>
+                  <td className="px-3 py-3 text-center">
+                    <span className="text-[13px] font-bold text-gray-800 tabular-nums">
+                      {semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}
+                    </span>
+                  </td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                   <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
-                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                 </tr>
                 {semSubdivisaoExpanded && semSubdivisao.map(lote => (
                   <LoteRow key={lote.loteId} lote={lote} fazendaId={fazendaId}

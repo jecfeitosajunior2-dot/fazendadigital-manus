@@ -8,8 +8,17 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, Plus, MapPin } from 'lucide-react';
-import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
+import {
+  FormLabel,
+  FieldBox,
+  FormDatePicker,
+  FormInput,
+  FormNativeSelect,
+  FormTextarea,
+  inputClassCompact,
+} from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
+import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   computeResumoPeso,
@@ -76,6 +85,9 @@ const EMPTY_REPRO_FORM = {
 
 const TAB_TRIGGER_CLASS =
   'rounded-md border border-transparent px-2 py-2 text-[12px] font-medium text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#2D5A5A] data-[state=active]:shadow-sm data-[state=active]:border-[#4ECDC4]/35';
+
+const INLINE_FORM_CARD = 'mb-6 bg-white border border-gray-200 rounded-md px-4 py-3';
+const INLINE_FORM_TITLE = 'font-semibold text-gray-800 mb-3';
 
 type HistoricoSubdivisaoRow = {
   id: number;
@@ -657,114 +669,116 @@ export const CattleDetailPageExpanded: React.FC = () => {
               </div>
 
               {showSaudeForm && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                  <h3 className="font-semibold text-gray-700 mb-3">Novo Registro Sanitário</h3>
+                <div className={INLINE_FORM_CARD}>
+                  <h3 className={INLINE_FORM_TITLE}>Novo Registro Sanitário</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo</FormLabel>
-                      <FieldBox required>
-                        <select
-                          value={saudeForm.tipo}
-                          onChange={e => setSaudeForm(p => ({ ...p, tipo: e.target.value }))}
-                          className={inputClassCompact}
-                        >
-                          <option value="">Selecione</option>
-                          <option value="Vacinação">Vacinação</option>
-                          <option value="Vermifugação">Vermifugação</option>
-                          <option value="Medicação">Medicação</option>
-                          <option value="Tratamento clínico">Tratamento clínico</option>
-                          <option value="Exame">Exame</option>
-                          <option value="Procedimento sanitário">Procedimento sanitário</option>
-                          <option value="Outro">Outro</option>
-                        </select>
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Tipo</FormLabel>
+                      <FormNativeSelect
+                        value={saudeForm.tipo}
+                        onChange={v => setSaudeForm(p => ({ ...p, tipo: v }))}
+                        placeholder="Selecione"
+                        required
+                        compact
+                        variant="light"
+                        options={[
+                          { value: 'Vacinação', label: 'Vacinação' },
+                          { value: 'Vermifugação', label: 'Vermifugação' },
+                          { value: 'Medicação', label: 'Medicação' },
+                          { value: 'Tratamento clínico', label: 'Tratamento clínico' },
+                          { value: 'Exame', label: 'Exame' },
+                          { value: 'Procedimento sanitário', label: 'Procedimento sanitário' },
+                          { value: 'Outro', label: 'Outro' },
+                        ]}
+                      />
                     </div>
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
-                      <FieldBox required>
-                        <input
-                          type="date"
-                          value={saudeForm.dataRegistro}
-                          onChange={e => setSaudeForm(p => ({ ...p, dataRegistro: e.target.value }))}
-                          className={inputClassCompact}
-                        />
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Data</FormLabel>
+                      <FormDatePicker
+                        value={saudeForm.dataRegistro}
+                        onChange={v => setSaudeForm(p => ({ ...p, dataRegistro: v }))}
+                        required
+                      />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Produto / Medicamento</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">Produto / Medicamento</FormLabel>
+                      <FormInput
                         value={saudeForm.medicamento}
-                        onChange={e => setSaudeForm(p => ({ ...p, medicamento: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, medicamento: v }))}
                         placeholder="Ex: Ivermectina, vacina, vermífugo..."
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Dose</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">Dose</FormLabel>
+                      <FormInput
                         value={saudeForm.dosagem}
-                        onChange={e => setSaudeForm(p => ({ ...p, dosagem: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, dosagem: v }))}
                         placeholder="Ex: 5 ml, 10 ml, 1 dose"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Carência (dias)</label>
-                      <input
+                      <FormLabel className="mb-1">Carência (dias)</FormLabel>
+                      <FormInput
                         type="number"
                         min="1"
                         step="1"
                         value={saudeForm.carenciaDias}
-                        onChange={e => setSaudeForm(p => ({ ...p, carenciaDias: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, carenciaDias: v }))}
                         placeholder="Ex: 30"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Fim da carência</label>
-                      <div
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm bg-gray-50 text-gray-700 min-h-[34px] flex items-center cursor-default select-none"
-                        aria-readonly
-                      >
-                        {fimCarenciaPreview ? (
-                          <span className="font-semibold tabular-nums">{formatDateBR(fimCarenciaPreview)}</span>
-                        ) : (
-                          <span className="text-gray-400 font-normal">Preencha Data e Carência (dias)</span>
-                        )}
-                      </div>
+                      <FormLabel className="mb-1">Fim da carência</FormLabel>
+                      <FieldBox variant="light">
+                        <div
+                          className={cn(inputClassCompact, "bg-white flex items-center cursor-default select-none")}
+                          aria-readonly
+                        >
+                          {fimCarenciaPreview ? (
+                            <span className="font-semibold tabular-nums">{formatDateBR(fimCarenciaPreview)}</span>
+                          ) : (
+                            <span className="text-gray-400 font-normal">Preencha Data e Carência (dias)</span>
+                          )}
+                        </div>
+                      </FieldBox>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">Responsável</FormLabel>
+                      <FormInput
                         value={saudeForm.veterinario}
-                        onChange={e => setSaudeForm(p => ({ ...p, veterinario: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, veterinario: v }))}
                         placeholder="Ex: Paulo Gomes"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Custo (R$)</label>
-                      <input
+                      <FormLabel className="mb-1">Custo (R$)</FormLabel>
+                      <FormInput
                         type="number"
                         min="0"
                         step="0.01"
                         value={saudeForm.custo}
-                        onChange={e => setSaudeForm(p => ({ ...p, custo: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, custo: v }))}
                         placeholder="Ex: 150,00"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Descrição</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">Descrição</FormLabel>
+                      <FormTextarea
                         value={saudeForm.descricao}
-                        onChange={e => setSaudeForm(p => ({ ...p, descricao: e.target.value }))}
+                        onChange={v => setSaudeForm(p => ({ ...p, descricao: v }))}
                         placeholder="Descreva o procedimento, observações ou motivo do registro..."
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        rows={3}
+                        variant="light"
                       />
                     </div>
                   </div>
@@ -966,121 +980,110 @@ export const CattleDetailPageExpanded: React.FC = () => {
               </div>
 
               {showReproForm && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                  <h3 className="font-semibold text-gray-700 mb-3">
+                <div className={INLINE_FORM_CARD}>
+                  <h3 className={INLINE_FORM_TITLE}>
                     {isEditingRepro ? 'Editar Registro Reprodutivo' : 'Novo Registro Reprodutivo'}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Tipo de Registro</FormLabel>
-                      <FieldBox required>
-                        <select
-                          value={reproForm.tipo}
-                          onChange={e => {
-                            const newTipo = e.target.value;
-                            setPrevisaoPartoManual(false);
-                            setReproForm(p => {
-                              const resultado = isReproResultadoValidForTipo(
-                                animal.sexo,
-                                newTipo,
-                                p.resultado,
-                              )
-                                ? p.resultado
-                                : '';
-                              return { ...p, tipo: newTipo, resultado };
-                            });
-                          }}
-                          className={inputClassCompact}
-                        >
-                          <option value="">Selecione</option>
-                          {reproTipoOptions.map(tipo => (
-                            <option key={tipo} value={tipo}>{tipo}</option>
-                          ))}
-                        </select>
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Tipo de Registro</FormLabel>
+                      <FormNativeSelect
+                        value={reproForm.tipo}
+                        onChange={newTipo => {
+                          setPrevisaoPartoManual(false);
+                          setReproForm(p => {
+                            const resultado = isReproResultadoValidForTipo(
+                              animal.sexo,
+                              newTipo,
+                              p.resultado,
+                            )
+                              ? p.resultado
+                              : '';
+                            return { ...p, tipo: newTipo, resultado };
+                          });
+                        }}
+                        placeholder="Selecione"
+                        required
+                        compact
+                        variant="light"
+                        options={reproTipoOptions.map(tipo => ({ value: tipo, label: tipo }))}
+                      />
                     </div>
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
-                      <FieldBox required>
-                        <input
-                          type="date"
-                          value={reproForm.data}
-                          onChange={e => {
-                            setPrevisaoPartoManual(false);
-                            setReproForm(p => ({ ...p, data: e.target.value }));
-                          }}
-                          className={inputClassCompact}
-                        />
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Data</FormLabel>
+                      <FormDatePicker
+                        value={reproForm.data}
+                        onChange={v => {
+                          setPrevisaoPartoManual(false);
+                          setReproForm(p => ({ ...p, data: v }));
+                        }}
+                        required
+                      />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Resultado / Status</label>
-                      <select
+                      <FormLabel className="mb-1">Resultado / Status</FormLabel>
+                      <FormNativeSelect
                         value={reproForm.resultado}
-                        onChange={e => setReproForm(p => ({ ...p, resultado: e.target.value }))}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
-                      >
-                        <option value="">Selecione (opcional)</option>
-                        {reproResultadoOptions.map(r => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
-                      </select>
+                        onChange={v => setReproForm(p => ({ ...p, resultado: v }))}
+                        placeholder="Selecione (opcional)"
+                        compact
+                        variant="light"
+                        options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
+                      />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">{reproRelacionadoLabel}</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">{reproRelacionadoLabel}</FormLabel>
+                      <FormInput
                         value={reproForm.reprodutorSemen}
-                        onChange={e => setReproForm(p => ({ ...p, reprodutorSemen: e.target.value }))}
+                        onChange={v => setReproForm(p => ({ ...p, reprodutorSemen: v }))}
                         placeholder={reproRelacionadoPlaceholder}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                     {showPrevisaoPartoForm ? (
                       <>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Previsão de Parto</label>
-                          <input
-                            type="date"
+                          <FormLabel className="mb-1">Previsão de Parto</FormLabel>
+                          <FormDatePicker
                             value={reproForm.previsaoParto}
-                            onChange={e => {
+                            onChange={v => {
                               setPrevisaoPartoManual(true);
-                              setReproForm(p => ({ ...p, previsaoParto: e.target.value }));
+                              setReproForm(p => ({ ...p, previsaoParto: v }));
                             }}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
-                          <input
-                            type="text"
+                          <FormLabel className="mb-1">Responsável</FormLabel>
+                          <FormInput
                             value={reproForm.responsavel}
-                            onChange={e => setReproForm(p => ({ ...p, responsavel: e.target.value }))}
+                            onChange={v => setReproForm(p => ({ ...p, responsavel: v }))}
                             placeholder="Ex: Paulo Gomes"
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                            compact
+                            variant="light"
                           />
                         </div>
                       </>
                     ) : (
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Responsável</label>
-                        <input
-                          type="text"
+                        <FormLabel className="mb-1">Responsável</FormLabel>
+                        <FormInput
                           value={reproForm.responsavel}
-                          onChange={e => setReproForm(p => ({ ...p, responsavel: e.target.value }))}
+                          onChange={v => setReproForm(p => ({ ...p, responsavel: v }))}
                           placeholder="Ex: Paulo Gomes"
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                          compact
+                          variant="light"
                         />
                       </div>
                     )}
                     <div className="md:col-span-2">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Observações</label>
-                      <textarea
+                      <FormLabel className="mb-1">Observações</FormLabel>
+                      <FormTextarea
                         value={reproForm.observacoes}
-                        onChange={e => setReproForm(p => ({ ...p, observacoes: e.target.value }))}
+                        onChange={v => setReproForm(p => ({ ...p, observacoes: v }))}
                         placeholder="Descreva detalhes do registro reprodutivo..."
                         rows={3}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm resize-y"
+                        variant="light"
                       />
                     </div>
                   </div>
@@ -1305,42 +1308,39 @@ export const CattleDetailPageExpanded: React.FC = () => {
               </div>
 
               {showPesagemForm && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                  <h3 className="font-semibold text-gray-700 mb-3">Registrar Pesagem</h3>
+                <div className={INLINE_FORM_CARD}>
+                  <h3 className={INLINE_FORM_TITLE}>Registrar Pesagem</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Peso (kg)</FormLabel>
-                      <FieldBox required>
-                        <input
-                          type="number"
-                          value={pesagemForm.peso}
-                          onChange={e => setPesagemForm(p => ({ ...p, peso: e.target.value }))}
-                          placeholder="ex: 450"
-                          min="0"
-                          step="0.1"
-                          className={inputClassCompact}
-                        />
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Peso (kg)</FormLabel>
+                      <FormInput
+                        type="number"
+                        value={pesagemForm.peso}
+                        onChange={v => setPesagemForm(p => ({ ...p, peso: v }))}
+                        placeholder="ex: 450"
+                        min="0"
+                        step="0.1"
+                        required
+                        compact
+                        variant="light"
+                      />
                     </div>
                     <div>
-                      <FormLabel required className="text-xs font-medium text-gray-700 mb-1">Data</FormLabel>
-                      <FieldBox required>
-                        <input
-                          type="date"
-                          value={pesagemForm.data}
-                          onChange={e => setPesagemForm(p => ({ ...p, data: e.target.value }))}
-                          className={inputClassCompact}
-                        />
-                      </FieldBox>
+                      <FormLabel required className="mb-1">Data</FormLabel>
+                      <FormDatePicker
+                        value={pesagemForm.data}
+                        onChange={v => setPesagemForm(p => ({ ...p, data: v }))}
+                        required
+                      />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Observações</label>
-                      <input
-                        type="text"
+                      <FormLabel className="mb-1">Observações</FormLabel>
+                      <FormInput
                         value={pesagemForm.observacoes}
-                        onChange={e => setPesagemForm(p => ({ ...p, observacoes: e.target.value }))}
+                        onChange={v => setPesagemForm(p => ({ ...p, observacoes: v }))}
                         placeholder="Opcional"
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        compact
+                        variant="light"
                       />
                     </div>
                   </div>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { exportListPdf, exportListSpreadsheet, type ExportRow } from "@/lib/exportList";
+import { exportListPdf, exportListSpreadsheet, type ExportRow, type PdfHeadCell } from "@/lib/exportList";
+import type { GroupedTableHeader } from "@shared/buildExportSpreadsheet";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
 import { cn } from "@/lib/utils";
 import type { ExportReportInfoLine } from "@shared/buildExportSpreadsheet";
@@ -41,8 +42,10 @@ type Props = {
   spreadsheetAutoFilter?: boolean;
   /** Cabeçalho discreto sem preenchimento colorido. */
   spreadsheetPlainHeader?: boolean;
+  spreadsheetGroupedTableHeader?: GroupedTableHeader;
   pdfHeaders?: string[];
   pdfRows?: ExportRow[];
+  pdfHeadRows?: PdfHeadCell[][];
   pdfColumnAligns?: ("left" | "center" | "right")[];
   pdfLandscape?: boolean;
   pdfWrapCols?: number[];
@@ -99,8 +102,10 @@ export default function ListExportButtons({
   spreadsheetBlankAfterMeta,
   spreadsheetAutoFilter,
   spreadsheetPlainHeader,
+  spreadsheetGroupedTableHeader,
   pdfHeaders,
   pdfRows,
+  pdfHeadRows,
   pdfColumnAligns,
   pdfLandscape,
   pdfWrapCols,
@@ -195,6 +200,7 @@ export default function ListExportButtons({
                 blankAfterMeta: spreadsheetBlankAfterMeta,
                 autoFilter: spreadsheetAutoFilter,
                 plainHeader: spreadsheetPlainHeader,
+                groupedTableHeader: spreadsheetGroupedTableHeader,
               });
             }}
           />
@@ -210,10 +216,11 @@ export default function ListExportButtons({
                 fazendaNome,
                 groupByCol,
                 landscape: pdfLandscape ?? landscape,
-                currencyColIndexes: pdfRows ? undefined : spreadsheetCurrencyCols,
-                integerColIndexes: pdfRows ? undefined : spreadsheetIntegerCols,
+                currencyColIndexes: spreadsheetCurrencyCols,
+                integerColIndexes: spreadsheetIntegerCols,
                 columnAligns: pdfColumnAligns ?? spreadsheetColumnAligns,
                 wrapColIndexes: pdfWrapCols,
+                headRows: pdfHeadRows,
               });
             }}
           />
