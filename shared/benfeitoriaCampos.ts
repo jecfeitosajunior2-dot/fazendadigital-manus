@@ -26,7 +26,6 @@ export const BENFEITORIA_LISTAGEM_COLUNAS = [
   { key: "vidaUtil", label: "Vida Útil", align: "center" as const },
   { key: "estado", label: "Estado", align: "center" as const },
   { key: "valor", label: "Valor", align: "right" as const },
-  { key: "observacoes", label: "Observações", align: "left" as const },
 ];
 
 export const BENFEITORIA_EXPORT_COLUMN_ALIGNS = BENFEITORIA_LISTAGEM_COLUNAS.map(() => "center" as const);
@@ -121,6 +120,5 @@ export function montarLinhaExportacaoBenfeitoria(
     formatVidaUtilExport(row.vidaUtil),
     row.estado ?? "",
     parseValor(row.valorEstimado) ?? "",
-    row.observacoes ?? "",
   ];
 }

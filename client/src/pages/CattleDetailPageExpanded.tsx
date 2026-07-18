@@ -19,6 +19,11 @@ import {
 } from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
+import {
+  formatTempoNoPastoMovimentacaoLote,
+  statusMovimentacaoLote,
+  type StatusMovimentacaoLote,
+} from '@shared/historicoMovimentacaoLote';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   computeResumoPeso,
@@ -90,18 +95,129 @@ const INLINE_FORM_CARD = 'mb-6 bg-white border border-gray-200 rounded-md px-4 p
 const INLINE_FORM_TITLE = 'font-semibold text-gray-800 mb-3';
 
 type HistoricoSubdivisaoRow = {
-  id: number;
+  id: string;
+  tipo: 'lote_pasto' | 'transferencia_lote';
   dataEntrada?: string | null;
+  dataSaida?: string | null;
+  pastoOrigemId?: number | null;
   pastoOrigemNome?: string | null;
   pastoDestinoNome?: string | null;
-  motivo?: string | null;
-  responsavel?: string | null;
   observacoes?: string | null;
+  responsavel?: string | null;
 };
 
 function historicoSubdivisaoTexto(value: string | null | undefined): string {
   const texto = value?.trim();
   return texto || '—';
+}
+
+function historicoSubdivisaoDestino(row: HistoricoSubdivisaoRow): string | null {
+  const destino = row.pastoDestinoNome?.trim();
+  return destino && destino !== '—' ? destino : null;
+}
+
+function historicoSubdivisaoMovimentacao(row: HistoricoSubdivisaoRow): string {
+  const origem = row.pastoOrigemNome?.trim();
+  const destino = historicoSubdivisaoDestino(row);
+  if (origem && origem !== '—' && destino) return `${origem} → ${destino}`;
+  if (destino) return `Registro inicial no ${destino}`;
+  return '—';
+}
+
+function historicoSubdivisaoHojeISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function historicoSubdivisaoMovInput(row: HistoricoSubdivisaoRow) {
+  return {
+    dataEntrada: row.dataEntrada ?? '',
+    dataSaida: row.dataSaida,
+    pastoOrigemId: row.pastoOrigemId,
+    pastoOrigemNome: row.pastoOrigemNome,
+  };
+}
+
+function historicoSubdivisaoStatus(
+  row: HistoricoSubdivisaoRow,
+): StatusMovimentacaoLote | 'transferencia' {
+  if (row.tipo === 'transferencia_lote' || !row.dataEntrada) return 'transferencia';
+  return statusMovimentacaoLote(historicoSubdivisaoMovInput(row), historicoSubdivisaoHojeISO());
+}
+
+function historicoSubdivisaoEstaAtual(row: HistoricoSubdivisaoRow): boolean {
+  return historicoSubdivisaoStatus(row) === 'atual';
+}
+
+function historicoSubdivisaoTempo(row: HistoricoSubdivisaoRow): string {
+  if (!row.dataEntrada || row.tipo === 'transferencia_lote') return '—';
+  const tempo = formatTempoNoPastoMovimentacaoLote(
+    historicoSubdivisaoMovInput(row),
+    historicoSubdivisaoHojeISO(),
+  );
+  return tempo ?? '—';
+}
+
+function HistoricoSubdivisaoStatusBadge({
+  status,
+}: {
+  status: StatusMovimentacaoLote | 'transferencia';
+}) {
+  const base =
+    'inline-flex items-center justify-center rounded text-[9px] font-semibold leading-none px-2 py-[4px] min-w-[58px]';
+  if (status === 'atual') {
+    return (
+      <span className={cn(base, 'bg-green-100 text-green-800 border border-green-200')}>
+        Atual
+      </span>
+    );
+  }
+  return (
+    <span className={cn(base, 'font-medium bg-gray-100 text-gray-600 border border-gray-200')}>
+      Encerrada
+    </span>
+  );
+}
+
+const HISTORICO_SUBDIVISAO_COLUNAS = [
+  { id: 'data', label: 'Data', width: '15%', head: 'text-center', cell: 'text-center' },
+  { id: 'mov', label: 'Movimentação', width: '42%', head: 'text-center', cell: 'text-center' },
+  { id: 'status', label: 'Status', width: '18%', head: 'text-center', cell: 'text-center' },
+  { id: 'tempo', label: 'Tempo', width: '25%', head: 'text-center', cell: 'text-center' },
+] as const;
+
+function HistoricoSubdivisaoCelulaTruncada({
+  texto,
+  className,
+  title,
+}: {
+  texto: string;
+  className?: string;
+  title?: string;
+}) {
+  const exibir = historicoSubdivisaoTexto(texto === '—' ? null : texto);
+  const tooltip = title ?? (exibir !== '—' ? exibir : undefined);
+  return (
+    <span className={cn('block truncate max-w-full', className)} title={tooltip}>
+      {exibir}
+    </span>
+  );
+}
+
+function historicoSubdivisaoTooltipDetalhe(
+  movimentacao: string,
+  row: HistoricoSubdivisaoRow,
+): string | undefined {
+  const linhas: string[] = [];
+  if (movimentacao !== '—') {
+    linhas.push(
+      row.tipo === 'transferencia_lote'
+        ? `${movimentacao} · Transferência entre lotes`
+        : movimentacao,
+    );
+  }
+  const responsavel = row.responsavel?.trim();
+  if (responsavel) linhas.push(`Responsável: ${responsavel}`);
+  return linhas.length > 0 ? linhas.join('\n') : undefined;
 }
 
 function getReproEmptyStateMessage(sexo: string | null | undefined): { titulo: string; orientacao: string } {
@@ -162,6 +278,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
   const { containerRef, state } = usePullToRefresh({
     onRefresh: async () => {
       await utils.animais.getById.invalidate({ id: animalId! });
+      await utils.animais.historicoPastos.invalidate({ animalId: animalId! });
       await utils.saude.list.invalidate({ animalId: animalId! });
       await utils.pesagens.list.invalidate({ animalId: animalId! });
       await utils.reproducao.list.invalidate();
@@ -510,9 +627,9 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const histPastos = historicoPastos as HistoricoSubdivisaoRow[];
   const subdivisaoAtual =
-    histPastos.length > 0
-      ? (histPastos[0].pastoDestinoNome || histPastos[0].pastoOrigemNome || null)
-      : (animalListRow?.pastoNome ?? null);
+    animalListRow?.pastoNome
+    ?? histPastos.find(h => historicoSubdivisaoEstaAtual(h))?.pastoDestinoNome
+    ?? null;
 
   const idadeMesesAnimal =
     animalListRow?.idadeMeses != null
@@ -1530,75 +1647,61 @@ export const CattleDetailPageExpanded: React.FC = () => {
                     {histPastos.length} movimenta{histPastos.length !== 1 ? 'ções' : 'ção'} registrada{histPastos.length !== 1 ? 's' : ''}
                     <span className="text-gray-400"> · mais recente primeiro</span>
                   </p>
-                  <div className="overflow-x-auto rounded-lg border border-gray-100">
-                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                  <div className="rounded-lg border border-gray-100 overflow-x-auto lg:overflow-x-visible">
+                    <table className="w-full table-fixed border-separate border-spacing-0 text-[11px] lg:min-w-0 min-w-[420px]">
                       <colgroup>
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '16%' }} />
-                        <col style={{ width: '16%' }} />
-                        <col style={{ width: '16%' }} />
-                        <col style={{ width: '16%' }} />
-                        <col style={{ width: '24%' }} />
+                        {HISTORICO_SUBDIVISAO_COLUNAS.map(col => (
+                          <col key={col.id} style={{ width: col.width }} />
+                        ))}
                       </colgroup>
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Data
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Origem
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Destino
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Motivo
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Responsável
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                            Observações
-                          </th>
+                          {HISTORICO_SUBDIVISAO_COLUNAS.map(col => (
+                            <th
+                              key={col.id}
+                              className={cn(
+                                'px-3 py-2.5 text-[9px] font-semibold text-gray-500 uppercase tracking-normal align-middle',
+                                col.head,
+                              )}
+                            >
+                              {col.label}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
                         {histPastos.map(m => {
-                          const origem = historicoSubdivisaoTexto(m.pastoOrigemNome);
-                          const destino = historicoSubdivisaoTexto(m.pastoDestinoNome);
-                          const motivo = historicoSubdivisaoTexto(m.motivo);
-                          const responsavel = historicoSubdivisaoTexto(m.responsavel);
-                          const observacoes = historicoSubdivisaoTexto(m.observacoes);
+                          const movimentacao = historicoSubdivisaoMovimentacao(m);
+                          const status = historicoSubdivisaoStatus(m);
+                          const atual = status === 'atual';
+                          const tempo = historicoSubdivisaoTempo(m);
+                          const tooltipMov = historicoSubdivisaoTooltipDetalhe(movimentacao, m);
+
                           return (
-                            <tr key={m.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
-                              <td className="text-gray-800 tabular-nums whitespace-nowrap font-medium">
+                            <tr
+                              key={m.id}
+                              className={cn(
+                                'border-b border-gray-100 hover:bg-gray-50/80 transition-colors',
+                                atual && 'bg-green-50/50',
+                              )}
+                            >
+                              <td
+                                className="px-3 py-2.5 align-middle text-center text-gray-800 tabular-nums whitespace-nowrap font-medium text-[11px]"
+                              >
                                 {m.dataEntrada ? formatDate(m.dataEntrada) : '—'}
                               </td>
-                              <td className="max-w-0">
-                                <span className="block truncate max-w-full text-gray-700" title={origem !== '—' ? origem : undefined}>
-                                  {origem}
-                                </span>
+                              <td className="px-3 py-2.5 align-middle max-w-0 text-center">
+                                <HistoricoSubdivisaoCelulaTruncada
+                                  texto={movimentacao}
+                                  className="text-[12px] font-medium text-gray-800 text-center"
+                                  title={tooltipMov}
+                                />
                               </td>
-                              <td className="max-w-0">
-                                <span className="block truncate max-w-full text-gray-700" title={destino !== '—' ? destino : undefined}>
-                                  {destino}
-                                </span>
+                              <td className="px-3 py-2.5 align-middle text-center">
+                                <HistoricoSubdivisaoStatusBadge status={status} />
                               </td>
-                              <td className="text-gray-600 whitespace-nowrap">
-                                {motivo}
-                              </td>
-                              <td className="max-w-0">
-                                <span className="block truncate max-w-full text-gray-600" title={responsavel !== '—' ? responsavel : undefined}>
-                                  {responsavel}
-                                </span>
-                              </td>
-                              <td className="max-w-0">
-                                <span
-                                  className="block truncate max-w-full text-gray-600 text-[11px]"
-                                  title={observacoes !== '—' ? observacoes : undefined}
-                                >
-                                  {observacoes}
-                                </span>
+                              <td className="px-2.5 py-2.5 align-middle text-center text-gray-600 tabular-nums text-[10px] leading-snug whitespace-nowrap">
+                                {tempo}
                               </td>
                             </tr>
                           );

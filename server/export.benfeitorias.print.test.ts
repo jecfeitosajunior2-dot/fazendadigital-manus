@@ -118,7 +118,7 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
     expect(formatVidaUtilListagem("10")).toBe("10 anos");
   });
 
-  it("exporta todas as colunas incluindo Observações", () => {
+  it("exporta colunas operacionais (sem Observações)", () => {
     expect(EXPORT_HEADERS).toEqual([
       "Nome",
       "Tipo",
@@ -126,9 +126,8 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
       "Vida Útil",
       "Estado",
       "Valor",
-      "Observações",
     ]);
-    expect(rows[0]).toEqual(["Curral", "Curral", 2025, 15, "Bom", 100, "Poço artesiano"]);
+    expect(rows[0]).toEqual(["Curral", "Curral", 2025, 15, "Bom", 100]);
   });
 
   it("valor alto exibe R$ 100.000,00 (não R$ 100000,000)", async () => {
@@ -155,9 +154,9 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
   });
 
   it("normaliza valor já em texto para R$ padronizado", async () => {
-    const r = [["Item", "", "2020", "", "Bom", "100.000,00", ""]] as (string | number)[][];
+    const r = [["Item", "", "2020", "", "Bom", "100.000,00"]] as (string | number)[][];
     const wb = await buildExportSpreadsheetWorkbook(
-      ["Nome", "Tipo", "Ano de Construção", "Vida Útil", "Estado", "Valor", "Observações"],
+      ["Nome", "Tipo", "Ano de Construção", "Vida Útil", "Estado", "Valor"],
       r,
       { currencyColIndexes: [5] },
     );
@@ -197,7 +196,7 @@ describe("Exportação de benfeitorias — planilha formatada", () => {
     expect(ws.getCell("A2").alignment?.horizontal).toBe("center");
     expect(ws.getCell("C2").alignment?.horizontal).toBe("center");
     expect(ws.getCell(valorCellRef(1)).alignment?.horizontal).toBe("center");
-    expect(ws.getCell("G2").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("F2").alignment?.horizontal).toBe("center");
     expect(ws.getCell("A1").alignment?.horizontal).toBe("center");
     expect(ws.getCell("A1").font?.bold).toBe(true);
   });

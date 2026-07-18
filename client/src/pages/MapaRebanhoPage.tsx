@@ -4,7 +4,7 @@
  * Foco: Total de Animais, Área (ha), Taxa de Lotação, Histórico de Movimentação
  * Rota: /rebanho/mapa-rebanho
  */
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useSearch } from "wouter";
 import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
@@ -12,12 +12,13 @@ import { trpc } from "@/lib/trpc";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { toast } from "sonner";
-import ListExportButtons, { ExportMenuItem } from "@/components/ListExportButtons";
-import { exportMapaRebanhoPdf, exportMapaRebanhoXlsx, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
-import { FormDatePicker, FormLabel, FormNativeSelect, FieldBox, inputClass } from "@/components/FormFields";
+import ListExportButtons from "@/components/ListExportButtons";
+import { exportMapaRebanhoPdf, exportMapaRebanhoXlsx, countMapaRebanhoRegistros, type MapaSubdivisaoExport, type MapaFazendaExport, type MapaLoteExport } from "@/lib/exportList";
+import { calcDiasNoPastoISO, normalizarDataISO } from "@shared/entradaPastoDisplay";
+import { FormDatePicker, FormLabel, FormSelect, FD_PRIMARY } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 
-const GREEN = "#2D5A5A";
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
 
 type FiltersState = { fazendaId: string; pastoId: string; search: string };
@@ -188,6 +189,10 @@ function statusBadge(status: string | null) {
     vazio:    { label: "Vazio",    bg: "#f9fafb", border: "#9ca3af", text: "#6b7280" },
   };
   const s = map[status] ?? { label: status, bg: "#f9fafb", border: "#9ca3af", text: "#6b7280" };
+  return mapaStatusBadge(s.label, s.bg, s.border, s.text);
+}
+
+function mapaStatusBadge(label: string, bg: string, border: string, text: string) {
   return (
     <span
       style={{
@@ -195,17 +200,51 @@ function statusBadge(status: string | null) {
         alignItems: "center",
         padding: "1px 7px",
         borderRadius: "3px",
-        border: `1.5px solid ${s.border}`,
-        backgroundColor: s.bg,
-        color: s.text,
+        border: `1.5px solid ${border}`,
+        backgroundColor: bg,
+        color: text,
         fontSize: "10px",
         fontWeight: 600,
         letterSpacing: "0.02em",
         lineHeight: "16px",
       }}
     >
-      {s.label}
+      {label}
     </span>
+  );
+}
+
+function loteCountBadge(count: number) {
+  const label = count === 1 ? "1 Lote" : `${count} Lotes`;
+  return mapaStatusBadge(label, "#fffbeb", "#d97706", "#b45309");
+}
+
+function SemSubdivisaoTitulo({
+  count,
+  expanded,
+  showChevron = false,
+}: {
+  count: number;
+  expanded?: boolean;
+  showChevron?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      {showChevron ? (
+        <span
+          className="text-[13px] text-amber-700 shrink-0 w-4 text-center leading-none"
+          aria-hidden
+        >
+          {expanded ? "▾" : "▸"}
+        </span>
+      ) : (
+        <span className="shrink-0 w-4" aria-hidden />
+      )}
+      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+        <span className="text-[13px] font-semibold italic text-amber-900">Sem Subdivisão</span>
+        {loteCountBadge(count)}
+      </div>
+    </div>
   );
 }
 
@@ -226,7 +265,6 @@ function ModalMoverLote({
 }) {
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
-  const [obs, setObs] = useState("");
 
   const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
@@ -255,34 +293,23 @@ function ModalMoverLote({
           {/* Data da Movimentação */}
           <div>
             <FormLabel required>Data de Movimentação</FormLabel>
-            <FormDatePicker value={data} onChange={setData} required />
+            <FormDatePicker value={data} onChange={setData} required max={hojeStr()} />
           </div>
           {/* Subdivisão Destino */}
           <div>
             <FormLabel required>Subdivisão Destino</FormLabel>
-            <FieldBox required>
-              <select
-                value={pastoDestinoId}
-                onChange={e => setPastoDestinoId(e.target.value)}
-                className={inputClass + " appearance-none cursor-pointer min-h-[42px]"}
-              >
-                <option value="">Selecione a subdivisão</option>
-                {pastosDisponiveis.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
-              </select>
-            </FieldBox>
-          </div>
-          {/* Observações */}
-          <div>
-            <FormLabel>Observações</FormLabel>
-            <FieldBox>
-              <textarea
-                value={obs}
-                onChange={e => setObs(e.target.value)}
-                rows={2}
-                placeholder="Opcional"
-                className={inputClass + " resize-none min-h-[60px]"}
-              />
-            </FieldBox>
+            <FormSelect
+              value={pastoDestinoId}
+              onChange={setPastoDestinoId}
+              placeholder="Selecione a subdivisão"
+              required
+            >
+              {pastosDisponiveis.map(p => (
+                <SelectItem key={p.id} value={String(p.id)} className="text-[13px]">
+                  {p.nome}
+                </SelectItem>
+              ))}
+            </FormSelect>
           </div>
         </div>
         {/* Footer */}
@@ -294,10 +321,10 @@ function ModalMoverLote({
           <button type="button" onClick={() => {
             if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
             if (!data) { toast.error("Informe uma data válida."); return; }
-            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data, observacoes: obs || undefined });
+            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data });
           }} disabled={moveMutation.isPending}
             className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: GREEN }}>
+            style={{ backgroundColor: FD_PRIMARY }}>
             {moveMutation.isPending ? "Movendo..." : "Confirmar"}
           </button>
         </div>
@@ -321,22 +348,77 @@ function temOrigemRegistrada(row: HistoricoRow): boolean {
   return row.pastoOrigemId != null || !!row.pastoOrigemNome?.trim();
 }
 
+const CONFIRMACAO_EXCLUSAO_MOV_ENCERRADA = {
+  titulo: "Excluir movimentação",
+  mensagem:
+    "Tem certeza que deseja excluir esta movimentação encerrada? Essa ação pode afetar o histórico do Lote.",
+  confirmar: "Excluir movimentação",
+  confirmarPendente: "Excluindo...",
+  confirmarClass: "bg-red-600 hover:bg-red-700 text-white",
+};
+
+function ConfirmExclusaoMovimentacao({
+  onCancelar,
+  onExcluir,
+  isPending,
+}: {
+  onCancelar: () => void;
+  onExcluir: () => void;
+  isPending: boolean;
+}) {
+  const cfg = CONFIRMACAO_EXCLUSAO_MOV_ENCERRADA;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div
+        className="bg-white rounded-md shadow-xl w-full max-w-md p-5"
+        role="alertdialog"
+        aria-labelledby="confirm-excluir-mov-title"
+        aria-describedby="confirm-excluir-mov-desc"
+      >
+        <h3 id="confirm-excluir-mov-title" className="text-[14px] font-semibold text-gray-800">
+          {cfg.titulo}
+        </h3>
+        <p id="confirm-excluir-mov-desc" className="text-[12px] text-gray-600 mt-2 leading-relaxed">
+          {cfg.mensagem}
+        </p>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button
+            type="button"
+            onClick={onCancelar}
+            disabled={isPending}
+            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onExcluir}
+            disabled={isPending}
+            className={`px-4 py-2 text-[12px] font-semibold rounded-sm transition disabled:opacity-50 ${cfg.confirmarClass}`}
+          >
+            {isPending ? cfg.confirmarPendente : cfg.confirmar}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function TimelineCard({
-  row, isFirst, confirmandoId, onConfirmar, onCancelar, onExcluir, isPending,
+  row, isFirst, onSolicitarExclusao,
 }: {
   row: HistoricoRow;
   isFirst: boolean;
-  confirmandoId: number | null;
-  onConfirmar: (id: number) => void;
-  onCancelar: () => void;
-  onExcluir: (id: number) => void;
-  isPending: boolean;
+  onSolicitarExclusao: (row: HistoricoRow) => void;
 }) {
   const isAtual = !row.dataSaida;
   const dias = row.diasNoPasto;
   const diasLabel = dias != null ? `${dias}d no pasto` : null;
   const comOrigem = temOrigemRegistrada(row);
   const destinoNome = row.pastoDestinoNome?.trim() || "—";
+  const podeExcluir = row.id > 0 && row.dataSaida != null;
 
   return (
     <div className="flex gap-3">
@@ -390,36 +472,16 @@ function TimelineCard({
               </span>
             )}
           </div>
-          {/* Botão excluir (registros persistidos apenas) */}
-          {row.id > 0 && (
-            confirmandoId === row.id ? (
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onExcluir(row.id)}
-                  disabled={isPending}
-                  className="px-2 py-0.5 text-[10px] font-semibold text-white bg-red-500 rounded hover:bg-red-600 transition disabled:opacity-50"
-                >
-                  {isPending ? "..." : "Excluir"}
-                </button>
-                <button
-                  type="button"
-                  onClick={onCancelar}
-                  className="px-2 py-0.5 text-[10px] font-semibold text-gray-500 border border-gray-200 rounded hover:bg-gray-50 transition"
-                >
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <TableIconButton
-                label="Excluir movimentação"
-                onClick={() => onConfirmar(row.id)}
-                tone="danger"
-                compact
-              >
-                <DeleteActionIcon size={16} />
-              </TableIconButton>
-            )
+          {/* Exclusão só em movimentações encerradas (histórico) */}
+          {podeExcluir && (
+            <TableIconButton
+              label="Excluir movimentação encerrada"
+              onClick={() => onSolicitarExclusao(row)}
+              tone="danger"
+              compact
+            >
+              <DeleteActionIcon size={16} />
+            </TableIconButton>
           )}
         </div>
 
@@ -518,7 +580,7 @@ function ModalHistorico({
   fazendaId: number; loteId?: number; pastoId?: number; loteNome?: string; onClose: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [confirmandoId, setConfirmandoId] = useState<number | null>(null);
+  const [excluirConfirmRow, setExcluirConfirmRow] = useState<HistoricoRow | null>(null);
 
   const { data: historico = [], isLoading } = trpc.lotes.mapaRebanhoHistorico.useQuery({
     fazendaId,
@@ -529,13 +591,13 @@ function ModalHistorico({
 
   const excluirMov = trpc.lotes.excluirMovimentacao.useMutation({
     onSuccess: () => {
-      setConfirmandoId(null);
+      setExcluirConfirmRow(null);
       utils.lotes.mapaRebanhoHistorico.invalidate();
       utils.lotes.mapaRebanhoV2.invalidate();
     },
     onError: (err) => {
-      setConfirmandoId(null);
-      alert(err.message);
+      setExcluirConfirmRow(null);
+      toast.error(err.message);
     },
   });
 
@@ -602,20 +664,26 @@ function ModalHistorico({
                   key={r.id}
                   row={r}
                   isFirst={i === 0}
-                  confirmandoId={confirmandoId}
-                  onConfirmar={setConfirmandoId}
-                  onCancelar={() => setConfirmandoId(null)}
-                  onExcluir={(id) => excluirMov.mutate({ movimentacaoId: id })}
-                  isPending={excluirMov.isPending}
+                  onSolicitarExclusao={setExcluirConfirmRow}
                 />
               ))}
             </div>
           )}
         </div>
 
+        {excluirConfirmRow && (
+          <ConfirmExclusaoMovimentacao
+            onCancelar={() => setExcluirConfirmRow(null)}
+            onExcluir={() => excluirMov.mutate({ movimentacaoId: excluirConfirmRow.id })}
+            isPending={excluirMov.isPending}
+          />
+        )}
+
         {/* Rodapé */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-[11px] text-gray-400">Clique na lixeira para excluir uma movimentação.</p>
+          <p className="text-[11px] text-gray-400">
+            Movimentação encerrada: use a lixeira para corrigir o histórico. Movimentação atual: use Mover Lote.
+          </p>
           <button type="button" onClick={onClose}
             className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
             Fechar
@@ -677,13 +745,13 @@ function LoteRow({
           <div className="flex items-center justify-center gap-1.5">
             <button type="button" onClick={() => setModalHistorico(true)}
               title="Histórico do lote"
-              className="px-2 py-1 text-[10px] font-medium text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
+              className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium leading-none text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
               Histórico
             </button>
             <button type="button" onClick={() => setModalMoverLote(true)}
               title="Mover lote para outra subdivisão"
               className="px-2 py-1 text-[10px] font-semibold text-white rounded hover:brightness-95 transition"
-              style={{ backgroundColor: GREEN }}>
+              style={{ backgroundColor: FD_PRIMARY }}>
               Mover Lote
             </button>
           </div>
@@ -807,7 +875,7 @@ function SubdivisaoRow({
             <button type="button"
               title="Histórico da subdivisão"
               onClick={e => { e.stopPropagation(); setModalHistorico(true); }}
-              className="px-2 py-1 text-[10px] font-medium text-gray-600 border border-gray-200 rounded hover:bg-white transition bg-white/80">
+              className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium leading-none text-gray-600 border border-gray-200 rounded hover:bg-white transition bg-white/80">
               Histórico
             </button>
           </div>
@@ -1017,22 +1085,27 @@ export default function MapaRebanhoPage() {
 
   // Dados hierárquicos para o PDF especializado
   const exportPdfData = useMemo((): MapaFazendaExport[] => {
+    const hoje = hojeStr();
     const calcTaxaProp = (taxaPasto: number | null, totalPasto: number, totalLote: number): number | null =>
       taxaPasto != null && totalPasto > 0
         ? Math.round((taxaPasto * (totalLote / totalPasto)) * 100) / 100
         : null;
-    const calcDias = (dataEntrada: string | null): number | null => {
-      if (!dataEntrada) return null;
-      const diff = Date.now() - new Date(dataEntrada).getTime();
-      return Math.floor(diff / 86400000);
+    const formatDataEntrada = (dataEntrada: string | null): string | null => {
+      const iso = normalizarDataISO(dataEntrada);
+      if (!iso) return null;
+      const [y, m, d] = iso.split("-");
+      return `${d}/${m}/${y}`;
     };
-    const toLote = (lote: LoteInfo, taxaPasto: number | null, totalPasto: number): MapaLoteExport => ({
-      loteNome: lote.loteNome,
-      totalAnimais: lote.totalAnimais,
-      taxaProporcional: calcTaxaProp(taxaPasto, totalPasto, lote.totalAnimais),
-      dataEntradaPasto: lote.dataEntradaPasto ? new Date(lote.dataEntradaPasto).toLocaleDateString("pt-BR") : null,
-      diasNoPasto: calcDias(lote.dataEntradaPasto),
-    });
+    const toLote = (lote: LoteInfo, taxaPasto: number | null, totalPasto: number): MapaLoteExport => {
+      const iso = normalizarDataISO(lote.dataEntradaPasto);
+      return {
+        loteNome: lote.loteNome,
+        totalAnimais: lote.totalAnimais,
+        taxaProporcional: calcTaxaProp(taxaPasto, totalPasto, lote.totalAnimais),
+        dataEntradaPasto: formatDataEntrada(lote.dataEntradaPasto),
+        diasNoPasto: iso ? calcDiasNoPastoISO(iso, hoje) : null,
+      };
+    };
     const toSub = (sub: SubdivisaoInfo): MapaSubdivisaoExport => ({
       pastoNome: sub.pastoNome,
       pastoSigla: sub.pastoSigla,
@@ -1041,22 +1114,25 @@ export default function MapaRebanhoPage() {
       areaHa: sub.areaHa ? Number(sub.areaHa) : null,
       taxaLotacao: sub.taxaLotacao,
       capacidade: sub.capacidade ?? null,
-      lotes: sub.lotes.map(l => toLote(l, sub.taxaLotacao, sub.totalAnimais)),
+      diasVazio: sub.diasVazio ?? null,
+      lotes: (sub.lotes ?? []).map(l => toLote(l, sub.taxaLotacao, sub.totalAnimais)),
     });
     if (fazendaId) {
       const fazNome = fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome ?? "Fazenda";
       return [{
         fazendaNome: fazNome,
-        subdivisoes: subdivisoes.map(toSub),
-        semSubdivisao: semSubdivisao.map(l => toLote(l, null, 0)),
+        subdivisoes: subdivisoesExibidas.map(toSub),
+        semSubdivisao: (urlSuperlotados ? [] : semSubdivisao).map(l => toLote(l, null, 0)),
       }];
     }
-    return fazendasGeral.map(faz => ({
+    return fazendasGeralExibidas.map(faz => ({
       fazendaNome: faz.fazendaNome,
-      subdivisoes: (faz.subdivisoes as SubdivisaoInfo[]).map(toSub),
+      subdivisoes: (faz.subdivisoes ?? []).map(toSub),
       semSubdivisao: (faz.semSubdivisao ?? []).map((l: LoteInfo) => toLote(l, null, 0)),
     }));
-  }, [fazendaId, subdivisoes, semSubdivisao, fazendasGeral, fazendasList, filters.fazendaId]);
+  }, [fazendaId, subdivisoesExibidas, semSubdivisao, fazendasGeralExibidas, fazendasList, filters.fazendaId, urlSuperlotados]);
+
+  const exportTemDados = countMapaRebanhoRegistros(exportPdfData) > 0;
 
   const toggleSubdivisao = (pastoId: number) => {
     setExpandedSubdivisoes(prev => {
@@ -1109,7 +1185,7 @@ export default function MapaRebanhoPage() {
                 type="button"
                 onClick={() => setModalHistoricoGeral(true)}
                 title="Histórico de movimentação de todos os lotes da fazenda"
-                className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold text-[#2D5A5A] border border-[#2D5A5A]/25 rounded-sm bg-white hover:bg-[#eef4f4] transition"
+                className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg text-[12px] font-semibold text-[#2D5A5A] border border-[#2D5A5A]/25 bg-white hover:bg-[#eef4f4] transition"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -1118,11 +1194,27 @@ export default function MapaRebanhoPage() {
                 Histórico Geral
               </button>
             )}
-            <ExportarMapaButton
-              exportPdfData={exportPdfData}
-              exportHeaders={exportHeaders}
-              exportRows={exportRows}
+            <ListExportButtons
+              title="Mapa do Rebanho"
+              filename="mapa-rebanho"
+              headers={exportHeaders}
+              rows={exportRows}
+              variant="secondary"
+              disabled={isLoading || !exportTemDados}
               fazendaNome={fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome}
+              onExportSpreadsheet={() =>
+                void exportMapaRebanhoXlsx(exportPdfData, {
+                  fazendaNome: fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome,
+                  subdivisaoNome: filters.pastoId
+                    ? pastosList.find(p => String(p.id) === filters.pastoId)?.nome
+                    : undefined,
+                })
+              }
+              onExportPdf={() =>
+                exportMapaRebanhoPdf(exportPdfData, {
+                  fazendaNome: fazendasList.find(f => String(f.id) === filters.fazendaId)?.nome,
+                })
+              }
             />
           </div>
         </div>
@@ -1221,7 +1313,7 @@ export default function MapaRebanhoPage() {
                     {/* Cabeçalho da fazenda */}
                     <div
                       className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
-                      style={{ backgroundColor: GREEN }}
+                      style={{ backgroundColor: FD_PRIMARY }}
                       onClick={() => toggleFazenda(fazenda.fazendaId)}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1268,21 +1360,16 @@ export default function MapaRebanhoPage() {
                                 className="border-b border-amber-100 cursor-default"
                                 style={{ backgroundColor: "#fffbeb" }}
                               >
-                                <td className="px-4 py-2.5 border-l-[3px] border-l-amber-300">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[13px] font-semibold italic text-amber-900">Sem Subdivisão</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                                      {fazenda.semSubdivisao.length} lote{fazenda.semSubdivisao.length !== 1 ? "s" : ""}
-                                    </span>
-                                  </div>
+                                <td className="px-4 py-3 border-l-[3px] border-l-amber-300">
+                                  <SemSubdivisaoTitulo count={fazenda.semSubdivisao.length} />
                                 </td>
-                                <td className="px-3 py-2.5 text-center text-[12px] font-bold text-gray-800 tabular-nums">
+                                <td className="px-3 py-3 text-center text-[12px] font-bold text-gray-800 tabular-nums">
                                   {fazenda.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0)}
                                 </td>
-                                <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-                                <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-                                <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
-                                <td className="px-3 py-2.5 text-center text-[12px] text-gray-400">—</td>
+                                <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                                <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                                <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
+                                <td className="px-3 py-3 text-center text-[12px] text-gray-400">—</td>
                               </tr>
                               {fazenda.semSubdivisao.map(lote => (
                                 <LoteRow key={lote.loteId} lote={lote} fazendaId={fazenda.fazendaId}
@@ -1335,7 +1422,7 @@ function TabelaMapa({
       <div className="border border-gray-200 rounded-md overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200" style={{ backgroundColor: GREEN }}>
+            <tr className="border-b border-gray-200" style={{ backgroundColor: FD_PRIMARY }}>
               {MAPA_TABLE_HEADERS}
             </tr>
           </thead>
@@ -1358,18 +1445,11 @@ function TabelaMapa({
                   onClick={onToggleSemSubdivisao}
                 >
                   <td className="px-4 py-3 border-l-[3px] border-l-amber-300">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <span
-                        className="text-[13px] text-amber-700 shrink-0 w-4 text-center leading-none"
-                        aria-hidden
-                      >
-                        {semSubdivisaoExpanded ? "▾" : "▸"}
-                      </span>
-                      <span className="text-[13px] font-semibold italic text-amber-900">Sem Subdivisão</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                        {semSubdivisao.length} lote{semSubdivisao.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
+                    <SemSubdivisaoTitulo
+                      count={semSubdivisao.length}
+                      expanded={semSubdivisaoExpanded}
+                      showChevron
+                    />
                   </td>
                   <td className="px-3 py-3 text-center">
                     <span className="text-[13px] font-bold text-gray-800 tabular-nums">
@@ -1391,71 +1471,5 @@ function TabelaMapa({
         </table>
       </div>
     </>
-  );
-}
-
-// ─── Botão de Exportação do Mapa do Rebanho ───────────────────────────────────
-function ExportarMapaButton({
-  exportPdfData,
-  exportHeaders,
-  exportRows,
-  fazendaNome,
-}: {
-  exportPdfData: MapaFazendaExport[];
-  exportHeaders: string[];
-  exportRows: (string | number | null)[][];
-  fazendaNome?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-white rounded-sm transition hover:brightness-95 active:scale-[.97]"
-        style={{ backgroundColor: "#2563eb" }}
-      >
-        <span className="material-icons text-[16px]">download</span>
-        Exportar
-        <span className="material-icons text-[14px]">{open ? "expand_less" : "expand_more"}</span>
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden"
-        >
-          <ExportMenuItem
-            variant="spreadsheet"
-            label="Planilha Excel"
-            onClick={() => {
-              setOpen(false);
-              exportMapaRebanhoXlsx(exportPdfData, { fazendaNome });
-            }}
-          />
-          <div className="border-t border-gray-100" />
-          <ExportMenuItem
-            variant="pdf"
-            label="PDF"
-            onClick={() => {
-              setOpen(false);
-              exportMapaRebanhoPdf(exportPdfData, { fazendaNome });
-            }}
-          />
-        </div>
-      )}
-    </div>
   );
 }

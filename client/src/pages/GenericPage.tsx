@@ -266,13 +266,18 @@ export function AnimaisPage() {
 
   // Helper: formata idade
   const formatIdade = (meses: number | null) => {
-    if (meses === null || meses === undefined) return "-";
+    if (meses === null || meses === undefined) return "—";
     if (meses < 1) return "< 1 m";
     if (meses < 24) return `${meses} m`;
     const anos = Math.floor(meses / 12);
     const resto = meses % 12;
     return resto > 0 ? `${anos}a ${resto}m` : `${anos} anos`;
   };
+
+  const exportTextOrDash = (value: string | null | undefined) =>
+    value != null && String(value).trim() !== "" ? String(value).trim() : "—";
+  const exportNumOrDash = (value: number | null | undefined) =>
+    value != null && Number.isFinite(value) ? value : "—";
 
   // Nome da fazenda selecionada no filtro (para o cabeçalho do PDF)
   const fazendaNomePdf = useMemo(() => {
@@ -281,19 +286,22 @@ export function AnimaisPage() {
     return (f as { nome?: string } | undefined)?.nome;
   }, [filters.fazendaId, fazendasData]);
 
+  const buildAnimaisExportTitle = () =>
+    fazendaNomePdf ? `${fazendaNomePdf} — Lista de Animais` : "Lista de Animais";
+
   const exportHeaders = ["Brinco", "Nº RFID", "Categoria", "Lote", "Sexo", "Idade", "Dias na Fazenda", "Últ. Peso (kg)", "Ganho (kg)", "GMD (kg/dia)", "Em Carência"];
   const exportColumnAligns = exportHeaders.map(() => "center" as const);
   const exportData = sortedAnimais.map(a => [
-    a.brinco || "",
-    a.brincoEletronico || "",
-    a.categoria || "",
-    a.loteNome || "",
+    exportTextOrDash(a.brinco),
+    exportTextOrDash(a.brincoEletronico),
+    exportTextOrDash(a.categoria),
+    exportTextOrDash(a.loteNome),
     a.sexo === "macho" ? "Macho" : "Fêmea",
     formatIdade(a.idadeMeses ?? null),
-    a.diasNaFazenda !== null && a.diasNaFazenda !== undefined ? a.diasNaFazenda : "",
-    a.ultimoPeso !== null && a.ultimoPeso !== undefined ? Number(a.ultimoPeso) : "",
-    a.ganhoKg !== null && a.ganhoKg !== undefined ? Number(a.ganhoKg) : "",
-    a.gmd !== null && a.gmd !== undefined ? Number(a.gmd) : "",
+    exportNumOrDash(a.diasNaFazenda),
+    exportNumOrDash(a.ultimoPeso != null ? Number(a.ultimoPeso) : null),
+    exportNumOrDash(a.ganhoKg != null ? Number(a.ganhoKg) : null),
+    exportNumOrDash(a.gmd != null ? Number(a.gmd) : null),
     a.emCarencia ? "Sim" : "Não",
   ]);
 
@@ -334,6 +342,14 @@ export function AnimaisPage() {
             spreadsheetColumnAligns={exportColumnAligns}
             fazendaNome={fazendaNomePdf}
             landscape
+            pdfShowRegistrosSubtitle={false}
+            pdfIncludeSpreadsheetTitle={false}
+            spreadsheetSheetName="Lista de Animais"
+            spreadsheetReportTitle={buildAnimaisExportTitle}
+            spreadsheetAllowEmpty
+            spreadsheetBlankAfterMeta={false}
+            spreadsheetAutoFilter={false}
+            spreadsheetPlainHeader
             variant="secondary"
             spreadsheetIntegerCols={[6]}
             spreadsheetTextCols={[0, 1]}

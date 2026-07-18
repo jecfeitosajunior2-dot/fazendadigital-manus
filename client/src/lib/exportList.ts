@@ -1,10 +1,11 @@
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import {
   buildExportSpreadsheetBuffer,
   type BuildExportSpreadsheetOptions,
   type ExportColumnAlign,
+  type ExportReportInfoLine,
   type ExportSpreadsheetRow,
+  type ExportSpreadsheetRowMeta,
 } from "@shared/buildExportSpreadsheet";
 import { formatValorCelulaMoedaBrlExcel } from "@shared/parseMoedaBr";
 
@@ -86,7 +87,43 @@ export type ExportPdfOptions = {
   wrapColIndexes?: number[];
   /** Cabeçalho em múltiplas linhas (ex.: Machos / Fêmeas agrupados). */
   headRows?: PdfHeadCell[][];
+  /** Linhas de contexto abaixo do título (mesmo padrão do Excel). */
+  reportSubtitles?: string[];
+  /** Linhas label/valor abaixo do título (mesmo padrão do Excel). */
+  reportInfo?: ExportReportInfoLine[];
+  /** Oculta subtítulo (ex.: Mapa do Rebanho). */
+  skipSubtitle?: boolean;
+  /** Exibe "X registros encontrados" (padrão: true, exceto skipSubtitle). */
+  showRegistrosSubtitle?: boolean;
 };
+
+function buildPdfReportSubtitleLines(
+  rowsCount: number,
+  options?: Pick<
+    ExportPdfOptions,
+    "skipSubtitle" | "reportSubtitles" | "reportInfo" | "showRegistrosSubtitle"
+  >,
+): { lines: string[]; titleOnly: boolean } {
+  if (options?.skipSubtitle) {
+    return { lines: [], titleOnly: true };
+  }
+
+  const lines: string[] = [];
+  for (const item of options?.reportInfo ?? []) {
+    lines.push(`${item.label}: ${item.value}`);
+  }
+  if (options?.reportSubtitles?.length) {
+    lines.push(...options.reportSubtitles);
+  }
+
+  if (options?.showRegistrosSubtitle !== false) {
+    lines.push(
+      `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
+    );
+  }
+
+  return { lines, titleOnly: lines.length === 0 };
+}
 
 export type PdfHeadCell = string | { content: string; colSpan?: number; rowSpan?: number };
 
@@ -100,9 +137,15 @@ const PDF_TITLE_OFFSET = 8;
 const PDF_SUBTITLE_OFFSET = 14;
 const PDF_TABLE_GAP = 6;
 
-function pdfTableStartY(): number {
-  // Espaço extra abaixo do subtítulo para não encostar no cabeçalho da tabela.
-  return PDF_BAND_H + PDF_SUBTITLE_OFFSET + PDF_TABLE_GAP + 3;
+function pdfTableStartY(summaryLineCount = 0, titleOnly = false): number {
+  if (titleOnly) {
+    return PDF_BAND_H + PDF_TITLE_OFFSET + PDF_TABLE_GAP + 2;
+  }
+  if (summaryLineCount <= 0) {
+    return PDF_BAND_H + PDF_SUBTITLE_OFFSET + PDF_TABLE_GAP + 3;
+  }
+  const lastLineY = PDF_BAND_H + PDF_SUBTITLE_OFFSET + (summaryLineCount - 1) * 3.5;
+  return lastLineY + 5;
 }
 
 function measureCanvasSpacedText(
@@ -254,6 +297,9 @@ function drawPdfPageChrome(
     year: number;
     dataFormatada: string;
     horaFormatada: string;
+    summaryLines?: string[];
+    /** Sem subtítulo (ex.: Mapa do Rebanho — só título). */
+    skipSubtitle?: boolean;
   },
 ) {
   const {
@@ -268,6 +314,8 @@ function drawPdfPageChrome(
     year,
     dataFormatada,
     horaFormatada,
+    summaryLines,
+    skipSubtitle,
   } = opts;
 
   doc.setFillColor(FD_NAVY[0], FD_NAVY[1], FD_NAVY[2]);
@@ -301,11 +349,19 @@ function drawPdfPageChrome(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(PDF_SUBTITLE_FONT_SIZE);
   doc.setTextColor(90, 90, 90);
-  doc.text(
-    `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
-    marginX,
-    PDF_BAND_H + PDF_SUBTITLE_OFFSET,
-  );
+  if (!skipSubtitle) {
+    if (summaryLines?.length) {
+      summaryLines.forEach((line, i) => {
+        doc.text(line, marginX, PDF_BAND_H + PDF_SUBTITLE_OFFSET + i * 3.5);
+      });
+    } else {
+      doc.text(
+        `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
+        marginX,
+        PDF_BAND_H + PDF_SUBTITLE_OFFSET,
+      );
+    }
+  }
 
   const pageNumber = doc.getNumberOfPages();
   doc.setDrawColor(224, 224, 224);
@@ -415,7 +471,8 @@ export async function exportListPdf(
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 10;
-    const tableStartY = pdfTableStartY();
+    const { lines: summaryLines, titleOnly } = buildPdfReportSubtitleLines(rows.length, options);
+    const tableStartY = pdfTableStartY(summaryLines.length, titleOnly);
 
     const drawHeaderFooter = () => {
       drawPdfPageChrome(doc, {
@@ -430,6 +487,8 @@ export async function exportListPdf(
         year: agora.getFullYear(),
         dataFormatada,
         horaFormatada,
+        summaryLines: summaryLines.length > 0 ? summaryLines : undefined,
+        skipSubtitle: titleOnly,
       });
     };
 
@@ -477,146 +536,6 @@ export async function exportListPdf(
   }
 }
 
-/**
- * Exporta o Mapa do Rebanho em XLSX com layout hierárquico:
- *  - Linha de cabeçalho da fazenda (negrito, separada por linha em branco)
- *  - Linha de cabeçalho de colunas
- *  - Linha de subdivisão (negrito)
- *  - Linhas de lotes (recuadas com "  └ ")
- * Sem cores — estrutura idêntica ao relatório PDF.
- */
-export function exportMapaRebanhoXlsx(
-  fazendas: MapaFazendaExport[],
-  options?: { fazendaNome?: string }
-) {
-  const totalRegistros = fazendas.reduce(
-    (acc, f) =>
-      acc +
-      f.subdivisoes.reduce((a, s) => a + Math.max(s.lotes.length, 1), 0) +
-      f.semSubdivisao.length,
-    0
-  );
-  if (totalRegistros === 0) {
-    toast.error("Nenhum dado para exportar");
-    return;
-  }
-
-  const NUM_FMT = "#,##0.00";
-  const COL_HEADERS = ["Subdivisão / Lote", "Total Animais", "Área (ha)", "Taxa Lotação (UA/ha)", "Entrada no Pasto"];
-  const NUM_COLS = COL_HEADERS.length; // 5
-
-  // Cada item: { values: string[], bold?: boolean, indent?: boolean, emptyRow?: boolean }
-  type SheetRow = { values: (string | number | null)[]; bold?: boolean; emptyRow?: boolean };
-  const sheetRows: SheetRow[] = [];
-
-  const fmtNum = (v: number | null, dec = 2): string =>
-    v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec }) : "—";
-
-  fazendas.forEach((faz, fi) => {
-    // Linha em branco entre fazendas
-    if (fi > 0) sheetRows.push({ values: Array(NUM_COLS).fill(""), emptyRow: true });
-
-    // Cabeçalho da fazenda
-    const totalFaz =
-      faz.subdivisoes.reduce((a, s) => a + s.totalAnimais, 0) +
-      faz.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0);
-    sheetRows.push({
-      values: [`FAZENDA: ${faz.fazendaNome}  —  ${totalFaz} animal${totalFaz !== 1 ? "is" : ""}`, "", "", "", ""],
-      bold: true,
-    });
-
-    // Cabeçalho das colunas
-    sheetRows.push({ values: COL_HEADERS, bold: true });
-
-    // Subdivisões e lotes
-    faz.subdivisoes.forEach(sub => {
-      const areaStr = sub.areaHa != null ? fmtNum(sub.areaHa) : "—";
-      const taxaStr = sub.taxaLotacao != null ? `${fmtNum(sub.taxaLotacao)} UA/ha` : "—";
-      sheetRows.push({
-        values: [sub.pastoNome, sub.totalAnimais, areaStr, taxaStr, ""],
-        bold: true,
-      });
-
-      if (sub.lotes.length === 0) {
-        sheetRows.push({ values: ["  └ Sem lotes", 0, "", "", ""] });
-      } else {
-        sub.lotes.forEach(lote => {
-          const taxaLote =
-            lote.taxaProporcional != null ? `${fmtNum(lote.taxaProporcional)} UA/ha` : "—";
-          sheetRows.push({
-            values: [
-              `  └ ${lote.loteNome}`,
-              lote.totalAnimais,
-              "",
-              taxaLote,
-              lote.dataEntradaPasto ?? "—",
-            ],
-          });
-        });
-      }
-    });
-
-    // Sem subdivisão
-    faz.semSubdivisao.forEach(lote => {
-      sheetRows.push({
-        values: [
-          `  └ ${lote.loteNome} (sem subdivisão)`,
-          lote.totalAnimais,
-          "",
-          "",
-          lote.dataEntradaPasto ?? "—",
-        ],
-      });
-    });
-  });
-
-  // Monta array-of-arrays para SheetJS
-  const aoa: (string | number)[][] = sheetRows.map(r =>
-    r.values.map(v => (v == null ? "" : v) as string | number)
-  );
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Aplica negrito via cell.s (requer sheetjs-style ou xlsx-js-style)
-  // SheetJS CE não suporta estilos — usamos apenas a estrutura de dados.
-  // Tipagem correta: números como t:'n', resto como t:'s'
-  const range = XLSX.utils.decode_range(ws["!ref"] as string);
-  for (let R = range.s.r; R <= range.e.r; R++) {
-    for (let C = range.s.c; C <= range.e.c; C++) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[addr];
-      if (!cell) continue;
-      const original = sheetRows[R]?.values[C];
-      if (typeof original === "number" && Number.isFinite(original)) {
-        cell.t = "n";
-        cell.v = original;
-        cell.z = NUM_FMT;
-      } else {
-        cell.t = "s";
-        cell.v = String(original ?? "");
-      }
-    }
-  }
-
-  // Largura automática das colunas
-  ws["!cols"] = COL_HEADERS.map((h, c) => {
-    let max = String(h).length;
-    for (const r of sheetRows) {
-      const v = r.values[c];
-      const len = v == null ? 0 : String(v).length;
-      if (len > max) max = len;
-    }
-    return { wch: Math.min(Math.max(max + 2, 12), 60) };
-  });
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Mapa do Rebanho");
-
-  const agora = new Date();
-  const carimbo = `${agora.toISOString().slice(0, 10)}_${String(agora.getHours()).padStart(2, "0")}-${String(agora.getMinutes()).padStart(2, "0")}-${String(agora.getSeconds()).padStart(2, "0")}`;
-  XLSX.writeFile(wb, `mapa-rebanho_${carimbo}.xlsx`);
-  toast.success("Planilha exportada!");
-}
 
 // ─── Tipos para exportação hierárquica do Mapa do Rebanho ────────────────────
 export type MapaLoteExport = {
@@ -635,6 +554,7 @@ export type MapaSubdivisaoExport = {
   areaHa: number | null;
   taxaLotacao: number | null;
   capacidade: number | null;
+  diasVazio?: number | null;
   lotes: MapaLoteExport[];
 };
 
@@ -644,240 +564,462 @@ export type MapaFazendaExport = {
   semSubdivisao: MapaLoteExport[];
 };
 
-/**
- * Exporta o Mapa do Rebanho em PDF com layout hierárquico:
- * - Linha de resumo por subdivisão (fundo verde escuro, dados consolidados)
- * - Linhas filhas de cada lote (recuadas, com taxa proporcional)
- */
-export function exportMapaRebanhoPdf(
-  fazendas: MapaFazendaExport[],
-  options?: { fazendaNome?: string; periodo?: string }
-) {
-  const totalRegistros = fazendas.reduce(
+function normalizeMapaFazendasExport(
+  fazendas: MapaFazendaExport[] | undefined | null,
+): MapaFazendaExport[] {
+  if (!Array.isArray(fazendas)) return [];
+  return fazendas.map(f => ({
+    fazendaNome: f.fazendaNome ?? "Fazenda",
+    subdivisoes: (f.subdivisoes ?? []).map(s => ({
+      ...s,
+      lotes: s.lotes ?? [],
+    })),
+    semSubdivisao: f.semSubdivisao ?? [],
+  }));
+}
+
+export function countMapaRebanhoRegistros(
+  fazendas: MapaFazendaExport[] | undefined | null,
+): number {
+  return normalizeMapaFazendasExport(fazendas).reduce(
     (acc, f) =>
       acc +
       f.subdivisoes.reduce((a, s) => a + Math.max(s.lotes.length, 1), 0) +
-      f.semSubdivisao.length,
-    0
+      (f.semSubdivisao.length > 0 ? 1 + f.semSubdivisao.length : 0),
+    0,
   );
-  if (totalRegistros === 0) {
-    toast.error("Nenhum dado para exportar");
-    return;
+}
+
+function fmtMapaNum(v: number | string | null | undefined, dec = 2): string {
+  if (v == null || v === "") return "—";
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+/** Mesma regra da tela: inteiro sem decimais, senão 2 casas. */
+function formatMapaAreaExport(areaHa: number | null | undefined): string {
+  if (areaHa == null) return "—";
+  const n = Number(areaHa);
+  if (!Number.isFinite(n)) return "—";
+  const formatted = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return `${formatted} ha`;
+}
+
+function formatMapaTaxaLotePlain(lote: MapaLoteExport): string {
+  if (lote.taxaProporcional == null) return "—";
+  return `${formatMapaTaxaExportBr(lote.taxaProporcional)} contribuição`;
+}
+
+const MAPA_EXPORT_COL_HEADERS = [
+  "Subdivisão e Lotes",
+  "Animais",
+  "Área",
+  "Lotação",
+  "Entrada",
+] as const;
+
+/** Lotação em pt-BR para Excel (0,10 UA/ha). */
+function formatMapaTaxaExportBr(taxa: number | null | undefined): string {
+  if (taxa == null || !Number.isFinite(taxa)) return "—";
+  return `${taxa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UA/ha`;
+}
+
+function formatMapaTaxaLoteExcel(lote: MapaLoteExport): string {
+  if (lote.taxaProporcional == null) return "—";
+  return `${formatMapaTaxaExportBr(lote.taxaProporcional)} contribuição`;
+}
+
+function formatMapaEntradaSubdivisaoExcel(sub: MapaSubdivisaoExport): string {
+  if (sub.totalAnimais > 0) return "—";
+  return "Sem animais";
+}
+
+function formatMapaEntradaLoteExcel(lote: MapaLoteExport): string {
+  if (!lote.dataEntradaPasto) return "Sem histórico";
+  if (lote.diasNoPasto != null && lote.diasNoPasto >= 0) {
+    return `${lote.dataEntradaPasto} (${lote.diasNoPasto} dias no pasto)`;
   }
+  return lote.dataEntradaPasto;
+}
 
-  const agora = new Date();
-  const dataFormatada = agora.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  const horaFormatada = agora.toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const periodo =
-    options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
-  const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
+function buildMapaRebanhoExcelRows(dados: MapaFazendaExport[]): {
+  rows: ExportSpreadsheetRow[];
+  rowMeta: ExportSpreadsheetRowMeta[];
+} {
+  const rows: ExportSpreadsheetRow[] = [];
+  const rowMeta: ExportSpreadsheetRowMeta[] = [];
+  const multiFaz = dados.length > 1;
 
-  const LOGO_URL = `${window.location.origin}/assets/fd-logo.webp`;
-
-  const fmtNum = (v: number | null, decimals = 2): string =>
-    v != null ? v.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : "—";
-
-  const fmtArea = (v: number | null): string =>
-    v != null ? `${fmtNum(v)} ha` : "—";
-
-  const statusLabel: Record<string, string> = {
-    ativo: "Ativo",
-    inativo: "Inativo",
-    descanso: "Descanso",
-    reforma: "Reforma",
+  const pushRow = (row: ExportSpreadsheetRow, meta: ExportSpreadsheetRowMeta = {}) => {
+    rows.push(row);
+    rowMeta.push(meta);
   };
 
-  // ── Gera blocos HTML por fazenda (igual ao layout da tela) ───────────────────────────────
-  const multiModo = fazendas.length > 1;
+  const loteIndent: ExportSpreadsheetRowMeta = { colIndents: { 0: 2 } };
+  const infoRowMeta: ExportSpreadsheetRowMeta = { italic: true, muted: true };
 
-  const buildFazendaBlock = (faz: typeof fazendas[0]): string => {
-    let rowIdx = 0;
-    let tableRows = "";
-
-    const addSubRow = (sub: MapaSubdivisaoExport) => {
-      const superlotado =
-        sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
-      const statusText = sub.pastoStatus ? (statusLabel[sub.pastoStatus] ?? sub.pastoStatus) : "";
-      const siglaText = sub.pastoSigla ? ` (${sub.pastoSigla})` : "";
-      const capText =
-        sub.capacidade != null && sub.capacidade > 0
-          ? `<br><span style="font-size:8px;color:${superlotado ? "#dc2626" : "#888"};"> ${superlotado ? "⚠ " : ""}${sub.totalAnimais}/${sub.capacidade} UA</span>`
-          : "";
-
-      tableRows += `
-        <tr class="sub-row" style="background:#2D5A5A;">
-          <td style="padding:6px 8px;font-weight:700;font-size:10px;color:#fff;">
-            ${sub.pastoNome}${siglaText}
-            ${statusText ? `<span style="margin-left:6px;font-size:8px;font-weight:600;background:rgba(255,255,255,0.2);padding:1px 5px;border-radius:3px;color:#d1fae5;">${statusText}</span>` : ""}
-            <span style="margin-left:6px;font-size:8px;color:rgba(255,255,255,0.6);">${sub.lotes.length} lote${sub.lotes.length !== 1 ? "s" : ""}</span>
-          </td>
-          <td style="padding:6px 8px;text-align:center;font-weight:700;color:#fff;font-size:11px;">${sub.totalAnimais}${capText}</td>
-          <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.85);font-size:10px;">${fmtArea(sub.areaHa)}</td>
-          <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.85);font-size:10px;">${fmtNum(sub.taxaLotacao)} UA/ha</td>
-          <td style="padding:6px 8px;text-align:center;color:rgba(255,255,255,0.5);font-size:10px;">—</td>
-        </tr>`;
+  for (const faz of dados) {
+    for (const sub of faz.subdivisoes) {
+      const subLabel = multiFaz ? `${faz.fazendaNome} — ${sub.pastoNome}` : sub.pastoNome;
+      pushRow([
+        subLabel,
+        sub.totalAnimais,
+        formatMapaAreaExport(sub.areaHa),
+        formatMapaTaxaExportBr(sub.taxaLotacao),
+        formatMapaEntradaSubdivisaoExcel(sub),
+      ]);
 
       if (sub.lotes.length === 0) {
-        const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
-        rowIdx++;
-        tableRows += `
-          <tr style="background:${bg};">
-            <td style="padding:5px 8px 5px 22px;font-size:10px;color:#aaa;">└ Sem lotes cadastrados</td>
-            <td colspan="4" style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
-          </tr>`;
+        pushRow(["Sem lotes cadastrados", "—", "—", "—", "—"], infoRowMeta);
       } else {
-        sub.lotes.forEach(lote => {
-          const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
-          rowIdx++;
-          const diasText =
-            lote.diasNoPasto != null
-              ? `<br><span style="font-size:8px;color:#aaa;">${lote.diasNoPasto}d no pasto</span>`
-              : "";
-          const taxaText =
-            lote.taxaProporcional != null
-              ? `${fmtNum(lote.taxaProporcional)} UA/ha<br><span style="font-size:8px;color:#aaa;">contribuição</span>`
-              : "—";
-          tableRows += `
-            <tr style="background:${bg};border-bottom:1px solid #e8eded;">
-              <td style="padding:5px 8px 5px 22px;font-size:10px;color:#374151;">
-                <span style="color:#ccc;margin-right:4px;">└</span>${lote.loteNome}
-              </td>
-              <td style="padding:5px 8px;text-align:center;font-size:10px;font-weight:600;color:#374151;">${lote.totalAnimais}</td>
-              <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
-              <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${taxaText}</td>
-              <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${lote.dataEntradaPasto ?? "—"}${diasText}</td>
-            </tr>`;
-        });
+        for (const lote of sub.lotes) {
+          pushRow(
+            [
+              `LOTE ${lote.loteNome}`,
+              lote.totalAnimais,
+              "—",
+              formatMapaTaxaLoteExcel(lote),
+              formatMapaEntradaLoteExcel(lote),
+            ],
+            loteIndent,
+          );
+        }
       }
-    };
+    }
 
-    faz.subdivisoes.forEach(sub => addSubRow(sub));
-    faz.semSubdivisao.forEach(lote => {
-      const bg = rowIdx % 2 === 0 ? "#fff" : "#f7fafa";
-      rowIdx++;
-      const diasText =
-        lote.diasNoPasto != null
-          ? `<br><span style="font-size:8px;color:#aaa;">${lote.diasNoPasto}d no pasto</span>`
-          : "";
-      tableRows += `
-        <tr style="background:${bg};border-bottom:1px solid #e8eded;">
-          <td style="padding:5px 8px;font-size:10px;color:#aaa;font-style:italic;">Sem Subdivisão</td>
-          <td style="padding:5px 8px;text-align:center;font-size:10px;font-weight:600;color:#374151;">${lote.totalAnimais}</td>
-          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
-          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#aaa;">—</td>
-          <td style="padding:5px 8px;text-align:center;font-size:10px;color:#374151;">${lote.dataEntradaPasto ?? "—"}${diasText}</td>
-        </tr>`;
+    if (faz.semSubdivisao.length > 0) {
+      const totalSem = faz.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0);
+      const n = faz.semSubdivisao.length;
+      const lotLabel = n === 1 ? "1 lote" : `${n} lotes`;
+      const semLabel = multiFaz
+        ? `${faz.fazendaNome} — Sem Subdivisão (${lotLabel})`
+        : `Sem Subdivisão (${lotLabel})`;
+      pushRow([semLabel, totalSem, "—", "—", "—"]);
+      for (const lote of faz.semSubdivisao) {
+        pushRow(
+          [
+            `LOTE ${lote.loteNome}`,
+            lote.totalAnimais,
+            "—",
+            "—",
+            formatMapaEntradaLoteExcel(lote),
+          ],
+          loteIndent,
+        );
+      }
+    }
+  }
+
+  return { rows, rowMeta };
+}
+
+/**
+ * Exporta o Mapa do Rebanho em XLSX — linha de contexto + tabela (padrão Animais do Lote).
+ */
+export async function exportMapaRebanhoXlsx(
+  fazendas: MapaFazendaExport[],
+  options?: { fazendaNome?: string; subdivisaoNome?: string },
+) {
+  try {
+    const dados = normalizeMapaFazendasExport(fazendas);
+    if (countMapaRebanhoRegistros(dados) === 0) {
+      toast.error("Nenhum dado para exportar");
+      return;
+    }
+
+    const fazendaNome = options?.fazendaNome ?? "Todas as Fazendas";
+    let reportTitle = `${fazendaNome} — Mapa do Rebanho`;
+    if (options?.subdivisaoNome) {
+      reportTitle += ` — ${options.subdivisaoNome}`;
+    }
+
+    const { rows, rowMeta } = buildMapaRebanhoExcelRows(dados);
+    const headers = [...MAPA_EXPORT_COL_HEADERS];
+
+    const buffer = await buildExportSpreadsheetBuffer(headers, rows, {
+      reportTitle,
+      blankAfterMeta: false,
+      autoFilter: false,
+      plainHeader: true,
+      sheetName: "Mapa do Rebanho",
+      integerColIndexes: [1],
+      columnAligns: ["left", "center", "center", "center", "center"],
+      rowMeta,
     });
 
-    const totalFaz = faz.subdivisoes.reduce((a, s) => a + s.totalAnimais, 0) +
+    downloadXlsxBuffer(buffer, exportFilename("mapa-rebanho"));
+    toast.success("Planilha exportada!");
+  } catch (error) {
+    console.error("[exportMapaRebanhoXlsx]", error);
+    toast.error("Não foi possível exportar a planilha");
+  }
+}
+
+/** jsPDF (Helvetica) corrompe o restante da célula após alguns símbolos Unicode. */
+function sanitizeMapaPdfText(value: string | number): string {
+  if (typeof value === "number") return String(value);
+  return value
+    .replace(/\u2514/g, "-")
+    .replace(/\u2014/g, "-")
+    .replace(/\u2013/g, "-")
+    .replace(/\u00B7/g, " | ")
+    .replace(/\u26A0\uFE0F?/g, "!")
+    .replace(/—/g, "-");
+}
+
+function mapaPdfCell(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "-";
+  return sanitizeMapaPdfText(value);
+}
+
+/** Recuo visual no PDF (3 espaços), alinhado ao Excel. */
+const MAPA_PDF_INDENT = "   ";
+
+function mapaPdfLoteLabel(loteNome: string): string {
+  return mapaPdfCell(`${MAPA_PDF_INDENT}LOTE ${loteNome}`);
+}
+
+function mapaPdfIndentedInfoLabel(text: string): string {
+  return mapaPdfCell(`${MAPA_PDF_INDENT}${text}`);
+}
+
+function mapaPdfTaxaBr(taxa: number | null | undefined): string {
+  return mapaPdfCell(formatMapaTaxaExportBr(taxa));
+}
+
+function mapaPdfEntradaSubdivisao(sub: MapaSubdivisaoExport): string {
+  return mapaPdfCell(formatMapaEntradaSubdivisaoExcel(sub));
+}
+
+function mapaPdfEntradaLote(lote: MapaLoteExport): string {
+  return mapaPdfCell(formatMapaEntradaLoteExcel(lote));
+}
+
+type MapaPdfRowKind = "fazenda" | "sub" | "sem" | "lote" | "empty" | "blank";
+type MapaPdfCell = string | number | { content: string; colSpan?: number; styles?: Record<string, unknown> };
+
+function buildMapaRebanhoPdfTable(dados: MapaFazendaExport[]) {
+  const body: MapaPdfCell[][] = [];
+  const rowKinds: MapaPdfRowKind[] = [];
+
+  dados.forEach((faz, fi) => {
+    if (fi > 0) {
+      body.push(["", "", "", "", ""]);
+      rowKinds.push("blank");
+    }
+
+    const totalFaz =
+      faz.subdivisoes.reduce((a, s) => a + s.totalAnimais, 0) +
       faz.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0);
 
-    // Cabeçalho da fazenda (barra verde escura) + tabela própria
-    const fazHeader = multiModo
-      ? `<div style="background:#1a3d3d;color:#fff;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;margin-top:14px;border-radius:4px 4px 0 0;">
-           <span style="font-size:11px;font-weight:700;">${faz.fazendaNome}</span>
-           <span style="font-size:10px;opacity:0.8;">${totalFaz} animal${totalFaz !== 1 ? "is" : ""}</span>
-         </div>`
-      : "";
-
-    return `
-      ${fazHeader}
-      <table style="width:100%;border-collapse:collapse;font-size:10px;${multiModo ? "border-radius:0 0 4px 4px;overflow:hidden;" : ""}">
-        <thead>
-          <tr style="background:#fff;border-bottom:2px solid #2D5A5A;">
-            <th style="text-align:left;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Subdivisão / Lote</th>
-            <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Total Animais</th>
-            <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Área (ha)</th>
-            <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Taxa Lotação (UA/ha)</th>
-            <th style="text-align:center;padding:6px 8px;font-size:9px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Entrada no Pasto</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>`;
-  };
-
-  const allBlocksHtml = fazendas.map(buildFazendaBlock).join("");
-
-  const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <title>Mapa do Rebanho</title>
-  <style>
-    @page { margin: 18mm 14mm 14mm 14mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
-    @media print {
-      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      .sub-row, .sub-row td { background:#2D5A5A !important; color:#fff !important; }
+    if (dados.length > 1) {
+      body.push([
+        {
+          content: mapaPdfCell(
+            `FAZENDA: ${faz.fazendaNome} - ${totalFaz} animal${totalFaz !== 1 ? "is" : ""}`,
+          ),
+          colSpan: 5,
+          styles: {
+            fillColor: [26, 61, 61],
+            textColor: [255, 255, 255],
+            fontStyle: "bold",
+            halign: "left",
+          },
+        },
+      ]);
+      rowKinds.push("fazenda");
     }
-    .report-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; border-bottom:2px solid #2D5A5A; margin-bottom:16px; }
-    .brand { display:flex; align-items:center; gap:10px; }
-    .brand img { width:44px; height:44px; object-fit:contain; }
-    .brand-text { display:flex; flex-direction:column; line-height:1; }
-    .brand-name { font-size:15px; font-weight:700; letter-spacing:.06em; color:#0F172A; text-transform:uppercase; }
-    .brand-sub { font-size:8px; font-weight:600; letter-spacing:.22em; color:#2D5A5A; text-transform:uppercase; margin-top:3px; }
-    .report-meta { text-align:right; }
-    .report-meta .fazenda-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#888; margin-bottom:2px; }
-    .report-meta .fazenda-nome { font-size:13px; font-weight:700; color:#2D5A5A; }
-    .report-meta .periodo { font-size:9px; color:#999; margin-top:3px; }
-    .report-title { font-size:14px; font-weight:700; color:#0F172A; margin-bottom:10px; }
-    .report-count { font-size:10px; color:#666; margin-bottom:12px; }
-    table { width:100%; border-collapse:collapse; font-size:10px; }
-    thead tr { background:#fff; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
-    thead th { padding:6px 8px; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; color:#1a1a1a; border-bottom:2px solid #2D5A5A; }
-    .sub-row { background:#2D5A5A !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
-    .sub-row td { color:#fff !important; -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
-    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .report-footer { margin-top:16px; padding-top:8px; border-top:1px solid #e0e0e0; display:flex; justify-content:space-between; font-size:9px; color:#aaa; }
-  </style>
-</head>
-<body>
-  <div class="report-header">
-    <div class="brand">
-      <img src="${LOGO_URL}" alt="Fazenda Digital" />
-      <div class="brand-text">
-        <span class="brand-name">Fazenda</span>
-        <span class="brand-sub">Digital</span>
-      </div>
-    </div>
-    <div class="report-meta">
-      <div class="fazenda-label">Fazenda</div>
-      <div class="fazenda-nome">${fazendaNome}</div>
-      <div class="periodo">${periodo}</div>
-    </div>
-  </div>
 
-  <div class="report-title">Mapa do Rebanho</div>
-  <div class="report-count">${totalRegistros} registro${totalRegistros !== 1 ? "s" : ""} encontrado${totalRegistros !== 1 ? "s" : ""}</div>
+    faz.subdivisoes.forEach(sub => {
+      body.push([
+        mapaPdfCell(sub.pastoNome),
+        sub.totalAnimais,
+        mapaPdfCell(formatMapaAreaExport(sub.areaHa)),
+        mapaPdfTaxaBr(sub.taxaLotacao),
+        mapaPdfEntradaSubdivisao(sub),
+      ]);
+      rowKinds.push("sub");
 
-  ${allBlocksHtml}
+      if (sub.lotes.length === 0) {
+        body.push([
+          mapaPdfIndentedInfoLabel("Sem lotes cadastrados"),
+          "-",
+          "-",
+          "-",
+          "-",
+        ]);
+        rowKinds.push("empty");
+      } else {
+        sub.lotes.forEach(lote => {
+          body.push([
+            mapaPdfLoteLabel(lote.loteNome),
+            lote.totalAnimais,
+            "-",
+            mapaPdfCell(formatMapaTaxaLotePlain(lote)),
+            mapaPdfEntradaLote(lote),
+          ]);
+          rowKinds.push("lote");
+        });
+      }
+    });
 
-  <div class="report-footer">
-    <span>Fazenda Digital &copy; ${agora.getFullYear()} &mdash; Gestão Pecuária Inteligente</span>
-    <span>${dataFormatada} ${horaFormatada}</span>
-  </div>
-</body></html>`;
+    if (faz.semSubdivisao.length > 0) {
+      const totalSem = faz.semSubdivisao.reduce((a, l) => a + l.totalAnimais, 0);
+      const lotLabel =
+        faz.semSubdivisao.length === 1 ? "1 lote" : `${faz.semSubdivisao.length} lotes`;
+      body.push([
+        mapaPdfCell(`Sem Subdivisão (${lotLabel})`),
+        totalSem,
+        "-",
+        "-",
+        "-",
+      ]);
+      rowKinds.push("sem");
+      faz.semSubdivisao.forEach(lote => {
+        body.push([
+          mapaPdfLoteLabel(lote.loteNome),
+          lote.totalAnimais,
+          "-",
+          "-",
+          mapaPdfEntradaLote(lote),
+        ]);
+        rowKinds.push("lote");
+      });
+    }
+  });
 
-  // Abre janela com dimensões A4 portrait para evitar linha pontilhada de quebra de página
-  const _W = 850;
-  const _H = 1160;
-  const _left = Math.max(0, Math.round((screen.width - _W) / 2));
-  const _top = Math.max(0, Math.round((screen.height - _H) / 2));
-  const win = window.open("", "_blank", `width=${_W},height=${_H},left=${_left},top=${_top},menubar=no,toolbar=no,location=no,status=no`);
-  if (!win) {
-    toast.error("Permita pop-ups para exportar PDF");
-    return;
+  return { body, rowKinds };
+}
+
+/**
+ * Exporta o Mapa do Rebanho em PDF (download direto, mesmo fluxo dos demais relatórios).
+ */
+export async function exportMapaRebanhoPdf(
+  fazendas: MapaFazendaExport[],
+  options?: { fazendaNome?: string; periodo?: string },
+) {
+  try {
+    const dados = normalizeMapaFazendasExport(fazendas);
+    const totalRegistros = countMapaRebanhoRegistros(dados);
+    if (totalRegistros === 0) {
+      toast.error("Nenhum dado para exportar");
+      return;
+    }
+
+    const agora = new Date();
+    const dataFormatada = agora.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const horaFormatada = agora.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const periodo =
+      options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
+    const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
+    const title = "Mapa do Rebanho";
+
+    const [{ jsPDF }, autoTableModule] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = autoTableModule.default;
+    const { body, rowKinds } = buildMapaRebanhoPdfTable(dados);
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+    const symbolDataUrl = await loadPdfAssetDataUrl(PDF_SYMBOL_URL);
+    const brandDataUrl = symbolDataUrl ? await renderPdfSidebarBrand(symbolDataUrl) : null;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 10;
+    const tableStartY = pdfTableStartY(0, true);
+
+    const drawHeaderFooter = () => {
+      drawPdfPageChrome(doc, {
+        pageWidth,
+        pageHeight,
+        marginX,
+        brandDataUrl,
+        fazendaNome,
+        periodo,
+        title,
+        rowsCount: totalRegistros,
+        year: agora.getFullYear(),
+        dataFormatada,
+        horaFormatada,
+        skipSubtitle: true,
+      });
+    };
+
+    autoTable(doc, {
+      head: [[...MAPA_EXPORT_COL_HEADERS]],
+      body,
+      startY: tableStartY,
+      margin: { top: tableStartY, right: marginX, bottom: 15, left: marginX },
+      theme: "grid",
+      styles: {
+        font: "helvetica",
+        fontSize: 7,
+        cellPadding: 1.6,
+        minCellHeight: 5,
+        overflow: "linebreak",
+        valign: "middle",
+        textColor: [34, 34, 34],
+        lineColor: [232, 237, 237],
+        lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: [45, 90, 90],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        halign: "center",
+      },
+      columnStyles: {
+        0: { halign: "left" },
+        1: { halign: "center" },
+        2: { halign: "center" },
+        3: { halign: "center" },
+        4: { halign: "center" },
+      },
+      didParseCell: hookData => {
+        if (hookData.section !== "body") return;
+        const kind = rowKinds[hookData.row.index];
+        if (!kind || kind === "blank") return;
+
+        if (kind === "sub") {
+          hookData.cell.styles.fillColor = [45, 90, 90];
+          hookData.cell.styles.textColor = [255, 255, 255];
+          hookData.cell.styles.fontStyle = "bold";
+        } else if (kind === "sem") {
+          hookData.cell.styles.fillColor = [255, 251, 235];
+          hookData.cell.styles.textColor = [146, 64, 14];
+          hookData.cell.styles.fontStyle = "bold";
+        } else if (kind === "lote") {
+          const loteIndex = rowKinds
+            .slice(0, hookData.row.index + 1)
+            .filter(k => k === "lote").length;
+          hookData.cell.styles.fillColor =
+            loteIndex % 2 === 1 ? [255, 255, 255] : [247, 250, 250];
+        } else if (kind === "empty") {
+          hookData.cell.styles.textColor = [170, 170, 170];
+          hookData.cell.styles.fontStyle = "italic";
+        }
+      },
+      didDrawPage: drawHeaderFooter,
+    });
+
+    const blob = doc.output("blob");
+    downloadPdfBlob(blob, exportPdfFilename(title));
+    toast.success("PDF exportado!");
+  } catch (error) {
+    console.error("[exportMapaRebanhoPdf]", error);
+    toast.error("Não foi possível exportar o PDF");
   }
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 500);
 }

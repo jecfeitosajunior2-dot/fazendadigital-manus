@@ -44,8 +44,8 @@ export function formatLoteNomeExport(lote: LoteGerenciamentoExportInput): string
   return `${lote.nome} (sem data nasc.: ${sem})`;
 }
 
-function faixaExportValue(value: number): number | "" {
-  return value > 0 ? value : "";
+function faixaExportValue(value: number): number | "—" {
+  return value > 0 ? value : "—";
 }
 
 export function buildLoteGerenciamentoExportRows(
@@ -59,7 +59,7 @@ export function buildLoteGerenciamentoExportRows(
       formatLoteNomeExport(lote),
       ...FAIXAS_IDADE_LOTE.map(f => faixaExportValue(lote.machos[f] ?? 0)),
       ...FAIXAS_IDADE_LOTE.map(f => faixaExportValue(lote.femeas[f] ?? 0)),
-      totalGeral > 0 ? totalGeral : "",
+      totalGeral > 0 ? totalGeral : "—",
     ];
   });
 }

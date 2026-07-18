@@ -614,6 +614,23 @@ function GmdRankBadge({ position }: { position: number }) {
   );
 }
 
+function RebanhoOverviewPlaceholderIcon() {
+  return (
+    <div className="flex justify-center mb-3">
+      <img
+        src="/assets/brand/fd-symbol-final-aligned.png"
+        alt=""
+        aria-hidden
+        className="h-10 w-10 object-contain opacity-40"
+        style={{
+          objectPosition: "center",
+          filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
+        }}
+      />
+    </div>
+  );
+}
+
 export function HerdOverviewPage() {
   const [, setLocation] = useLocation();
   const [fazendaId, setFazendaId] = useState<number | undefined>(undefined);
@@ -691,7 +708,7 @@ export function HerdOverviewPage() {
       <AppLayout>
         {headerBlock}
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
-          <span className="material-icons text-[40px] text-gray-300 mb-3 block">agriculture</span>
+          <RebanhoOverviewPlaceholderIcon />
           <p className="text-[13px] font-semibold text-gray-800 mb-1">Nenhuma fazenda cadastrada</p>
           <p className="text-[11px] text-gray-500">
             Cadastre uma fazenda para acompanhar os indicadores do rebanho.
@@ -706,7 +723,7 @@ export function HerdOverviewPage() {
       <AppLayout>
         {headerBlock}
         <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
-          <span className="material-icons text-[40px] text-gray-300 mb-3 block">agriculture</span>
+          <RebanhoOverviewPlaceholderIcon />
           <p className="text-[13px] font-semibold text-gray-800 mb-1">Escolha uma fazenda</p>
           <p className="text-[11px] text-gray-500">
             Use o seletor acima para carregar os indicadores, alertas e ranking desta propriedade.

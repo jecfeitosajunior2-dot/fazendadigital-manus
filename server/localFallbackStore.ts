@@ -3,6 +3,12 @@ import path from "node:path";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import { mensagemExclusaoLoteBloqueada } from "../shared/loteExclusaoBloqueada";
 import type { AvaliacaoExclusaoLote } from "../shared/loteExclusaoBloqueada";
+import {
+  agruparLotesPorLocalizacaoVigente,
+  movimentacaoExibivelHistorico,
+  resolverLocalizacaoAtualLote,
+  type MovimentacaoPastoLoteRef,
+} from "../shared/localizacaoAtualLote";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
@@ -437,6 +443,28 @@ async function countLocalAnimaisNoLote(userId: number, loteId: number): Promise<
   return pool.filter(a => Number(a.loteId) === loteId).length;
 }
 
+async function syncLocalAnimaisPastoDoLote(
+  userId: number,
+  loteId: number,
+  pastoId: number | null,
+): Promise<void> {
+  const animais = await readAnimais();
+  const byUser = animais.filter(row => row.userId === userId);
+  const now = new Date().toISOString();
+  let changed = false;
+
+  for (let i = 0; i < animais.length; i++) {
+    const a = animais[i];
+    const sameUser = a.userId === userId || byUser.length === 0;
+    if (sameUser && Number(a.loteId) === loteId && a.status === "ativo") {
+      animais[i] = { ...a, pastoId, updatedAt: now };
+      changed = true;
+    }
+  }
+
+  if (changed) await writeAnimais(animais);
+}
+
 /** Move/define subdivisão do lote no armazenamento local (quando o MySQL está offline). */
 export async function moveLocalLoteToPasto(
   userId: number,
@@ -451,7 +479,12 @@ export async function moveLocalLoteToPasto(
   const index = rows.findIndex(row => row.id === lote.id);
   if (index < 0) throw new Error("Lote não encontrado");
 
-  const hoje = input.dataEntrada ?? new Date().toISOString().slice(0, 10);
+  const hojeLimite = new Date().toISOString().slice(0, 10);
+  const hoje = input.dataEntrada ?? hojeLimite;
+  if (hoje > hojeLimite) {
+    throw new Error("A data de entrada no pasto não pode ser futura.");
+  }
+
   const pastoOrigemId = lote.pastoAtualId ?? null;
   const qtdAnimais = await countLocalAnimaisNoLote(userId, lote.id);
   const movs = await readLotePastoMovimentacoes();
@@ -509,6 +542,7 @@ export async function moveLocalLoteToPasto(
       updatedAt: now,
     };
     await writeLotes(rows);
+    await syncLocalAnimaisPastoDoLote(userId, lote.id, null);
     return { success: true, localFallback: true };
   }
 
@@ -549,6 +583,8 @@ export async function moveLocalLoteToPasto(
     // Pasto pode não existir no arquivo local com o mesmo userId — lote já foi atualizado.
   }
 
+  await syncLocalAnimaisPastoDoLote(userId, lote.id, input.pastoId);
+
   return { success: true, localFallback: true };
 }
 
@@ -585,6 +621,9 @@ export async function listLocalMapaRebanhoHistorico(
 
   movs.sort((a, b) => b.dataEntrada.localeCompare(a.dataEntrada));
 
+  const hoje = new Date().toISOString().slice(0, 10);
+  movs = movs.filter(m => movimentacaoExibivelHistorico(m, hoje));
+
   const mapped = movs.slice(0, limit).map(r => ({
     id: r.id,
     loteId: r.loteId,
@@ -600,26 +639,36 @@ export async function listLocalMapaRebanhoHistorico(
     observacoes: r.observacoes,
   }));
 
-  // Estadia atual sem registro (movimentações feitas antes da correção do histórico local)
-  if (mapped.length === 0 && input.loteId) {
+  // Estadia atual no lote sem movimentação aberta correspondente (legado / inconsistência)
+  if (input.loteId) {
     const lote = lotes.find(l => l.id === input.loteId);
-    if (lote?.pastoAtualId && lote.dataEntradaPasto) {
-      const hoje = new Date().toISOString().slice(0, 10);
-      const qtd = await countLocalAnimaisNoLote(userId, lote.id);
-      mapped.push({
-        id: 0,
-        loteId: lote.id,
-        loteNome: loteNomeMap.get(lote.id) ?? String(lote.nome),
-        pastoOrigemId: null,
-        pastoOrigemNome: null,
-        pastoDestinoId: lote.pastoAtualId,
-        pastoDestinoNome: pastoNomeMap.get(lote.pastoAtualId) ?? "—",
-        dataEntrada: lote.dataEntradaPasto,
-        dataSaida: null,
-        diasNoPasto: diasEntrePasto(lote.dataEntradaPasto, hoje),
-        qtdAnimais: qtd,
-        observacoes: null,
-      });
+    if (lote) {
+      const movsLote = (await readLotePastoMovimentacoes())
+        .filter(m => m.userId === userId && m.loteId === lote.id)
+        .map(m => ({
+          pastoDestinoId: m.pastoDestinoId,
+          dataEntrada: m.dataEntrada,
+          dataSaida: m.dataSaida,
+        }));
+      const loc = resolverLocalizacaoAtualLote(lote, movsLote, hoje);
+      const hasOpenMov = mapped.some(m => m.loteId === lote.id && m.dataSaida == null);
+      if (!hasOpenMov && loc.pastoId && loc.dataEntradaPasto) {
+        const qtd = await countLocalAnimaisNoLote(userId, lote.id);
+        mapped.unshift({
+          id: 0,
+          loteId: lote.id,
+          loteNome: loteNomeMap.get(lote.id) ?? String(lote.nome),
+          pastoOrigemId: null,
+          pastoOrigemNome: null,
+          pastoDestinoId: loc.pastoId,
+          pastoDestinoNome: pastoNomeMap.get(loc.pastoId) ?? "—",
+          dataEntrada: loc.dataEntradaPasto,
+          dataSaida: null,
+          diasNoPasto: diasEntrePasto(loc.dataEntradaPasto, hoje),
+          qtdAnimais: qtd,
+          observacoes: null,
+        });
+      }
     }
   }
 
@@ -635,29 +684,38 @@ export async function excluirLocalLotePastoMovimentacao(
   if (idx < 0) throw new Error("Movimentação não encontrada.");
 
   const mov = movs[idx];
-  if (!mov.dataSaida) {
-    const lotes = await readLotes();
-    const loteIdx = lotes.findIndex(l => l.id === mov.loteId);
-    if (loteIdx >= 0) {
-      lotes[loteIdx] = {
-        ...lotes[loteIdx],
-        pastoAtualId: null,
-        dataEntradaPasto: null,
-        updatedAt: new Date().toISOString(),
-      };
-      await writeLotes(lotes);
-    }
-    if (mov.pastoDestinoId) {
-      try {
-        await updateLocalPasto(userId, mov.pastoDestinoId, { status: "vazio" });
-      } catch {
-        // ignora se pasto não existir localmente
-      }
-    }
+  const dataSaidaStr = mov.dataSaida ? String(mov.dataSaida).slice(0, 10) : null;
+  if (!dataSaidaStr) {
+    throw new Error(
+      "Não é possível excluir a movimentação atual. Use Mover Lote para corrigir a localização do Lote.",
+    );
   }
 
   movs.splice(idx, 1);
   await writeLotePastoMovimentacoes(movs);
+  return { ok: true };
+}
+
+/** Cancela estadia sintética (id 0) derivada dos campos atuais do lote. */
+export async function cancelarLocalEstadiaSinteticaLote(
+  userId: number,
+  loteId: number,
+): Promise<{ ok: true }> {
+  const lotes = await readLotes();
+  const idx = lotes.findIndex(l => l.id === loteId && l.userId === userId);
+  if (idx < 0) throw new Error("Lote não encontrado.");
+
+  const lote = lotes[idx];
+  const now = new Date().toISOString();
+  lotes[idx] = {
+    ...lote,
+    pastoAtualId: null,
+    dataEntradaPasto: null,
+    localizacao: null,
+    updatedAt: now,
+  };
+  await writeLotes(lotes);
+  await syncLocalAnimaisPastoDoLote(userId, loteId, null);
   return { ok: true };
 }
 
@@ -973,6 +1031,42 @@ async function readAnimalLoteMovimentacoes(): Promise<LocalAnimalLoteMovimentaca
 
 async function writeAnimalLoteMovimentacoes(rows: LocalAnimalLoteMovimentacao[]): Promise<void> {
   await writeJsonFile(animalLoteMovimentacoesFile, rows);
+}
+
+/** Histórico unificado de subdivisões do animal (modo local / MySQL offline). */
+export async function listLocalHistoricoPastosAnimal(userId: number, animalId: number) {
+  const { buildHistoricoSubdivisaoAnimal } = await import("../shared/historicoSubdivisaoAnimal");
+  const animais = await readAnimais();
+  const byUser = animais.filter(row => row.userId === userId);
+  const pool = byUser.length > 0 ? byUser : animais;
+  const animal = pool.find(a => a.id === animalId);
+  if (!animal) return [];
+
+  const transfers = (await readAnimalLoteMovimentacoes())
+    .filter(row => row.animalId === animalId && (row.userId === userId || byUser.length === 0));
+
+  const loteIds = new Set<number>();
+  if (animal.loteId) loteIds.add(Number(animal.loteId));
+  for (const transfer of transfers) {
+    loteIds.add(transfer.loteOrigemId);
+    loteIds.add(transfer.loteDestinoId);
+  }
+  if (loteIds.size === 0) return [];
+
+  const lotePastoMovs = (await readLotePastoMovimentacoes()).filter(
+    row => row.userId === userId && loteIds.has(row.loteId),
+  );
+
+  const pastos = await listLocalPastos(userId);
+  const pastoMap: Record<number, string> = {};
+  for (const pasto of pastos) pastoMap[pasto.id] = String(pasto.nome);
+
+  return buildHistoricoSubdivisaoAnimal({
+    currentLoteId: animal.loteId != null ? Number(animal.loteId) : null,
+    transfers,
+    lotePastoMovs,
+    pastoMap,
+  });
 }
 
 /** Transfere animais entre lotes da mesma fazenda (MySQL offline). */
@@ -1336,7 +1430,10 @@ export async function listLocalAnimaisEnriched(
   if (input?.loteId) lista = lista.filter(a => a.loteId === input.loteId);
   if (input?.raca && input.raca !== "") lista = lista.filter(a => a.raca === input.raca);
   if (input?.categoria && input.categoria !== "") lista = lista.filter(a => a.categoria === input.categoria);
-  if (input?.fazendaId) lista = lista.filter(a => a.fazendaId === input.fazendaId);
+  if (input?.fazendaId) {
+    const loteIdsFaz = buildLoteIdsSetPorFazenda(await listLocalLotes(userId), Number(input.fazendaId));
+    lista = filterAnimaisPorFazenda(lista, Number(input.fazendaId), loteIdsFaz);
+  }
   if (input?.dataNascimentoInicio) {
     lista = lista.filter(a => a.dataNascimento && a.dataNascimento >= String(input.dataNascimentoInicio));
   }
@@ -1680,21 +1777,12 @@ function buildMapaSubdivisoesFromLocal(
   lotesList: LocalLote[],
   totalPorLote: Map<number, number>,
   q: string,
+  movimentacoesPorLote: Map<number, MovimentacaoPastoLoteRef[]>,
+  hojeISO: string,
   pastoIdFilter?: number,
 ): { subdivisoes: MapaSubdivisaoRow[]; semSubdivisao: MapaLoteRow[] } {
-  const porPasto = new Map<number, LocalLote[]>();
-  const semSubdivisaoLotes: LocalLote[] = [];
-
-  for (const lote of lotesList) {
-    const pastoAtualId = lote.pastoAtualId != null ? Number(lote.pastoAtualId) : null;
-    if (pastoAtualId) {
-      const arr = porPasto.get(pastoAtualId) ?? [];
-      arr.push(lote);
-      porPasto.set(pastoAtualId, arr);
-    } else {
-      semSubdivisaoLotes.push(lote);
-    }
-  }
+  const { porPasto, semSubdivisao: semSubdivisaoLotes, localizacaoPorLoteId } =
+    agruparLotesPorLocalizacaoVigente(lotesList, movimentacoesPorLote, hojeISO);
 
   const pastosComLote = new Set(porPasto.keys());
 
@@ -1721,12 +1809,13 @@ function buildMapaSubdivisoesFromLocal(
           loteId: l.id,
           loteNome: l.nome,
           loteSigla: l.sigla ?? null,
-          dataEntradaPasto: l.dataEntradaPasto ?? null,
+          dataEntradaPasto: localizacaoPorLoteId.get(l.id)?.dataEntradaPasto ?? null,
           totalAnimais: totalPorLote.get(l.id) ?? 0,
         })),
       };
     })
     .filter((s): s is MapaSubdivisaoRow => s != null)
+    .filter(s => !pastoIdFilter || s.pastoId === pastoIdFilter)
     .filter(s => !q || s.pastoNome.toLowerCase().includes(q) || s.lotes.some(l => l.loteNome.toLowerCase().includes(q)))
     .sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR'));
 
@@ -1748,12 +1837,13 @@ function buildMapaSubdivisoesFromLocal(
     }));
 
   const semSubdivisao = semSubdivisaoLotes
+    .filter(l => !pastoIdFilter)
     .filter(l => !q || l.nome.toLowerCase().includes(q))
     .map(l => ({
       loteId: l.id,
       loteNome: l.nome,
       loteSigla: l.sigla ?? null,
-      dataEntradaPasto: l.dataEntradaPasto ?? null,
+      dataEntradaPasto: localizacaoPorLoteId.get(l.id)?.dataEntradaPasto ?? null,
       totalAnimais: totalPorLote.get(l.id) ?? 0,
     }));
 
@@ -1787,18 +1877,42 @@ export async function buildLocalMapaRebanhoV2(
   }
 
   const pastosList = await listLocalPastosByFazenda(userId, input.fazendaId);
-  let lotesList = (await listLocalLotes(userId)).filter(l => l.fazendaId === input.fazendaId);
-  if (input.pastoId) {
-    lotesList = lotesList.filter(l => Number(l.pastoAtualId) === input.pastoId);
-  }
+  const lotesList = (await listLocalLotes(userId)).filter(l => l.fazendaId === input.fazendaId);
 
   if (lotesList.length === 0 && pastosList.length === 0) {
     return { subdivisoes: [], semSubdivisao: [] };
   }
 
+  const movsRaw = await readLotePastoMovimentacoes();
+  const movimentacoesPorLote = new Map<number, MovimentacaoPastoLoteRef[]>();
+  for (const m of movsRaw.filter(row => row.userId === userId)) {
+    const arr = movimentacoesPorLote.get(m.loteId) ?? [];
+    arr.push({
+      pastoDestinoId: m.pastoDestinoId,
+      dataEntrada: m.dataEntrada,
+      dataSaida: m.dataSaida,
+    });
+    movimentacoesPorLote.set(m.loteId, arr);
+  }
+
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  let lotesParaMapa = lotesList;
+  if (input.pastoId) {
+    const { porPasto } = agruparLotesPorLocalizacaoVigente(lotesList, movimentacoesPorLote, hojeISO);
+    lotesParaMapa = porPasto.get(input.pastoId) ?? [];
+  }
+
   const totalPorLote = await buildLocalTotalPorLote(userId, lotesList.map(l => l.id));
   const q = input.search?.trim().toLowerCase() ?? '';
-  return buildMapaSubdivisoesFromLocal(pastosList, lotesList, totalPorLote, q, input.pastoId);
+  return buildMapaSubdivisoesFromLocal(
+    pastosList,
+    lotesParaMapa,
+    totalPorLote,
+    q,
+    movimentacoesPorLote,
+    hojeISO,
+    input.pastoId,
+  );
 }
 
 export async function buildLocalMapaRebanhoGeral(
@@ -1818,11 +1932,30 @@ export async function buildLocalMapaRebanhoGeral(
   const lotesList = await listLocalLotes(userId);
   const totalPorLote = await buildLocalTotalPorLote(userId, lotesList.map(l => l.id));
   const q = input?.search?.trim().toLowerCase() ?? '';
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const movsRaw = await readLotePastoMovimentacoes();
+  const movimentacoesPorLote = new Map<number, MovimentacaoPastoLoteRef[]>();
+  for (const m of movsRaw.filter(row => row.userId === userId)) {
+    const arr = movimentacoesPorLote.get(m.loteId) ?? [];
+    arr.push({
+      pastoDestinoId: m.pastoDestinoId,
+      dataEntrada: m.dataEntrada,
+      dataSaida: m.dataSaida,
+    });
+    movimentacoesPorLote.set(m.loteId, arr);
+  }
 
   const resultadoPorFazenda = fazendasList.map(fazenda => {
     const lotesF = lotesList.filter(l => l.fazendaId === fazenda.id);
     const pastosF = pastosList.filter(p => p.fazendaId === fazenda.id);
-    const { subdivisoes, semSubdivisao } = buildMapaSubdivisoesFromLocal(pastosF, lotesF, totalPorLote, q);
+    const { subdivisoes, semSubdivisao } = buildMapaSubdivisoesFromLocal(
+      pastosF,
+      lotesF,
+      totalPorLote,
+      q,
+      movimentacoesPorLote,
+      hojeISO,
+    );
     const totalAnimais = lotesF.reduce((s, l) => s + (totalPorLote.get(l.id) ?? 0), 0);
     return {
       fazendaId: fazenda.id,
@@ -1838,4 +1971,75 @@ export async function buildLocalMapaRebanhoGeral(
       f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q),
     )
     : resultadoPorFazenda;
+}
+
+export async function buildLocalRebanhoOverview(userId: number, fazendaId?: number) {
+  const { computeRebanhoOverview } = await import("./rebanhoOverviewCompute");
+  const { buildLoteIdsSetPorFazenda, filterAnimaisPorFazenda } = await import("./animaisPorFazenda");
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const lotesAll = await listLocalLotes(userId);
+  let lista = (await listLocalAnimais(userId)).filter(a => a.status === "ativo");
+
+  if (fazendaId != null) {
+    const loteIdsFaz = buildLoteIdsSetPorFazenda(lotesAll, fazendaId);
+    lista = filterAnimaisPorFazenda(lista, fazendaId, loteIdsFaz);
+  }
+
+  const animalIds = new Set(lista.map(a => a.id));
+  const pesagensAll = (await listLocalPesagens(userId)).filter(p => animalIds.has(p.animalId));
+  const pesagensPorAnimal = buildLocalPesagensPorAnimal(pesagensAll);
+
+  const saudeAll = (await listLocalSaudeRegistros(userId))
+    .filter(s => animalIds.has(s.animalId))
+    .map(s => ({
+      animalId: s.animalId,
+      medicamento: s.medicamento,
+      dataRegistro: s.dataRegistro,
+      proximaData: s.proximaData,
+    }));
+
+  const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(saudeAll, new Map(), hoje);
+
+  const loteIds = [...new Set(lista.map(a => a.loteId).filter(Boolean) as number[])];
+  const lotesRows = lotesAll
+    .filter(l => loteIds.includes(l.id))
+    .map(l => ({ id: l.id, nome: l.nome, pastoAtualId: l.pastoAtualId ?? null }));
+
+  const pastoIds = [...new Set(lotesRows.map(l => l.pastoAtualId).filter(Boolean) as number[])];
+  const pastosAll = await listLocalPastos(userId);
+  const pastoCapacidadeMap = new Map<number, number | null>(
+    pastosAll
+      .filter(p => pastoIds.includes(p.id))
+      .map(p => [p.id, p.capacidade ?? null]),
+  );
+
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const inicioMesStr = inicioMes.toISOString().slice(0, 10);
+  const saidasCount = (await listLocalAnimais(userId)).filter(a =>
+    ["vendido", "morto", "transferido"].includes(String(a.status))
+    && String(a.updatedAt ?? "") >= inicioMesStr,
+  ).length;
+
+  return computeRebanhoOverview({
+    lista: lista.map(a => ({
+      id: a.id,
+      brinco: a.brinco ?? null,
+      categoria: a.categoria ?? null,
+      sexo: a.sexo ?? null,
+      raca: a.raca ?? null,
+      loteId: a.loteId ?? null,
+      dataNascimento: a.dataNascimento ?? null,
+      dataEntrada: a.dataEntrada ?? null,
+      pesoAtual: a.pesoAtual ?? null,
+    })),
+    pesagensPorAnimal,
+    emCarenciaAnimalIds: new Set(fimCarenciaPorAnimal.keys()),
+    lotesRows,
+    pastoCapacidadeMap,
+    saidasCount,
+    hoje,
+  });
 }

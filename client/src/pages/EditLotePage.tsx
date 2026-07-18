@@ -288,13 +288,14 @@ export default function EditLotePage() {
       a.raca || "—",
     ]);
   }, [animalRows, tableState.sortAsc]);
-  const exportTitle = (() => {
+  const exportIdentityLine = useMemo(() => {
+    const fazenda = fazendaNome || "Fazenda não informada";
     const nome = form.nome.trim() || "Lote";
     const sigla = form.sigla.trim();
     return sigla
-      ? `Animais do Lote — ${nome} (${sigla})`
-      : `Animais do Lote — ${nome}`;
-  })();
+      ? `${fazenda} — Lote: ${nome} (${sigla})`
+      : `${fazenda} — Lote: ${nome}`;
+  }, [fazendaNome, form.nome, form.sigla]);
   const exportFilenameBase = useMemo(() => {
     const slug = (form.nome || "lote")
       .normalize("NFD")
@@ -304,15 +305,6 @@ export default function EditLotePage() {
       .replace(/^-+|-+$/g, "") || "lote";
     return `animais-lote-${slug}`;
   }, [form.nome]);
-
-  const buildExportIdentityLine = () => {
-    const fazenda = fazendaNome || "Fazenda não informada";
-    const nome = form.nome.trim() || "Lote";
-    const sigla = form.sigla.trim();
-    return sigla
-      ? `${fazenda} — Lote: ${nome} (${sigla})`
-      : `${fazenda} — Lote: ${nome}`;
-  };
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -767,22 +759,24 @@ export default function EditLotePage() {
             </button>
 
             <ListExportButtons
-              title={exportTitle}
+              title="Animais do Lote"
               filename={exportFilenameBase}
               headers={exportHeaders}
               rows={exportRows}
-              fazendaNome={fazendaNome}
+              fazendaNome={exportIdentityLine}
               variant="secondary"
               buttonLabel="Exportar"
               className="shrink-0 [&_button]:min-h-9 [&_button]:h-9"
               spreadsheetSheetName="Animais do Lote"
-              spreadsheetReportTitle={buildExportIdentityLine}
+              spreadsheetReportTitle={() => exportIdentityLine}
               spreadsheetAllowEmpty
               spreadsheetBlankAfterMeta={false}
               spreadsheetAutoFilter={false}
               spreadsheetPlainHeader
               spreadsheetTextCols={[0]}
               spreadsheetColumnAligns={["center", "center", "center", "center"]}
+              pdfIncludeSpreadsheetTitle={false}
+              pdfShowRegistrosSubtitle={false}
             />
           </div>
 

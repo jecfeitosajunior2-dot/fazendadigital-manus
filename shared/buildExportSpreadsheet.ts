@@ -49,6 +49,15 @@ export type BuildExportSpreadsheetOptions = {
   allowEmpty?: boolean;
   /** Cabeçalho em duas linhas (agrupado), como o quadro de Gerenciamento de Lotes. */
   groupedTableHeader?: GroupedTableHeader;
+  /** Estilo opcional por linha de dados (mesma ordem de `rows`). */
+  rowMeta?: ExportSpreadsheetRowMeta[];
+};
+
+export type ExportSpreadsheetRowMeta = {
+  /** Recuo Excel por coluna (índice 0-based). */
+  colIndents?: Partial<Record<number, number>>;
+  italic?: boolean;
+  muted?: boolean;
 };
 
 export type ExportSpreadsheetRow = (string | number | null | undefined)[];
@@ -292,7 +301,9 @@ export async function buildExportSpreadsheetWorkbook(
     headerExcelRow = headerRow.number;
   }
 
-  for (const row of rows) {
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const row = rows[rowIdx];
+    const meta = options?.rowMeta?.[rowIdx];
     const excelRow = ws.addRow(new Array(headers.length).fill(null));
     excelRow.height = 18;
 
@@ -304,12 +315,19 @@ export async function buildExportSpreadsheetWorkbook(
       const isInteger = integerCols?.has(colIdx) ?? false;
       const isText = textCols?.has(colIdx) ?? false;
       const colNumFmt = columnNumFmts?.[colIdx];
+      const indent = meta?.colIndents?.[colIdx] ?? 0;
 
-      excelCell.font = { name: FONT, size: 10 };
+      excelCell.font = {
+        name: FONT,
+        size: 10,
+        ...(meta?.italic ? { italic: true } : {}),
+        ...(meta?.muted ? { color: { argb: "FF6B7280" } } : {}),
+      };
       excelCell.alignment = {
         horizontal,
         vertical: "middle",
         wrapText: isObservacoes,
+        ...(indent > 0 ? { indent } : {}),
       };
       excelCell.border = thinBorder();
 

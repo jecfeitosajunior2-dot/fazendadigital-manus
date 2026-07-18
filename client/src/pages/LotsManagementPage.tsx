@@ -408,6 +408,8 @@ export default function LotsManagementPage() {
             spreadsheetIntegerCols={LOTE_GERENCIAMENTO_INTEGER_COLS}
             spreadsheetColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
             spreadsheetPlainHeader
+            pdfIncludeSpreadsheetTitle={false}
+            pdfShowRegistrosSubtitle={false}
             pdfHeadRows={loteGerenciamentoPdfHeadRows()}
             pdfColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
           />

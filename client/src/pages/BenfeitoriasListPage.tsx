@@ -232,6 +232,11 @@ export default function BenfeitoriasListPage() {
     ? fazendas.find(f => f.id === Number(fazendaFilter))?.nome ?? ""
     : "";
 
+  const buildBenfeitoriasExportTitle = () =>
+    fazendaFilterNome
+      ? `${fazendaFilterNome} — Lista de Benfeitorias`
+      : "Lista de Benfeitorias";
+
   const handleFazendaChange = (v: string) => {
     setFazendaFilter(v);
     setEstadoFilter("");
@@ -371,6 +376,13 @@ export default function BenfeitoriasListPage() {
               pdfRows={exportPdfData}
               pdfColumnAligns={BENFEITORIA_PDF_COLUMN_ALIGNS}
               pdfLandscape
+              pdfShowRegistrosSubtitle={false}
+              spreadsheetSheetName="Lista de Benfeitorias"
+              spreadsheetReportTitle={buildBenfeitoriasExportTitle}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetAllowEmpty
               spreadsheetCurrencyCols={[EXPORT_VALOR_COL_INDEX]}
               spreadsheetCurrencyFormat={EXCEL_FMT_MOEDA_BRL}
               spreadsheetIntegerCols={BENFEITORIA_EXPORT_INTEGER_COL_INDEXES}

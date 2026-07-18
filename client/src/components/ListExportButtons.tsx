@@ -49,7 +49,35 @@ type Props = {
   pdfColumnAligns?: ("left" | "center" | "right")[];
   pdfLandscape?: boolean;
   pdfWrapCols?: number[];
+  /** Exibe "X registros encontrados" abaixo do título no PDF (padrão: true). */
+  pdfShowRegistrosSubtitle?: boolean;
+  /** Repete spreadsheetReportTitle como subtítulo no PDF (padrão: true). */
+  pdfIncludeSpreadsheetTitle?: boolean;
+  /** Substitui a exportação padrão para Excel (ex.: layout customizado do Mapa do Rebanho). */
+  onExportSpreadsheet?: () => void;
+  /** Substitui a exportação padrão para PDF. */
+  onExportPdf?: () => void;
 };
+
+function resolveExportMeta<T>(value: T | (() => T) | undefined): T | undefined {
+  if (value == null) return undefined;
+  return typeof value === "function" ? (value as () => T)() : value;
+}
+
+function buildListExportPdfSubtitles(
+  title: string,
+  spreadsheetReportTitle?: string | (() => string),
+  spreadsheetReportSubtitles?: string[] | (() => string[]),
+  includeSpreadsheetTitle = true,
+): string[] | undefined {
+  const metaTitle = includeSpreadsheetTitle ? resolveExportMeta(spreadsheetReportTitle) : undefined;
+  const extra = resolveExportMeta(spreadsheetReportSubtitles) ?? [];
+  const lines = [
+    ...(metaTitle && metaTitle !== title ? [metaTitle] : []),
+    ...extra,
+  ];
+  return lines.length > 0 ? lines : undefined;
+}
 
 type ExportMenuItemProps = {
   variant: "spreadsheet" | "pdf";
@@ -109,6 +137,10 @@ export default function ListExportButtons({
   pdfColumnAligns,
   pdfLandscape,
   pdfWrapCols,
+  pdfShowRegistrosSubtitle,
+  pdfIncludeSpreadsheetTitle = true,
+  onExportSpreadsheet,
+  onExportPdf,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -179,6 +211,10 @@ export default function ListExportButtons({
             label="Planilha Excel"
             onClick={() => {
               setOpen(false);
+              if (onExportSpreadsheet) {
+                onExportSpreadsheet();
+                return;
+              }
               void exportListSpreadsheet(headers, rows, filename, {
                 currencyColIndexes: spreadsheetCurrencyCols,
                 currencyNumFmt: spreadsheetCurrencyFormat,
@@ -210,7 +246,11 @@ export default function ListExportButtons({
             label="PDF"
             onClick={() => {
               setOpen(false);
-              exportListPdf(title, pdfHeaders ?? headers, pdfRows ?? rows, {
+              if (onExportPdf) {
+                onExportPdf();
+                return;
+              }
+              void exportListPdf(title, pdfHeaders ?? headers, pdfRows ?? rows, {
                 alignRightFrom,
                 alignRightCols,
                 fazendaNome,
@@ -221,6 +261,14 @@ export default function ListExportButtons({
                 columnAligns: pdfColumnAligns ?? spreadsheetColumnAligns,
                 wrapColIndexes: pdfWrapCols,
                 headRows: pdfHeadRows,
+                reportSubtitles: buildListExportPdfSubtitles(
+                  title,
+                  spreadsheetReportTitle,
+                  spreadsheetReportSubtitles,
+                  pdfIncludeSpreadsheetTitle,
+                ),
+                reportInfo: resolveExportMeta(spreadsheetReportInfo),
+                showRegistrosSubtitle: pdfShowRegistrosSubtitle,
               });
             }}
           />
