@@ -1431,8 +1431,12 @@ export async function listLocalAnimaisEnriched(
   if (input?.raca && input.raca !== "") lista = lista.filter(a => a.raca === input.raca);
   if (input?.categoria && input.categoria !== "") lista = lista.filter(a => a.categoria === input.categoria);
   if (input?.fazendaId) {
-    const loteIdsFaz = buildLoteIdsSetPorFazenda(await listLocalLotes(userId), Number(input.fazendaId));
-    lista = filterAnimaisPorFazenda(lista, Number(input.fazendaId), loteIdsFaz);
+    const { buildLoteFazendaContext, filterAnimaisPorFazenda } = await import("./animaisPorFazenda");
+    const { loteFazendaById } = buildLoteFazendaContext(
+      await listLocalLotes(userId),
+      await listLocalPastos(userId),
+    );
+    lista = filterAnimaisPorFazenda(lista, Number(input.fazendaId), loteFazendaById);
   }
   if (input?.dataNascimentoInicio) {
     lista = lista.filter(a => a.dataNascimento && a.dataNascimento >= String(input.dataNascimentoInicio));
@@ -1975,17 +1979,18 @@ export async function buildLocalMapaRebanhoGeral(
 
 export async function buildLocalRebanhoOverview(userId: number, fazendaId?: number) {
   const { computeRebanhoOverview } = await import("./rebanhoOverviewCompute");
-  const { buildLoteIdsSetPorFazenda, filterAnimaisPorFazenda } = await import("./animaisPorFazenda");
+  const { buildLoteFazendaContext, filterAnimaisPorFazenda } = await import("./animaisPorFazenda");
 
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
   const lotesAll = await listLocalLotes(userId);
+  const pastosAll = await listLocalPastos(userId);
   let lista = (await listLocalAnimais(userId)).filter(a => a.status === "ativo");
 
   if (fazendaId != null) {
-    const loteIdsFaz = buildLoteIdsSetPorFazenda(lotesAll, fazendaId);
-    lista = filterAnimaisPorFazenda(lista, fazendaId, loteIdsFaz);
+    const { loteFazendaById } = buildLoteFazendaContext(lotesAll, pastosAll);
+    lista = filterAnimaisPorFazenda(lista, fazendaId, loteFazendaById);
   }
 
   const animalIds = new Set(lista.map(a => a.id));
@@ -2009,7 +2014,6 @@ export async function buildLocalRebanhoOverview(userId: number, fazendaId?: numb
     .map(l => ({ id: l.id, nome: l.nome, pastoAtualId: l.pastoAtualId ?? null }));
 
   const pastoIds = [...new Set(lotesRows.map(l => l.pastoAtualId).filter(Boolean) as number[])];
-  const pastosAll = await listLocalPastos(userId);
   const pastoCapacidadeMap = new Map<number, number | null>(
     pastosAll
       .filter(p => pastoIds.includes(p.id))

@@ -22,7 +22,7 @@ import {
   importarCoordenadasPastosLocal,
 } from "./importarCoordenadasPastos";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
-import { listLoteIdsPorFazenda } from "./animaisPorFazenda";
+import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
   createLocalPasto,
@@ -512,16 +512,6 @@ const animaisRouter = router({
       if (input?.rgd?.trim()) {
         conditions.push(like(animais.rgd, `%${input.rgd.trim()}%`));
       }
-      if (input?.fazendaId) {
-        const loteIdsFaz = await listLoteIdsPorFazenda(ctx.user.id, input.fazendaId);
-        if (loteIdsFaz.length > 0) {
-          conditions.push(
-            or(eq(animais.fazendaId, input.fazendaId), inArray(animais.loteId, loteIdsFaz))!,
-          );
-        } else {
-          conditions.push(eq(animais.fazendaId, input.fazendaId));
-        }
-      }
       if (input?.dataEntradaDe) conditions.push(gte(animais.dataEntrada, input.dataEntradaDe));
       if (input?.dataEntradaAte) conditions.push(lte(animais.dataEntrada, input.dataEntradaAte));
       if (input?.pastoId) {
@@ -533,7 +523,11 @@ const animaisRouter = router({
         conditions.push(inArray(animais.loteId, loteIds));
       }
 
-      const lista = await db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
+      let lista = await db.select().from(animais).where(and(...conditions)).orderBy(desc(animais.createdAt));
+      if (input?.fazendaId) {
+        const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
+        lista = filterAnimaisPorFazenda(lista, input.fazendaId, loteFazendaById);
+      }
       if (lista.length === 0) return [];
 
       const animalIds = lista.map(a => a.id);

@@ -3,11 +3,11 @@ import { db } from "../db";
 import {
   animais, lotes, pastos, pesagens, saudeRegistros, estoque,
 } from "../../drizzle/schema";
-import { eq, and, inArray, desc, sql, or } from "drizzle-orm";
+import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import z from "zod";
 import { isDatabaseUnavailable, buildLocalRebanhoOverview } from "../localFallbackStore";
 import { buildFimCarenciaPorAnimal } from "../../shared/carenciaAnimal";
-import { listLoteIdsPorFazenda } from "../animaisPorFazenda";
+import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser } from "../animaisPorFazenda";
 import { computeRebanhoOverview } from "../rebanhoOverviewCompute";
 
 export const rebanhoOverviewRouter = router({
@@ -23,17 +23,11 @@ export const rebanhoOverviewRouter = router({
           eq(animais.userId, userId),
           eq(animais.status, "ativo"),
         ];
+        let lista = await db.select().from(animais).where(and(...conditions));
         if (input?.fazendaId) {
-          const loteIds = await listLoteIdsPorFazenda(userId, input.fazendaId);
-          if (loteIds.length > 0) {
-            conditions.push(
-              or(eq(animais.fazendaId, input.fazendaId), inArray(animais.loteId, loteIds))!,
-            );
-          } else {
-            conditions.push(eq(animais.fazendaId, input.fazendaId));
-          }
+          const { loteFazendaById } = await loadLoteFazendaContextForUser(userId);
+          lista = filterAnimaisPorFazenda(lista, input.fazendaId, loteFazendaById);
         }
-        const lista = await db.select().from(animais).where(and(...conditions));
 
         const animalIds = lista.map(a => a.id);
         const loteIds = [...new Set(lista.map(a => a.loteId).filter(Boolean) as number[])];
