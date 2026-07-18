@@ -52,4 +52,12 @@ describe("animaisPorFazenda", () => {
     expect(animalCompativelComFazendaLote({ fazendaId: 2 }, 2)).toBe(true);
     expect(animalCompativelComFazendaLote({ fazendaId: 3 }, 2)).toBe(false);
   });
+
+  it("inclui animal só com fazendaId, sem lote nem subdivisão", () => {
+    const { loteFazendaById } = buildLoteFazendaContext([], []);
+    const animal = { fazendaId: 2, loteId: null };
+    expect(animalPertenceFazenda(animal, 2, loteFazendaById)).toBe(true);
+    expect(filterAnimaisPorFazenda([animal], 2, loteFazendaById)).toHaveLength(1);
+    expect(animalPertenceFazenda(animal, 3, loteFazendaById)).toBe(false);
+  });
 });
