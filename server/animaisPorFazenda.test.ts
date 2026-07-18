@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  animalCompativelComFazendaLote,
   animalPertenceFazenda,
   buildLoteFazendaContext,
   filterAnimaisPorFazenda,
+  resolveAnimalLocalizacaoFromLote,
   resolveLoteFazendaId,
 } from "./animaisPorFazenda";
 
@@ -35,5 +37,19 @@ describe("animaisPorFazenda", () => {
     const { loteFazendaById } = buildLoteFazendaContext([{ id: 10, fazendaId: 2 }], []);
     const animal = { fazendaId: null, loteId: 99 };
     expect(animalPertenceFazenda(animal, 2, loteFazendaById)).toBe(false);
+  });
+
+  it("resolve localização do animal a partir do lote e subdivisão", () => {
+    const pastoMap = new Map([[5, 2]]);
+    expect(resolveAnimalLocalizacaoFromLote(
+      { id: 10, fazendaId: null, pastoAtualId: 5 },
+      pastoMap,
+    )).toEqual({ fazendaId: 2, pastoId: 5 });
+  });
+
+  it("permite animal sem fazendaId entrar no lote da fazenda", () => {
+    expect(animalCompativelComFazendaLote({ fazendaId: null }, 2)).toBe(true);
+    expect(animalCompativelComFazendaLote({ fazendaId: 2 }, 2)).toBe(true);
+    expect(animalCompativelComFazendaLote({ fazendaId: 3 }, 2)).toBe(false);
   });
 });

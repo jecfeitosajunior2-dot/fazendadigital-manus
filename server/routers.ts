@@ -22,7 +22,7 @@ import {
   importarCoordenadasPastosLocal,
 } from "./importarCoordenadasPastos";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
-import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
+import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
   createLocalPasto,
@@ -1959,7 +1959,7 @@ const lotesRouter = router({
           .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id)));
 
         await db.update(animais)
-          .set({ pastoId: input.pastoId })
+          .set({ pastoId: input.pastoId, fazendaId: pasto.fazendaId })
           .where(and(
             eq(animais.userId, ctx.user.id),
             eq(animais.loteId, lote.id),
@@ -2069,10 +2069,20 @@ const lotesRouter = router({
 
         await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
 
-        // Sincroniza pastoId de todos os animais do lote quando pastoAtualId é alterado
+        // Sincroniza pastoId e fazendaId de todos os animais do lote quando pastoAtualId é alterado
         if (rest.pastoAtualId !== undefined) {
+          const animalPatch: { pastoId: number | null; fazendaId?: number } = {
+            pastoId: rest.pastoAtualId,
+          };
+          if (rest.pastoAtualId != null) {
+            const [pasto] = await db.select({ fazendaId: pastos.fazendaId })
+              .from(pastos)
+              .where(and(eq(pastos.id, rest.pastoAtualId), eq(pastos.userId, ctx.user.id)))
+              .limit(1);
+            if (pasto?.fazendaId) animalPatch.fazendaId = pasto.fazendaId;
+          }
           await db.update(animais)
-            .set({ pastoId: rest.pastoAtualId })
+            .set(animalPatch)
             .where(and(
               eq(animais.userId, ctx.user.id),
               eq(animais.loteId, id),
@@ -2122,7 +2132,23 @@ const lotesRouter = router({
             message: "Este Lote está inativo e não aceita novos animais.",
           });
         }
-        if (!lote.fazendaId) {
+        if (!lote.fazendaId && !lote.pastoAtualId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.",
+          });
+        }
+
+        const pastoFazendaMap = new Map<number, number>();
+        if (lote.pastoAtualId) {
+          const [pasto] = await db.select({ id: pastos.id, fazendaId: pastos.fazendaId })
+            .from(pastos)
+            .where(and(eq(pastos.id, lote.pastoAtualId), eq(pastos.userId, ctx.user.id)))
+            .limit(1);
+          if (pasto?.fazendaId) pastoFazendaMap.set(pasto.id, pasto.fazendaId);
+        }
+        const { fazendaId: fazendaIdLote, pastoId: pastoIdLote } = resolveAnimalLocalizacaoFromLote(lote, pastoFazendaMap);
+        if (!fazendaIdLote) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.",
@@ -2155,7 +2181,7 @@ const lotesRouter = router({
             if (!erroAmigavel) erroAmigavel = "Só é possível adicionar animais ativos ao lote.";
             continue;
           }
-          if (animal.fazendaId !== lote.fazendaId) {
+          if (!animalCompativelComFazendaLote(animal, fazendaIdLote)) {
             if (!erroAmigavel) {
               erroAmigavel = "Este animal pertence a outra fazenda e não pode ser incluído neste lote.";
             }
@@ -2177,11 +2203,12 @@ const lotesRouter = router({
           });
         }
 
-        // Mantém a fazenda do animal; atualiza lote e localização operacional (subdivisão do lote).
+        // Sincroniza fazenda, lote e subdivisão operacional do animal.
         await db.update(animais)
           .set({
             loteId: input.loteId,
-            pastoId: lote.pastoAtualId ?? null,
+            pastoId: pastoIdLote,
+            fazendaId: fazendaIdLote,
           })
           .where(and(
             eq(animais.userId, ctx.user.id),
@@ -2268,14 +2295,26 @@ const lotesRouter = router({
         }
 
         const animalIds = animaisRows.map(a => a.id);
-        const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? null;
-        const pastoDestinoId = loteDestino.pastoAtualId ?? null;
+        const pastoFazendaMap = buildPastoFazendaMap(
+          loteDestino.pastoAtualId
+            ? (await db.select({ id: pastos.id, fazendaId: pastos.fazendaId })
+              .from(pastos)
+              .where(and(eq(pastos.id, loteDestino.pastoAtualId), eq(pastos.userId, ctx.user.id)))
+              .limit(1))
+            : [],
+        );
+        const { fazendaId: fazendaIdDestino, pastoId: pastoDestinoId } = resolveAnimalLocalizacaoFromLote(
+          loteDestino,
+          pastoFazendaMap,
+        );
+        const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? fazendaIdDestino ?? null;
 
-        // Mantém a fazenda do animal; atualiza lote e localização (subdivisão do destino).
+        // Sincroniza fazenda, lote e subdivisão do destino.
         await db.update(animais)
           .set({
             loteId: input.loteDestinoId,
             pastoId: pastoDestinoId,
+            ...(fazendaIdDestino != null ? { fazendaId: fazendaIdDestino } : {}),
           })
           .where(and(
             eq(animais.userId, ctx.user.id),

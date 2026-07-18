@@ -443,10 +443,10 @@ async function countLocalAnimaisNoLote(userId: number, loteId: number): Promise<
   return pool.filter(a => Number(a.loteId) === loteId).length;
 }
 
-async function syncLocalAnimaisPastoDoLote(
+async function syncLocalAnimaisDoLote(
   userId: number,
   loteId: number,
-  pastoId: number | null,
+  patch: { pastoId?: number | null; fazendaId?: number | null },
 ): Promise<void> {
   const animais = await readAnimais();
   const byUser = animais.filter(row => row.userId === userId);
@@ -457,7 +457,12 @@ async function syncLocalAnimaisPastoDoLote(
     const a = animais[i];
     const sameUser = a.userId === userId || byUser.length === 0;
     if (sameUser && Number(a.loteId) === loteId && a.status === "ativo") {
-      animais[i] = { ...a, pastoId, updatedAt: now };
+      animais[i] = {
+        ...a,
+        ...(patch.pastoId !== undefined ? { pastoId: patch.pastoId } : {}),
+        ...(patch.fazendaId !== undefined ? { fazendaId: patch.fazendaId } : {}),
+        updatedAt: now,
+      };
       changed = true;
     }
   }
@@ -542,7 +547,7 @@ export async function moveLocalLoteToPasto(
       updatedAt: now,
     };
     await writeLotes(rows);
-    await syncLocalAnimaisPastoDoLote(userId, lote.id, null);
+    await syncLocalAnimaisDoLote(userId, lote.id, { pastoId: null });
     return { success: true, localFallback: true };
   }
 
@@ -583,7 +588,10 @@ export async function moveLocalLoteToPasto(
     // Pasto pode não existir no arquivo local com o mesmo userId — lote já foi atualizado.
   }
 
-  await syncLocalAnimaisPastoDoLote(userId, lote.id, input.pastoId);
+  await syncLocalAnimaisDoLote(userId, lote.id, {
+    pastoId: input.pastoId,
+    fazendaId: pasto.fazendaId,
+  });
 
   return { success: true, localFallback: true };
 }
@@ -715,7 +723,7 @@ export async function cancelarLocalEstadiaSinteticaLote(
     updatedAt: now,
   };
   await writeLotes(lotes);
-  await syncLocalAnimaisPastoDoLote(userId, loteId, null);
+  await syncLocalAnimaisDoLote(userId, loteId, { pastoId: null });
   return { ok: true };
 }
 
@@ -832,17 +840,16 @@ export async function updateLocalLote(
   await writeLotes(rows);
 
   if (input.pastoAtualId !== undefined) {
-    const animais = await readAnimais();
-    let changed = false;
-    for (let i = 0; i < animais.length; i++) {
-      const a = animais[i];
-      const sameUser = a.userId === userId || byUser.length === 0;
-      if (sameUser && a.loteId === id && a.status === "ativo") {
-        animais[i] = { ...a, pastoId: input.pastoAtualId, updatedAt: new Date().toISOString() };
-        changed = true;
-      }
+    let fazendaIdAnimais: number | null | undefined;
+    if (input.pastoAtualId != null) {
+      const pastosRows = await listLocalPastos(userId);
+      const pasto = pastosRows.find(p => p.id === input.pastoAtualId);
+      fazendaIdAnimais = pasto?.fazendaId ?? null;
     }
-    if (changed) await writeAnimais(animais);
+    await syncLocalAnimaisDoLote(userId, id, {
+      pastoId: input.pastoAtualId,
+      ...(fazendaIdAnimais != null ? { fazendaId: fazendaIdAnimais } : {}),
+    });
   }
 
   return { success: true, localFallback: true };
@@ -1118,8 +1125,14 @@ export async function movimentarAnimaisLocalLote(
   }
 
   const validIds = new Set(valid.map(a => a.id));
-  const pastoDestinoId = loteDestino.pastoAtualId ?? null;
-  const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? null;
+  const pastosRows = await listLocalPastos(userId);
+  const { buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } = await import("./animaisPorFazenda");
+  const pastoFazendaMap = buildPastoFazendaMap(pastosRows);
+  const { fazendaId: fazendaIdDestino, pastoId: pastoDestinoId } = resolveAnimalLocalizacaoFromLote(
+    loteDestino,
+    pastoFazendaMap,
+  );
+  const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? fazendaIdDestino ?? null;
   const now = new Date().toISOString();
 
   for (let i = 0; i < rows.length; i++) {
@@ -1128,7 +1141,7 @@ export async function movimentarAnimaisLocalLote(
       ...rows[i],
       loteId: input.loteDestinoId,
       pastoId: pastoDestinoId,
-      // fazendaId NÃO muda neste fluxo
+      ...(fazendaIdDestino != null ? { fazendaId: fazendaIdDestino } : {}),
       updatedAt: now,
     };
   }
@@ -1171,7 +1184,12 @@ export async function incluirAnimaisLocalLote(
   if (lote.ativo === false) {
     throw new Error("Este Lote está inativo e não aceita novos animais.");
   }
-  if (!lote.fazendaId) {
+
+  const pastosRows = await listLocalPastos(userId);
+  const { animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } = await import("./animaisPorFazenda");
+  const pastoFazendaMap = buildPastoFazendaMap(pastosRows);
+  const { fazendaId: fazendaIdLote, pastoId: pastoIdLote } = resolveAnimalLocalizacaoFromLote(lote, pastoFazendaMap);
+  if (!fazendaIdLote) {
     throw new Error("Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.");
   }
 
@@ -1191,7 +1209,7 @@ export async function incluirAnimaisLocalLote(
       if (!erroAmigavel) erroAmigavel = "Só é possível adicionar animais ativos ao lote.";
       continue;
     }
-    if (Number(animal.fazendaId) !== Number(lote.fazendaId)) {
+    if (!animalCompativelComFazendaLote(animal, fazendaIdLote)) {
       if (!erroAmigavel) {
         erroAmigavel = "Este animal pertence a outra fazenda e não pode ser incluído neste lote.";
       }
@@ -1217,8 +1235,8 @@ export async function incluirAnimaisLocalLote(
     rows[i] = {
       ...rows[i],
       loteId: input.loteId,
-      pastoId: lote.pastoAtualId ?? null,
-      // fazendaId NÃO muda neste fluxo
+      pastoId: pastoIdLote,
+      fazendaId: fazendaIdLote,
       updatedAt: now,
     };
   }

@@ -64,6 +64,27 @@ export function listLoteIdsPorFazendaFromContext(
     .map(([id]) => id);
 }
 
+/** Localização do animal derivada do lote (fazenda direta ou via subdivisão). */
+export function resolveAnimalLocalizacaoFromLote(
+  lote: LoteFazendaRef,
+  pastoFazendaMap: Map<number, number>,
+): { fazendaId: number | null; pastoId: number | null } {
+  return {
+    fazendaId: resolveLoteFazendaId(lote, pastoFazendaMap),
+    pastoId: lote.pastoAtualId ?? null,
+  };
+}
+
+/** Animal sem fazenda pode entrar no lote; com fazenda, precisa bater com a do lote. */
+export function animalCompativelComFazendaLote(
+  animal: { fazendaId?: number | null },
+  fazendaIdLote: number | null,
+): boolean {
+  if (fazendaIdLote == null) return false;
+  if (animal.fazendaId == null) return true;
+  return Number(animal.fazendaId) === Number(fazendaIdLote);
+}
+
 /** Animal pertence à fazenda se fazendaId bate ou se o lote resolve para a fazenda. */
 export function animalPertenceFazenda(
   animal: { fazendaId?: number | null; loteId?: number | null },
