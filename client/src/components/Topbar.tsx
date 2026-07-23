@@ -125,7 +125,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
   return (
     <header
-      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b relative z-30"
+      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b relative z-[60]"
       style={{
         background: "linear-gradient(135deg, #0F172A 0%, #164E63 60%, #0891B2 100%)",
         borderBottomColor: "rgba(27,197,189,0.15)",

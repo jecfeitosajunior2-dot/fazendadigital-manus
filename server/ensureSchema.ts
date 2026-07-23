@@ -167,6 +167,90 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "carencia_leite_dias", "int");
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
       await ensureColumn(pool, "estoque", "fazenda_id", "int");
+      await ensureColumn(pool, "estoque", "produto_id", "int");
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`produtos_catalogo\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`nome\` varchar(100) NOT NULL,
+        \`categoria\` varchar(50),
+        \`subcategoria\` varchar(80),
+        \`unidade\` varchar(20),
+        \`fabricante\` varchar(100),
+        \`identificador_unico\` varchar(100),
+        \`produzido_na_fazenda\` boolean DEFAULT false,
+        \`monitorar_estoque\` boolean DEFAULT false,
+        \`situacao\` varchar(20) DEFAULT 'ativo',
+        \`embalagens\` text,
+        \`possui_carencia\` boolean DEFAULT false,
+        \`carencia_abate_dias\` int,
+        \`carencia_abate_unidade\` varchar(8) DEFAULT 'd',
+        \`carencia_leite_dias\` int,
+        \`observacoes_carencia\` text,
+        \`observacoes\` text,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`)
+      )
+    `);
+
+    // Backfill: estoque sem produto_id → cria/reusa catálogo
+    try {
+      const [orphans] = await pool.query(
+        `SELECT id, nome, categoria, subcategoria, unidade, fabricante, identificador_unico,
+                produzido_na_fazenda, monitorar_estoque, situacao, embalagens,
+                possui_carencia, carencia_abate_dias, carencia_abate_unidade,
+                carencia_leite_dias, observacoes_carencia, observacoes
+         FROM estoque
+         WHERE produto_id IS NULL
+         ORDER BY id ASC`
+      );
+      const rows = orphans as Array<Record<string, unknown>>;
+      const chaveToProdutoId = new Map<string, number>();
+      for (const row of rows) {
+        const chave = [
+          String(row.nome ?? "").trim().toLowerCase(),
+          String(row.unidade ?? "").trim().toLowerCase(),
+          String(row.categoria ?? "").trim().toLowerCase(),
+        ].join("|");
+        let produtoId = chaveToProdutoId.get(chave);
+        if (!produtoId) {
+          const [ins] = await pool.query(
+            `INSERT INTO produtos_catalogo
+              (nome, categoria, subcategoria, unidade, fabricante, identificador_unico,
+               produzido_na_fazenda, monitorar_estoque, situacao, embalagens,
+               possui_carencia, carencia_abate_dias, carencia_abate_unidade,
+               carencia_leite_dias, observacoes_carencia, observacoes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              row.nome,
+              row.categoria ?? null,
+              row.subcategoria ?? null,
+              row.unidade ?? null,
+              row.fabricante ?? null,
+              row.identificador_unico ?? null,
+              row.produzido_na_fazenda ?? false,
+              row.monitorar_estoque ?? false,
+              row.situacao ?? "ativo",
+              row.embalagens ?? null,
+              row.possui_carencia ?? false,
+              row.carencia_abate_dias ?? null,
+              row.carencia_abate_unidade ?? "d",
+              row.carencia_leite_dias ?? null,
+              row.observacoes_carencia ?? null,
+              row.observacoes ?? null,
+            ]
+          );
+          produtoId = Number((ins as { insertId?: number }).insertId);
+          if (produtoId) chaveToProdutoId.set(chave, produtoId);
+        }
+        if (produtoId) {
+          await pool.query(`UPDATE estoque SET produto_id = ? WHERE id = ?`, [produtoId, row.id]);
+        }
+      }
+    } catch {
+      /* tabela/coluna ainda indisponível */
     }
 
     await pool.query(`
@@ -262,6 +346,27 @@ export async function ensureSchema() {
       await ensureColumn(pool, "animais", "fazendaId", "int");
       await ensureColumn(pool, "animais", "pastoId", "int");
     }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`pessoas\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`nome\` varchar(255) NOT NULL,
+        \`tipo\` enum('fornecedor','cliente','funcionario') NOT NULL,
+        \`funcao\` varchar(150),
+        \`documento\` varchar(20),
+        \`endereco\` varchar(255),
+        \`telefone\` varchar(30),
+        \`email\` varchar(150),
+        \`observacoes\` text,
+        \`ativo\` boolean DEFAULT true,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`)
+      )
+    `);
+
+    await ensureColumn(pool, "pessoas", "documento", "varchar(20)");
+    await ensureColumn(pool, "pessoas", "endereco", "varchar(255)");
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

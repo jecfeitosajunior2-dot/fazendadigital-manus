@@ -13,17 +13,20 @@ export function PullToRefreshIndicator({
 }: PullToRefreshIndicatorProps) {
   const progress = Math.min(pullDistance / threshold, 1);
   const isReady = pullDistance >= threshold;
+  const active = pullDistance > 0 || isRefreshing;
 
   return (
     <div
       className={cn(
         "fixed top-0 left-0 right-0 flex items-center justify-center transition-all duration-200 z-50",
-        "bg-gradient-to-b from-blue-50 to-transparent border-b border-blue-100"
+        "bg-gradient-to-b from-blue-50 to-transparent border-b border-blue-100",
+        !active && "pointer-events-none",
       )}
       style={{
-        height: `${Math.max(40, pullDistance)}px`,
-        opacity: pullDistance > 0 ? 1 : 0,
+        height: active ? `${Math.max(40, pullDistance)}px` : "0px",
+        opacity: active ? 1 : 0,
       }}
+      aria-hidden={!active}
     >
       <div className="flex flex-col items-center gap-1">
         {isRefreshing ? (

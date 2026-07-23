@@ -9,62 +9,152 @@ import {
   FormLabel,
   FormInput,
   FormNativeSelect,
+  FormSelect,
   FieldBox,
 } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import {
   CATEGORIAS_PRODUTO,
   SUBCATEGORIAS,
   UNIDADES_OPCOES,
   FABRICANTES,
-  EMBALAGENS_PADRAO,
   normalizarUnidade,
   siglaUnidade,
   rotuloUnidade,
   parseEmbalagens,
-  extrairVolumeEmbalagem,
   type EmbalagemProduto,
 } from "@/lib/produto-types";
+
+function buildRetornoUrl(retorno: string, produtoId?: number) {
+  const url = new URL(retorno, window.location.origin);
+  if (produtoId) url.searchParams.set("produtoId", String(produtoId));
+  return url.pathname + url.search;
+}
 
 const fmtDecimalInput = (v: string | number | null | undefined): string => {
   if (v == null || v === "") return "";
   const n = Number(v);
   if (Number.isNaN(n)) return String(v);
+  if (n === 0) return "";
   return String(n);
 };
 
+const CATEGORIA_SANITARIA = "Farmácia";
+
+/** Produtos veterinários/sanitários em que carência de abate faz sentido. */
+function isProdutoSanitario(categoria: string, subcategoria: string): boolean {
+  if (categoria === CATEGORIA_SANITARIA) return true;
+  if (!subcategoria.trim()) return false;
+  const s = subcategoria.toLowerCase();
+  return /vacina|verm[ií]fugo|medicamento|antibi|ectocida|antiparasit|endectocida|carrapaticida|horm[oô]nio|antiviral|anti-helm|sanit|veterin/.test(s);
+}
+
+function formatRotuloEmbalagem(e: EmbalagemProduto): string {
+  const nome = e.nome.trim();
+  if (e.volume != null && e.unidade) {
+    if (/\d/.test(nome) || /\bde\b/i.test(nome)) return nome;
+    const volFmt = Number(e.volume).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+    return `${nome} de ${volFmt} ${rotuloUnidade(e.unidade)}`;
+  }
+  return nome;
+}
+
+function chaveEmbalagem(e: EmbalagemProduto): string {
+  return `${e.nome.trim().toLowerCase()}|${e.volume ?? ""}|${e.unidade ?? ""}`;
+}
+
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-md border border-gray-200 mb-6">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+        <h2 className="text-[13px] font-semibold text-gray-800">{title}</h2>
+        {description && (
+          <p className="mt-1 text-[12px] leading-relaxed text-gray-500">{description}</p>
+        )}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
+  );
+}
+
+type FazendaConfigForm = {
+  produzido: "sim" | "nao";
+  monitorar: "sim" | "nao";
+  quantidadeMinima: string;
+  quantidadeMaxima: string;
+};
+
 type FormState = {
-  fazendaId: string;
+  fazendaIds: string[];
+  configPorFazenda: Record<string, FazendaConfigForm>;
   nome: string;
   categoria: string;
   subcategoria: string;
-  quantidadeMinima: string;
-  quantidadeMaxima: string;
   unidade: string;
   fabricante: string;
-  identificadorUnico: string;
-  produzidoNaFazenda: "sim" | "nao";
-  monitorarEstoque: "sim" | "nao";
   situacao: "ativo" | "inativo";
-  embalagemSelecionada: string;
   carenciaAbate: string;
 };
 
+const emptyFazendaConfig = (): FazendaConfigForm => ({
+  produzido: "nao",
+  monitorar: "nao",
+  quantidadeMinima: "",
+  quantidadeMaxima: "",
+});
+
 const emptyForm = (): FormState => ({
-  fazendaId: "",
+  fazendaIds: [],
+  configPorFazenda: {},
   nome: "",
   categoria: "",
   subcategoria: "",
-  quantidadeMinima: "",
-  quantidadeMaxima: "",
   unidade: "",
   fabricante: "",
-  identificadorUnico: "",
-  produzidoNaFazenda: "nao",
-  monitorarEstoque: "nao",
   situacao: "ativo",
-  embalagemSelecionada: "",
   carenciaAbate: "",
 });
+
+function SimNaoRadios({
+  name,
+  value,
+  onChange,
+  label,
+}: {
+  name: string;
+  value: "sim" | "nao";
+  onChange: (v: "sim" | "nao") => void;
+  label?: string;
+}) {
+  return (
+    <div className="inline-flex items-center gap-2 flex-wrap">
+      {label ? <span className="text-[11px] text-gray-500 whitespace-nowrap">{label}</span> : null}
+      <div className="inline-flex items-center gap-2.5">
+        {(["sim", "nao"] as const).map(opt => (
+          <label key={opt} className="flex items-center gap-1 text-[12px] text-gray-700 cursor-pointer">
+            <input
+              type="radio"
+              name={name}
+              checked={value === opt}
+              onChange={() => onChange(opt)}
+              className="accent-[#4ECDC4] border-gray-400 focus:ring-[#4ECDC4]"
+              style={{ accentColor: FD_PRIMARY }}
+            />
+            {opt === "sim" ? "Sim" : "Não"}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function FormRadioGroup({
   value,
@@ -97,6 +187,7 @@ export default function ProductRegistrationPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const produtoId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
   const fazendaIdParam = searchParams.get("fazendaId") ?? "";
+  const retornoUrl = searchParams.get("retorno") ? decodeURIComponent(searchParams.get("retorno")!) : null;
   const isEdit = produtoId != null && !isNaN(produtoId);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
@@ -105,38 +196,71 @@ export default function ProductRegistrationPage() {
     { enabled: isEdit }
   );
 
+  const { data: todasMovimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery(undefined, {
+    enabled: isEdit,
+  });
+
+  const fazendasBloqueadas = useMemo(() => {
+    const set = new Set<string>();
+    if (!isEdit || !produto) return set;
+    const vinculados = (produto as {
+      estoquesVinculados?: { fazendaId: number; estoqueId: number; quantidade: string | null }[];
+    }).estoquesVinculados ?? [];
+    const movIds = new Set(todasMovimentacoes.map(m => m.estoqueId));
+    for (const v of vinculados) {
+      const qty = Number(v.quantidade ?? 0);
+      if (movIds.has(v.estoqueId) || (!Number.isNaN(qty) && qty !== 0)) {
+        set.add(String(v.fazendaId));
+      }
+    }
+    return set;
+  }, [isEdit, produto, todasMovimentacoes]);
+
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [embalagensOpcoes, setEmbalagensOpcoes] = useState<EmbalagemProduto[]>(
-    EMBALAGENS_PADRAO.map(nome => {
-      const vol = extrairVolumeEmbalagem(nome);
-      return { nome, volume: vol.volume, unidade: vol.unidade };
-    })
-  );
+  const [embalagensProduto, setEmbalagensProduto] = useState<EmbalagemProduto[]>([]);
   const [novaEmbalagem, setNovaEmbalagem] = useState("");
   const [novaEmbalagemVolume, setNovaEmbalagemVolume] = useState("");
   const [novaEmbalagemUnidade, setNovaEmbalagemUnidade] = useState("");
   const [showNovaEmbalagem, setShowNovaEmbalagem] = useState(false);
+  const [embalagemUnidadeKey, setEmbalagemUnidadeKey] = useState(0);
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    if (!isEdit && fazendaIdParam && !form.fazendaId) {
-      setForm(f => ({ ...f, fazendaId: fazendaIdParam }));
+    if (!isEdit && fazendaIdParam && form.fazendaIds.length === 0) {
+      setForm(f => ({
+        ...f,
+        fazendaIds: [fazendaIdParam],
+        configPorFazenda: {
+          ...f.configPorFazenda,
+          [fazendaIdParam]: f.configPorFazenda[fazendaIdParam] ?? emptyFazendaConfig(),
+        },
+      }));
     }
-  }, [isEdit, fazendaIdParam, form.fazendaId]);
+  }, [isEdit, fazendaIdParam, form.fazendaIds.length]);
 
   useEffect(() => {
-    if (!isEdit && !fazendaIdParam && fazendas.length === 1 && !form.fazendaId) {
-      setForm(f => ({ ...f, fazendaId: String(fazendas[0]!.id) }));
+    if (!isEdit && !fazendaIdParam && fazendas.length === 1 && form.fazendaIds.length === 0) {
+      const id = String(fazendas[0]!.id);
+      setForm(f => ({
+        ...f,
+        fazendaIds: [id],
+        configPorFazenda: {
+          ...f.configPorFazenda,
+          [id]: f.configPorFazenda[id] ?? emptyFazendaConfig(),
+        },
+      }));
     }
-  }, [isEdit, fazendaIdParam, fazendas, form.fazendaId]);
+  }, [isEdit, fazendaIdParam, fazendas, form.fazendaIds.length]);
 
   const fazendasOpcoes = useMemo(() => {
     const opts = fazendas.map(f => ({ value: String(f.id), label: f.nome }));
-    if (form.fazendaId && !opts.some(o => o.value === form.fazendaId)) {
-      opts.push({ value: form.fazendaId, label: `Fazenda #${form.fazendaId}` });
+    for (const id of form.fazendaIds) {
+      if (id && !opts.some(o => o.value === id)) {
+        opts.push({ value: id, label: `Fazenda #${id}` });
+      }
     }
     return opts;
-  }, [fazendas, form.fazendaId]);
+  }, [fazendas, form.fazendaIds]);
 
   const subcategorias = useMemo(() => {
     if (!form.categoria) return form.subcategoria ? [form.subcategoria] : [];
@@ -148,10 +272,12 @@ export default function ProductRegistrationPage() {
   }, [form.categoria, form.subcategoria]);
 
   const fabricantesOpcoes = useMemo(() => {
-    if (form.fabricante && !(FABRICANTES as readonly string[]).includes(form.fabricante)) {
-      return [...FABRICANTES, form.fabricante];
+    const opts = FABRICANTES.map(f => ({ value: f, label: f }));
+    const atual = form.fabricante.trim();
+    if (atual && !opts.some(o => o.value === atual)) {
+      opts.unshift({ value: atual, label: atual });
     }
-    return [...FABRICANTES];
+    return opts;
   }, [form.fabricante]);
 
   const unidadesOpcoes = useMemo(() => {
@@ -178,38 +304,76 @@ export default function ProductRegistrationPage() {
       const embalagensSalvas = parseEmbalagens(produto.embalagens);
 
       setForm({
-        fazendaId: produto.fazendaId ? String(produto.fazendaId) : "",
+        fazendaIds:
+          (produto as { fazendaIds?: number[] }).fazendaIds?.map(String) ??
+          (produto.fazendaId ? [String(produto.fazendaId)] : []),
+        configPorFazenda: (() => {
+          const vinculados = (produto as {
+            estoquesVinculados?: {
+              fazendaId: number;
+              produzidoNaFazenda: boolean;
+              monitorarEstoque: boolean;
+              quantidadeMinima: string | null;
+              quantidadeMaxima: string | null;
+            }[];
+          }).estoquesVinculados;
+          if (vinculados?.length) {
+            return Object.fromEntries(
+              vinculados.map(v => [
+                String(v.fazendaId),
+                {
+                  produzido: v.produzidoNaFazenda ? "sim" : "nao",
+                  monitorar: v.monitorarEstoque ? "sim" : "nao",
+                  quantidadeMinima: fmtDecimalInput(v.quantidadeMinima),
+                  quantidadeMaxima: fmtDecimalInput(v.quantidadeMaxima),
+                } satisfies FazendaConfigForm,
+              ])
+            );
+          }
+          const ids =
+            (produto as { fazendaIds?: number[] }).fazendaIds ??
+            (produto.fazendaId ? [produto.fazendaId] : []);
+          const legado: FazendaConfigForm = {
+            produzido: produto.produzidoNaFazenda ? "sim" : "nao",
+            monitorar: produto.monitorarEstoque ? "sim" : "nao",
+            quantidadeMinima: fmtDecimalInput(produto.quantidadeMinima),
+            quantidadeMaxima: fmtDecimalInput(produto.quantidadeMaxima),
+          };
+          return Object.fromEntries(ids.map(id => [String(id), { ...legado }]));
+        })(),
         nome: produto.nome || "",
         categoria: produto.categoria || "",
         subcategoria: produto.subcategoria || "",
-        quantidadeMinima: fmtDecimalInput(produto.quantidadeMinima),
-        quantidadeMaxima: fmtDecimalInput(produto.quantidadeMaxima),
         unidade: normalizarUnidade(produto.unidade),
         fabricante: produto.fabricante || "",
-        identificadorUnico: produto.identificadorUnico || "",
-        produzidoNaFazenda: produto.produzidoNaFazenda ? "sim" : "nao",
-        monitorarEstoque: produto.monitorarEstoque ? "sim" : "nao",
         situacao: produto.situacao === "inativo" ? "inativo" : "ativo",
-        embalagemSelecionada: embalagensSalvas[0]?.nome || "",
         carenciaAbate: produto.carenciaAbateDias != null ? String(produto.carenciaAbateDias) : "",
       });
 
       if (embalagensSalvas.length) {
-        setEmbalagensOpcoes(prev => {
-          const nomes = new Set(prev.map(e => e.nome));
-          const extras = embalagensSalvas.filter(e => !nomes.has(e.nome));
-          return [...prev, ...extras];
-        });
+        setEmbalagensProduto(embalagensSalvas);
       }
       setInitialized(true);
     }
   }, [isEdit, produto, initialized]);
 
+  const voltarParaOrigem = (novoProdutoId?: number) => {
+    if (retornoUrl) {
+      setLocation(buildRetornoUrl(retornoUrl, novoProdutoId));
+      return;
+    }
+    setLocation("/insumos/lista-produtos");
+  };
+
   const createMutation = trpc.estoque.create.useMutation({
-    onSuccess: () => {
-      utils.estoque.list.invalidate();
+    onSuccess: async data => {
+      await utils.estoque.list.invalidate();
       toast.success("Produto cadastrado!");
-      setLocation("/insumos/lista-produtos");
+      if (retornoUrl && data.id) {
+        voltarParaOrigem(data.id);
+      } else {
+        setLocation("/insumos/lista-produtos");
+      }
     },
     onError: e => toast.error(e.message),
   });
@@ -217,6 +381,7 @@ export default function ProductRegistrationPage() {
   const updateMutation = trpc.estoque.update.useMutation({
     onSuccess: () => {
       utils.estoque.list.invalidate();
+      if (produtoId) utils.estoque.get.invalidate({ id: produtoId });
       toast.success("Produto atualizado!");
       setLocation("/insumos/lista-produtos");
     },
@@ -229,67 +394,112 @@ export default function ProductRegistrationPage() {
     setForm(f => ({ ...f, [key]: value }));
 
   const handleAddEmbalagem = () => {
-    const nome = novaEmbalagem.trim();
-    if (!nome) { toast.error("Informe o nome da embalagem"); return; }
-    const parsed = extrairVolumeEmbalagem(nome);
-    const volume = novaEmbalagemVolume
-      ? parseFloat(novaEmbalagemVolume.replace(",", "."))
-      : parsed.volume;
-    const unidade = novaEmbalagemUnidade || parsed.unidade || form.unidade;
-    const item: EmbalagemProduto = {
-      nome,
-      volume: volume && !Number.isNaN(volume) ? volume : undefined,
-      unidade: unidade || undefined,
-    };
-    if (!embalagensOpcoes.some(e => e.nome === nome)) {
-      setEmbalagensOpcoes(prev => [...prev, item]);
+    const tipo = novaEmbalagem.trim();
+    const volume = parseFloat(novaEmbalagemVolume.replace(",", "."));
+    const unidade = novaEmbalagemUnidade;
+    if (!tipo) { toast.error("Informe o nome da embalagem"); return; }
+    if (!novaEmbalagemVolume.trim() || Number.isNaN(volume) || volume <= 0) {
+      toast.error("Informe a quantidade por embalagem");
+      return;
     }
-    setForm(f => ({ ...f, embalagemSelecionada: nome }));
+    if (!unidade) { toast.error("Selecione a unidade da embalagem"); return; }
+
+    const item: EmbalagemProduto = {
+      nome: tipo,
+      volume,
+      unidade: siglaUnidade(unidade),
+    };
+    const chave = chaveEmbalagem(item);
+    if (embalagensProduto.some(e => chaveEmbalagem(e) === chave)) {
+      toast.error("Esta embalagem já foi incluída");
+      return;
+    }
+    setEmbalagensProduto(prev => [...prev, item]);
     setNovaEmbalagem("");
     setNovaEmbalagemVolume("");
     setNovaEmbalagemUnidade("");
-    setShowNovaEmbalagem(false);
+    setEmbalagemUnidadeKey(k => k + 1);
     toast.success("Embalagem adicionada!");
   };
 
-  const embalagemAtiva = useMemo(
-    () => embalagensOpcoes.find(e => e.nome === form.embalagemSelecionada),
-    [embalagensOpcoes, form.embalagemSelecionada]
-  );
+  const handleRemoveEmbalagem = (chave: string) => {
+    setEmbalagensProduto(prev => prev.filter(e => chaveEmbalagem(e) !== chave));
+  };
+
+  const podeIncluirEmbalagem =
+    novaEmbalagem.trim().length > 0 &&
+    novaEmbalagemVolume.trim().length > 0 &&
+    !!novaEmbalagemUnidade &&
+    !Number.isNaN(parseFloat(novaEmbalagemVolume.replace(",", "."))) &&
+    parseFloat(novaEmbalagemVolume.replace(",", ".")) > 0;
+
+  const temEmbalagensProduto = embalagensProduto.length > 0;
+
+  const mostrarInfoSanitaria =
+    isProdutoSanitario(form.categoria, form.subcategoria) || !!form.carenciaAbate.trim();
 
   const buildPayload = () => ({
-    fazendaId: form.fazendaId ? parseInt(form.fazendaId, 10) : undefined,
+    fazendaIds: form.fazendaIds.map(id => parseInt(id, 10)).filter(id => !Number.isNaN(id) && id > 0),
+    fazendaId: form.fazendaIds[0] ? parseInt(form.fazendaIds[0], 10) : undefined,
+    estoquesConfig: form.fazendaIds
+      .map(id => parseInt(id, 10))
+      .filter(id => !Number.isNaN(id) && id > 0)
+      .map(fazendaId => {
+        const cfg = form.configPorFazenda[String(fazendaId)] ?? emptyFazendaConfig();
+        const monitorar = cfg.monitorar === "sim";
+        return {
+          fazendaId,
+          produzidoNaFazenda: cfg.produzido === "sim",
+          monitorarEstoque: monitorar,
+          quantidadeMinima: monitorar && cfg.quantidadeMinima ? cfg.quantidadeMinima : null,
+          quantidadeMaxima: monitorar && cfg.quantidadeMaxima ? cfg.quantidadeMaxima : null,
+        };
+      }),
     nome: form.nome.trim(),
     categoria: form.categoria,
-    subcategoria: form.subcategoria,
+    subcategoria: form.subcategoria.trim() || "",
     unidade: siglaUnidade(form.unidade),
-    quantidadeMinima: form.quantidadeMinima || undefined,
-    quantidadeMaxima: form.quantidadeMaxima || undefined,
     fabricante: form.fabricante || undefined,
-    identificadorUnico: form.identificadorUnico.trim() || undefined,
-    produzidoNaFazenda: form.produzidoNaFazenda === "sim",
-    monitorarEstoque: form.monitorarEstoque === "sim",
     situacao: form.situacao,
-    embalagens: form.embalagemSelecionada
-      ? embalagensOpcoes.filter(e => e.nome === form.embalagemSelecionada)
+    embalagens: embalagensProduto.length
+      ? embalagensProduto.map(e => ({
+          nome: formatRotuloEmbalagem(e),
+          volume: e.volume,
+          unidade: e.unidade,
+        }))
       : undefined,
-    possuiCarencia: !!form.carenciaAbate.trim(),
-    carenciaAbateDias: form.carenciaAbate.trim()
-      ? parseInt(form.carenciaAbate, 10)
-      : null,
-    carenciaAbateUnidade: (form.carenciaAbate.trim() ? "d" : null) as "d" | "h" | null,
-    carenciaLeiteDias: null,
-    carenciaLeiteUnidade: null,
-    observacoesCarencia: null,
+    possuiCarencia: mostrarInfoSanitaria && !!form.carenciaAbate.trim(),
+    ...(mostrarInfoSanitaria && form.carenciaAbate.trim()
+      ? {
+          carenciaAbateDias: parseInt(form.carenciaAbate, 10),
+          carenciaAbateUnidade: "d" as const,
+        }
+      : {}),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.fazendaIds.length === 0) {
+      toast.error("Selecione pelo menos uma fazenda para usar este produto.");
+      return;
+    }
     if (!form.nome.trim()) { toast.error("Nome do produto é obrigatório"); return; }
     if (!form.categoria) { toast.error("Categoria é obrigatória"); return; }
-    if (!form.subcategoria) { toast.error("Subcategoria é obrigatória"); return; }
     if (!form.unidade) { toast.error("Unidade base é obrigatória"); return; }
-    if (!form.fazendaId) { toast.error("Fazenda (estoque) é obrigatória"); return; }
+
+    for (const id of form.fazendaIds) {
+      const cfg = form.configPorFazenda[id] ?? emptyFazendaConfig();
+      if (cfg.monitorar !== "sim") continue;
+      if (cfg.quantidadeMinima && cfg.quantidadeMaxima) {
+        const min = parseFloat(cfg.quantidadeMinima.replace(",", "."));
+        const max = parseFloat(cfg.quantidadeMaxima.replace(",", "."));
+        if (!Number.isNaN(min) && !Number.isNaN(max) && max < min) {
+          const nomeFazenda = fazendasOpcoes.find(f => f.value === id)?.label ?? `Fazenda #${id}`;
+          toast.error(`Em ${nomeFazenda}, a quantidade máxima deve ser maior ou igual à mínima.`);
+          return;
+        }
+      }
+    }
 
     const payload = buildPayload();
     if (isEdit && produtoId) updateMutation.mutate({ id: produtoId, ...payload });
@@ -331,206 +541,289 @@ export default function ProductRegistrationPage() {
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={() => voltarParaOrigem()}
+        disabled={isBusy}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <form onSubmit={handleSubmit}>
         <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
           <h1
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            {isEdit ? "Editar produto" : "Cadastro de produtos"}
+            {isEdit ? "Editar produto" : "Cadastro de Produto"}
           </h1>
-
-          {/* Linha 1 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div>
-              <FormLabel required>Estoque (Fazenda)</FormLabel>
-              <FormNativeSelect
-                value={form.fazendaId}
-                onChange={v => set("fazendaId", v)}
-                placeholder="Selecione"
-                options={fazendasOpcoes}
-                required
-              />
-            </div>
-            <div>
-              <FormLabel required>Nome do Produto</FormLabel>
-              <FormInput
-                value={form.nome}
-                onChange={v => set("nome", v)}
-                placeholder="Produto"
-                required
-              />
-            </div>
-            <div>
-              <FormLabel required>Categoria</FormLabel>
-              <FormNativeSelect
-                value={form.categoria}
-                onChange={v => setForm(f => ({ ...f, categoria: v, subcategoria: "" }))}
-                placeholder="Selecione"
-                options={categoriasOpcoes}
-                required
-              />
-            </div>
-            <div>
-              <FormLabel required>Subcategoria</FormLabel>
-              <FormNativeSelect
-                value={form.subcategoria}
-                onChange={v => set("subcategoria", v)}
-                placeholder="Selecione"
-                options={subcategorias.map(s => ({ value: s, label: s }))}
-                required
-                disabled={!form.categoria}
-              />
-            </div>
-          </div>
-
-          {/* Linha 2 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div>
-              <FormLabel>Quantidade Mínima</FormLabel>
-              <FormInput
-                type="number"
-                value={form.quantidadeMinima}
-                onChange={v => set("quantidadeMinima", v)}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <FormLabel>Quantidade Máxima</FormLabel>
-              <FormInput
-                type="number"
-                value={form.quantidadeMaxima}
-                onChange={v => set("quantidadeMaxima", v)}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <FormLabel required>Unidade Base</FormLabel>
-              <FormNativeSelect
-                value={form.unidade}
-                onChange={v => set("unidade", v)}
-                placeholder="Selecione"
-                options={unidadesOpcoes}
-                required
-              />
-              {form.unidade && (
-                <div
-                  className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
-                  style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
-                >
-                  <span className="font-semibold text-gray-800">Unidade base: </span>
-                  {rotuloUnidade(form.unidade)}
+          {/* 1. Dados universais do produto */}
+          <FormSection
+            title="Dados do produto"
+            description="Cadastro único no catálogo da conta. Estes dados valem para todas as fazendas vinculadas."
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FormLabel required>Nome do Produto</FormLabel>
+                  <FormInput
+                    value={form.nome}
+                    onChange={v => set("nome", v)}
+                    placeholder="Ex: Sal Mineral Proteinado 30kg"
+                    required
+                  />
                 </div>
+                <div>
+                  <FormLabel required>Categoria</FormLabel>
+                  <FormNativeSelect
+                    value={form.categoria}
+                    onChange={v => setForm(f => ({ ...f, categoria: v, subcategoria: "" }))}
+                    placeholder="Selecione"
+                    options={categoriasOpcoes}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <FormLabel>Subcategoria</FormLabel>
+                  <FormSelect
+                    value={form.subcategoria}
+                    onChange={v => set("subcategoria", v)}
+                    placeholder="Opcional"
+                    disabled={!form.categoria}
+                    displayValue={form.subcategoria || undefined}
+                    triggerClassName="h-[42px] py-0"
+                  >
+                    {subcategorias.map(s => (
+                      <SelectItem key={s} value={s} className="text-[13px]">
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
+                </div>
+                <div>
+                  <FormLabel required>Unidade Base</FormLabel>
+                  <FormNativeSelect
+                    value={form.unidade}
+                    onChange={v => set("unidade", v)}
+                    placeholder="Selecione"
+                    options={unidadesOpcoes}
+                    required
+                  />
+                  <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+                    Unidade usada para controlar estoque (kg, litro, dose, saco…)
+                  </p>
+                </div>
+                <div>
+                  <FormLabel>Fabricante</FormLabel>
+                  <FormSelect
+                    value={form.fabricante}
+                    onChange={v => set("fabricante", v)}
+                    placeholder="Selecione"
+                    displayValue={form.fabricante || undefined}
+                    triggerClassName="h-[42px] py-0"
+                  >
+                    {fabricantesOpcoes.map(f => (
+                      <SelectItem key={f.value} value={f.value} className="text-[13px]">
+                        {f.label}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
+                </div>
+                <div>
+                  <FormLabel required>Situação no catálogo</FormLabel>
+                  <FormRadioGroup
+                    value={form.situacao}
+                    onChange={v => set("situacao", v as "ativo" | "inativo")}
+                    options={[
+                      { value: "ativo", label: "Ativo" },
+                      { value: "inativo", label: "Inativo" },
+                    ]}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+          </FormSection>
+
+          {/* 2. Fazendas vinculadas — config operacional por fazenda */}
+          <FormSection
+            title="Fazendas vinculadas ao produto"
+            description="Selecione em quais fazendas este produto será usado. Cada fazenda terá estoque e controle próprios."
+          >
+            <div className="space-y-2">
+              {fazendasOpcoes.map(f => {
+                const checked = form.fazendaIds.includes(f.value);
+                const cfg = form.configPorFazenda[f.value] ?? emptyFazendaConfig();
+                const bloqueada = fazendasBloqueadas.has(f.value);
+                const siglaUnidadeBase = form.unidade ? siglaUnidade(form.unidade) : "";
+                const unidadeEstoqueLabel = siglaUnidadeBase
+                  ? siglaUnidadeBase.charAt(0).toUpperCase() + siglaUnidadeBase.slice(1)
+                  : "";
+                const unidadeAoLado = unidadeEstoqueLabel ? (
+                  <span className="text-[11px] text-gray-600 whitespace-nowrap">{unidadeEstoqueLabel}</span>
+                ) : (
+                  <span className="text-[10px] text-gray-400 whitespace-nowrap max-w-[148px] leading-tight">
+                    Selecione a unidade base
+                  </span>
+                );
+                return (
+                  <div
+                    key={f.value}
+                    className={`rounded-md border px-3 py-2.5 transition-colors ${
+                      checked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50/40"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+                      <label className="inline-flex items-center gap-2 text-[13px] font-medium text-gray-800 cursor-pointer shrink-0 min-w-[140px]">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            if (checked && bloqueada) {
+                              toast.error(
+                                "Este produto possui movimentações ou estoque nesta fazenda. Não é possível desvincular diretamente. Inative o produto para esta fazenda ou ajuste o estoque antes."
+                              );
+                              return;
+                            }
+                            setForm(prev => {
+                              if (checked) {
+                                const { [f.value]: _removed, ...rest } = prev.configPorFazenda;
+                                return {
+                                  ...prev,
+                                  fazendaIds: prev.fazendaIds.filter(id => id !== f.value),
+                                  configPorFazenda: rest,
+                                };
+                              }
+                              return {
+                                ...prev,
+                                fazendaIds: [...prev.fazendaIds, f.value],
+                                configPorFazenda: {
+                                  ...prev.configPorFazenda,
+                                  [f.value]: prev.configPorFazenda[f.value] ?? emptyFazendaConfig(),
+                                },
+                              };
+                            });
+                          }}
+                          className="rounded accent-[#4ECDC4] border-gray-400 focus:ring-[#4ECDC4]"
+                          style={{ accentColor: FD_PRIMARY }}
+                        />
+                        {f.label}
+                      </label>
+
+                      {checked && (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2 pl-6 lg:pl-0 flex-1">
+                          <SimNaoRadios
+                            name={`produzido-${f.value}`}
+                            label="Produzido na fazenda?"
+                            value={cfg.produzido}
+                            onChange={v =>
+                              setForm(prev => ({
+                                ...prev,
+                                configPorFazenda: {
+                                  ...prev.configPorFazenda,
+                                  [f.value]: { ...cfg, produzido: v },
+                                },
+                              }))
+                            }
+                          />
+                          <SimNaoRadios
+                            name={`monitorar-${f.value}`}
+                            label="Monitorar estoque:"
+                            value={cfg.monitorar}
+                            onChange={v =>
+                              setForm(prev => ({
+                                ...prev,
+                                configPorFazenda: {
+                                  ...prev.configPorFazenda,
+                                  [f.value]: {
+                                    ...cfg,
+                                    monitorar: v,
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                          {cfg.monitorar === "sim" && (
+                            <div className="flex flex-wrap items-center gap-3">
+                              <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+                                <span className="whitespace-nowrap">Mínimo</span>
+                                <input
+                                  type="number"
+                                  value={cfg.quantidadeMinima}
+                                  onChange={e =>
+                                    setForm(prev => ({
+                                      ...prev,
+                                      configPorFazenda: {
+                                        ...prev.configPorFazenda,
+                                        [f.value]: { ...cfg, quantidadeMinima: e.target.value },
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Ex: 10"
+                                  className="h-8 w-[88px] rounded border border-gray-300 bg-white px-2 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#4ECDC4]"
+                                />
+                                {unidadeAoLado}
+                              </label>
+                              <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+                                <span className="whitespace-nowrap">Máximo</span>
+                                <input
+                                  type="number"
+                                  value={cfg.quantidadeMaxima}
+                                  onChange={e =>
+                                    setForm(prev => ({
+                                      ...prev,
+                                      configPorFazenda: {
+                                        ...prev.configPorFazenda,
+                                        [f.value]: { ...cfg, quantidadeMaxima: e.target.value },
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Opcional"
+                                  className="h-8 w-[88px] rounded border border-gray-300 bg-white px-2 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#4ECDC4]"
+                                />
+                                {unidadeAoLado}
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {fazendasOpcoes.length === 0 && (
+                <span className="text-[12px] text-gray-400">Nenhuma fazenda cadastrada.</span>
               )}
             </div>
-            <div>
-              <FormLabel>Fabricante</FormLabel>
-              <FormNativeSelect
-                value={form.fabricante}
-                onChange={v => set("fabricante", v)}
-                placeholder="Selecione"
-                options={fabricantesOpcoes.map(f => ({ value: f, label: f }))}
-              />
-              {form.fabricante && (
-                <div
-                  className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
-                  style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
-                >
-                  <span className="font-semibold text-gray-800">Fabricante: </span>
-                  {form.fabricante}
-                </div>
-              )}
-            </div>
-          </div>
+          </FormSection>
 
-          {/* Linha 3 — quantidades mín/máx com confirmação */}
-          {(form.quantidadeMinima || form.quantidadeMaxima) && (
-            <div
-              className="mb-4 px-3 py-2 rounded border text-[12px] text-gray-700 flex flex-wrap gap-x-6 gap-y-1"
-              style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
+          {/* 3. Informações sanitárias — só para produtos veterinários/sanitários */}
+          {mostrarInfoSanitaria && (
+            <FormSection
+              title="Informações sanitárias"
+              description="Preencha quando o produto exigir carência para abate ou consumo. Vale para o produto inteiro."
             >
-              {form.quantidadeMinima && (
-                <span>
-                  <span className="font-semibold text-gray-800">Qtd. mínima: </span>
-                  {Number(form.quantidadeMinima).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </span>
-              )}
-              {form.quantidadeMaxima && (
-                <span>
-                  <span className="font-semibold text-gray-800">Qtd. máxima: </span>
-                  {Number(form.quantidadeMaxima).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </span>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div>
-              <FormLabel>Identificador único</FormLabel>
-              <FormInput
-                value={form.identificadorUnico}
-                onChange={v => set("identificadorUnico", v)}
-                placeholder=""
-              />
-            </div>
-            <div>
-              <FormLabel>Produzido na Fazenda</FormLabel>
-              <FormRadioGroup
-                value={form.produzidoNaFazenda}
-                onChange={v => set("produzidoNaFazenda", v as "sim" | "nao")}
-                options={[
-                  { value: "sim", label: "Sim" },
-                  { value: "nao", label: "Não" },
-                ]}
-              />
-            </div>
-            <div>
-              <FormLabel required>Monitorar Estoque</FormLabel>
-              <FormRadioGroup
-                value={form.monitorarEstoque}
-                onChange={v => set("monitorarEstoque", v as "sim" | "nao")}
-                options={[
-                  { value: "sim", label: "Sim" },
-                  { value: "nao", label: "Não" },
-                ]}
-                required
-              />
-            </div>
-            <div>
-              <FormLabel>Situação do produto</FormLabel>
-              <FormRadioGroup
-                value={form.situacao}
-                onChange={v => set("situacao", v as "ativo" | "inativo")}
-                options={[
-                  { value: "ativo", label: "Ativo" },
-                  { value: "inativo", label: "Inativo" },
-                ]}
-              />
-            </div>
-          </div>
-
-          {/* Carência de abate — estilo iRancho */}
-          <div className="border border-gray-200 rounded-md mb-6">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-[13px] font-semibold text-gray-800">Carência de abate</h2>
-            </div>
-            <div className="px-4 py-4">
               <div className="max-w-xs">
                 <FormLabel>Carência de abate (dias)</FormLabel>
                 <FormInput
                   type="number"
                   value={form.carenciaAbate}
                   onChange={v => set("carenciaAbate", v.replace(/\D/g, ""))}
-                  placeholder="0"
+                  placeholder="Ex: 30"
                 />
               </div>
-            </div>
-          </div>
+            </FormSection>
+          )}
 
-          {/* Tipos de embalagem — estilo iRancho */}
-          <div className="border border-gray-200 rounded-md mb-6">
-            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-[13px] font-semibold text-gray-800">Tipos de embalagem</h2>
+          {/* 4. Tipos de embalagem */}
+          <FormSection
+            title="Tipos de embalagem"
+            description="Cadastre como o produto é comprado ou armazenado. Ex: saco de 30 kg, frasco de 500 ml. Vale para todas as fazendas."
+          >
+            <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
               <button
                 type="button"
                 onClick={() => setShowNovaEmbalagem(v => !v)}
@@ -539,73 +832,107 @@ export default function ProductRegistrationPage() {
                 Nova Embalagem
               </button>
             </div>
-            <div className="px-4 py-4">
-              {showNovaEmbalagem && (
-                <div className="flex flex-wrap items-end gap-2 mb-4">
-                  <div className="flex-1 min-w-[180px]">
-                    <FormLabel>Nova embalagem</FormLabel>
-                    <FormInput
-                      value={novaEmbalagem}
-                      onChange={v => setNovaEmbalagem(v)}
-                      placeholder="Ex: Frasco 500ml"
-                    />
-                  </div>
-                  <div className="w-28">
-                    <FormLabel>Qtd / unidade</FormLabel>
-                    <FormInput
-                      type="number"
-                      value={novaEmbalagemVolume}
-                      onChange={v => setNovaEmbalagemVolume(v)}
-                      placeholder="500"
-                    />
-                  </div>
-                  <div className="w-36">
-                    <FormLabel>Unidade</FormLabel>
-                    <FormNativeSelect
-                      value={novaEmbalagemUnidade || form.unidade}
-                      onChange={v => setNovaEmbalagemUnidade(v)}
-                      placeholder="Unidade"
-                      options={unidadesOpcoes}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddEmbalagem}
-                    className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900"
-                    style={{ backgroundColor: FD_PRIMARY }}
+            {showNovaEmbalagem && (
+              <div className="flex flex-wrap items-end gap-2 mb-4 pb-4 border-b border-gray-100">
+                <div className="flex-1 min-w-[180px]">
+                  <FormLabel>Nome da embalagem</FormLabel>
+                  <FormInput
+                    value={novaEmbalagem}
+                    onChange={v => setNovaEmbalagem(v)}
+                    placeholder="Ex: Saco, Frasco, Caixa, Galão"
+                  />
+                </div>
+                <div className="w-28">
+                  <FormLabel>Qtd. por embalagem</FormLabel>
+                  <FormInput
+                    type="number"
+                    value={novaEmbalagemVolume}
+                    onChange={v => setNovaEmbalagemVolume(v)}
+                    placeholder="Ex: 30"
+                  />
+                </div>
+                <div className="w-36">
+                  <FormLabel>Unidade</FormLabel>
+                  <FormSelect
+                    key={embalagemUnidadeKey}
+                    value={novaEmbalagemUnidade}
+                    onChange={v => setNovaEmbalagemUnidade(v)}
+                    placeholder="Selecione"
+                    displayValue={novaEmbalagemUnidade ? rotuloUnidade(novaEmbalagemUnidade) : undefined}
+                    triggerClassName="h-[42px] py-0"
                   >
-                    Incluir
-                  </button>
+                    {unidadesOpcoes.map(o => (
+                      <SelectItem key={o.value} value={o.value} className="text-[13px]">
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </FormSelect>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddEmbalagem}
+                  disabled={!podeIncluirEmbalagem}
+                  className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  Incluir
+                </button>
+              </div>
+            )}
+            <div>
+              {temEmbalagensProduto ? (
+                <div>
+                  <FormLabel>Embalagens do produto</FormLabel>
+                  <ul className="mt-2 space-y-2">
+                    {embalagensProduto.map(e => {
+                      const chave = chaveEmbalagem(e);
+                      return (
+                        <li
+                          key={chave}
+                          className="flex items-center justify-between gap-3 px-3 py-2.5 rounded border border-gray-200 bg-gray-50/60 text-[13px] text-gray-800"
+                        >
+                          <span>{formatRotuloEmbalagem(e)}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEmbalagem(chave)}
+                            className="p-1 text-gray-400 hover:text-red-600 transition-colors shrink-0"
+                            title="Remover embalagem"
+                            aria-label="Remover embalagem"
+                          >
+                            <span className="material-icons text-[18px]">close</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-2 text-[13px] text-gray-500 leading-relaxed">
+                  <p>Nenhuma embalagem cadastrada para este produto.</p>
+                  <p className="mt-1">
+                    Use &ldquo;Nova Embalagem&rdquo; para informar como o produto é comprado ou armazenado.
+                  </p>
                 </div>
               )}
-              <div>
-                <FormLabel>Embalagens do produto</FormLabel>
-                <FormNativeSelect
-                  value={form.embalagemSelecionada}
-                  onChange={v => set("embalagemSelecionada", v)}
-                  placeholder="Selecione"
-                  options={embalagensOpcoes.map(e => ({ value: e.nome, label: e.nome }))}
-                />
-                {embalagemAtiva && (embalagemAtiva.volume || embalagemAtiva.unidade) && (
-                  <div
-                    className="mt-2 px-3 py-2 rounded border text-[12px] text-gray-700"
-                    style={{ borderColor: FD_PRIMARY, backgroundColor: `${FD_PRIMARY}14` }}
-                  >
-                    <span className="font-semibold">Por unidade: </span>
-                    {embalagemAtiva.volume?.toLocaleString("pt-BR") ?? "—"}
-                    {embalagemAtiva.unidade ? ` ${rotuloUnidade(embalagemAtiva.unidade)}` : ""}
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
+          </FormSection>
 
           {/* Salvar */}
-          <div className="flex justify-end pt-2">
+          <div className="flex justify-end gap-3 pt-2">
+            {retornoUrl && (
+              <button
+                type="button"
+                onClick={() => voltarParaOrigem()}
+                disabled={isBusy}
+                className="px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              >
+                Cancelar
+              </button>
+            )}
             <button
               type="submit"
               disabled={isBusy}
-              className="px-8 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              className="px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               {isBusy ? "Salvando..." : "Salvar"}

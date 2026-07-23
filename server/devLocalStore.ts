@@ -18,6 +18,7 @@ type DevFazenda = {
 
 type DevEstoque = {
   id: number;
+  produtoId: number | null;
   fazendaId: number | null;
   nome: string;
   categoria: string | null;
@@ -39,6 +40,28 @@ type DevEstoque = {
   observacoesCarencia: string | null;
   valorUnitario: string | null;
   localizacao: string | null;
+  observacoes: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+type DevProdutoCatalogo = {
+  id: number;
+  nome: string;
+  categoria: string | null;
+  subcategoria: string | null;
+  unidade: string | null;
+  fabricante: string | null;
+  identificadorUnico: string | null;
+  produzidoNaFazenda: boolean | null;
+  monitorarEstoque: boolean | null;
+  situacao: string | null;
+  embalagens: string | null;
+  possuiCarencia: boolean | null;
+  carenciaAbateDias: number | null;
+  carenciaAbateUnidade: string | null;
+  carenciaLeiteDias: number | null;
+  observacoesCarencia: string | null;
   observacoes: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -86,19 +109,40 @@ type DevMovimentacaoFinanceira = {
   createdAt: Date | null;
 };
 
+export type DevPessoaTipo = "fornecedor" | "cliente" | "funcionario";
+
+type DevPessoa = {
+  id: number;
+  userId: number;
+  nome: string;
+  tipo: DevPessoaTipo;
+  funcao: string | null;
+  documento: string | null;
+  endereco: string | null;
+  telefone: string | null;
+  email: string | null;
+  observacoes: string | null;
+  ativo: boolean;
+  createdAt: Date | null;
+};
+
 type StoreData = {
   nextFazendaId: number;
   nextEstoqueId: number;
+  nextProdutoCatalogoId: number;
   nextMovId: number;
   nextContaId: number;
   nextFinMovId: number;
+  nextPessoaId: number;
   nextAnimalId: number;
   nextLoteId: number;
   fazendas: DevFazenda[];
+  produtosCatalogo: DevProdutoCatalogo[];
   estoque: DevEstoque[];
   movimentacoes: DevMovimentacao[];
   contas: DevContaFinanceira[];
   financeiroMovimentacoes: DevMovimentacaoFinanceira[];
+  pessoas: DevPessoa[];
   animais: DevAnimal[];
   lotes: DevLote[];
   rebanhoSeedVersion?: number;
@@ -119,9 +163,11 @@ function defaultStore(): StoreData {
   return {
     nextFazendaId: 2,
     nextEstoqueId: 4,
+    nextProdutoCatalogoId: 4,
     nextMovId: 4,
     nextContaId: 4,
     nextFinMovId: 9,
+    nextPessoaId: 6,
     nextAnimalId: rebanho.nextAnimalId,
     nextLoteId: rebanho.nextLoteId,
     animais: rebanho.animais,
@@ -137,9 +183,11 @@ function defaultStore(): StoreData {
         createdAt,
       },
     ],
+    produtosCatalogo: [],
     estoque: [
       {
         id: 1,
+        produtoId: 1,
         fazendaId: 1,
         nome: "Diesel S10",
         categoria: "Combustível",
@@ -167,6 +215,7 @@ function defaultStore(): StoreData {
       },
       {
         id: 2,
+        produtoId: 2,
         fazendaId: 1,
         nome: "Sal Mineral",
         categoria: "Nutrição",
@@ -194,6 +243,7 @@ function defaultStore(): StoreData {
       },
       {
         id: 3,
+        produtoId: 3,
         fazendaId: 1,
         nome: "Vacina Aftosa",
         categoria: "Sanidade",
@@ -288,6 +338,13 @@ function defaultStore(): StoreData {
       { id: 7, contaId: 3, categoriaId: null, tipo: "receita", descricao: "Arrendamento de pasto", valor: "8000.00", data: diasAtras(20), status: "confirmado", observacoes: null, createdAt },
       { id: 8, contaId: 1, categoriaId: null, tipo: "despesa", descricao: "Vacinas do rebanho", valor: "6300.00", data: diasAtras(25), status: "confirmado", observacoes: null, createdAt },
     ],
+    pessoas: [
+      { id: 1, userId: 0, nome: "Posto Rural", tipo: "fornecedor", funcao: "Combustível", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+      { id: 2, userId: 0, nome: "Nutrição Animal Ltda", tipo: "fornecedor", funcao: "Insumos", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+      { id: 3, userId: 0, nome: "Agropecuária Central", tipo: "fornecedor", funcao: "Insumos", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+      { id: 4, userId: 0, nome: "Frigorífico São Paulo", tipo: "cliente", funcao: "Comprador", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+      { id: 5, userId: 0, nome: "João Silva", tipo: "funcionario", funcao: "Vaqueiro", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+    ],
   };
 }
 
@@ -298,6 +355,61 @@ function reviveDates(raw: StoreData): StoreData {
   for (const e of raw.estoque) {
     if (e.createdAt) e.createdAt = new Date(e.createdAt);
     if (e.updatedAt) e.updatedAt = new Date(e.updatedAt);
+  }
+  if (!raw.produtosCatalogo) raw.produtosCatalogo = [];
+  if (!raw.nextProdutoCatalogoId) {
+    raw.nextProdutoCatalogoId =
+      Math.max(0, ...raw.produtosCatalogo.map(p => p.id), ...raw.estoque.map(e => e.produtoId ?? 0)) + 1;
+  }
+  for (const p of raw.produtosCatalogo) {
+    if (p.createdAt) p.createdAt = new Date(p.createdAt);
+    if (p.updatedAt) p.updatedAt = new Date(p.updatedAt);
+  }
+  // Backfill produtoId + catálogo a partir do estoque legado
+  const chaveToId = new Map<string, number>();
+  for (const p of raw.produtosCatalogo) {
+    const chave = [
+      (p.nome ?? "").trim().toLowerCase(),
+      (p.unidade ?? "").trim().toLowerCase(),
+      (p.categoria ?? "").trim().toLowerCase(),
+    ].join("|");
+    chaveToId.set(chave, p.id);
+  }
+  for (const e of raw.estoque) {
+    if (e.produtoId) continue;
+    const chave = [
+      (e.nome ?? "").trim().toLowerCase(),
+      (e.unidade ?? "").trim().toLowerCase(),
+      (e.categoria ?? "").trim().toLowerCase(),
+    ].join("|");
+    let produtoId = chaveToId.get(chave);
+    if (!produtoId) {
+      produtoId = raw.nextProdutoCatalogoId++;
+      const createdAt = e.createdAt ?? now();
+      raw.produtosCatalogo.push({
+        id: produtoId,
+        nome: e.nome,
+        categoria: e.categoria,
+        subcategoria: e.subcategoria,
+        unidade: e.unidade,
+        fabricante: e.fabricante,
+        identificadorUnico: e.identificadorUnico,
+        produzidoNaFazenda: e.produzidoNaFazenda,
+        monitorarEstoque: e.monitorarEstoque,
+        situacao: e.situacao,
+        embalagens: e.embalagens,
+        possuiCarencia: e.possuiCarencia,
+        carenciaAbateDias: e.carenciaAbateDias,
+        carenciaAbateUnidade: e.carenciaAbateUnidade,
+        carenciaLeiteDias: e.carenciaLeiteDias,
+        observacoesCarencia: e.observacoesCarencia,
+        observacoes: e.observacoes,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      chaveToId.set(chave, produtoId);
+    }
+    e.produtoId = produtoId;
   }
   for (const m of raw.movimentacoes) {
     if (m.createdAt) m.createdAt = new Date(m.createdAt);
@@ -314,15 +426,30 @@ function reviveDates(raw: StoreData): StoreData {
   for (const l of raw.lotes ?? []) {
     if (l.createdAt) l.createdAt = new Date(l.createdAt);
   }
+  for (const p of raw.pessoas ?? []) {
+    if (p.createdAt) p.createdAt = new Date(p.createdAt);
+    if (p.documento === undefined) p.documento = null;
+    if (p.endereco === undefined) p.endereco = null;
+  }
   if (!raw.contas) raw.contas = [];
   if (!raw.financeiroMovimentacoes) raw.financeiroMovimentacoes = [];
+  if (!raw.pessoas) raw.pessoas = [];
   if (!raw.animais) raw.animais = [];
   if (!raw.lotes) raw.lotes = [];
   if (!raw.nextContaId) raw.nextContaId = raw.contas.length + 1;
   if (!raw.nextFinMovId) raw.nextFinMovId = raw.financeiroMovimentacoes.length + 1;
+  if (!raw.nextPessoaId) raw.nextPessoaId = raw.pessoas.length + 1;
   if (!raw.nextAnimalId) raw.nextAnimalId = raw.animais.length + 1;
   if (!raw.nextLoteId) raw.nextLoteId = raw.lotes.length + 1;
   return raw;
+}
+
+function ensurePessoasSeed(data: StoreData): boolean {
+  if (data.pessoas?.length) return false;
+  const seed = defaultStore();
+  data.pessoas = seed.pessoas;
+  data.nextPessoaId = seed.nextPessoaId;
+  return true;
 }
 
 function loadStore(): StoreData {
@@ -332,7 +459,9 @@ function loadStore(): StoreData {
     fs.writeFileSync(DATA_FILE, JSON.stringify(seed, null, 2), "utf8");
     return seed;
   }
-  return reviveDates(JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as StoreData);
+  const data = reviveDates(JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as StoreData);
+  if (ensurePessoasSeed(data)) saveStore(data);
+  return data;
 }
 
 function saveStore(data: StoreData) {
@@ -362,6 +491,58 @@ function getItem(data: StoreData, id: number) {
   return data.estoque.find(e => e.id === id);
 }
 
+function configLocalParaFazenda(
+  input: Record<string, unknown>,
+  fazendaId: number,
+  fallback?: {
+    produzidoNaFazenda?: boolean;
+    monitorarEstoque?: boolean;
+    quantidadeMinima?: string | null;
+    quantidadeMaxima?: string | null;
+  }
+) {
+  const configs = input.estoquesConfig as
+    | {
+        fazendaId: number;
+        produzidoNaFazenda?: boolean;
+        monitorarEstoque?: boolean;
+        quantidadeMinima?: string | null;
+        quantidadeMaxima?: string | null;
+      }[]
+    | undefined;
+  const cfg = (configs ?? []).find(c => Number(c.fazendaId) === fazendaId);
+  const monitorar =
+    cfg?.monitorarEstoque ??
+    fallback?.monitorarEstoque ??
+    (typeof input.monitorarEstoque === "boolean" ? input.monitorarEstoque : false);
+  const produzido =
+    cfg?.produzidoNaFazenda ??
+    fallback?.produzidoNaFazenda ??
+    (typeof input.produzidoNaFazenda === "boolean" ? input.produzidoNaFazenda : false);
+  let quantidadeMinima: string | null = null;
+  let quantidadeMaxima: string | null = null;
+  if (monitorar) {
+    quantidadeMinima =
+      cfg?.quantidadeMinima ??
+      fallback?.quantidadeMinima ??
+      (input.quantidadeMinima as string | undefined) ??
+      "0";
+    quantidadeMaxima =
+      cfg?.quantidadeMaxima ??
+      fallback?.quantidadeMaxima ??
+      (input.quantidadeMaxima as string | null | undefined) ??
+      null;
+    if (quantidadeMinima === "") quantidadeMinima = "0";
+    if (quantidadeMaxima === "") quantidadeMaxima = null;
+  }
+  return {
+    produzidoNaFazenda: !!produzido,
+    monitorarEstoque: !!monitorar,
+    quantidadeMinima,
+    quantidadeMaxima,
+  };
+}
+
 function joinMov(data: StoreData, mov: DevMovimentacao) {
   const item = getItem(data, mov.estoqueId);
   return {
@@ -374,6 +555,7 @@ function joinMov(data: StoreData, mov: DevMovimentacao) {
     identificadorUnico: item?.identificadorUnico ?? null,
     unidade: item?.unidade ?? null,
     embalagens: item?.embalagens ?? null,
+    situacao: item?.situacao ?? "ativo",
   };
 }
 
@@ -401,6 +583,7 @@ export const devLocalStore = {
       }
     }
     if (ensureRebanhoSeed(data)) changed = true;
+    if (ensurePessoasSeed(data)) changed = true;
     if (changed) saveStore(data);
     console.log("[dev] Estoque local em .dev-data/local.json (sem MySQL)");
   },
@@ -427,8 +610,34 @@ export const devLocalStore = {
       const id = data.nextEstoqueId++;
       const createdAt = now();
       const embalagens = input.embalagens as unknown[] | undefined;
+      let produtoId = (input.produtoId as number | undefined) ?? null;
+      if (!produtoId) {
+        produtoId = data.nextProdutoCatalogoId++;
+        data.produtosCatalogo.push({
+          id: produtoId,
+          nome: String(input.nome),
+          categoria: (input.categoria as string) ?? null,
+          subcategoria: (input.subcategoria as string) ?? null,
+          unidade: (input.unidade as string) ?? null,
+          fabricante: (input.fabricante as string | undefined) ?? null,
+          identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
+          produzidoNaFazenda: (input.produzidoNaFazenda as boolean | undefined) ?? false,
+          monitorarEstoque: (input.monitorarEstoque as boolean | undefined) ?? false,
+          situacao: (input.situacao as string | undefined) ?? "ativo",
+          embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
+          possuiCarencia: (input.possuiCarencia as boolean | undefined) ?? false,
+          carenciaAbateDias: (input.carenciaAbateDias as number | null | undefined) ?? null,
+          carenciaAbateUnidade: (input.carenciaAbateUnidade as string | undefined) ?? "d",
+          carenciaLeiteDias: (input.carenciaLeiteDias as number | null | undefined) ?? null,
+          observacoesCarencia: (input.observacoesCarencia as string | null | undefined) ?? null,
+          observacoes: (input.observacoes as string | undefined) ?? null,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
       const row: DevEstoque = {
         id,
+        produtoId,
         fazendaId: (input.fazendaId as number | undefined) ?? 1,
         nome: String(input.nome),
         categoria: (input.categoria as string) ?? null,
@@ -455,7 +664,360 @@ export const devLocalStore = {
         updatedAt: createdAt,
       };
       data.estoque.push(row);
-      return { success: true, id };
+      return { success: true, id, produtoId };
+    });
+  },
+
+  createProdutoComEstoques(input: Record<string, unknown> & { fazendaIds: number[] }) {
+    return withStore(data => {
+      const createdAt = now();
+      const embalagens = input.embalagens as unknown[] | undefined;
+      const produtoId = data.nextProdutoCatalogoId++;
+      const monitorarAlguma = (input.estoquesConfig as { monitorarEstoque?: boolean }[] | undefined)?.some(
+        c => c.monitorarEstoque
+      );
+      data.produtosCatalogo.push({
+        id: produtoId,
+        nome: String(input.nome),
+        categoria: (input.categoria as string) ?? null,
+        subcategoria: (input.subcategoria as string) ?? null,
+        unidade: (input.unidade as string) ?? null,
+        fabricante: (input.fabricante as string | undefined) ?? null,
+        identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
+        produzidoNaFazenda: false,
+        monitorarEstoque: monitorarAlguma || !!(input.monitorarEstoque as boolean | undefined),
+        situacao: (input.situacao as string | undefined) ?? "ativo",
+        embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
+        possuiCarencia: (input.possuiCarencia as boolean | undefined) ?? false,
+        carenciaAbateDias: (input.carenciaAbateDias as number | null | undefined) ?? null,
+        carenciaAbateUnidade: (input.carenciaAbateUnidade as string | undefined) ?? "d",
+        carenciaLeiteDias: (input.carenciaLeiteDias as number | null | undefined) ?? null,
+        observacoesCarencia: (input.observacoesCarencia as string | null | undefined) ?? null,
+        observacoes: (input.observacoes as string | undefined) ?? null,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      let firstId: number | null = null;
+      for (const fazendaId of input.fazendaIds) {
+        const id = data.nextEstoqueId++;
+        if (!firstId) firstId = id;
+        const cfg = configLocalParaFazenda(input, fazendaId);
+        data.estoque.push({
+          id,
+          produtoId,
+          fazendaId,
+          nome: String(input.nome),
+          categoria: (input.categoria as string) ?? null,
+          subcategoria: (input.subcategoria as string) ?? null,
+          unidade: (input.unidade as string) ?? null,
+          quantidade:
+            fazendaId === input.fazendaIds[0]
+              ? ((input.quantidade as string | undefined) ?? "0")
+              : "0",
+          quantidadeMinima: cfg.quantidadeMinima ?? "0",
+          quantidadeMaxima: cfg.quantidadeMaxima,
+          fabricante: (input.fabricante as string | undefined) ?? null,
+          identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
+          produzidoNaFazenda: cfg.produzidoNaFazenda,
+          monitorarEstoque: cfg.monitorarEstoque,
+          situacao: (input.situacao as string | undefined) ?? "ativo",
+          embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
+          possuiCarencia: (input.possuiCarencia as boolean | undefined) ?? false,
+          carenciaAbateDias: (input.carenciaAbateDias as number | null | undefined) ?? null,
+          carenciaAbateUnidade: (input.carenciaAbateUnidade as string | undefined) ?? "d",
+          carenciaLeiteDias: (input.carenciaLeiteDias as number | null | undefined) ?? null,
+          observacoesCarencia: (input.observacoesCarencia as string | null | undefined) ?? null,
+          valorUnitario: (input.valorUnitario as string | undefined) ?? null,
+          localizacao: (input.localizacao as string | undefined) ?? null,
+          observacoes: (input.observacoes as string | undefined) ?? null,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+      return { success: true, id: firstId!, produtoId };
+    });
+  },
+
+  listFazendaIdsDoProduto(produtoId: number | null, fallbackFazendaId?: number | null) {
+    const data = loadStore();
+    if (!produtoId) {
+      return fallbackFazendaId ? [fallbackFazendaId] : [];
+    }
+    return [
+      ...new Set(
+        data.estoque
+          .filter(e => e.produtoId === produtoId && e.fazendaId != null)
+          .map(e => e.fazendaId as number)
+      ),
+    ];
+  },
+
+  listEstoquesVinculados(
+    produtoId: number | null,
+    fallback?: Pick<
+      DevEstoque,
+      | "id"
+      | "fazendaId"
+      | "produzidoNaFazenda"
+      | "monitorarEstoque"
+      | "quantidadeMinima"
+      | "quantidadeMaxima"
+      | "quantidade"
+    > | null
+  ) {
+    const data = loadStore();
+    const mapRow = (e: DevEstoque) => ({
+      fazendaId: e.fazendaId as number,
+      estoqueId: e.id,
+      produzidoNaFazenda: !!e.produzidoNaFazenda,
+      monitorarEstoque: !!e.monitorarEstoque,
+      quantidadeMinima: e.quantidadeMinima != null ? String(e.quantidadeMinima) : null,
+      quantidadeMaxima: e.quantidadeMaxima != null ? String(e.quantidadeMaxima) : null,
+      quantidade: e.quantidade != null ? String(e.quantidade) : null,
+    });
+    if (!produtoId) {
+      if (fallback?.fazendaId) {
+        return [
+          {
+            fazendaId: fallback.fazendaId,
+            estoqueId: fallback.id,
+            produzidoNaFazenda: !!fallback.produzidoNaFazenda,
+            monitorarEstoque: !!fallback.monitorarEstoque,
+            quantidadeMinima:
+              fallback.quantidadeMinima != null ? String(fallback.quantidadeMinima) : null,
+            quantidadeMaxima:
+              fallback.quantidadeMaxima != null ? String(fallback.quantidadeMaxima) : null,
+            quantidade: fallback.quantidade != null ? String(fallback.quantidade) : null,
+          },
+        ];
+      }
+      return [];
+    }
+    return data.estoque
+      .filter(e => e.produtoId === produtoId && e.fazendaId != null && e.fazendaId > 0)
+      .map(mapRow);
+  },
+
+  updateProdutoComEstoques(input: Record<string, unknown> & { id: number }) {
+    return withStore(data => {
+      const row = getItem(data, input.id);
+      if (!row) throw new Error("Produto não encontrado");
+      const embalagens = input.embalagens as unknown[] | undefined;
+      const embalagensStr = embalagens?.length ? JSON.stringify(embalagens) : row.embalagens;
+      let produtoId = row.produtoId;
+      const monitorarAlguma = (input.estoquesConfig as { monitorarEstoque?: boolean }[] | undefined)?.some(
+        c => c.monitorarEstoque
+      );
+      if (!produtoId) {
+        produtoId = data.nextProdutoCatalogoId++;
+        row.produtoId = produtoId;
+        data.produtosCatalogo.push({
+          id: produtoId,
+          nome: String(input.nome ?? row.nome),
+          categoria: (input.categoria as string) ?? row.categoria,
+          subcategoria: (input.subcategoria as string) ?? row.subcategoria,
+          unidade: (input.unidade as string) ?? row.unidade,
+          fabricante: (input.fabricante as string | undefined) ?? row.fabricante,
+          identificadorUnico: (input.identificadorUnico as string | undefined) ?? row.identificadorUnico,
+          produzidoNaFazenda: false,
+          monitorarEstoque:
+            monitorarAlguma ??
+            ((input.monitorarEstoque as boolean | undefined) ?? row.monitorarEstoque),
+          situacao: (input.situacao as string | undefined) ?? row.situacao,
+          embalagens: embalagensStr,
+          possuiCarencia: (input.possuiCarencia as boolean | undefined) ?? row.possuiCarencia,
+          carenciaAbateDias: (input.carenciaAbateDias as number | null | undefined) ?? row.carenciaAbateDias,
+          carenciaAbateUnidade: (input.carenciaAbateUnidade as string | undefined) ?? row.carenciaAbateUnidade,
+          carenciaLeiteDias: (input.carenciaLeiteDias as number | null | undefined) ?? row.carenciaLeiteDias,
+          observacoesCarencia: (input.observacoesCarencia as string | null | undefined) ?? row.observacoesCarencia,
+          observacoes: (input.observacoes as string | undefined) ?? row.observacoes,
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      } else {
+        const catalogo = data.produtosCatalogo.find(p => p.id === produtoId);
+        if (catalogo) {
+          Object.assign(catalogo, {
+            nome: input.nome ?? catalogo.nome,
+            categoria: input.categoria ?? catalogo.categoria,
+            subcategoria: input.subcategoria ?? catalogo.subcategoria,
+            unidade: input.unidade ?? catalogo.unidade,
+            fabricante: input.fabricante !== undefined ? input.fabricante : catalogo.fabricante,
+            identificadorUnico:
+              input.identificadorUnico !== undefined ? input.identificadorUnico : catalogo.identificadorUnico,
+            monitorarEstoque:
+              monitorarAlguma != null
+                ? monitorarAlguma
+                : input.monitorarEstoque !== undefined
+                  ? input.monitorarEstoque
+                  : catalogo.monitorarEstoque,
+            situacao: input.situacao ?? catalogo.situacao,
+            embalagens: embalagens ? embalagensStr : catalogo.embalagens,
+            possuiCarencia: input.possuiCarencia !== undefined ? input.possuiCarencia : catalogo.possuiCarencia,
+            carenciaAbateDias:
+              input.carenciaAbateDias !== undefined ? input.carenciaAbateDias : catalogo.carenciaAbateDias,
+            carenciaAbateUnidade:
+              input.carenciaAbateUnidade !== undefined
+                ? input.carenciaAbateUnidade
+                : catalogo.carenciaAbateUnidade,
+            carenciaLeiteDias:
+              input.carenciaLeiteDias !== undefined ? input.carenciaLeiteDias : catalogo.carenciaLeiteDias,
+            observacoesCarencia:
+              input.observacoesCarencia !== undefined
+                ? input.observacoesCarencia
+                : catalogo.observacoesCarencia,
+            observacoes: input.observacoes !== undefined ? input.observacoes : catalogo.observacoes,
+            updatedAt: now(),
+          });
+        }
+      }
+
+      // Ficha compartilhada — sem produzido/monitorar/min/max/situacao (são por fazenda ou catálogo)
+      const syncFields = {
+        nome: String(input.nome ?? row.nome),
+        categoria: (input.categoria as string) ?? row.categoria,
+        subcategoria: (input.subcategoria as string) ?? row.subcategoria,
+        unidade: (input.unidade as string) ?? row.unidade,
+        fabricante: (input.fabricante as string | undefined) ?? row.fabricante,
+        identificadorUnico: (input.identificadorUnico as string | undefined) ?? row.identificadorUnico,
+        embalagens: embalagens ? embalagensStr : row.embalagens,
+        possuiCarencia: (input.possuiCarencia as boolean | undefined) ?? row.possuiCarencia,
+        carenciaAbateDias: (input.carenciaAbateDias as number | null | undefined) ?? row.carenciaAbateDias,
+        carenciaAbateUnidade: (input.carenciaAbateUnidade as string | undefined) ?? row.carenciaAbateUnidade,
+        carenciaLeiteDias: (input.carenciaLeiteDias as number | null | undefined) ?? row.carenciaLeiteDias,
+        observacoesCarencia:
+          (input.observacoesCarencia as string | null | undefined) ?? row.observacoesCarencia,
+        observacoes: (input.observacoes as string | undefined) ?? row.observacoes,
+        valorUnitario: (input.valorUnitario as string | undefined) ?? row.valorUnitario,
+        localizacao: (input.localizacao as string | undefined) ?? row.localizacao,
+        updatedAt: now(),
+      };
+
+      const fazendaIds = [
+        ...new Set([
+          ...((input.fazendaIds as unknown[] | undefined) ?? []),
+          ...(input.fazendaId != null ? [input.fazendaId] : []),
+          ...((input.estoquesConfig as { fazendaId: unknown }[] | undefined)?.map(c => c.fazendaId) ?? []),
+        ]),
+      ]
+        .map(v => {
+          const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        })
+        .filter((id): id is number => id != null);
+      const desired = new Set(fazendaIds);
+
+      for (const item of data.estoque.filter(e => e.produtoId === produtoId)) {
+        const itemFarm = item.fazendaId != null ? Number(item.fazendaId) : null;
+        if (itemFarm != null && Number.isFinite(itemFarm) && !desired.has(itemFarm)) {
+          const qty = Number(item.quantidade ?? 0);
+          const hasMov = data.movimentacoes.some(m => m.estoqueId === item.id);
+          if (hasMov || (!Number.isNaN(qty) && qty !== 0)) {
+            throw new Error(
+              "Este produto possui movimentações ou estoque nesta Fazenda. Não é possível desvincular diretamente. Inative o produto para esta Fazenda ou ajuste o estoque antes."
+            );
+          }
+          data.estoque = data.estoque.filter(e => e.id !== item.id);
+          continue;
+        }
+        Object.assign(item, syncFields);
+        if (itemFarm != null && Number.isFinite(itemFarm)) {
+          const cfg = configLocalParaFazenda(input, itemFarm, {
+            produzidoNaFazenda: !!item.produzidoNaFazenda,
+            monitorarEstoque: !!item.monitorarEstoque,
+            quantidadeMinima: item.quantidadeMinima,
+            quantidadeMaxima: item.quantidadeMaxima,
+          });
+          item.produzidoNaFazenda = cfg.produzidoNaFazenda;
+          item.monitorarEstoque = cfg.monitorarEstoque;
+          item.quantidadeMinima = cfg.quantidadeMinima ?? "0";
+          item.quantidadeMaxima = cfg.quantidadeMaxima;
+        }
+      }
+
+      // Situação operacional é por fazenda — não cascatear situacao do catálogo
+
+      const linked = new Set(
+        data.estoque
+          .filter(e => e.produtoId === produtoId && e.fazendaId != null)
+          .map(e => Number(e.fazendaId))
+          .filter(id => Number.isFinite(id) && id > 0)
+      );
+      for (const fazendaId of fazendaIds) {
+        if (linked.has(fazendaId)) continue;
+        const cfg = configLocalParaFazenda(input, fazendaId);
+        const id = data.nextEstoqueId++;
+        data.estoque.push({
+          id,
+          produtoId,
+          fazendaId,
+          ...syncFields,
+          produzidoNaFazenda: cfg.produzidoNaFazenda,
+          monitorarEstoque: cfg.monitorarEstoque,
+          quantidadeMinima: cfg.quantidadeMinima ?? "0",
+          quantidadeMaxima: cfg.quantidadeMaxima,
+          situacao: "ativo",
+          quantidade: "0",
+          createdAt: now(),
+        } as DevEstoque);
+      }
+      return { success: true, produtoId };
+    });
+  },
+
+  vincularFazenda(input: {
+    produtoId: number;
+    fazendaId: number;
+    produzidoNaFazenda?: boolean;
+    monitorarEstoque?: boolean;
+    quantidadeMinima?: string;
+    quantidadeMaxima?: string;
+  }) {
+    return withStore(data => {
+      const catalogo = data.produtosCatalogo.find(p => p.id === input.produtoId);
+      if (!catalogo) throw new Error("Produto do catálogo não encontrado");
+      const existing = data.estoque.find(
+        e => e.produtoId === input.produtoId && e.fazendaId === input.fazendaId
+      );
+      if (existing) {
+        if (input.produzidoNaFazenda != null) existing.produzidoNaFazenda = input.produzidoNaFazenda;
+        if (input.monitorarEstoque != null) existing.monitorarEstoque = input.monitorarEstoque;
+        if (input.quantidadeMinima !== undefined) existing.quantidadeMinima = input.quantidadeMinima;
+        if (input.quantidadeMaxima !== undefined) existing.quantidadeMaxima = input.quantidadeMaxima ?? null;
+        existing.updatedAt = now();
+        return { id: existing.id, alreadyLinked: true };
+      }
+      const id = data.nextEstoqueId++;
+      const createdAt = now();
+      data.estoque.push({
+        id,
+        produtoId: input.produtoId,
+        fazendaId: input.fazendaId,
+        nome: catalogo.nome,
+        categoria: catalogo.categoria,
+        subcategoria: catalogo.subcategoria,
+        unidade: catalogo.unidade,
+        quantidade: "0",
+        quantidadeMinima: input.quantidadeMinima ?? "0",
+        quantidadeMaxima: input.quantidadeMaxima ?? null,
+        fabricante: catalogo.fabricante,
+        identificadorUnico: catalogo.identificadorUnico,
+        produzidoNaFazenda: input.produzidoNaFazenda ?? false,
+        monitorarEstoque: input.monitorarEstoque ?? false,
+        situacao: catalogo.situacao,
+        embalagens: catalogo.embalagens,
+        possuiCarencia: catalogo.possuiCarencia,
+        carenciaAbateDias: catalogo.carenciaAbateDias,
+        carenciaAbateUnidade: catalogo.carenciaAbateUnidade,
+        carenciaLeiteDias: catalogo.carenciaLeiteDias,
+        observacoesCarencia: catalogo.observacoesCarencia,
+        valorUnitario: null,
+        localizacao: null,
+        observacoes: catalogo.observacoes,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      return { id, alreadyLinked: false };
     });
   },
 
@@ -465,7 +1027,7 @@ export const devLocalStore = {
       if (!row) throw new Error("Produto não encontrado");
       const embalagens = input.embalagens as unknown[] | undefined;
       Object.assign(row, {
-        fazendaId: input.fazendaId ?? row.fazendaId,
+        fazendaId: input.fazendaId !== undefined ? input.fazendaId : row.fazendaId,
         nome: input.nome ?? row.nome,
         categoria: input.categoria ?? row.categoria,
         subcategoria: input.subcategoria ?? row.subcategoria,
@@ -492,31 +1054,128 @@ export const devLocalStore = {
     });
   },
 
-  deleteEstoque(id: number) {
+  /**
+   * Remove vínculo de estoque.
+   * - fazenda: só a linha informada (outras fazendas e catálogo permanecem, se houver mais vínculos)
+   * - catalogo: remove produto do catálogo e todos os estoques/movimentações
+   */
+  deleteEstoque(id: number, escopo: "fazenda" | "catalogo" = "fazenda") {
     return withStore(data => {
-      data.movimentacoes = data.movimentacoes.filter(m => m.estoqueId !== id);
-      data.estoque = data.estoque.filter(e => e.id !== id);
-      return { success: true };
+      const row = getItem(data, id);
+      if (!row) return { success: true, escopo };
+
+      if (escopo === "fazenda") {
+        const qty = Number(row.quantidade ?? 0);
+        const hasMov = data.movimentacoes.some(m => m.estoqueId === id);
+        if (hasMov || (!Number.isNaN(qty) && qty !== 0)) {
+          throw new Error(
+            "Este produto possui movimentações ou estoque nesta Fazenda. Não é possível desvincular diretamente. Inative o produto para esta Fazenda ou ajuste o estoque antes."
+          );
+        }
+        const produtoId = row.produtoId ?? null;
+        data.movimentacoes = data.movimentacoes.filter(m => m.estoqueId !== id);
+        data.estoque = data.estoque.filter(e => e.id !== id);
+        if (produtoId) {
+          const aindaVinculado = data.estoque.some(e => e.produtoId === produtoId);
+          if (!aindaVinculado) {
+            data.produtosCatalogo = data.produtosCatalogo.filter(p => p.id !== produtoId);
+          }
+        }
+        return { success: true, escopo };
+      }
+
+      const produtoId = row.produtoId ?? null;
+      const idsParaRemover = new Set<number>([id]);
+      if (produtoId) {
+        for (const e of data.estoque) {
+          if (e.produtoId === produtoId) idsParaRemover.add(e.id);
+        }
+      } else if (row.nome) {
+        const chave = [
+          (row.nome ?? "").trim().toLowerCase(),
+          (row.unidade ?? "").trim().toLowerCase(),
+          (row.categoria ?? "").trim().toLowerCase(),
+        ].join("|");
+        for (const e of data.estoque) {
+          const k = [
+            (e.nome ?? "").trim().toLowerCase(),
+            (e.unidade ?? "").trim().toLowerCase(),
+            (e.categoria ?? "").trim().toLowerCase(),
+          ].join("|");
+          if (k === chave) idsParaRemover.add(e.id);
+        }
+      }
+
+      data.movimentacoes = data.movimentacoes.filter(m => !idsParaRemover.has(m.estoqueId));
+      data.estoque = data.estoque.filter(e => !idsParaRemover.has(e.id));
+      if (produtoId) {
+        data.produtosCatalogo = data.produtosCatalogo.filter(p => p.id !== produtoId);
+      }
+      return { success: true, escopo };
     });
   },
 
-  inativarProdutos(ids: number[]) {
+  inativarProdutos(ids: number[], escopo: "fazenda" | "catalogo" = "fazenda") {
     return withStore(data => {
-      for (const id of ids) {
-        const row = getItem(data, id);
-        if (row) row.situacao = "inativo";
+      const idsAlvo = new Set<number>(ids);
+      const produtoIds = new Set<number>();
+      if (escopo === "catalogo") {
+        for (const id of ids) {
+          const row = getItem(data, id);
+          if (row?.produtoId) produtoIds.add(row.produtoId);
+        }
+        for (const e of data.estoque) {
+          if (e.produtoId != null && produtoIds.has(e.produtoId)) idsAlvo.add(e.id);
+        }
+        for (const p of data.produtosCatalogo) {
+          if (produtoIds.has(p.id)) {
+            p.situacao = "inativo";
+            p.updatedAt = now();
+          }
+        }
       }
-      return { success: true, count: ids.length };
+      let count = 0;
+      for (const id of idsAlvo) {
+        const row = getItem(data, id);
+        if (row) {
+          row.situacao = "inativo";
+          row.updatedAt = now();
+          count++;
+        }
+      }
+      return { success: true, count, escopo };
     });
   },
 
-  ativarProdutos(ids: number[]) {
+  ativarProdutos(ids: number[], escopo: "fazenda" | "catalogo" = "fazenda") {
     return withStore(data => {
-      for (const id of ids) {
-        const row = getItem(data, id);
-        if (row) row.situacao = "ativo";
+      const idsAlvo = new Set<number>(ids);
+      const produtoIds = new Set<number>();
+      if (escopo === "catalogo") {
+        for (const id of ids) {
+          const row = getItem(data, id);
+          if (row?.produtoId) produtoIds.add(row.produtoId);
+        }
+        for (const e of data.estoque) {
+          if (e.produtoId != null && produtoIds.has(e.produtoId)) idsAlvo.add(e.id);
+        }
+        for (const p of data.produtosCatalogo) {
+          if (produtoIds.has(p.id)) {
+            p.situacao = "ativo";
+            p.updatedAt = now();
+          }
+        }
       }
-      return { success: true, count: ids.length };
+      let count = 0;
+      for (const id of idsAlvo) {
+        const row = getItem(data, id);
+        if (row) {
+          row.situacao = "ativo";
+          row.updatedAt = now();
+          count++;
+        }
+      }
+      return { success: true, count, escopo };
     });
   },
 
@@ -553,6 +1212,9 @@ export const devLocalStore = {
       const item = getItem(data, estoqueId);
       if (!item) throw new Error("Produto não encontrado");
 
+      const fazendaId = (input.fazendaId as number | undefined) ?? item.fazendaId;
+      if (!fazendaId) throw new Error("Informe a fazenda da movimentação.");
+
       const qty = parseFloat(String(input.quantidade).replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) throw new Error("Informe uma quantidade válida.");
 
@@ -576,7 +1238,7 @@ export const devLocalStore = {
       data.movimentacoes.push({
         id,
         estoqueId,
-        fazendaId: (input.fazendaId as number | undefined) ?? item.fazendaId,
+        fazendaId,
         tipo: (input.tipo as string | undefined) ?? null,
         dataMovimentacao: String(input.dataMovimentacao).slice(0, 10),
         quantidade: String(qty),
@@ -906,5 +1568,81 @@ export const devLocalStore = {
 
   rebanhoOverview(_userId: number, _fazendaId?: number) {
     return REBANHO_OVERVIEW_DEMO;
+  },
+
+  listPessoas(userId: number, tipo?: DevPessoaTipo) {
+    const data = loadStore();
+    const matched = data.pessoas
+      .filter(p => p.userId === userId && p.ativo)
+      .filter(p => !tipo || p.tipo === tipo);
+    const visible =
+      matched.length > 0
+        ? matched
+        : data.pessoas.filter(p => p.ativo).filter(p => !tipo || p.tipo === tipo);
+    return visible.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  },
+
+  createPessoa(userId: number, input: Omit<DevPessoa, "id" | "userId" | "createdAt" | "ativo">) {
+    return withStore(data => {
+      const nome = input.nome.trim();
+      if (!nome) throw new Error("Informe o nome.");
+      const documento = input.documento?.trim();
+      if (!documento) throw new Error("Informe o CPF/CNPJ.");
+      const id = data.nextPessoaId++;
+      const row: DevPessoa = {
+        id,
+        userId,
+        nome,
+        tipo: input.tipo,
+        funcao: input.funcao?.trim() || null,
+        documento,
+        endereco: input.endereco?.trim() || null,
+        telefone: input.telefone?.trim() || null,
+        email: input.email?.trim() || null,
+        observacoes: input.observacoes?.trim() || null,
+        ativo: true,
+        createdAt: now(),
+      };
+      data.pessoas.push(row);
+      return row;
+    });
+  },
+
+  updatePessoa(
+    userId: number,
+    id: number,
+    input: Partial<Omit<DevPessoa, "id" | "userId" | "createdAt">>
+  ) {
+    return withStore(data => {
+      const row = data.pessoas.find(p => p.id === id && (p.userId === userId || p.userId === 0));
+      if (!row) throw new Error("Pessoa não encontrada.");
+      if (input.nome !== undefined) {
+        const nome = input.nome.trim();
+        if (!nome) throw new Error("Informe o nome.");
+        row.nome = nome;
+      }
+      if (input.tipo !== undefined) row.tipo = input.tipo;
+      if (input.funcao !== undefined) row.funcao = input.funcao?.trim() || null;
+      if (input.documento !== undefined) {
+        const documento = input.documento?.trim();
+        if (!documento) throw new Error("Informe o CPF/CNPJ.");
+        row.documento = documento;
+      }
+      if (input.endereco !== undefined) row.endereco = input.endereco?.trim() || null;
+      if (input.telefone !== undefined) row.telefone = input.telefone?.trim() || null;
+      if (input.email !== undefined) row.email = input.email?.trim() || null;
+      if (input.observacoes !== undefined) row.observacoes = input.observacoes?.trim() || null;
+      if (input.ativo !== undefined) row.ativo = input.ativo;
+      return row;
+    });
+  },
+
+  deletePessoa(userId: number, id: number) {
+    return withStore(data => {
+      const row = data.pessoas.find(p => p.id === id && (p.userId === userId || p.userId === 0));
+      if (!row) throw new Error("Pessoa não encontrada.");
+      row.ativo = false;
+      return { success: true };
+    });
   },
 };

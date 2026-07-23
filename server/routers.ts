@@ -8,7 +8,7 @@ import {
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
-  historicoBrincos
+  historicoBrincos, produtosCatalogo
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
 import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
@@ -98,6 +98,14 @@ import {
 } from "./loteExclusaoCheck";
 import { packReproObservacoes } from "../shared/reproRegistroMeta";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
+import { devLocalStore } from "./devLocalStore";
+import {
+  configParaFazenda,
+  resolverFazendaIds,
+  toCatalogoInsertValues,
+  toEstoqueInsertValues,
+  toEstoqueSyncFromCatalogo,
+} from "./estoqueDb";
 import {
   assertBrincoUnicoEntreAtivos,
   assertBrincoUnicoEntreAtivosDb,
@@ -4802,8 +4810,68 @@ const benfeitoriasRouter = router({
 });
 
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
+
+/** Une DB + local; evita fantasma de produto duplicado na mesma fazenda. */
+function mergeEstoqueListPreferLocal<T extends {
+  id: number;
+  produtoId?: number | null;
+  fazendaId?: number | null;
+  nome?: string | null;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+}>(dbRows: T[], localRows: T[]): T[] {
+  const ts = (r: T) => {
+    const raw = r.updatedAt ?? r.createdAt;
+    if (!raw) return 0;
+    return raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
+  };
+  const keyOf = (r: T) => {
+    const pid = r.produtoId != null && Number(r.produtoId) > 0 ? Number(r.produtoId) : null;
+    const fid = r.fazendaId != null && Number(r.fazendaId) > 0 ? Number(r.fazendaId) : null;
+    if (pid && fid) return `p:${pid}|f:${fid}`;
+    const nome = String(r.nome ?? "").trim().toLowerCase();
+    if (nome && fid) return `n:${nome}|f:${fid}`;
+    return `e:${r.id}`;
+  };
+
+  const localById = new Map(localRows.map(r => [r.id, r]));
+  const byKey = new Map<string, T>();
+
+  const consider = (row: T) => {
+    const key = keyOf(row);
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, row);
+      return;
+    }
+    if (ts(row) >= ts(prev)) byKey.set(key, row);
+  };
+
+  for (const row of dbRows) {
+    consider(localById.get(row.id) ?? row);
+  }
+  for (const row of localRows) {
+    consider(row);
+  }
+
+  return [...byKey.values()].sort((a, b) => ts(b) - ts(a));
+}
+
 const estoqueInputFields = {
   fazendaId: z.number().optional(),
+  fazendaIds: z.array(z.number()).optional(),
+  estoquesConfig: z
+    .array(
+      z.object({
+        fazendaId: z.number(),
+        produzidoNaFazenda: z.boolean().optional(),
+        monitorarEstoque: z.boolean().optional(),
+        quantidadeMinima: z.string().nullish(),
+        quantidadeMaxima: z.string().nullish(),
+      })
+    )
+    .optional(),
+  produtoId: z.number().optional(),
   nome: z.string(),
   categoria: z.string(),
   subcategoria: z.string(),
@@ -4813,7 +4881,7 @@ const estoqueInputFields = {
   fabricante: z.string().optional(),
   identificadorUnico: z.string().optional(),
   produzidoNaFazenda: z.boolean().optional(),
-  monitorarEstoque: z.boolean(),
+  monitorarEstoque: z.boolean().optional(),
   situacao: z.enum(["ativo", "inativo"]).optional(),
   embalagens: z.array(z.object({
     nome: z.string(),
@@ -4833,109 +4901,706 @@ const estoqueInputFields = {
 
 const estoqueRouter = router({
   list: protectedProcedure.query(async () => {
-    return db.select().from(estoque).orderBy(desc(estoque.createdAt));
+    try {
+      const rows = await db.select().from(estoque).orderBy(desc(estoque.createdAt));
+      const localRows = devLocalStore.listEstoque();
+      if (localRows.length === 0) return rows;
+      return mergeEstoqueListPreferLocal(rows, localRows);
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      return devLocalStore.listEstoque();
+    }
   }),
+
+  listByFazenda: protectedProcedure
+    .input(z.object({ fazendaId: z.number() }))
+    .query(async ({ input }) => {
+      try {
+        const rows = await db
+          .select()
+          .from(estoque)
+          .where(eq(estoque.fazendaId, input.fazendaId))
+          .orderBy(desc(estoque.createdAt));
+        const localRows = devLocalStore
+          .listEstoque()
+          .filter(r => Number(r.fazendaId) === input.fazendaId);
+        if (localRows.length === 0) return rows;
+        return mergeEstoqueListPreferLocal(rows, localRows);
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return devLocalStore.listEstoque().filter(r => Number(r.fazendaId) === input.fazendaId);
+      }
+    }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
-      return row ?? null;
+      const mergeVinculos = (
+        base: {
+          fazendaId: number;
+          estoqueId: number;
+          produzidoNaFazenda: boolean;
+          monitorarEstoque: boolean;
+          quantidadeMinima: string | null;
+          quantidadeMaxima: string | null;
+          quantidade: string | null;
+        }[],
+        extras: typeof base
+      ) => {
+        const byFarm = new Map<number, (typeof base)[number]>();
+        for (const v of base) {
+          const fid = Number(v.fazendaId);
+          if (Number.isFinite(fid) && fid > 0) byFarm.set(fid, { ...v, fazendaId: fid });
+        }
+        // Vínculos locais sobrescrevem / completam por fazenda
+        for (const v of extras) {
+          const fid = Number(v.fazendaId);
+          if (Number.isFinite(fid) && fid > 0) byFarm.set(fid, { ...v, fazendaId: fid });
+        }
+        return [...byFarm.values()];
+      };
+
+      try {
+        const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
+        if (row) {
+          let estoquesVinculados: {
+            fazendaId: number;
+            estoqueId: number;
+            produzidoNaFazenda: boolean;
+            monitorarEstoque: boolean;
+            quantidadeMinima: string | null;
+            quantidadeMaxima: string | null;
+            quantidade: string | null;
+          }[] = [];
+          if (row.produtoId) {
+            const linked = await db
+              .select({
+                id: estoque.id,
+                fazendaId: estoque.fazendaId,
+                produzidoNaFazenda: estoque.produzidoNaFazenda,
+                monitorarEstoque: estoque.monitorarEstoque,
+                quantidadeMinima: estoque.quantidadeMinima,
+                quantidadeMaxima: estoque.quantidadeMaxima,
+                quantidade: estoque.quantidade,
+              })
+              .from(estoque)
+              .where(eq(estoque.produtoId, row.produtoId));
+            estoquesVinculados = linked
+              .filter((l): l is typeof l & { fazendaId: number } => l.fazendaId != null && l.fazendaId > 0)
+              .map(l => ({
+                fazendaId: l.fazendaId,
+                estoqueId: l.id,
+                produzidoNaFazenda: !!l.produzidoNaFazenda,
+                monitorarEstoque: !!l.monitorarEstoque,
+                quantidadeMinima: l.quantidadeMinima != null ? String(l.quantidadeMinima) : null,
+                quantidadeMaxima: l.quantidadeMaxima != null ? String(l.quantidadeMaxima) : null,
+                quantidade: l.quantidade != null ? String(l.quantidade) : null,
+              }));
+          } else if (row.fazendaId) {
+            estoquesVinculados = [
+              {
+                fazendaId: row.fazendaId,
+                estoqueId: row.id,
+                produzidoNaFazenda: !!row.produzidoNaFazenda,
+                monitorarEstoque: !!row.monitorarEstoque,
+                quantidadeMinima: row.quantidadeMinima != null ? String(row.quantidadeMinima) : null,
+                quantidadeMaxima: row.quantidadeMaxima != null ? String(row.quantidadeMaxima) : null,
+                quantidade: row.quantidade != null ? String(row.quantidade) : null,
+              },
+            ];
+          }
+
+          const localRow = devLocalStore.getEstoque(input.id);
+          const localProdutoId = localRow?.produtoId ?? row.produtoId ?? null;
+          const localVinculos = devLocalStore.listEstoquesVinculados(localProdutoId, localRow ?? row);
+          estoquesVinculados = mergeVinculos(estoquesVinculados, localVinculos);
+
+          const base = localRow ? { ...row, ...localRow, id: row.id } : row;
+          const fazendaIds = [...new Set(estoquesVinculados.map(e => e.fazendaId))];
+          return { ...base, fazendaIds, estoquesVinculados };
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      const local = devLocalStore.getEstoque(input.id);
+      if (!local) return null;
+      const estoquesVinculados = devLocalStore.listEstoquesVinculados(
+        local.produtoId ?? null,
+        local
+      );
+      return {
+        ...local,
+        fazendaIds: estoquesVinculados.map(e => e.fazendaId),
+        estoquesVinculados,
+      };
     }),
 
   create: protectedProcedure
     .input(z.object(estoqueInputFields))
     .mutation(async ({ input }) => {
-      const { embalagens, ...rest } = input;
-      const result = await db.insert(estoque).values({
-        ...rest,
-        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+      const fazendaIds = resolverFazendaIds(input);
+      if (fazendaIds.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Selecione pelo menos uma fazenda para usar este produto.",
+        });
+      }
+      const catalogoValues = toCatalogoInsertValues(input);
+
+      try {
+        const catalogoResult = await db.insert(produtosCatalogo).values(catalogoValues);
+        const produtoId = Number((catalogoResult as any)[0]?.insertId);
+        if (!produtoId) throw new Error("Falha ao criar produto no catálogo.");
+
+        let firstEstoqueId: number | null = null;
+        for (const fazendaId of fazendaIds) {
+          const cfg = configParaFazenda(input, fazendaId);
+          const values = toEstoqueInsertValues({
+            ...input,
+            produtoId,
+            fazendaId,
+            produzidoNaFazenda: cfg.produzidoNaFazenda,
+            monitorarEstoque: cfg.monitorarEstoque,
+            quantidadeMinima: cfg.quantidadeMinima ?? undefined,
+            quantidadeMaxima: cfg.quantidadeMaxima ?? undefined,
+            quantidade: fazendaId === fazendaIds[0] ? input.quantidade ?? "0" : "0",
+          });
+          const result = await db.insert(estoque).values(values);
+          const estoqueId = Number((result as any)[0]?.insertId);
+          if (!firstEstoqueId && estoqueId) firstEstoqueId = estoqueId;
+        }
+        return { success: true, id: firstEstoqueId ?? produtoId, produtoId };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = devLocalStore.createProdutoComEstoques({
+          ...input,
+          embalagens: input.embalagens,
+          fazendaIds,
+        });
+        return {
+          success: true,
+          id: result.id,
+          produtoId: result.produtoId,
+          localFallback: true,
+        };
+      }
     }),
 
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...estoqueInputFields }))
     .mutation(async ({ input }) => {
-      const { id, embalagens, ...rest } = input;
-      await db.update(estoque).set({
-        ...rest,
-        embalagens: embalagens?.length ? JSON.stringify(embalagens) : undefined,
-      }).where(eq(estoque.id, id));
-      return { success: true };
+      const { id, ...fields } = input;
+      const fazendaIds = resolverFazendaIds(fields);
+      if (fazendaIds.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Selecione pelo menos uma fazenda para usar este produto.",
+        });
+      }
+      const catalogoValues = toCatalogoInsertValues(fields);
+      const syncValues = toEstoqueSyncFromCatalogo(catalogoValues);
+      const localPayload = { id, ...fields, embalagens: fields.embalagens };
+
+      try {
+        const [existing] = await db.select().from(estoque).where(eq(estoque.id, id));
+
+        if (existing) {
+          let produtoId = existing.produtoId;
+          if (produtoId) {
+            await db
+              .update(produtosCatalogo)
+              .set(catalogoValues)
+              .where(eq(produtosCatalogo.id, produtoId));
+            await db
+              .update(estoque)
+              .set({
+                ...syncValues,
+                valorUnitario: fields.valorUnitario ?? existing.valorUnitario,
+                localizacao: fields.localizacao ?? existing.localizacao,
+              })
+              .where(eq(estoque.produtoId, produtoId));
+
+            // Situação operacional (ativo/inativo) é por fazenda — não cascatear a do catálogo
+
+            const linked = await db
+              .select()
+              .from(estoque)
+              .where(eq(estoque.produtoId, produtoId));
+            const linkedFazendas = new Set(
+              linked
+                .map(l => Number(l.fazendaId))
+                .filter((f): f is number => Number.isFinite(f) && f > 0)
+            );
+            const desired = new Set(fazendaIds.map(Number).filter(f => Number.isFinite(f) && f > 0));
+
+            for (const item of linked) {
+              const itemFarm = Number(item.fazendaId);
+              if (!Number.isFinite(itemFarm) || itemFarm <= 0 || desired.has(itemFarm)) continue;
+              const qty = Number(item.quantidade ?? 0);
+              const [mov] = await db
+                .select({ id: estoqueMovimentacoes.id })
+                .from(estoqueMovimentacoes)
+                .where(eq(estoqueMovimentacoes.estoqueId, item.id))
+                .limit(1);
+              if (mov || (!Number.isNaN(qty) && qty !== 0)) {
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message:
+                    "Este produto possui movimentações ou estoque nesta Fazenda. Não é possível desvincular diretamente. Inative o produto para esta Fazenda ou ajuste o estoque antes.",
+                });
+              }
+              await db.delete(estoque).where(eq(estoque.id, item.id));
+            }
+
+            for (const item of linked) {
+              const itemFarm = Number(item.fazendaId);
+              if (!Number.isFinite(itemFarm) || itemFarm <= 0 || !desired.has(itemFarm)) continue;
+              const cfg = configParaFazenda(fields, itemFarm, {
+                produzidoNaFazenda: !!item.produzidoNaFazenda,
+                monitorarEstoque: !!item.monitorarEstoque,
+                quantidadeMinima: item.quantidadeMinima != null ? String(item.quantidadeMinima) : null,
+                quantidadeMaxima: item.quantidadeMaxima != null ? String(item.quantidadeMaxima) : null,
+              });
+              await db
+                .update(estoque)
+                .set({
+                  produzidoNaFazenda: cfg.produzidoNaFazenda,
+                  monitorarEstoque: cfg.monitorarEstoque,
+                  quantidadeMinima: cfg.quantidadeMinima ?? "0",
+                  quantidadeMaxima: cfg.quantidadeMaxima,
+                })
+                .where(eq(estoque.id, item.id));
+            }
+
+            for (const fazendaId of fazendaIds) {
+              if (linkedFazendas.has(fazendaId)) continue;
+              const cfg = configParaFazenda(fields, fazendaId);
+              await db.insert(estoque).values(
+                toEstoqueInsertValues({
+                  ...fields,
+                  produtoId,
+                  fazendaId,
+                  produzidoNaFazenda: cfg.produzidoNaFazenda,
+                  monitorarEstoque: cfg.monitorarEstoque,
+                  quantidadeMinima: cfg.quantidadeMinima ?? undefined,
+                  quantidadeMaxima: cfg.quantidadeMaxima ?? undefined,
+                  quantidade: "0",
+                })
+              );
+            }
+          } else {
+            const catalogoResult = await db.insert(produtosCatalogo).values(catalogoValues);
+            produtoId = Number(
+              (catalogoResult as any)[0]?.insertId ?? (catalogoResult as any).insertId
+            );
+            const cfg = configParaFazenda(fields, existing.fazendaId ?? 0, {
+              produzidoNaFazenda: !!existing.produzidoNaFazenda,
+              monitorarEstoque: !!existing.monitorarEstoque,
+            });
+            await db
+              .update(estoque)
+              .set({
+                ...toEstoqueInsertValues({
+                  ...fields,
+                  produtoId: produtoId ?? undefined,
+                  fazendaId: existing.fazendaId ?? undefined,
+                  produzidoNaFazenda: cfg.produzidoNaFazenda,
+                  monitorarEstoque: cfg.monitorarEstoque,
+                  quantidadeMinima: cfg.quantidadeMinima ?? undefined,
+                  quantidadeMaxima: cfg.quantidadeMaxima ?? undefined,
+                }),
+                quantidade: existing.quantidade,
+              })
+              .where(eq(estoque.id, id));
+
+            if (produtoId && fazendaIds.length > 0) {
+              for (const fazendaId of fazendaIds) {
+                if (fazendaId === existing.fazendaId) continue;
+                const farmCfg = configParaFazenda(fields, fazendaId);
+                await db.insert(estoque).values(
+                  toEstoqueInsertValues({
+                    ...fields,
+                    produtoId,
+                    fazendaId,
+                    produzidoNaFazenda: farmCfg.produzidoNaFazenda,
+                    monitorarEstoque: farmCfg.monitorarEstoque,
+                    quantidadeMinima: farmCfg.quantidadeMinima ?? undefined,
+                    quantidadeMaxima: farmCfg.quantidadeMaxima ?? undefined,
+                    quantidade: "0",
+                  })
+                );
+              }
+            }
+          }
+
+          if (devLocalStore.getEstoque(id)) {
+            devLocalStore.updateProdutoComEstoques(localPayload);
+          } else if (produtoId) {
+            // Espelha no local mesmo se o id editado só existir no MySQL
+            const localAny = devLocalStore.listEstoque().find(e => e.produtoId === produtoId);
+            if (localAny) {
+              devLocalStore.updateProdutoComEstoques({ ...localPayload, id: localAny.id });
+            }
+          }
+          return { success: true, produtoId: produtoId ?? undefined };
+        }
+
+        const local = devLocalStore.getEstoque(id);
+        if (local) {
+          devLocalStore.updateProdutoComEstoques(localPayload);
+          return { success: true, localFallback: true };
+        }
+
+        throw new TRPCError({ code: "NOT_FOUND", message: "Produto não encontrado" });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        devLocalStore.updateProdutoComEstoques(localPayload);
+        return { success: true, localFallback: true };
+      }
+    }),
+
+  vincularFazenda: protectedProcedure
+    .input(z.object({
+      produtoId: z.number(),
+      fazendaId: z.number(),
+      produzidoNaFazenda: z.boolean().optional(),
+      monitorarEstoque: z.boolean().optional(),
+      quantidadeMinima: z.string().optional(),
+      quantidadeMaxima: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const [catalogo] = await db
+          .select()
+          .from(produtosCatalogo)
+          .where(eq(produtosCatalogo.id, input.produtoId));
+        if (!catalogo) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Produto do catálogo não encontrado." });
+        }
+        const [existing] = await db
+          .select({ id: estoque.id })
+          .from(estoque)
+          .where(
+            and(eq(estoque.produtoId, input.produtoId), eq(estoque.fazendaId, input.fazendaId))
+          )
+          .limit(1);
+        if (existing) {
+          const patch: Record<string, unknown> = {};
+          if (input.produzidoNaFazenda != null) patch.produzidoNaFazenda = input.produzidoNaFazenda;
+          if (input.monitorarEstoque != null) patch.monitorarEstoque = input.monitorarEstoque;
+          if (input.quantidadeMinima !== undefined) patch.quantidadeMinima = input.quantidadeMinima;
+          if (input.quantidadeMaxima !== undefined) patch.quantidadeMaxima = input.quantidadeMaxima;
+          if (Object.keys(patch).length > 0) {
+            await db.update(estoque).set(patch).where(eq(estoque.id, existing.id));
+          }
+          return { success: true, id: existing.id, alreadyLinked: true };
+        }
+        const values = toEstoqueInsertValues({
+          produtoId: input.produtoId,
+          fazendaId: input.fazendaId,
+          nome: catalogo.nome,
+          categoria: catalogo.categoria ?? "",
+          subcategoria: catalogo.subcategoria ?? "",
+          unidade: catalogo.unidade ?? "",
+          monitorarEstoque: input.monitorarEstoque ?? false,
+          situacao: (catalogo.situacao as "ativo" | "inativo" | undefined) ?? "ativo",
+          quantidadeMinima: input.quantidadeMinima,
+          quantidadeMaxima: input.quantidadeMaxima,
+          fabricante: catalogo.fabricante ?? undefined,
+          identificadorUnico: catalogo.identificadorUnico ?? undefined,
+          produzidoNaFazenda: input.produzidoNaFazenda ?? false,
+          possuiCarencia: catalogo.possuiCarencia ?? false,
+          carenciaAbateDias: catalogo.carenciaAbateDias,
+          carenciaAbateUnidade: (catalogo.carenciaAbateUnidade as "d" | "h" | null) ?? "d",
+          carenciaLeiteDias: catalogo.carenciaLeiteDias,
+          observacoesCarencia: catalogo.observacoesCarencia,
+          observacoes: catalogo.observacoes ?? undefined,
+          quantidade: "0",
+        });
+        const result = await db.insert(estoque).values(values);
+        return { success: true, id: Number((result as any)[0]?.insertId) };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = devLocalStore.vincularFazenda(input);
+        return { success: true, id: result.id, localFallback: true, alreadyLinked: result.alreadyLinked };
+      }
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({
+      id: z.number(),
+      /** fazenda = desvincular só desta fazenda; catalogo = apagar produto inteiro */
+      escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
+    }))
     .mutation(async ({ input }) => {
-      await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.estoqueId, input.id));
-      await db.delete(estoque).where(eq(estoque.id, input.id));
-      return { success: true };
+      const deleteLocal = () => {
+        try {
+          return devLocalStore.deleteEstoque(input.id, input.escopo);
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("desvincular")) throw err;
+          return { success: true, escopo: input.escopo };
+        }
+      };
+
+      try {
+        const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
+        if (!row) {
+          const local = deleteLocal();
+          return { success: true, localFallback: true, escopo: input.escopo, ...local };
+        }
+
+        if (input.escopo === "fazenda") {
+          const qty = Number(row.quantidade ?? 0);
+          const [mov] = await db
+            .select({ id: estoqueMovimentacoes.id })
+            .from(estoqueMovimentacoes)
+            .where(eq(estoqueMovimentacoes.estoqueId, row.id))
+            .limit(1);
+          if (mov || (!Number.isNaN(qty) && qty !== 0)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Este produto possui movimentações ou estoque nesta Fazenda. Não é possível desvincular diretamente. Inative o produto para esta Fazenda ou ajuste o estoque antes.",
+            });
+          }
+
+          await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.estoqueId, row.id));
+          await db.delete(estoque).where(eq(estoque.id, row.id));
+
+          if (row.produtoId) {
+            const restantes = await db
+              .select({ id: estoque.id })
+              .from(estoque)
+              .where(eq(estoque.produtoId, row.produtoId))
+              .limit(1);
+            if (restantes.length === 0) {
+              await db.delete(produtosCatalogo).where(eq(produtosCatalogo.id, row.produtoId));
+            }
+          }
+
+          try {
+            deleteLocal();
+          } catch { /* ignore */ }
+          return { success: true, escopo: "fazenda" as const };
+        }
+
+        // Catálogo: remove todas as fazendas + ficha
+        const produtoId = row.produtoId;
+        let estoqueIds = [row.id];
+        if (produtoId) {
+          const linked = await db
+            .select({ id: estoque.id })
+            .from(estoque)
+            .where(eq(estoque.produtoId, produtoId));
+          estoqueIds = linked.map(l => l.id);
+        }
+
+        if (estoqueIds.length > 0) {
+          await db
+            .delete(estoqueMovimentacoes)
+            .where(inArray(estoqueMovimentacoes.estoqueId, estoqueIds));
+          await db.delete(estoque).where(inArray(estoque.id, estoqueIds));
+        }
+        if (produtoId) {
+          await db.delete(produtosCatalogo).where(eq(produtosCatalogo.id, produtoId));
+        }
+
+        try {
+          deleteLocal();
+        } catch { /* ignore */ }
+        return { success: true, escopo: "catalogo" as const };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          const local = deleteLocal();
+          return { success: true, localFallback: true, escopo: input.escopo, ...local };
+        } catch (localErr) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: localErr instanceof Error ? localErr.message : "Não foi possível desvincular o produto.",
+          });
+        }
+      }
     }),
 
   inativarProdutos: protectedProcedure
-    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .input(z.object({
+      ids: z.array(z.number()).min(1),
+      /** fazenda = só os estoques informados; catalogo = produto inteiro + todas as fazendas */
+      escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
+    }))
     .mutation(async ({ input }) => {
-      await db
-        .update(estoque)
-        .set({ situacao: "inativo" })
-        .where(inArray(estoque.id, input.ids));
-      return { success: true, count: input.ids.length };
+      const aplicar = async () => {
+        if (input.escopo === "fazenda") {
+          await db
+            .update(estoque)
+            .set({ situacao: "inativo" })
+            .where(inArray(estoque.id, input.ids));
+          return { success: true, count: input.ids.length, escopo: input.escopo as const };
+        }
+
+        // Catálogo: resolve todos os estoques vinculados e a ficha mestra
+        const rows = await db.select().from(estoque).where(inArray(estoque.id, input.ids));
+        const produtoIds = new Set<number>();
+        const estoqueIds = new Set<number>(input.ids);
+        for (const row of rows) {
+          if (row.produtoId) produtoIds.add(row.produtoId);
+        }
+        if (produtoIds.size > 0) {
+          const linked = await db
+            .select({ id: estoque.id, produtoId: estoque.produtoId })
+            .from(estoque)
+            .where(inArray(estoque.produtoId, [...produtoIds]));
+          for (const l of linked) estoqueIds.add(l.id);
+          await db
+            .update(produtosCatalogo)
+            .set({ situacao: "inativo" })
+            .where(inArray(produtosCatalogo.id, [...produtoIds]));
+        }
+        const ids = [...estoqueIds];
+        if (ids.length > 0) {
+          await db.update(estoque).set({ situacao: "inativo" }).where(inArray(estoque.id, ids));
+        }
+        return { success: true, count: ids.length, escopo: input.escopo as const };
+      };
+
+      try {
+        const result = await aplicar();
+        try {
+          devLocalStore.inativarProdutos(input.ids, input.escopo);
+        } catch { /* ignore */ }
+        return result;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = devLocalStore.inativarProdutos(input.ids, input.escopo);
+        return { ...result, localFallback: true };
+      }
     }),
 
   ativarProdutos: protectedProcedure
-    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .input(z.object({
+      ids: z.array(z.number()).min(1),
+      escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
+    }))
     .mutation(async ({ input }) => {
-      await db
-        .update(estoque)
-        .set({ situacao: "ativo" })
-        .where(inArray(estoque.id, input.ids));
-      return { success: true, count: input.ids.length };
+      const aplicar = async () => {
+        if (input.escopo === "fazenda") {
+          await db
+            .update(estoque)
+            .set({ situacao: "ativo" })
+            .where(inArray(estoque.id, input.ids));
+          return { success: true, count: input.ids.length, escopo: input.escopo as const };
+        }
+
+        const rows = await db.select().from(estoque).where(inArray(estoque.id, input.ids));
+        const produtoIds = new Set<number>();
+        const estoqueIds = new Set<number>(input.ids);
+        for (const row of rows) {
+          if (row.produtoId) produtoIds.add(row.produtoId);
+        }
+        if (produtoIds.size > 0) {
+          const linked = await db
+            .select({ id: estoque.id, produtoId: estoque.produtoId })
+            .from(estoque)
+            .where(inArray(estoque.produtoId, [...produtoIds]));
+          for (const l of linked) estoqueIds.add(l.id);
+          await db
+            .update(produtosCatalogo)
+            .set({ situacao: "ativo" })
+            .where(inArray(produtosCatalogo.id, [...produtoIds]));
+        }
+        const ids = [...estoqueIds];
+        if (ids.length > 0) {
+          await db.update(estoque).set({ situacao: "ativo" }).where(inArray(estoque.id, ids));
+        }
+        return { success: true, count: ids.length, escopo: input.escopo as const };
+      };
+
+      try {
+        const result = await aplicar();
+        try {
+          devLocalStore.ativarProdutos(input.ids, input.escopo);
+        } catch { /* ignore */ }
+        return result;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = devLocalStore.ativarProdutos(input.ids, input.escopo);
+        return { ...result, localFallback: true };
+      }
     }),
 
   resumo: protectedProcedure.query(async () => {
-    const itens = await db.select().from(estoque);
-    const monitorados = itens.filter(i => i.monitorarEstoque);
-    const abaixoLimite = monitorados.filter(i => {
-      const q = Number(i.quantidade ?? 0);
-      const min = Number(i.quantidadeMinima ?? 0);
-      return min > 0 && q <= min;
-    });
-    return {
-      totalMonitorados: monitorados.length,
-      totalAbaixoLimite: abaixoLimite.length,
-    };
+    try {
+      const itens = await db.select().from(estoque);
+      const monitorados = itens.filter(i => i.monitorarEstoque);
+      const abaixoLimite = monitorados.filter(i => {
+        const q = Number(i.quantidade ?? 0);
+        const min = Number(i.quantidadeMinima ?? 0);
+        return min > 0 && q <= min;
+      });
+      return {
+        totalMonitorados: monitorados.length,
+        totalAbaixoLimite: abaixoLimite.length,
+      };
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      const itens = devLocalStore.listEstoque();
+      const monitorados = itens.filter(i => i.monitorarEstoque);
+      const abaixoLimite = monitorados.filter(i => {
+        const q = Number(i.quantidade ?? 0);
+        const min = Number(i.quantidadeMinima ?? 0);
+        return min > 0 && q <= min;
+      });
+      return {
+        totalMonitorados: monitorados.length,
+        totalAbaixoLimite: abaixoLimite.length,
+      };
+    }
   }),
 
   listMovimentacoes: protectedProcedure.query(async () => {
-    const rows = await db
-      .select({
-        id: estoqueMovimentacoes.id,
-        estoqueId: estoqueMovimentacoes.estoqueId,
-        fazendaId: estoqueMovimentacoes.fazendaId,
-        produtoFazendaId: estoque.fazendaId,
-        tipo: estoqueMovimentacoes.tipo,
-        dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
-        quantidade: estoqueMovimentacoes.quantidade,
-        dataValidade: estoqueMovimentacoes.dataValidade,
-        destino: estoqueMovimentacoes.destino,
-        manejo: estoqueMovimentacoes.manejo,
-        notaFiscal: estoqueMovimentacoes.notaFiscal,
-        frete: estoqueMovimentacoes.frete,
-        fornecedor: estoqueMovimentacoes.fornecedor,
-        valor: estoqueMovimentacoes.valor,
-        observacoes: estoqueMovimentacoes.observacoes,
-        nome: estoque.nome,
-        categoria: estoque.categoria,
-        subcategoria: estoque.subcategoria,
-        fabricante: estoque.fabricante,
-        identificadorUnico: estoque.identificadorUnico,
-        unidade: estoque.unidade,
-      })
-      .from(estoqueMovimentacoes)
-      .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
-      .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
-    return rows;
+    try {
+      const rows = await db
+        .select({
+          id: estoqueMovimentacoes.id,
+          estoqueId: estoqueMovimentacoes.estoqueId,
+          fazendaId: estoqueMovimentacoes.fazendaId,
+          produtoFazendaId: estoque.fazendaId,
+          tipo: estoqueMovimentacoes.tipo,
+          dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
+          quantidade: estoqueMovimentacoes.quantidade,
+          dataValidade: estoqueMovimentacoes.dataValidade,
+          destino: estoqueMovimentacoes.destino,
+          manejo: estoqueMovimentacoes.manejo,
+          notaFiscal: estoqueMovimentacoes.notaFiscal,
+          frete: estoqueMovimentacoes.frete,
+          fornecedor: estoqueMovimentacoes.fornecedor,
+          valor: estoqueMovimentacoes.valor,
+          observacoes: estoqueMovimentacoes.observacoes,
+          nome: estoque.nome,
+          categoria: estoque.categoria,
+          subcategoria: estoque.subcategoria,
+          fabricante: estoque.fabricante,
+          identificadorUnico: estoque.identificadorUnico,
+          unidade: estoque.unidade,
+          situacao: estoque.situacao,
+        })
+        .from(estoqueMovimentacoes)
+        .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+        .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
+      const localRows = devLocalStore.listMovimentacoes();
+      if (localRows.length === 0) return rows;
+      const ids = new Set(rows.map(r => r.id));
+      const extras = localRows.filter(r => !ids.has(r.id));
+      return [...rows, ...extras];
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      return devLocalStore.listMovimentacoes();
+    }
   }),
 
   getMovimentacao: protectedProcedure
@@ -4964,6 +5629,7 @@ const estoqueRouter = router({
           fabricante: estoque.fabricante,
           unidade: estoque.unidade,
           embalagens: estoque.embalagens,
+          situacao: estoque.situacao,
         })
         .from(estoqueMovimentacoes)
         .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
@@ -4974,7 +5640,7 @@ const estoqueRouter = router({
   createMovimentacao: protectedProcedure
     .input(z.object({
       estoqueId: z.number(),
-      fazendaId: z.number().optional(),
+      fazendaId: z.number({ required_error: "Informe a fazenda da movimentação." }),
       tipo: z.string().optional(),
       dataMovimentacao: z.string(),
       quantidade: z.string(),
@@ -4997,44 +5663,60 @@ const estoqueRouter = router({
       if (Number.isNaN(qty) || qty === 0) {
         throw new Error("Informe uma quantidade válida.");
       }
-      const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-      if (!item) throw new Error("Produto não encontrado.");
-
-      const atual = Number(item.quantidade ?? 0);
-      const novo = atual + qty;
-      if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
-
-      let observacoes = input.observacoes;
-      if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
-        observacoes = JSON.stringify({
-          modo: input.modo,
-          sinal: input.sinal,
-          unidades: input.quantidadeUnidades,
-          porUnidade: input.quantidadePorUnidade,
-          unidade: input.unidadeLancamento,
-          total: qty,
-        });
+      if (!input.fazendaId) {
+        throw new Error("Informe a fazenda da movimentação.");
       }
 
-      const result = await db.insert(estoqueMovimentacoes).values({
-        estoqueId: input.estoqueId,
-        fazendaId: input.fazendaId ?? item.fazendaId ?? undefined,
-        tipo: input.tipo || undefined,
-        dataMovimentacao: input.dataMovimentacao,
-        quantidade: String(qty),
-        dataValidade: input.dataValidade || undefined,
-        destino: input.destino || undefined,
-        manejo: input.manejo || undefined,
-        notaFiscal: input.notaFiscal || undefined,
-        frete: input.frete || undefined,
-        fornecedor: input.fornecedor || undefined,
-        valor: input.valor || undefined,
-        observacoes,
-      });
+      try {
+        const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+        if (!item) {
+          const result = devLocalStore.createMovimentacao(input);
+          return { success: true, id: result.id, localFallback: true };
+        }
 
-      await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+        const atual = Number(item.quantidade ?? 0);
+        const novo = atual + qty;
+        if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
 
-      return { success: true, id: (result as any)[0]?.insertId };
+        let observacoes = input.observacoes;
+        if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
+          observacoes = JSON.stringify({
+            modo: input.modo,
+            sinal: input.sinal,
+            unidades: input.quantidadeUnidades,
+            porUnidade: input.quantidadePorUnidade,
+            unidade: input.unidadeLancamento,
+            total: qty,
+          });
+        }
+
+        const result = await db.insert(estoqueMovimentacoes).values({
+          estoqueId: input.estoqueId,
+          fazendaId: input.fazendaId ?? item.fazendaId ?? undefined,
+          tipo: input.tipo || undefined,
+          dataMovimentacao: input.dataMovimentacao,
+          quantidade: String(qty),
+          dataValidade: input.dataValidade || undefined,
+          destino: input.destino || undefined,
+          manejo: input.manejo || undefined,
+          notaFiscal: input.notaFiscal || undefined,
+          frete: input.frete || undefined,
+          fornecedor: input.fornecedor || undefined,
+          valor: input.valor || undefined,
+          observacoes,
+        });
+
+        await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+
+        return { success: true, id: (result as any)[0]?.insertId };
+      } catch (error) {
+        if (error instanceof Error && /estoque insuficiente|quantidade válida/i.test(error.message)) {
+          throw error;
+        }
+        if (!isDatabaseUnavailable(error)) throw error;
+        const result = devLocalStore.createMovimentacao(input);
+        return { success: true, id: result.id, localFallback: true };
+      }
     }),
 
   updateMovimentacao: protectedProcedure

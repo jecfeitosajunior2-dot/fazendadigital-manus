@@ -33,6 +33,7 @@ import EditLotePage from "./pages/EditLotePage";
 import { SaudePage } from "./pages/ReproductionManagementPage";
 import { ReproductionManagementPage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
+import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
@@ -137,7 +138,7 @@ function ProtectedRoutes() {
       <Route path="/financeiro/contas" component={FinancialManagementPage} />
       <Route path="/financeiro/movimentacao" component={FinancialManagementPage} />
       <Route path="/financeiro/categorias" component={FinancialManagementPage} />
-      <Route path="/financeiro/pessoas" component={FinancialManagementPage} />
+      <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
 
       {/* Reports */}
       <Route path="/relatorios/visao-geral" component={ReportsManagementPage} />

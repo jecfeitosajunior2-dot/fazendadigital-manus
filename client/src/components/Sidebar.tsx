@@ -490,8 +490,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50
           lg:relative lg:z-auto
           transition-[width,transform] duration-200 ease-out
-          ${mobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"}
-          lg:translate-x-0
+          ${mobileOpen ? "max-lg:translate-x-0 max-lg:pointer-events-auto" : "max-lg:-translate-x-full max-lg:pointer-events-none"}
+          lg:translate-x-0 lg:pointer-events-auto
           ${collapsed ? "w-[60px]" : "w-[220px]"}
         `}
         style={{ backgroundColor: "#0F172A", backgroundImage: "linear-gradient(180deg, #0F172A 0%, #0D1B2A 100%)" }}

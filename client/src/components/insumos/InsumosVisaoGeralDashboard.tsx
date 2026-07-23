@@ -9,7 +9,7 @@ import {
   Pie,
   PieChart,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -54,7 +54,9 @@ export default function InsumosVisaoGeralDashboard() {
   const [periodo, setPeriodo] = useState<PeriodoChave>("90d");
 
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
-  const { data: movs = [] } = trpc.estoque.listMovimentacoes.useQuery();
+  const { data: movs = [] } = trpc.estoque.listMovimentacoes.useQuery(undefined, {
+    refetchOnMount: "always",
+  });
 
   // Mapa de valor unitário por produto (para estimar valor das movimentações).
   const valorUnitMap = useMemo(() => {
@@ -262,7 +264,8 @@ export default function InsumosVisaoGeralDashboard() {
       .slice(0, 6);
   }, [movs, valorUnitMap, periodo]);
 
-  const temProdutos = produtos.length > 0;
+  const temProdutosAtivos = estoque.ativos.length > 0;
+  const totalProdutosCadastrados = estoque.ativos.length;
 
   return (
     <div className="space-y-5 mb-5">
@@ -273,8 +276,13 @@ export default function InsumosVisaoGeralDashboard() {
             Visão Geral de Insumos
           </h1>
           <p className="text-[12px] text-gray-500">Inteligência de estoque, consumo e validade</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Resumo gerencial — acompanhe indicadores, alertas e movimentações recentes</p>
         </div>
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+        <div
+          className={`flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 ${
+            !temProdutosAtivos ? "opacity-80" : ""
+          }`}
+        >
           {PERIODOS.map(p => (
             <button
               key={p.chave}
@@ -291,6 +299,34 @@ export default function InsumosVisaoGeralDashboard() {
         </div>
       </div>
 
+      {!temProdutosAtivos ? (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-12 sm:py-14 text-center">
+          <img
+            src="/assets/icon-insumo-saco-green.png"
+            alt="Insumos"
+            width={48}
+            height={48}
+            className="mx-auto"
+            style={{ objectFit: "contain" }}
+          />
+          <h2 className="text-[18px] font-semibold text-gray-900 mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+            Nenhum produto cadastrado.
+          </h2>
+          <p className="text-[13px] text-gray-600 mt-2 max-w-xl mx-auto leading-relaxed">
+            Para começar, acesse <strong className="font-medium text-gray-700">Lista de Produtos</strong> e cadastre seus insumos.
+            Depois, registre entradas e saídas em <strong className="font-medium text-gray-700">Movimentação</strong> para alimentar os indicadores.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLocation("/insumos/lista-produtos")}
+            className="mt-6 px-6 py-2.5 rounded text-[11px] font-semibold uppercase tracking-wide text-white hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: TEAL }}
+          >
+            Ir para Lista de Produtos
+          </button>
+        </div>
+      ) : (
+        <>
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KpiCard
@@ -302,34 +338,34 @@ export default function InsumosVisaoGeralDashboard() {
         />
         <KpiCard
           label="Produtos ativos"
-          value={num(estoque.ativos.length)}
+          value={num(totalProdutosCadastrados)}
           icon="inventory_2"
           color={TEAL}
-          sub={<span>{num(estoque.totalCategorias)} categorias</span>}
+          sub={<span>{num(totalProdutosCadastrados)} produtos cadastrados</span>}
         />
         <KpiCard
-          label="Abaixo do mínimo"
+          label="Abaixo do estoque mínimo"
           value={num(estoque.abaixoMin.length)}
           icon="production_quantity_limits"
           color={estoque.abaixoMin.length > 0 ? RED : GREEN}
           sub={<span>repor estoque</span>}
         />
         <KpiCard
-          label="Vencendo (30d)"
+          label="Vencendo em 30 dias"
           value={num(alertas.validade.length)}
           icon="event_busy"
           color={alertas.temVencido ? RED : alertas.validade.length > 0 ? GOLD : GREEN}
           sub={<span>{alertas.temVencido ? "há itens vencidos" : "validade próxima"}</span>}
         />
         <KpiCard
-          label="Comprado período"
+          label="Compras no período"
           value={brlCompact(periodoTotais.comprado)}
           icon="shopping_cart"
           color={NAVY}
           sub={<span>entradas</span>}
         />
         <KpiCard
-          label="Consumo período"
+          label="Consumo no período"
           value={brlCompact(periodoTotais.consumido)}
           icon="local_fire_department"
           color="#0891B2"
@@ -382,7 +418,7 @@ export default function InsumosVisaoGeralDashboard() {
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number, n: string) => [brl(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                    <RechartsTooltip formatter={(v: number, n: string) => [brl(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-1.5 mt-2">
@@ -411,7 +447,7 @@ export default function InsumosVisaoGeralDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={v => brlCompact(v).replace("R$ ", "")} />
-                  <Tooltip formatter={(v: number, n: string) => [brl(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                  <RechartsTooltip formatter={(v: number, n: string) => [brl(v), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="entrada" name="Entradas" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
                   <Bar dataKey="saida" name="Saídas" fill={GOLD} radius={[4, 4, 0, 0]} maxBarSize={28} />
@@ -472,11 +508,7 @@ export default function InsumosVisaoGeralDashboard() {
           )}
         </SectionCard>
       </div>
-
-      {!temProdutos && (
-        <div className="text-center text-[12px] text-gray-400">
-          Cadastre produtos e registre movimentações — os indicadores e alertas se preenchem automaticamente.
-        </div>
+        </>
       )}
     </div>
   );

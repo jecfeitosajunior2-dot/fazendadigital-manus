@@ -5,13 +5,21 @@ import { FD_PRIMARY } from "@/components/FormFields";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { ViewEditDeleteRowActionButtons } from "@/components/icons/FarmActionIcons";
+import {
+  ViewEditDeleteRowActionButtons,
+  EditActionIcon,
+  DeleteActionIcon,
+  InactivateActionIcon,
+  ActivateActionIcon,
+  TableIconButton,
+} from "@/components/icons/FarmActionIcons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { normalizarUnidade, nomeUnidadeExibicao } from '@/lib/produto-types';
+import { normalizarUnidade, nomeUnidadeExibicao, formatDataBr, sinalDoTipo } from '@/lib/produto-types';
+import { brl, diasAte } from '@/lib/dashboard-utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import {
   ANIMAIS_LIST_FILTERS_STORAGE_KEY,
@@ -535,16 +543,129 @@ export function AnimaisPage() {
   );
 }
 
-// ─── Lista de Produtos (iRancho fiel) ────────────────────────────────────────
+// ─── Lista de Produtos ───────────────────────────────────────────────────────
 
 type SortKeyEstoque =
-  | "nome" | "categoria" | "situacao" | "fabricante" | "identificadorUnico"
-  | "quantidadeMinima" | "quantidadeMaxima" | "quantidade" | "unidade" | "valorUnitario";
+  | "nome" | "categoria" | "quantidade" | "quantidadeMinima"
+  | "validade" | "valorEmEstoque" | "status";
+
+type StatusProdutoExibicao = "ativo" | "inativo" | "abaixo_minimo" | "vencendo" | "vencido";
+
+type EstoqueItem = {
+  id: number;
+  produtoId?: number | null;
+  nome: string;
+  categoria?: string | null;
+  unidade?: string | null;
+  quantidade?: string | number | null;
+  quantidadeMinima?: string | number | null;
+  quantidadeMaxima?: string | number | null;
+  valorUnitario?: string | number | null;
+  monitorarEstoque?: boolean | null;
+  situacao?: string | null;
+  fabricante?: string | null;
+  identificadorUnico?: string | number | null;
+  fazendaId?: number | null;
+  /** Quando agrega catálogo sem filtro de fazenda */
+  fazendasVinculadas?: string[];
+  idsEstoque?: number[];
+  /** Alerta de mínimo em alguma fazenda (visão agregada) */
+  alertaAbaixoAgregado?: boolean;
+};
+
+const numEstoque = (v: unknown) => {
+  const n = Number(v);
+  return Number.isNaN(n) ? 0 : n;
+};
+
+const formatEstoqueComUnidade = (qtd: number, unidade: string | null | undefined) => {
+  const un = nomeUnidadeExibicao(unidade);
+  const abs = Math.abs(qtd);
+  const isWhole = abs % 1 === 0;
+  const formatted = abs.toLocaleString("pt-BR", {
+    minimumFractionDigits: isWhole ? 0 : 2,
+    maximumFractionDigits: isWhole ? 0 : 2,
+  });
+  const signed = qtd < 0 ? `-${formatted}` : formatted;
+  return un ? `${signed} ${un}` : signed;
+};
+
+const resolverStatusProduto = (
+  item: EstoqueItem,
+  validade: string | null | undefined,
+): StatusProdutoExibicao => {
+  if (item.situacao === "inativo") return "inativo";
+  const dias = validade ? diasAte(validade) : null;
+  if (dias != null && dias < 0) return "vencido";
+  if (dias != null && dias <= 30) return "vencendo";
+  if (item.alertaAbaixoAgregado) return "abaixo_minimo";
+  if (
+    item.monitorarEstoque &&
+    numEstoque(item.quantidadeMinima) > 0 &&
+    numEstoque(item.quantidade) <= numEstoque(item.quantidadeMinima)
+  ) {
+    return "abaixo_minimo";
+  }
+  return "ativo";
+};
+
+const STATUS_PRODUTO_LABEL: Record<StatusProdutoExibicao, string> = {
+  ativo: "Ativo",
+  inativo: "Inativo",
+  abaixo_minimo: "Abaixo do mínimo",
+  vencendo: "Vencendo",
+  vencido: "Vencido",
+};
+
+const STATUS_PRODUTO_CLASS: Record<StatusProdutoExibicao, string> = {
+  ativo: "bg-green-100 text-green-700",
+  inativo: "bg-gray-100 text-gray-600",
+  abaixo_minimo: "bg-orange-100 text-orange-700",
+  vencendo: "bg-amber-100 text-amber-800",
+  vencido: "bg-red-100 text-red-700",
+};
+
+function StatusProdutoBadge({ status }: { status: StatusProdutoExibicao }) {
+  return (
+    <span className={`px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${STATUS_PRODUTO_CLASS[status]}`}>
+      {STATUS_PRODUTO_LABEL[status]}
+    </span>
+  );
+}
+
+function ListaProdutosEmptyState() {
+  return (
+    <div className="py-12 sm:py-14 px-6 text-center">
+      <img
+        src="/assets/icon-insumo-saco-green.png"
+        alt="Insumos"
+        width={48}
+        height={48}
+        className="mx-auto"
+        style={{
+          objectFit: "contain",
+          filter:
+            "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+        }}
+      />
+      <h2 className="text-[18px] font-semibold text-gray-900 mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+        Nenhum produto cadastrado.
+      </h2>
+      <p className="text-[13px] text-gray-600 mt-2 max-w-xl mx-auto leading-relaxed">
+        Cadastre insumos como sal mineral, medicamentos, vacinas, defensivos, sementes, ração ou outros produtos usados na fazenda.
+      </p>
+    </div>
+  );
+}
 
 export function EstoquePage() {
   const [, setLocation] = useLocation();
+  const confirmAction = useConfirm();
+  const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
-  const [estoqueFiltro, setEstoqueFiltro] = useState<string>("todos");
+  /** Vazio = nenhuma fazenda selecionada (obrigatório escolher) */
+  const [estoqueFiltro, setEstoqueFiltro] = useState<string>("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [statusFiltro, setStatusFiltro] = useState<"ativo" | "inativo" | "todos">("ativo");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -552,54 +673,156 @@ export function EstoquePage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: items = [], isLoading, refetch } = trpc.estoque.list.useQuery();
+  const { data: movs = [] } = trpc.estoque.listMovimentacoes.useQuery();
+
+  useEffect(() => {
+    if (loadingFazendas || fazendaInitDone) return;
+    if (!fazendas.length) {
+      setFazendaInitDone(true);
+      return;
+    }
+    const ids = fazendas.map(f => f.id);
+    const fromStorage = readPersistedRebanhoFazendaId(ids);
+    const resolved =
+      fromStorage ||
+      (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setEstoqueFiltro(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone, loadingFazendas]);
+
+  const fazendaSelecionada = Boolean(estoqueFiltro);
+  const fazendaSelecionadaNome = useMemo(
+    () => fazendas.find(f => String(f.id) === estoqueFiltro)?.nome,
+    [fazendas, estoqueFiltro]
+  );
+
   const deleteMutation = trpc.estoque.delete.useMutation({
-    onSuccess: () => { toast.success("Produto removido!"); refetch(); },
-  });
-  const inativarMutation = trpc.estoque.inativarProdutos.useMutation({
-    onSuccess: (data) => {
-      toast.success(`${data.count} produto(s) inativado(s)!`);
+    onSuccess: async (data) => {
+      toast.success(
+        data.escopo === "catalogo"
+          ? "Produto removido do catálogo!"
+          : "Produto desvinculado desta Fazenda!"
+      );
       setSelectedIds(new Set());
-      refetch();
+      await utils.estoque.list.invalidate();
+      await utils.estoque.listMovimentacoes.invalidate();
+      await refetch();
+    },
+    onError: (e) => toast.error(e.message || "Não foi possível excluir o produto."),
+  });
+
+  const inativarMutation = trpc.estoque.inativarProdutos.useMutation({
+    onSuccess: () => {
+      toast.success("Produto(s) inativado(s) nesta Fazenda.");
+      setSelectedIds(new Set());
+      void utils.estoque.list.invalidate();
+      void refetch();
     },
     onError: () => toast.error("Não foi possível inativar os produtos."),
   });
   const ativarMutation = trpc.estoque.ativarProdutos.useMutation({
-    onSuccess: (data) => {
-      toast.success(`${data.count} produto(s) ativado(s)!`);
+    onSuccess: () => {
+      toast.success("Produto(s) ativado(s) nesta Fazenda.");
       setSelectedIds(new Set());
-      refetch();
+      void utils.estoque.list.invalidate();
+      void refetch();
     },
     onError: () => toast.error("Não foi possível ativar os produtos."),
   });
 
-  const acaoEmLote = useMemo((): "ativar" | "inativar" | null => {
-    if (selectedIds.size === 0) return null;
-    if (statusFiltro === "inativo") return "ativar";
-    if (statusFiltro === "ativo") return "inativar";
-    const selecionados = items.filter(i => selectedIds.has(i.id));
-    if (selecionados.every(i => i.situacao === "inativo")) return "ativar";
-    if (selecionados.every(i => (i.situacao ?? "ativo") === "ativo")) return "inativar";
-    return null;
-  }, [selectedIds, statusFiltro, items]);
+  const validadePorProduto = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const mv of movs) {
+      if (!mv.dataValidade) continue;
+      const atual = map.get(mv.estoqueId);
+      if (!atual || mv.dataValidade < atual) map.set(mv.estoqueId, mv.dataValidade);
+    }
+    return map;
+  }, [movs]);
+
+  const fornecedoresPorProduto = useMemo(() => {
+    const map = new Map<number, Set<string>>();
+    for (const mv of movs) {
+      if (!mv.fornecedor?.trim()) continue;
+      const fornecedor = mv.fornecedor.trim().toLowerCase();
+      if (!map.has(mv.estoqueId)) map.set(mv.estoqueId, new Set());
+      map.get(mv.estoqueId)!.add(fornecedor);
+    }
+    return map;
+  }, [movs]);
+
+  const produtosComMovimentacao = useMemo(() => {
+    const set = new Set<number>();
+    for (const mv of movs) set.add(mv.estoqueId);
+    return set;
+  }, [movs]);
+
+  const precoMedioImplicit = useMemo(() => {
+    const totalQtd = new Map<number, number>();
+    const totalVal = new Map<number, number>();
+    for (const mv of movs) {
+      const sinal = mv.tipo ? sinalDoTipo(mv.tipo) : numEstoque(mv.quantidade) < 0 ? "saida" : "entrada";
+      if (sinal === "saida") continue;
+      const qtd = Math.abs(numEstoque(mv.quantidade));
+      const val = numEstoque(mv.valor);
+      if (qtd > 0 && val > 0) {
+        totalQtd.set(mv.estoqueId, (totalQtd.get(mv.estoqueId) ?? 0) + qtd);
+        totalVal.set(mv.estoqueId, (totalVal.get(mv.estoqueId) ?? 0) + val);
+      }
+    }
+    const map = new Map<number, number>();
+    for (const [id, qtd] of totalQtd.entries()) {
+      const val = totalVal.get(id) ?? 0;
+      map.set(id, qtd > 0 ? val / qtd : 0);
+    }
+    return map;
+  }, [movs]);
+
+  const precoEfetivo = (item: EstoqueItem) =>
+    numEstoque(item.valorUnitario) || (precoMedioImplicit.get(item.id) ?? 0);
+
+  const valorEmEstoque = (item: EstoqueItem) =>
+    numEstoque(item.quantidade) * precoEfetivo(item);
+
+  const novoProdutoPath = fazendaSelecionada
+    ? `/insumos/cadastro?fazendaId=${estoqueFiltro}`
+    : "/insumos/cadastro";
+
+  const handleNovoProduto = () => {
+    if (!fazendaSelecionada) {
+      toast.error("Selecione uma fazenda antes de cadastrar ou vincular um produto ao estoque.");
+      return;
+    }
+    setLocation(novoProdutoPath);
+  };
 
   const filtered = useMemo(() => {
-    let list = [...items];
-    if (estoqueFiltro !== "todos") {
-      const fazendaId = parseInt(estoqueFiltro, 10);
-      list = list.filter(i => i.fazendaId === fazendaId);
-    }
+    if (!fazendaSelecionada) return [] as EstoqueItem[];
+
+    let list = [...items] as EstoqueItem[];
+    const fazendaId = parseInt(estoqueFiltro, 10);
+    list = list.filter(i => Number(i.fazendaId) === fazendaId);
+
     if (statusFiltro !== "todos") {
       list = list.filter(i => (i.situacao ?? "ativo") === statusFiltro);
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter(i =>
-        [i.nome, i.categoria, i.fabricante, i.identificadorUnico].some(
-          v => v && String(v).toLowerCase().includes(q)
-        )
-      );
+      list = list.filter(i => {
+        const campos = [
+          i.nome,
+          i.categoria,
+          i.fabricante,
+        ];
+        const matchCampo = campos.some(v => v && String(v).toLowerCase().includes(q));
+        const matchFornecedor = [...(fornecedoresPorProduto.get(i.id) ?? [])].some(f => f.includes(q));
+        return matchCampo || matchFornecedor;
+      });
     }
     list.sort((a, b) => {
       let va: string | number = "";
@@ -607,24 +830,36 @@ export function EstoquePage() {
       switch (sortKey) {
         case "nome": va = String(a.nome ?? "").toLowerCase(); vb = String(b.nome ?? "").toLowerCase(); break;
         case "categoria": va = String(a.categoria ?? "").toLowerCase(); vb = String(b.categoria ?? "").toLowerCase(); break;
-        case "situacao": va = String(a.situacao ?? ""); vb = String(b.situacao ?? ""); break;
-        case "fabricante": va = String(a.fabricante ?? "").toLowerCase(); vb = String(b.fabricante ?? "").toLowerCase(); break;
-        case "identificadorUnico": va = Number(a.identificadorUnico ?? 0); vb = Number(b.identificadorUnico ?? 0); break;
-        case "quantidadeMinima": va = Number(a.quantidadeMinima ?? 0); vb = Number(b.quantidadeMinima ?? 0); break;
-        case "quantidadeMaxima": va = Number(a.quantidadeMaxima ?? 0); vb = Number(b.quantidadeMaxima ?? 0); break;
-        case "quantidade": va = Number(a.quantidade ?? 0); vb = Number(b.quantidade ?? 0); break;
-        case "unidade": va = nomeUnidadeExibicao(a.unidade).toLowerCase(); vb = nomeUnidadeExibicao(b.unidade).toLowerCase(); break;
-        case "valorUnitario": va = Number(a.valorUnitario ?? 0); vb = Number(b.valorUnitario ?? 0); break;
+        case "quantidadeMinima": va = numEstoque(a.quantidadeMinima); vb = numEstoque(b.quantidadeMinima); break;
+        case "quantidade": va = numEstoque(a.quantidade); vb = numEstoque(b.quantidade); break;
+        case "validade":
+          va = validadePorProduto.get(a.id) ?? "";
+          vb = validadePorProduto.get(b.id) ?? "";
+          break;
+        case "valorEmEstoque": va = valorEmEstoque(a); vb = valorEmEstoque(b); break;
+        case "status":
+          va = resolverStatusProduto(a, validadePorProduto.get(a.id));
+          vb = resolverStatusProduto(b, validadePorProduto.get(b.id));
+          break;
       }
       if (va < vb) return sortAsc ? -1 : 1;
       if (va > vb) return sortAsc ? 1 : -1;
       return 0;
     });
     return list;
-  }, [items, search, estoqueFiltro, statusFiltro, sortKey, sortAsc]);
+  }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
+
+  const acaoEmLote = useMemo((): "ativar" | "inativar" | null => {
+    if (selectedIds.size === 0) return null;
+    if (statusFiltro === "inativo") return "ativar";
+    if (statusFiltro === "ativo") return "inativar";
+    const selecionados = filtered.filter(i => selectedIds.has(i.id));
+    if (selecionados.every(i => i.situacao === "inativo")) return "ativar";
+    if (selecionados.every(i => (i.situacao ?? "ativo") === "ativo")) return "inativar";
+    return null;
+  }, [selectedIds, statusFiltro, filtered]);
 
   const toggleSort = (key: SortKeyEstoque) => {
     if (sortKey === key) setSortAsc(a => !a);
@@ -644,88 +879,368 @@ export function EstoquePage() {
     else setSelectedIds(new Set(pageItems.map(i => i.id)));
   };
 
-  const exportHeaders = [
-    "Nome", "Categoria", "Situação", "Fabricante", "Identif. Único",
-    "Qtde Mínima", "Qtde Máxima", "Em Estoque", "Unidade", "Valor Residual",
-  ];
-  const exportRows = filtered.map(i => [
-    i.nome,
-    i.categoria ?? "",
-    i.situacao === "inativo" ? "Inativa" : "Ativa",
-    i.fabricante ?? "",
-    i.identificadorUnico ?? "",
-    Number(i.quantidadeMinima ?? 0).toFixed(2),
-    Number(i.quantidadeMaxima ?? 0).toFixed(2),
-    Number(i.quantidade ?? 0).toFixed(2),
-    nomeUnidadeExibicao(i.unidade),
-    i.valorUnitario ? `R$ ${Number(i.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "",
-  ]);
+  const limparSelecao = () => setSelectedIds(new Set());
 
-  const SortIcon = ({ col }: { col: SortKeyEstoque }) => (
-    <span className="material-icons text-[13px] text-gray-400 ml-0.5 align-middle leading-none">
-      {sortKey === col ? (sortAsc ? "arrow_drop_up" : "arrow_drop_down") : "unfold_more"}
-    </span>
+  const handleInativarIndividual = async (id: number) => {
+    const ok = await confirmAction({
+      title: "Inativar nesta Fazenda",
+      description:
+        "Deseja inativar este produto apenas na fazenda selecionada? O produto continuará existindo no catálogo geral e poderá permanecer ativo em outras Fazendas.",
+      confirmText: "Inativar nesta Fazenda",
+      cancelText: "Cancelar",
+      variant: "warning",
+    });
+    if (ok) inativarMutation.mutate({ ids: [id], escopo: "fazenda" });
+  };
+
+  const handleInativarLote = async () => {
+    const ids = Array.from(selectedIds);
+    const qtd = ids.length;
+    const ok = await confirmAction({
+      title: "Inativar nesta Fazenda",
+      description: `Deseja inativar ${qtd} produto(s) apenas na fazenda selecionada? Eles continuarão existindo no catálogo geral e poderão permanecer ativos em outras Fazendas.`,
+      confirmText: "Inativar nesta Fazenda",
+      cancelText: "Cancelar",
+      variant: "warning",
+    });
+    if (ok) inativarMutation.mutate({ ids, escopo: "fazenda" });
+  };
+
+  const handleExcluirProduto = async (id: number, nome: string, bloqueado: boolean) => {
+    if (bloqueado) {
+      toast.error(
+        "Produto com movimentações não pode ser desvinculado. Inative o produto nesta Fazenda para removê-lo da operação.",
+      );
+      return;
+    }
+    const fazendaNome = fazendaSelecionadaNome ?? "fazenda selecionada";
+    const ok = await confirmAction({
+      title: "Desvincular desta Fazenda",
+      description: `Deseja desvincular o produto '${nome}' apenas da ${fazendaNome}? O produto permanecerá no catálogo e nas outras Fazendas vinculadas.`,
+      confirmText: "Desvincular desta Fazenda",
+      cancelText: "Cancelar",
+      variant: "danger",
+    });
+    if (ok) deleteMutation.mutate({ id, escopo: "fazenda" });
+  };
+
+  const handleAtivarIndividual = async (id: number) => {
+    const ok = await confirmAction({
+      title: "Ativar nesta Fazenda",
+      description: "Deseja reativar este produto nesta Fazenda?",
+      confirmText: "Ativar nesta Fazenda",
+      cancelText: "Cancelar",
+      variant: "default",
+    });
+    if (ok) ativarMutation.mutate({ ids: [id], escopo: "fazenda" });
+  };
+
+  const handleAtivarLote = async () => {
+    const ids = Array.from(selectedIds);
+    const qtd = ids.length;
+    const ok = await confirmAction({
+      title: "Ativar nesta Fazenda",
+      description: `Deseja reativar ${qtd} produto(s) nesta Fazenda?`,
+      confirmText: "Ativar nesta Fazenda",
+      cancelText: "Cancelar",
+      variant: "default",
+    });
+    if (ok) ativarMutation.mutate({ ids, escopo: "fazenda" });
+  };
+
+  const exportStatusLabel =
+    statusFiltro === "ativo" ? "Ativos" : statusFiltro === "inativo" ? "Inativos" : "Todos";
+
+  const exportFazendaNomePdf = fazendaSelecionadaNome;
+
+  const buildProdutosExportTitle = () =>
+    exportFazendaNomePdf
+      ? `${exportFazendaNomePdf} — Lista de Produtos (${exportStatusLabel})`
+      : `Lista de Produtos (${exportStatusLabel})`;
+
+  const exportHeaders = [
+    "Produto", "Categoria", "Estoque", "Mínimo", "Valor", "Validade", "Status",
+  ];
+  const exportRows = useMemo(
+    () =>
+      filtered.map(item => {
+        const validade = validadePorProduto.get(item.id);
+        const status = resolverStatusProduto(item, validade);
+        const valor = valorEmEstoque(item);
+        const minimo =
+          item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
+            ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
+            : "—";
+
+        return [
+          item.nome,
+          item.categoria?.trim() || "—",
+          formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade),
+          minimo,
+          valor > 0 ? valor : "",
+          validade ? formatDataBr(validade) : "—",
+          STATUS_PRODUTO_LABEL[status],
+        ];
+      }),
+    [filtered, validadePorProduto, precoMedioImplicit],
   );
 
-  const thClass = "px-3 py-3 text-[10px] font-semibold text-gray-700 uppercase tracking-wide whitespace-nowrap cursor-pointer select-none text-left";
+  const isEmptyCadastro = fazendaSelecionada && !isLoading && items.length === 0;
+  const isEmptySemFazenda = !fazendaSelecionada && fazendaInitDone;
+  const isEmptyFiltro =
+    fazendaSelecionada && !isLoading && filtered.length === 0 && items.length > 0;
+
+  const SORT_TIPS: Record<SortKeyEstoque, string> = {
+    nome: "Ordenar por produto",
+    categoria: "Ordenar por categoria",
+    quantidade: "Ordenar por estoque",
+    quantidadeMinima: "Ordenar por estoque mínimo",
+    valorEmEstoque: "Ordenar por valor",
+    validade: "Ordenar por validade",
+    status: "Ordenar por status",
+  };
+
+  const SortIcon = ({ col }: { col: SortKeyEstoque }) => {
+    if (sortKey === col) {
+      return (
+        <span className="material-icons text-[14px] text-gray-500 ml-0.5 align-middle leading-none">
+          {sortAsc ? "arrow_drop_up" : "arrow_drop_down"}
+        </span>
+      );
+    }
+    return (
+      <span className="material-icons text-[13px] text-gray-300 ml-0.5 align-middle leading-none opacity-0 group-hover/th:opacity-100 transition-opacity">
+        unfold_more
+      </span>
+    );
+  };
+
+  const thClass =
+    "px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap cursor-pointer select-none text-left hover:bg-gray-100 transition-colors group/th";
+
+  const stickyProdutoTh =
+    "sticky left-0 z-20 bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] border-r border-gray-200";
+  const stickyProdutoTd =
+    "sticky left-0 z-10 bg-white group-hover:bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] border-r border-gray-100";
+
+  const produtoColunas: [SortKeyEstoque, string, string][] = [
+    ["nome", "Produto", "min-w-[140px]"],
+    ["categoria", "Categoria", "min-w-[100px]"],
+    ["quantidade", "Estoque", "min-w-[88px]"],
+    ["quantidadeMinima", "Mínimo", "min-w-[80px]"],
+    ["valorEmEstoque", "Valor", "min-w-[96px]"],
+    ["validade", "Validade", "min-w-[88px]"],
+    ["status", "Status", "min-w-[100px]"],
+  ];
+
+  const renderProdutoRow = (item: EstoqueItem) => {
+    const validade = validadePorProduto.get(item.id);
+    const status = resolverStatusProduto(item, validade);
+    const valor = valorEmEstoque(item);
+    const minimo =
+      item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
+        ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
+        : "—";
+    const validadeDias = validade ? diasAte(validade) : null;
+    const temMovimentacao = produtosComMovimentacao.has(item.id);
+
+    return (
+      <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
+        <td className="px-2 py-2 text-center w-10">
+          <input
+            type="checkbox"
+            className="accent-[#4ECDC4]"
+            checked={selectedIds.has(item.id)}
+            onChange={() => toggleSelect(item.id)}
+          />
+        </td>
+        <td className={`px-3 py-2 align-middle ${stickyProdutoTd}`}>
+          <div className="font-medium text-[13px] text-gray-900 leading-snug">{item.nome}</div>
+        </td>
+        <td className="px-3 py-2 text-gray-700 align-middle">{item.categoria?.trim() || "—"}</td>
+        <td className="px-3 py-2 tabular-nums text-gray-900 align-middle whitespace-nowrap">
+          {formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade)}
+        </td>
+        <td className="px-3 py-2 tabular-nums text-gray-700 align-middle whitespace-nowrap">{minimo}</td>
+        <td className="px-3 py-2 tabular-nums text-gray-700 align-middle whitespace-nowrap">
+          {valor > 0 ? brl(valor) : "—"}
+        </td>
+        <td
+          className={`px-3 py-2 tabular-nums align-middle whitespace-nowrap ${
+            validadeDias != null && validadeDias <= 30
+              ? validadeDias < 0
+                ? "text-red-600 font-medium"
+                : "text-amber-700"
+              : "text-gray-700"
+          }`}
+        >
+          {validade ? formatDataBr(validade) : "—"}
+        </td>
+        <td className="px-3 py-2 align-middle">
+          <StatusProdutoBadge status={status} />
+        </td>
+        <td className="px-2 py-2 align-middle">
+          <div className="flex items-center justify-end gap-0.5">
+            <TableIconButton
+              label="Editar produto"
+              onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)}
+              tone="neutral"
+              compact
+            >
+              <EditActionIcon size={16} />
+            </TableIconButton>
+            {item.situacao === "inativo" ? (
+              <TableIconButton
+                label="Ativar nesta Fazenda"
+                onClick={() => void handleAtivarIndividual(item.id)}
+                tone="success"
+                compact
+              >
+                <ActivateActionIcon size={16} />
+              </TableIconButton>
+            ) : (
+              <TableIconButton
+                label="Inativar nesta Fazenda"
+                onClick={() => void handleInativarIndividual(item.id)}
+                tone="warning"
+                compact
+              >
+                <InactivateActionIcon size={16} />
+              </TableIconButton>
+            )}
+            {temMovimentacao ? (
+              <TableIconButton
+                label="Produto com movimentações não pode ser desvinculado. Inative o produto nesta Fazenda para removê-lo da operação."
+                onClick={() => void handleExcluirProduto(item.id, item.nome, true)}
+                tone="danger"
+                compact
+              >
+                <DeleteActionIcon size={16} />
+              </TableIconButton>
+            ) : (
+              <TableIconButton
+                label="Desvincular desta Fazenda"
+                onClick={() => void handleExcluirProduto(item.id, item.nome, false)}
+                tone="danger"
+                compact
+              >
+                <DeleteActionIcon size={16} />
+              </TableIconButton>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <AppLayout>
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
         {/* Cabeçalho */}
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
-          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-            Lista de produtos
-          </h1>
-          <div className="flex items-center gap-4 text-[10px] text-gray-600">
-            <ListExportButtons title="Lista de produtos" filename="lista-produtos" headers={exportHeaders} rows={exportRows} alignRightFrom={5} />
+          <div>
+            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+              Lista de Produtos
+            </h1>
+            <p className="text-[12px] text-gray-500 mt-0.5">
+              Produtos vinculados ao estoque da fazenda selecionada.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleNovoProduto}
+              aria-disabled={!fazendaSelecionada}
+              title={
+                fazendaSelecionada
+                  ? "Cadastrar ou vincular produto à fazenda selecionada"
+                  : "Selecione uma fazenda antes de cadastrar ou vincular um produto ao estoque"
+              }
+              className={`inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px] ${
+                fazendaSelecionada
+                  ? "hover:brightness-95 active:scale-[0.97]"
+                  : "opacity-50 cursor-not-allowed"
+              }`}
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[16px]">add</span>
+              Novo Produto
+            </button>
+            <ListExportButtons
+              title="Lista de Produtos"
+              filename="lista-produtos"
+              headers={exportHeaders}
+              rows={fazendaSelecionada ? exportRows : []}
+              fazendaNome={exportFazendaNomePdf}
+              disabled={!fazendaSelecionada}
+              variant="secondary"
+              spreadsheetAllowEmpty
+              spreadsheetSheetName="Lista de Produtos"
+              spreadsheetReportTitle={buildProdutosExportTitle}
+              spreadsheetPlainHeader
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetTextCols={[0, 1, 2, 3, 5, 6]}
+              spreadsheetCurrencyCols={[4]}
+              spreadsheetColumnAligns={["center", "center", "center", "center", "center", "center", "center"]}
+              pdfColumnAligns={["center", "center", "center", "center", "center", "center", "center"]}
+              pdfIncludeSpreadsheetTitle={false}
+              pdfShowRegistrosSubtitle={false}
+            />
           </div>
         </div>
 
-        {/* Botões de ação */}
-        <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
-          <button
-            type="button"
-            onClick={() => setLocation(
-              estoqueFiltro !== "todos"
-                ? `/insumos/cadastro?fazendaId=${estoqueFiltro}`
-                : "/insumos/cadastro"
+        {/* Seleção em lote */}
+        {selectedIds.size > 0 && fazendaSelecionada && (
+          <div className="px-5 py-2.5 flex flex-wrap items-center gap-3 border-b border-gray-100 bg-gray-50/60">
+            <span className="text-[12px] text-gray-600">
+              {selectedIds.size}{" "}
+              {selectedIds.size === 1 ? "produto selecionado" : "produtos selecionados"}
+            </span>
+            {selectedIds.size >= 2 && acaoEmLote === "inativar" && (
+              <button
+                type="button"
+                onClick={() => void handleInativarLote()}
+                disabled={inativarMutation.isPending}
+                className="px-4 py-1.5 rounded text-[12px] font-semibold text-white bg-[#D97706] hover:bg-[#B45309] disabled:opacity-60 transition-colors"
+              >
+                Inativar nesta Fazenda
+              </button>
             )}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            Novo Produto
-          </button>
-          {acaoEmLote && (
+            {selectedIds.size >= 2 && acaoEmLote === "ativar" && (
+              <button
+                type="button"
+                onClick={() => void handleAtivarLote()}
+                disabled={ativarMutation.isPending}
+                className="px-4 py-1.5 rounded text-[11px] font-semibold uppercase tracking-wide text-white bg-[#4ECDC4] hover:brightness-95 disabled:opacity-60 transition-colors"
+              >
+                Ativar nesta Fazenda
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => {
-                const qtd = selectedIds.size;
-                const ids = Array.from(selectedIds);
-                if (acaoEmLote === "ativar") {
-                  if (confirm(`Ativar ${qtd} produto(s) selecionado(s)?`)) {
-                    ativarMutation.mutate({ ids });
-                  }
-                } else if (confirm(`Inativar ${qtd} produto(s) selecionado(s)?`)) {
-                  inativarMutation.mutate({ ids });
-                }
-              }}
-              disabled={inativarMutation.isPending || ativarMutation.isPending}
-              className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-white bg-[#E85D5D] hover:bg-[#d44f4f] disabled:opacity-60 transition-colors"
+              onClick={limparSelecao}
+              className="text-[12px] text-gray-500 hover:text-gray-800 underline underline-offset-2 transition-colors"
             >
-              {acaoEmLote === "ativar" ? "Ativar Produtos" : "Inativar Produtos"}
+              Limpar seleção
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Filtros de status + busca */}
+        {/* Filtros + busca */}
         <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
           <select
             value={estoqueFiltro}
-            onChange={e => { setEstoqueFiltro(e.target.value); setPage(1); setSelectedIds(new Set()); }}
+            onChange={e => {
+              const value = e.target.value;
+              setEstoqueFiltro(value);
+              persistRebanhoFazendaId(value);
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[180px]"
           >
-            <option value="todos">Todos Estoques</option>
+            <option value="">Selecione uma Fazenda</option>
             {fazendas.map(f => (
               <option key={f.id} value={String(f.id)}>{f.nome}</option>
             ))}
@@ -733,217 +1248,129 @@ export function EstoquePage() {
           <select
             value={statusFiltro}
             onChange={e => { setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos"); setPage(1); setSelectedIds(new Set()); }}
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px]"
+            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por status" : undefined}
           >
-            <option value="ativo">Ativas</option>
-            <option value="inativo">Inativas</option>
+            <option value="ativo">Ativos</option>
+            <option value="inativo">Inativos</option>
             <option value="todos">Todos</option>
           </select>
           <div className="relative">
             <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
             <input
               type="text"
-              placeholder="Buscar"
+              placeholder="Buscar produto"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
-              className="border border-gray-300 rounded pl-8 pr-3 py-1.5 text-[12px] w-52"
+              disabled={!fazendaSelecionada}
+              title={!fazendaSelecionada ? "Selecione uma fazenda para buscar produtos" : undefined}
+              className="border border-gray-300 rounded pl-8 pr-3 py-1.5 text-[12px] w-52 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
             />
           </div>
+          {fazendaSelecionada && fazendaSelecionadaNome ? (
+            <span className="text-[12px] text-gray-600 ml-auto sm:ml-1">
+              Fazenda selecionada:{" "}
+              <span className="font-medium text-gray-800">{fazendaSelecionadaNome}</span>
+            </span>
+          ) : null}
         </div>
 
-        {/* Cards mobile */}
-        <div className="lg:hidden px-4 py-3 space-y-2.5">
-          {isLoading ? (
-            <div className="py-12 text-center text-gray-400 text-[13px]">Carregando...</div>
-          ) : pageItems.length === 0 ? (
-            <div className="py-12 text-center text-gray-400 text-[13px]">Sem dados</div>
-          ) : pageItems.map(item => {
-            const isInativoM = item.situacao === "inativo";
-            return (
-              <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-semibold text-gray-900 uppercase truncate">{item.nome}</p>
-                    <p className="text-[12px] text-gray-400 mt-0.5">{item.categoria ?? "Sem categoria"}</p>
-                  </div>
-                  {isInativoM ? (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium shrink-0">Inativa</span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium shrink-0">Ativa</span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-3 text-[12px]">
-                  <div><span className="text-gray-400">Em estoque: </span><span className="font-semibold text-gray-800 tabular-nums">{Number(item.quantidade ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} {nomeUnidadeExibicao(item.unidade)}</span></div>
-                  <div><span className="text-gray-400">Valor: </span><span className="font-semibold text-gray-800 tabular-nums">{item.valorUnitario ? `R$ ${Number(item.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "-"}</span></div>
-                </div>
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-                  <button onClick={() => setLocation(`/insumos/historico-produto?id=${item.id}`)} className="flex-1 grid place-items-center rounded-lg bg-gray-50 text-gray-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Histórico"><span className="material-icons text-[20px]">format_list_bulleted</span></button>
-                  <button onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)} className="flex-1 grid place-items-center rounded-lg bg-blue-50 text-blue-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Editar"><span className="material-icons text-[20px]">edit</span></button>
-                  <button onClick={() => { if (confirm("Remover produto?")) deleteMutation.mutate({ id: item.id }); }} className="flex-1 grid place-items-center rounded-lg bg-red-50 text-red-600 active:scale-95 transition" style={{ minHeight: 42 }} aria-label="Excluir"><span className="material-icons text-[20px]">delete</span></button>
-                </div>
+        {isEmptySemFazenda ? (
+          <div className="px-5 py-16 text-center">
+            <img
+              src="/assets/icon-insumo-saco-green.png"
+              alt="Insumos"
+              width={48}
+              height={48}
+              className="mx-auto mb-3"
+              style={{
+                objectFit: "contain",
+                /* Tom cinza-azulado do ícone de rebanho (#B0BEC5) */
+                filter:
+                  "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+              }}
+            />
+            <p className="text-[14px] font-medium text-gray-800">
+              Selecione uma fazenda para visualizar os produtos vinculados ao estoque.
+            </p>
+            <p className="text-[12px] text-gray-500 mt-2 max-w-md mx-auto leading-relaxed">
+              Os produtos são cadastrados de forma universal, mas estoque, validade, mínimo, valor e status são controlados individualmente por fazenda.
+            </p>
+          </div>
+        ) : isEmptyCadastro ? (
+          <ListaProdutosEmptyState />
+        ) : (
+          <TableHorizontalScroll
+            footer={
+              <div className="border-t border-gray-100">
+                <TablePaginationFooter
+                  pageSize={perPage}
+                  page={page}
+                  totalItems={filtered.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={size => {
+                    setPerPage(size);
+                    setPage(1);
+                  }}
+                  itemLabel="produtos"
+                />
               </div>
-            );
-          })}
-        </div>
-
-        {/* Tabela desktop */}
-        <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="border-b border-gray-200 bg-white">
-                <th className="w-8 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    className="accent-[#4ECDC4]"
-                    checked={pageItems.length > 0 && selectedIds.size === pageItems.length}
-                    onChange={toggleAll}
-                  />
-                </th>
-                <th className="w-6 px-1" />
-                {([
-                  ["nome", "Nome"],
-                  ["categoria", "Categoria"],
-                  ["situacao", "Situação"],
-                  ["fabricante", "Fabricante"],
-                  ["identificadorUnico", "Identif. Único"],
-                  ["quantidadeMinima", "Qtde Mínima"],
-                  ["quantidadeMaxima", "Qtde Máxima"],
-                  ["quantidade", "Em Estoque"],
-                  ["unidade", "Unidade"],
-                  ["valorUnitario", "Valor Residual"],
-                ] as [SortKeyEstoque, string][]).map(([key, label]) => (
-                  <th key={key} className={thClass} onClick={() => toggleSort(key)}>
-                    <span className="inline-flex items-center">{label}<SortIcon col={key} /></span>
+            }
+          >
+            <table className="w-full min-w-[920px] text-[12px] border-collapse">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="w-10 px-2 py-2.5">
+                    <input
+                      type="checkbox"
+                      className="accent-[#4ECDC4]"
+                      checked={pageItems.length > 0 && selectedIds.size === pageItems.length}
+                      onChange={toggleAll}
+                      aria-label="Selecionar todos da página"
+                    />
                   </th>
-                ))}
-                <th className="w-24 px-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={13} className="text-center py-12 text-gray-400">Carregando...</td></tr>
-              ) : pageItems.length === 0 ? (
-                <tr><td colSpan={13} className="text-center py-12 text-gray-400">Sem dados</td></tr>
-              ) : pageItems.map(item => {
-                const isInativo = item.situacao === "inativo";
-                return (
-                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-3 py-2.5 text-center">
-                      <input
-                        type="checkbox"
-                        className="accent-[#4ECDC4]"
-                        checked={selectedIds.has(item.id)}
-                        onChange={() => toggleSelect(item.id)}
-                      />
-                    </td>
-                    <td className="px-1 py-2.5 text-center">
-                      <span className="material-icons text-[14px] text-gray-400">chevron_right</span>
-                    </td>
-                    <td className="px-3 py-2.5 font-medium text-gray-900 uppercase whitespace-nowrap">{item.nome}</td>
-                    <td className="px-3 py-2.5 text-gray-700">{item.categoria ?? ""}</td>
-                    <td className="px-3 py-2.5">
-                      {isInativo ? (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-medium">Inativa</span>
-                      ) : (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">Ativa</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-gray-700">{item.fabricante ?? ""}</td>
-                    <td className="px-3 py-2.5 text-gray-700 tabular-nums">{item.identificadorUnico ?? ""}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-gray-700">{item.quantidadeMinima ? Number(item.quantidadeMinima).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-gray-700">{item.quantidadeMaxima ? Number(item.quantidadeMaxima).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}</td>
-                    <td className="px-3 py-2.5 tabular-nums font-medium text-gray-900">{Number(item.quantidade ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                    <td className="px-3 py-2.5 text-gray-700">{nomeUnidadeExibicao(item.unidade)}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-gray-700">
-                      {item.valorUnitario ? `R$ ${Number(item.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : ""}
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          onClick={() => setLocation(`/insumos/historico-produto?id=${item.id}`)}
-                          className="p-1 text-gray-500 hover:text-[#4ECDC4]"
-                          title="Ver histórico de movimentações"
-                        >
-                          <span className="material-icons text-[17px]">format_list_bulleted</span>
-                        </button>
-                        <button
-                          onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)}
-                          className="p-1 text-gray-500 hover:text-blue-600"
-                          title="Editar"
-                        >
-                          <span className="material-icons text-[17px]">edit</span>
-                        </button>
-                        <button
-                          onClick={() => { if (confirm("Remover produto?")) deleteMutation.mutate({ id: item.id }); }}
-                          className="p-1 text-gray-500 hover:text-red-600"
-                          title="Excluir"
-                        >
-                          <span className="material-icons text-[17px]">delete</span>
-                        </button>
-                      </div>
+                  {produtoColunas.map(([key, label, minW]) => {
+                    const isProduto = key === "nome";
+                    const sortTitle =
+                      sortKey === key
+                        ? `${SORT_TIPS[key]} (${sortAsc ? "crescente" : "decrescente"})`
+                        : SORT_TIPS[key];
+                    return (
+                      <th
+                        key={key}
+                        title={sortTitle}
+                        className={`${thClass} ${minW}${isProduto ? ` ${stickyProdutoTh}` : ""}`}
+                        onClick={() => toggleSort(key)}
+                      >
+                        <span className="inline-flex items-center">
+                          {label}
+                          <SortIcon col={key} />
+                        </span>
+                      </th>
+                    );
+                  })}
+                  <th className="px-2 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-center w-[108px]">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr><td colSpan={10} className="text-center py-12 text-gray-400">Carregando...</td></tr>
+                ) : isEmptyFiltro ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-12 text-gray-500">
+                      Nenhum produto vinculado a esta fazenda com os filtros aplicados.
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Paginação */}
-        <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[12px] text-gray-600">
-            <select
-              value={perPage}
-              onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-              className="border border-gray-300 rounded px-2 py-1 text-[11px] bg-white"
-            >
-              {[10, 20, 50].map(n => (
-                <option key={n} value={n}>{n} itens por página</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-3 text-[12px] text-gray-600">
-            <span>
-              Mostrando {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} de {filtered.length} itens
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="w-7 h-7 flex items-center justify-center rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-              >
-                <span className="material-icons text-[16px]">chevron_left</span>
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
-                .reduce<(number | "...")[]>((acc, n, i, arr) => {
-                  if (i > 0 && n - (arr[i - 1] as number) > 1) acc.push("...");
-                  acc.push(n);
-                  return acc;
-                }, [])
-                .map((n, i) =>
-                  n === "..." ? (
-                    <span key={`dots-${i}`} className="px-1 text-gray-400">…</span>
-                  ) : (
-                    <button
-                      key={n}
-                      onClick={() => setPage(n as number)}
-                      className={`w-7 h-7 flex items-center justify-center rounded border text-[11px] font-medium ${page === n ? "border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10" : "border-gray-300 hover:bg-gray-50"}`}
-                    >
-                      {n}
-                    </button>
-                  )
+                ) : (
+                  pageItems.map(renderProdutoRow)
                 )}
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="w-7 h-7 flex items-center justify-center rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-              >
-                <span className="material-icons text-[16px]">chevron_right</span>
-              </button>
-            </div>
-          </div>
-        </div>
+              </tbody>
+            </table>
+          </TableHorizontalScroll>
+        )}
       </div>
     </AppLayout>
   );

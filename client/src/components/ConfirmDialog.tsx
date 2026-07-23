@@ -15,8 +15,8 @@ type ConfirmOptions = {
   description?: string;
   confirmText?: string;
   cancelText?: string;
-  /** "danger" pinta o botão de confirmar em vermelho (exclusões). */
-  variant?: "danger" | "default";
+  /** "danger" = exclusão (vermelho). "warning" = inativação/alerta (âmbar). "success" = confirmação positiva (teal). "default" = confirmação neutra. */
+  variant?: "danger" | "warning" | "success" | "default";
   /** Fechar pelo X/backdrop resolve null em vez de false. */
   abortOnDismiss?: boolean;
 };
@@ -33,8 +33,10 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({});
   const resolverRef = useRef<((value: boolean | null) => void) | null>(null);
+  const settledRef = useRef(false);
 
   const confirm = useCallback<ConfirmContextValue>((opts) => {
+    settledRef.current = false;
     setOptions(opts ?? {});
     setOpen(true);
     return new Promise<boolean | null>((resolve) => {
@@ -43,6 +45,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const settle = useCallback((value: boolean | null) => {
+    settledRef.current = true;
     setOpen(false);
     resolverRef.current?.(value);
     resolverRef.current = null;
@@ -57,13 +60,30 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     abortOnDismiss = false,
   } = options;
 
+  const confirmButtonStyle = (() => {
+    if (variant === "danger") return { backgroundColor: "#dc2626" };
+    if (variant === "warning") return { backgroundColor: "#D97706" };
+    if (variant === "success") return { backgroundColor: "#4ECDC4" };
+    return undefined;
+  })();
+
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
       <AlertDialog
         open={open}
         onOpenChange={(o) => {
-          if (!o) settle(abortOnDismiss ? null : false);
+          if (o) {
+            setOpen(true);
+            return;
+          }
+          setOpen(false);
+          if (settledRef.current) {
+            settledRef.current = false;
+            return;
+          }
+          resolverRef.current?.(abortOnDismiss ? null : false);
+          resolverRef.current = null;
         }}
       >
         <AlertDialogContent className="max-w-[420px]">
@@ -71,6 +91,9 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
             <AlertDialogTitle className="flex items-center gap-2 text-gray-900">
               {variant === "danger" && (
                 <span className="material-icons text-[22px] text-red-500">warning</span>
+              )}
+              {variant === "warning" && (
+                <span className="material-icons text-[22px] text-amber-600">info</span>
               )}
               {title}
             </AlertDialogTitle>
@@ -80,18 +103,24 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
             <AlertDialogCancel
-              onClick={() => settle(false)}
+              onClick={(e) => {
+                e.preventDefault();
+                settle(false);
+              }}
               className="rounded-full"
               style={{ minHeight: 44 }}
             >
               {cancelText}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => settle(true)}
-              className="rounded-full text-white"
+              onClick={(e) => {
+                e.preventDefault();
+                settle(true);
+              }}
+              className="rounded-full text-white hover:opacity-95"
               style={{
                 minHeight: 44,
-                backgroundColor: variant === "danger" ? "#dc2626" : undefined,
+                ...confirmButtonStyle,
               }}
             >
               {confirmText}

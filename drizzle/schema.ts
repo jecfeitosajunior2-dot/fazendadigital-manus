@@ -349,9 +349,33 @@ export const benfeitorias = mysqlTable("benfeitorias", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
 
-// Estoque table (uses snake_case)
+// Catálogo de produtos (ficha mestra, sem saldo por fazenda)
+export const produtosCatalogo = mysqlTable("produtos_catalogo", {
+  id: int("id").primaryKey().autoincrement(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  categoria: varchar("categoria", { length: 50 }),
+  subcategoria: varchar("subcategoria", { length: 80 }),
+  unidade: varchar("unidade", { length: 20 }),
+  fabricante: varchar("fabricante", { length: 100 }),
+  identificadorUnico: varchar("identificador_unico", { length: 100 }),
+  produzidoNaFazenda: boolean("produzido_na_fazenda").default(false),
+  monitorarEstoque: boolean("monitorar_estoque").default(false),
+  situacao: varchar("situacao", { length: 20 }).default("ativo"),
+  embalagens: text("embalagens"),
+  possuiCarencia: boolean("possui_carencia").default(false),
+  carenciaAbateDias: int("carencia_abate_dias"),
+  carenciaAbateUnidade: varchar("carencia_abate_unidade", { length: 8 }).default("d"),
+  carenciaLeiteDias: int("carencia_leite_dias"),
+  observacoesCarencia: text("observacoes_carencia"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+// Estoque table (uses snake_case) — saldo por fazenda vinculado ao catálogo
 export const estoque = mysqlTable("estoque", {
   id: int("id").primaryKey().autoincrement(),
+  produtoId: int("produto_id"),
   fazendaId: int("fazenda_id"),
   nome: varchar("nome", { length: 100 }).notNull(),
   categoria: varchar("categoria", { length: 50 }),
@@ -443,5 +467,21 @@ export const vendas = mysqlTable("vendas", {
   valorTotal: varchar("valor_total", { length: 50 }),
   observacoes: text("observacoes"),
   status: mysqlEnum("status", ["pendente", "concluido", "cancelado"]).default("pendente"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/** Cadastro central de parceiros — fornecedores, clientes e funcionários. */
+export const pessoas = mysqlTable("pessoas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  tipo: mysqlEnum("tipo", ["fornecedor", "cliente", "funcionario"]).notNull(),
+  funcao: varchar("funcao", { length: 150 }),
+  documento: varchar("documento", { length: 20 }),
+  endereco: varchar("endereco", { length: 255 }),
+  telefone: varchar("telefone", { length: 30 }),
+  email: varchar("email", { length: 150 }),
+  observacoes: text("observacoes"),
+  ativo: boolean("ativo").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });

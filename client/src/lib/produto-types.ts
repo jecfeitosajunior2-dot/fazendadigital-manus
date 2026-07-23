@@ -276,12 +276,20 @@ export const sinalDoTipo = (tipo: string | null | undefined): "entrada" | "saida
 };
 
 export const FABRICANTES = [
-  "Ourofino",
-  "Zoetis",
-  "Merck",
+  "Agener União",
   "Bayer",
-  "Virbac",
+  "Biogénesis Bagó",
+  "Boehringer Ingelheim",
   "Ceva",
+  "Elanco",
+  "Hipra",
+  "MSD Saúde Animal",
+  "Ourofino",
+  "Phibro",
+  "Syntec",
+  "Vallée",
+  "Virbac",
+  "Zoetis",
   "Outro",
 ] as const;
 

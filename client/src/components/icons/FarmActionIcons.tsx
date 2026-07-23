@@ -1,11 +1,13 @@
 import { cn } from "@/lib/utils";
-import { Eye, SquarePen, Trash2 } from "lucide-react";
+import { Ban, CircleCheck, Eye, SquarePen, Trash2 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 export const FD_EDIT_ACTION_COLOR = "#586168";
 export const FD_VIEW_ACTION_COLOR = "#586168";
 export const FD_VIEW_ACTION_HOVER_COLOR = "#2D5A5A";
 export const FD_DELETE_ACTION_COLOR = "#E28484";
+export const FD_INACTIVATE_ACTION_COLOR = "#C9844A";
+export const FD_ACTIVATE_ACTION_COLOR = "#16A34A";
 const ICON_STROKE = 1.75;
 
 type IconProps = {
@@ -52,11 +54,37 @@ export function DeleteActionIcon({ size = 17, className = "", style }: IconProps
   );
 }
 
+/** Inativar — círculo cortado (Lucide Ban) */
+export function InactivateActionIcon({ size = 17, className = "", style }: IconProps) {
+  return (
+    <Ban
+      size={size}
+      strokeWidth={ICON_STROKE}
+      className={cn("shrink-0", className)}
+      style={{ color: FD_INACTIVATE_ACTION_COLOR, ...style }}
+      aria-hidden
+    />
+  );
+}
+
+/** Ativar — confirmação (Lucide CircleCheck) */
+export function ActivateActionIcon({ size = 17, className = "", style }: IconProps) {
+  return (
+    <CircleCheck
+      size={size}
+      strokeWidth={ICON_STROKE}
+      className={cn("shrink-0", className)}
+      style={{ color: FD_ACTIVATE_ACTION_COLOR, ...style }}
+      aria-hidden
+    />
+  );
+}
+
 type TableIconButtonProps = {
   label: string;
   onClick: () => void;
   children: ReactNode;
-  tone?: "neutral" | "view" | "danger";
+  tone?: "neutral" | "view" | "danger" | "warning" | "success";
   compact?: boolean;
 };
 export function TableIconButton({
@@ -94,6 +122,14 @@ export function TableIconButton({
         tone === "danger" && [
           compact ? "hover:bg-red-50" : "text-[#E28484] hover:text-[#D46B6B] hover:bg-rose-50",
           "focus-visible:ring-rose-200",
+        ],
+        tone === "warning" && [
+          compact ? "hover:bg-amber-50" : "hover:bg-amber-50",
+          "focus-visible:ring-amber-200",
+        ],
+        tone === "success" && [
+          compact ? "hover:bg-green-50" : "hover:bg-green-50",
+          "focus-visible:ring-green-200",
         ],
       )}
     >

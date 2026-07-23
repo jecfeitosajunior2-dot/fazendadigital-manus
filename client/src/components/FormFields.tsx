@@ -68,6 +68,7 @@ export function FormInput({
   variant = "default",
   min,
   step,
+  list,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -81,6 +82,7 @@ export function FormInput({
   variant?: "default" | "light";
   min?: string | number;
   step?: string | number;
+  list?: string;
 }) {
   return (
     <FieldBox required={required} variant={variant}>
@@ -93,6 +95,7 @@ export function FormInput({
         placeholder={placeholder}
         min={min}
         step={step}
+        list={list}
         className={cn(
           compact ? inputClassCompact : inputClass,
           variant === "light" && "bg-white",
@@ -170,6 +173,7 @@ export function FormSelect({
   compact,
   displayValue,
   triggerClassName,
+  variant = "default",
   children,
 }: {
   value: string;
@@ -181,6 +185,7 @@ export function FormSelect({
   /** Texto exibido no trigger (útil quando o value é sigla/código). */
   displayValue?: string;
   triggerClassName?: string;
+  variant?: "default" | "light";
   children: React.ReactNode;
 }) {
   // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
@@ -188,7 +193,7 @@ export function FormSelect({
   const selectValue = value ?? "";
 
   return (
-    <FieldBox required={required}>
+    <FieldBox required={required} variant={variant}>
       <Select value={selectValue} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           className={cn(
@@ -203,7 +208,9 @@ export function FormSelect({
             <SelectValue placeholder={placeholder} />
           )}
         </SelectTrigger>
-        <SelectContent className="max-h-60">{children}</SelectContent>
+        <SelectContent className="max-h-60" side="bottom" avoidCollisions={false}>
+          {children}
+        </SelectContent>
       </Select>
     </FieldBox>
   );
@@ -330,7 +337,7 @@ export function FormDatePicker({
 
   return (
     <FieldBox required={required} variant="light">
-      <div className="flex w-full items-center justify-start gap-0.5 min-h-[34px] pl-1.5 pr-2">
+      <div className="flex w-full items-center justify-start gap-2 min-h-[34px] pl-1.5 pr-2">
         <button
           type="button"
           tabIndex={-1}

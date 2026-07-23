@@ -1758,11 +1758,49 @@ function PurchaseSaleTabs({ active }: { active: string }) {
 }
 
 export function PurchasesPage() {
+  const [, setLocation] = useLocation();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ data: "", fornecedor: "", quantidade: "", valorTotal: "", observacoes: "" });
+  const [form, setForm] = useState({ data: "", fornecedorId: "", quantidade: "", valorTotal: "", observacoes: "" });
   const { data: compras, refetch, isLoading } = trpc.compras.list.useQuery();
+  const { data: fornecedores = [] } = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
+  const fornecedorOpcoes = fornecedores.map(f => ({ value: String(f.id), label: f.nome }));
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const novoFornecedorId = params.get("fornecedorId");
+    const raw = sessionStorage.getItem("fd_compras_form_draft");
+
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw) as { form: typeof form; showForm: boolean };
+        setForm(draft.form);
+        setShowForm(draft.showForm);
+      } catch {
+        /* rascunho inválido */
+      }
+      sessionStorage.removeItem("fd_compras_form_draft");
+    }
+
+    if (novoFornecedorId) {
+      setForm(f => ({ ...f, fornecedorId: novoFornecedorId }));
+      setShowForm(true);
+      params.delete("fornecedorId");
+      const qs = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+  }, []);
+
+  const irCadastrarFornecedor = () => {
+    sessionStorage.setItem(
+      "fd_compras_form_draft",
+      JSON.stringify({ form, showForm: true })
+    );
+    const retorno = window.location.pathname + window.location.search;
+    setLocation(`/financeiro/pessoas?novo=fornecedor&retorno=${encodeURIComponent(retorno)}`);
+  };
+
   const createMutation = trpc.compras.create.useMutation({
-    onSuccess: () => { toast.success("Compra registrada com sucesso!"); setShowForm(false); setForm({ data: "", fornecedor: "", quantidade: "", valorTotal: "", observacoes: "" }); refetch(); },
+    onSuccess: () => { toast.success("Compra registrada com sucesso!"); setShowForm(false); setForm({ data: "", fornecedorId: "", quantidade: "", valorTotal: "", observacoes: "" }); refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const deleteMutation = trpc.compras.delete.useMutation({
@@ -1776,13 +1814,48 @@ export function PurchasesPage() {
           <DialogHeader><DialogTitle>Novo Borderô de Compra</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Data</Label><Input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
-            <div><Label>Fornecedor</Label><Input placeholder="Nome do fornecedor" value={form.fornecedor} onChange={e => setForm(f => ({ ...f, fornecedor: e.target.value }))} /></div>
+            <div>
+              <Label>Fornecedor</Label>
+              <select
+                value={form.fornecedorId}
+                onChange={e => setForm(f => ({ ...f, fornecedorId: e.target.value }))}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white"
+              >
+                <option value="">Selecione o fornecedor</option>
+                {fornecedorOpcoes.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={irCadastrarFornecedor}
+                className="mt-1.5 w-full h-8 text-[11px] font-medium border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/5 hover:text-[#4ECDC4]"
+              >
+                + Cadastrar fornecedor
+              </Button>
+            </div>
             <div><Label>Quantidade de Animais</Label><Input type="number" placeholder="0" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: e.target.value }))} /></div>
             <div><Label>Valor Total (R$)</Label><Input type="number" placeholder="0.00" value={form.valorTotal} onChange={e => setForm(f => ({ ...f, valorTotal: e.target.value }))} /></div>
             <div><Label>Observações</Label><Textarea placeholder="Observações..." value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} /></div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-              <Button onClick={() => createMutation.mutate({ data: form.data, fornecedor: form.fornecedor, quantidadeAnimais: parseInt(form.quantidade) || 0, valorTotal: form.valorTotal || "0", observacoes: form.observacoes })} disabled={createMutation.isPending || !form.fornecedor || !form.data}>Salvar</Button>
+              <Button
+                onClick={() => {
+                  const fornecedor = fornecedores.find(f => String(f.id) === form.fornecedorId)?.nome ?? "";
+                  createMutation.mutate({
+                    data: form.data,
+                    fornecedor,
+                    quantidadeAnimais: parseInt(form.quantidade) || 0,
+                    valorTotal: form.valorTotal || "0",
+                    observacoes: form.observacoes,
+                  });
+                }}
+                disabled={createMutation.isPending || !form.fornecedorId || !form.data}
+              >
+                Salvar
+              </Button>
             </div>
           </div>
         </DialogContent>
