@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildDevRebanhoSeed, REBANHO_SEED_VERSION, type DevAnimal, type DevLote } from "./devAnimaisSeed";
 import { REBANHO_OVERVIEW_DEMO } from "../shared/rebanhoOverviewDemo";
+import { avaliarEstornoEstoque } from "./estoqueEstorno";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -69,8 +70,11 @@ type DevProdutoCatalogo = {
 
 type DevMovimentacao = {
   id: number;
+  grupoId: string | null;
   estoqueId: number;
   fazendaId: number | null;
+  userId: number | null;
+  registradoPor: string | null;
   tipo: string | null;
   dataMovimentacao: string;
   quantidade: string;
@@ -82,7 +86,13 @@ type DevMovimentacao = {
   fornecedor: string | null;
   valor: string | null;
   observacoes: string | null;
+  status: "ativa" | "estornada" | "estorno" | null;
+  originalGrupoId: string | null;
+  motivoEstorno: string | null;
   createdAt: Date | null;
+  updatedAt: Date | null;
+  updatedByUserId: number | null;
+  updatedByNome: string | null;
 };
 
 type DevContaFinanceira = {
@@ -273,8 +283,11 @@ function defaultStore(): StoreData {
     movimentacoes: [
       {
         id: 1,
+        grupoId: "seed-mov-1",
         estoqueId: 1,
         fazendaId: 1,
+        userId: null,
+        registradoPor: null,
         tipo: "entrada",
         dataMovimentacao: diasAtras(10),
         quantidade: "500",
@@ -286,12 +299,21 @@ function defaultStore(): StoreData {
         fornecedor: "Posto Rural",
         valor: "3250.00",
         observacoes: "Abastecimento inicial",
+        status: "ativa",
+        originalGrupoId: null,
+        motivoEstorno: null,
         createdAt,
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
       },
       {
         id: 2,
+        grupoId: "seed-mov-2",
         estoqueId: 1,
         fazendaId: 1,
+        userId: null,
+        registradoPor: null,
         tipo: "saida",
         dataMovimentacao: diasAtras(3),
         quantidade: "-80",
@@ -303,12 +325,21 @@ function defaultStore(): StoreData {
         fornecedor: null,
         valor: null,
         observacoes: null,
+        status: "ativa",
+        originalGrupoId: null,
+        motivoEstorno: null,
         createdAt,
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
       },
       {
         id: 3,
+        grupoId: "seed-mov-3",
         estoqueId: 2,
         fazendaId: 1,
+        userId: null,
+        registradoPor: null,
         tipo: "entrada",
         dataMovimentacao: diasAtras(7),
         quantidade: "200",
@@ -320,7 +351,13 @@ function defaultStore(): StoreData {
         fornecedor: "Nutrição Animal Ltda",
         valor: "560.00",
         observacoes: null,
+        status: "ativa",
+        originalGrupoId: null,
+        motivoEstorno: null,
         createdAt,
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
       },
     ],
     contas: [
@@ -419,6 +456,19 @@ function reviveDates(raw: StoreData): StoreData {
   }
   for (const m of raw.financeiroMovimentacoes ?? []) {
     if (m.createdAt) m.createdAt = new Date(m.createdAt);
+  }
+  for (const m of raw.movimentacoes ?? []) {
+    if (m.createdAt) m.createdAt = new Date(m.createdAt);
+    if (m.updatedAt) m.updatedAt = new Date(m.updatedAt as string | Date);
+    if (m.grupoId === undefined) m.grupoId = null;
+    if (m.userId === undefined) m.userId = null;
+    if (m.registradoPor === undefined) m.registradoPor = null;
+    if (m.status === undefined || m.status === null) m.status = "ativa";
+    if (m.originalGrupoId === undefined) m.originalGrupoId = null;
+    if (m.motivoEstorno === undefined) m.motivoEstorno = null;
+    if (m.updatedAt === undefined) m.updatedAt = null;
+    if (m.updatedByUserId === undefined) m.updatedByUserId = null;
+    if (m.updatedByNome === undefined) m.updatedByNome = null;
   }
   for (const a of raw.animais ?? []) {
     if (a.createdAt) a.createdAt = new Date(a.createdAt);
@@ -1237,8 +1287,11 @@ export const devLocalStore = {
       const id = data.nextMovId++;
       data.movimentacoes.push({
         id,
+        grupoId: (input.grupoId as string | undefined)?.trim() || null,
         estoqueId,
         fazendaId,
+        userId: (input.userId as number | undefined) ?? null,
+        registradoPor: (input.registradoPor as string | undefined)?.trim() || null,
         tipo: (input.tipo as string | undefined) ?? null,
         dataMovimentacao: String(input.dataMovimentacao).slice(0, 10),
         quantidade: String(qty),
@@ -1250,7 +1303,13 @@ export const devLocalStore = {
         fornecedor: (input.fornecedor as string | undefined) ?? null,
         valor: (input.valor as string | undefined) ?? null,
         observacoes: observacoes ?? null,
+        status: ((input.status as string | undefined) as DevMovimentacao["status"]) || "ativa",
+        originalGrupoId: (input.originalGrupoId as string | undefined)?.trim() || null,
+        motivoEstorno: (input.motivoEstorno as string | undefined)?.trim() || null,
         createdAt: now(),
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
       });
       item.quantidade = String(novo);
       item.updatedAt = now();
@@ -1262,6 +1321,10 @@ export const devLocalStore = {
     return withStore(data => {
       const mov = data.movimentacoes.find(m => m.id === input.id);
       if (!mov) throw new Error("Movimentação não encontrada");
+      const status = mov.status || "ativa";
+      if (status === "estornada" || status === "estorno") {
+        throw new Error("Movimentação estornada não pode ser editada.");
+      }
 
       const qty = parseFloat(String(input.quantidade).replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) throw new Error("Informe uma quantidade válida.");
@@ -1305,8 +1368,219 @@ export const devLocalStore = {
         fornecedor: (input.fornecedor as string | undefined) ?? null,
         valor: (input.valor as string | undefined) ?? null,
         observacoes: (input.observacoes as string | undefined) ?? mov.observacoes,
+        updatedAt: now(),
+        updatedByUserId: (input.updatedByUserId as number | undefined) ?? mov.updatedByUserId,
+        updatedByNome: (input.updatedByNome as string | undefined)?.trim() || mov.updatedByNome,
       });
       return { success: true };
+    });
+  },
+
+  /**
+   * Estorna uma movimentação administrativa completa (todos os itens do grupo).
+   * Cria lançamentos inversos e marca a original como estornada.
+   */
+  validarEstorno(itemIds: number[]) {
+    const data = loadStore();
+    const seeds = data.movimentacoes.filter(m => itemIds.includes(m.id));
+    if (!seeds.length) {
+      return {
+        podeEstornar: false,
+        jaEstornada: false,
+        insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+        mensagem: "Movimentação não encontrada.",
+      };
+    }
+
+    const grupoId = seeds[0]!.grupoId?.trim() || null;
+    const originais = grupoId
+      ? data.movimentacoes.filter(m => m.grupoId === grupoId)
+      : seeds;
+
+    for (const mov of originais) {
+      const st = mov.status || "ativa";
+      if (st === "estornada") {
+        return {
+          podeEstornar: false,
+          jaEstornada: true,
+          insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+          mensagem: "Esta movimentação já foi estornada.",
+        };
+      }
+      if (st === "estorno") {
+        return {
+          podeEstornar: false,
+          jaEstornada: true,
+          insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+          mensagem: "Não é possível estornar um lançamento de estorno.",
+        };
+      }
+    }
+
+    const saldos = new Map<number, { quantidade: number; nome: string; unidade?: string | null }>();
+    for (const mov of originais) {
+      const item = getItem(data, mov.estoqueId);
+      if (!item) continue;
+      saldos.set(mov.estoqueId, {
+        quantidade: Number(item.quantidade ?? 0),
+        nome: item.nome,
+        unidade: item.unidade,
+      });
+    }
+
+    const insuficientes = avaliarEstornoEstoque(
+      originais.map(o => {
+        const item = getItem(data, o.estoqueId);
+        return {
+          estoqueId: o.estoqueId,
+          quantidade: o.quantidade,
+          nome: item?.nome,
+          unidade: item?.unidade,
+        };
+      }),
+      saldos,
+    );
+
+    return {
+      podeEstornar: insuficientes.length === 0,
+      jaEstornada: false,
+      insuficientes,
+      mensagem:
+        insuficientes.length > 0
+          ? "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão."
+          : null,
+    };
+  },
+
+  estornarMovimentacaoGrupo(input: {
+    itemIds: number[];
+    motivo: string;
+    userId: number;
+    registradoPor: string;
+  }) {
+    return withStore(data => {
+      const motivo = input.motivo.trim();
+      if (!motivo) throw new Error("Informe o motivo do estorno.");
+      if (!input.userId || !input.registradoPor?.trim()) {
+        throw new Error("Usuário autenticado inválido para registrar o estorno.");
+      }
+
+      const seeds = data.movimentacoes.filter(m => input.itemIds.includes(m.id));
+      if (!seeds.length) throw new Error("Movimentação não encontrada.");
+
+      const grupoId = seeds[0]!.grupoId?.trim() || null;
+      const originais = grupoId
+        ? data.movimentacoes.filter(m => m.grupoId === grupoId)
+        : seeds;
+
+      for (const mov of originais) {
+        const st = mov.status || "ativa";
+        if (st === "estornada") {
+          throw new Error("Esta movimentação já foi estornada.");
+        }
+        if (st === "estorno") {
+          throw new Error("Não é possível estornar um lançamento de estorno.");
+        }
+      }
+
+      const saldos = new Map<number, { quantidade: number; nome: string; unidade?: string | null }>();
+      for (const mov of originais) {
+        const item = getItem(data, mov.estoqueId);
+        if (!item) throw new Error("Produto não encontrado.");
+        saldos.set(mov.estoqueId, {
+          quantidade: Number(item.quantidade ?? 0),
+          nome: item.nome,
+          unidade: item.unidade,
+        });
+      }
+      const insuficientes = avaliarEstornoEstoque(
+        originais.map(o => {
+          const item = getItem(data, o.estoqueId);
+          return {
+            estoqueId: o.estoqueId,
+            quantidade: o.quantidade,
+            nome: item?.nome,
+            unidade: item?.unidade,
+          };
+        }),
+        saldos,
+      );
+      if (insuficientes.length > 0) {
+        throw new Error(
+          "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
+        );
+      }
+
+      const originalGrupoId =
+        grupoId ||
+        (() => {
+          const novo = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+          for (const mov of originais) mov.grupoId = novo;
+          return novo;
+        })();
+
+      const estornoGrupoId = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+      const hoje = new Date().toISOString().slice(0, 10);
+      const idsCriados: number[] = [];
+
+      for (const mov of originais) {
+        const qty = Number(mov.quantidade);
+        const qtyInversa = -qty;
+        const item = getItem(data, mov.estoqueId);
+        if (!item) throw new Error("Produto não encontrado.");
+        const atual = Number(item.quantidade ?? 0);
+        const novo = atual + qtyInversa;
+        if (novo < 0) {
+          throw new Error(
+            "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
+          );
+        }
+        item.quantidade = String(novo);
+        item.updatedAt = now();
+
+        const id = data.nextMovId++;
+        idsCriados.push(id);
+        data.movimentacoes.push({
+          id,
+          grupoId: estornoGrupoId,
+          estoqueId: mov.estoqueId,
+          fazendaId: mov.fazendaId,
+          userId: input.userId,
+          registradoPor: input.registradoPor.trim(),
+          tipo: mov.tipo,
+          dataMovimentacao: hoje,
+          quantidade: String(qtyInversa),
+          dataValidade: mov.dataValidade,
+          destino: mov.destino,
+          manejo: mov.manejo,
+          notaFiscal: mov.notaFiscal,
+          frete: mov.frete,
+          fornecedor: mov.fornecedor,
+          valor: mov.valor,
+          observacoes: mov.observacoes,
+          status: "estorno",
+          originalGrupoId,
+          motivoEstorno: motivo,
+          createdAt: now(),
+          updatedAt: null,
+          updatedByUserId: null,
+          updatedByNome: null,
+        });
+
+        mov.status = "estornada";
+        mov.motivoEstorno = motivo;
+        mov.updatedAt = now();
+        mov.updatedByUserId = input.userId;
+        mov.updatedByNome = input.registradoPor.trim();
+        if (!mov.grupoId) mov.grupoId = originalGrupoId;
+      }
+
+      return {
+        success: true,
+        originalGrupoId,
+        estornoGrupoId,
+        ids: idsCriados,
+      };
     });
   },
 
@@ -1314,9 +1588,21 @@ export const devLocalStore = {
     return withStore(data => {
       const mov = data.movimentacoes.find(m => m.id === id);
       if (!mov) throw new Error("Movimentação não encontrada");
+      const status = mov.status || "ativa";
+      if (status === "estornada" || status === "estorno") {
+        throw new Error("Movimentação estornada não pode ser excluída. Use o histórico para consulta.");
+      }
       const item = getItem(data, mov.estoqueId);
       if (item) {
-        item.quantidade = String(Number(item.quantidade ?? 0) - Number(mov.quantidade));
+        const atual = Number(item.quantidade ?? 0);
+        const qtyMov = Number(mov.quantidade);
+        const revertido = atual - qtyMov;
+        if (qtyMov > 0 && revertido < 0) {
+          throw new Error(
+            `Não é possível remover este item: o estoque atual de "${item.nome}" é insuficiente para reverter a entrada (necessário ${qtyMov}, saldo ${atual}). Estorne a movimentação ou ajuste o estoque antes.`,
+          );
+        }
+        item.quantidade = String(revertido);
         item.updatedAt = now();
       }
       data.movimentacoes = data.movimentacoes.filter(m => m.id !== id);

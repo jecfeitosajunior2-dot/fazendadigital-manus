@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { Fragment, useState, useMemo, useEffect } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
 import { FD_PRIMARY } from "@/components/FormFields";
@@ -18,7 +18,7 @@ import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { normalizarUnidade, nomeUnidadeExibicao, formatDataBr, sinalDoTipo } from '@/lib/produto-types';
+import { normalizarUnidade, nomeUnidadeExibicao, formatDataBr } from '@/lib/produto-types';
 import { brl, diasAte } from '@/lib/dashboard-utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import {
@@ -598,16 +598,37 @@ const resolverStatusProduto = (
   const dias = validade ? diasAte(validade) : null;
   if (dias != null && dias < 0) return "vencido";
   if (dias != null && dias <= 30) return "vencendo";
-  if (item.alertaAbaixoAgregado) return "abaixo_minimo";
-  if (
-    item.monitorarEstoque &&
-    numEstoque(item.quantidadeMinima) > 0 &&
-    numEstoque(item.quantidade) <= numEstoque(item.quantidadeMinima)
-  ) {
-    return "abaixo_minimo";
-  }
+  if (isAbaixoEstoqueMinimo(item)) return "abaixo_minimo";
   return "ativo";
 };
+
+/** Condição de estoque (alerta) — independente do status Ativo/Inativo. */
+const isAbaixoEstoqueMinimo = (item: EstoqueItem): boolean => {
+  if (item.alertaAbaixoAgregado) return true;
+  return Boolean(
+    item.monitorarEstoque &&
+      numEstoque(item.quantidadeMinima) > 0 &&
+      numEstoque(item.quantidade) <= numEstoque(item.quantidadeMinima),
+  );
+};
+
+const isAcimaEstoqueMaximo = (item: EstoqueItem): boolean =>
+  Boolean(
+    item.monitorarEstoque &&
+      numEstoque(item.quantidadeMaxima) > 0 &&
+      numEstoque(item.quantidade) > numEstoque(item.quantidadeMaxima),
+  );
+
+type AlertaEstoqueFiltro = "todos" | "abaixo_minimo" | "acima_maximo";
+
+const rotuloAlertaEstoque = (item: EstoqueItem): string => {
+  if (isAbaixoEstoqueMinimo(item)) return "Abaixo do mínimo";
+  if (isAcimaEstoqueMaximo(item)) return "Acima do máximo";
+  return "—";
+};
+
+const statusOperacional = (item: EstoqueItem): "ativo" | "inativo" =>
+  item.situacao === "inativo" ? "inativo" : "ativo";
 
 const STATUS_PRODUTO_LABEL: Record<StatusProdutoExibicao, string> = {
   ativo: "Ativo",
@@ -660,6 +681,7 @@ function ListaProdutosEmptyState() {
 
 export function EstoquePage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const confirmAction = useConfirm();
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
@@ -667,6 +689,10 @@ export function EstoquePage() {
   const [estoqueFiltro, setEstoqueFiltro] = useState<string>("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [statusFiltro, setStatusFiltro] = useState<"ativo" | "inativo" | "todos">("ativo");
+  /** Condição de estoque — dimensão separada do status operacional. */
+  const [alertaFiltro, setAlertaFiltro] = useState<AlertaEstoqueFiltro>("todos");
+  /** Filtro opcional por categoria (vindo da Visão Geral / URL). */
+  const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [sortKey, setSortKey] = useState<SortKeyEstoque>("nome");
@@ -684,22 +710,50 @@ export function EstoquePage() {
       return;
     }
     const ids = fazendas.map(f => f.id);
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    const fromUrl = params.get("fazendaId");
+    const urlOk = fromUrl && ids.some(id => String(id) === fromUrl) ? fromUrl : "";
     const fromStorage = readPersistedRebanhoFazendaId(ids);
     const resolved =
+      urlOk ||
       fromStorage ||
       (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
     if (resolved) {
       setEstoqueFiltro(resolved);
       persistRebanhoFazendaId(resolved);
     }
+    const alerta = params.get("alerta");
+    if (alerta === "abaixo_minimo" || alerta === "acima_maximo") {
+      setAlertaFiltro(alerta);
+      setStatusFiltro("ativo");
+    }
+    const statusUrl = params.get("status");
+    if (statusUrl === "ativo" || statusUrl === "inativo" || statusUrl === "todos") {
+      setStatusFiltro(statusUrl);
+    }
+    const buscaUrl = params.get("busca") || params.get("q");
+    if (buscaUrl) setSearch(buscaUrl);
+    const categoriaUrl = params.get("categoria");
+    if (categoriaUrl) setCategoriaFiltro(categoriaUrl);
     setFazendaInitDone(true);
-  }, [fazendas, fazendaInitDone, loadingFazendas]);
+  }, [fazendas, fazendaInitDone, loadingFazendas, searchString]);
 
   const fazendaSelecionada = Boolean(estoqueFiltro);
   const fazendaSelecionadaNome = useMemo(
     () => fazendas.find(f => String(f.id) === estoqueFiltro)?.nome,
     [fazendas, estoqueFiltro]
   );
+
+  const categoriasDisponiveis = useMemo(() => {
+    if (!fazendaSelecionada) return [] as string[];
+    const fazendaId = parseInt(estoqueFiltro, 10);
+    const set = new Set<string>();
+    for (const i of items as EstoqueItem[]) {
+      if (Number(i.fazendaId) !== fazendaId) continue;
+      set.add(i.categoria?.trim() || "Sem categoria");
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [items, estoqueFiltro, fazendaSelecionada]);
 
   const deleteMutation = trpc.estoque.delete.useMutation({
     onSuccess: async (data) => {
@@ -766,11 +820,13 @@ export function EstoquePage() {
     const totalQtd = new Map<number, number>();
     const totalVal = new Map<number, number>();
     for (const mv of movs) {
-      const sinal = mv.tipo ? sinalDoTipo(mv.tipo) : numEstoque(mv.quantidade) < 0 ? "saida" : "entrada";
-      if (sinal === "saida") continue;
-      const qtd = Math.abs(numEstoque(mv.quantidade));
+      const status = String(mv.status || "ativa").toLowerCase();
+      if (status === "estornada" || status === "estorno") continue;
+      const qtd = numEstoque(mv.quantidade);
+      // Só entradas que ainda compõem o estoque (qtd > 0). Estornos técnicos têm qtd negativa.
+      if (!(qtd > 0)) continue;
       const val = numEstoque(mv.valor);
-      if (qtd > 0 && val > 0) {
+      if (val > 0) {
         totalQtd.set(mv.estoqueId, (totalQtd.get(mv.estoqueId) ?? 0) + qtd);
         totalVal.set(mv.estoqueId, (totalVal.get(mv.estoqueId) ?? 0) + val);
       }
@@ -811,6 +867,18 @@ export function EstoquePage() {
     if (statusFiltro !== "todos") {
       list = list.filter(i => (i.situacao ?? "ativo") === statusFiltro);
     }
+    if (alertaFiltro === "abaixo_minimo") {
+      list = list.filter(i => isAbaixoEstoqueMinimo(i));
+    } else if (alertaFiltro === "acima_maximo") {
+      list = list.filter(i => isAcimaEstoqueMaximo(i));
+    }
+    if (categoriaFiltro.trim()) {
+      const alvo = categoriaFiltro.trim().toLowerCase();
+      list = list.filter(i => {
+        const cat = i.categoria?.trim() || "Sem categoria";
+        return cat.toLowerCase() === alvo;
+      });
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(i => {
@@ -838,8 +906,8 @@ export function EstoquePage() {
           break;
         case "valorEmEstoque": va = valorEmEstoque(a); vb = valorEmEstoque(b); break;
         case "status":
-          va = resolverStatusProduto(a, validadePorProduto.get(a.id));
-          vb = resolverStatusProduto(b, validadePorProduto.get(b.id));
+          va = (a.situacao ?? "ativo") === "inativo" ? "inativo" : "ativo";
+          vb = (b.situacao ?? "ativo") === "inativo" ? "inativo" : "ativo";
           break;
       }
       if (va < vb) return sortAsc ? -1 : 1;
@@ -847,7 +915,7 @@ export function EstoquePage() {
       return 0;
     });
     return list;
-  }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
+  }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, alertaFiltro, categoriaFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
 
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
 
@@ -909,15 +977,15 @@ export function EstoquePage() {
   const handleExcluirProduto = async (id: number, nome: string, bloqueado: boolean) => {
     if (bloqueado) {
       toast.error(
-        "Produto com movimentações não pode ser desvinculado. Inative o produto nesta Fazenda para removê-lo da operação.",
+        "Produto com movimentações ou estoque não pode ser desvinculado. Inative o produto nesta fazenda para removê-lo da operação.",
       );
       return;
     }
     const fazendaNome = fazendaSelecionadaNome ?? "fazenda selecionada";
     const ok = await confirmAction({
-      title: "Desvincular desta Fazenda",
-      description: `Deseja desvincular o produto '${nome}' apenas da ${fazendaNome}? O produto permanecerá no catálogo e nas outras Fazendas vinculadas.`,
-      confirmText: "Desvincular desta Fazenda",
+      title: "Desvincular produto da fazenda",
+      description: `O produto será removido da Fazenda ${fazendaNome}, mas continuará disponível no catálogo geral da conta. Deseja continuar?`,
+      confirmText: "Confirmar desvínculo",
       cancelText: "Cancelar",
       variant: "danger",
     });
@@ -950,22 +1018,28 @@ export function EstoquePage() {
 
   const exportStatusLabel =
     statusFiltro === "ativo" ? "Ativos" : statusFiltro === "inativo" ? "Inativos" : "Todos";
+  const exportAlertaLabel =
+    alertaFiltro === "abaixo_minimo"
+      ? " · Abaixo do mínimo"
+      : alertaFiltro === "acima_maximo"
+        ? " · Acima do máximo"
+        : "";
 
   const exportFazendaNomePdf = fazendaSelecionadaNome;
 
   const buildProdutosExportTitle = () =>
     exportFazendaNomePdf
-      ? `${exportFazendaNomePdf} — Lista de Produtos (${exportStatusLabel})`
-      : `Lista de Produtos (${exportStatusLabel})`;
+      ? `${exportFazendaNomePdf} — Lista de Produtos (${exportStatusLabel}${exportAlertaLabel})`
+      : `Lista de Produtos (${exportStatusLabel}${exportAlertaLabel})`;
 
   const exportHeaders = [
-    "Produto", "Categoria", "Estoque", "Mínimo", "Valor", "Validade", "Status",
+    "Produto", "Categoria", "Estoque", "Mínimo", "Valor", "Validade", "Status", "Alerta",
   ];
   const exportRows = useMemo(
     () =>
       filtered.map(item => {
         const validade = validadePorProduto.get(item.id);
-        const status = resolverStatusProduto(item, validade);
+        const statusOp = statusOperacional(item);
         const valor = valorEmEstoque(item);
         const minimo =
           item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
@@ -979,7 +1053,8 @@ export function EstoquePage() {
           minimo,
           valor > 0 ? valor : "",
           validade ? formatDataBr(validade) : "—",
-          STATUS_PRODUTO_LABEL[status],
+          STATUS_PRODUTO_LABEL[statusOp],
+          rotuloAlertaEstoque(item),
         ];
       }),
     [filtered, validadePorProduto, precoMedioImplicit],
@@ -1030,12 +1105,14 @@ export function EstoquePage() {
     ["quantidadeMinima", "Mínimo", "min-w-[80px]"],
     ["valorEmEstoque", "Valor", "min-w-[96px]"],
     ["validade", "Validade", "min-w-[88px]"],
-    ["status", "Status", "min-w-[100px]"],
+    ["status", "Status", "min-w-[88px]"],
   ];
 
   const renderProdutoRow = (item: EstoqueItem) => {
     const validade = validadePorProduto.get(item.id);
-    const status = resolverStatusProduto(item, validade);
+    const statusOp = statusOperacional(item);
+    const abaixoMinimo = isAbaixoEstoqueMinimo(item);
+    const acimaMaximo = isAcimaEstoqueMaximo(item);
     const valor = valorEmEstoque(item);
     const minimo =
       item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
@@ -1043,6 +1120,11 @@ export function EstoquePage() {
         : "—";
     const validadeDias = validade ? diasAte(validade) : null;
     const temMovimentacao = produtosComMovimentacao.has(item.id);
+    const temEstoque = numEstoque(item.quantidade) !== 0;
+    const desvinculoBloqueado = temMovimentacao || temEstoque;
+    const tooltipDesvincular = desvinculoBloqueado
+      ? "Produto com movimentações ou estoque não pode ser desvinculado. Inative o produto nesta fazenda para removê-lo da operação."
+      : "Desvincular da fazenda";
 
     return (
       <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
@@ -1077,12 +1159,25 @@ export function EstoquePage() {
           {validade ? formatDataBr(validade) : "—"}
         </td>
         <td className="px-3 py-2 align-middle">
-          <StatusProdutoBadge status={status} />
+          <StatusProdutoBadge status={statusOp} />
+        </td>
+        <td className="px-3 py-2 align-middle whitespace-nowrap">
+          {abaixoMinimo ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-100 text-orange-700">
+              Abaixo do mínimo
+            </span>
+          ) : acimaMaximo ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+              Acima do máximo
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
         </td>
         <td className="px-2 py-2 align-middle">
           <div className="flex items-center justify-end gap-0.5">
             <TableIconButton
-              label="Editar produto"
+              label="Editar"
               onClick={() => setLocation(`/insumos/cadastro?id=${item.id}`)}
               tone="neutral"
               compact
@@ -1091,7 +1186,7 @@ export function EstoquePage() {
             </TableIconButton>
             {item.situacao === "inativo" ? (
               <TableIconButton
-                label="Ativar nesta Fazenda"
+                label="Ativar nesta fazenda"
                 onClick={() => void handleAtivarIndividual(item.id)}
                 tone="success"
                 compact
@@ -1100,7 +1195,7 @@ export function EstoquePage() {
               </TableIconButton>
             ) : (
               <TableIconButton
-                label="Inativar nesta Fazenda"
+                label="Inativar nesta fazenda"
                 onClick={() => void handleInativarIndividual(item.id)}
                 tone="warning"
                 compact
@@ -1108,25 +1203,18 @@ export function EstoquePage() {
                 <InactivateActionIcon size={16} />
               </TableIconButton>
             )}
-            {temMovimentacao ? (
-              <TableIconButton
-                label="Produto com movimentações não pode ser desvinculado. Inative o produto nesta Fazenda para removê-lo da operação."
-                onClick={() => void handleExcluirProduto(item.id, item.nome, true)}
-                tone="danger"
-                compact
-              >
-                <DeleteActionIcon size={16} />
-              </TableIconButton>
-            ) : (
-              <TableIconButton
-                label="Desvincular desta Fazenda"
-                onClick={() => void handleExcluirProduto(item.id, item.nome, false)}
-                tone="danger"
-                compact
-              >
-                <DeleteActionIcon size={16} />
-              </TableIconButton>
-            )}
+            <TableIconButton
+              label={tooltipDesvincular}
+              onClick={() => void handleExcluirProduto(item.id, item.nome, desvinculoBloqueado)}
+              tone={desvinculoBloqueado ? "neutral" : "danger"}
+              blocked={desvinculoBloqueado}
+              compact
+            >
+              <DeleteActionIcon
+                size={16}
+                style={desvinculoBloqueado ? { color: "#9CA3AF" } : undefined}
+              />
+            </TableIconButton>
           </div>
         </td>
       </tr>
@@ -1180,10 +1268,10 @@ export function EstoquePage() {
               spreadsheetPlainHeader
               spreadsheetBlankAfterMeta={false}
               spreadsheetAutoFilter={false}
-              spreadsheetTextCols={[0, 1, 2, 3, 5, 6]}
+              spreadsheetTextCols={[0, 1, 2, 3, 5, 6, 7]}
               spreadsheetCurrencyCols={[4]}
-              spreadsheetColumnAligns={["center", "center", "center", "center", "center", "center", "center"]}
-              pdfColumnAligns={["center", "center", "center", "center", "center", "center", "center"]}
+              spreadsheetColumnAligns={["center", "center", "center", "center", "center", "center", "center", "center"]}
+              pdfColumnAligns={["center", "center", "center", "center", "center", "center", "center", "center"]}
               pdfIncludeSpreadsheetTitle={false}
               pdfShowRegistrosSubtitle={false}
             />
@@ -1235,6 +1323,7 @@ export function EstoquePage() {
               const value = e.target.value;
               setEstoqueFiltro(value);
               persistRebanhoFazendaId(value);
+              setCategoriaFiltro("");
               setPage(1);
               setSelectedIds(new Set());
             }}
@@ -1247,7 +1336,11 @@ export function EstoquePage() {
           </select>
           <select
             value={statusFiltro}
-            onChange={e => { setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos"); setPage(1); setSelectedIds(new Set()); }}
+            onChange={e => {
+              setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos");
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
             disabled={!fazendaSelecionada}
             title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por status" : undefined}
@@ -1255,6 +1348,39 @@ export function EstoquePage() {
             <option value="ativo">Ativos</option>
             <option value="inativo">Inativos</option>
             <option value="todos">Todos</option>
+          </select>
+          <select
+            value={alertaFiltro}
+            onChange={e => {
+              setAlertaFiltro(e.target.value as AlertaEstoqueFiltro);
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
+            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[150px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar alertas" : undefined}
+            aria-label="Alerta de estoque"
+          >
+            <option value="todos">Alerta: Todos</option>
+            <option value="abaixo_minimo">Abaixo do mínimo</option>
+            <option value="acima_maximo">Acima do máximo</option>
+          </select>
+          <select
+            value={categoriaFiltro}
+            onChange={e => {
+              setCategoriaFiltro(e.target.value);
+              setPage(1);
+              setSelectedIds(new Set());
+            }}
+            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[150px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por categoria" : undefined}
+            aria-label="Categoria"
+          >
+            <option value="">Categoria: Todas</option>
+            {categoriasDisponiveis.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
           </select>
           <div className="relative">
             <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
@@ -1336,7 +1462,7 @@ export function EstoquePage() {
                       sortKey === key
                         ? `${SORT_TIPS[key]} (${sortAsc ? "crescente" : "decrescente"})`
                         : SORT_TIPS[key];
-                    return (
+                    const th = (
                       <th
                         key={key}
                         title={sortTitle}
@@ -1349,6 +1475,17 @@ export function EstoquePage() {
                         </span>
                       </th>
                     );
+                    if (key === "status") {
+                      return (
+                        <Fragment key="status-alerta">
+                          {th}
+                          <th className="px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-left min-w-[120px]">
+                            Alerta
+                          </th>
+                        </Fragment>
+                      );
+                    }
+                    return th;
                   })}
                   <th className="px-2 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-center w-[108px]">
                     Ações

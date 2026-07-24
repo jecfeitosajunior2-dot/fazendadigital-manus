@@ -121,11 +121,13 @@ export function AlertGroup({
           {itens.length}
         </span>
       </div>
-      <ul className="space-y-1">
+      <ul className="space-y-1.5">
         {itens.slice(0, 3).map((it, i) => (
-          <li key={i} className="flex items-center justify-between gap-2 text-[11px]">
-            <span className="text-gray-700 truncate">{it.texto}</span>
-            <span className="text-gray-400 whitespace-nowrap">{it.detalhe}</span>
+          <li key={i} className="text-[11px] min-w-0">
+            <div className="text-gray-700 truncate font-medium">{it.texto}</div>
+            {it.detalhe ? (
+              <div className="text-gray-500 leading-snug">{it.detalhe}</div>
+            ) : null}
           </li>
         ))}
         {itens.length > 3 && (

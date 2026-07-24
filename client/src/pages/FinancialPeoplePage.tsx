@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FD_PRIMARY, FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
-import { formatCpfCnpj } from "@/lib/utils";
+import { formatCpfCnpj, formatPhoneBR } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
 type PessoaTipo = "fornecedor" | "cliente" | "funcionario";
@@ -171,7 +171,7 @@ export default function FinancialPeoplePage() {
       tipo: p.tipo as PessoaTipo,
       documento: formatCpfCnpj((p as { documento?: string | null }).documento ?? ""),
       endereco: (p as { endereco?: string | null }).endereco ?? "",
-      telefone: p.telefone ?? "",
+      telefone: formatPhoneBR(p.telefone ?? ""),
       email: p.email ?? "",
       observacoes: p.observacoes ?? "",
     });
@@ -277,7 +277,9 @@ export default function FinancialPeoplePage() {
               <FormInput
                 variant="light"
                 value={form.telefone}
-                onChange={v => setForm(f => ({ ...f, telefone: v }))}
+                onChange={v => setForm(f => ({ ...f, telefone: formatPhoneBR(v) }))}
+                placeholder="(00) 00000-0000"
+                inputMode="tel"
               />
             </div>
             <div>

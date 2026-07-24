@@ -10,15 +10,16 @@ export function brl(value: number | string | null | undefined, decimals = 2): st
   })}`;
 }
 
-/** Formato compacto para KPIs (ex.: R$ 1,2 mi / R$ 340 mil). */
+/** Formato compacto para KPIs (ex.: R$ 1,2 mi / R$ 340 mil).
+ * Abaixo de R$ 1.000 mantém centavos, alinhado às telas operacionais. */
 export function brlCompact(value: number | string | null | undefined): string {
   const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(",", "."));
-  if (Number.isNaN(n) || n === 0) return "R$ 0";
+  if (Number.isNaN(n) || n === 0) return "R$ 0,00";
   const abs = Math.abs(n);
   const sinal = n < 0 ? "-" : "";
   if (abs >= 1_000_000) return `${sinal}R$ ${(abs / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
   if (abs >= 1_000) return `${sinal}R$ ${(abs / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
-  return `${sinal}R$ ${abs.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+  return `${sinal}R$ ${abs.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Número pt-BR. */
@@ -118,6 +119,114 @@ export function ultimosMeses(n: number): BucketMes[] {
 export function mesChave(value: string | Date | null | undefined): string | null {
   const d = parseData(value);
   return d ? `${d.getFullYear()}-${d.getMonth()}` : null;
+}
+
+export type BucketFluxo = {
+  chave: string;
+  label: string;
+  entrada: number;
+  saida: number;
+};
+
+/** Chave semanal ISO aproximada (segunda = início). */
+function semanaChave(d: Date): string {
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = (copy.getDay() + 6) % 7; // segunda=0
+  copy.setDate(copy.getDate() - day);
+  return `${copy.getFullYear()}-${copy.getMonth()}-${copy.getDate()}`;
+}
+
+function semanaLabel(d: Date): string {
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = (copy.getDay() + 6) % 7;
+  copy.setDate(copy.getDate() - day);
+  return `${String(copy.getDate()).padStart(2, "0")}/${String(copy.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Buckets do gráfico Entradas × Saídas conforme o filtro de período.
+ * - 30d: semanal
+ * - 90d / 12m: mensal
+ * - all: mensal cobrindo o histórico informado (mín. 1, máx. 24)
+ */
+export function bucketsFluxoPeriodo(
+  periodo: PeriodoChave,
+  datasHistorico: Array<string | Date | null | undefined> = [],
+): BucketFluxo[] {
+  const hoje = new Date();
+  hoje.setHours(12, 0, 0, 0);
+
+  if (periodo === "30d") {
+    const buckets: BucketFluxo[] = [];
+    for (let i = 4; i >= 0; i--) {
+      const d = new Date(hoje);
+      d.setDate(d.getDate() - i * 7);
+      buckets.push({ chave: semanaChave(d), label: semanaLabel(d), entrada: 0, saida: 0 });
+    }
+    // dedupe por chave (caso sobreposição)
+    const seen = new Set<string>();
+    return buckets.filter(b => {
+      if (seen.has(b.chave)) return false;
+      seen.add(b.chave);
+      return true;
+    });
+  }
+
+  if (periodo === "90d") {
+    return ultimosMeses(3).map(b => ({
+      chave: b.chave,
+      label: b.label,
+      entrada: 0,
+      saida: 0,
+    }));
+  }
+
+  if (periodo === "12m") {
+    return ultimosMeses(12).map(b => ({
+      chave: b.chave,
+      label: b.label,
+      entrada: 0,
+      saida: 0,
+    }));
+  }
+
+  // all — mensal conforme histórico disponível
+  let maisAntiga: Date | null = null;
+  for (const raw of datasHistorico) {
+    const d = parseData(raw);
+    if (!d) continue;
+    if (!maisAntiga || d < maisAntiga) maisAntiga = d;
+  }
+  if (!maisAntiga) {
+    return ultimosMeses(6).map(b => ({
+      chave: b.chave,
+      label: b.label,
+      entrada: 0,
+      saida: 0,
+    }));
+  }
+  const meses =
+    (hoje.getFullYear() - maisAntiga.getFullYear()) * 12 +
+    (hoje.getMonth() - maisAntiga.getMonth()) +
+    1;
+  const n = Math.min(24, Math.max(1, meses));
+  return ultimosMeses(n).map(b => ({
+    chave: b.chave,
+    label: b.label,
+    entrada: 0,
+    saida: 0,
+  }));
+}
+
+/** Chave do bucket para uma data, alinhada ao período. */
+export function chaveFluxoPeriodo(
+  periodo: PeriodoChave,
+  value: string | Date | null | undefined,
+): string | null {
+  const d = parseData(value);
+  if (!d) return null;
+  if (periodo === "30d") return semanaChave(d);
+  return mesChave(d);
 }
 
 /** Idade em anos a partir da data de nascimento (null se inválida). */

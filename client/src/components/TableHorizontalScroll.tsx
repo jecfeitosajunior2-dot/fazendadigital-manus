@@ -6,6 +6,11 @@ interface TableHorizontalScrollProps {
   /** Rodapé fixo (paginação) — não rola com a tabela */
   footer?: ReactNode;
   className?: string;
+  /**
+   * Quando true, o conteúdo ocupa 100% da largura disponível (sem forçar w-max).
+   * Use em tabelas que devem caber no desktop sem rolagem lateral.
+   */
+  fitWidth?: boolean;
 }
 
 /**
@@ -15,6 +20,7 @@ export default function TableHorizontalScroll({
   children,
   footer,
   className,
+  fitWidth = false,
 }: TableHorizontalScrollProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -58,7 +64,7 @@ export default function TableHorizontalScroll({
       ro.disconnect();
       window.removeEventListener("resize", updateMetrics);
     };
-  }, [updateMetrics, children]);
+  }, [updateMetrics, children, fitWidth]);
 
   const scrollFromClientX = (clientX: number) => {
     const el = scrollRef.current;
@@ -106,7 +112,9 @@ export default function TableHorizontalScroll({
         ref={scrollRef}
         className="fd-table-scroll-x fd-table-scroll-x--hide-native overflow-x-auto overflow-y-hidden"
       >
-        <div className="inline-block w-max min-w-full">{children}</div>
+        <div className={cn(fitWidth ? "block w-full min-w-0" : "inline-block w-max min-w-full")}>
+          {children}
+        </div>
       </div>
 
       <div className="px-4 pt-2 pb-1 border-t border-gray-100 bg-white">

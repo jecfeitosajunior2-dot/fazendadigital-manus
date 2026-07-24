@@ -267,6 +267,9 @@ export async function ensureSchema() {
     `);
 
     await ensureColumn(pool, "estoque_movimentacoes", "fazenda_id", "int");
+    await ensureColumn(pool, "estoque_movimentacoes", "grupo_id", "varchar(40)");
+    await ensureColumn(pool, "estoque_movimentacoes", "user_id", "int");
+    await ensureColumn(pool, "estoque_movimentacoes", "registrado_por", "varchar(150)");
     await ensureColumn(pool, "estoque_movimentacoes", "tipo", "varchar(40)");
     await ensureColumn(pool, "estoque_movimentacoes", "destino", "varchar(150)");
     await ensureColumn(pool, "estoque_movimentacoes", "manejo", "varchar(150)");
@@ -274,6 +277,12 @@ export async function ensureSchema() {
     await ensureColumn(pool, "estoque_movimentacoes", "frete", "decimal(12,2)");
     await ensureColumn(pool, "estoque_movimentacoes", "fornecedor", "varchar(150)");
     await ensureColumn(pool, "estoque_movimentacoes", "valor", "decimal(12,2)");
+    await ensureColumn(pool, "estoque_movimentacoes", "status", "varchar(20) DEFAULT 'ativa'");
+    await ensureColumn(pool, "estoque_movimentacoes", "original_grupo_id", "varchar(40)");
+    await ensureColumn(pool, "estoque_movimentacoes", "motivo_estorno", "varchar(255)");
+    await ensureColumn(pool, "estoque_movimentacoes", "updated_at", "timestamp NULL");
+    await ensureColumn(pool, "estoque_movimentacoes", "updated_by_user_id", "int");
+    await ensureColumn(pool, "estoque_movimentacoes", "updated_by_nome", "varchar(150)");
 
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
     if ((maquinasTable as unknown[]).length > 0) {

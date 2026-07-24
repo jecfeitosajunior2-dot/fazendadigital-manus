@@ -8,7 +8,7 @@ import {
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
-  historicoBrincos, produtosCatalogo
+  historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
 import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
@@ -21,7 +21,7 @@ import {
   importarCoordenadasPastos,
   importarCoordenadasPastosLocal,
 } from "./importarCoordenadasPastos";
-import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
+import { avaliarEstornoEstoque, isEstornoBusinessError, montarMotivoEstorno } from "./estoqueEstorno";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
@@ -5567,9 +5567,12 @@ const estoqueRouter = router({
       const rows = await db
         .select({
           id: estoqueMovimentacoes.id,
+          grupoId: estoqueMovimentacoes.grupoId,
           estoqueId: estoqueMovimentacoes.estoqueId,
           fazendaId: estoqueMovimentacoes.fazendaId,
           produtoFazendaId: estoque.fazendaId,
+          userId: estoqueMovimentacoes.userId,
+          registradoPor: estoqueMovimentacoes.registradoPor,
           tipo: estoqueMovimentacoes.tipo,
           dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
           quantidade: estoqueMovimentacoes.quantidade,
@@ -5581,6 +5584,13 @@ const estoqueRouter = router({
           fornecedor: estoqueMovimentacoes.fornecedor,
           valor: estoqueMovimentacoes.valor,
           observacoes: estoqueMovimentacoes.observacoes,
+          status: estoqueMovimentacoes.status,
+          originalGrupoId: estoqueMovimentacoes.originalGrupoId,
+          motivoEstorno: estoqueMovimentacoes.motivoEstorno,
+          createdAt: estoqueMovimentacoes.createdAt,
+          updatedAt: estoqueMovimentacoes.updatedAt,
+          updatedByUserId: estoqueMovimentacoes.updatedByUserId,
+          updatedByNome: estoqueMovimentacoes.updatedByNome,
           nome: estoque.nome,
           categoria: estoque.categoria,
           subcategoria: estoque.subcategoria,
@@ -5606,41 +5616,58 @@ const estoqueRouter = router({
   getMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      const [row] = await db
-        .select({
-          id: estoqueMovimentacoes.id,
-          estoqueId: estoqueMovimentacoes.estoqueId,
-          fazendaId: estoqueMovimentacoes.fazendaId,
-          produtoFazendaId: estoque.fazendaId,
-          tipo: estoqueMovimentacoes.tipo,
-          dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
-          quantidade: estoqueMovimentacoes.quantidade,
-          dataValidade: estoqueMovimentacoes.dataValidade,
-          destino: estoqueMovimentacoes.destino,
-          manejo: estoqueMovimentacoes.manejo,
-          notaFiscal: estoqueMovimentacoes.notaFiscal,
-          frete: estoqueMovimentacoes.frete,
-          fornecedor: estoqueMovimentacoes.fornecedor,
-          valor: estoqueMovimentacoes.valor,
-          observacoes: estoqueMovimentacoes.observacoes,
-          nome: estoque.nome,
-          categoria: estoque.categoria,
-          subcategoria: estoque.subcategoria,
-          fabricante: estoque.fabricante,
-          unidade: estoque.unidade,
-          embalagens: estoque.embalagens,
-          situacao: estoque.situacao,
-        })
-        .from(estoqueMovimentacoes)
-        .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
-        .where(eq(estoqueMovimentacoes.id, input.id));
-      return row ?? null;
+      try {
+        const [row] = await db
+          .select({
+            id: estoqueMovimentacoes.id,
+            grupoId: estoqueMovimentacoes.grupoId,
+            estoqueId: estoqueMovimentacoes.estoqueId,
+            fazendaId: estoqueMovimentacoes.fazendaId,
+            produtoFazendaId: estoque.fazendaId,
+            userId: estoqueMovimentacoes.userId,
+            registradoPor: estoqueMovimentacoes.registradoPor,
+            tipo: estoqueMovimentacoes.tipo,
+            dataMovimentacao: estoqueMovimentacoes.dataMovimentacao,
+            quantidade: estoqueMovimentacoes.quantidade,
+            dataValidade: estoqueMovimentacoes.dataValidade,
+            destino: estoqueMovimentacoes.destino,
+            manejo: estoqueMovimentacoes.manejo,
+            notaFiscal: estoqueMovimentacoes.notaFiscal,
+            frete: estoqueMovimentacoes.frete,
+            fornecedor: estoqueMovimentacoes.fornecedor,
+            valor: estoqueMovimentacoes.valor,
+            observacoes: estoqueMovimentacoes.observacoes,
+            status: estoqueMovimentacoes.status,
+            originalGrupoId: estoqueMovimentacoes.originalGrupoId,
+            motivoEstorno: estoqueMovimentacoes.motivoEstorno,
+            createdAt: estoqueMovimentacoes.createdAt,
+            updatedAt: estoqueMovimentacoes.updatedAt,
+            updatedByUserId: estoqueMovimentacoes.updatedByUserId,
+            updatedByNome: estoqueMovimentacoes.updatedByNome,
+            nome: estoque.nome,
+            categoria: estoque.categoria,
+            subcategoria: estoque.subcategoria,
+            fabricante: estoque.fabricante,
+            unidade: estoque.unidade,
+            embalagens: estoque.embalagens,
+            situacao: estoque.situacao,
+          })
+          .from(estoqueMovimentacoes)
+          .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+          .where(eq(estoqueMovimentacoes.id, input.id));
+        if (row) return row;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      // Itens criados no store local (dev) aparecem na listagem, mas podem não existir no banco.
+      return devLocalStore.getMovimentacao(input.id);
     }),
 
   createMovimentacao: protectedProcedure
     .input(z.object({
       estoqueId: z.number(),
       fazendaId: z.number({ required_error: "Informe a fazenda da movimentação." }),
+      grupoId: z.string().min(1).max(40).optional(),
       tipo: z.string().optional(),
       dataMovimentacao: z.string(),
       quantidade: z.string(),
@@ -5658,7 +5685,7 @@ const estoqueRouter = router({
       quantidadePorUnidade: z.string().optional(),
       unidadeLancamento: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const qty = parseFloat(input.quantidade.replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) {
         throw new Error("Informe uma quantidade válida.");
@@ -5667,11 +5694,24 @@ const estoqueRouter = router({
         throw new Error("Informe a fazenda da movimentação.");
       }
 
+      const userId = ctx.user.id;
+      const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "";
+      if (!userId || !registradoPor) {
+        throw new Error("Usuário autenticado inválido para registrar movimentação.");
+      }
+
+      const localInput = {
+        ...input,
+        userId,
+        registradoPor,
+        status: "ativa" as const,
+      };
+
       try {
         const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
         if (!item) {
-          const result = devLocalStore.createMovimentacao(input);
-          return { success: true, id: result.id, localFallback: true };
+          const result = devLocalStore.createMovimentacao(localInput);
+          return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
         }
 
         const atual = Number(item.quantidade ?? 0);
@@ -5691,8 +5731,11 @@ const estoqueRouter = router({
         }
 
         const result = await db.insert(estoqueMovimentacoes).values({
+          grupoId: input.grupoId || undefined,
           estoqueId: input.estoqueId,
           fazendaId: input.fazendaId ?? item.fazendaId ?? undefined,
+          userId,
+          registradoPor,
           tipo: input.tipo || undefined,
           dataMovimentacao: input.dataMovimentacao,
           quantidade: String(qty),
@@ -5704,18 +5747,23 @@ const estoqueRouter = router({
           fornecedor: input.fornecedor || undefined,
           valor: input.valor || undefined,
           observacoes,
+          status: "ativa",
         });
 
         await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
 
-        return { success: true, id: (result as any)[0]?.insertId };
+        return {
+          success: true,
+          id: (result as any)[0]?.insertId,
+          grupoId: input.grupoId ?? null,
+        };
       } catch (error) {
-        if (error instanceof Error && /estoque insuficiente|quantidade válida/i.test(error.message)) {
+        if (error instanceof Error && /estoque insuficiente|quantidade válida|usuário autenticado/i.test(error.message)) {
           throw error;
         }
         if (!isDatabaseUnavailable(error)) throw error;
-        const result = devLocalStore.createMovimentacao(input);
-        return { success: true, id: result.id, localFallback: true };
+        const result = devLocalStore.createMovimentacao(localInput);
+        return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
       }
     }),
 
@@ -5741,88 +5789,403 @@ const estoqueRouter = router({
       quantidadePorUnidade: z.string().optional(),
       unidadeLancamento: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const qty = parseFloat(input.quantidade.replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) {
         throw new Error("Informe uma quantidade válida.");
       }
 
-      const [mov] = await db
-        .select()
-        .from(estoqueMovimentacoes)
-        .where(eq(estoqueMovimentacoes.id, input.id));
-      if (!mov) throw new Error("Movimentação não encontrada.");
-
-      const oldQty = Number(mov.quantidade);
-      const oldEstoqueId = mov.estoqueId;
-
-      if (oldEstoqueId === input.estoqueId) {
-        const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-        if (!item) throw new Error("Produto não encontrado.");
-        const base = Number(item.quantidade ?? 0) - oldQty;
-        const novo = base + qty;
-        if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
-        await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
-      } else {
-        const [oldItem] = await db.select().from(estoque).where(eq(estoque.id, oldEstoqueId));
-        const [newItem] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-        if (!oldItem || !newItem) throw new Error("Produto não encontrado.");
-        const oldStock = Number(oldItem.quantidade ?? 0) - oldQty;
-        const newStock = Number(newItem.quantidade ?? 0) + qty;
-        if (newStock < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
-        await db.update(estoque).set({ quantidade: String(oldStock) }).where(eq(estoque.id, oldEstoqueId));
-        await db.update(estoque).set({ quantidade: String(newStock) }).where(eq(estoque.id, input.estoqueId));
+      const updatedByNome = ctx.user.name?.trim() || ctx.user.email?.trim() || "";
+      if (!ctx.user.id || !updatedByNome) {
+        throw new Error("Usuário autenticado inválido para editar movimentação.");
       }
 
-      let observacoes = input.observacoes;
-      if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
-        observacoes = JSON.stringify({
-          modo: input.modo,
-          sinal: input.sinal,
-          unidades: input.quantidadeUnidades,
-          porUnidade: input.quantidadePorUnidade,
-          unidade: input.unidadeLancamento,
-          total: qty,
+      try {
+        const [mov] = await db
+          .select()
+          .from(estoqueMovimentacoes)
+          .where(eq(estoqueMovimentacoes.id, input.id));
+        if (!mov) {
+          // Pode existir só no store local (mesmo padrão de listMovimentacoes).
+          return devLocalStore.updateMovimentacao({
+            ...input,
+            updatedByUserId: ctx.user.id,
+            updatedByNome,
+          });
+        }
+
+        const status = mov.status || "ativa";
+        if (status === "estornada" || status === "estorno") {
+          throw new Error("Movimentação estornada não pode ser editada.");
+        }
+
+        const oldQty = Number(mov.quantidade);
+        const oldEstoqueId = mov.estoqueId;
+
+        if (oldEstoqueId === input.estoqueId) {
+          const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+          if (!item) throw new Error("Produto não encontrado.");
+          const base = Number(item.quantidade ?? 0) - oldQty;
+          const novo = base + qty;
+          if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+          await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+        } else {
+          const [oldItem] = await db.select().from(estoque).where(eq(estoque.id, oldEstoqueId));
+          const [newItem] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+          if (!oldItem || !newItem) throw new Error("Produto não encontrado.");
+          const oldStock = Number(oldItem.quantidade ?? 0) - oldQty;
+          const newStock = Number(newItem.quantidade ?? 0) + qty;
+          if (newStock < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+          await db.update(estoque).set({ quantidade: String(oldStock) }).where(eq(estoque.id, oldEstoqueId));
+          await db.update(estoque).set({ quantidade: String(newStock) }).where(eq(estoque.id, input.estoqueId));
+        }
+
+        let observacoes = input.observacoes;
+        if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
+          observacoes = JSON.stringify({
+            modo: input.modo,
+            sinal: input.sinal,
+            unidades: input.quantidadeUnidades,
+            porUnidade: input.quantidadePorUnidade,
+            unidade: input.unidadeLancamento,
+            total: qty,
+          });
+        }
+
+        await db.update(estoqueMovimentacoes).set({
+          estoqueId: input.estoqueId,
+          fazendaId: input.fazendaId ?? null,
+          tipo: input.tipo || null,
+          dataMovimentacao: input.dataMovimentacao.slice(0, 10),
+          quantidade: String(qty),
+          dataValidade: input.dataValidade ? input.dataValidade.slice(0, 10) : null,
+          destino: input.destino || null,
+          manejo: input.manejo || null,
+          notaFiscal: input.notaFiscal || null,
+          frete: input.frete || null,
+          fornecedor: input.fornecedor || null,
+          valor: input.valor || null,
+          observacoes: observacoes ?? null,
+          updatedAt: new Date(),
+          updatedByUserId: ctx.user.id,
+          updatedByNome,
+        }).where(eq(estoqueMovimentacoes.id, input.id));
+
+        return { success: true };
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          /insuficiente|quantidade válida|estornada|usuário autenticado|produto não encontrado/i.test(error.message)
+        ) {
+          throw error;
+        }
+        if (!isDatabaseUnavailable(error)) throw error;
+        return devLocalStore.updateMovimentacao({
+          ...input,
+          updatedByUserId: ctx.user.id,
+          updatedByNome,
         });
       }
+    }),
 
-      await db.update(estoqueMovimentacoes).set({
-        estoqueId: input.estoqueId,
-        fazendaId: input.fazendaId ?? null,
-        tipo: input.tipo || null,
-        dataMovimentacao: input.dataMovimentacao.slice(0, 10),
-        quantidade: String(qty),
-        dataValidade: input.dataValidade ? input.dataValidade.slice(0, 10) : null,
-        destino: input.destino || null,
-        manejo: input.manejo || null,
-        notaFiscal: input.notaFiscal || null,
-        frete: input.frete || null,
-        fornecedor: input.fornecedor || null,
-        valor: input.valor || null,
-        observacoes: observacoes ?? null,
-      }).where(eq(estoqueMovimentacoes.id, input.id));
+  validarEstorno: protectedProcedure
+    .input(z.object({ itemIds: z.array(z.number()).min(1) }))
+    .query(async ({ input }) => {
+      try {
+        const seeds = await db
+          .select({
+            id: estoqueMovimentacoes.id,
+            grupoId: estoqueMovimentacoes.grupoId,
+            estoqueId: estoqueMovimentacoes.estoqueId,
+            quantidade: estoqueMovimentacoes.quantidade,
+            status: estoqueMovimentacoes.status,
+            nome: estoque.nome,
+            unidade: estoque.unidade,
+            saldo: estoque.quantidade,
+          })
+          .from(estoqueMovimentacoes)
+          .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+          .where(inArray(estoqueMovimentacoes.id, input.itemIds));
 
-      return { success: true };
+        if (!seeds.length) {
+          const local = devLocalStore.validarEstorno(input.itemIds);
+          return local;
+        }
+
+        const grupoId = seeds[0]!.grupoId?.trim() || null;
+        const originais = grupoId
+          ? await db
+              .select({
+                id: estoqueMovimentacoes.id,
+                estoqueId: estoqueMovimentacoes.estoqueId,
+                quantidade: estoqueMovimentacoes.quantidade,
+                status: estoqueMovimentacoes.status,
+                nome: estoque.nome,
+                unidade: estoque.unidade,
+                saldo: estoque.quantidade,
+              })
+              .from(estoqueMovimentacoes)
+              .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+              .where(eq(estoqueMovimentacoes.grupoId, grupoId))
+          : seeds;
+
+        for (const mov of originais) {
+          const st = mov.status || "ativa";
+          if (st === "estornada") {
+            return {
+              podeEstornar: false,
+              jaEstornada: true,
+              insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+              mensagem: "Esta movimentação já foi estornada.",
+            };
+          }
+          if (st === "estorno") {
+            return {
+              podeEstornar: false,
+              jaEstornada: true,
+              insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+              mensagem: "Não é possível estornar um lançamento de estorno.",
+            };
+          }
+        }
+
+        const saldos = new Map(
+          originais.map(o => [
+            o.estoqueId,
+            {
+              quantidade: Number(o.saldo ?? 0),
+              nome: o.nome ?? `Produto #${o.estoqueId}`,
+              unidade: o.unidade,
+            },
+          ]),
+        );
+        const insuficientes = avaliarEstornoEstoque(
+          originais.map(o => ({
+            estoqueId: o.estoqueId,
+            quantidade: o.quantidade,
+            nome: o.nome,
+            unidade: o.unidade,
+          })),
+          saldos,
+        );
+
+        return {
+          podeEstornar: insuficientes.length === 0,
+          jaEstornada: false,
+          insuficientes,
+          mensagem:
+            insuficientes.length > 0
+              ? "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão."
+              : null,
+        };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return devLocalStore.validarEstorno(input.itemIds);
+      }
+    }),
+
+  estornarMovimentacao: protectedProcedure
+    .input(z.object({
+      itemIds: z.array(z.number()).min(1),
+      motivo: z.string().min(1, "Informe o motivo do estorno.").max(255),
+      observacao: z.string().max(200).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "";
+      if (!ctx.user.id || !registradoPor) {
+        throw new Error("Usuário autenticado inválido para registrar o estorno.");
+      }
+      const motivo = montarMotivoEstorno(input.motivo, input.observacao);
+      if (!motivo) throw new Error("Informe o motivo do estorno.");
+
+      const localPayload = {
+        itemIds: input.itemIds,
+        motivo,
+        userId: ctx.user.id,
+        registradoPor,
+      };
+
+      try {
+        const seeds = await db
+          .select()
+          .from(estoqueMovimentacoes)
+          .where(inArray(estoqueMovimentacoes.id, input.itemIds));
+        if (!seeds.length) {
+          // Itens podem existir só no store local (dev / fallback).
+          return devLocalStore.estornarMovimentacaoGrupo(localPayload);
+        }
+
+        const grupoId = seeds[0]!.grupoId?.trim() || null;
+        const originais = grupoId
+          ? await db.select().from(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.grupoId, grupoId))
+          : seeds;
+
+        for (const mov of originais) {
+          const st = mov.status || "ativa";
+          if (st === "estornada") throw new Error("Esta movimentação já foi estornada.");
+          if (st === "estorno") throw new Error("Não é possível estornar um lançamento de estorno.");
+        }
+
+        const estoqueIds = [...new Set(originais.map(m => m.estoqueId))];
+        const produtos = await db.select().from(estoque).where(inArray(estoque.id, estoqueIds));
+        const saldos = new Map(
+          produtos.map(p => [
+            p.id,
+            {
+              quantidade: Number(p.quantidade ?? 0),
+              nome: p.nome ?? `Produto #${p.id}`,
+              unidade: p.unidade,
+            },
+          ]),
+        );
+        const nomePorId = new Map(produtos.map(p => [p.id, p.nome]));
+        const insuficientes = avaliarEstornoEstoque(
+          originais.map(o => ({
+            estoqueId: o.estoqueId,
+            quantidade: o.quantidade,
+            nome: nomePorId.get(o.estoqueId),
+          })),
+          saldos,
+        );
+        if (insuficientes.length > 0) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
+            cause: { insuficientes },
+          });
+        }
+
+        let originalGrupoId = grupoId;
+        if (!originalGrupoId) {
+          originalGrupoId = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        }
+
+        const estornoGrupoId = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        const hoje = new Date().toISOString().slice(0, 10);
+        const idsCriados: number[] = [];
+
+        await db.transaction(async tx => {
+          if (!grupoId) {
+            for (const mov of originais) {
+              await tx.update(estoqueMovimentacoes)
+                .set({ grupoId: originalGrupoId })
+                .where(eq(estoqueMovimentacoes.id, mov.id));
+              mov.grupoId = originalGrupoId;
+            }
+          }
+
+          for (const mov of originais) {
+            const qty = Number(mov.quantidade);
+            const qtyInversa = -qty;
+            const [item] = await tx.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
+            if (!item) throw new Error("Produto não encontrado.");
+            const atual = Number(item.quantidade ?? 0);
+            const novo = atual + qtyInversa;
+            if (novo < 0) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message:
+                  "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
+              });
+            }
+            await tx.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, mov.estoqueId));
+
+            const insertResult = await tx.insert(estoqueMovimentacoes).values({
+              grupoId: estornoGrupoId,
+              estoqueId: mov.estoqueId,
+              fazendaId: mov.fazendaId ?? undefined,
+              userId: ctx.user.id,
+              registradoPor,
+              tipo: mov.tipo || undefined,
+              dataMovimentacao: hoje,
+              quantidade: String(qtyInversa),
+              dataValidade: mov.dataValidade || undefined,
+              destino: mov.destino || undefined,
+              manejo: mov.manejo || undefined,
+              notaFiscal: mov.notaFiscal || undefined,
+              frete: mov.frete != null ? String(mov.frete) : undefined,
+              fornecedor: mov.fornecedor || undefined,
+              valor: mov.valor != null ? String(mov.valor) : undefined,
+              observacoes: mov.observacoes || undefined,
+              status: "estorno",
+              originalGrupoId,
+              motivoEstorno: motivo,
+            });
+            idsCriados.push((insertResult as any)[0]?.insertId);
+
+            await tx.update(estoqueMovimentacoes).set({
+              status: "estornada",
+              motivoEstorno: motivo,
+              updatedAt: new Date(),
+              updatedByUserId: ctx.user.id,
+              updatedByNome: registradoPor,
+            }).where(eq(estoqueMovimentacoes.id, mov.id));
+          }
+        });
+
+        return {
+          success: true,
+          originalGrupoId,
+          estornoGrupoId,
+          ids: idsCriados,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        // Não usar /estorno/ solto: mensagens SQL com coluna motivo_estorno batem no regex.
+        if (isEstornoBusinessError(error)) throw error;
+        if (!isDatabaseUnavailable(error)) {
+          throw new Error(
+            "Não foi possível concluir o estorno. Nenhuma alteração foi realizada no estoque. Tente novamente.",
+          );
+        }
+        return devLocalStore.estornarMovimentacaoGrupo(localPayload);
+      }
     }),
 
   deleteMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      const [mov] = await db
-        .select()
-        .from(estoqueMovimentacoes)
-        .where(eq(estoqueMovimentacoes.id, input.id));
-      if (!mov) throw new Error("Movimentação não encontrada.");
+      try {
+        const [mov] = await db
+          .select()
+          .from(estoqueMovimentacoes)
+          .where(eq(estoqueMovimentacoes.id, input.id));
+        if (!mov) {
+          return devLocalStore.deleteMovimentacao(input.id);
+        }
 
-      const [item] = await db.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
-      if (item) {
-        const atual = Number(item.quantidade ?? 0);
-        const revertido = atual - Number(mov.quantidade);
-        await db.update(estoque).set({ quantidade: String(revertido) }).where(eq(estoque.id, mov.estoqueId));
+        const status = mov.status || "ativa";
+        if (status === "estornada" || status === "estorno") {
+          throw new Error("Movimentação estornada não pode ser excluída. Use o histórico para consulta.");
+        }
+
+        const [item] = await db.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
+        if (item) {
+          const atual = Number(item.quantidade ?? 0);
+          const qtyMov = Number(mov.quantidade);
+          const revertido = atual - qtyMov;
+          // Entrada (qtd > 0): remover o item exige retirar do estoque — não permite negativo.
+          if (qtyMov > 0 && revertido < 0) {
+            throw new Error(
+              `Não é possível remover este item: o estoque atual de "${item.nome ?? "produto"}" é insuficiente para reverter a entrada (necessário ${qtyMov}, saldo ${atual}). Estorne a movimentação ou ajuste o estoque antes.`,
+            );
+          }
+          await db.update(estoque).set({ quantidade: String(revertido) }).where(eq(estoque.id, mov.estoqueId));
+        }
+
+        await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.id, input.id));
+        return { success: true };
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          /não encontrada|estornada|insuficiente|não é possível remover/i.test(error.message)
+        ) {
+          throw error;
+        }
+        if (!isDatabaseUnavailable(error)) throw error;
+        return devLocalStore.deleteMovimentacao(input.id);
       }
-
-      await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.id, input.id));
-      return { success: true };
     }),
 
   listMovimentacoesByProduto: protectedProcedure
@@ -6469,6 +6832,132 @@ const brincosRouter = router({
     }),
 });
 
+// ─── PESSOAS (fornecedores, clientes, funcionários) ───────────────────────────
+const pessoaTipoSchema = z.enum(["fornecedor", "cliente", "funcionario"]);
+
+const pessoaFieldsSchema = z.object({
+  nome: z.string().min(1, "Informe o nome."),
+  tipo: pessoaTipoSchema,
+  funcao: z.string().optional(),
+  documento: z.string().optional(),
+  endereco: z.string().optional(),
+  telefone: z.string().optional(),
+  email: z.string().optional(),
+  observacoes: z.string().optional(),
+});
+
+const pessoasRouter = router({
+  list: protectedProcedure
+    .input(z.object({ tipo: pessoaTipoSchema.optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      try {
+        const conditions = [eq(pessoas.userId, ctx.user.id), eq(pessoas.ativo, true)];
+        if (input?.tipo) conditions.push(eq(pessoas.tipo, input.tipo));
+        return await db
+          .select()
+          .from(pessoas)
+          .where(and(...conditions))
+          .orderBy(pessoas.nome);
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return devLocalStore.listPessoas(ctx.user.id, input?.tipo);
+      }
+    }),
+
+  create: protectedProcedure
+    .input(pessoaFieldsSchema)
+    .mutation(async ({ ctx, input }) => {
+      const documento = input.documento?.trim();
+      if (!documento) throw new Error("Informe o CPF/CNPJ.");
+
+      try {
+        const result = await db.insert(pessoas).values({
+          userId: ctx.user.id,
+          nome: input.nome.trim(),
+          tipo: input.tipo,
+          funcao: input.funcao?.trim() || null,
+          documento,
+          endereco: input.endereco?.trim() || null,
+          telefone: input.telefone?.trim() || null,
+          email: input.email?.trim() || null,
+          observacoes: input.observacoes?.trim() || null,
+          ativo: true,
+        });
+        const id = Number((result as [{ insertId?: number }])[0]?.insertId ?? 0);
+        return { success: true, id };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const row = devLocalStore.createPessoa(ctx.user.id, {
+          nome: input.nome,
+          tipo: input.tipo,
+          funcao: input.funcao ?? null,
+          documento,
+          endereco: input.endereco ?? null,
+          telefone: input.telefone ?? null,
+          email: input.email ?? null,
+          observacoes: input.observacoes ?? null,
+        });
+        return { success: true, id: row.id, localFallback: true };
+      }
+    }),
+
+  update: protectedProcedure
+    .input(pessoaFieldsSchema.partial().extend({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...rest } = input;
+      try {
+        const patch: Record<string, unknown> = {};
+        if (rest.nome !== undefined) patch.nome = rest.nome.trim();
+        if (rest.tipo !== undefined) patch.tipo = rest.tipo;
+        if (rest.funcao !== undefined) patch.funcao = rest.funcao?.trim() || null;
+        if (rest.documento !== undefined) {
+          const documento = rest.documento.trim();
+          if (!documento) throw new Error("Informe o CPF/CNPJ.");
+          patch.documento = documento;
+        }
+        if (rest.endereco !== undefined) patch.endereco = rest.endereco?.trim() || null;
+        if (rest.telefone !== undefined) patch.telefone = rest.telefone?.trim() || null;
+        if (rest.email !== undefined) patch.email = rest.email?.trim() || null;
+        if (rest.observacoes !== undefined) patch.observacoes = rest.observacoes?.trim() || null;
+
+        await db
+          .update(pessoas)
+          .set(patch)
+          .where(and(eq(pessoas.id, id), eq(pessoas.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (error instanceof Error && /CPF\/CNPJ|Informe o nome/i.test(error.message)) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        devLocalStore.updatePessoa(ctx.user.id, id, {
+          nome: rest.nome,
+          tipo: rest.tipo,
+          funcao: rest.funcao,
+          documento: rest.documento,
+          endereco: rest.endereco,
+          telefone: rest.telefone,
+          email: rest.email,
+          observacoes: rest.observacoes,
+        });
+        return { success: true, localFallback: true };
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await db
+          .update(pessoas)
+          .set({ ativo: false })
+          .where(and(eq(pessoas.id, input.id), eq(pessoas.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return { ...devLocalStore.deletePessoa(ctx.user.id, input.id), localFallback: true };
+      }
+    }),
+});
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: authRouter,
@@ -6491,5 +6980,6 @@ export const appRouter = router({
     pastos: pastosRouter,
   rebanho: rebanhoOverviewRouter,
   brincos: brincosRouter,
+  pessoas: pessoasRouter,
 });
 export type AppRouter = typeof appRouter;

@@ -404,8 +404,13 @@ export const estoque = mysqlTable("estoque", {
 
 export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),
+  /** Agrupa vários itens (produtos) da mesma movimentação administrativa. */
+  grupoId: varchar("grupo_id", { length: 40 }),
   estoqueId: int("estoque_id").notNull(),
   fazendaId: int("fazenda_id"),
+  /** Usuário que criou (createdByUserId). */
+  userId: int("user_id"),
+  registradoPor: varchar("registrado_por", { length: 150 }),
   tipo: varchar("tipo", { length: 40 }),
   dataMovimentacao: date("data_movimentacao", { mode: "string" }).notNull(),
   quantidade: decimal("quantidade", { precision: 12, scale: 2 }).notNull(),
@@ -417,7 +422,15 @@ export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   fornecedor: varchar("fornecedor", { length: 150 }),
   valor: decimal("valor", { precision: 12, scale: 2 }),
   observacoes: text("observacoes"),
+  /** ativa | estornada | estorno */
+  status: varchar("status", { length: 20 }).default("ativa"),
+  /** grupoId da movimentação original (quando status = estorno). */
+  originalGrupoId: varchar("original_grupo_id", { length: 40 }),
+  motivoEstorno: varchar("motivo_estorno", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+  updatedByUserId: int("updated_by_user_id"),
+  updatedByNome: varchar("updated_by_nome", { length: 150 }),
 });
 
 // Contas financeiras table (uses snake_case)

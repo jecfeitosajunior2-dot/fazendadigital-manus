@@ -4,22 +4,23 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
-import { FD_PRIMARY, FormDatePicker, FormInput, FormLabel, FormNativeSelect, FormSelect } from "@/components/FormFields";
+import { FD_PRIMARY, FieldBox, FormDatePicker, FormInput, FormLabel, FormNativeSelect, FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
-  UNIDADES_OPCOES,
   TIPOS_MOVIMENTACAO,
   sinalDoTipo,
   normalizarUnidade,
   nomeUnidadeExibicao,
   rotuloUnidade,
   converterUnidade,
-  unidadesCompativeis,
   formatQuantidadeMov,
   formatDataBr,
   toDateInput,
+  parseEmbalagens,
+  extrairVolumeEmbalagem,
+  type EmbalagemProduto,
 } from "@/lib/produto-types";
 
 // ─── Estilos compartilhados ─────────────────────────────────────────────────
@@ -29,31 +30,123 @@ const labelCls = "block text-[12px] font-medium text-gray-600 mb-1";
 const sectionTitleCls = "text-[12px] font-semibold text-gray-600 uppercase tracking-wide";
 const sectionCardCls = "border border-gray-200 rounded-lg p-4";
 
+const EMB_PREFIX = "emb:";
+const FAZENDA_HELPER =
+  "Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.";
+
+function isEmbalagemUnidade(value: string): boolean {
+  return value.startsWith(EMB_PREFIX);
+}
+
+function embalagemNomeFromValue(value: string): string {
+  return value.slice(EMB_PREFIX.length);
+}
+
+function embalagemValueFromNome(nome: string): string {
+  return `${EMB_PREFIX}${nome}`;
+}
+
+function parseEmbalagensProduto(raw: unknown): EmbalagemProduto[] {
+  if (Array.isArray(raw)) return parseEmbalagens(JSON.stringify(raw));
+  if (typeof raw === "string") return parseEmbalagens(raw);
+  return [];
+}
+
+function rotuloUnidadeMovimentacao(value: string): string {
+  if (!value) return "—";
+  if (isEmbalagemUnidade(value)) return embalagemNomeFromValue(value);
+  return nomeUnidadeExibicao(value) || rotuloUnidade(value) || value;
+}
+
+/** Converte quantidade da unidade/embalagem escolhida para a unidade-base do estoque. */
+function quantidadeNaUnidadeBase(
+  qtd: number,
+  unidadeMov: string,
+  prod: { unidade?: string | null; embalagens?: unknown }
+): number | null {
+  const base = normalizarUnidade(prod.unidade);
+  if (!unidadeMov || !Number.isFinite(qtd)) return null;
+
+  if (!isEmbalagemUnidade(unidadeMov)) {
+    if (!base) return qtd;
+    if (normalizarUnidade(unidadeMov) === base) return qtd;
+    return converterUnidade(qtd, unidadeMov, base);
+  }
+
+  const nome = embalagemNomeFromValue(unidadeMov);
+  const emb = parseEmbalagensProduto(prod.embalagens).find(e => e.nome === nome);
+  const extracted = extrairVolumeEmbalagem(nome);
+  const volume = emb?.volume ?? extracted.volume;
+  const unEmb = normalizarUnidade(emb?.unidade ?? extracted.unidade ?? base);
+  if (volume == null || volume <= 0) return null;
+  const totalNaUnEmb = qtd * volume;
+  if (!base || unEmb === base) return totalNaUnEmb;
+  return converterUnidade(totalNaUnEmb, unEmb, base);
+}
+
+function opcoesUnidadeDoProduto(prod: {
+  unidade?: string | null;
+  embalagens?: unknown;
+} | null | undefined): { value: string; label: string }[] {
+  if (!prod) return [];
+  const base = normalizarUnidade(prod.unidade);
+  const opts: { value: string; label: string }[] = [];
+  if (base) {
+    opts.push({ value: base, label: rotuloUnidade(base) });
+  }
+  for (const emb of parseEmbalagensProduto(prod.embalagens)) {
+    const nome = emb.nome?.trim();
+    if (!nome) continue;
+    opts.push({ value: embalagemValueFromNome(nome), label: nome });
+  }
+  return opts;
+}
+
 function UnidadeMovSelect({
   value,
   onChange,
   required,
+  disabled,
+  options,
 }: {
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
+  disabled?: boolean;
+  options: { value: string; label: string }[];
 }) {
+  const display = options.find(o => o.value === value)?.label;
   return (
     <FormSelect
       value={value}
       onChange={onChange}
-      placeholder="Selecione a unidade"
+      placeholder={disabled ? "Selecione o produto primeiro" : "Selecione a unidade"}
       required={required}
+      disabled={disabled}
       variant="light"
-      displayValue={value ? rotuloUnidade(value) : undefined}
+      displayValue={display}
       triggerClassName="h-[38px] py-0 bg-white"
     >
-      {UNIDADES_OPCOES.map(u => (
-        <SelectItem key={u.sigla} value={u.sigla} className="text-[13px]">
-          {u.legenda.charAt(0).toUpperCase() + u.legenda.slice(1)} ({u.sigla})
+      {options.map(o => (
+        <SelectItem key={o.value} value={o.value} className="text-[13px]">
+          {o.label}
         </SelectItem>
       ))}
     </FormSelect>
+  );
+}
+
+function FazendaReadonlyField({ label, nome }: { label: string; nome: string }) {
+  return (
+    <div>
+      <FormLabel required>{label}</FormLabel>
+      <FieldBox variant="light" className="bg-gray-50">
+        <div className="w-full min-h-[42px] px-3 py-2.5 text-[13px] text-gray-800">
+          {nome || "—"}
+        </div>
+      </FieldBox>
+      <p className="text-[11px] text-gray-500 mt-1">{FAZENDA_HELPER}</p>
+    </div>
   );
 }
 
@@ -74,13 +167,20 @@ function toCurrencyField(value: string | number | null | undefined): string {
     if (isNaN(value) || value <= 0) return "";
     return formatCurrencyBrl(String(Math.round(value * 100)));
   }
-  const str = String(value);
+  const str = String(value).trim();
+  // Valor decimal do banco ("28.155...", "50.00") — ponto é decimal, não milhar.
+  // parseCurrencyBrl remove os pontos e explode o número.
+  if (/^-?\d+(\.\d+)?$/.test(str)) {
+    const n = parseFloat(str);
+    if (isNaN(n) || n <= 0) return "";
+    return formatCurrencyBrl(String(Math.round(n * 100)));
+  }
   const parsed = parseCurrencyBrl(str);
   if (parsed) {
     const n = parseFloat(parsed);
     if (!isNaN(n) && n > 0) return formatCurrencyBrl(String(Math.round(n * 100)));
   }
-  const n = parseFloat(str.replace(",", "."));
+  const n = parseFloat(str.replace(/\./g, "").replace(",", "."));
   if (isNaN(n) || n <= 0) return "";
   return formatCurrencyBrl(String(Math.round(n * 100)));
 }
@@ -187,13 +287,23 @@ function movimentacaoToLinha(m: {
   estoqueId: number;
   quantidade: string | number;
   valor?: string | number | null;
+  frete?: string | number | null;
   dataValidade?: string | Date | null;
   unidade?: string | null;
 }): ProdutoLinha {
   const baseUnit = normalizarUnidade(m.unidade);
   const qtdBase = Math.abs(Number(m.quantidade));
   const valorTotal = m.valor != null ? Number(m.valor) : null;
-  const unitario = valorTotal != null && qtdBase > 0 ? valorTotal / qtdBase : valorTotal;
+  const freteLinha = m.frete != null ? Number(m.frete) : 0;
+  // `valor` pode incluir frete rateado; o unitário exibido é só o produto.
+  const valorProduto =
+    valorTotal != null && Number.isFinite(valorTotal)
+      ? freteLinha > 0 && freteLinha < Math.abs(valorTotal)
+        ? valorTotal - freteLinha
+        : valorTotal
+      : null;
+  const unitario =
+    valorProduto != null && qtdBase > 0 ? valorProduto / qtdBase : valorProduto;
   return {
     localId: `mov-${m.id}`,
     estoqueId: String(m.estoqueId),
@@ -208,6 +318,7 @@ function movimentacaoToLinha(m: {
 function isMesmaNota(
   atual: {
     id: number;
+    grupoId?: string | null;
     fazendaId?: number | null;
     dataMovimentacao?: string | Date | null;
     fornecedor?: string | null;
@@ -217,6 +328,9 @@ function isMesmaNota(
   outra: typeof atual
 ): boolean {
   if (atual.id === outra.id) return false;
+  const gA = atual.grupoId?.trim();
+  const gB = outra.grupoId?.trim();
+  if (gA || gB) return Boolean(gA && gB && gA === gB);
   if ((atual.fazendaId ?? null) !== (outra.fazendaId ?? null)) return false;
   if (toDateInput(atual.dataMovimentacao) !== toDateInput(outra.dataMovimentacao)) return false;
   if ((atual.fornecedor ?? "").trim().toLowerCase() !== (outra.fornecedor ?? "").trim().toLowerCase()) {
@@ -290,8 +404,6 @@ export default function InsumosNovaMovimentacaoPage() {
   const [operacao, setOperacao] = useState<Operacao>("Entrada");
   const [tipoMov, setTipoMov] = useState("Compra");
   const [fazendaId, setFazendaId] = useState(fazendaIdQuery);
-  /** Fazenda da tela de Movimentações: preenchida e bloqueada para edição. */
-  const [fazendaTravada, setFazendaTravada] = useState(Boolean(fazendaIdQuery));
   const [fazendaDestinoId, setFazendaDestinoId] = useState("");
   const [destinoUso, setDestinoUso] = useState("");
   const [fornecedorId, setFornecedorId] = useState("");
@@ -333,7 +445,6 @@ export default function InsumosNovaMovimentacaoPage() {
         setOperacao(draft.operacao);
         setTipoMov(draft.tipoMov);
         setFazendaId(draft.fazendaId);
-        setFazendaTravada(Boolean(draft.fazendaId) || Boolean(fazendaIdQuery));
         setFazendaDestinoId(draft.fazendaDestinoId);
         setDestinoUso(draft.destinoUso);
         setFornecedorId(draft.fornecedorId);
@@ -416,7 +527,12 @@ export default function InsumosNovaMovimentacaoPage() {
   const produtoOpcoes = useMemo(() => {
     if (!fazendaId) return [];
     return estoqueList
-      .filter(p => String(p.fazendaId ?? "") === fazendaId && p.situacao !== "inativo")
+      .filter(p => {
+        if (String(p.fazendaId ?? "") !== fazendaId) return false;
+        // Ativo na fazenda (status operacional do estoque)
+        if (p.situacao === "inativo") return false;
+        return true;
+      })
       .map(p => ({ value: String(p.id), label: p.nome }));
   }, [estoqueList, fazendaId]);
 
@@ -490,33 +606,56 @@ export default function InsumosNovaMovimentacaoPage() {
     [estoqueList, prodEstoqueId]
   );
   const unidadeBaseSelecionada = normalizarUnidade(produtoSelecionado?.unidade);
+  const unidadeMovOpcoes = useMemo(
+    () => opcoesUnidadeDoProduto(produtoSelecionado),
+    [produtoSelecionado]
+  );
+
+  const fazendaNomeSelecionada = useMemo(
+    () => fazendas.find(f => String(f.id) === fazendaId)?.nome ?? "",
+    [fazendas, fazendaId]
+  );
 
   /** Preview da conversão lançamento → unidade base, exibido sob a quantidade. */
   const previewConversao = useMemo(() => {
     const qtd = parseFloat(prodQuantidade.replace(",", "."));
-    if (!prodEstoqueId || isNaN(qtd) || qtd === 0 || !prodUnidade || !unidadeBaseSelecionada) {
+    if (!prodEstoqueId || !produtoSelecionado || isNaN(qtd) || qtd <= 0 || !prodUnidade) {
       return null;
     }
-    if (normalizarUnidade(prodUnidade) === unidadeBaseSelecionada) return null;
-    if (!unidadesCompativeis(prodUnidade, unidadeBaseSelecionada)) {
+    if (!isEmbalagemUnidade(prodUnidade) && normalizarUnidade(prodUnidade) === unidadeBaseSelecionada) {
+      return null;
+    }
+    const convertida = quantidadeNaUnidadeBase(Math.abs(qtd), prodUnidade, produtoSelecionado);
+    if (convertida == null) {
       return {
-        erro: `Unidade ${rotuloUnidade(prodUnidade)} é incompatível com a unidade base ${rotuloUnidade(
-          unidadeBaseSelecionada
-        )} do produto.`,
+        erro: isEmbalagemUnidade(prodUnidade)
+          ? `Não foi possível converter a embalagem "${rotuloUnidadeMovimentacao(prodUnidade)}" para a unidade-base do estoque.`
+          : `Unidade ${rotuloUnidadeMovimentacao(prodUnidade)} é incompatível com a unidade base ${rotuloUnidade(
+              unidadeBaseSelecionada
+            )} do produto.`,
       };
     }
-    const convertida = converterUnidade(Math.abs(qtd), prodUnidade, unidadeBaseSelecionada);
-    if (convertida == null) return null;
+    if (!unidadeBaseSelecionada) return null;
+    if (!isEmbalagemUnidade(prodUnidade) && normalizarUnidade(prodUnidade) === unidadeBaseSelecionada) {
+      return null;
+    }
     return {
-      texto: `${formatQuantidadeMov(Math.abs(qtd))} ${nomeUnidadeExibicao(prodUnidade)} = ${formatQuantidadeMov(
+      texto: `${formatQuantidadeMov(Math.abs(qtd))} ${rotuloUnidadeMovimentacao(prodUnidade)} = ${formatQuantidadeMov(
         convertida
       )} ${nomeUnidadeExibicao(unidadeBaseSelecionada)} (unidade base do estoque).`,
     };
-  }, [prodEstoqueId, prodQuantidade, prodUnidade, unidadeBaseSelecionada]);
+  }, [prodEstoqueId, prodQuantidade, prodUnidade, produtoSelecionado, unidadeBaseSelecionada]);
 
   // ── Inicializar edição ────────────────────────────────────────────────────
   useEffect(() => {
     if (draftRestoredRef.current || !isEdit || !movimentacao || initialized) return;
+
+    const status = String((movimentacao as { status?: string | null }).status || "ativa").toLowerCase();
+    if (status === "estornada" || status === "estorno") {
+      toast.error("Movimentação estornada não pode ser editada.");
+      setLocation("/insumos/movimentacao");
+      return;
+    }
 
     const tipoNorm = normalizarTipoMov(movimentacao.tipo ?? undefined);
     const op = operacaoDoTipo(movimentacao.tipo ?? undefined);
@@ -524,7 +663,6 @@ export default function InsumosNovaMovimentacaoPage() {
     setTipoMov(tipoNorm);
     if (movimentacao.fazendaId) {
       setFazendaId(String(movimentacao.fazendaId));
-      setFazendaTravada(true);
     }
     const fornecedorNome = movimentacao.fornecedor?.trim() ?? "";
     const fornecedorMatch = fornecedores.find(
@@ -534,6 +672,7 @@ export default function InsumosNovaMovimentacaoPage() {
     setFornecedorLegado(!fornecedorMatch && fornecedorNome ? fornecedorNome : "");
     setNotaFiscal(movimentacao.notaFiscal ?? "");
     setDataMovimentacao(toDateInput(movimentacao.dataMovimentacao));
+    // Frete da nota = soma dos rateios; ajustado de novo ao carregar os irmãos.
     setFrete(toCurrencyField(movimentacao.frete));
 
     const destStr = movimentacao.destino?.trim() ?? "";
@@ -582,9 +721,21 @@ export default function InsumosNovaMovimentacaoPage() {
     }
     if (!todasMovimentacoes.length) return;
 
-    const irmaos = todasMovimentacoes
-      .filter(m => isMesmaNota(movimentacao, m))
+    const doGrupo = todasMovimentacoes.filter(
+      m => m.id === movimentacao.id || isMesmaNota(movimentacao, m),
+    );
+    const irmaos = doGrupo
+      .filter(m => m.id !== movimentacao.id)
       .map(m => movimentacaoToLinha(m));
+
+    // Frete no card é o total da nota (soma dos rateios por item).
+    const freteTotalNota = doGrupo.reduce((s, m) => {
+      const f = Number(m.frete ?? 0);
+      return s + (Number.isFinite(f) ? f : 0);
+    }, 0);
+    if (freteTotalNota > 0) {
+      setFrete(toCurrencyField(freteTotalNota));
+    }
 
     if (irmaos.length) {
       setProdutos(prev => {
@@ -684,14 +835,21 @@ export default function InsumosNovaMovimentacaoPage() {
   const validarLinha = (p: ProdutoLinha): string | null => {
     const prod = estoqueList.find(e => String(e.id) === p.estoqueId);
     if (!prod) return "Produto não encontrado.";
+    if (String(prod.fazendaId ?? "") !== fazendaId) {
+      return `${prod.nome} não pertence à fazenda desta movimentação.`;
+    }
+    if (prod.situacao === "inativo") {
+      return `${prod.nome} está inativo nesta fazenda.`;
+    }
+    if (!p.unidadeMov) return `Selecione a unidade de movimentação de ${prod.nome}.`;
     const qtd = parseFloat(p.quantidade.replace(",", "."));
-    if (isNaN(qtd) || qtd === 0) return `Informe a quantidade de ${prod.nome}.`;
-    if (!p.unidadeMov) return `Selecione a unidade de ${prod.nome}.`;
-    const baseUnit = normalizarUnidade(prod.unidade);
-    if (baseUnit && !unidadesCompativeis(p.unidadeMov, baseUnit)) {
-      return `Unidade ${rotuloUnidade(p.unidadeMov)} é incompatível com a unidade base ${rotuloUnidade(
-        baseUnit
-      )} de ${prod.nome}.`;
+    if (isNaN(qtd) || qtd <= 0) return `Informe a quantidade de ${prod.nome} (maior que zero).`;
+    const opcoes = opcoesUnidadeDoProduto(prod);
+    if (!opcoes.some(o => o.value === p.unidadeMov)) {
+      return `Unidade inválida para ${prod.nome}.`;
+    }
+    if (quantidadeNaUnidadeBase(qtd, p.unidadeMov, prod) == null) {
+      return `Não foi possível converter a quantidade de ${prod.nome} para a unidade-base do estoque.`;
     }
     return null;
   };
@@ -717,6 +875,15 @@ export default function InsumosNovaMovimentacaoPage() {
   const incluirProduto = () => {
     if (!prodEstoqueId) {
       toast.error("Selecione o produto.");
+      return;
+    }
+    if (!prodUnidade) {
+      toast.error("Selecione a unidade de movimentação.");
+      return;
+    }
+    const qtdCheck = parseFloat(prodQuantidade.replace(",", "."));
+    if (!prodQuantidade.trim() || isNaN(qtdCheck) || qtdCheck <= 0) {
+      toast.error("Informe uma quantidade válida e maior que zero.");
       return;
     }
     const dup = produtos.find(p => p.estoqueId === prodEstoqueId && p.localId !== editandoLinhaId);
@@ -751,10 +918,24 @@ export default function InsumosNovaMovimentacaoPage() {
 
     const prod = estoqueList.find(e => String(e.id) === linha.estoqueId);
     const nome = prod?.nome ?? "este produto";
+    const qtdLinha = Math.abs(parseFloat(String(linha.quantidade).replace(",", ".")) || 0);
+    const saldoAtual = Number(prod?.quantidade ?? 0);
+    const isEntrada = sinalDoTipo(tipoMov) === "entrada";
+
+    // Pré-checagem: remover item de compra exige retirar do estoque.
+    if (linha.movimentacaoId && isEntrada && qtdLinha > 0 && saldoAtual < qtdLinha) {
+      toast.error(
+        `Não é possível remover "${nome}": estoque insuficiente para reverter a entrada (necessário ${qtdLinha}, saldo ${saldoAtual}). Use Estornar na listagem ou ajuste o estoque antes.`,
+      );
+      return;
+    }
+
     const ok = await confirm({
       title: "Remover item da nota",
       description: linha.movimentacaoId
-        ? `Tem certeza que deseja remover "${nome}" desta nota? A movimentação vinculada será excluída quando você salvar.`
+        ? isEntrada
+          ? `Remover "${nome}" vai excluir essa linha do histórico e baixar ${qtdLinha} do estoque ao salvar. Para desfazer a nota inteira com auditoria, use Estornar na listagem.`
+          : `Remover "${nome}" vai excluir essa linha do histórico e devolver a quantidade ao estoque ao salvar. Para desfazer a nota inteira com auditoria, use Estornar na listagem.`
         : `Tem certeza que deseja remover "${nome}" desta nota? O item será retirado da lista.`,
       confirmText: "Remover item",
       cancelText: "Cancelar",
@@ -831,23 +1012,55 @@ export default function InsumosNovaMovimentacaoPage() {
     return temValor ? sum : null;
   }, [produtos, prodEstoqueId, prodQuantidade, prodValorUnitario, prodUnidade, prodDataValidade, editandoLinhaId]);
 
+  const freteNumero = useMemo(() => {
+    const parsed = parseCurrencyBrl(frete);
+    if (!parsed) return 0;
+    const n = parseFloat(parsed);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, [frete]);
+
+  const totalNotaComFrete = useMemo(() => {
+    if (totalValorNota == null) return null;
+    return totalValorNota + freteNumero;
+  }, [totalValorNota, freteNumero]);
+
   const produtosAlterados =
     JSON.stringify(mesclarLinhasComPendente(produtos, linhaPendente())) !== initialProdutosRef.current ||
     movimentacoesRemovidas.length > 0;
 
   /** Converte uma linha para o payload do servidor (quantidade na unidade base). */
-  const prepararPayload = (p: ProdutoLinha, sinal: "entrada" | "saida") => {
+  const prepararPayload = (
+    p: ProdutoLinha,
+    sinal: "entrada" | "saida",
+    rateio?: { subtotal: number; freteTotal: number },
+    grupoId?: string
+  ) => {
     const prod = estoqueList.find(e => String(e.id) === p.estoqueId)!;
     const baseUnit = normalizarUnidade(prod.unidade);
     const qtd = Math.abs(parseFloat(p.quantidade.replace(",", ".")));
-    const convertida = converterUnidade(qtd, p.unidadeMov, baseUnit) ?? qtd;
+    const convertida = quantidadeNaUnidadeBase(qtd, p.unidadeMov, prod);
+    if (convertida == null) {
+      throw new Error(`Não foi possível converter a quantidade de ${prod.nome}.`);
+    }
     const qtdFinal = sinal === "saida" ? -convertida : convertida;
     const vuStr = parseCurrencyBrl(p.valorUnitario);
     const vu = vuStr ? parseFloat(vuStr) : NaN;
-    const valorTotal = !isNaN(vu) ? String(vu * qtd) : undefined;
+    const valorLinha = !isNaN(vu) ? vu * qtd : 0;
+    let freteShare = 0;
+    if (
+      isEntrada &&
+      rateio &&
+      rateio.freteTotal > 0 &&
+      rateio.subtotal > 0 &&
+      valorLinha > 0
+    ) {
+      freteShare = rateio.freteTotal * (valorLinha / rateio.subtotal);
+    }
+    const valorComFrete = valorLinha + freteShare;
     return {
       estoqueId: Number(p.estoqueId),
       fazendaId: Number(fazendaId),
+      grupoId,
       tipo: tipoMov,
       dataMovimentacao: dataMovimentacao,
       quantidade: String(qtdFinal),
@@ -855,11 +1068,8 @@ export default function InsumosNovaMovimentacaoPage() {
       destino: resolverDestinoPayload(),
       fornecedor: isEntrada && nomeFornecedorSelecionado ? nomeFornecedorSelecionado : undefined,
       notaFiscal: isEntrada && notaFiscal.trim() ? notaFiscal.trim() : undefined,
-      frete: (() => {
-        const freteStr = parseCurrencyBrl(frete);
-        return isEntrada && freteStr ? freteStr : undefined;
-      })(),
-      valor: isEntrada && valorTotal ? valorTotal : undefined,
+      frete: isEntrada && freteShare > 0 ? String(freteShare) : undefined,
+      valor: isEntrada && valorComFrete > 0 ? String(valorComFrete) : undefined,
       modo: "direto" as const,
       sinal,
       unidadeLancamento: baseUnit || undefined,
@@ -875,6 +1085,22 @@ export default function InsumosNovaMovimentacaoPage() {
       return;
     }
 
+    let subtotal = 0;
+    for (const p of linhas) {
+      const t = valorTotalLinha(p);
+      if (t != null) subtotal += t;
+    }
+    const rateio = { subtotal, freteTotal: isEntrada ? freteNumero : 0 };
+    const grupoIdExistente =
+      isEdit && movimentacao && (movimentacao as { grupoId?: string | null }).grupoId
+        ? String((movimentacao as { grupoId?: string | null }).grupoId)
+        : undefined;
+    const grupoId =
+      grupoIdExistente ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 32)
+        : `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
+
     if (isEdit && movId) {
       try {
         for (const idRem of movimentacoesRemovidas) {
@@ -882,9 +1108,9 @@ export default function InsumosNovaMovimentacaoPage() {
         }
         for (const p of linhas) {
           if (p.movimentacaoId) {
-            await updateMutation.mutateAsync({ id: p.movimentacaoId, ...prepararPayload(p, sinal) });
+            await updateMutation.mutateAsync({ id: p.movimentacaoId, ...prepararPayload(p, sinal, rateio, grupoId) });
           } else {
-            await createMutation.mutateAsync(prepararPayload(p, sinal));
+            await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
           }
         }
         const novos = linhas.filter(p => !p.movimentacaoId).length;
@@ -908,7 +1134,7 @@ export default function InsumosNovaMovimentacaoPage() {
 
     try {
       for (const p of linhas) {
-        await createMutation.mutateAsync(prepararPayload(p, sinal));
+        await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
       }
       toast.success(
         linhas.length > 1 ? `${linhas.length} movimentações registradas!` : "Movimentação registrada!"
@@ -929,6 +1155,10 @@ export default function InsumosNovaMovimentacaoPage() {
 
     if (!fazendaId) {
       toast.error("Selecione uma fazenda na tela de Movimentações antes de registrar.");
+      return;
+    }
+    if (!Number(fazendaId)) {
+      toast.error("Fazenda inválida. Volte à tela de Movimentações e selecione novamente.");
       return;
     }
 
@@ -1061,44 +1291,12 @@ export default function InsumosNovaMovimentacaoPage() {
               </div>
 
               {isEntrada && (
-                <div>
-                  <FormLabel required>Estoque Destino</FormLabel>
-                  <FormNativeSelect
-                    value={fazendaId}
-                    onChange={setFazendaId}
-                    placeholder="Selecione o estoque destino"
-                    options={fazendaOpcoes}
-                    variant="light"
-                    required
-                    disabled={fazendaTravada}
-                  />
-                  {fazendaTravada && (
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.
-                    </p>
-                  )}
-                </div>
+                <FazendaReadonlyField label="Estoque Destino" nome={fazendaNomeSelecionada} />
               )}
 
               {isSaida && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FormLabel required>Estoque Origem</FormLabel>
-                    <FormNativeSelect
-                      value={fazendaId}
-                      onChange={setFazendaId}
-                      placeholder="Selecione o estoque origem"
-                      options={fazendaOpcoes}
-                      variant="light"
-                      required
-                      disabled={fazendaTravada}
-                    />
-                    {fazendaTravada && (
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.
-                      </p>
-                    )}
-                  </div>
+                  <FazendaReadonlyField label="Estoque Origem" nome={fazendaNomeSelecionada} />
                   <div>
                     <label className={labelCls}>Destino / Uso</label>
                     <input
@@ -1112,44 +1310,12 @@ export default function InsumosNovaMovimentacaoPage() {
               )}
 
               {isAjuste && (
-                <div>
-                  <FormLabel required>Estoque</FormLabel>
-                  <FormNativeSelect
-                    value={fazendaId}
-                    onChange={setFazendaId}
-                    placeholder="Selecione o estoque"
-                    options={fazendaOpcoes}
-                    variant="light"
-                    required
-                    disabled={fazendaTravada}
-                  />
-                  {fazendaTravada && (
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.
-                    </p>
-                  )}
-                </div>
+                <FazendaReadonlyField label="Estoque" nome={fazendaNomeSelecionada} />
               )}
 
               {isTransferencia && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <FormLabel required>Estoque Origem</FormLabel>
-                    <FormNativeSelect
-                      value={fazendaId}
-                      onChange={setFazendaId}
-                      placeholder="Selecione o estoque origem"
-                      options={fazendaOpcoes}
-                      variant="light"
-                      required
-                      disabled={fazendaTravada}
-                    />
-                    {fazendaTravada && (
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.
-                      </p>
-                    )}
-                  </div>
+                  <FazendaReadonlyField label="Estoque Origem" nome={fazendaNomeSelecionada} />
                   <div>
                     <FormLabel required>Estoque Destino</FormLabel>
                     <FormNativeSelect
@@ -1293,9 +1459,15 @@ export default function InsumosNovaMovimentacaoPage() {
                   </button>
                 </div>
                 <div>
-                  <FormLabel required>Unidade Movimentação</FormLabel>
-                  <UnidadeMovSelect value={prodUnidade} onChange={setProdUnidade} required />
-                  {unidadeBaseSelecionada && (
+                  <FormLabel required>Unidade de movimentação</FormLabel>
+                  <UnidadeMovSelect
+                    value={prodUnidade}
+                    onChange={setProdUnidade}
+                    required
+                    disabled={!prodEstoqueId}
+                    options={unidadeMovOpcoes}
+                  />
+                  {unidadeBaseSelecionada && prodEstoqueId && (
                     <p className="mt-1 text-[11px] text-gray-500">
                       Unidade base do produto:{" "}
                       <span className="font-medium">{rotuloUnidade(unidadeBaseSelecionada)}</span>
@@ -1442,7 +1614,7 @@ export default function InsumosNovaMovimentacaoPage() {
                             {p.quantidade}
                           </td>
                           <td className="px-4 py-3.5 text-gray-700 text-left align-middle">
-                            {nomeUnidadeExibicao(p.unidadeMov)}
+                            {rotuloUnidadeMovimentacao(p.unidadeMov)}
                           </td>
                           <td className="px-4 py-3.5 text-gray-700 tabular-nums text-right align-middle">
                             {fmtMoeda(p.valorUnitario)}
@@ -1476,18 +1648,61 @@ export default function InsumosNovaMovimentacaoPage() {
                   </tbody>
                   {totalValorNota != null && (
                     <tfoot>
-                      <tr className="bg-gray-50 border-t border-gray-200">
-                        <td
-                          colSpan={4}
-                          className="px-4 py-3.5 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide align-middle"
-                        >
-                          Total da nota
-                        </td>
-                        <td className="px-4 py-3.5 text-gray-900 tabular-nums font-semibold text-center align-middle">
-                          {formatCurrencyBrl(String(Math.round(totalValorNota * 100)))}
-                        </td>
-                        <td className="px-4 py-3.5" />
-                      </tr>
+                      {isEntrada && freteNumero > 0 ? (
+                        <>
+                          <tr className="bg-gray-50 border-t border-gray-200">
+                            <td
+                              colSpan={4}
+                              className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide align-middle"
+                            >
+                              Subtotal dos itens
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-900 tabular-nums font-semibold text-center align-middle">
+                              {formatCurrencyBrl(String(Math.round(totalValorNota * 100)))}
+                            </td>
+                            <td className="px-4 py-2.5" />
+                          </tr>
+                          <tr className="bg-gray-50">
+                            <td
+                              colSpan={4}
+                              className="px-4 py-2.5 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide align-middle"
+                            >
+                              Frete
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-900 tabular-nums font-semibold text-center align-middle">
+                              {formatCurrencyBrl(String(Math.round(freteNumero * 100)))}
+                            </td>
+                            <td className="px-4 py-2.5" />
+                          </tr>
+                          <tr className="bg-gray-50 border-t border-gray-200">
+                            <td
+                              colSpan={4}
+                              className="px-4 py-3.5 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide align-middle"
+                            >
+                              Total da nota
+                            </td>
+                            <td className="px-4 py-3.5 text-gray-900 tabular-nums font-semibold text-center align-middle">
+                              {formatCurrencyBrl(
+                                String(Math.round((totalNotaComFrete ?? totalValorNota) * 100))
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5" />
+                          </tr>
+                        </>
+                      ) : (
+                        <tr className="bg-gray-50 border-t border-gray-200">
+                          <td
+                            colSpan={4}
+                            className="px-4 py-3.5 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide align-middle"
+                          >
+                            Total da nota
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-900 tabular-nums font-semibold text-center align-middle">
+                            {formatCurrencyBrl(String(Math.round(totalValorNota * 100)))}
+                          </td>
+                          <td className="px-4 py-3.5" />
+                        </tr>
+                      )}
                     </tfoot>
                   )}
                 </table>

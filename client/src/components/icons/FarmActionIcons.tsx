@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Ban, CircleCheck, Eye, SquarePen, Trash2 } from "lucide-react";
+import { Ban, CircleCheck, Eye, SquarePen, Trash2, Undo2 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 export const FD_EDIT_ACTION_COLOR = "#586168";
@@ -67,6 +67,19 @@ export function InactivateActionIcon({ size = 17, className = "", style }: IconP
   );
 }
 
+/** Estornar / desfazer — seta de reverso (Lucide Undo2) */
+export function EstornoActionIcon({ size = 17, className = "", style }: IconProps) {
+  return (
+    <Undo2
+      size={size}
+      strokeWidth={ICON_STROKE}
+      className={cn("shrink-0", className)}
+      style={{ color: FD_INACTIVATE_ACTION_COLOR, ...style }}
+      aria-hidden
+    />
+  );
+}
+
 /** Ativar — confirmação (Lucide CircleCheck) */
 export function ActivateActionIcon({ size = 17, className = "", style }: IconProps) {
   return (
@@ -86,6 +99,8 @@ type TableIconButtonProps = {
   children: ReactNode;
   tone?: "neutral" | "view" | "danger" | "warning" | "success";
   compact?: boolean;
+  /** Aparência de ação indisponível (continua clicável para feedback/tooltip). */
+  blocked?: boolean;
 };
 export function TableIconButton({
   label,
@@ -93,6 +108,7 @@ export function TableIconButton({
   children,
   tone = "neutral",
   compact = false,
+  blocked = false,
 }: TableIconButtonProps) {
   return (
     <button
@@ -100,17 +116,25 @@ export function TableIconButton({
       onClick={onClick}
       title={label}
       aria-label={label}
+      aria-disabled={blocked || undefined}
       className={cn(
-        "transition-all duration-150 ease-out cursor-pointer",
+        "transition-all duration-150 ease-out",
+        blocked ? "cursor-not-allowed opacity-55" : "cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1",
         compact
           ? "grid place-items-center rounded active:scale-95 h-7 w-6"
           : "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent active:scale-[0.96]",
-        tone === "neutral" && [
+        blocked && [
+          compact ? "text-gray-400 hover:bg-transparent" : "text-gray-400 hover:bg-transparent hover:text-gray-400",
+          "focus-visible:ring-gray-200",
+          !compact && "active:scale-100",
+          compact && "active:scale-100",
+        ],
+        !blocked && tone === "neutral" && [
           compact ? "hover:bg-gray-100" : "text-[#586168] hover:text-[#434A54] hover:bg-slate-100/90",
           "focus-visible:ring-slate-300",
         ],
-        tone === "view" && [
+        !blocked && tone === "view" && [
           compact
             ? "text-[#586168] hover:text-[#2D5A5A] hover:bg-[#4ECDC414] active:bg-[#4ECDC426]"
             : [
@@ -119,15 +143,15 @@ export function TableIconButton({
               ],
           "focus-visible:ring-[#4ECDC4]/30",
         ],
-        tone === "danger" && [
+        !blocked && tone === "danger" && [
           compact ? "hover:bg-red-50" : "text-[#E28484] hover:text-[#D46B6B] hover:bg-rose-50",
           "focus-visible:ring-rose-200",
         ],
-        tone === "warning" && [
+        !blocked && tone === "warning" && [
           compact ? "hover:bg-amber-50" : "hover:bg-amber-50",
           "focus-visible:ring-amber-200",
         ],
-        tone === "success" && [
+        !blocked && tone === "success" && [
           compact ? "hover:bg-green-50" : "hover:bg-green-50",
           "focus-visible:ring-green-200",
         ],

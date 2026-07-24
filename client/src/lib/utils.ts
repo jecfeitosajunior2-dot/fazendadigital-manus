@@ -49,3 +49,17 @@ export function formatCpfCnpj(value: string): string {
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
 }
+
+/** Máscara de telefone BR: (00) 0000-0000 ou (00) 00000-0000. */
+export function formatPhoneBR(value: string): string {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 11);
+  if (!digits) return "";
+
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
