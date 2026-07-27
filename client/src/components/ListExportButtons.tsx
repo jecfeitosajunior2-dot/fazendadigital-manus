@@ -17,6 +17,8 @@ type Props = {
   groupByCol?: number[];
   landscape?: boolean;
   disabled?: boolean;
+  /** Tooltip quando disabled (padrão: mensagem de fazenda). */
+  disabledTitle?: string;
   variant?: "primary" | "secondary";
   /** Texto do botão (padrão: "Exportar") */
   buttonLabel?: string;
@@ -114,6 +116,7 @@ export default function ListExportButtons({
   groupByCol,
   landscape,
   disabled = false,
+  disabledTitle = "Selecione uma fazenda para exportar",
   variant = "primary",
   buttonLabel = "Exportar",
   spreadsheetCurrencyCols,
@@ -168,6 +171,7 @@ export default function ListExportButtons({
   }, [disabled]);
 
   const isSecondary = variant === "secondary";
+  const canExport = spreadsheetAllowEmpty || rows.length > 0;
 
   return (
     <div ref={ref} className={`relative ${className ?? ""}`}>
@@ -178,7 +182,7 @@ export default function ListExportButtons({
           if (disabled) return;
           setOpen(v => !v);
         }}
-        aria-expanded={open}
+        aria-expanded={open && !disabled}
         aria-haspopup="menu"
         className={cn(
           "flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold active:scale-[0.97] transition w-full sm:w-auto min-h-[44px]",
@@ -187,17 +191,17 @@ export default function ListExportButtons({
             : "text-white hover:brightness-[1.03]",
           disabled && "opacity-50 cursor-not-allowed active:scale-100 hover:bg-white",
         )}
-        style={isSecondary ? undefined : { backgroundColor: "#2563eb" }}
-        title={disabled ? "Selecione uma fazenda para exportar" : buttonLabel}
+        style={isSecondary || disabled ? undefined : { backgroundColor: "#2563eb" }}
+        title={disabled ? disabledTitle : buttonLabel}
       >
-        <span className={cn("material-icons text-[16px]", isSecondary && "text-gray-500")}>download</span>
+        <span className={cn("material-icons text-[16px]", (isSecondary || disabled) && "text-gray-500")}>download</span>
         {buttonLabel}
-        <span className={cn("material-icons text-[16px] ml-0.5", isSecondary && "text-gray-500")}>
-          {open ? "expand_less" : "expand_more"}
+        <span className={cn("material-icons text-[16px] ml-0.5", (isSecondary || disabled) && "text-gray-500")}>
+          {open && !disabled ? "expand_less" : "expand_more"}
         </span>
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
           role="menu"
           className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50 overflow-hidden"
@@ -211,6 +215,7 @@ export default function ListExportButtons({
             label="Planilha Excel"
             onClick={() => {
               setOpen(false);
+              if (!canExport) return;
               if (onExportSpreadsheet) {
                 onExportSpreadsheet();
                 return;
@@ -246,6 +251,7 @@ export default function ListExportButtons({
             label="PDF"
             onClick={() => {
               setOpen(false);
+              if (!canExport) return;
               if (onExportPdf) {
                 onExportPdf();
                 return;

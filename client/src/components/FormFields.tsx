@@ -29,18 +29,23 @@ export function FieldBox({
   required,
   className,
   variant = "default",
+  invalid,
 }: {
   children: React.ReactNode;
   required?: boolean;
   className?: string;
   variant?: "default" | "light";
+  /** Destaca borda em vermelho (validação). */
+  invalid?: boolean;
 }) {
   return (
     <div
       className={cn(
         variant === "light" ? "bg-white" : "bg-[#EEEEEE]",
-        "border border-gray-200 rounded-sm",
-        required && "border-l-[3px] border-l-[#4ECDC4]",
+        "border rounded-sm",
+        invalid ? "border-red-500" : "border-gray-200",
+        required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+        required && invalid && "border-l-[3px] border-l-red-500",
         className
       )}
     >
@@ -69,6 +74,9 @@ export function FormInput({
   min,
   step,
   list,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -83,10 +91,14 @@ export function FormInput({
   min?: string | number;
   step?: string | number;
   list?: string;
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   return (
-    <FieldBox required={required} variant={variant}>
+    <FieldBox required={required} variant={variant} invalid={invalid}>
       <input
+        id={id}
         type={type}
         inputMode={inputMode}
         value={value}
@@ -96,6 +108,8 @@ export function FormInput({
         min={min}
         step={step}
         list={list}
+        aria-invalid={invalid || undefined}
+        aria-describedby={ariaDescribedBy}
         className={cn(
           compact ? inputClassCompact : inputClass,
           variant === "light" && "bg-white",
@@ -115,6 +129,9 @@ export function FormNativeSelect({
   compact,
   options,
   variant = "default",
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -124,6 +141,9 @@ export function FormNativeSelect({
   compact?: boolean;
   options: readonly { value: string; label: string }[];
   variant?: "default" | "light";
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   const mergedOptions = React.useMemo(() => {
     const current = String(value ?? "").trim();
@@ -133,12 +153,15 @@ export function FormNativeSelect({
   }, [value, options]);
 
   return (
-    <FieldBox required={required} variant={variant}>
+    <FieldBox required={required} variant={variant} invalid={invalid}>
       <div className="relative">
         <select
+          id={id}
           value={value}
           disabled={disabled}
           onChange={e => onChange(e.target.value)}
+          aria-invalid={invalid || undefined}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             compact ? inputClassCompact : inputClass,
             variant === "light" && "bg-white",
@@ -175,6 +198,9 @@ export function FormSelect({
   triggerClassName,
   variant = "default",
   children,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -187,15 +213,21 @@ export function FormSelect({
   triggerClassName?: string;
   variant?: "default" | "light";
   children: React.ReactNode;
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
   // troca descontrolado→controlado do Radix que impede a atualização visual.
   const selectValue = value ?? "";
 
   return (
-    <FieldBox required={required} variant={variant}>
+    <FieldBox required={required} variant={variant} invalid={invalid}>
       <Select value={selectValue} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
+          id={id}
+          aria-invalid={invalid || undefined}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             compact ? inputClassCompact : inputClass,
             "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
@@ -232,6 +264,9 @@ export function FormYearPicker({
   required,
   minYear = ANO_MINIMO_PADRAO,
   maxYear = new Date().getFullYear() + 1,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -239,6 +274,9 @@ export function FormYearPicker({
   required?: boolean;
   minYear?: number;
   maxYear?: number;
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   const anos = React.useMemo(() => listarAnos(minYear, maxYear), [minYear, maxYear]);
   const opcoes = React.useMemo(() => {
@@ -249,12 +287,15 @@ export function FormYearPicker({
 
   return (
     <FormSelect
+      id={id}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
       required={required}
       displayValue={value}
       triggerClassName="h-[42px] py-0"
+      invalid={invalid}
+      aria-describedby={ariaDescribedBy}
     >
       {opcoes.map(ano => (
         <SelectItem key={ano} value={ano} className="text-[13px]">
@@ -272,6 +313,9 @@ export function FormDatePicker({
   placeholder = "DD/MM/AAAA",
   required,
   max,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -279,6 +323,9 @@ export function FormDatePicker({
   required?: boolean;
   /** Limite superior YYYY-MM-DD (ex.: hoje). */
   max?: string;
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
   const [inputText, setInputText] = React.useState("");
@@ -336,7 +383,7 @@ export function FormDatePicker({
   const displayValue = focused ? inputText : (value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : inputText);
 
   return (
-    <FieldBox required={required} variant="light">
+    <FieldBox required={required} variant="light" invalid={invalid}>
       <div className="flex w-full items-center justify-start gap-2 min-h-[34px] pl-1.5 pr-2">
         <button
           type="button"
@@ -348,6 +395,7 @@ export function FormDatePicker({
           <Calendar className="w-4 h-4" strokeWidth={1.75} />
         </button>
         <input
+          id={id}
           type="text"
           inputMode="numeric"
           value={displayValue}
@@ -355,6 +403,8 @@ export function FormDatePicker({
           onFocus={() => { setFocused(true); setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : ""); }}
           onBlur={handleBlur}
           placeholder={placeholder}
+          aria-invalid={invalid || undefined}
+          aria-describedby={ariaDescribedBy}
           className="w-full min-w-0 flex-1 bg-transparent border-0 outline-none py-1.5 text-[12px] leading-none text-left text-gray-800 placeholder:text-gray-400"
           style={{ textAlign: "left", paddingLeft: 0, marginLeft: 0 }}
         />

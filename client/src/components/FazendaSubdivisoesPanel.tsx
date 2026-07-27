@@ -29,6 +29,65 @@ import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/
 import SemCoordenadasIcon from "@/components/icons/SemCoordenadasIcon";
 import { Map } from "lucide-react";
 const FD_PRIMARY = "#4ECDC4";
+const TOAST_ID_OBRIGATORIOS = "subdivisao-campos-obrigatorios";
+
+type CampoObrigatorioSub = "tipo" | "nome" | "area";
+
+const CAMPOS_ORDEM: CampoObrigatorioSub[] = ["tipo", "nome", "area"];
+
+function fieldDomId(campo: CampoObrigatorioSub) {
+  return `subdivisao-field-${campo}`;
+}
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
+function focarCampo(campo: CampoObrigatorioSub) {
+  const el = document.getElementById(fieldDomId(campo));
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => {
+    if (el instanceof HTMLElement) el.focus({ preventScroll: true });
+  }, 250);
+}
+
+function coletarErrosSubdivisao(form: {
+  tipo: string;
+  nome: string;
+  area: string;
+  areaUnidade: AreaInputUnidade;
+}): Partial<Record<CampoObrigatorioSub, string>> {
+  const erros: Partial<Record<CampoObrigatorioSub, string>> = {};
+  if (!form.tipo.trim()) erros.tipo = "Selecione o tipo de divisão.";
+  if (!form.nome.trim()) erros.nome = "Informe o nome da subdivisão.";
+
+  const areaObrigatoria = areaObrigatoriaParaTipo(form.tipo);
+  const areaHa = convertAreaInputToHectares(form.area, form.areaUnidade);
+  if (form.area.trim() && areaHa === null) {
+    erros.area = "Informe uma área válida.";
+  } else if (areaObrigatoria && areaHa === null) {
+    erros.area = "Informe a área da subdivisão.";
+  }
+  return erros;
+}
+
+function primeiroCampoInvalido(
+  erros: Partial<Record<CampoObrigatorioSub, string>>,
+): CampoObrigatorioSub | null {
+  return CAMPOS_ORDEM.find(c => !!erros[c]) ?? null;
+}
+
+const MSG_TOAST: Record<CampoObrigatorioSub, string> = {
+  tipo: "Tipo de divisão é obrigatório.",
+  nome: "Nome da subdivisão é obrigatório.",
+  area: "Área é obrigatória para este tipo de subdivisão.",
+};
 
 type Fazenda = {
   id: number;
@@ -120,6 +179,9 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm());
+  const [errosObrigatorios, setErrosObrigatorios] = useState<
+    Partial<Record<CampoObrigatorioSub, string>>
+  >({});
   const [importarCoordenadasOpen, setImportarCoordenadasOpen] = useState(false);
   const [mapaPastoDestaque, setMapaPastoDestaque] = useState<{
     id: number;
@@ -190,11 +252,13 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     setForm(emptyForm());
     setEditId(null);
     setShowForm(false);
+    setErrosObrigatorios({});
   };
 
   const openNovaSubdivisaoForm = () => {
     setEditId(null);
     setForm(emptyForm());
+    setErrosObrigatorios({});
     setShowForm(true);
   };
 
@@ -203,20 +267,32 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
     else openNovaSubdivisaoForm();
   };
 
+  const limparErroCampo = (campo: CampoObrigatorioSub) => {
+    setErrosObrigatorios(prev => {
+      if (!prev[campo]) return prev;
+      const next = { ...prev };
+      delete next[campo];
+      return next;
+    });
+  };
+
   const handleSubmit = async () => {
-    if (!form.nome.trim()) { toast.error("Nome da subdivisão é obrigatório"); return; }
+    const erros = coletarErrosSubdivisao(form);
+    const primeiro = primeiroCampoInvalido(erros);
 
-    const areaObrigatoria = areaObrigatoriaParaTipo(form.tipo);
+    if (primeiro) {
+      setErrosObrigatorios(erros);
+      const toastMsg =
+        primeiro === "area" && form.area.trim() && !convertAreaInputToHectares(form.area, form.areaUnidade)
+          ? "Informe uma área válida."
+          : MSG_TOAST[primeiro];
+      toast.error(toastMsg, { id: TOAST_ID_OBRIGATORIOS });
+      focarCampo(primeiro);
+      return;
+    }
+
+    setErrosObrigatorios({});
     const areaHa = convertAreaInputToHectares(form.area, form.areaUnidade);
-
-    if (form.area.trim() && areaHa === null) {
-      toast.error("Informe uma área válida");
-      return;
-    }
-    if (areaObrigatoria && areaHa === null) {
-      toast.error("Área é obrigatória para este tipo de subdivisão");
-      return;
-    }
 
     let incluirArea = form.incluirArea;
     if (incluirArea && tipoCostumaFicarForaAreaTotal(form.tipo)) {
@@ -255,6 +331,9 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
       tipo,
       incluirArea: incluirAreaPadraoParaTipo(tipo),
     }));
+    limparErroCampo("tipo");
+    // Área pode deixar de ser obrigatória ao trocar o tipo
+    limparErroCampo("area");
   };
 
   const areaObrigatoria = areaObrigatoriaParaTipo(form.tipo);
@@ -263,6 +342,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
   const startEdit = (s: typeof subdivisoes[0]) => {
     setEditId(s.id);
+    setErrosObrigatorios({});
     setForm({
       tipo: s.tipo || "Pasto",
       nome: s.nome,
@@ -278,6 +358,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   };
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
+  const tentativaValidacao = Object.keys(errosObrigatorios).length > 0;
 
   if (!fazenda) {
     return (
@@ -295,21 +376,23 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
         <h2 className="text-[13px] font-semibold text-gray-800 min-w-0 flex-1">
           Subdivisões Cadastradas da {fazenda.nome}
         </h2>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setImportarCoordenadasOpen(true)}
-            className="px-3 py-1.5 rounded border border-gray-300 bg-white text-[10px] font-semibold uppercase text-gray-700 hover:bg-gray-50"
-          >
-            Importar Coordenadas
-          </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
           <button
             type="button"
             onClick={toggleNovaSubdivisaoForm}
-            className="px-3 py-1.5 rounded text-[10px] font-semibold uppercase text-white"
+            className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
             style={{ backgroundColor: FD_PRIMARY }}
           >
+            <span className="material-icons text-[16px]">add</span>
             Nova Subdivisão
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportarCoordenadasOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+          >
+            <span className="material-icons text-[16px] text-gray-500">upload_file</span>
+            Importar Coordenadas
           </button>
         </div>
       </div>
@@ -327,23 +410,40 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
               Identificação
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
-              <div>
+              <div className="scroll-mt-24">
                 <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Divisão</FormLabel>
-                <FormSelect compact value={form.tipo} onChange={handleTipoChange} placeholder="Tipo" required>
+                <FormSelect
+                  id={fieldDomId("tipo")}
+                  compact
+                  value={form.tipo}
+                  onChange={handleTipoChange}
+                  placeholder="Tipo"
+                  required
+                  invalid={!!errosObrigatorios.tipo}
+                  aria-describedby={errosObrigatorios.tipo ? "subdivisao-err-tipo" : undefined}
+                >
                   {TIPOS_DIVISAO.map(t => (
                     <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
                   ))}
                 </FormSelect>
+                <FieldErrorMsg id="subdivisao-err-tipo" message={errosObrigatorios.tipo} />
               </div>
-              <div>
+              <div className="scroll-mt-24">
                 <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Nome da Subdivisão</FormLabel>
                 <FormInput
+                  id={fieldDomId("nome")}
                   compact
                   required
                   value={form.nome}
-                  onChange={v => setForm(f => ({ ...f, nome: v }))}
+                  onChange={v => {
+                    setForm(f => ({ ...f, nome: v }));
+                    limparErroCampo("nome");
+                  }}
                   placeholder="Ex. Pasto A"
+                  invalid={!!errosObrigatorios.nome}
+                  aria-describedby={errosObrigatorios.nome ? "subdivisao-err-nome" : undefined}
                 />
+                <FieldErrorMsg id="subdivisao-err-nome" message={errosObrigatorios.nome} />
               </div>
               <div>
                 <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Sigla da Subdivisão</FormLabel>
@@ -364,26 +464,35 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 Área e capacidade
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-                <div className="sm:col-span-2 lg:col-span-1">
+                <div className="sm:col-span-2 lg:col-span-1 scroll-mt-24">
                   <FormLabel required={areaObrigatoria} className="text-[10px] font-medium text-gray-600 mb-1">
                     Área
                   </FormLabel>
                   <div className="flex gap-1.5">
                     <div className="min-w-0 flex-1">
                       <FormInput
+                        id={fieldDomId("area")}
                         compact
                         required={areaObrigatoria}
                         type="text"
                         inputMode="decimal"
                         value={form.area}
-                        onChange={v => setForm(f => ({ ...f, area: v }))}
+                        onChange={v => {
+                          setForm(f => ({ ...f, area: v }));
+                          limparErroCampo("area");
+                        }}
                         placeholder={areaPlaceholderParaTipo(form.tipo, form.areaUnidade)}
+                        invalid={!!errosObrigatorios.area}
+                        aria-describedby={errosObrigatorios.area ? "subdivisao-err-area" : undefined}
                       />
                     </div>
-                    <FieldBox className="shrink-0 w-[62px]">
+                    <FieldBox className="shrink-0 w-[62px]" invalid={!!errosObrigatorios.area}>
                       <select
                         value={form.areaUnidade}
-                        onChange={e => setForm(f => ({ ...f, areaUnidade: e.target.value as AreaInputUnidade }))}
+                        onChange={e => {
+                          setForm(f => ({ ...f, areaUnidade: e.target.value as AreaInputUnidade }));
+                          limparErroCampo("area");
+                        }}
                         className={cn(inputClassCompact, "cursor-pointer pr-1")}
                         aria-label="Unidade da área"
                       >
@@ -392,7 +501,8 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                       </select>
                     </FieldBox>
                   </div>
-                  {areaDica && (
+                  <FieldErrorMsg id="subdivisao-err-area" message={errosObrigatorios.area} />
+                  {areaDica && !errosObrigatorios.area && (
                     <p className="mt-1 text-[10px] leading-relaxed text-gray-500">{areaDica}</p>
                   )}
                 </div>
@@ -472,23 +582,33 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
             </section>
           </div>
 
-          <div className="flex gap-2 pt-1 justify-end">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-4 py-1.5 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-100"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={isBusy}
-              className="px-4 py-1.5 rounded text-[11px] font-medium text-gray-800 disabled:opacity-50"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : editId ? "Salvar" : "Incluir Subdivisão"}
-            </button>
+          <div className="pt-1 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="min-h-[18px]">
+              {tentativaValidacao && (
+                <p className="text-[12px] text-red-600">
+                  Preencha os campos obrigatórios destacados.
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 justify-end shrink-0">
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={isBusy}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={isBusy}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {isBusy ? "Salvando..." : editId ? "Salvar" : "Cadastrar"}
+              </button>
+            </div>
           </div>
         </div>
       )}

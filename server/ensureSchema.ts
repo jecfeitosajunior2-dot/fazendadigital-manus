@@ -268,6 +268,7 @@ export async function ensureSchema() {
 
     await ensureColumn(pool, "estoque_movimentacoes", "fazenda_id", "int");
     await ensureColumn(pool, "estoque_movimentacoes", "grupo_id", "varchar(40)");
+    await ensureColumn(pool, "estoque_movimentacoes", "abastecimento_id", "int");
     await ensureColumn(pool, "estoque_movimentacoes", "user_id", "int");
     await ensureColumn(pool, "estoque_movimentacoes", "registrado_por", "varchar(150)");
     await ensureColumn(pool, "estoque_movimentacoes", "tipo", "varchar(40)");
@@ -284,6 +285,11 @@ export async function ensureSchema() {
     await ensureColumn(pool, "estoque_movimentacoes", "updated_by_user_id", "int");
     await ensureColumn(pool, "estoque_movimentacoes", "updated_by_nome", "varchar(150)");
 
+    const [abastecimentosTable] = await pool.query(`SHOW TABLES LIKE 'abastecimentos'`);
+    if ((abastecimentosTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "abastecimentos", "movimentacaoEstoqueId", "int");
+    }
+
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);
     if ((maquinasTable as unknown[]).length > 0) {
       await ensureColumn(pool, "maquinas", "userId", "int");
@@ -292,9 +298,11 @@ export async function ensureSchema() {
       await ensureColumn(pool, "maquinas", "fazendaId", "int");
       await ensureColumn(pool, "maquinas", "valor", "decimal(12,2)");
       await ensureColumn(pool, "maquinas", "anoAquisicao", "int");
+      await ensureColumn(pool, "maquinas", "dataAquisicao", "date");
       await ensureColumn(pool, "maquinas", "vidaUtil", "varchar(50)");
       await ensureColumn(pool, "maquinas", "dataDesativacao", "date");
       await ensureColumn(pool, "maquinas", "estado", "varchar(20)");
+      await ensureColumn(pool, "maquinas", "tipoMedidor", "varchar(30)");
       await ensureColumn(pool, "maquinas", "imagem1", "text");
       await ensureColumn(pool, "maquinas", "imagem2", "text");
       await ensureColumn(pool, "maquinas", "imagem3", "text");

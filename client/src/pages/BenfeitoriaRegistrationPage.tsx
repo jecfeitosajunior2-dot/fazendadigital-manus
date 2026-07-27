@@ -19,6 +19,65 @@ import {
   TIPOS_BENFEITORIA,
 } from "@shared/benfeitoria-types";
 
+const TOAST_ID_OBRIGATORIOS = "benfeitoria-campos-obrigatorios";
+
+const CAMPOS_OBRIGATORIOS = ["nome", "fazendaId", "tipo", "estado", "anoConstrucao"] as const;
+type CampoObrigatorio = (typeof CAMPOS_OBRIGATORIOS)[number];
+
+const MSG_LOCAL: Record<CampoObrigatorio, string> = {
+  nome: "Informe o nome da benfeitoria.",
+  fazendaId: "Selecione a Fazenda.",
+  tipo: "Selecione o tipo de Benfeitoria.",
+  estado: "Selecione o estado de conservação.",
+  anoConstrucao: "Selecione o ano de construção.",
+};
+
+const MSG_TOAST: Record<CampoObrigatorio, string> = {
+  nome: "Nome da benfeitoria é obrigatório.",
+  fazendaId: "Selecione uma fazenda.",
+  tipo: "Tipo de Benfeitoria é obrigatório.",
+  estado: "Estado de Conservação é obrigatório.",
+  anoConstrucao: "Ano de construção é obrigatório.",
+};
+
+function fieldDomId(campo: CampoObrigatorio) {
+  return `benfeitoria-field-${campo}`;
+}
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
+function coletarErros(form: FormState): Partial<Record<CampoObrigatorio, string>> {
+  const erros: Partial<Record<CampoObrigatorio, string>> = {};
+  if (!form.nome.trim()) erros.nome = MSG_LOCAL.nome;
+  if (!form.fazendaId) erros.fazendaId = MSG_LOCAL.fazendaId;
+  if (!form.tipo.trim()) erros.tipo = MSG_LOCAL.tipo;
+  if (!form.estado.trim()) erros.estado = MSG_LOCAL.estado;
+  if (!form.anoConstrucao.trim()) erros.anoConstrucao = MSG_LOCAL.anoConstrucao;
+  return erros;
+}
+
+function primeiroCampoInvalido(
+  erros: Partial<Record<CampoObrigatorio, string>>,
+): CampoObrigatorio | null {
+  return CAMPOS_OBRIGATORIOS.find(c => !!erros[c]) ?? null;
+}
+
+function focarCampo(campo: CampoObrigatorio) {
+  const el = document.getElementById(fieldDomId(campo));
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => {
+    if (el instanceof HTMLElement) el.focus({ preventScroll: true });
+  }, 250);
+}
+
 type ImageSlot =
   | { kind: "empty" }
   | { kind: "preview"; url: string; existingPath?: string }
@@ -159,6 +218,10 @@ export default function BenfeitoriaRegistrationPage() {
   const [initialized, setInitialized] = useState(false);
   const [dirtyFields, setDirtyFields] = useState<DirtyFields>({});
   const [imageSlotsDirty, setImageSlotsDirty] = useState(false);
+  const [errosObrigatorios, setErrosObrigatorios] = useState<
+    Partial<Record<CampoObrigatorio, string>>
+  >({});
+  const tentativaValidacao = Object.keys(errosObrigatorios).length > 0;
 
   useEffect(() => {
     if (!isEdit && fazendaIdFromUrl && !initialized) {
@@ -235,6 +298,14 @@ export default function BenfeitoriaRegistrationPage() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
     setDirtyFields(f => ({ ...f, [key]: true }));
+    if (CAMPOS_OBRIGATORIOS.includes(key as CampoObrigatorio)) {
+      setErrosObrigatorios(prev => {
+        if (!prev[key as CampoObrigatorio]) return prev;
+        const next = { ...prev };
+        delete next[key as CampoObrigatorio];
+        return next;
+      });
+    }
   };
 
   const setImageAt = (index: number, file: File) => {
@@ -288,11 +359,17 @@ export default function BenfeitoriaRegistrationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.fazendaId) { toast.error("Selecione uma fazenda"); return; }
-    if (!form.nome.trim()) { toast.error("Nome da benfeitoria é obrigatório"); return; }
-    if (!form.tipo.trim()) { toast.error("Tipo de Benfeitoria é obrigatório"); return; }
-    if (!form.estado.trim()) { toast.error("Estado de Conservação é obrigatório"); return; }
-    if (!form.anoConstrucao.trim()) { toast.error("Ano de construção é obrigatório"); return; }
+    const erros = coletarErros(form);
+    const primeiro = primeiroCampoInvalido(erros);
+
+    if (primeiro) {
+      setErrosObrigatorios(erros);
+      toast.error(MSG_TOAST[primeiro], { id: TOAST_ID_OBRIGATORIOS });
+      focarCampo(primeiro);
+      return;
+    }
+
+    setErrosObrigatorios({});
 
     const payload = {
       fazendaId: parseInt(form.fazendaId),
@@ -340,7 +417,17 @@ export default function BenfeitoriaRegistrationPage() {
 
   return (
     <AppLayout>
-      <form onSubmit={handleSubmit}>
+      <button
+        type="button"
+        onClick={() => setLocation(listUrl)}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
           <h1
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
@@ -366,37 +453,48 @@ export default function BenfeitoriaRegistrationPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
+            <div className="scroll-mt-24">
               <FormLabel required>Nome</FormLabel>
               <FormInput
+                id={fieldDomId("nome")}
                 value={form.nome}
                 onChange={v => set("nome", v)}
                 placeholder="Digite um nome para a benfeitoria"
                 required
+                invalid={!!errosObrigatorios.nome}
+                aria-describedby={errosObrigatorios.nome ? "benfeitoria-err-nome" : undefined}
               />
+              <FieldErrorMsg id="benfeitoria-err-nome" message={errosObrigatorios.nome} />
             </div>
-            <div>
+            <div className="scroll-mt-24">
               <FormLabel required>Fazenda</FormLabel>
               <FormNativeSelect
+                id={fieldDomId("fazendaId")}
                 value={form.fazendaId}
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
                 required
                 options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                invalid={!!errosObrigatorios.fazendaId}
+                aria-describedby={errosObrigatorios.fazendaId ? "benfeitoria-err-fazendaId" : undefined}
               />
+              <FieldErrorMsg id="benfeitoria-err-fazendaId" message={errosObrigatorios.fazendaId} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
+            <div className="scroll-mt-24">
               <FormLabel required>Tipo de Benfeitoria</FormLabel>
               <FormSelect
+                id={fieldDomId("tipo")}
                 value={form.tipo}
                 onChange={v => set("tipo", v)}
                 placeholder="Selecione o tipo"
                 required
                 displayValue={form.tipo}
                 triggerClassName="h-[42px] py-0"
+                invalid={!!errosObrigatorios.tipo}
+                aria-describedby={errosObrigatorios.tipo ? "benfeitoria-err-tipo" : undefined}
               >
                 {TIPOS_BENFEITORIA.map(tipo => (
                   <SelectItem key={tipo} value={tipo} className="text-[13px]">
@@ -404,16 +502,20 @@ export default function BenfeitoriaRegistrationPage() {
                   </SelectItem>
                 ))}
               </FormSelect>
+              <FieldErrorMsg id="benfeitoria-err-tipo" message={errosObrigatorios.tipo} />
             </div>
-            <div>
+            <div className="scroll-mt-24">
               <FormLabel required>Estado de Conservação</FormLabel>
               <FormSelect
+                id={fieldDomId("estado")}
                 value={form.estado}
                 onChange={v => set("estado", v)}
                 placeholder="Selecione o estado"
                 required
                 displayValue={form.estado}
                 triggerClassName="h-[42px] py-0"
+                invalid={!!errosObrigatorios.estado}
+                aria-describedby={errosObrigatorios.estado ? "benfeitoria-err-estado" : undefined}
               >
                 {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
                   <SelectItem key={estado} value={estado} className="text-[13px]">
@@ -421,17 +523,27 @@ export default function BenfeitoriaRegistrationPage() {
                   </SelectItem>
                 ))}
               </FormSelect>
+              <FieldErrorMsg id="benfeitoria-err-estado" message={errosObrigatorios.estado} />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
+            <div className="scroll-mt-24">
               <FormLabel required>Ano de Construção</FormLabel>
               <FormYearPicker
+                id={fieldDomId("anoConstrucao")}
                 value={form.anoConstrucao}
                 onChange={v => set("anoConstrucao", v)}
                 placeholder="Selecione o ano de construção"
                 required
+                invalid={!!errosObrigatorios.anoConstrucao}
+                aria-describedby={
+                  errosObrigatorios.anoConstrucao ? "benfeitoria-err-anoConstrucao" : undefined
+                }
+              />
+              <FieldErrorMsg
+                id="benfeitoria-err-anoConstrucao"
+                message={errosObrigatorios.anoConstrucao}
               />
             </div>
             <div>
@@ -462,22 +574,31 @@ export default function BenfeitoriaRegistrationPage() {
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={() => setLocation(listUrl)}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
-            >
-              Voltar
-            </button>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
-            </button>
+          <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-h-[18px]">
+              {tentativaValidacao && (
+                <p className="text-[12px] text-red-600">
+                  Preencha os campos obrigatórios destacados.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLocation(listUrl)}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
+              </button>
+            </div>
           </div>
         </div>
       </form>

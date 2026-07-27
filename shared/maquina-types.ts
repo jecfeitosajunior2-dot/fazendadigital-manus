@@ -288,3 +288,44 @@ export const MARCAS_MAQUINA = [
 ] as const;
 
 export type MarcaMaquina = (typeof MARCAS_MAQUINA)[number];
+
+/** Fonte de verdade do medidor operacional da máquina. */
+export const TIPOS_MEDIDOR = ["horimetro", "quilometragem", "sem_medidor"] as const;
+export type TipoMedidor = (typeof TIPOS_MEDIDOR)[number];
+
+export const TIPOS_MEDIDOR_LABEL: Record<TipoMedidor, string> = {
+  horimetro: "Horímetro",
+  quilometragem: "Quilometragem",
+  sem_medidor: "Sem medidor",
+};
+
+/** Sugestão inicial de medidor conforme o Tipo (usuário pode alterar). */
+export function sugerirTipoMedidor(tipo: string): TipoMedidor {
+  const t = tipo.trim();
+  if (t === "Veículos" || ["Caminhão", "Carreta", "Carro", "Moto"].includes(t)) {
+    return "quilometragem";
+  }
+  if (
+    t === "Máquinas" ||
+    t === "Equipamentos com Motor" ||
+    ["Trator", "Colheitadeira", "Plantadeira", "Pulverizador"].includes(t)
+  ) {
+    return "horimetro";
+  }
+  return "sem_medidor";
+}
+
+/** Label dinâmico de placa / número de série conforme o Tipo. */
+export function labelIdentificadorMaquina(tipo: string): string {
+  const t = tipo.trim();
+  if (t === "Veículos" || ["Caminhão", "Carreta", "Carro", "Moto"].includes(t)) {
+    return "Placa";
+  }
+  if (t === "Máquinas" || ["Trator", "Colheitadeira", "Plantadeira", "Pulverizador"].includes(t)) {
+    return "Número de série";
+  }
+  if (t === "Equipamentos com Motor" || t === "Implementos") {
+    return "Número de série / patrimônio";
+  }
+  return "Placa ou número de série";
+}

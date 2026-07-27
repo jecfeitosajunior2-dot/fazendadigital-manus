@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -15,13 +15,15 @@ import {
   FormDatePicker,
   FieldBox,
 } from "@/components/FormFields";
-import { TIPOS_MAQUINA, getMarcasPorTipo } from "@/lib/maquina-types";
-
-// Marcas extras aceitas livremente (para tipos sem mapeamento ou marcas não listadas)
-const MARCAS_EXTRAS_LIVRES = [
-  'JCB', 'Caterpillar', 'Komatsu', 'Jacto', 'Stara',
-  'Agrale', 'Santal', 'Lely', 'CLAAS', 'Challenger', 'CNH',
-];
+import {
+  TIPOS_MAQUINA,
+  getMarcasPorTipo,
+  TIPOS_MEDIDOR,
+  TIPOS_MEDIDOR_LABEL,
+  sugerirTipoMedidor,
+  labelIdentificadorMaquina,
+  type TipoMedidor,
+} from "@/lib/maquina-types";
 
 type ImageSlot =
   | { kind: "empty" }
@@ -31,32 +33,34 @@ type ImageSlot =
 type FormState = {
   tipo: string;
   fazendaId: string;
-  apelido: string;
+  nome: string;
   valor: string;
   marca: string;
   modelo: string;
   placa: string;
   anoFabricacao: string;
-  anoAquisicao: string;
+  dataAquisicao: string;
   vidaUtil: string;
-  dataDesativacao: string;
   estado: "novo" | "usado";
+  tipoMedidor: TipoMedidor | "";
+  leituraInicial: string;
   observacoes: string;
 };
 
 const emptyForm = (): FormState => ({
   tipo: "",
   fazendaId: "",
-  apelido: "",
+  nome: "",
   valor: "",
   marca: "",
   modelo: "",
   placa: "",
   anoFabricacao: "",
-  anoAquisicao: "",
+  dataAquisicao: "",
   vidaUtil: "",
-  dataDesativacao: "",
   estado: "novo",
+  tipoMedidor: "",
+  leituraInicial: "",
   observacoes: "",
 });
 
@@ -70,6 +74,46 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function toDateInput(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function FormRadioGroup({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <FieldBox variant="light">
+      <RadioGroup
+        value={value}
+        onValueChange={onChange}
+        className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center"
+      >
+        {options.map(opt => (
+          <label
+            key={opt.value}
+            className="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer"
+          >
+            <RadioGroupItem value={opt.value} className="border-gray-400 text-[#4ECDC4]" />
+            {opt.label}
+          </label>
+        ))}
+      </RadioGroup>
+    </FieldBox>
+  );
 }
 
 function ImageUploadSlot({
@@ -88,7 +132,9 @@ function ImageUploadSlot({
       <label
         className={cn(
           "flex flex-col items-center justify-center h-[120px] border border-dashed rounded cursor-pointer transition-colors",
-          hasImage ? "border-gray-300 bg-gray-50" : "border-gray-300 hover:border-[#4ECDC4] hover:bg-gray-50/50"
+          hasImage
+            ? "border-gray-300 bg-gray-50"
+            : "border-gray-300 hover:border-[#4ECDC4] hover:bg-gray-50/50",
         )}
       >
         {hasImage ? (
@@ -99,7 +145,9 @@ function ImageUploadSlot({
               className="absolute inset-0 w-full h-full object-cover rounded"
             />
             <div className="absolute inset-0 bg-black/0 hover:bg-black/30 rounded transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-              <span className="text-white text-[10px] font-medium bg-black/50 px-2 py-1 rounded">Alterar</span>
+              <span className="text-white text-[10px] font-medium bg-black/50 px-2 py-1 rounded">
+                Alterar
+              </span>
             </div>
           </>
         ) : (
@@ -115,6 +163,10 @@ function ImageUploadSlot({
           onChange={e => {
             const file = e.target.files?.[0];
             if (file) {
+              if (!file.type.startsWith("image/")) {
+                toast.error("Selecione um arquivo de imagem válido.");
+                return;
+              }
               if (file.size > 5 * 1024 * 1024) {
                 toast.error("Imagem deve ter no máximo 5 MB");
                 return;
@@ -130,42 +182,13 @@ function ImageUploadSlot({
           type="button"
           onClick={onRemove}
           className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-sm hover:bg-red-600 z-10"
+          aria-label="Remover foto"
         >
           <span className="material-icons text-[12px]">close</span>
         </button>
       )}
     </div>
   );
-}
-
-function FormRadioGroup({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <FieldBox variant="light">
-      <RadioGroup value={value} onValueChange={onChange} className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center">
-        {options.map(opt => (
-          <label key={opt.value} className="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer">
-            <RadioGroupItem value={opt.value} className="border-gray-400 text-[#4ECDC4]" />
-            {opt.label}
-          </label>
-        ))}
-      </RadioGroup>
-    </FieldBox>
-  );
-}
-
-function toDateInput(value: unknown): string {
-  if (!value) return "";
-  const d = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
 }
 
 export default function MaquinaRegistrationPage() {
@@ -178,7 +201,7 @@ export default function MaquinaRegistrationPage() {
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: maquina, isLoading: loadingMaquina } = trpc.maquinas.get.useQuery(
     { id: maquinaId! },
-    { enabled: isEdit }
+    { enabled: isEdit },
   );
 
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -187,41 +210,52 @@ export default function MaquinaRegistrationPage() {
     { kind: "empty" },
     { kind: "empty" },
   ]);
-
-  // Ref que rastreia qual maquina.id foi inicializado por último — corrige o caso
-  // em que Wouter reutiliza o componente ao navegar entre ?id= diferentes.
   const initializedForId = useRef<number | null>(null);
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const anoAtual = new Date().getFullYear();
 
   useEffect(() => {
     if (!isEdit || !maquina) return;
     if (initializedForId.current === maquina.id) return;
 
-    // Converte valor decimal do banco → string de centavos para formatCurrencyBrl
     const valorCents = maquina.valor
       ? Math.round(parseFloat(parseFloat(String(maquina.valor)).toFixed(2)) * 100)
       : 0;
 
+    const tipoMedidorRaw = String(maquina.tipoMedidor || "");
+    const tipoMedidor: TipoMedidor | "" = TIPOS_MEDIDOR.includes(tipoMedidorRaw as TipoMedidor)
+      ? (tipoMedidorRaw as TipoMedidor)
+      : maquina.tipo
+        ? sugerirTipoMedidor(maquina.tipo)
+        : "";
+
+    let dataAquisicao = toDateInput(maquina.dataAquisicao);
+    if (!dataAquisicao && maquina.anoAquisicao) {
+      dataAquisicao = `${maquina.anoAquisicao}-01-01`;
+    }
+
     setForm({
       tipo: maquina.tipo || "",
       fazendaId: maquina.fazendaId != null ? String(maquina.fazendaId) : "",
-      apelido: maquina.nome || "",
+      nome: maquina.nome || "",
       valor: valorCents > 0 ? formatCurrencyBrl(String(valorCents)) : "",
       marca: maquina.marca || "",
       modelo: maquina.modelo || "",
       placa: maquina.placa || "",
       anoFabricacao: maquina.ano ? String(maquina.ano) : "",
-      anoAquisicao: maquina.anoAquisicao ? String(maquina.anoAquisicao) : "",
-      vidaUtil: maquina.vidaUtil || "",
-      dataDesativacao: toDateInput(maquina.dataDesativacao),
+      dataAquisicao,
+      vidaUtil: maquina.vidaUtil ? String(maquina.vidaUtil).replace(/[^\d]/g, "") : "",
       estado: maquina.estado === "usado" ? "usado" : "novo",
+      tipoMedidor,
+      leituraInicial: maquina.horimetro ? String(maquina.horimetro) : "",
       observacoes: maquina.observacoes || "",
     });
     setImageSlots(
       [maquina.imagem1, maquina.imagem2, maquina.imagem3].map(path =>
         path
           ? { kind: "preview" as const, url: path, existingPath: path }
-          : { kind: "empty" as const }
-      )
+          : { kind: "empty" as const },
+      ),
     );
     initializedForId.current = maquina.id;
   }, [isEdit, maquina]);
@@ -229,7 +263,7 @@ export default function MaquinaRegistrationPage() {
   const createMutation = trpc.maquinas.create.useMutation({
     onSuccess: () => {
       utils.maquinas.list.invalidate();
-      toast.success("Maquinário cadastrado!");
+      toast.success("Máquina cadastrada com sucesso.");
       setLocation("/maquinas/visao-geral");
     },
     onError: e => toast.error(e.message),
@@ -238,7 +272,7 @@ export default function MaquinaRegistrationPage() {
   const updateMutation = trpc.maquinas.update.useMutation({
     onSuccess: () => {
       utils.maquinas.list.invalidate();
-      toast.success("Maquinário atualizado!");
+      toast.success("Máquina atualizada com sucesso.");
       setLocation("/maquinas/visao-geral");
     },
     onError: e => toast.error(e.message),
@@ -249,21 +283,35 @@ export default function MaquinaRegistrationPage() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
 
-  // Marcas disponíveis para o tipo atualmente selecionado.
-  // Se o tipo tiver mapeamento, usa EXCLUSIVAMENTE as marcas daquele tipo.
-  // Se não tiver mapeamento (tipo vazio ou legado), exibe marcas extras livres.
-  const marcasDoTipo = form.tipo
-    ? getMarcasPorTipo(form.tipo)
-    : MARCAS_EXTRAS_LIVRES;
+  const marcasDoTipo = form.tipo ? getMarcasPorTipo(form.tipo) : [];
+  const marcasOptions = useMemo(() => {
+    const base = [...marcasDoTipo];
+    if (!base.includes("Outra marca") && !base.includes("Outra")) {
+      base.push("Outra marca");
+    }
+    if (form.marca && !base.includes(form.marca)) {
+      base.unshift(form.marca);
+    }
+    return base;
+  }, [marcasDoTipo, form.marca]);
 
-  // Ao trocar o tipo, limpa a marca se o valor atual não for válido para o novo tipo
   const handleTipoChange = (novoTipo: string) => {
-    const marcasNovoTipo = getMarcasPorTipo(novoTipo);
+    const sugerido = sugerirTipoMedidor(novoTipo);
     setForm(f => ({
       ...f,
       tipo: novoTipo,
-      // Limpa a marca apenas se o tipo tiver marcas mapeadas E a marca atual não estiver na lista
-      marca: marcasNovoTipo.length > 0 && !marcasNovoTipo.includes(f.marca) ? "" : f.marca,
+      marca: "",
+      tipoMedidor: sugerido,
+      leituraInicial: sugerido === "sem_medidor" ? "" : f.leituraInicial,
+    }));
+  };
+
+  const handleMedidorChange = (v: string) => {
+    const medidor = v as TipoMedidor;
+    setForm(f => ({
+      ...f,
+      tipoMedidor: medidor,
+      leituraInicial: "",
     }));
   };
 
@@ -297,7 +345,8 @@ export default function MaquinaRegistrationPage() {
 
     for (const slot of imageSlots) {
       if (slot.kind === "empty") payload.push({ type: "empty" });
-      else if (slot.kind === "preview" && slot.existingPath) payload.push({ type: "keep", path: slot.existingPath });
+      else if (slot.kind === "preview" && slot.existingPath)
+        payload.push({ type: "keep", path: slot.existingPath });
       else if (slot.kind === "file") {
         payload.push({
           type: "new",
@@ -314,86 +363,176 @@ export default function MaquinaRegistrationPage() {
     ];
   };
 
+  const precisaLeitura =
+    form.tipoMedidor === "horimetro" || form.tipoMedidor === "quilometragem";
+
+  const leituraNum = form.leituraInicial.trim()
+    ? parseFloat(form.leituraInicial.replace(",", "."))
+    : null;
+  const leituraInvalida =
+    precisaLeitura &&
+    (form.leituraInicial.trim() === "" ||
+      leituraNum == null ||
+      Number.isNaN(leituraNum) ||
+      leituraNum < 0);
+
+  const valorNum = form.valor.trim() ? parseCurrencyBrl(form.valor) : null;
+  const valorInvalido = form.valor.trim() !== "" && (valorNum == null || valorNum < 0);
+
+  const vidaNum = form.vidaUtil.trim() ? parseInt(form.vidaUtil.replace(/[^\d]/g, ""), 10) : null;
+  const vidaInvalida =
+    form.vidaUtil.trim() !== "" && (vidaNum == null || Number.isNaN(vidaNum) || vidaNum <= 0);
+
+  const anoFab = form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : null;
+  const anoFabInvalido =
+    form.anoFabricacao.trim() !== "" &&
+    (anoFab == null || Number.isNaN(anoFab) || anoFab > anoAtual || anoFab < 1900);
+
+  const dataAqFutura = !!form.dataAquisicao && form.dataAquisicao > hojeISO;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBusy) return;
 
-    const fazendaIdNum = form.fazendaId ? parseInt(form.fazendaId, 10) : NaN;
-
-    // Para cadastro (novo), tipo/fazenda/marca são obrigatórios
-    if (!isEdit) {
-      if (!form.tipo.trim()) { toast.error("Selecione o tipo de máquina"); return; }
-      if (!form.fazendaId || isNaN(fazendaIdNum)) { toast.error("Selecione uma fazenda"); return; }
-      if (!form.marca.trim()) { toast.error("Selecione a marca"); return; }
+    const fazendaIdNum = parseInt(form.fazendaId, 10);
+    if (!form.nome.trim()) {
+      toast.error("Informe o nome de identificação");
+      return;
+    }
+    if (!form.tipo.trim()) {
+      toast.error("Selecione o tipo de máquina");
+      return;
+    }
+    if (!form.fazendaId || isNaN(fazendaIdNum)) {
+      toast.error("Selecione uma fazenda");
+      return;
+    }
+    if (!form.marca.trim()) {
+      toast.error("Selecione a marca");
+      return;
+    }
+    if (!form.tipoMedidor) {
+      toast.error("Selecione o tipo de medidor");
+      return;
+    }
+    if (leituraInvalida) {
+      toast.error(
+        form.tipoMedidor === "quilometragem"
+          ? "Informe a quilometragem inicial"
+          : "Informe o horímetro inicial",
+      );
+      return;
+    }
+    if (valorInvalido) {
+      toast.error("Valor de aquisição não pode ser negativo");
+      return;
+    }
+    if (vidaInvalida) {
+      toast.error("Vida útil estimada deve ser um número positivo");
+      return;
+    }
+    if (anoFabInvalido) {
+      toast.error("Ano de fabricação inválido");
+      return;
+    }
+    if (dataAqFutura) {
+      toast.error("Data de aquisição não pode ser futura");
+      return;
     }
 
+    if (form.dataAquisicao && anoFab && parseInt(form.dataAquisicao.slice(0, 4), 10) < anoFab) {
+      toast.warning("A data de aquisição é anterior ao ano de fabricação. Confira se está correto.");
+    }
+
+    const placaNorm = form.placa.trim().replace(/\s+/g, "").toUpperCase();
+
     const basePayload = {
-      nome: form.apelido.trim() || undefined,
+      nome: form.nome.trim(),
       modelo: form.modelo.trim() || undefined,
-      placa: form.placa.trim() || undefined,
+      placa: placaNorm || undefined,
       ano: form.anoFabricacao.trim() ? parseInt(form.anoFabricacao, 10) : undefined,
-      anoAquisicao: form.anoAquisicao.trim() ? parseInt(form.anoAquisicao, 10) : undefined,
-      valor: parseCurrencyBrl(form.valor) || undefined,
+      dataAquisicao: form.dataAquisicao || undefined,
+      valor: valorNum != null && valorNum >= 0 ? String(valorNum) : undefined,
       vidaUtil: form.vidaUtil.trim() || undefined,
-      dataDesativacao: form.dataDesativacao || undefined,
       estado: form.estado,
+      tipoMedidor: form.tipoMedidor as TipoMedidor,
+      horimetro:
+        form.tipoMedidor === "sem_medidor"
+          ? undefined
+          : form.leituraInicial.trim().replace(",", ".") || undefined,
       observacoes: form.observacoes.trim() || undefined,
       imageSlots: await buildImageSlotsPayload(),
-      // tipo/fazendaId/marca: apenas envia se preenchidos (evita sobrescrever existentes com vazio)
-      ...(form.tipo.trim() ? { tipo: form.tipo.trim() } : {}),
-      ...(form.marca.trim() ? { marca: form.marca.trim() } : {}),
-      ...(!isNaN(fazendaIdNum) && fazendaIdNum > 0 ? { fazendaId: fazendaIdNum } : {}),
+      tipo: form.tipo.trim(),
+      marca: form.marca.trim(),
+      fazendaId: fazendaIdNum,
     };
 
     if (isEdit && maquinaId) {
       updateMutation.mutate({ id: maquinaId, ...basePayload });
     } else {
-      // Para criar: tipo/fazendaId/marca já foram validados acima
-      createMutation.mutate({
-        ...basePayload,
-        fazendaId: fazendaIdNum,
-        tipo: form.tipo.trim(),
-        marca: form.marca.trim(),
-      });
+      createMutation.mutate(basePayload);
     }
   };
 
-  // Campos obrigatórios que estão vazios neste maquinário (edit mode)
-  const camposVazios = isEdit && maquina
-    ? [!form.tipo && "Tipo", !form.fazendaId && "Fazenda", !form.marca && "Marca"].filter(Boolean)
-    : [];
+  const camposVazios =
+    isEdit && maquina
+      ? [
+          !form.tipo && "Tipo",
+          !form.fazendaId && "Fazenda",
+          !form.marca && "Marca",
+          !form.nome.trim() && "Nome de identificação",
+          !form.tipoMedidor && "Tipo de medidor",
+        ].filter(Boolean)
+      : [];
+
+  const labelIdent = labelIdentificadorMaquina(form.tipo);
+  const medidorComLeitura = precisaLeitura;
 
   if (isEdit && loadingMaquina) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Carregando...</div>
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
+          Carregando...
+        </div>
       </AppLayout>
     );
   }
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={() => setLocation("/maquinas/visao-geral")}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <form onSubmit={handleSubmit}>
         <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
           <h1
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            {isEdit ? "Editar maquinário" : "Cadastro de maquinário"}
+            {isEdit ? "Editar máquina" : "Cadastrar máquina"}
           </h1>
 
           {camposVazios.length > 0 && (
             <div className="mb-5 flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded text-[12px] text-amber-800">
               <span className="material-icons text-[16px] text-amber-500 mt-0.5 shrink-0">info</span>
               <span>
-                Este maquinário não possui <strong>{camposVazios.join(", ")}</strong> registrado{camposVazios.length > 1 ? "s" : ""}.
-                Selecione os campos destacados com <span style={{ color: "#4ECDC4" }}>■</span> e salve para completar o cadastro.
+                Esta máquina não possui <strong>{camposVazios.join(", ")}</strong> registrado
+                {camposVazios.length > 1 ? "s" : ""}. Complete os campos e salve para atualizar o
+                cadastro.
               </span>
             </div>
           )}
 
           <div className="mb-6">
             <p className="text-[11px] text-gray-600 mb-3">
-              Selecione até três fotos para seu maquinário
+              Selecione até três fotos para sua máquina
             </p>
             <div className="flex gap-3">
               {imageSlots.map((slot, i) => (
@@ -407,8 +546,16 @@ export default function MaquinaRegistrationPage() {
             </div>
           </div>
 
-          {/* Linha 1 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <FormLabel required>Nome de identificação</FormLabel>
+              <FormInput
+                value={form.nome}
+                onChange={v => set("nome", v)}
+                placeholder="Ex.: Trator 01, S10 Fazenda, Gerador Galpão"
+                required
+              />
+            </div>
             <div>
               <FormLabel required>Tipo</FormLabel>
               <FormNativeSelect
@@ -419,6 +566,9 @@ export default function MaquinaRegistrationPage() {
                 options={TIPOS_MAQUINA.map(t => ({ value: t, label: t }))}
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <FormLabel required>Fazenda</FormLabel>
               <FormNativeSelect
@@ -430,48 +580,19 @@ export default function MaquinaRegistrationPage() {
               />
             </div>
             <div>
-              <FormLabel>Apelido</FormLabel>
-              <FormInput
-                value={form.apelido}
-                onChange={v => set("apelido", v)}
-                placeholder="Digite um nome para a máquina"
-              />
-            </div>
-          </div>
-
-          {/* Linha 2 — Valor (sem combustível / unidade de medição) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
-              <FormLabel>Valor</FormLabel>
-              <FormInput
-                value={form.valor}
-                onChange={v => set("valor", formatCurrencyBrl(v))}
-                placeholder="R$ 0,00"
-              />
-            </div>
-          </div>
-
-          {/* Linha 3 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
               <FormLabel required>Marca</FormLabel>
-              {/* Marcas filtradas pelo tipo selecionado via datalist */}
-              <FieldBox required>
-                <input
-                  list="marcas-por-tipo-list"
-                  value={form.marca}
-                  onChange={e => set("marca", e.target.value)}
-                  placeholder={form.tipo ? `Selecione a marca para ${form.tipo}` : "Selecione primeiro o tipo"}
-                  required
-                  className="w-full min-h-[42px] px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-                <datalist id="marcas-por-tipo-list">
-                  {(marcasDoTipo as readonly string[]).map((m: string) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-              </FieldBox>
+              <FormNativeSelect
+                value={form.marca}
+                onChange={v => set("marca", v)}
+                placeholder={form.tipo ? "Selecione a marca" : "Selecione primeiro o tipo"}
+                required
+                disabled={!form.tipo}
+                options={marcasOptions.map(m => ({ value: m, label: m }))}
+              />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <FormLabel>Modelo</FormLabel>
               <FormInput
@@ -481,19 +602,18 @@ export default function MaquinaRegistrationPage() {
               />
             </div>
             <div>
-              <FormLabel>Placa ou nº de série</FormLabel>
+              <FormLabel>{labelIdent}</FormLabel>
               <FormInput
                 value={form.placa}
                 onChange={v => set("placa", v)}
-                placeholder="Placa do veículo ou nº de série da máquina"
+                placeholder={labelIdent}
               />
             </div>
           </div>
 
-          {/* Linha 4 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <FormLabel>Ano de Fabricação</FormLabel>
+              <FormLabel>Ano de fabricação</FormLabel>
               <FormYearPicker
                 value={form.anoFabricacao}
                 onChange={v => set("anoFabricacao", v)}
@@ -501,52 +621,104 @@ export default function MaquinaRegistrationPage() {
               />
             </div>
             <div>
-              <FormLabel>Ano de Aquisição</FormLabel>
-              <FormYearPicker
-                value={form.anoAquisicao}
-                onChange={v => set("anoAquisicao", v)}
-                placeholder="Selecione o ano de aquisição"
-              />
-            </div>
-            <div>
-              <FormLabel>Vida útil</FormLabel>
-              <FormInput
-                value={form.vidaUtil}
-                onChange={v => set("vidaUtil", v)}
-                placeholder="Ex: 10 anos"
+              <FormLabel>Data de aquisição</FormLabel>
+              <FormDatePicker
+                value={form.dataAquisicao}
+                onChange={v => set("dataAquisicao", v)}
+                placeholder="DD/MM/AAAA"
+                max={hojeISO}
               />
             </div>
           </div>
 
-          {/* Linha 5 — sem porcentagem utilizada na atividade */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <FormLabel>Data de Desativação</FormLabel>
-              <FormDatePicker
-                value={form.dataDesativacao}
-                onChange={v => set("dataDesativacao", v)}
-                placeholder="Selecione a data de desativação"
-              />
-            </div>
-            <div>
-              <FormLabel>Estado</FormLabel>
+              <FormLabel>Condição de aquisição</FormLabel>
               <FormRadioGroup
                 value={form.estado}
                 onChange={v => set("estado", v as "novo" | "usado")}
                 options={[
-                  { value: "novo", label: "Novo" },
-                  { value: "usado", label: "Usado" },
+                  { value: "novo", label: "Nova" },
+                  { value: "usado", label: "Usada" },
                 ]}
               />
             </div>
+            <div>
+              <FormLabel>Valor de aquisição (R$)</FormLabel>
+              <FormInput
+                value={form.valor}
+                onChange={v => set("valor", formatCurrencyBrl(v))}
+                placeholder="R$ 150.000,00"
+              />
+            </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <FormLabel>Vida útil estimada (anos)</FormLabel>
+              <FormInput
+                value={form.vidaUtil}
+                onChange={v => set("vidaUtil", v.replace(/[^\d]/g, "").slice(0, 3))}
+                placeholder="Ex.: 10"
+                inputMode="numeric"
+              />
+            </div>
+            <div>
+              <FormLabel required>Tipo de medidor</FormLabel>
+              <FormNativeSelect
+                value={form.tipoMedidor}
+                onChange={handleMedidorChange}
+                placeholder="Selecione o tipo de medidor"
+                required
+                options={TIPOS_MEDIDOR.map(t => ({
+                  value: t,
+                  label: TIPOS_MEDIDOR_LABEL[t],
+                }))}
+              />
+            </div>
+          </div>
+
+          {medidorComLeitura && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <FormLabel required>
+                  {form.tipoMedidor === "quilometragem"
+                    ? "Quilometragem inicial"
+                    : "Horímetro inicial"}
+                </FormLabel>
+                <div className="relative">
+                  <FormInput
+                    value={form.leituraInicial}
+                    onChange={v => set("leituraInicial", v.replace(/[^\d.,]/g, ""))}
+                    placeholder={
+                      form.tipoMedidor === "quilometragem" ? "Ex.: 82.450" : "Ex.: 1.250,5"
+                    }
+                    className="pr-10"
+                    required
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-500 pointer-events-none">
+                    {form.tipoMedidor === "quilometragem" ? "km" : "h"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isEdit && (
+            <div className="mb-4 flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-gray-700">Status</span>
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                Ativa
+              </span>
+            </div>
+          )}
 
           <div className="mb-6">
             <FormLabel>Observações</FormLabel>
             <FormTextarea
               value={form.observacoes}
               onChange={v => set("observacoes", v)}
-              placeholder="Descreva seu maquinário"
+              placeholder="Informações adicionais sobre esta máquina"
               rows={3}
             />
           </div>
@@ -555,22 +727,18 @@ export default function MaquinaRegistrationPage() {
             <button
               type="button"
               onClick={() => setLocation("/maquinas/visao-geral")}
-              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 active:scale-[0.97] transition-colors flex items-center justify-center"
-              style={{ minHeight: 48 }}
+              disabled={isBusy}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isBusy}
-              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 active:scale-[0.97] transition-all hover:opacity-90 flex items-center justify-center gap-2"
-              style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
+              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY }}
             >
-              {isBusy ? (
-                <><span className="material-icons text-[16px] animate-spin">refresh</span> Salvando...</>
-              ) : (
-                <><span className="material-icons text-[16px]">save</span> Salvar maquinário</>
-              )}
+              {isBusy ? "Salvando..." : "Salvar"}
             </button>
           </div>
         </div>

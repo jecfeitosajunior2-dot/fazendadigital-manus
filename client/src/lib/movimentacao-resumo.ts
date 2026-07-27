@@ -23,6 +23,7 @@ export type MovimentacaoItemRaw = {
   status?: string | null;
   originalGrupoId?: string | null;
   motivoEstorno?: string | null;
+  abastecimentoId?: number | null;
   nome?: string | null;
   categoria?: string | null;
   subcategoria?: string | null;
@@ -75,6 +76,10 @@ export type MovimentacaoResumo = {
   originalGrupoId: string | null;
   /** Grupo administrativo da movimentação (quando existir). */
   grupoId: string | null;
+  /** Abastecimento que gerou esta saída (quando aplicável). */
+  abastecimentoId: number | null;
+  /** Nome da máquina (manejo), quando gerada por abastecimento. */
+  maquinaNome: string | null;
   /** Detalhes do estorno vinculado (somente quando status = estornada). */
   infoEstorno: InfoEstornoMovimentacao | null;
   /** Frete total repetido em cada item (lançamento legado). */
@@ -148,6 +153,9 @@ export function rotuloOrigemDestino(m: MovimentacaoItemRaw): string {
   const destino = m.destino?.trim();
   const manejo = m.manejo?.trim();
 
+  if (m.abastecimentoId != null || destino?.toLowerCase().includes("abastecimento de máquina")) {
+    return destino || "Abastecimento de máquina";
+  }
   if (tipo.includes("compra") || (tipo.includes("entrada") && fornecedor)) {
     return fornecedor || destino || "—";
   }
@@ -164,6 +172,14 @@ export function rotuloOrigemDestino(m: MovimentacaoItemRaw): string {
     return destino || fornecedor || "—";
   }
   return destino || fornecedor || manejo || "—";
+}
+
+export function isMovimentacaoDeAbastecimento(m: MovimentacaoItemRaw | MovimentacaoResumo): boolean {
+  if ("abastecimentoId" in m && m.abastecimentoId != null) return true;
+  if ("itens" in m && Array.isArray(m.itens)) {
+    return m.itens.some(i => i.abastecimentoId != null);
+  }
+  return false;
 }
 
 export function rotuloDocumentoMov(m: MovimentacaoItemRaw): string {
@@ -406,6 +422,14 @@ export function agruparMovimentacoes(itens: MovimentacaoItemRaw[]): Movimentacao
         head.status,
     );
 
+    const abastecimentoId =
+      ordenados.map(i => (i.abastecimentoId != null ? Number(i.abastecimentoId) : null)).find(v => v != null) ??
+      null;
+    const maquinaNome =
+      abastecimentoId != null
+        ? ordenados.map(i => i.manejo?.trim()).find(Boolean) || null
+        : null;
+
     const estornosVinculados = grupoId ? (estornosPorOriginal.get(grupoId) ?? []) : [];
     const infoEstorno =
       status === "estornada" || estornosVinculados.length > 0
@@ -434,6 +458,8 @@ export function agruparMovimentacoes(itens: MovimentacaoItemRaw[]): Movimentacao
       motivoEstorno,
       originalGrupoId: head.originalGrupoId?.trim() || null,
       grupoId,
+      abastecimentoId,
+      maquinaNome,
       infoEstorno: status === "estornada" ? infoEstorno : null,
       itens: ordenados,
       freteLegado,

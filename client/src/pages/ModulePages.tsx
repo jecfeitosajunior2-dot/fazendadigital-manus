@@ -170,25 +170,31 @@ export function FarmsOverviewPage() {
       {/* Lista de fazendas — layout iRancho */}
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-[15px] font-semibold text-gray-800 leading-none">Lista de Fazendas</h1>
+          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Fazendas</h1>
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
               onClick={() => setLocation("/fazendas/cadastro")}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-semibold uppercase text-white bg-[#4ECDC4] hover:bg-[#36BDB4] transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+              style={{ backgroundColor: "#4ECDC4" }}
             >
-              <span className="text-[11px] leading-none font-semibold">+</span>
-              <span className="leading-none">Nova Fazenda</span>
+              <span className="material-icons text-[16px]">add</span>
+              Nova Fazenda
             </button>
-          </div>
-          <div className="relative">
-            <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
-            <input
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Buscar"
-              className="h-8 pl-8 pr-3 text-[11px] border border-gray-200 rounded w-48 bg-white"
-            />
+            <div className="relative">
+              <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">
+                search
+              </span>
+              <input
+                value={search}
+                onChange={e => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Buscar"
+                className="min-h-[44px] pl-8 pr-3 text-[12px] border border-gray-200 rounded-lg w-48 bg-white"
+              />
+            </div>
           </div>
         </div>
 

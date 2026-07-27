@@ -19,6 +19,7 @@ import {
   formatQtdItem,
   formatUnidadeItem,
   formatValorResumo,
+  isMovimentacaoDeAbastecimento,
   rotuloStatusMov,
   statusBadgeClassMov,
   tipoBadgeClassMov,
@@ -113,6 +114,10 @@ export default function InsumosMovimentacaoPanel() {
   const [estornoAlvo, setEstornoAlvo] = useState<MovimentacaoResumo | null>(null);
   const [estornando, setEstornando] = useState(false);
   const [estornoSubmitError, setEstornoSubmitError] = useState<string | null>(null);
+  const [vinculoAlvo, setVinculoAlvo] = useState<{
+    resumo: MovimentacaoResumo;
+    acao: "editar" | "excluir";
+  } | null>(null);
 
   const filtrosRascunho: FiltrosSecundarios = {
     categoria: fCategoria,
@@ -382,9 +387,27 @@ export default function InsumosMovimentacaoPanel() {
       toast.error("Movimentação estornada não pode ser editada.");
       return;
     }
+    if (isMovimentacaoDeAbastecimento(resumo)) {
+      setVinculoAlvo({ resumo, acao: "editar" });
+      return;
+    }
     setLocation(
       `/insumos/nova-movimentacao?id=${resumo.editId}${fFazenda ? `&fazendaId=${encodeURIComponent(fFazenda)}` : ""}`,
     );
+  };
+
+  const pedirEstorno = (resumo: MovimentacaoResumo) => {
+    if (isMovimentacaoDeAbastecimento(resumo)) {
+      setVinculoAlvo({ resumo, acao: "excluir" });
+      return;
+    }
+    setEstornoAlvo(resumo);
+  };
+
+  const irParaAbastecimento = (resumo: MovimentacaoResumo) => {
+    if (!resumo.abastecimentoId) return;
+    setVinculoAlvo(null);
+    setLocation(`/maquinas/abastecimento/cadastro?id=${resumo.abastecimentoId}`);
   };
 
   const confirmarEstorno = async (payload: { motivo: string; observacao?: string }) => {
@@ -437,11 +460,13 @@ export default function InsumosMovimentacaoPanel() {
   const exportHeaders = [
     "Data",
     "Tipo de movimentação",
-    "Fornecedor",
+    "Origem / Destino",
     "Documento",
     "Itens",
     "Valor total",
     "Situação",
+    "Máquina",
+    "Referência abastecimento",
     "Data do estorno",
     "Motivo do estorno",
   ];
@@ -453,6 +478,8 @@ export default function InsumosMovimentacaoPanel() {
     formatItensLabel(m.qtdItens),
     m.valorTotal != null ? formatValorResumo(m.valorTotal) : "",
     rotuloStatusMov(m.status === "estornada" ? "estornada" : "ativa"),
+    m.maquinaNome || "",
+    m.abastecimentoId != null ? `Abastecimento #${m.abastecimentoId}` : "",
     m.status === "estornada" ? (m.infoEstorno?.dataHoraLabel ?? "") : "",
     m.status === "estornada"
       ? (m.infoEstorno?.motivo || m.motivoEstorno || "")
@@ -510,7 +537,7 @@ export default function InsumosMovimentacaoPanel() {
         reportTitle: exportIdentityLine,
         columnAligns: exportColumnAligns,
         currencyColIndexes: [5],
-        textColIndexes: [0, 1, 2, 3, 4, 6, 7, 8],
+        textColIndexes: [0, 1, 2, 3, 4, 6, 7, 8, 9, 10],
         ...simpleOpts,
       });
 
@@ -641,6 +668,51 @@ export default function InsumosMovimentacaoPanel() {
         submitError={estornoSubmitError}
         onClearSubmitError={() => setEstornoSubmitError(null)}
       />
+
+      {vinculoAlvo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="bg-white rounded-lg shadow-xl border border-gray-200 max-w-md w-full p-5"
+          >
+            <h2 className="text-[15px] font-semibold text-gray-900 mb-2">
+              Movimentação vinculada a abastecimento
+            </h2>
+            <p className="text-[13px] text-gray-600 leading-relaxed">
+              {vinculoAlvo.acao === "editar"
+                ? "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original."
+                : "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente."}
+            </p>
+            {vinculoAlvo.resumo.abastecimentoId != null && (
+              <p className="text-[12px] text-gray-500 mt-2">
+                Referência: Abastecimento #{vinculoAlvo.resumo.abastecimentoId}
+                {vinculoAlvo.resumo.maquinaNome ? ` · ${vinculoAlvo.resumo.maquinaNome}` : ""}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setVinculoAlvo(null)}
+                className="px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Fechar
+              </button>
+              {vinculoAlvo.resumo.abastecimentoId != null && (
+                <button
+                  type="button"
+                  onClick={() => irParaAbastecimento(vinculoAlvo.resumo)}
+                  className="px-4 py-2 rounded-lg text-[12px] font-semibold text-white hover:brightness-95"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  Ver abastecimento
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filtros */}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden px-4 py-3">
         {/* Linha 1 — Fazenda | Produto */}
@@ -977,6 +1049,18 @@ export default function InsumosMovimentacaoPanel() {
                               <span className={`px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${tipoBadgeClassMov(resumo.tipo)}`}>
                                 {resumo.tipo}
                               </span>
+                              {isMovimentacaoDeAbastecimento(resumo) && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide whitespace-nowrap bg-slate-100 text-slate-600"
+                                  title={
+                                    resumo.abastecimentoId
+                                      ? `Abastecimento #${resumo.abastecimentoId}${resumo.maquinaNome ? ` — ${resumo.maquinaNome}` : ""}`
+                                      : "Gerada por abastecimento"
+                                  }
+                                >
+                                  Automática
+                                </span>
+                              )}
                               {resumo.status === "estornada" && (
                                 <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide whitespace-nowrap ${statusBadgeClassMov(resumo.status)}`}>
                                   {rotuloStatusMov(resumo.status)}
@@ -985,7 +1069,14 @@ export default function InsumosMovimentacaoPanel() {
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-gray-800 align-middle text-center leading-snug max-w-[280px]">
-                            {resumo.origemDestino}
+                            <div>{resumo.origemDestino}</div>
+                            {isMovimentacaoDeAbastecimento(resumo) && (
+                              <div className="text-[10px] text-gray-500 mt-0.5">
+                                {[resumo.maquinaNome, resumo.abastecimentoId != null ? `#${resumo.abastecimentoId}` : null]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap align-middle text-center">
                             {resumo.documento}
@@ -1011,7 +1102,7 @@ export default function InsumosMovimentacaoPanel() {
                               {podeEstornar && (
                                 <TableIconButton
                                   label="Estornar movimentação"
-                                  onClick={() => setEstornoAlvo(resumo)}
+                                  onClick={() => pedirEstorno(resumo)}
                                   tone="warning"
                                   compact
                                 >

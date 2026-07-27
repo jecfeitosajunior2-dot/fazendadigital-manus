@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
+  FD_PRIMARY,
   FormLabel,
   FieldBox,
   FormDatePicker,
@@ -486,16 +487,6 @@ const AnimalFormPage: React.FC = () => {
 
   // ── Validação ──
   const hasDataReferencia = !!(form.dataNascimento.trim() || form.dataEntrada.trim());
-  const canSubmit =
-    !!fazendaId &&
-    !!form.brinco.trim() &&
-    !!form.sexo &&
-    !!form.categoria &&
-    hasDataReferencia;
-
-  const essentialFieldsHint = isEditMode
-    ? 'Para salvar, preencha: Fazenda, Número do Brinco, Sexo, Categoria e Data de Nascimento ou Data de Entrada.'
-    : 'Para cadastrar, preencha: Fazenda, Número do Brinco, Sexo, Categoria e Data de Nascimento ou Data de Entrada.';
 
   const clearDataReferenciaErrors = (nascimento: string, entrada: string) => {
     if (nascimento.trim() || entrada.trim()) {
@@ -1094,61 +1085,35 @@ const AnimalFormPage: React.FC = () => {
           </SectionCard>
 
           {/* ── Ações ── */}
-          <div className="bg-white rounded-lg border border-gray-100 shadow-sm px-4 py-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              {!canSubmit ? (
-                <p className="flex items-center gap-1.5 text-[11px] text-amber-700/90 sm:max-w-md">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500" aria-hidden />
-                  <span>{essentialFieldsHint}</span>
-                </p>
-              ) : (
-                <span className="hidden sm:block" aria-hidden />
-              )}
-              <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2 sm:gap-3 shrink-0">
-              <Button
+          <div className="pt-4 border-t border-gray-100 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setLocation('/rebanho/lista-animais')}
+              disabled={isSubmitting}
+              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
+
+            {!isEditMode && (
+              <button
                 type="button"
-                variant="outline"
-                onClick={() => setLocation('/rebanho/lista-animais')}
+                onClick={() => handleSave(true)}
                 disabled={isSubmitting}
-                className={cn(
-                  'min-h-[44px] bg-white border-[#CBD5E1] text-[#1E293B] hover:bg-slate-50 hover:text-[#1E293B]',
-                  isSubmitting && 'opacity-60 cursor-not-allowed hover:bg-white',
-                )}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
-                Cancelar
-              </Button>
+                {isSubmitting ? 'Salvando...' : 'Salvar e Novo'}
+              </button>
+            )}
 
-              {!isEditMode && (
-                <Button
-                  type="button"
-                  onClick={() => handleSave(true)}
-                  disabled={isSubmitting || !canSubmit}
-                  className={cn(
-                    'min-h-[44px] bg-white border-[#4ECDC4] text-[#159A91] hover:bg-[rgba(78,205,196,0.08)]',
-                    (isSubmitting || !canSubmit) &&
-                      'border-[#4ECDC4]/45 text-[#159A91]/45 cursor-not-allowed hover:bg-white',
-                  )}
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                  Salvar e Novo
-                </Button>
-              )}
-
-              <Button
-                type="submit"
-                disabled={isSubmitting || !canSubmit}
-                className={cn(
-                  'min-h-[44px] text-white border border-transparent',
-                  canSubmit && !isSubmitting
-                    ? 'bg-[#4ECDC4] hover:bg-[#38BDB4]'
-                    : 'bg-[#B8E8E4] text-white/75 cursor-not-allowed hover:bg-[#B8E8E4]',
-                )}
-              >
-                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                {isEditMode ? 'Salvar Alterações' : 'Cadastrar Animal'}
-              </Button>
-              </div>
-            </div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              {isSubmitting ? 'Salvando...' : isEditMode ? 'Salvar' : 'Cadastrar'}
+            </button>
           </div>
         </form>
       </div>

@@ -1,7 +1,7 @@
 {
   "nextFazendaId": 2,
-  "nextEstoqueId": 20,
-  "nextMovId": 12,
+  "nextEstoqueId": 21,
+  "nextMovId": 13,
   "nextContaId": 4,
   "nextFinMovId": 9,
   "fazendas": [
@@ -99,6 +99,34 @@
       "situacao": "ativo",
       "quantidade": "0",
       "createdAt": "2026-07-24T18:11:18.832Z"
+    },
+    {
+      "id": 20,
+      "produtoId": 8,
+      "fazendaId": 1,
+      "nome": "Filtro de Ar",
+      "categoria": "Peças",
+      "subcategoria": "Máquinas",
+      "unidade": "un",
+      "quantidade": "1",
+      "quantidadeMinima": "0",
+      "quantidadeMaxima": null,
+      "fabricante": "Outro",
+      "identificadorUnico": null,
+      "produzidoNaFazenda": false,
+      "monitorarEstoque": false,
+      "situacao": "ativo",
+      "embalagens": null,
+      "possuiCarencia": false,
+      "carenciaAbateDias": null,
+      "carenciaAbateUnidade": "d",
+      "carenciaLeiteDias": null,
+      "observacoesCarencia": null,
+      "valorUnitario": null,
+      "localizacao": null,
+      "observacoes": null,
+      "createdAt": "2026-07-25T11:34:14.721Z",
+      "updatedAt": "2026-07-25T11:36:34.648Z"
     }
   ],
   "movimentacoes": [
@@ -254,6 +282,32 @@
       "originalGrupoId": "gmrz08e4semphloj7",
       "motivoEstorno": "Movimentação registrada na fazenda errada",
       "createdAt": "2026-07-24T13:57:20.908Z",
+      "updatedAt": null,
+      "updatedByUserId": null,
+      "updatedByNome": null
+    },
+    {
+      "id": 12,
+      "grupoId": "4fdbc2e213cd43b4a4b17c797ff19056",
+      "estoqueId": 20,
+      "fazendaId": 1,
+      "userId": 1,
+      "registradoPor": "Paulo Gomes",
+      "tipo": "Compra",
+      "dataMovimentacao": "2026-07-23",
+      "quantidade": "1",
+      "dataValidade": null,
+      "destino": null,
+      "manejo": null,
+      "notaFiscal": "164530",
+      "frete": null,
+      "fornecedor": "Real Lubrificantes",
+      "valor": "22",
+      "observacoes": null,
+      "status": "ativa",
+      "originalGrupoId": null,
+      "motivoEstorno": null,
+      "createdAt": "2026-07-25T11:36:34.648Z",
       "updatedAt": null,
       "updatedByUserId": null,
       "updatedByNome": null
@@ -740,9 +794,23 @@
       "observacoes": null,
       "ativo": true,
       "createdAt": "2026-07-24T12:14:36.583Z"
+    },
+    {
+      "id": 11,
+      "userId": 1,
+      "nome": "Real Lubrificantes",
+      "tipo": "fornecedor",
+      "funcao": null,
+      "documento": "07.177.148/0002-26",
+      "endereco": "Av. Governador Luis Rocha",
+      "telefone": "(63) 99204-1786",
+      "email": "reallubrificantes@hotmail.com",
+      "observacoes": null,
+      "ativo": true,
+      "createdAt": "2026-07-25T11:36:03.538Z"
     }
   ],
-  "nextPessoaId": 11,
+  "nextPessoaId": 12,
   "produtosCatalogo": [
     {
       "id": 6,
@@ -785,7 +853,28 @@
       "observacoes": null,
       "createdAt": "2026-07-23T19:53:37.286Z",
       "updatedAt": "2026-07-24T17:49:37.624Z"
+    },
+    {
+      "id": 8,
+      "nome": "Filtro de Ar",
+      "categoria": "Peças",
+      "subcategoria": "Máquinas",
+      "unidade": "un",
+      "fabricante": "Outro",
+      "identificadorUnico": null,
+      "produzidoNaFazenda": false,
+      "monitorarEstoque": false,
+      "situacao": "ativo",
+      "embalagens": null,
+      "possuiCarencia": false,
+      "carenciaAbateDias": null,
+      "carenciaAbateUnidade": "d",
+      "carenciaLeiteDias": null,
+      "observacoesCarencia": null,
+      "observacoes": null,
+      "createdAt": "2026-07-25T11:34:14.721Z",
+      "updatedAt": "2026-07-25T11:34:14.721Z"
     }
   ],
-  "nextProdutoCatalogoId": 8
+  "nextProdutoCatalogoId": 9
 }

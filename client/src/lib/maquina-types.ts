@@ -8,5 +8,9 @@ export {
   MARCAS_POR_TIPO,
   getMarcasPorTipo,
   isMarcaValidaParaTipo,
+  TIPOS_MEDIDOR,
+  TIPOS_MEDIDOR_LABEL,
+  sugerirTipoMedidor,
+  labelIdentificadorMaquina,
 } from "@shared/maquina-types";
-export type { TipoMaquina, MarcaMaquina } from "@shared/maquina-types";
+export type { TipoMaquina, MarcaMaquina, TipoMedidor } from "@shared/maquina-types";

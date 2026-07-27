@@ -265,6 +265,7 @@ function ModalMoverLote({
 }) {
   const [pastoDestinoId, setPastoDestinoId] = useState("");
   const [data, setData] = useState(hojeStr());
+  const [erros, setErros] = useState<{ data?: string; pastoDestino?: string }>({});
 
   const fazendaIdNum = typeof fazendaId === 'number' ? fazendaId : Number(fazendaId);
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
@@ -280,6 +281,27 @@ function ModalMoverLote({
     .filter(p => p.id !== pastoAtualId)
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }));
 
+  const handleConfirmar = () => {
+    const next: { data?: string; pastoDestino?: string } = {};
+    if (!data.trim()) next.data = "Informe a data de movimentação.";
+    if (!pastoDestinoId) next.pastoDestino = "Selecione a subdivisão destino.";
+    if (Object.keys(next).length > 0) {
+      setErros(next);
+      toast.error("Preencha os campos obrigatórios destacados.", { id: "mover-lote-obrigatorios" });
+      const firstId = next.data ? "mover-lote-data" : "mover-lote-destino";
+      requestAnimationFrame(() => {
+        const el = document.getElementById(firstId);
+        if (el instanceof HTMLElement) {
+          el.focus({ preventScroll: true });
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+      return;
+    }
+    setErros({});
+    moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data });
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-md shadow-xl w-full max-w-md mx-4">
@@ -293,16 +315,38 @@ function ModalMoverLote({
           {/* Data da Movimentação */}
           <div>
             <FormLabel required>Data de Movimentação</FormLabel>
-            <FormDatePicker value={data} onChange={setData} required max={hojeStr()} />
+            <FormDatePicker
+              id="mover-lote-data"
+              value={data}
+              onChange={v => {
+                setData(v);
+                if (erros.data) setErros(prev => { const n = { ...prev }; delete n.data; return n; });
+              }}
+              required
+              max={hojeStr()}
+              invalid={!!erros.data}
+              aria-describedby={erros.data ? "mover-lote-err-data" : undefined}
+            />
+            {erros.data && (
+              <p id="mover-lote-err-data" className="mt-1 text-[11px] text-red-600" role="alert">
+                {erros.data}
+              </p>
+            )}
           </div>
           {/* Subdivisão Destino */}
           <div>
             <FormLabel required>Subdivisão Destino</FormLabel>
             <FormSelect
+              id="mover-lote-destino"
               value={pastoDestinoId}
-              onChange={setPastoDestinoId}
+              onChange={v => {
+                setPastoDestinoId(v);
+                if (erros.pastoDestino) setErros(prev => { const n = { ...prev }; delete n.pastoDestino; return n; });
+              }}
               placeholder="Selecione a subdivisão"
               required
+              invalid={!!erros.pastoDestino}
+              aria-describedby={erros.pastoDestino ? "mover-lote-err-destino" : undefined}
             >
               {pastosDisponiveis.map(p => (
                 <SelectItem key={p.id} value={String(p.id)} className="text-[13px]">
@@ -310,21 +354,30 @@ function ModalMoverLote({
                 </SelectItem>
               ))}
             </FormSelect>
+            {erros.pastoDestino && (
+              <p id="mover-lote-err-destino" className="mt-1 text-[11px] text-red-600" role="alert">
+                {erros.pastoDestino}
+              </p>
+            )}
           </div>
         </div>
         {/* Footer */}
-        <div className="px-6 pb-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition bg-white">
+        <div className="px-6 pb-5 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={moveMutation.isPending}
+            className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+          >
             Cancelar
           </button>
-          <button type="button" onClick={() => {
-            if (!pastoDestinoId) { toast.error("Selecione a subdivisão destino."); return; }
-            if (!data) { toast.error("Informe uma data válida."); return; }
-            moveMutation.mutate({ loteId: lote.loteId, pastoId: Number(pastoDestinoId), dataEntrada: data });
-          }} disabled={moveMutation.isPending}
-            className="px-5 py-2 text-[12px] font-semibold text-white rounded-sm hover:brightness-95 disabled:opacity-50 transition"
-            style={{ backgroundColor: FD_PRIMARY }}>
+          <button
+            type="button"
+            onClick={handleConfirmar}
+            disabled={moveMutation.isPending}
+            className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
             {moveMutation.isPending ? "Movendo..." : "Confirmar"}
           </button>
         </div>

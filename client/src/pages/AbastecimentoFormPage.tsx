@@ -24,6 +24,8 @@ const COMBUSTIVEIS = [
 ] as const;
 
 type Combustivel = (typeof COMBUSTIVEIS)[number]["value"];
+type OrigemCombustivel = "estoque" | "externo";
+type MedidorTipo = "horimetro" | "quilometragem";
 
 type FormState = {
   data: string;
@@ -31,7 +33,7 @@ type FormState = {
   combustivel: Combustivel | "";
   litros: string;
   horimetro: string;
-  abastecidoNaFazenda: "sim" | "nao";
+  origem: OrigemCombustivel;
   fazendaId: string;
   valorLitro: string;
   responsavel: string;
@@ -44,7 +46,7 @@ const emptyForm = (): FormState => ({
   combustivel: "",
   litros: "",
   horimetro: "",
-  abastecidoNaFazenda: "sim",
+  origem: "estoque",
   fazendaId: "",
   valorLitro: "",
   responsavel: "",
@@ -58,11 +60,75 @@ function toDateInput(value: unknown): string {
   return d.toISOString().slice(0, 10);
 }
 
-// formatDateBR importada de @/lib/date-utils
-
 function getSearchParam(name: string): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(name);
+}
+
+/** Medidor da máquina: usa tipoMedidor cadastrado; fallback por Tipo (legado). */
+function inferMedidorPorTipo(tipo: string | null | undefined): MedidorTipo | null {
+  if (!tipo?.trim()) return null;
+  const t = tipo.trim();
+  const veiculos = new Set(["Veículos", "Caminhão", "Carreta", "Carro", "Moto"]);
+  const horas = new Set([
+    "Máquinas",
+    "Equipamentos com Motor",
+    "Trator",
+    "Colheitadeira",
+    "Plantadeira",
+    "Pulverizador",
+  ]);
+  if (veiculos.has(t)) return "quilometragem";
+  if (horas.has(t)) return "horimetro";
+  return null;
+}
+
+function getMedidorTipo(maquina?: {
+  tipo?: string | null;
+  tipoMedidor?: string | null;
+} | null): MedidorTipo | null {
+  const tm = maquina?.tipoMedidor?.trim();
+  if (tm === "horimetro") return "horimetro";
+  if (tm === "quilometragem") return "quilometragem";
+  if (tm === "sem_medidor") return null;
+  return inferMedidorPorTipo(maquina?.tipo);
+}
+
+function formatLeitura(valor: number, medidor: MedidorTipo | null): string {
+  const num = valor.toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  if (medidor === "quilometragem") return `${num} km`;
+  if (medidor === "horimetro") return `${num} h`;
+  return num;
+}
+
+function formatLitros(valor: number): string {
+  return `${valor.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} L`;
+}
+
+type CampoObrigatorioAbastecimento =
+  | "data"
+  | "maquinaId"
+  | "combustivel"
+  | "litros"
+  | "horimetro"
+  | "fazendaId"
+  | "valorLitro";
+
+const TOAST_ID_OBRIGATORIOS = "abastecimento-obrigatorios";
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
 }
 
 export default function AbastecimentoFormPage() {
@@ -72,8 +138,27 @@ export default function AbastecimentoFormPage() {
   const initializedForId = useRef<number | null>(null);
 
   const [form, setForm] = useState<FormState>(emptyForm);
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const [erros, setErros] = useState<Partial<Record<CampoObrigatorioAbastecimento, string>>>({});
+
+  const limparErro = (campo: CampoObrigatorioAbastecimento) => {
+    setErros(prev => {
+      if (!prev[campo]) return prev;
+      const next = { ...prev };
+      delete next[campo];
+      return next;
+    });
+  };
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
+    if (key === "data") limparErro("data");
+    if (key === "maquinaId") limparErro("maquinaId");
+    if (key === "combustivel") limparErro("combustivel");
+    if (key === "litros") limparErro("litros");
+    if (key === "horimetro") limparErro("horimetro");
+    if (key === "fazendaId") limparErro("fazendaId");
+    if (key === "valorLitro") limparErro("valorLitro");
+  };
 
   const { data: registro, isLoading } = trpc.abastecimentos.get.useQuery(
     { id: editId },
@@ -85,6 +170,7 @@ export default function AbastecimentoFormPage() {
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
+  const { data: movimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery();
   const { data: user } = trpc.auth.me.useQuery();
   const { data: historicoMaquina = [] } = trpc.abastecimentos.list.useQuery(
     { maquinaId: maquinaIdNum },
@@ -123,7 +209,7 @@ export default function AbastecimentoFormPage() {
       combustivel: (registro.combustivel as Combustivel) ?? "",
       litros: registro.litros ? String(registro.litros) : "",
       horimetro: registro.horimetro ?? "",
-      abastecidoNaFazenda: registro.abastecidoNaFazenda ? "sim" : "nao",
+      origem: registro.abastecidoNaFazenda ? "estoque" : "externo",
       fazendaId: registro.fazendaId ? String(registro.fazendaId) : "",
       valorLitro: registro.valorLitro
         ? formatCurrencyBrl(String(Math.round(parseFloat(String(registro.valorLitro)) * 100)))
@@ -139,9 +225,15 @@ export default function AbastecimentoFormPage() {
     set("responsavel", user.name);
   }, [isEdit, user?.name, form.responsavel]);
 
-  // ── Dados calculados do histórico da máquina (igual iRancho) ──────────────
+  const maquinaSelecionada = useMemo(
+    () => maquinas.find(m => String(m.id) === form.maquinaId) ?? null,
+    [maquinas, form.maquinaId],
+  );
+
+  const medidorTipo = getMedidorTipo(maquinaSelecionada);
+  const origemEstoque = form.origem === "estoque";
+
   const statsHistorico = useMemo(() => {
-    // Filtra pelo registro atual (no edit, exclui o próprio)
     const registros = historicoMaquina
       .filter(r => !isEdit || r.id !== editId)
       .sort((a, b) => {
@@ -151,102 +243,280 @@ export default function AbastecimentoFormPage() {
       });
 
     const ultimo = registros[0] ?? null;
+    const leituraAbastecimento = ultimo?.horimetro ? parseFloat(String(ultimo.horimetro)) : null;
+    const leituraCadastro = maquinaSelecionada?.horimetro
+      ? parseFloat(String(maquinaSelecionada.horimetro))
+      : null;
+    const leituraAnteriorNum =
+      leituraAbastecimento != null && !Number.isNaN(leituraAbastecimento)
+        ? leituraAbastecimento
+        : leituraCadastro != null && !Number.isNaN(leituraCadastro)
+          ? leituraCadastro
+          : null;
+    const leituraAnteriorFmt =
+      leituraAnteriorNum != null && !Number.isNaN(leituraAnteriorNum)
+        ? formatLeitura(leituraAnteriorNum, medidorTipo)
+        : "—";
 
-    const leituraAnterior = ultimo?.horimetro
-      ? parseFloat(String(ultimo.horimetro)).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " h"
-      : "—";
-
-    // Validação de leitura crescente
     const leituraAtual = form.horimetro ? parseFloat(form.horimetro.replace(",", ".")) : null;
-    const leituraAnteriorNum = ultimo?.horimetro ? parseFloat(String(ultimo.horimetro)) : null;
-    const leituraInvalida = leituraAtual !== null && leituraAnteriorNum !== null && leituraAtual < leituraAnteriorNum;
+    const leituraInvalida =
+      leituraAtual !== null &&
+      leituraAnteriorNum !== null &&
+      !Number.isNaN(leituraAtual) &&
+      !Number.isNaN(leituraAnteriorNum) &&
+      leituraAtual < leituraAnteriorNum;
 
     const dataUltimo = ultimo?.data ? formatDateBR(ultimo.data) : "—";
 
     let consumoMedio = "—";
-    const comHorimetro = registros.filter(r => r.horimetro && r.litros);
-    if (comHorimetro.length >= 1) {
-      const totalLitros = comHorimetro.reduce((s, r) => s + parseFloat(String(r.litros || 0)), 0);
-      const totalHoras = comHorimetro.reduce((s, r) => s + parseFloat(String(r.horimetro || 0)), 0);
+    const comLeitura = registros.filter(r => r.horimetro && r.litros);
+    if (comLeitura.length >= 1 && medidorTipo === "horimetro") {
+      const totalLitros = comLeitura.reduce((s, r) => s + parseFloat(String(r.litros || 0)), 0);
+      const totalHoras = comLeitura.reduce((s, r) => s + parseFloat(String(r.horimetro || 0)), 0);
       if (totalHoras > 0) {
-        consumoMedio = (totalLitros / totalHoras).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " L/hora";
+        consumoMedio =
+          (totalLitros / totalHoras).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) +
+          " L/hora";
+      }
+    } else if (comLeitura.length >= 2 && medidorTipo === "quilometragem") {
+      const ordenados = [...comLeitura].sort(
+        (a, b) => parseFloat(String(a.horimetro || 0)) - parseFloat(String(b.horimetro || 0)),
+      );
+      const primeiro = ordenados[0];
+      const ultimoKm = ordenados[ordenados.length - 1];
+      const km =
+        parseFloat(String(ultimoKm.horimetro || 0)) - parseFloat(String(primeiro.horimetro || 0));
+      const litros = ordenados.reduce((s, r) => s + parseFloat(String(r.litros || 0)), 0);
+      if (km > 0) {
+        consumoMedio =
+          (litros / km).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + " L/km";
       }
     }
 
-    return { leituraAnterior, dataUltimo, consumoMedio, leituraInvalida, ultimo };
-  }, [historicoMaquina, isEdit, editId, form.horimetro]);
+    return {
+      leituraAnteriorFmt,
+      leituraAnteriorNum,
+      dataUltimo,
+      consumoMedio,
+      leituraInvalida,
+      ultimo,
+    };
+  }, [historicoMaquina, isEdit, editId, form.horimetro, medidorTipo, maquinaSelecionada]);
 
-  const { leituraInvalida, ultimo } = statsHistorico;
+  const { leituraInvalida, leituraAnteriorFmt, leituraAnteriorNum } = statsHistorico;
+
+  /** Fazendas com saldo positivo do combustível selecionado (não lista saldo zero). */
+  const fazendasComEstoque = useMemo(() => {
+    if (!form.combustivel) return [];
+    return fazendas
+      .filter(f => getSaldoLitros(estoque, f.id, form.combustivel) > 0)
+      .sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "", "pt-BR"));
+  }, [fazendas, estoque, form.combustivel]);
+
+  const nenhumaFazendaDisponivel =
+    origemEstoque && !!form.combustivel && fazendasComEstoque.length === 0;
+
+  const fazendaSelectDisabled = origemEstoque && !form.combustivel;
+
+  /** Se a fazenda selecionada deixar de ter saldo, limpa a seleção. */
+  useEffect(() => {
+    if (!origemEstoque || !form.fazendaId || !form.combustivel) return;
+    if (!estoque.length) return; // aguarda carga do estoque
+    const aindaValida = fazendasComEstoque.some(f => String(f.id) === form.fazendaId);
+    if (!aindaValida) set("fazendaId", "");
+  }, [origemEstoque, form.fazendaId, form.combustivel, fazendasComEstoque, estoque.length]);
 
   const estoqueAtualLitros = useMemo(() => {
-    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId || !form.combustivel) return null;
+    if (!origemEstoque || !form.fazendaId || !form.combustivel) return null;
     return getSaldoLitros(estoque, Number(form.fazendaId), form.combustivel);
-  }, [estoque, form.abastecidoNaFazenda, form.fazendaId, form.combustivel]);
+  }, [estoque, origemEstoque, form.fazendaId, form.combustivel]);
 
   const valorLitroEstoque = useMemo(() => {
-    if (form.abastecidoNaFazenda !== "sim" || !form.fazendaId || !form.combustivel) return null;
-    return getValorLitroEstoque(estoque, Number(form.fazendaId), form.combustivel);
-  }, [estoque, form.abastecidoNaFazenda, form.fazendaId, form.combustivel]);
+    if (!origemEstoque || !form.fazendaId || !form.combustivel) return null;
+    return getValorLitroEstoque(
+      estoque,
+      Number(form.fazendaId),
+      form.combustivel,
+      movimentacoes,
+    );
+  }, [estoque, movimentacoes, origemEstoque, form.fazendaId, form.combustivel]);
+
+  const custoMedioIndisponivel =
+    origemEstoque &&
+    !!form.fazendaId &&
+    !!form.combustivel &&
+    (valorLitroEstoque == null || valorLitroEstoque <= 0);
+
+  const valorLitroNumero = useMemo(() => {
+    if (origemEstoque) return valorLitroEstoque != null && valorLitroEstoque > 0 ? valorLitroEstoque : null;
+    const parsed = parseFloat(parseCurrencyBrl(form.valorLitro) || "");
+    return Number.isNaN(parsed) || !form.valorLitro ? null : parsed;
+  }, [origemEstoque, valorLitroEstoque, form.valorLitro]);
 
   const valorTotalPreview = useMemo(() => {
     const litros = parseFloat(form.litros.replace(",", "."));
-    if (Number.isNaN(litros) || litros <= 0) return "";
+    if (Number.isNaN(litros) || litros <= 0 || valorLitroNumero == null) return "";
+    return (litros * valorLitroNumero).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }, [form.litros, valorLitroNumero]);
 
-    if (form.abastecidoNaFazenda === "sim") {
-      if (!valorLitroEstoque) return "";
-      return (litros * valorLitroEstoque).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-    }
+  const pending = createMutation.isPending || updateMutation.isPending;
 
-    const valor = parseFloat(parseCurrencyBrl(form.valorLitro) || "0");
-    if (Number.isNaN(valor) || !form.valorLitro) return "";
-    return (litros * valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  }, [form.litros, form.valorLitro, form.abastecidoNaFazenda, valorLitroEstoque]);
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const litrosNumForm = parseFloat(form.litros.replace(",", "."));
+  const litrosValidos =
+    form.litros.trim() !== "" && !Number.isNaN(litrosNumForm) && litrosNumForm > 0;
+  const quantidadeAcimaSaldo =
+    origemEstoque &&
+    estoqueAtualLitros != null &&
+    litrosValidos &&
+    litrosNumForm > estoqueAtualLitros;
 
-  const handleAbastecidoChange = (v: "sim" | "nao") => {
+  const handleOrigemChange = (v: OrigemCombustivel) => {
     setForm(f => ({
       ...f,
-      abastecidoNaFazenda: v,
-      // Sim → debita estoque: limpa valores monetários
-      ...(v === "sim" ? { valorLitro: "" } : { fazendaId: "" }),
+      origem: v,
+      ...(v === "estoque" ? { valorLitro: "", fazendaId: "" } : { fazendaId: "" }),
     }));
+    limparErro("fazendaId");
+    limparErro("valorLitro");
   };
 
-  const abastecidoNaFazenda = form.abastecidoNaFazenda === "sim";
+  const handleMaquinaChange = (maquinaId: string) => {
+    setForm(f => ({ ...f, maquinaId, horimetro: "" }));
+    limparErro("maquinaId");
+    limparErro("horimetro");
+  };
+
+  const handleCombustivelChange = (combustivel: Combustivel | "") => {
+    setForm(f => ({
+      ...f,
+      combustivel,
+      // Troca de combustível limpa fazenda, saldo e custo derivados
+      ...(f.origem === "estoque" ? { fazendaId: "", valorLitro: "" } : {}),
+    }));
+    limparErro("combustivel");
+    limparErro("fazendaId");
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.maquinaId) return toast.error("Selecione a máquina.");
-    if (!form.combustivel) return toast.error("Selecione o combustível.");
-    if (!form.litros.trim()) return toast.error("Informe a quantidade abastecida.");
-    if (abastecidoNaFazenda && !form.fazendaId) {
-      return toast.error("Selecione o estoque (fazenda).");
+    if (pending) return;
+
+    const next: Partial<Record<CampoObrigatorioAbastecimento, string>> = {};
+    if (!form.data.trim()) next.data = "Informe a data do abastecimento.";
+    if (!form.maquinaId) next.maquinaId = "Selecione a máquina.";
+    if (!form.combustivel) next.combustivel = "Selecione o combustível.";
+    if (!form.litros.trim()) next.litros = "Informe a quantidade abastecida.";
+    if (medidorTipo != null && !form.horimetro.trim()) {
+      next.horimetro =
+        medidorTipo === "quilometragem"
+          ? "Informe a quilometragem atual."
+          : "Informe o horímetro atual.";
+    }
+    if (origemEstoque && !nenhumaFazendaDisponivel && !form.fazendaId) {
+      next.fazendaId = "Selecione a Fazenda do estoque.";
+    }
+    if (!origemEstoque && !form.valorLitro.trim()) {
+      next.valorLitro = "Informe o valor por litro.";
+    }
+
+    if (Object.keys(next).length > 0) {
+      setErros(next);
+      toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+      const ordem: CampoObrigatorioAbastecimento[] = [
+        "data",
+        "maquinaId",
+        "combustivel",
+        "litros",
+        "horimetro",
+        "fazendaId",
+        "valorLitro",
+      ];
+      const primeiro = ordem.find(c => next[c]);
+      if (primeiro) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`abast-field-${primeiro}`);
+          if (el instanceof HTMLElement) {
+            el.focus({ preventScroll: true });
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        });
+      }
+      return;
+    }
+
+    setErros({});
+
+    if (form.data > hojeISO) return toast.error("A data do abastecimento não pode ser futura.");
+    if (origemEstoque && nenhumaFazendaDisponivel) {
+      return toast.error("Nenhuma Fazenda possui estoque deste combustível.");
+    }
+    if (leituraInvalida && leituraAnteriorNum != null) {
+      return toast.error(
+        `A leitura informada não pode ser menor que a última leitura registrada: ${formatLeitura(leituraAnteriorNum, medidorTipo)}.`,
+      );
     }
 
     const litrosNum = parseFloat(form.litros.replace(",", "."));
+    if (Number.isNaN(litrosNum) || litrosNum <= 0) {
+      setErros({ litros: "Informe uma quantidade abastecida válida." });
+      toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+      return;
+    }
 
-    // Sim → valor vem do preço unitário do combustível no estoque da fazenda
-    const valorLitroSim = abastecidoNaFazenda && form.fazendaId && form.combustivel
-      ? getValorLitroEstoque(estoque, Number(form.fazendaId), form.combustivel)
-      : null;
+    if (origemEstoque) {
+      const saldo =
+        form.fazendaId && form.combustivel
+          ? getSaldoLitros(estoque, Number(form.fazendaId), form.combustivel)
+          : 0;
+      if (saldo <= 0) {
+        return toast.error("Não há estoque disponível deste combustível na Fazenda selecionada.");
+      }
+      if (litrosNum > saldo) {
+        return toast.error(
+          `O estoque disponível é de ${saldo.toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} L. Informe uma quantidade igual ou inferior ao saldo.`,
+        );
+      }
+      if (valorLitroEstoque == null || valorLitroEstoque <= 0) {
+        return toast.error("Custo médio não disponível para este combustível na Fazenda selecionada.");
+      }
+    }
 
-    const valorLitroFinal = !abastecidoNaFazenda && form.valorLitro
-      ? parseCurrencyBrl(form.valorLitro)
-      : valorLitroSim != null
-        ? valorLitroSim.toFixed(3)
+    if (!origemEstoque) {
+      if (valorLitroNumero == null || valorLitroNumero <= 0) {
+        setErros({ valorLitro: "Informe um valor por litro válido." });
+        toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+        return;
+      }
+    }
+
+    const valorLitroFinal = origemEstoque
+      ? valorLitroEstoque != null
+        ? valorLitroEstoque.toFixed(3)
+        : undefined
+      : form.valorLitro
+        ? parseCurrencyBrl(form.valorLitro)
         : undefined;
 
-    const valorTotalFinal = valorLitroFinal && !Number.isNaN(litrosNum)
-      ? (litrosNum * parseFloat(valorLitroFinal)).toFixed(2)
-      : undefined;
+    const valorTotalFinal =
+      valorLitroFinal && !Number.isNaN(litrosNum)
+        ? (litrosNum * parseFloat(valorLitroFinal)).toFixed(2)
+        : undefined;
 
     const payload = {
       maquinaId: Number(form.maquinaId),
       data: form.data,
       combustivel: form.combustivel as Combustivel,
       litros: form.litros.replace(",", "."),
-      horimetro: form.horimetro.trim() || undefined,
-      abastecidoNaFazenda,
-      fazendaId: abastecidoNaFazenda && form.fazendaId ? Number(form.fazendaId) : null,
+      horimetro: medidorTipo && form.horimetro.trim() ? form.horimetro.trim() : undefined,
+      abastecidoNaFazenda: origemEstoque,
+      fazendaId: origemEstoque && form.fazendaId ? Number(form.fazendaId) : null,
       valorLitro: valorLitroFinal,
       valorTotal: valorTotalFinal,
       responsavel: form.responsavel.trim() || undefined,
@@ -257,7 +527,15 @@ export default function AbastecimentoFormPage() {
     else createMutation.mutate(payload);
   };
 
-  const pending = createMutation.isPending || updateMutation.isPending;
+  const medidorLabel =
+    medidorTipo === "quilometragem" ? "Quilometragem atual" : "Horímetro atual";
+  const medidorSufixo = medidorTipo === "quilometragem" ? "km" : "h";
+  const leituraAnteriorCardLabel =
+    medidorTipo === "quilometragem"
+      ? "Leitura anterior (km)"
+      : medidorTipo === "horimetro"
+        ? "Leitura anterior (h)"
+        : "Leitura anterior";
 
   if (isEdit && isLoading) {
     return (
@@ -269,152 +547,273 @@ export default function AbastecimentoFormPage() {
 
   return (
     <AppLayout>
-      <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
+      <button
+        type="button"
+        onClick={() => setLocation("/maquinas/abastecimento")}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
+      <form onSubmit={handleSubmit} noValidate>
+        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-6">
           <h1
-            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
+            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100 text-left"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            {isEdit ? "Editar abastecimento" : "Lançamento de Abastecimento"}
+            {isEdit ? "Editar abastecimento" : "Novo abastecimento"}
           </h1>
 
-          {/* Linha 1: Data | Máquina | Combustível | Quantidade */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div>
+          {/* Grade 2 colunas — campos em pares por linha */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {/* Linha 1 */}
+            <div className="min-w-0">
               <FormLabel required>Data do abastecimento</FormLabel>
               <FormDatePicker
+                id="abast-field-data"
                 value={form.data}
                 onChange={v => set("data", v)}
-                placeholder="Selecione a data do Abastecimento"
+                placeholder="Selecione a data"
                 required
+                max={hojeISO}
+                invalid={!!erros.data}
+                aria-describedby={erros.data ? "abast-err-data" : undefined}
               />
+              <FieldErrorMsg id="abast-err-data" message={erros.data} />
             </div>
-            <div>
+            <div className="min-w-0">
               <FormLabel required>Máquina</FormLabel>
               <FormNativeSelect
+                id="abast-field-maquinaId"
                 value={form.maquinaId}
-                onChange={v => set("maquinaId", v)}
-                placeholder="Selecione a Máquina"
+                onChange={handleMaquinaChange}
+                placeholder="Selecione a máquina"
                 required
                 options={maquinas.map(m => ({ value: String(m.id), label: m.nome }))}
+                invalid={!!erros.maquinaId}
+                aria-describedby={erros.maquinaId ? "abast-err-maquinaId" : undefined}
               />
+              <FieldErrorMsg id="abast-err-maquinaId" message={erros.maquinaId} />
             </div>
-            <div>
+
+            {/* Linha 2 */}
+            <div className="min-w-0">
               <FormLabel required>Combustível</FormLabel>
               <FormNativeSelect
+                id="abast-field-combustivel"
                 value={form.combustivel}
-                onChange={v => set("combustivel", v as Combustivel | "")}
-                placeholder="Selecione o tipo de Combustível"
+                onChange={v => handleCombustivelChange(v as Combustivel | "")}
+                placeholder="Selecione o combustível"
                 required
-                options={COMBUSTIVEIS.map(c => ({ value: c.value, label: c.label }))}
+                options={COMBUSTIVEIS.map(c => ({
+                  value: c.value,
+                  label: c.label,
+                }))}
+                invalid={!!erros.combustivel}
+                aria-describedby={erros.combustivel ? "abast-err-combustivel" : undefined}
               />
+              <FieldErrorMsg id="abast-err-combustivel" message={erros.combustivel} />
             </div>
-            <div>
+            <div className="min-w-0">
               <FormLabel required>Quantidade abastecida (L)</FormLabel>
               <FormInput
+                id="abast-field-litros"
                 value={form.litros}
                 onChange={v => set("litros", v.replace(/[^\d.,]/g, ""))}
-                placeholder="Ex. 100"
+                placeholder="Ex.: 100"
                 required
+                invalid={!!erros.litros || quantidadeAcimaSaldo}
+                aria-describedby={
+                  erros.litros || quantidadeAcimaSaldo ? "abast-err-litros" : undefined
+                }
               />
-            </div>
-          </div>
-
-          {/* Linha 2: muda conforme Abastecido na fazenda */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div>
-              <div className="flex items-center justify-between mb-0.5">
-                <FormLabel className="mb-0">Leitura atual do odômetro</FormLabel>
-                {ultimo && (
-                  <span className="text-gray-500 text-[11px]">
-                    Últ.: {statsHistorico.leituraAnterior}
-                  </span>
-                )}
-              </div>
-              <FormInput
-                value={form.horimetro}
-                onChange={v => set("horimetro", v.replace(/[^\d.,]/g, ""))}
-                placeholder="Ex. 10000"
-                className={leituraInvalida ? "border-red-500" : ""}
-              />
-              {leituraInvalida && (
-                <p className="text-red-500 text-[12px] mt-1">
-                  ⚠️ Leitura menor que anterior ({statsHistorico.leituraAnterior})
-                </p>
+              {erros.litros ? (
+                <FieldErrorMsg id="abast-err-litros" message={erros.litros} />
+              ) : (
+                quantidadeAcimaSaldo &&
+                estoqueAtualLitros != null && (
+                  <p id="abast-err-litros" className="text-red-500 text-[12px] mt-1" role="alert">
+                    O estoque disponível é de{" "}
+                    {estoqueAtualLitros.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    L. Informe uma quantidade igual ou inferior ao saldo.
+                  </p>
+                )
               )}
             </div>
-            <div>
-              <FormLabel required>Abastecido na fazenda</FormLabel>
-              <RadioGroup
-                value={form.abastecidoNaFazenda}
-                onValueChange={v => handleAbastecidoChange(v as "sim" | "nao")}
-                className="flex items-center gap-6 h-[42px] px-1"
-              >
-                <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700">
-                  <RadioGroupItem value="sim" />
-                  Sim
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700">
-                  <RadioGroupItem value="nao" />
-                  Não
-                </label>
-              </RadioGroup>
-            </div>
 
-            {abastecidoNaFazenda ? (
+            {/* Linha 3 */}
+            <div className="min-w-0">
+              <FormLabel required>Origem do combustível</FormLabel>
+              <div className="flex items-center min-h-[42px] px-1">
+                <RadioGroup
+                  value={form.origem}
+                  onValueChange={v => handleOrigemChange(v as OrigemCombustivel)}
+                  className="flex flex-wrap items-center gap-x-5 gap-y-2"
+                >
+                  <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700 whitespace-nowrap">
+                    <RadioGroupItem value="estoque" />
+                    Estoque da Fazenda
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700 whitespace-nowrap">
+                    <RadioGroupItem value="externo" />
+                    Compra externa / Posto
+                  </label>
+                </RadioGroup>
+              </div>
+            </div>
+            {medidorTipo ? (
+              <div className="min-w-0">
+                <div className="flex items-center justify-between mb-0.5">
+                  <FormLabel required className="mb-0">{medidorLabel}</FormLabel>
+                  {statsHistorico.ultimo && (
+                    <span className="text-gray-500 text-[11px]">
+                      Últ.: {leituraAnteriorFmt}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <FormInput
+                    id="abast-field-horimetro"
+                    value={form.horimetro}
+                    onChange={v => set("horimetro", v.replace(/[^\d.,]/g, ""))}
+                    placeholder="Ex.: 1000"
+                    className="pr-10"
+                    invalid={!!erros.horimetro || leituraInvalida}
+                    aria-describedby={
+                      erros.horimetro || leituraInvalida ? "abast-err-horimetro" : undefined
+                    }
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400 pointer-events-none">
+                    {medidorSufixo}
+                  </span>
+                </div>
+                {erros.horimetro ? (
+                  <FieldErrorMsg id="abast-err-horimetro" message={erros.horimetro} />
+                ) : (
+                  leituraInvalida &&
+                  leituraAnteriorNum != null && (
+                    <p id="abast-err-horimetro" className="text-red-500 text-[12px] mt-1" role="alert">
+                      A leitura informada não pode ser menor que a última leitura registrada:{" "}
+                      {formatLeitura(leituraAnteriorNum, medidorTipo)}.
+                    </p>
+                  )
+                )}
+              </div>
+            ) : (
+              <div className="hidden md:block" aria-hidden />
+            )}
+
+            {/* Linha 4 — somente Estoque da Fazenda */}
+            {origemEstoque && (
               <>
-                {/* SIM → debita do estoque da fazenda */}
-                <div>
-                  <FormLabel required>Estoque</FormLabel>
+                <div className="min-w-0">
+                  <FormLabel required>Fazenda do estoque</FormLabel>
                   <FormNativeSelect
+                    id="abast-field-fazendaId"
                     value={form.fazendaId}
                     onChange={v => set("fazendaId", v)}
-                    placeholder="Selecione uma Fazenda"
-                    required
-                    options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                    placeholder={
+                      fazendaSelectDisabled
+                        ? "Selecione primeiro o combustível"
+                        : "Selecione a Fazenda"
+                    }
+                    required={!fazendaSelectDisabled}
+                    disabled={fazendaSelectDisabled}
+                    options={fazendasComEstoque.map(f => ({
+                      value: String(f.id),
+                      label: f.nome,
+                    }))}
+                    invalid={!!erros.fazendaId}
+                    aria-describedby={erros.fazendaId ? "abast-err-fazendaId" : undefined}
                   />
+                  {erros.fazendaId ? (
+                    <FieldErrorMsg id="abast-err-fazendaId" message={erros.fazendaId} />
+                  ) : (
+                    nenhumaFazendaDisponivel && (
+                      <p className="text-amber-700 text-[12px] mt-1.5">
+                        Não há estoque disponível deste combustível em nenhuma Fazenda.
+                      </p>
+                    )
+                  )}
                 </div>
-                <div>
-                  <FormLabel>Estoque atual (em litros)</FormLabel>
+                <div className="min-w-0">
+                  <FormLabel>Estoque atual</FormLabel>
                   <FormInput
                     value={
                       estoqueAtualLitros != null
-                        ? estoqueAtualLitros.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
-                        : form.fazendaId ? "0,00" : ""
+                        ? formatLitros(estoqueAtualLitros)
+                        : form.fazendaId
+                          ? "0,00 L"
+                          : ""
                     }
                     onChange={() => {}}
-                    placeholder="0,00"
-                    className="cursor-default bg-gray-50"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                {/* NÃO → abastecimento externo, informa valores */}
-                <div>
-                  <FormLabel>Valor por litro (R$)</FormLabel>
-                  <FormInput
-                    value={form.valorLitro}
-                    onChange={v => set("valorLitro", formatCurrencyBrl(v))}
-                    placeholder="R$ 0,00"
-                  />
-                </div>
-                <div>
-                  <FormLabel>Valor total (R$)</FormLabel>
-                  <FormInput
-                    value={valorTotalPreview ? `R$ ${valorTotalPreview}` : ""}
-                    onChange={() => {}}
-                    placeholder="Calculado automaticamente"
-                    className="cursor-default bg-gray-50"
+                    placeholder="0,00 L"
+                    className="cursor-default bg-gray-50 text-gray-800"
                   />
                 </div>
               </>
             )}
-          </div>
 
-          {/* Linha 3: Responsável | Observações */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <div>
+            {/* Linha 5 — custos */}
+            <div className="min-w-0">
+              {origemEstoque ? (
+                <>
+                  <FormLabel>Valor por litro (R$)</FormLabel>
+                  <FormInput
+                    value={
+                      !form.fazendaId || !form.combustivel
+                        ? ""
+                        : valorLitroEstoque != null
+                          ? `R$ ${valorLitroEstoque.toLocaleString("pt-BR", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 3,
+                            })}`
+                          : "Custo médio não disponível"
+                    }
+                    onChange={() => {}}
+                    placeholder="Custo médio do estoque"
+                    className={cn(
+                      "cursor-default bg-gray-50",
+                      custoMedioIndisponivel ? "text-amber-800" : "text-gray-800",
+                    )}
+                  />
+                  {custoMedioIndisponivel && (
+                    <p className="text-amber-700 text-[12px] mt-1.5">
+                      Não é possível salvar sem o custo médio deste combustível no estoque.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <FormLabel required>Valor por litro (R$)</FormLabel>
+                  <FormInput
+                    id="abast-field-valorLitro"
+                    value={form.valorLitro}
+                    onChange={v => set("valorLitro", formatCurrencyBrl(v))}
+                    placeholder="R$ 0,00"
+                    required
+                    invalid={!!erros.valorLitro}
+                    aria-describedby={erros.valorLitro ? "abast-err-valorLitro" : undefined}
+                  />
+                  <FieldErrorMsg id="abast-err-valorLitro" message={erros.valorLitro} />
+                </>
+              )}
+            </div>
+            <div className="min-w-0">
+              <FormLabel>Valor total (R$)</FormLabel>
+              <FormInput
+                value={valorTotalPreview ? `R$ ${valorTotalPreview}` : ""}
+                onChange={() => {}}
+                placeholder="Calculado automaticamente"
+                className="cursor-default bg-gray-50 text-gray-800"
+              />
+            </div>
+
+            {/* Linha 6 */}
+            <div className="min-w-0">
               <FormLabel>Responsável pelo abastecimento</FormLabel>
               <FormNativeSelect
                 value={form.responsavel}
@@ -430,25 +829,25 @@ export default function AbastecimentoFormPage() {
                 ]}
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <FormLabel>Observações</FormLabel>
               <FormTextarea
                 value={form.observacoes}
                 onChange={v => set("observacoes", v)}
-                placeholder="Descreva seu ultimo abastecimento"
-                rows={1}
+                placeholder="Informações adicionais sobre este abastecimento"
+                rows={4}
+                className="min-h-[88px] max-h-[100px]"
               />
             </div>
           </div>
 
-          {/* Cards informativos do histórico da máquina (igual iRancho) */}
-          {maquinaIdNum && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 mb-6 border border-gray-200 rounded-md overflow-hidden">
+          {maquinaIdNum && medidorTipo && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 mb-4 border border-gray-200 rounded-md overflow-hidden">
               <div className="px-4 py-3 bg-gray-50 border-r border-gray-200">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
-                  Leitura anterior do odômetro
+                  {leituraAnteriorCardLabel}
                 </p>
-                <p className="text-[13px] font-medium text-gray-800">{statsHistorico.leituraAnterior}</p>
+                <p className="text-[13px] font-medium text-gray-800">{leituraAnteriorFmt}</p>
               </div>
               <div className="px-4 py-3 bg-gray-50 border-r border-gray-200">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
@@ -469,25 +868,18 @@ export default function AbastecimentoFormPage() {
             <button
               type="button"
               onClick={() => setLocation("/maquinas/abastecimento")}
-              className="w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 active:scale-[0.97] transition-colors flex items-center justify-center"
-              style={{ minHeight: 48 }}
+              disabled={pending}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={pending}
-              className={cn(
-                "w-full sm:w-auto px-6 rounded-full text-[12px] font-semibold uppercase tracking-wide text-white active:scale-[0.97] transition-colors flex items-center justify-center gap-2",
-                pending && "opacity-60 cursor-not-allowed"
-              )}
-              style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
+              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY }}
             >
-              {pending ? (
-                <><span className="material-icons text-[16px] animate-spin">refresh</span> Salvando...</>
-              ) : (
-                <><span className="material-icons text-[16px]">save</span> Salvar</>
-              )}
+              {pending ? "Salvando..." : "Salvar"}
             </button>
           </div>
         </div>

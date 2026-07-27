@@ -21,19 +21,24 @@ const COMBUSTIVEL_LABEL: Record<string, string> = {
 
 type ColAlign = "left" | "right" | "center";
 
-const TABLE_COLUMNS: { key: string; label: string; align: ColAlign; width: string }[] = [
-  { key: "maquina",     label: "Máquina",      align: "left",   width: "140px" },
-  { key: "tipo",        label: "Tipo",          align: "left",   width: "90px"  },
-  { key: "combustivel", label: "Combust.",      align: "left",   width: "80px"  },
-  { key: "data",        label: "Data",          align: "left",   width: "90px"  },
-  { key: "qtd",         label: "Qtd (L)",       align: "right",  width: "70px"  },
-  { key: "valorL",      label: "R$/L",          align: "right",  width: "70px"  },
-  { key: "valorTotal",  label: "Total (R$)",    align: "right",  width: "90px"  },
-  { key: "odometro",    label: "Odômetro",      align: "right",  width: "80px"  },
-  { key: "estoque",     label: "Estoque",       align: "left",   width: "100px" },
-  { key: "naFazenda",   label: "Na Fazenda",    align: "center", width: "80px"  },
-  { key: "responsavel", label: "Responsável",   align: "left",   width: "110px" },
-  { key: "obs",         label: "Obs.",          align: "left",   width: "80px"  },
+type DisplayCol = {
+  key: string;
+  label: string;
+  align: ColAlign;
+  /** Esconde primeiro em telas médias (ex.: Tipo). */
+  hideBelowXl?: boolean;
+};
+
+const DISPLAY_COLUMNS: DisplayCol[] = [
+  { key: "data", label: "Data", align: "left" },
+  { key: "maquina", label: "Máquina", align: "left" },
+  { key: "tipo", label: "Tipo", align: "left", hideBelowXl: true },
+  { key: "combustivel", label: "Combustível", align: "left" },
+  { key: "qtd", label: "Quantidade", align: "right" },
+  { key: "valorL", label: "Valor por litro", align: "right" },
+  { key: "valorTotal", label: "Valor total", align: "right" },
+  { key: "odometro", label: "Horímetro / Quilometragem", align: "right" },
+  { key: "responsavel", label: "Responsável", align: "left" },
 ];
 
 const alignClass: Record<ColAlign, string> = {
@@ -58,20 +63,23 @@ const FILTROS_VAZIOS: Filtros = {
 
 function formatDate(value: unknown): string {
   if (!value) return "—";
-  // Datas vindas do banco chegam como string "YYYY-MM-DD".
-  // new Date("YYYY-MM-DD") interpreta como UTC meia-noite, o que causa
-  // regressão de 1 dia em fusos negativos (ex: UTC-3 do Brasil).
-  // Solução: parsear manualmente para evitar qualquer conversão de timezone.
   const str = value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     const [, y, m, d] = match;
     return `${d}/${m}/${y}`;
   }
-  // Fallback para Date objects sem string ISO
   const d = new Date(str);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR");
+}
+
+/** Extrai YYYY-MM-DD sem deslocar timezone. */
+function toDateKey(value: unknown): string {
+  if (!value) return "";
+  const str = value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
 }
 
 function formatNum(value: unknown, decimals = 2): string {
@@ -81,17 +89,30 @@ function formatNum(value: unknown, decimals = 2): string {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+function formatMoney(value: number | null | undefined, decimals = 2): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `R$ ${value.toLocaleString("pt-BR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
+}
+
+function isMaquinaAtiva(m: { status?: string | null; dataDesativacao?: unknown }): boolean {
+  if (m.dataDesativacao) return false;
+  const s = String(m.status || "ativo").toLowerCase();
+  return s === "ativo" || s === "manutencao";
+}
+
 export default function AbastecimentoListPage() {
   const [, setLocation] = useLocation();
   const [page, setPage] = useState(1);
-  const pageSize = 5;
-  const [filtrosAbertos, setFiltrosAbertos] = useState(true);
+  const pageSize = 10;
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [filtrosRascunho, setFiltrosRascunho] = useState<Filtros>(FILTROS_VAZIOS);
   const [aplicados, setAplicados] = useState<Filtros>(FILTROS_VAZIOS);
 
   const { data: registros = [], isLoading, refetch } = trpc.abastecimentos.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
   const { data: movimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery();
   const utils = trpc.useUtils();
@@ -111,46 +132,65 @@ export default function AbastecimentoListPage() {
     onError: e => toast.error(e.message),
   });
 
+  const irParaCadastro = () => setLocation("/maquinas/abastecimento/cadastro");
+
   const maquinaMap = useMemo(() => {
     const m = new Map<number, (typeof maquinas)[0]>();
     maquinas.forEach(item => m.set(item.id, item));
     return m;
   }, [maquinas]);
 
-  const fazendaMap = useMemo(() => {
-    const m = new Map<number, string>();
-    fazendas.forEach(f => m.set(f.id, f.nome));
-    return m;
-  }, [fazendas]);
+  const maquinasAtivas = useMemo(
+    () => maquinas.filter(isMaquinaAtiva).sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "", "pt-BR")),
+    [maquinas],
+  );
 
   const tiposMaquina = useMemo(() => {
     const set = new Set<string>();
-    maquinas.forEach(m => { if (m.tipo?.trim()) set.add(m.tipo.trim()); });
-    return Array.from(set).sort();
-  }, [maquinas]);
+    maquinasAtivas.forEach(m => {
+      if (m.tipo?.trim()) set.add(m.tipo.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [maquinasAtivas]);
 
-  const maquinasFiltradasPorTipo = useMemo(() => {
-    if (!filtrosRascunho.tipoMaquina) return maquinas;
-    return maquinas.filter(m => m.tipo === filtrosRascunho.tipoMaquina);
-  }, [maquinas, filtrosRascunho.tipoMaquina]);
+  const maquinasOpcoes = useMemo(() => {
+    if (!filtrosRascunho.tipoMaquina) return maquinasAtivas;
+    return maquinasAtivas.filter(m => m.tipo === filtrosRascunho.tipoMaquina);
+  }, [maquinasAtivas, filtrosRascunho.tipoMaquina]);
+
+  const onChangeTipo = (tipo: string) => {
+    setFiltrosRascunho(f => {
+      const next = { ...f, tipoMaquina: tipo };
+      if (f.maquinaId) {
+        const m = maquinasAtivas.find(x => String(x.id) === f.maquinaId);
+        if (!m || (tipo && m.tipo !== tipo)) next.maquinaId = "";
+      }
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
     return registros.filter(r => {
       const maquina = maquinaMap.get(r.maquinaId);
-      const dataStr = r.data ? new Date(String(r.data)).toISOString().slice(0, 10) : "";
+      const dataStr = toDateKey(r.data);
 
       if (aplicados.tipoMaquina && maquina?.tipo !== aplicados.tipoMaquina) return false;
       if (aplicados.maquinaId && String(r.maquinaId) !== aplicados.maquinaId) return false;
-      if (aplicados.dataInicio && dataStr < aplicados.dataInicio) return false;
-      if (aplicados.dataFim && dataStr > aplicados.dataFim) return false;
+      if (aplicados.dataInicio && dataStr && dataStr < aplicados.dataInicio) return false;
+      if (aplicados.dataFim && dataStr && dataStr > aplicados.dataFim) return false;
       return true;
     });
   }, [registros, aplicados, maquinaMap]);
 
+  const precisaPaginacao = filtered.length > pageSize;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const pageItems = precisaPaginacao
+    ? filtered.slice((page - 1) * pageSize, page * pageSize)
+    : filtered;
 
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const aplicarFiltros = () => {
     setAplicados({ ...filtrosRascunho });
@@ -163,25 +203,42 @@ export default function AbastecimentoListPage() {
     setPage(1);
   };
 
-  const exportHeaders = TABLE_COLUMNS.map(c => c.label);
+  const exportHeaders = [
+    "Data",
+    "Máquina",
+    "Tipo",
+    "Combustível",
+    "Quantidade (L)",
+    "Valor por litro",
+    "Valor total",
+    "Horímetro / Quilometragem",
+    "Responsável",
+  ];
   const exportData = filtered.map(r => {
     const maquina = maquinaMap.get(r.maquinaId);
     const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
     return [
+      formatDate(r.data),
       maquina?.nome ?? "",
       maquina?.tipo ?? "",
       r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "",
-      formatDate(r.data),
       formatNum(r.litros),
-      valorLitro != null ? formatNum(valorLitro, 3) : "",
+      valorLitro != null ? formatNum(valorLitro, 2) : "",
       valorTotal != null ? formatNum(valorTotal) : "",
       r.horimetro ? formatNum(r.horimetro) : "",
-      r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "",
-      r.abastecidoNaFazenda ? "Sim" : "Não",
       r.responsavel ?? "",
-      r.observacoes ?? "",
     ];
   });
+
+  const emptyTotal = !isLoading && registros.length === 0;
+  const emptyFiltro = !isLoading && registros.length > 0 && filtered.length === 0;
+  // Filtros só aparecem quando já existe pelo menos um abastecimento cadastrado
+  const mostrarFiltros = !isLoading && registros.length > 0;
+  const exportDisabled = !isLoading && exportData.length === 0;
+
+  const labelClass = "block text-[11px] font-medium text-gray-600 mb-2";
+  const fieldClass =
+    "w-full h-9 px-3 text-[12px] border border-gray-300 rounded bg-white text-gray-700 focus:outline-none focus:border-[#4ECDC4]";
 
   return (
     <AppLayout>
@@ -189,255 +246,277 @@ export default function AbastecimentoListPage() {
         pullDistance={state.pullDistance}
         isRefreshing={state.isRefreshing}
       />
-      <div
-        ref={containerRef}
-        className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden overflow-y-auto"
-        style={{ maxHeight: "calc(100vh - 200px)" }}
-      >
-        {/* Cabeçalho */}
-        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[15px] font-semibold text-gray-800">Abastecimentos</h1>
-          <ListExportButtons
-            title="Abastecimentos"
-            filename="abastecimentos"
-            headers={exportHeaders}
-            rows={exportData}
-            alignRightFrom={4}
-          />
+      <div ref={containerRef} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Cabeçalho compacto: título + ações */}
+        <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-[16px] font-semibold text-gray-900 leading-tight">Abastecimentos</h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={irParaCadastro}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white shadow-sm hover:brightness-95 active:scale-[0.97] transition min-h-[44px]"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[18px]">add</span>
+              Novo abastecimento
+            </button>
+            <ListExportButtons
+              title="Abastecimentos"
+              filename="abastecimentos"
+              headers={exportHeaders}
+              rows={exportData}
+              variant="secondary"
+              alignRightFrom={4}
+              disabled={exportDisabled}
+              disabledTitle="Nenhum abastecimento disponível para exportação."
+            />
+          </div>
         </div>
 
-        {/* Novo abastecimento */}
-        <div className="px-5 py-3 border-b border-gray-100">
-          <button
-            type="button"
-            onClick={() => setLocation("/maquinas/abastecimento/cadastro")}
-            className="inline-flex items-center gap-2 px-5 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-white shadow-sm hover:brightness-95 active:scale-[0.97] transition"
-            style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
-          >
-            <span className="material-icons text-[18px]">add</span>
-            Novo Abastecimento
-          </button>
-        </div>
+        {/* Filtros — ocultos só quando o sistema não tem nenhum abastecimento */}
+        {mostrarFiltros && (
+          <div className="border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => setFiltrosAbertos(o => !o)}
+              className="w-full px-6 py-2.5 flex items-center justify-between text-left hover:bg-gray-50/60 transition"
+            >
+              <span className="text-[12px] font-semibold text-gray-800 flex items-center gap-1.5">
+                <span className="material-icons text-[16px] text-gray-400">tune</span>
+                Filtros
+              </span>
+              <span className="material-icons text-[18px] text-gray-400">
+                {filtrosAbertos ? "expand_less" : "expand_more"}
+              </span>
+            </button>
 
-        {/* Filtros — igual iRancho */}
-        <div className="border-b border-gray-100">
-          <button
-            type="button"
-            onClick={() => setFiltrosAbertos(o => !o)}
-            className="w-full px-5 flex items-center justify-between text-left hover:bg-gray-50/60 active:bg-gray-100 transition"
-            style={{ minHeight: 52 }}
-          >
-            <span className="text-[13px] font-semibold text-gray-800 flex items-center gap-2">
-              <span className="material-icons text-[18px] text-gray-400">tune</span>
-              Filtros
-            </span>
-            <span className="material-icons text-[20px] text-gray-400">
-              {filtrosAbertos ? "expand_less" : "chevron_right"}
-            </span>
-          </button>
-
-          {filtrosAbertos && (
-            <div className="px-5 pb-4 border-t border-gray-50 pt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">Tipo de Maquinário</label>
-                  <select
-                    value={filtrosRascunho.tipoMaquina}
-                    onChange={e => setFiltrosRascunho(f => ({ ...f, tipoMaquina: e.target.value, maquinaId: "" }))}
-                    className="w-full h-[42px] px-3 text-[13px] border border-gray-200 rounded-sm bg-[#EEEEEE] focus:outline-none focus:border-[#4ECDC4]"
-                  >
-                    <option value="">Selecione o tipo de maquinário</option>
-                    {tiposMaquina.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">Máquina</label>
-                  <select
-                    value={filtrosRascunho.maquinaId}
-                    onChange={e => setFiltrosRascunho(f => ({ ...f, maquinaId: e.target.value }))}
-                    className="w-full h-[42px] px-3 text-[13px] border border-gray-200 rounded-sm bg-[#EEEEEE] focus:outline-none focus:border-[#4ECDC4]"
-                  >
-                    <option value="">Selecione a máquina</option>
-                    {maquinasFiltradasPorTipo.map(m => (
-                      <option key={m.id} value={String(m.id)}>{m.nome}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1.5">Data de Abastecimento</label>
-                  <div className="flex items-center gap-2">
+            {filtrosAbertos && (
+              <div className="px-6 pb-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 gap-3 items-end">
+                  <div className="xl:col-span-3">
+                    <label className={labelClass}>Tipo de máquina</label>
+                    <select
+                      value={filtrosRascunho.tipoMaquina}
+                      onChange={e => onChangeTipo(e.target.value)}
+                      className={fieldClass}
+                    >
+                      <option value="">Todos os tipos</option>
+                      {tiposMaquina.map(t => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="xl:col-span-3">
+                    <label className={labelClass}>Máquina</label>
+                    <select
+                      value={filtrosRascunho.maquinaId}
+                      onChange={e => setFiltrosRascunho(f => ({ ...f, maquinaId: e.target.value }))}
+                      className={fieldClass}
+                    >
+                      <option value="">Todas as máquinas</option>
+                      {maquinasOpcoes.map(m => (
+                        <option key={m.id} value={String(m.id)}>
+                          {m.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="xl:col-span-2">
+                    <label className={labelClass}>Data inicial</label>
                     <input
                       type="date"
                       value={filtrosRascunho.dataInicio}
                       onChange={e => setFiltrosRascunho(f => ({ ...f, dataInicio: e.target.value }))}
-                      placeholder="De"
-                      className="flex-1 h-[42px] px-3 text-[13px] border border-gray-200 rounded-sm bg-[#EEEEEE] focus:outline-none focus:border-[#4ECDC4]"
+                      className={fieldClass}
+                      title="Período do abastecimento — data inicial"
                     />
-                    <span className="text-[12px] text-gray-500 shrink-0">até</span>
+                  </div>
+                  <div className="xl:col-span-2">
+                    <label className={labelClass}>Data final</label>
                     <input
                       type="date"
                       value={filtrosRascunho.dataFim}
                       onChange={e => setFiltrosRascunho(f => ({ ...f, dataFim: e.target.value }))}
-                      className="flex-1 h-[42px] px-3 text-[13px] border border-gray-200 rounded-sm bg-[#EEEEEE] focus:outline-none focus:border-[#4ECDC4]"
+                      className={fieldClass}
+                      title="Período do abastecimento — data final"
                     />
                   </div>
+                  <div className="xl:col-span-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={aplicarFiltros}
+                      className="inline-flex items-center justify-center px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 active:scale-[0.97] transition min-h-9"
+                      style={{ backgroundColor: FD_PRIMARY }}
+                    >
+                      Filtrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={limparFiltros}
+                      className="inline-flex items-center justify-center px-4 rounded-lg text-[12px] font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:scale-[0.97] transition min-h-9"
+                    >
+                      Limpar
+                    </button>
+                  </div>
                 </div>
+                <p className="sr-only">Período do abastecimento</p>
               </div>
+            )}
+          </div>
+        )}
 
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={aplicarFiltros}
-                  className="flex-1 sm:flex-none px-6 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-white transition hover:brightness-95 active:scale-[0.97]"
-                  style={{ backgroundColor: FD_PRIMARY, minHeight: 48 }}
-                >
-                  Filtrar
-                </button>
-                <button
-                  type="button"
-                  onClick={limparFiltros}
-                  className="flex-1 sm:flex-none px-6 rounded-lg text-[12px] font-semibold uppercase tracking-wide text-red-500 bg-red-50 border border-red-100 hover:bg-red-100 active:scale-[0.97] transition"
-                  style={{ minHeight: 48 }}
-                >
-                  Limpar Filtros
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tabela plana — todas as colunas visíveis */}
         {/* Cards no mobile */}
-        <div className="lg:hidden px-3 py-3 space-y-3">
+        <div className="lg:hidden px-4 py-3 space-y-3">
           {isLoading && (
-            <div className="py-10 text-center text-gray-400 text-[13px]">Carregando...</div>
+            <div className="py-8 text-center text-gray-400 text-[13px]">Carregando...</div>
           )}
-          {!isLoading && pageItems.length === 0 && (
-            <div className="py-10 text-center text-gray-400 text-[13px]">Nenhum abastecimento registrado.</div>
-          )}
-          {!isLoading && pageItems.map(r => {
-            const maquina = maquinaMap.get(r.maquinaId);
-            const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
-            return (
-              <MobileCard
-                key={r.id}
-                title={maquina?.nome ?? `#${r.maquinaId}`}
-                subtitle={[r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "", formatDate(r.data)].filter(Boolean).join(" · ") || undefined}
-                badge={valorTotal != null ? (
-                  <span className="text-[13px] font-semibold text-gray-900 tabular-nums">R$ {formatNum(valorTotal)}</span>
-                ) : undefined}
-                fields={[
-                  { label: "Qtd (L)", value: formatNum(r.litros) },
-                  { label: "Valor (L)", value: valorLitro != null ? `R$ ${formatNum(valorLitro, 3)}` : "" },
-                  { label: "Odômetro", value: r.horimetro ? formatNum(r.horimetro) : "" },
-                  { label: "Responsável", value: r.responsavel || "" },
-                ]}
-                actions={[
-                  { icon: "edit", label: "Editar", onClick: () => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`) },
-                  { icon: "delete", label: "Excluir", variant: "danger", onClick: () => { if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id }); } },
-                ]}
-              />
-            );
-          })}
+          {emptyTotal && <EmptyTotal />}
+          {emptyFiltro && <EmptyFiltro />}
+          {!isLoading &&
+            pageItems.map(r => {
+              const maquina = maquinaMap.get(r.maquinaId);
+              const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
+              return (
+                <MobileCard
+                  key={r.id}
+                  title={maquina?.nome ?? `#${r.maquinaId}`}
+                  subtitle={
+                    [
+                      r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "",
+                      formatDate(r.data),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
+                  }
+                  badge={
+                    valorTotal != null ? (
+                      <span className="text-[13px] font-semibold text-gray-900 tabular-nums">
+                        {formatMoney(valorTotal)}
+                      </span>
+                    ) : undefined
+                  }
+                  fields={[
+                    { label: "Quantidade", value: formatNum(r.litros) !== "—" ? `${formatNum(r.litros)} L` : "" },
+                    {
+                      label: "Valor por litro",
+                      value: valorLitro != null ? formatMoney(valorLitro) : "",
+                    },
+                    {
+                      label: "Horímetro / Quilometragem",
+                      value: r.horimetro ? formatNum(r.horimetro) : "",
+                    },
+                    { label: "Responsável", value: r.responsavel || "" },
+                  ]}
+                  actions={[
+                    {
+                      icon: "edit",
+                      label: "Editar",
+                      onClick: () => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`),
+                    },
+                    {
+                      icon: "delete",
+                      label: "Excluir",
+                      variant: "danger",
+                      onClick: () => {
+                        if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id });
+                      },
+                    },
+                  ]}
+                />
+              );
+            })}
         </div>
 
         {/* Tabela no desktop */}
         <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full min-w-[1080px] border-collapse text-[11px]">
-            <colgroup>
-              {TABLE_COLUMNS.map(col => (
-                <col key={col.key} style={{ width: col.width }} />
-              ))}
-              <col style={{ width: "72px" }} />
-            </colgroup>
+          <table className="w-full border-collapse text-[12px]">
             <thead>
               <tr className="bg-gray-50/80 border-y border-gray-200">
-                {TABLE_COLUMNS.map(col => (
+                {DISPLAY_COLUMNS.map(col => (
                   <th
                     key={col.key}
                     className={cn(
-                      "px-3 py-3 align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-[0.04em] whitespace-nowrap",
-                      alignClass[col.align]
+                      "px-3 py-2.5 align-middle text-[10px] font-semibold text-gray-500 uppercase tracking-[0.04em] whitespace-nowrap",
+                      alignClass[col.align],
+                      col.hideBelowXl && "hidden xl:table-cell",
                     )}
                   >
-                    <span className={cn("inline-flex items-center gap-0.5", col.align === "right" && "justify-end w-full")}>
-                      {col.label}
-                      <span className="material-icons text-[13px] text-gray-300 leading-none">unfold_more</span>
-                    </span>
+                    {col.label}
                   </th>
                 ))}
-                <th className="px-2 py-3 w-[72px]" />
+                <th className="px-2 py-2.5 w-[72px]" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-16 text-center text-gray-400">
+                  <td colSpan={DISPLAY_COLUMNS.length + 1} className="px-4 py-12 text-center text-gray-400">
                     Carregando...
                   </td>
                 </tr>
               )}
-              {!isLoading && pageItems.length === 0 && (
+              {emptyTotal && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="px-4 py-16 text-center text-gray-400">
-                    Nenhum abastecimento registrado.
+                  <td colSpan={DISPLAY_COLUMNS.length + 1} className="px-4 py-6">
+                    <EmptyTotal />
+                  </td>
+                </tr>
+              )}
+              {emptyFiltro && (
+                <tr>
+                  <td colSpan={DISPLAY_COLUMNS.length + 1} className="px-4 py-8">
+                    <EmptyFiltro />
                   </td>
                 </tr>
               )}
               {pageItems.map(r => {
                 const maquina = maquinaMap.get(r.maquinaId);
-                const fazendaNome = r.fazendaId ? fazendaMap.get(r.fazendaId) ?? "" : "";
                 const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
 
                 return (
-                  <tr key={r.id} className="group h-[48px] hover:bg-[#4ECDC4]/[0.06] transition-colors">
-                    <td className="px-3 align-middle font-medium text-gray-800 truncate" title={maquina?.nome}>
+                  <tr key={r.id} className="group h-11 hover:bg-[#4ECDC4]/[0.06] transition-colors">
+                    <td className="px-3 align-middle text-gray-600 tabular-nums whitespace-nowrap">
+                      {formatDate(r.data)}
+                    </td>
+                    <td className="px-3 align-middle font-medium text-gray-800 truncate max-w-[160px]" title={maquina?.nome}>
                       {maquina?.nome ?? `#${r.maquinaId}`}
                     </td>
-                    <td className="px-3 align-middle text-gray-600 capitalize truncate">
+                    <td className="px-3 align-middle text-gray-600 capitalize truncate hidden xl:table-cell">
                       {maquina?.tipo ?? "—"}
                     </td>
                     <td className="px-3 align-middle text-gray-600 capitalize">
                       {r.combustivel ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel : "—"}
                     </td>
-                    <td className="px-3 align-middle text-gray-600 tabular-nums whitespace-nowrap">
-                      {formatDate(r.data)}
+                    <td className="px-3 align-middle text-gray-700 text-right tabular-nums whitespace-nowrap">
+                      {formatNum(r.litros) !== "—" ? `${formatNum(r.litros)} L` : "—"}
                     </td>
-                    <td className="px-3 align-middle text-gray-700 text-right tabular-nums">
-                      {formatNum(r.litros)}
+                    <td className="px-3 align-middle text-gray-700 text-right tabular-nums whitespace-nowrap">
+                      {formatMoney(valorLitro)}
                     </td>
-                    <td className="px-3 align-middle text-gray-700 text-right tabular-nums">
-                      {valorLitro != null ? formatNum(valorLitro, 2) : "—"}
-                    </td>
-                    <td className="px-3 align-middle text-gray-800 font-semibold text-right tabular-nums">
-                      {valorTotal != null ? formatNum(valorTotal) : "—"}
+                    <td className="px-3 align-middle text-gray-800 font-semibold text-right tabular-nums whitespace-nowrap">
+                      {formatMoney(valorTotal)}
                     </td>
                     <td className="px-3 align-middle text-gray-600 text-right tabular-nums">
                       {r.horimetro ? formatNum(r.horimetro) : "—"}
                     </td>
-                    <td className="px-3 align-middle text-gray-600 truncate" title={fazendaNome}>
-                      {fazendaNome || "—"}
-                    </td>
-                    <td className="px-3 align-middle text-gray-600 text-center">
-                      {r.abastecidoNaFazenda ? "Sim" : "Não"}
-                    </td>
-                    <td className="px-3 align-middle text-gray-600 truncate" title={r.responsavel ?? ""}>
+                    <td className="px-3 align-middle text-gray-600 truncate max-w-[120px]" title={r.responsavel ?? ""}>
                       {r.responsavel || "—"}
                     </td>
-                    <td className="px-3 align-middle text-gray-500 truncate" title={r.observacoes ?? ""}>
-                      {r.observacoes || "—"}
-                    </td>
                     <td className="px-2 align-middle">
-                      <div className="flex items-center justify-end gap-1 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-0.5 opacity-80 sm:opacity-60 group-hover:opacity-100 transition-opacity">
                         <button
                           type="button"
                           onClick={() => setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)}
                           className="grid place-items-center rounded-md text-gray-500 hover:bg-white hover:text-[#0f766e] hover:shadow-sm border border-transparent hover:border-gray-200 active:scale-95 transition"
-                          style={{ minWidth: 40, minHeight: 40 }}
+                          style={{ minWidth: 36, minHeight: 36 }}
                           aria-label="Editar"
                           title="Editar"
                         >
-                          <span className="material-icons text-[18px] leading-none">edit</span>
+                          <span className="material-icons text-[17px] leading-none">edit</span>
                         </button>
                         <button
                           type="button"
@@ -445,11 +524,11 @@ export default function AbastecimentoListPage() {
                             if (confirm("Excluir este abastecimento?")) deleteMutation.mutate({ id: r.id });
                           }}
                           className="grid place-items-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-100 active:scale-95 transition"
-                          style={{ minWidth: 40, minHeight: 40 }}
+                          style={{ minWidth: 36, minHeight: 36 }}
                           aria-label="Excluir"
                           title="Excluir"
                         >
-                          <span className="material-icons text-[18px] leading-none">delete</span>
+                          <span className="material-icons text-[17px] leading-none">delete</span>
                         </button>
                       </div>
                     </td>
@@ -460,51 +539,78 @@ export default function AbastecimentoListPage() {
           </table>
         </div>
 
-        {/* Paginação */}
-        <div className="px-4 sm:px-5 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
-          <span className="hidden sm:inline">{pageSize} itens por página</span>
-          <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-end">
-            <span className="tabular-nums text-[11px]">
-              {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} de {filtered.length}
+        {/* Rodapé / paginação */}
+        {!isLoading && filtered.length > 0 && (
+          <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+            <span className="tabular-nums">
+              {precisaPaginacao
+                ? `Mostrando ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, filtered.length)} de ${filtered.length} abastecimentos`
+                : `Mostrando ${filtered.length} ${filtered.length === 1 ? "abastecimento" : "abastecimentos"}`}
             </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage(p => p - 1)}
-                className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
-                style={{ minWidth: 40, minHeight: 40 }}
-              >
-                <span className="material-icons text-[18px] leading-none">chevron_left</span>
-              </button>
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(p => (
+            {precisaPaginacao && (
+              <div className="flex items-center gap-1">
                 <button
-                  key={p}
                   type="button"
-                  onClick={() => setPage(p)}
-                  className={cn(
-                    "grid place-items-center px-2 rounded-md text-[13px] font-semibold tabular-nums active:scale-95 transition",
-                    p === page ? "text-[#0f3d3a]" : "text-gray-500 hover:bg-gray-100"
-                  )}
-                  style={p === page ? { backgroundColor: FD_PRIMARY, minWidth: 40, minHeight: 40 } : { minWidth: 40, minHeight: 40 }}
+                  disabled={page <= 1}
+                  onClick={() => setPage(p => p - 1)}
+                  className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
+                  style={{ minWidth: 36, minHeight: 36 }}
                 >
-                  {p}
+                  <span className="material-icons text-[18px] leading-none">chevron_left</span>
                 </button>
-              ))}
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
-                style={{ minWidth: 40, minHeight: 40 }}
-              >
-                <span className="material-icons text-[18px] leading-none">chevron_right</span>
-              </button>
-            </div>
+                <span className="px-2 tabular-nums text-gray-600">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => p + 1)}
+                  className="grid place-items-center rounded-md border border-gray-200 bg-white text-gray-500 disabled:opacity-40 enabled:hover:bg-gray-50 active:scale-95 transition"
+                  style={{ minWidth: 36, minHeight: 36 }}
+                >
+                  <span className="material-icons text-[18px] leading-none">chevron_right</span>
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
     </AppLayout>
+  );
+}
+
+function EmptyTotal() {
+  return (
+    <div className="text-center py-1">
+      <img
+        src="/assets/icon-maquina-trator-green.png"
+        alt=""
+        width={40}
+        height={40}
+        className="mx-auto mb-3"
+        aria-hidden
+        style={{
+          objectFit: "contain",
+          /* Tom cinza-azulado padrão dos estados vazios de insumos */
+          filter:
+            "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+        }}
+      />
+      <p className="text-[13px] font-medium text-gray-700">Nenhum abastecimento registrado.</p>
+      <p className="text-[12px] text-gray-500 mt-1.5 max-w-md mx-auto">
+        Registre o primeiro abastecimento para acompanhar consumo, custos e uso das máquinas.
+      </p>
+    </div>
+  );
+}
+
+function EmptyFiltro() {
+  return (
+    <div className="text-center py-2">
+      <p className="text-[13px] text-gray-600">
+        Nenhum abastecimento encontrado com os filtros aplicados.
+      </p>
+    </div>
   );
 }
 

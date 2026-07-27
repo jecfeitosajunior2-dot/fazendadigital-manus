@@ -161,23 +161,48 @@ function FormRadioGroup({
   onChange,
   options,
   required,
+  invalid,
+  id,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   required?: boolean;
+  invalid?: boolean;
+  id?: string;
+  "aria-describedby"?: string;
 }) {
   return (
-    <FieldBox required={required} variant="light">
-      <RadioGroup value={value} onValueChange={onChange} className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center">
+    <FieldBox required={required} variant="light" invalid={invalid}>
+      <RadioGroup
+        value={value}
+        onValueChange={onChange}
+        className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center"
+        aria-invalid={invalid || undefined}
+        aria-describedby={ariaDescribedBy}
+      >
         {options.map(opt => (
           <label key={opt.value} className="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer">
-            <RadioGroupItem value={opt.value} className="border-gray-400 text-[#4ECDC4]" />
+            <RadioGroupItem id={opt.value === value ? id : undefined} value={opt.value} className="border-gray-400 text-[#4ECDC4]" />
             {opt.label}
           </label>
         ))}
       </RadioGroup>
     </FieldBox>
+  );
+}
+
+type CampoObrigatorioProduto = "nome" | "categoria" | "unidade" | "fazendas";
+
+const TOAST_ID_OBRIGATORIOS = "produto-obrigatorios";
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
   );
 }
 
@@ -224,6 +249,7 @@ export default function ProductRegistrationPage() {
   const [showNovaEmbalagem, setShowNovaEmbalagem] = useState(false);
   const [embalagemUnidadeKey, setEmbalagemUnidadeKey] = useState(0);
   const [initialized, setInitialized] = useState(false);
+  const [erros, setErros] = useState<Partial<Record<CampoObrigatorioProduto, string>>>({});
 
   useEffect(() => {
     if (!isEdit && fazendaIdParam && form.fazendaIds.length === 0) {
@@ -390,8 +416,22 @@ export default function ProductRegistrationPage() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const limparErro = (campo: CampoObrigatorioProduto) => {
+    setErros(prev => {
+      if (!prev[campo]) return prev;
+      const next = { ...prev };
+      delete next[campo];
+      return next;
+    });
+  };
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
+    if (key === "nome") limparErro("nome");
+    if (key === "categoria") limparErro("categoria");
+    if (key === "unidade") limparErro("unidade");
+    if (key === "fazendaIds") limparErro("fazendas");
+  };
 
   const handleAddEmbalagem = () => {
     const tipo = novaEmbalagem.trim();
@@ -479,13 +519,36 @@ export default function ProductRegistrationPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const next: Partial<Record<CampoObrigatorioProduto, string>> = {};
+    if (!form.nome.trim()) next.nome = "Nome do produto é obrigatório.";
+    if (!form.categoria) next.categoria = "Categoria é obrigatória.";
+    if (!form.unidade) next.unidade = "Unidade base é obrigatória.";
     if (form.fazendaIds.length === 0) {
-      toast.error("Selecione pelo menos uma fazenda para usar este produto.");
+      next.fazendas = "Selecione pelo menos uma fazenda para usar este produto.";
+    }
+
+    if (Object.keys(next).length > 0) {
+      setErros(next);
+      toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+      const primeiro: CampoObrigatorioProduto = next.nome
+        ? "nome"
+        : next.categoria
+          ? "categoria"
+          : next.unidade
+            ? "unidade"
+            : "fazendas";
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`produto-field-${primeiro}`);
+        if (el instanceof HTMLElement) {
+          el.focus({ preventScroll: true });
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
       return;
     }
-    if (!form.nome.trim()) { toast.error("Nome do produto é obrigatório"); return; }
-    if (!form.categoria) { toast.error("Categoria é obrigatória"); return; }
-    if (!form.unidade) { toast.error("Unidade base é obrigatória"); return; }
+
+    setErros({});
 
     for (const id of form.fazendaIds) {
       const cfg = form.configPorFazenda[id] ?? emptyFazendaConfig();
@@ -545,12 +608,14 @@ export default function ProductRegistrationPage() {
         type="button"
         onClick={() => voltarParaOrigem()}
         disabled={isBusy}
-        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group disabled:opacity-50"
       >
-        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
         <span className="text-[13px]">Voltar</span>
       </button>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
           <h1
             className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
@@ -568,21 +633,32 @@ export default function ProductRegistrationPage() {
                 <div>
                   <FormLabel required>Nome do Produto</FormLabel>
                   <FormInput
+                    id="produto-field-nome"
                     value={form.nome}
                     onChange={v => set("nome", v)}
                     placeholder="Ex: Sal Mineral Proteinado 30kg"
                     required
+                    invalid={!!erros.nome}
+                    aria-describedby={erros.nome ? "produto-err-nome" : undefined}
                   />
+                  <FieldErrorMsg id="produto-err-nome" message={erros.nome} />
                 </div>
                 <div>
                   <FormLabel required>Categoria</FormLabel>
                   <FormNativeSelect
+                    id="produto-field-categoria"
                     value={form.categoria}
-                    onChange={v => setForm(f => ({ ...f, categoria: v, subcategoria: "" }))}
+                    onChange={v => {
+                      setForm(f => ({ ...f, categoria: v, subcategoria: "" }));
+                      limparErro("categoria");
+                    }}
                     placeholder="Selecione"
                     options={categoriasOpcoes}
                     required
+                    invalid={!!erros.categoria}
+                    aria-describedby={erros.categoria ? "produto-err-categoria" : undefined}
                   />
+                  <FieldErrorMsg id="produto-err-categoria" message={erros.categoria} />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -606,15 +682,22 @@ export default function ProductRegistrationPage() {
                 <div>
                   <FormLabel required>Unidade Base</FormLabel>
                   <FormNativeSelect
+                    id="produto-field-unidade"
                     value={form.unidade}
                     onChange={v => set("unidade", v)}
                     placeholder="Selecione"
                     options={unidadesOpcoes}
                     required
+                    invalid={!!erros.unidade}
+                    aria-describedby={erros.unidade ? "produto-err-unidade" : undefined}
                   />
-                  <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
-                    Unidade usada para controlar estoque (kg, litro, dose, saco…)
-                  </p>
+                  {erros.unidade ? (
+                    <FieldErrorMsg id="produto-err-unidade" message={erros.unidade} />
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-gray-500 leading-relaxed">
+                      Unidade usada para controlar estoque (kg, litro, dose, saco…)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <FormLabel>Fabricante</FormLabel>
@@ -653,7 +736,13 @@ export default function ProductRegistrationPage() {
             title="Fazendas vinculadas ao produto"
             description="Selecione em quais fazendas este produto será usado. Cada fazenda terá estoque e controle próprios."
           >
-            <div className="space-y-2">
+            <div
+              id="produto-field-fazendas"
+              tabIndex={-1}
+              className={`space-y-2 rounded-md outline-none ${erros.fazendas ? "ring-1 ring-red-500 p-2 -m-2" : ""}`}
+              aria-invalid={!!erros.fazendas || undefined}
+              aria-describedby={erros.fazendas ? "produto-err-fazendas" : undefined}
+            >
               {fazendasOpcoes.map(f => {
                 const checked = form.fazendaIds.includes(f.value);
                 const cfg = form.configPorFazenda[f.value] ?? emptyFazendaConfig();
@@ -706,6 +795,7 @@ export default function ProductRegistrationPage() {
                                 },
                               };
                             });
+                            limparErro("fazendas");
                           }}
                           className="rounded accent-[#4ECDC4] border-gray-400 focus:ring-[#4ECDC4]"
                           style={{ accentColor: FD_PRIMARY }}
@@ -798,6 +888,7 @@ export default function ProductRegistrationPage() {
                 <span className="text-[12px] text-gray-400">Nenhuma fazenda cadastrada.</span>
               )}
             </div>
+            <FieldErrorMsg id="produto-err-fazendas" message={erros.fazendas} />
           </FormSection>
 
           {/* 3. Informações sanitárias — só para produtos veterinários/sanitários */}
@@ -918,21 +1009,19 @@ export default function ProductRegistrationPage() {
           </FormSection>
 
           {/* Salvar */}
-          <div className="flex justify-end gap-3 pt-2">
-            {retornoUrl && (
-              <button
-                type="button"
-                onClick={() => voltarParaOrigem()}
-                disabled={isBusy}
-                className="px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-              >
-                Cancelar
-              </button>
-            )}
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => voltarParaOrigem()}
+              disabled={isBusy}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
             <button
               type="submit"
               disabled={isBusy}
-              className="px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               {isBusy ? "Salvando..." : "Salvar"}

@@ -5,6 +5,7 @@ type EstoqueItem = {
   categoria?: string | null;
   quantidade?: string | number | null;
   valorUnitario?: string | number | null;
+  situacao?: string | null;
 };
 
 /** Movimentação de estoque (compra/saída). O preço de compra fica em `valor` (total). */
@@ -29,15 +30,39 @@ function matchesCombustivel(item: EstoqueItem, combustivel: string): boolean {
   return keywords.some(k => nome.includes(k) || cat.includes(k));
 }
 
-/** Produtos de combustível da fazenda filtrados por tipo. */
+/** Indica se o produto do estoque é combustível (por nome/categoria). */
+export function isProdutoCombustivel(item: {
+  nome?: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+}): boolean {
+  const nome = (item.nome ?? "").toLowerCase();
+  const cat = `${item.categoria ?? ""} ${item.subcategoria ?? ""}`.toLowerCase();
+  const blob = `${nome} ${cat}`;
+  return Object.values(COMBUSTIVEL_KEYWORDS).some(keys => keys.some(k => blob.includes(k)));
+}
+
+/** Produtos de combustível da fazenda filtrados por tipo (ignora inativos). */
 export function getCombustivelItens(
   estoque: EstoqueItem[],
   fazendaId: number,
   combustivel: string
 ): EstoqueItem[] {
-  return estoque.filter(
-    item => item.fazendaId === fazendaId && matchesCombustivel(item, combustivel)
-  );
+  return estoque.filter(item => {
+    if (item.fazendaId !== fazendaId) return false;
+    const situacao = String(item.situacao ?? "ativo").toLowerCase();
+    if (situacao === "inativo") return false;
+    return matchesCombustivel(item, combustivel);
+  });
+}
+
+/** Indica se a fazenda tem cadastro válido do combustível (mesmo com saldo zero). */
+export function temCombustivelCadastrado(
+  estoque: EstoqueItem[],
+  fazendaId: number,
+  combustivel: string
+): boolean {
+  return getCombustivelItens(estoque, fazendaId, combustivel).length > 0;
 }
 
 /** Saldo total em litros do combustível na fazenda. */

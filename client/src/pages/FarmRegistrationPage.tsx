@@ -18,6 +18,89 @@ import {
   inputClass,
 } from "@/components/FormFields";
 
+/** Ordem visual dos campos obrigatórios no cadastro simples. */
+const CAMPOS_OBRIGATORIOS = [
+  "nome",
+  "pais",
+  "estado",
+  "cidade",
+  "unidadeArea",
+  "area",
+  "atividadePrincipal",
+] as const;
+
+type CampoObrigatorio = (typeof CAMPOS_OBRIGATORIOS)[number];
+
+const MSG_LOCAL_OBRIGATORIO: Record<CampoObrigatorio, string> = {
+  nome: "Informe o nome da Fazenda.",
+  pais: "Selecione o País.",
+  estado: "Selecione o Estado.",
+  cidade: "Selecione o Município.",
+  unidadeArea: "Selecione a unidade de medida da área.",
+  area: "Informe a área total da Fazenda.",
+  atividadePrincipal: "Selecione a atividade principal da Fazenda.",
+};
+
+const MSG_TOAST_OBRIGATORIO: Record<CampoObrigatorio, string> = {
+  nome: "Nome da Fazenda é obrigatório.",
+  pais: "País é obrigatório.",
+  estado: "Estado é obrigatório.",
+  cidade: "Município é obrigatório.",
+  unidadeArea: "Unidade de medida da área é obrigatória.",
+  area: "Área total é obrigatória.",
+  atividadePrincipal: "Atividade principal da Fazenda é obrigatória.",
+};
+
+const TOAST_ID_OBRIGATORIOS = "fazenda-campos-obrigatorios";
+
+function fieldDomId(campo: CampoObrigatorio): string {
+  return `fazenda-field-${campo}`;
+}
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
+function coletarErrosObrigatorios(form: {
+  nome: string;
+  pais: string;
+  estado: string;
+  cidade: string;
+  unidadeArea: string;
+  area: string;
+  atividadePrincipal: string;
+}): Partial<Record<CampoObrigatorio, string>> {
+  const erros: Partial<Record<CampoObrigatorio, string>> = {};
+  if (!form.nome.trim()) erros.nome = MSG_LOCAL_OBRIGATORIO.nome;
+  if (!form.pais) erros.pais = MSG_LOCAL_OBRIGATORIO.pais;
+  if (!form.estado) erros.estado = MSG_LOCAL_OBRIGATORIO.estado;
+  if (!form.cidade) erros.cidade = MSG_LOCAL_OBRIGATORIO.cidade;
+  if (!form.unidadeArea) erros.unidadeArea = MSG_LOCAL_OBRIGATORIO.unidadeArea;
+  if (!form.area.trim()) erros.area = MSG_LOCAL_OBRIGATORIO.area;
+  if (!form.atividadePrincipal) erros.atividadePrincipal = MSG_LOCAL_OBRIGATORIO.atividadePrincipal;
+  return erros;
+}
+
+function primeiroCampoInvalido(
+  erros: Partial<Record<CampoObrigatorio, string>>,
+): CampoObrigatorio | null {
+  return CAMPOS_OBRIGATORIOS.find(c => !!erros[c]) ?? null;
+}
+
+function focarCampo(campo: CampoObrigatorio) {
+  const el = document.getElementById(fieldDomId(campo));
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.setTimeout(() => {
+    if (el instanceof HTMLElement) el.focus({ preventScroll: true });
+  }, 250);
+}
+
 type FormState = {
   nome: string;
   sigla: string;
@@ -345,6 +428,10 @@ export function FarmRegistrationPage() {
   const [cidades, setCidades] = useState<string[]>([]);
   const [loadingCidades, setLoadingCidades] = useState(false);
   const [hydratedKey, setHydratedKey] = useState("");
+  const [errosObrigatorios, setErrosObrigatorios] = useState<
+    Partial<Record<CampoObrigatorio, string>>
+  >({});
+  const tentativaValidacao = Object.keys(errosObrigatorios).length > 0;
 
   const hydrationKey = isEdit ? fazendaHydrationKey(fazenda as Record<string, unknown> | undefined) : "new";
 
@@ -448,8 +535,31 @@ export function FarmRegistrationPage() {
     return base;
   }, [cidades, form.cidade]);
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
+    if (CAMPOS_OBRIGATORIOS.includes(key as CampoObrigatorio)) {
+      setErrosObrigatorios(prev => {
+        if (!prev[key as CampoObrigatorio]) return prev;
+        const next = { ...prev };
+        delete next[key as CampoObrigatorio];
+        return next;
+      });
+    }
+  };
+
+  const setEstado = (v: string) => {
+    setForm(f => ({ ...f, estado: v, cidade: "" }));
+    setErrosObrigatorios(prev => {
+      const next = { ...prev };
+      delete next.estado;
+      // cidade foi limpa — se já havia tentativa, marca cidade se ainda inválida
+      if (prev.cidade || prev.estado) {
+        // remove cidade error until next submit if cleared; keep if still invalid after change
+        delete next.cidade;
+      }
+      return next;
+    });
+  };
 
   const setMatricula = (index: number, value: string) => {
     setForm(f => {
@@ -540,13 +650,17 @@ export function FarmRegistrationPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nome.trim()) { toast.error("Nome da fazenda é obrigatório"); return; }
-    if (!form.pais) { toast.error("País é obrigatório"); return; }
-    if (!form.estado) { toast.error("Estado é obrigatório"); return; }
-    if (!form.cidade) { toast.error("Município é obrigatório"); return; }
-    if (!form.unidadeArea) { toast.error("Unidade de medida da área é obrigatória"); return; }
-    if (!form.area.trim()) { toast.error("Área total é obrigatória"); return; }
-    if (!form.atividadePrincipal) { toast.error("Atividade principal da fazenda é obrigatória"); return; }
+    const erros = coletarErrosObrigatorios(form);
+    const primeiro = primeiroCampoInvalido(erros);
+
+    if (primeiro) {
+      setErrosObrigatorios(erros);
+      toast.error(MSG_TOAST_OBRIGATORIO[primeiro], { id: TOAST_ID_OBRIGATORIOS });
+      focarCampo(primeiro);
+      return;
+    }
+
+    setErrosObrigatorios({});
     if (isEdit && fazendaId) {
       updateMutation.mutate({ id: fazendaId, ...payload() });
     } else {
@@ -591,7 +705,17 @@ export function FarmRegistrationPage() {
 
   return (
     <AppLayout>
-      <form onSubmit={handleSubmit}>
+      <button
+        type="button"
+        onClick={() => setLocation("/fazendas/visao-geral")}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="bg-white rounded-md shadow-sm border border-gray-100 p-5 sm:p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
@@ -618,9 +742,18 @@ export function FarmRegistrationPage() {
               title="Cadastro Simples"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>Nome da Fazenda</FormLabel>
-                  <FormInput value={form.nome} onChange={v => set("nome", v)} placeholder="Ex. Fazenda Santa Maria" required />
+                  <FormInput
+                    id={fieldDomId("nome")}
+                    value={form.nome}
+                    onChange={v => set("nome", v)}
+                    placeholder="Ex. Fazenda Santa Maria"
+                    required
+                    invalid={!!errosObrigatorios.nome}
+                    aria-describedby={errosObrigatorios.nome ? "fazenda-err-nome" : undefined}
+                  />
+                  <FieldErrorMsg id="fazenda-err-nome" message={errosObrigatorios.nome} />
                 </div>
                 <div>
                   <FormLabel>Sigla da Fazenda</FormLabel>
@@ -633,24 +766,31 @@ export function FarmRegistrationPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-start">
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>País</FormLabel>
                   <FormNativeSelect
+                    id={fieldDomId("pais")}
                     value={form.pais}
                     onChange={v => set("pais", v)}
                     placeholder="Selecione"
                     required
                     options={PAIS_OPTIONS}
+                    invalid={!!errosObrigatorios.pais}
+                    aria-describedby={errosObrigatorios.pais ? "fazenda-err-pais" : undefined}
                   />
+                  <FieldErrorMsg id="fazenda-err-pais" message={errosObrigatorios.pais} />
                 </div>
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>Estado</FormLabel>
                   <FormSelect
+                    id={fieldDomId("estado")}
                     value={form.estado}
-                    onChange={v => setForm(f => ({ ...f, estado: v, cidade: "" }))}
+                    onChange={setEstado}
                     placeholder="Selecione"
                     required
                     displayValue={estadoDisplayName}
+                    invalid={!!errosObrigatorios.estado}
+                    aria-describedby={errosObrigatorios.estado ? "fazenda-err-estado" : undefined}
                   >
                     {estadoOptions.map(o => (
                       <SelectItem key={o.value} value={o.value} className="text-[13px]">
@@ -658,16 +798,20 @@ export function FarmRegistrationPage() {
                       </SelectItem>
                     ))}
                   </FormSelect>
+                  <FieldErrorMsg id="fazenda-err-estado" message={errosObrigatorios.estado} />
                 </div>
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>Município</FormLabel>
                   <FormSelect
+                    id={fieldDomId("cidade")}
                     value={form.cidade}
                     onChange={v => set("cidade", v)}
                     placeholder={municipioPlaceholder}
                     disabled={!form.estado || loadingCidades}
                     required
                     displayValue={form.cidade}
+                    invalid={!!errosObrigatorios.cidade}
+                    aria-describedby={errosObrigatorios.cidade ? "fazenda-err-cidade" : undefined}
                   >
                     {municipioOptions.map(o => (
                       <SelectItem key={o.value} value={o.value} className="text-[13px]">
@@ -675,21 +819,42 @@ export function FarmRegistrationPage() {
                       </SelectItem>
                     ))}
                   </FormSelect>
+                  <FieldErrorMsg id="fazenda-err-cidade" message={errosObrigatorios.cidade} />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>Unidade de Medida da Área</FormLabel>
-                  <FormSelect value={form.unidadeArea} onChange={v => set("unidadeArea", v)} placeholder="Selecione" required displayValue={form.unidadeArea}>
+                  <FormSelect
+                    id={fieldDomId("unidadeArea")}
+                    value={form.unidadeArea}
+                    onChange={v => set("unidadeArea", v)}
+                    placeholder="Selecione"
+                    required
+                    displayValue={form.unidadeArea}
+                    invalid={!!errosObrigatorios.unidadeArea}
+                    aria-describedby={errosObrigatorios.unidadeArea ? "fazenda-err-unidadeArea" : undefined}
+                  >
                     <SelectItem value="Hectare" className="text-[13px]">Hectare</SelectItem>
                     <SelectItem value="Alqueire" className="text-[13px]">Alqueire</SelectItem>
                     <SelectItem value="Metro²" className="text-[13px]">Metro²</SelectItem>
                   </FormSelect>
+                  <FieldErrorMsg id="fazenda-err-unidadeArea" message={errosObrigatorios.unidadeArea} />
                 </div>
-                <div>
+                <div className="scroll-mt-24">
                   <FormLabel required>Área Total da Fazenda</FormLabel>
-                  <FormInput value={form.area} onChange={v => set("area", v)} placeholder="0" type="number" required />
+                  <FormInput
+                    id={fieldDomId("area")}
+                    value={form.area}
+                    onChange={v => set("area", v)}
+                    placeholder="0"
+                    type="number"
+                    required
+                    invalid={!!errosObrigatorios.area}
+                    aria-describedby={errosObrigatorios.area ? "fazenda-err-area" : undefined}
+                  />
+                  <FieldErrorMsg id="fazenda-err-area" message={errosObrigatorios.area} />
                 </div>
                 <div>
                   <FormLabel>Área de Reserva</FormLabel>
@@ -711,14 +876,23 @@ export function FarmRegistrationPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4 items-start">
-                <div className="lg:col-span-4">
+                <div className="lg:col-span-4 scroll-mt-24">
                   <FormLabel required>Atividade Principal da Fazenda</FormLabel>
                   <FormNativeSelect
+                    id={fieldDomId("atividadePrincipal")}
                     value={form.atividadePrincipal}
                     onChange={v => set("atividadePrincipal", v)}
                     placeholder="Selecione"
                     required
                     options={ATIVIDADE_PRINCIPAL_OPTIONS}
+                    invalid={!!errosObrigatorios.atividadePrincipal}
+                    aria-describedby={
+                      errosObrigatorios.atividadePrincipal ? "fazenda-err-atividadePrincipal" : undefined
+                    }
+                  />
+                  <FieldErrorMsg
+                    id="fazenda-err-atividadePrincipal"
+                    message={errosObrigatorios.atividadePrincipal}
                   />
                 </div>
                 <div className="lg:col-span-8">
@@ -932,22 +1106,31 @@ export function FarmRegistrationPage() {
           </div>
 
           {/* Footer buttons */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={() => setLocation("/fazendas/visao-geral")}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
-            >
-              Voltar
-            </button>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
-            </button>
+          <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="min-h-[18px]">
+              {tentativaValidacao && (
+                <p className="text-[12px] text-red-600">
+                  Preencha os campos obrigatórios destacados.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLocation("/fazendas/visao-geral")}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
+              </button>
+            </div>
           </div>
         </div>
       </form>

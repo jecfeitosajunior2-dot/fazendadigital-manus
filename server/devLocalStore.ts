@@ -72,6 +72,7 @@ type DevMovimentacao = {
   id: number;
   grupoId: string | null;
   estoqueId: number;
+  abastecimentoId: number | null;
   fazendaId: number | null;
   userId: number | null;
   registradoPor: string | null;
@@ -285,6 +286,7 @@ function defaultStore(): StoreData {
         id: 1,
         grupoId: "seed-mov-1",
         estoqueId: 1,
+        abastecimentoId: null,
         fazendaId: 1,
         userId: null,
         registradoPor: null,
@@ -311,6 +313,7 @@ function defaultStore(): StoreData {
         id: 2,
         grupoId: "seed-mov-2",
         estoqueId: 1,
+        abastecimentoId: null,
         fazendaId: 1,
         userId: null,
         registradoPor: null,
@@ -337,6 +340,7 @@ function defaultStore(): StoreData {
         id: 3,
         grupoId: "seed-mov-3",
         estoqueId: 2,
+        abastecimentoId: null,
         fazendaId: 1,
         userId: null,
         registradoPor: null,
@@ -1289,6 +1293,7 @@ export const devLocalStore = {
         id,
         grupoId: (input.grupoId as string | undefined)?.trim() || null,
         estoqueId,
+        abastecimentoId: (input.abastecimentoId as number | undefined) ?? null,
         fazendaId,
         userId: (input.userId as number | undefined) ?? null,
         registradoPor: (input.registradoPor as string | undefined)?.trim() || null,
@@ -1324,6 +1329,11 @@ export const devLocalStore = {
       const status = mov.status || "ativa";
       if (status === "estornada" || status === "estorno") {
         throw new Error("Movimentação estornada não pode ser editada.");
+      }
+      if (mov.abastecimentoId) {
+        throw new Error(
+          "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original.",
+        );
       }
 
       const qty = parseFloat(String(input.quantidade).replace(",", "."));
@@ -1468,6 +1478,12 @@ export const devLocalStore = {
       const seeds = data.movimentacoes.filter(m => input.itemIds.includes(m.id));
       if (!seeds.length) throw new Error("Movimentação não encontrada.");
 
+      if (seeds.some(s => s.abastecimentoId != null)) {
+        throw new Error(
+          "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente.",
+        );
+      }
+
       const grupoId = seeds[0]!.grupoId?.trim() || null;
       const originais = grupoId
         ? data.movimentacoes.filter(m => m.grupoId === grupoId)
@@ -1544,6 +1560,7 @@ export const devLocalStore = {
           id,
           grupoId: estornoGrupoId,
           estoqueId: mov.estoqueId,
+          abastecimentoId: mov.abastecimentoId ?? null,
           fazendaId: mov.fazendaId,
           userId: input.userId,
           registradoPor: input.registradoPor.trim(),
@@ -1591,6 +1608,11 @@ export const devLocalStore = {
       const status = mov.status || "ativa";
       if (status === "estornada" || status === "estorno") {
         throw new Error("Movimentação estornada não pode ser excluída. Use o histórico para consulta.");
+      }
+      if (mov.abastecimentoId) {
+        throw new Error(
+          "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente.",
+        );
       }
       const item = getItem(data, mov.estoqueId);
       if (item) {

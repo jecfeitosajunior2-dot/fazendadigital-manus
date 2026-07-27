@@ -22,6 +22,7 @@ import {
   extrairVolumeEmbalagem,
   type EmbalagemProduto,
 } from "@/lib/produto-types";
+import { isProdutoCombustivel } from "@/lib/combustivel-estoque";
 
 // ─── Estilos compartilhados ─────────────────────────────────────────────────
 const inputCls =
@@ -108,16 +109,23 @@ function UnidadeMovSelect({
   required,
   disabled,
   options,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
   disabled?: boolean;
   options: { value: string; label: string }[];
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   const display = options.find(o => o.value === value)?.label;
   return (
     <FormSelect
+      id={id}
       value={value}
       onChange={onChange}
       placeholder={disabled ? "Selecione o produto primeiro" : "Selecione a unidade"}
@@ -126,6 +134,8 @@ function UnidadeMovSelect({
       variant="light"
       displayValue={display}
       triggerClassName="h-[38px] py-0 bg-white"
+      invalid={invalid}
+      aria-describedby={ariaDescribedBy}
     >
       {options.map(o => (
         <SelectItem key={o.value} value={o.value} className="text-[13px]">
@@ -136,19 +146,55 @@ function UnidadeMovSelect({
   );
 }
 
-function FazendaReadonlyField({ label, nome }: { label: string; nome: string }) {
+function FazendaReadonlyField({
+  label,
+  nome,
+  invalid,
+  errorMessage,
+  id,
+}: {
+  label: string;
+  nome: string;
+  invalid?: boolean;
+  errorMessage?: string;
+  id?: string;
+}) {
   return (
-    <div>
+    <div id={id} tabIndex={-1} className="outline-none">
       <FormLabel required>{label}</FormLabel>
-      <FieldBox variant="light" className="bg-gray-50">
+      <FieldBox variant="light" className="bg-gray-50" required invalid={invalid}>
         <div className="w-full min-h-[42px] px-3 py-2.5 text-[13px] text-gray-800">
           {nome || "—"}
         </div>
       </FieldBox>
-      <p className="text-[11px] text-gray-500 mt-1">{FAZENDA_HELPER}</p>
+      {errorMessage ? (
+        <p className="mt-1 text-[11px] text-red-600" role="alert">{errorMessage}</p>
+      ) : (
+        <p className="text-[11px] text-gray-500 mt-1">{FAZENDA_HELPER}</p>
+      )}
     </div>
   );
 }
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
+const TOAST_ID_OBRIGATORIOS = "nova-mov-obrigatorios";
+type CampoErroMov =
+  | "tipoMov"
+  | "fazenda"
+  | "fazendaDestino"
+  | "data"
+  | "itens"
+  | "produto"
+  | "unidade"
+  | "quantidade";
 
 const fmtMoeda = (v: string) => {
   if (!v.trim()) return "R$ 0,00";
@@ -424,6 +470,7 @@ export default function InsumosNovaMovimentacaoPage() {
   const [produtos, setProdutos] = useState<ProdutoLinha[]>([]);
   const [editandoLinhaId, setEditandoLinhaId] = useState<string | null>(null);
   const [movimentacoesRemovidas, setMovimentacoesRemovidas] = useState<number[]>([]);
+  const [erros, setErros] = useState<Partial<Record<CampoErroMov, string>>>({});
   const siblingsLoadedRef = useRef(false);
   const initialProdutosRef = useRef<string>("[]");
 
@@ -657,6 +704,15 @@ export default function InsumosNovaMovimentacaoPage() {
       return;
     }
 
+    const abastId = (movimentacao as { abastecimentoId?: number | null }).abastecimentoId;
+    if (abastId != null) {
+      toast.error(
+        "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original.",
+      );
+      setLocation(`/maquinas/abastecimento/cadastro?id=${abastId}`);
+      return;
+    }
+
     const tipoNorm = normalizarTipoMov(movimentacao.tipo ?? undefined);
     const op = operacaoDoTipo(movimentacao.tipo ?? undefined);
     setOperacao(op);
@@ -768,6 +824,9 @@ export default function InsumosNovaMovimentacaoPage() {
     setProdEstoqueId(id);
     const prod = estoqueList.find(p => String(p.id) === id);
     setProdUnidade(prod ? normalizarUnidade(prod.unidade) : "");
+    limparErro("produto");
+    limparErro("itens");
+    limparErro("unidade");
   };
 
   // ── Ao mudar operação, reajustar motivo/tipo se necessário ────────────────
@@ -909,6 +968,10 @@ export default function InsumosNovaMovimentacaoPage() {
     setProdutos(prev =>
       editandoLinhaId ? prev.map(p => (p.localId === editandoLinhaId ? linha : p)) : [...prev, linha]
     );
+    limparErro("itens");
+    limparErro("produto");
+    limparErro("unidade");
+    limparErro("quantidade");
     limparMiniForm();
   };
 
@@ -1147,36 +1210,68 @@ export default function InsumosNovaMovimentacaoPage() {
   };
 
   // ── Salvar ────────────────────────────────────────────────────────────────
+  const limparErro = (campo: CampoErroMov) => {
+    setErros(prev => {
+      if (!prev[campo]) return prev;
+      const next = { ...prev };
+      delete next[campo];
+      return next;
+    });
+  };
+
+  const focarCampoErro = (campo: CampoErroMov) => {
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`mov-field-${campo}`);
+      if (el instanceof HTMLElement) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  };
+
   const salvar = async () => {
-    if (!tipoMov) {
-      toast.error("Selecione o motivo / tipo da operação.");
-      return;
-    }
+    const next: Partial<Record<CampoErroMov, string>> = {};
 
-    if (!fazendaId) {
-      toast.error("Selecione uma fazenda na tela de Movimentações antes de registrar.");
-      return;
+    if (!tipoMov) next.tipoMov = "Selecione o motivo / tipo da operação.";
+    if (!fazendaId || !Number(fazendaId)) {
+      next.fazenda = "Selecione uma fazenda na tela de Movimentações antes de registrar.";
     }
-    if (!Number(fazendaId)) {
-      toast.error("Fazenda inválida. Volte à tela de Movimentações e selecione novamente.");
-      return;
-    }
-
     if (isTransferencia && !fazendaDestinoId) {
-      toast.error("Selecione o estoque destino da transferência.");
-      return;
+      next.fazendaDestino = "Selecione o estoque destino da transferência.";
     }
+    if (!dataMovimentacao.trim()) next.data = "Informe a data da movimentação.";
 
     if (formPendenteIncompleto) {
-      toast.error("Complete produto e quantidade, ou deixe os campos vazios.");
-      return;
+      if (!prodEstoqueId) next.produto = "Selecione o produto.";
+      if (!prodUnidade) next.unidade = "Selecione a unidade de movimentação.";
+      if (!prodQuantidade.trim()) next.quantidade = "Informe a quantidade.";
     }
 
     const linhas = coletarLinhasParaSalvar();
-    if (linhas.length === 0) {
-      toast.error("A movimentação precisa ter pelo menos um item.");
+    if (linhas.length === 0 && !formPendenteIncompleto) {
+      next.itens = "Inclua pelo menos um item na movimentação.";
+      next.produto = "Inclua pelo menos um item na movimentação.";
+    }
+
+    if (Object.keys(next).length > 0) {
+      setErros(next);
+      toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+      const ordem: CampoErroMov[] = [
+        "tipoMov",
+        "fazenda",
+        "fazendaDestino",
+        "data",
+        "produto",
+        "unidade",
+        "quantidade",
+        "itens",
+      ];
+      const primeiro = ordem.find(c => next[c]);
+      if (primeiro) focarCampoErro(primeiro === "itens" ? "produto" : primeiro);
       return;
     }
+
+    setErros({});
 
     const idsVistos = new Set<string>();
     for (const p of linhas) {
@@ -1255,6 +1350,23 @@ export default function InsumosNovaMovimentacaoPage() {
         <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl">
           {/* ── Cabeçalho ── */}
           <div className="px-6 py-4 border-b border-gray-200">
+            <button
+              type="button"
+              onClick={() => {
+                const fid = fazendaId || fazendaIdQuery;
+                setLocation(
+                  fid
+                    ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
+                    : "/insumos/movimentacao",
+                );
+              }}
+              className="mb-3 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+            >
+              <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+                arrow_back
+              </span>
+              <span className="text-[13px]">Voltar</span>
+            </button>
             <h2 className="text-[18px] font-semibold text-gray-900">
               {isEdit ? "Editar Movimentação" : "Nova Movimentação"}
             </h2>
@@ -1279,24 +1391,43 @@ export default function InsumosNovaMovimentacaoPage() {
                 <div>
                   <FormLabel required>Motivo / Tipo</FormLabel>
                   <FormNativeSelect
+                    id="mov-field-tipoMov"
                     value={tipoMov}
-                    onChange={setTipoMov}
+                    onChange={v => {
+                      setTipoMov(v);
+                      limparErro("tipoMov");
+                    }}
                     placeholder="Selecione o motivo / tipo"
                     options={tipoMovOpcoes}
                     disabled={isTransferencia}
                     variant="light"
                     required
+                    invalid={!!erros.tipoMov}
+                    aria-describedby={erros.tipoMov ? "mov-err-tipoMov" : undefined}
                   />
+                  <FieldErrorMsg id="mov-err-tipoMov" message={erros.tipoMov} />
                 </div>
               </div>
 
               {isEntrada && (
-                <FazendaReadonlyField label="Estoque Destino" nome={fazendaNomeSelecionada} />
+                <FazendaReadonlyField
+                  id="mov-field-fazenda"
+                  label="Estoque Destino"
+                  nome={fazendaNomeSelecionada}
+                  invalid={!!erros.fazenda}
+                  errorMessage={erros.fazenda}
+                />
               )}
 
               {isSaida && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FazendaReadonlyField label="Estoque Origem" nome={fazendaNomeSelecionada} />
+                  <FazendaReadonlyField
+                    id="mov-field-fazenda"
+                    label="Estoque Origem"
+                    nome={fazendaNomeSelecionada}
+                    invalid={!!erros.fazenda}
+                    errorMessage={erros.fazenda}
+                  />
                   <div>
                     <label className={labelCls}>Destino / Uso</label>
                     <input
@@ -1310,22 +1441,41 @@ export default function InsumosNovaMovimentacaoPage() {
               )}
 
               {isAjuste && (
-                <FazendaReadonlyField label="Estoque" nome={fazendaNomeSelecionada} />
+                <FazendaReadonlyField
+                  id="mov-field-fazenda"
+                  label="Estoque"
+                  nome={fazendaNomeSelecionada}
+                  invalid={!!erros.fazenda}
+                  errorMessage={erros.fazenda}
+                />
               )}
 
               {isTransferencia && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FazendaReadonlyField label="Estoque Origem" nome={fazendaNomeSelecionada} />
+                  <FazendaReadonlyField
+                    id="mov-field-fazenda"
+                    label="Estoque Origem"
+                    nome={fazendaNomeSelecionada}
+                    invalid={!!erros.fazenda}
+                    errorMessage={erros.fazenda}
+                  />
                   <div>
                     <FormLabel required>Estoque Destino</FormLabel>
                     <FormNativeSelect
+                      id="mov-field-fazendaDestino"
                       value={fazendaDestinoId}
-                      onChange={setFazendaDestinoId}
+                      onChange={v => {
+                        setFazendaDestinoId(v);
+                        limparErro("fazendaDestino");
+                      }}
                       placeholder="Selecione o estoque destino"
                       options={fazendaOpcoes}
                       variant="light"
                       required
+                      invalid={!!erros.fazendaDestino}
+                      aria-describedby={erros.fazendaDestino ? "mov-err-fazendaDestino" : undefined}
                     />
+                    <FieldErrorMsg id="mov-err-fazendaDestino" message={erros.fazendaDestino} />
                   </div>
                 </div>
               )}
@@ -1334,11 +1484,18 @@ export default function InsumosNovaMovimentacaoPage() {
                 <div className="max-w-sm">
                   <FormLabel required>{labelData}</FormLabel>
                   <FormDatePicker
+                    id="mov-field-data"
                     value={dataMovimentacao}
-                    onChange={setDataMovimentacao}
+                    onChange={v => {
+                      setDataMovimentacao(v);
+                      limparErro("data");
+                    }}
                     placeholder="DD/MM/AAAA"
                     required
+                    invalid={!!erros.data}
+                    aria-describedby={erros.data ? "mov-err-data" : undefined}
                   />
+                  <FieldErrorMsg id="mov-err-data" message={erros.data} />
                 </div>
               )}
             </div>
@@ -1377,11 +1534,18 @@ export default function InsumosNovaMovimentacaoPage() {
                   <div>
                     <FormLabel required>{labelData}</FormLabel>
                     <FormDatePicker
+                      id="mov-field-data"
                       value={dataMovimentacao}
-                      onChange={setDataMovimentacao}
+                      onChange={v => {
+                        setDataMovimentacao(v);
+                        limparErro("data");
+                      }}
                       placeholder="DD/MM/AAAA"
                       required
+                      invalid={!!erros.data}
+                      aria-describedby={erros.data ? "mov-err-data" : undefined}
                     />
+                    <FieldErrorMsg id="mov-err-data" message={erros.data} />
                   </div>
                   <div>
                     <label className={labelCls}>Frete</label>
@@ -1430,24 +1594,52 @@ export default function InsumosNovaMovimentacaoPage() {
             )}
 
             {/* ── 3. Itens da movimentação (formulário) ── */}
-            <div className={`${sectionCardCls} space-y-3`}>
+            <div
+              className={`${sectionCardCls} space-y-3 ${
+                erros.itens ? "ring-1 ring-red-500" : ""
+              }`}
+            >
               <p className={sectionTitleCls + " mb-0"}>Itens da movimentação</p>
+              {erros.itens && (
+                <p className="text-[11px] text-red-600" role="alert">{erros.itens}</p>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Produto</FormLabel>
                   <FormNativeSelect
+                    id="mov-field-produto"
                     value={prodEstoqueId}
-                    onChange={onProdutoChange}
+                    onChange={v => {
+                      onProdutoChange(v);
+                      limparErro("produto");
+                      limparErro("itens");
+                    }}
                     placeholder={fazendaId ? "Selecione o produto" : "Selecione o estoque primeiro"}
                     options={produtoOpcoes}
                     variant="light"
                     required
                     disabled={!fazendaId}
+                    invalid={!!erros.produto}
+                    aria-describedby={erros.produto ? "mov-err-produto" : undefined}
                   />
-                  {fazendaId && produtoOpcoes.length === 0 && (
+                  <FieldErrorMsg id="mov-err-produto" message={erros.produto} />
+                  {fazendaId && produtoOpcoes.length === 0 && !erros.produto && (
                     <p className="mt-1 text-[11px] text-amber-700">
                       Nenhum produto vinculado a este estoque. Cadastre ou vincule o produto a esta fazenda.
+                    </p>
+                  )}
+                  {isSaida && produtoSelecionado && isProdutoCombustivel(produtoSelecionado) && (
+                    <p className="mt-1.5 text-[11px] text-gray-500 leading-snug">
+                      Para abastecimento de máquinas cadastradas, utilize a tela{" "}
+                      <button
+                        type="button"
+                        onClick={() => setLocation("/maquinas/abastecimento")}
+                        className="text-[#4ECDC4] font-medium hover:underline"
+                      >
+                        Abastecimentos
+                      </button>
+                      . A saída de estoque será gerada automaticamente.
                     </p>
                   )}
                   <button
@@ -1461,13 +1653,20 @@ export default function InsumosNovaMovimentacaoPage() {
                 <div>
                   <FormLabel required>Unidade de movimentação</FormLabel>
                   <UnidadeMovSelect
+                    id="mov-field-unidade"
                     value={prodUnidade}
-                    onChange={setProdUnidade}
+                    onChange={v => {
+                      setProdUnidade(v);
+                      limparErro("unidade");
+                    }}
                     required
                     disabled={!prodEstoqueId}
                     options={unidadeMovOpcoes}
+                    invalid={!!erros.unidade}
+                    aria-describedby={erros.unidade ? "mov-err-unidade" : undefined}
                   />
-                  {unidadeBaseSelecionada && prodEstoqueId && (
+                  <FieldErrorMsg id="mov-err-unidade" message={erros.unidade} />
+                  {unidadeBaseSelecionada && prodEstoqueId && !erros.unidade && (
                     <p className="mt-1 text-[11px] text-gray-500">
                       Unidade base do produto:{" "}
                       <span className="font-medium">{rotuloUnidade(unidadeBaseSelecionada)}</span>
@@ -1487,13 +1686,21 @@ export default function InsumosNovaMovimentacaoPage() {
                 <div>
                   <FormLabel required>Quantidade</FormLabel>
                   <FormInput
+                    id="mov-field-quantidade"
                     value={prodQuantidade}
-                    onChange={setProdQuantidade}
+                    onChange={v => {
+                      setProdQuantidade(v);
+                      limparErro("quantidade");
+                      limparErro("itens");
+                    }}
                     placeholder="Quantidade de produtos"
                     inputMode="decimal"
                     variant="light"
                     required
+                    invalid={!!erros.quantidade}
+                    aria-describedby={erros.quantidade ? "mov-err-quantidade" : undefined}
                   />
+                  <FieldErrorMsg id="mov-err-quantidade" message={erros.quantidade} />
                 </div>
                 {isEntrada && (
                   <div>
@@ -1711,11 +1918,19 @@ export default function InsumosNovaMovimentacaoPage() {
           </div>
 
           {/* ── Rodapé ── */}
-          <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row justify-end gap-3">
             <button
               type="button"
-              onClick={() => setLocation("/insumos/visao-geral")}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+              onClick={() => {
+                const fid = fazendaId || fazendaIdQuery;
+                setLocation(
+                  fid
+                    ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
+                    : "/insumos/movimentacao",
+                );
+              }}
+              disabled={isBusy}
+              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
@@ -1723,7 +1938,7 @@ export default function InsumosNovaMovimentacaoPage() {
               type="button"
               onClick={salvar}
               disabled={isBusy}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               {isBusy ? "Salvando..." : "Salvar"}

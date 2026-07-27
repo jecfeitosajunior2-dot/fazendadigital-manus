@@ -1230,9 +1230,6 @@ export function EstoquePage() {
             <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
               Lista de Produtos
             </h1>
-            <p className="text-[12px] text-gray-500 mt-0.5">
-              Produtos vinculados ao estoque da fazenda selecionada.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button

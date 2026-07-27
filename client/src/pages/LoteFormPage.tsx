@@ -51,6 +51,19 @@ function lotesListUrl(fazendaId?: string) {
   return fazendaId ? `/rebanho/lotes?fazendaId=${fazendaId}` : "/rebanho/lotes";
 }
 
+type CampoObrigatorioLote = "fazenda" | "nome" | "dataCriacao";
+
+const TOAST_ID_OBRIGATORIOS = "novo-lote-obrigatorios";
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
+
 export function NewLotePage() {
   const [, setLocation] = useLocation();
   const fazendaIdFromRoute = parseFazendaIdParam(
@@ -60,6 +73,7 @@ export function NewLotePage() {
 
   const [fazendaId, setFazendaId] = useState(fazendaIdFromRoute);
   const [form, setForm] = useState<FormState>(INITIAL);
+  const [erros, setErros] = useState<Partial<Record<CampoObrigatorioLote, string>>>({});
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
 
@@ -86,34 +100,50 @@ export function NewLotePage() {
     },
   });
 
+  const limparErro = (campo: CampoObrigatorioLote) => {
+    setErros(prev => {
+      if (!prev[campo]) return prev;
+      const next = { ...prev };
+      delete next[campo];
+      return next;
+    });
+  };
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
+    if (key === "nome") limparErro("nome");
+    if (key === "dataCriacao") limparErro("dataCriacao");
   };
 
   const handleSubmit = (e?: FormEvent) => {
     e?.preventDefault();
     if (createMutation.isPending) return;
 
-    if (!fazendaId) {
-      toast.error("Selecione uma fazenda antes de criar o Lote.");
+    const next: Partial<Record<CampoObrigatorioLote, string>> = {};
+    if (!fazendaId) next.fazenda = "Selecione a fazenda.";
+    if (!form.nome.trim()) next.nome = "Nome do Lote é obrigatório.";
+    if (!form.dataCriacao.trim()) next.dataCriacao = "Data de criação é obrigatória.";
+
+    if (Object.keys(next).length > 0) {
+      setErros(next);
+      toast.error("Preencha os campos obrigatórios destacados.", { id: TOAST_ID_OBRIGATORIOS });
+      const primeiro: CampoObrigatorioLote =
+        next.fazenda ? "fazenda" : next.nome ? "nome" : "dataCriacao";
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`novo-lote-field-${primeiro}`);
+        if (el instanceof HTMLElement) {
+          el.focus({ preventScroll: true });
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
       return;
     }
 
-    const nome = form.nome.trim();
-    if (!nome) {
-      toast.error("Nome do Lote é obrigatório");
-      return;
-    }
-
-    if (!form.dataCriacao) {
-      toast.error("Data de criação é obrigatória");
-      return;
-    }
-
+    setErros({});
     const sigla = form.sigla.trim().toUpperCase();
 
     createMutation.mutate({
-      nome,
+      nome: form.nome.trim(),
       sigla: sigla || undefined,
       dataCriacao: form.dataCriacao,
       fazendaId: Number(fazendaId),
@@ -127,6 +157,7 @@ export function NewLotePage() {
       <div className="max-w-lg mx-auto">
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden"
         >
           <div className="px-6 py-4 border-b border-gray-100">
@@ -152,13 +183,18 @@ export function NewLotePage() {
                   </div>
                 </FieldBox>
               ) : (
-                <FieldBox required variant="light">
+                <FieldBox required variant="light" invalid={!!erros.fazenda}>
                   <div className="relative">
                     <select
+                      id="novo-lote-field-fazenda"
                       value={fazendaId}
-                      onChange={e => setFazendaId(e.target.value)}
-                      required
+                      onChange={e => {
+                        setFazendaId(e.target.value);
+                        limparErro("fazenda");
+                      }}
                       aria-label="Fazenda"
+                      aria-invalid={!!erros.fazenda || undefined}
+                      aria-describedby={erros.fazenda ? "novo-lote-err-fazenda" : undefined}
                       className={cn(
                         inputClass,
                         "appearance-none cursor-pointer w-full min-h-[42px] pr-10 bg-white",
@@ -178,21 +214,25 @@ export function NewLotePage() {
                   </div>
                 </FieldBox>
               )}
+              <FieldErrorMsg id="novo-lote-err-fazenda" message={erros.fazenda} />
             </div>
 
             <div>
               <FormLabel required>Nome do Lote</FormLabel>
-              <FieldBox required variant="light">
+              <FieldBox required variant="light" invalid={!!erros.nome}>
                 <input
+                  id="novo-lote-field-nome"
                   type="text"
                   value={form.nome}
                   onChange={e => set("nome", e.target.value)}
                   placeholder="Ex. Lote de prenhas"
-                  required
                   maxLength={NOME_MAX}
+                  aria-invalid={!!erros.nome || undefined}
+                  aria-describedby={erros.nome ? "novo-lote-err-nome" : undefined}
                   className={cn(inputClass, "bg-white min-h-[42px]")}
                 />
               </FieldBox>
+              <FieldErrorMsg id="novo-lote-err-nome" message={erros.nome} />
             </div>
 
             <div>
@@ -213,10 +253,14 @@ export function NewLotePage() {
             <div>
               <FormLabel required>Data de Criação</FormLabel>
               <FormDatePicker
+                id="novo-lote-field-dataCriacao"
                 value={form.dataCriacao}
                 onChange={v => set("dataCriacao", v)}
                 required
+                invalid={!!erros.dataCriacao}
+                aria-describedby={erros.dataCriacao ? "novo-lote-err-dataCriacao" : undefined}
               />
+              <FieldErrorMsg id="novo-lote-err-dataCriacao" message={erros.dataCriacao} />
             </div>
 
             {fazendaSelecionada && (
@@ -239,7 +283,7 @@ export function NewLotePage() {
             <button
               type="submit"
               disabled={isBusy}
-              className="inline-flex items-center justify-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+              className="inline-flex items-center justify-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               {isBusy ? (

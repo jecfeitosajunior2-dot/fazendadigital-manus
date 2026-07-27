@@ -21,6 +21,12 @@ import {
   importarCoordenadasPastos,
   importarCoordenadasPastosLocal,
 } from "./importarCoordenadasPastos";
+import {
+  syncSaidaAbastecimento,
+  estornarSaidaAbastecimento,
+  MSG_MOV_VINCULADA_EDITAR,
+  MSG_MOV_VINCULADA_EXCLUIR,
+} from "./abastecimentoEstoqueSync";
 import { avaliarEstornoEstoque, isEstornoBusinessError, montarMotivoEstorno } from "./estoqueEstorno";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
@@ -3235,14 +3241,92 @@ const reproducaoRouter = router({
 });
 
 // ─── MAQUINAS ROUTER ──────────────────────────────────────────────────────────
+const TIPOS_MEDIDOR_Z = z.enum(["horimetro", "quilometragem", "sem_medidor"]);
+
+function isMaquinaAtivaRow(m: { status?: string | null; dataDesativacao?: unknown }): boolean {
+  if (m.dataDesativacao) return false;
+  if (m.status === "inativo") return false;
+  return true;
+}
+
+function normalizePlacaIdent(value: string): string {
+  return value.trim().replace(/\s+/g, "").toUpperCase();
+}
+
+async function assertMaquinaSemDuplicidade(opts: {
+  userId: number;
+  fazendaId: number;
+  nome: string;
+  placa?: string | null;
+  excludeId?: number;
+}) {
+  const rows = await db
+    .select({
+      id: maquinas.id,
+      nome: maquinas.nome,
+      placa: maquinas.placa,
+      status: maquinas.status,
+      dataDesativacao: maquinas.dataDesativacao,
+      fazendaId: maquinas.fazendaId,
+    })
+    .from(maquinas)
+    .where(and(eq(maquinas.userId, opts.userId), eq(maquinas.fazendaId, opts.fazendaId)));
+
+  const nomeNorm = opts.nome.trim().toLowerCase();
+  const placaNorm = opts.placa ? normalizePlacaIdent(opts.placa) : "";
+
+  for (const row of rows) {
+    if (opts.excludeId != null && row.id === opts.excludeId) continue;
+    if (!isMaquinaAtivaRow(row)) continue;
+
+    if (row.nome?.trim().toLowerCase() === nomeNorm) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Já existe uma máquina ativa com este nome de identificação na Fazenda selecionada.",
+      });
+    }
+    if (placaNorm && row.placa && normalizePlacaIdent(row.placa) === placaNorm) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Já existe uma máquina ativa com esta identificação na Fazenda selecionada.",
+      });
+    }
+  }
+}
+
+function parseLeituraNaoNegativa(raw: string | undefined, label: string): string | undefined {
+  if (raw == null || !String(raw).trim()) return undefined;
+  const n = parseFloat(String(raw).replace(",", "."));
+  if (Number.isNaN(n) || n < 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${label} não pode ser negativa.`,
+    });
+  }
+  return String(n);
+}
+
+function parseValorNaoNegativo(raw: string | undefined): string | undefined {
+  if (raw == null || !String(raw).trim() || raw === "0" || raw === "0.00") return undefined;
+  const n = parseFloat(String(raw).replace(",", "."));
+  if (Number.isNaN(n) || n < 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Valor de aquisição não pode ser negativo.",
+    });
+  }
+  return n.toFixed(2);
+}
+
 // Campos comuns a create e update (todos opcionais — create valida no client)
 const maquinasBaseFields = {
   nome: z.string().optional(),
   tipo: z.string().min(1).optional(),
   marca: z.string().min(1).optional(),
   fazendaId: z.number().int().positive().optional(),
-  ano: z.number().optional(),
+  ano: z.number().int().min(1900).max(2100).optional(),
   anoAquisicao: z.number().optional(),
+  dataAquisicao: z.string().optional(),
   modelo: z.string().optional(),
   placa: z.string().optional(),
   valor: z.string().optional(),
@@ -3250,17 +3334,20 @@ const maquinasBaseFields = {
   dataDesativacao: z.string().optional(),
   estado: z.enum(["novo", "usado"]).optional(),
   horimetro: z.string().optional(),
+  tipoMedidor: TIPOS_MEDIDOR_Z.optional(),
   status: z.enum(["ativo", "manutencao", "inativo"]).optional(),
   observacoes: z.string().optional(),
   imageSlots: z.array(imageSlotInput).length(3).optional(),
 };
 
-// Create exige tipo, marca e fazendaId
+// Create exige nome, tipo, marca, fazendaId e tipoMedidor
 const maquinasInputFields = {
   ...maquinasBaseFields,
+  nome: z.string().min(1),
   fazendaId: z.number().int().positive(),
   tipo: z.string().min(1),
   marca: z.string().min(1),
+  tipoMedidor: TIPOS_MEDIDOR_Z,
 };
 
 const maquinasRouter = router({
@@ -3438,43 +3525,211 @@ const maquinasRouter = router({
   create: protectedProcedure
     .input(z.object(maquinasInputFields))
     .mutation(async ({ ctx, input }) => {
-      const { dataDesativacao, imageSlots, nome, valor, ...rest } = input;
+      const {
+        dataDesativacao: _ignoreDesativacao,
+        imageSlots,
+        nome,
+        valor,
+        horimetro,
+        tipoMedidor,
+        placa,
+        dataAquisicao,
+        vidaUtil,
+        ...rest
+      } = input;
+
+      const nomeTrim = nome.trim();
+      if (!nomeTrim) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Informe o nome de identificação da máquina.",
+        });
+      }
+
+      if (tipoMedidor !== "sem_medidor" && (horimetro == null || !String(horimetro).trim())) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            tipoMedidor === "quilometragem"
+              ? "Informe a quilometragem inicial."
+              : "Informe o horímetro inicial.",
+        });
+      }
+
+      const placaNorm = placa?.trim() ? normalizePlacaIdent(placa) : undefined;
+      const leitura =
+        tipoMedidor === "sem_medidor"
+          ? undefined
+          : parseLeituraNaoNegativa(
+              horimetro,
+              tipoMedidor === "quilometragem" ? "Quilometragem inicial" : "Horímetro inicial",
+            );
+
+      if (vidaUtil?.trim()) {
+        const vida = parseInt(vidaUtil.replace(/[^\d]/g, ""), 10);
+        if (Number.isNaN(vida) || vida <= 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Vida útil estimada deve ser um número positivo.",
+          });
+        }
+      }
+
+      await assertMaquinaSemDuplicidade({
+        userId: ctx.user.id,
+        fazendaId: input.fazendaId,
+        nome: nomeTrim,
+        placa: placaNorm,
+      });
+
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
+      const anoFromData = dataAquisicao?.trim()
+        ? parseInt(dataAquisicao.slice(0, 4), 10)
+        : undefined;
+
       try {
         const result = await db.insert(maquinas).values({
           userId: ctx.user.id,
           ...rest,
-          nome: nome?.trim() || "Sem apelido",
-          valor: valor && valor !== "0" && valor !== "0.00" ? valor : undefined,
-          dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : undefined,
+          nome: nomeTrim,
+          placa: placaNorm,
+          tipoMedidor,
+          horimetro: leitura,
+          dataAquisicao: dataAquisicao?.trim() || undefined,
+          anoAquisicao: anoFromData && !Number.isNaN(anoFromData) ? anoFromData : rest.anoAquisicao,
+          valor: parseValorNaoNegativo(valor),
+          vidaUtil: vidaUtil?.trim() || undefined,
+          status: "ativo",
           imagem1: img1,
           imagem2: img2,
           imagem3: img3,
         });
         return { success: true, id: (result as any)[0]?.insertId };
       } catch (err) {
+        if (err instanceof TRPCError) throw err;
         console.error("[maquinas.create]", err);
-        throw new Error("Não foi possível salvar o maquinário. Verifique se o banco está atualizado e tente novamente.");
+        throw new Error("Não foi possível salvar a máquina. Verifique os dados e tente novamente.");
       }
     }),
 
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...maquinasBaseFields }))
     .mutation(async ({ ctx, input }) => {
-      const { id, dataDesativacao, imageSlots, nome, tipo, marca, fazendaId, ...rest } = input;
+      const {
+        id,
+        dataDesativacao,
+        imageSlots,
+        nome,
+        tipo,
+        marca,
+        fazendaId,
+        valor,
+        horimetro,
+        tipoMedidor,
+        placa,
+        dataAquisicao,
+        vidaUtil,
+        ...rest
+      } = input;
+
+      const [existing] = await db
+        .select()
+        .from(maquinas)
+        .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+      }
+
+      const nextFazendaId = fazendaId ?? existing.fazendaId;
+      const nextNome = nome !== undefined ? nome.trim() : existing.nome;
+      if (!nextNome) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Informe o nome de identificação da máquina.",
+        });
+      }
+
+      const nextTipoMedidor = tipoMedidor ?? (existing.tipoMedidor as z.infer<typeof TIPOS_MEDIDOR_Z> | null);
+      const nextPlaca =
+        placa !== undefined ? (placa.trim() ? normalizePlacaIdent(placa) : null) : existing.placa;
+
+      if (
+        nextTipoMedidor &&
+        nextTipoMedidor !== "sem_medidor" &&
+        horimetro !== undefined &&
+        !String(horimetro).trim()
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            nextTipoMedidor === "quilometragem"
+              ? "Informe a quilometragem inicial."
+              : "Informe o horímetro inicial.",
+        });
+      }
+
+      if (vidaUtil?.trim()) {
+        const vida = parseInt(vidaUtil.replace(/[^\d]/g, ""), 10);
+        if (Number.isNaN(vida) || vida <= 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Vida útil estimada deve ser um número positivo.",
+          });
+        }
+      }
+
+      if (nextFazendaId) {
+        await assertMaquinaSemDuplicidade({
+          userId: ctx.user.id,
+          fazendaId: nextFazendaId,
+          nome: nextNome,
+          placa: nextPlaca,
+          excludeId: id,
+        });
+      }
+
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      await db.update(maquinas).set({
-        ...rest,
-        ...(nome !== undefined ? { nome: nome.trim() || "Sem apelido" } : {}),
-        // Só atualiza tipo/marca/fazendaId se enviados (não sobrescreve existentes com null)
-        ...(tipo ? { tipo } : {}),
-        ...(marca ? { marca } : {}),
-        ...(fazendaId ? { fazendaId } : {}),
-        dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null,
-        imagem1: img1,
-        imagem2: img2,
-        imagem3: img3,
-      }).where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      const leitura =
+        horimetro !== undefined
+          ? nextTipoMedidor === "sem_medidor"
+            ? null
+            : parseLeituraNaoNegativa(
+                horimetro,
+                nextTipoMedidor === "quilometragem" ? "Quilometragem inicial" : "Horímetro inicial",
+              ) ?? null
+          : undefined;
+
+      const anoFromData = dataAquisicao?.trim()
+        ? parseInt(dataAquisicao.slice(0, 4), 10)
+        : undefined;
+
+      await db
+        .update(maquinas)
+        .set({
+          ...rest,
+          ...(nome !== undefined ? { nome: nextNome } : {}),
+          ...(tipo ? { tipo } : {}),
+          ...(marca ? { marca } : {}),
+          ...(fazendaId ? { fazendaId } : {}),
+          ...(placa !== undefined ? { placa: nextPlaca } : {}),
+          ...(tipoMedidor !== undefined ? { tipoMedidor } : {}),
+          ...(leitura !== undefined ? { horimetro: leitura } : {}),
+          ...(dataAquisicao !== undefined
+            ? {
+                dataAquisicao: dataAquisicao.trim() || null,
+                ...(anoFromData && !Number.isNaN(anoFromData) ? { anoAquisicao: anoFromData } : {}),
+              }
+            : {}),
+          ...(valor !== undefined ? { valor: parseValorNaoNegativo(valor) ?? null } : {}),
+          ...(vidaUtil !== undefined ? { vidaUtil: vidaUtil.trim() || null } : {}),
+          ...(dataDesativacao !== undefined
+            ? { dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null }
+            : {}),
+          imagem1: img1,
+          imagem2: img2,
+          imagem3: img3,
+        })
+        .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -3772,83 +4027,6 @@ const maquinasRouter = router({
     }),
 });
 
-// ─── ABASTECIMENTOS: HELPER DE BAIXA NO ESTOQUE ─────────────────────────────
-
-const COMBUSTIVEL_KEYWORDS_SERVER: Record<string, string[]> = {
-  diesel: ["diesel", "s10", "s500", "óleo diesel", "oleo diesel"],
-  gasolina: ["gasolina"],
-  etanol: ["etanol", "álcool", "alcool"],
-  arla: ["arla"],
-};
-
-function matchCombustivelEstoque(
-  item: { nome: string | null; categoria: string | null },
-  combustivel: string
-): boolean {
-  const keywords = COMBUSTIVEL_KEYWORDS_SERVER[combustivel] ?? [combustivel];
-  const nome = (item.nome ?? "").toLowerCase();
-  const cat = (item.categoria ?? "").toLowerCase();
-  return keywords.some(k => nome.includes(k) || cat.includes(k));
-}
-
-/**
- * Encontra o item de estoque de combustível para a fazenda.
- * Retorna o primeiro item que bate com o tipo de combustível e fazendaId.
- */
-async function findEstoqueCombustivel(
-  fazendaId: number,
-  combustivel: string
-): Promise<{ id: number; quantidade: string | null } | null> {
-  const itens = await db
-    .select({ id: estoque.id, nome: estoque.nome, categoria: estoque.categoria, quantidade: estoque.quantidade })
-    .from(estoque)
-    .where(eq(estoque.fazendaId, fazendaId));
-  const match = itens.find(i => matchCombustivelEstoque(i, combustivel));
-  return match ?? null;
-}
-
-/**
- * Aplica baixa no estoque de combustível (saída).
- * Registra movimentação de saída e atualiza saldo.
- */
-async function darBaixaEstoqueCombustivel(
-  fazendaId: number,
-  combustivel: string,
-  litros: number,
-  data: string,
-  observacoes?: string
-): Promise<void> {
-  const item = await findEstoqueCombustivel(fazendaId, combustivel);
-  if (!item) return; // sem item de estoque cadastrado — silencioso
-  const atual = parseFloat(String(item.quantidade ?? 0));
-  const novo = atual - litros;
-  // Registra movimentação de saída
-  await db.insert(estoqueMovimentacoes).values({
-    estoqueId: item.id,
-    fazendaId,
-    tipo: "Saída",
-    dataMovimentacao: data,
-    quantidade: String(-litros), // negativo = saída
-    observacoes: observacoes ?? `Abastecimento interno de ${combustivel}`,
-  });
-  // Atualiza saldo
-  await db.update(estoque).set({ quantidade: String(Math.max(0, novo)) }).where(eq(estoque.id, item.id));
-}
-
-/**
- * Reverte uma baixa anterior no estoque (para update/delete de abastecimento).
- */
-async function reverterBaixaEstoqueCombustivel(
-  fazendaId: number,
-  combustivel: string,
-  litros: number
-): Promise<void> {
-  const item = await findEstoqueCombustivel(fazendaId, combustivel);
-  if (!item) return;
-  const atual = parseFloat(String(item.quantidade ?? 0));
-  await db.update(estoque).set({ quantidade: String(atual + litros) }).where(eq(estoque.id, item.id));
-}
-
 // ─── ABASTECIMENTOS ROUTER ────────────────────────────────────────────────────
 const abastecimentosBaseFields = {
   maquinaId: z.number().optional(),
@@ -3897,34 +4075,73 @@ const abastecimentosRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { data, valorLitro, litros, ...rest } = input;
-      const dataISO = data.slice(0, 10);
-      const total = input.valorTotal
-        ?? (valorLitro && litros
-          ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
-          : undefined);
-      const result = await db.insert(abastecimentos).values({
-        userId: ctx.user.id,
-        ...rest,
-        litros,
-        valorLitro,
-        valorTotal: total,
-        data: dataISO,
-      });
-      // Dar baixa automática no estoque quando abastecimento é interno
-      if (input.abastecidoNaFazenda && input.fazendaId && litros) {
-        const qtd = parseFloat(litros);
-        if (qtd > 0) {
-          await darBaixaEstoqueCombustivel(
-            input.fazendaId,
-            input.combustivel,
-            qtd,
-            dataISO,
-            input.observacoes
-          );
-        }
+      const dataISO = input.data.slice(0, 10);
+      const qtd = parseFloat(input.litros.replace(",", "."));
+      if (Number.isNaN(qtd) || qtd <= 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Informe uma quantidade abastecida válida." });
       }
-      return { success: true, id: (result as any)[0]?.insertId };
+
+      const total = input.valorTotal
+        ?? (input.valorLitro && input.litros
+          ? (qtd * parseFloat(input.valorLitro)).toFixed(2)
+          : undefined);
+
+      const interno = Boolean(input.abastecidoNaFazenda && input.fazendaId);
+
+      try {
+        const insertId = await db.transaction(async tx => {
+          const result = await tx.insert(abastecimentos).values({
+            userId: ctx.user.id,
+            maquinaId: input.maquinaId,
+            data: dataISO,
+            combustivel: input.combustivel,
+            litros: String(qtd),
+            valorLitro: input.valorLitro,
+            valorTotal: total,
+            horimetro: input.horimetro,
+            responsavel: input.responsavel,
+            abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
+            fazendaId: input.fazendaId ?? null,
+            observacoes: input.observacoes,
+          });
+          const id = Number((result as any)[0]?.insertId ?? 0);
+          if (!id) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Não foi possível registrar o abastecimento. Tente novamente.",
+            });
+          }
+
+          if (interno && input.fazendaId) {
+            await syncSaidaAbastecimento(
+              {
+                abastecimentoId: id,
+                maquinaId: input.maquinaId,
+                fazendaId: input.fazendaId,
+                combustivel: input.combustivel,
+                litros: qtd,
+                dataISO,
+                responsavel: input.responsavel,
+                valorTotal: total,
+                observacoes: input.observacoes,
+                userId: ctx.user.id,
+              },
+              tx,
+            );
+          }
+
+          return id;
+        });
+
+        return { success: true, id: insertId };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("[abastecimentos.create]", error);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Não foi possível registrar o abastecimento. Verifique os dados e tente novamente.",
+        });
+      }
     }),
 
   update: protectedProcedure
@@ -3932,90 +4149,124 @@ const abastecimentosRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, data, valorLitro, litros, fazendaId, ...rest } = input;
       const dataISO = data ? data.slice(0, 10) : undefined;
-      const total = input.valorTotal
-        ?? (valorLitro && litros
-          ? (parseFloat(litros) * parseFloat(valorLitro)).toFixed(2)
-          : undefined);
 
-      // Buscar registro anterior para reverter baixa se necessário
       const [anterior] = await db
         .select()
         .from(abastecimentos)
         .where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
-
-      await db.update(abastecimentos).set({
-        ...rest,
-        ...(dataISO ? { data: dataISO } : {}),
-        ...(litros !== undefined ? { litros } : {}),
-        ...(valorLitro !== undefined ? { valorLitro } : {}),
-        ...(total !== undefined ? { valorTotal: total } : {}),
-        ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
-      }).where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
-
-      // Reverter baixa anterior e aplicar nova baixa se necessário
-      if (anterior) {
-        const eraInterno = anterior.abastecidoNaFazenda && anterior.fazendaId && anterior.combustivel;
-        const eAgora = (input.abastecidoNaFazenda ?? anterior.abastecidoNaFazenda) &&
-                       (fazendaId ?? anterior.fazendaId) &&
-                       (input.combustivel ?? anterior.combustivel);
-
-        // Reverter baixa anterior
-        if (eraInterno) {
-          const litrosAnt = parseFloat(String(anterior.litros ?? 0));
-          if (litrosAnt > 0) {
-            await reverterBaixaEstoqueCombustivel(
-              anterior.fazendaId!,
-              anterior.combustivel!,
-              litrosAnt
-            );
-          }
-        }
-
-        // Aplicar nova baixa
-        if (eAgora) {
-          const novoFazendaId = (fazendaId ?? anterior.fazendaId) as number;
-          const novoCombustivel = (input.combustivel ?? anterior.combustivel) as string;
-          const novosLitros = parseFloat(String(litros ?? anterior.litros ?? 0));
-          const novaData = dataISO ?? anterior.data;
-          if (novosLitros > 0) {
-            await darBaixaEstoqueCombustivel(
-              novoFazendaId,
-              novoCombustivel,
-              novosLitros,
-              novaData,
-              input.observacoes ?? anterior.observacoes ?? undefined
-            );
-          }
-        }
+      if (!anterior) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
       }
 
-      return { success: true };
+      const novosLitros = litros != null
+        ? parseFloat(String(litros).replace(",", "."))
+        : parseFloat(String(anterior.litros ?? 0));
+      const total = input.valorTotal
+        ?? (valorLitro && !Number.isNaN(novosLitros)
+          ? (novosLitros * parseFloat(valorLitro)).toFixed(2)
+          : undefined);
+
+      const eraInterno = Boolean(anterior.abastecidoNaFazenda && anterior.fazendaId);
+      const eAgora = Boolean(
+        (input.abastecidoNaFazenda ?? anterior.abastecidoNaFazenda) &&
+        (fazendaId !== undefined ? fazendaId : anterior.fazendaId),
+      );
+      const novoFazendaId = (fazendaId !== undefined ? fazendaId : anterior.fazendaId) as number | null;
+      const novoCombustivel = (input.combustivel ?? anterior.combustivel) as string;
+      const novaData = dataISO ?? String(anterior.data).slice(0, 10);
+      const novoMaquinaId = input.maquinaId ?? anterior.maquinaId;
+      const novoResponsavel = input.responsavel !== undefined ? input.responsavel : anterior.responsavel;
+      const novasObs = input.observacoes !== undefined ? input.observacoes : anterior.observacoes;
+      const valorTotalFinal = total ?? (anterior.valorTotal != null ? String(anterior.valorTotal) : undefined);
+
+      try {
+        await db.transaction(async tx => {
+          await tx.update(abastecimentos).set({
+            ...rest,
+            ...(dataISO ? { data: dataISO } : {}),
+            ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
+            ...(valorLitro !== undefined ? { valorLitro } : {}),
+            ...(total !== undefined ? { valorTotal: total } : {}),
+            ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
+          }).where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+
+          if (eraInterno && !eAgora) {
+            await estornarSaidaAbastecimento(
+              id,
+              {
+                motivo: "Origem alterada para compra externa / posto",
+                userId: ctx.user.id,
+                registradoPor: ctx.user.name?.trim() || undefined,
+              },
+              tx,
+            );
+          } else if (eAgora && novoFazendaId) {
+            await syncSaidaAbastecimento(
+              {
+                abastecimentoId: id,
+                maquinaId: novoMaquinaId,
+                fazendaId: novoFazendaId,
+                combustivel: novoCombustivel,
+                litros: novosLitros,
+                dataISO: novaData,
+                responsavel: novoResponsavel,
+                valorTotal: valorTotalFinal,
+                observacoes: novasObs,
+                userId: ctx.user.id,
+              },
+              tx,
+            );
+          }
+        });
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("[abastecimentos.update]", error);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Não foi possível atualizar o abastecimento. Verifique os dados e tente novamente.",
+        });
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Buscar registro para reverter baixa no estoque
       const [anterior] = await db
         .select()
         .from(abastecimentos)
         .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-
-      await db.delete(abastecimentos).where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
-
-      // Reverter baixa no estoque se era abastecimento interno
-      if (anterior?.abastecidoNaFazenda && anterior.fazendaId && anterior.combustivel) {
-        const litrosAnt = parseFloat(String(anterior.litros ?? 0));
-        if (litrosAnt > 0) {
-          await reverterBaixaEstoqueCombustivel(
-            anterior.fazendaId,
-            anterior.combustivel,
-            litrosAnt
-          );
-        }
+      if (!anterior) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
       }
 
-      return { success: true };
+      try {
+        await db.transaction(async tx => {
+          if (anterior.abastecidoNaFazenda && anterior.fazendaId) {
+            await estornarSaidaAbastecimento(
+              input.id,
+              {
+                motivo: "Exclusão do abastecimento original",
+                userId: ctx.user.id,
+                registradoPor: ctx.user.name?.trim() || undefined,
+              },
+              tx,
+            );
+          }
+          await tx
+            .delete(abastecimentos)
+            .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+        });
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        console.error("[abastecimentos.delete]", error);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Não foi possível excluir o abastecimento. Tente novamente.",
+        });
+      }
     }),
 });
 
@@ -5569,6 +5820,7 @@ const estoqueRouter = router({
           id: estoqueMovimentacoes.id,
           grupoId: estoqueMovimentacoes.grupoId,
           estoqueId: estoqueMovimentacoes.estoqueId,
+          abastecimentoId: estoqueMovimentacoes.abastecimentoId,
           fazendaId: estoqueMovimentacoes.fazendaId,
           produtoFazendaId: estoque.fazendaId,
           userId: estoqueMovimentacoes.userId,
@@ -5622,6 +5874,7 @@ const estoqueRouter = router({
             id: estoqueMovimentacoes.id,
             grupoId: estoqueMovimentacoes.grupoId,
             estoqueId: estoqueMovimentacoes.estoqueId,
+            abastecimentoId: estoqueMovimentacoes.abastecimentoId,
             fazendaId: estoqueMovimentacoes.fazendaId,
             produtoFazendaId: estoque.fazendaId,
             userId: estoqueMovimentacoes.userId,
@@ -5817,6 +6070,12 @@ const estoqueRouter = router({
         const status = mov.status || "ativa";
         if (status === "estornada" || status === "estorno") {
           throw new Error("Movimentação estornada não pode ser editada.");
+        }
+        if (mov.abastecimentoId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_MOV_VINCULADA_EDITAR,
+          });
         }
 
         const oldQty = Number(mov.quantidade);
@@ -6015,6 +6274,13 @@ const estoqueRouter = router({
           return devLocalStore.estornarMovimentacaoGrupo(localPayload);
         }
 
+        if (seeds.some(s => s.abastecimentoId != null)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_MOV_VINCULADA_EXCLUIR,
+          });
+        }
+
         const grupoId = seeds[0]!.grupoId?.trim() || null;
         const originais = grupoId
           ? await db.select().from(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.grupoId, grupoId))
@@ -6158,6 +6424,12 @@ const estoqueRouter = router({
         const status = mov.status || "ativa";
         if (status === "estornada" || status === "estorno") {
           throw new Error("Movimentação estornada não pode ser excluída. Use o histórico para consulta.");
+        }
+        if (mov.abastecimentoId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_MOV_VINCULADA_EXCLUIR,
+          });
         }
 
         const [item] = await db.select().from(estoque).where(eq(estoque.id, mov.estoqueId));

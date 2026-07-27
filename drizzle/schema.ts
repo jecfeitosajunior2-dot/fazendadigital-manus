@@ -218,11 +218,17 @@ export const maquinas = mysqlTable("maquinas", {
   modelo: varchar("modelo", { length: 100 }),
   ano: int("ano"),
   anoAquisicao: int("anoAquisicao"),
+  /** Data completa de aquisição (preferencial em relação a anoAquisicao). */
+  dataAquisicao: date("dataAquisicao", { mode: "string" }),
   placa: varchar("placa", { length: 50 }),
+  /** Leitura inicial (horímetro ou km), conforme tipoMedidor. */
   horimetro: varchar("horimetro", { length: 50 }),
+  /** horimetro | quilometragem | sem_medidor */
+  tipoMedidor: varchar("tipoMedidor", { length: 30 }),
   valor: decimal("valor", { precision: 12, scale: 2 }),
   vidaUtil: varchar("vidaUtil", { length: 50 }),
   dataDesativacao: date("dataDesativacao"),
+  /** Condição de aquisição: novo | usado */
   estado: varchar("estado", { length: 20 }),
   status: mysqlEnum("status", ["ativo", "manutencao", "inativo"]).default("ativo"),
   imagem1: text("imagem1"),
@@ -247,6 +253,8 @@ export const abastecimentos = mysqlTable("abastecimentos", {
   responsavel: varchar("responsavel", { length: 200 }),
   abastecidoNaFazenda: boolean("abastecidoNaFazenda").default(false),
   fazendaId: int("fazendaId"),
+  /** Movimentação de saída gerada automaticamente (quando origem = estoque). */
+  movimentacaoEstoqueId: int("movimentacaoEstoqueId"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
@@ -407,6 +415,8 @@ export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   /** Agrupa vários itens (produtos) da mesma movimentação administrativa. */
   grupoId: varchar("grupo_id", { length: 40 }),
   estoqueId: int("estoque_id").notNull(),
+  /** Abastecimento que gerou esta saída (quando aplicável). */
+  abastecimentoId: int("abastecimento_id"),
   fazendaId: int("fazenda_id"),
   /** Usuário que criou (createdByUserId). */
   userId: int("user_id"),
