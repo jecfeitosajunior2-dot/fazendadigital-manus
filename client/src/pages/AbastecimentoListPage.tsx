@@ -97,12 +97,6 @@ function formatMoney(value: number | null | undefined, decimals = 2): string {
   })}`;
 }
 
-function isMaquinaAtiva(m: { status?: string | null; dataDesativacao?: unknown }): boolean {
-  if (m.dataDesativacao) return false;
-  const s = String(m.status || "ativo").toLowerCase();
-  return s === "ativo" || s === "manutencao";
-}
-
 export default function AbastecimentoListPage() {
   const [, setLocation] = useLocation();
   const [page, setPage] = useState(1);
@@ -140,29 +134,29 @@ export default function AbastecimentoListPage() {
     return m;
   }, [maquinas]);
 
-  const maquinasAtivas = useMemo(
-    () => maquinas.filter(isMaquinaAtiva).sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "", "pt-BR")),
+  const maquinasOrdenadas = useMemo(
+    () => [...maquinas].sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "", "pt-BR")),
     [maquinas],
   );
 
   const tiposMaquina = useMemo(() => {
     const set = new Set<string>();
-    maquinasAtivas.forEach(m => {
+    maquinasOrdenadas.forEach(m => {
       if (m.tipo?.trim()) set.add(m.tipo.trim());
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [maquinasAtivas]);
+  }, [maquinasOrdenadas]);
 
   const maquinasOpcoes = useMemo(() => {
-    if (!filtrosRascunho.tipoMaquina) return maquinasAtivas;
-    return maquinasAtivas.filter(m => m.tipo === filtrosRascunho.tipoMaquina);
-  }, [maquinasAtivas, filtrosRascunho.tipoMaquina]);
+    if (!filtrosRascunho.tipoMaquina) return maquinasOrdenadas;
+    return maquinasOrdenadas.filter(m => m.tipo === filtrosRascunho.tipoMaquina);
+  }, [maquinasOrdenadas, filtrosRascunho.tipoMaquina]);
 
   const onChangeTipo = (tipo: string) => {
     setFiltrosRascunho(f => {
       const next = { ...f, tipoMaquina: tipo };
       if (f.maquinaId) {
-        const m = maquinasAtivas.find(x => String(x.id) === f.maquinaId);
+        const m = maquinasOrdenadas.find(x => String(x.id) === f.maquinaId);
         if (!m || (tipo && m.tipo !== tipo)) next.maquinaId = "";
       }
       return next;

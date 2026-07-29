@@ -33,19 +33,23 @@ import {
   createLocalFazenda,
   createLocalPasto,
   createLocalBenfeitoria,
+  createLocalMaquina,
   createLocalAnimal,
   deleteLocalFazenda,
   deleteLocalPasto,
   deleteLocalBenfeitoria,
+  deleteLocalMaquina,
   deleteLocalAnimal,
   getLocalFazenda,
   getLocalBenfeitoria,
+  getLocalMaquina,
   getLocalAnimal,
   isDatabaseUnavailable,
   listLocalFazendas,
   listLocalPastos,
   listLocalPastosByFazenda,
   listLocalBenfeitorias,
+  listLocalMaquinas,
   listLocalAnimais,
   listLocalAnimaisEnriched,
   listLocalLotes,
@@ -71,6 +75,7 @@ import {
   updateLocalFazenda,
   updateLocalPasto,
   updateLocalBenfeitoria,
+  updateLocalMaquina,
   updateLocalAnimal,
   enrichLocalAnimal,
   listLocalHistoricoBrincos,
@@ -3249,6 +3254,160 @@ function isMaquinaAtivaRow(m: { status?: string | null; dataDesativacao?: unknow
   return true;
 }
 
+/** Compara updatedAt/createdAt de forma estável (Date, ISO string, etc.). */
+function timestampMs(value: unknown): number {
+  if (value == null || value === "") return 0;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? 0 : t;
+  }
+  const t = new Date(String(value)).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function isBlankMaquinaField(value: unknown): boolean {
+  return value == null || value === "";
+}
+
+const MAQUINA_CADASTRO_KEYS = [
+  "tipo",
+  "marca",
+  "fazendaId",
+  "tipoMedidor",
+  "nome",
+  "modelo",
+  "placa",
+  "valor",
+  "horimetro",
+  "estado",
+  "ano",
+  "anoAquisicao",
+  "dataAquisicao",
+  "vidaUtil",
+  "status",
+  "observacoes",
+  "imagem1",
+  "imagem2",
+  "imagem3",
+] as const;
+
+function mergeMaquinaDbComLocal<T extends Record<string, any>>(
+  dbRow: T,
+  local: Record<string, any> | null | undefined,
+): T {
+  if (!local) return dbRow;
+  const localMs = timestampMs(local.updatedAt ?? local.createdAt);
+  const dbMs = timestampMs(dbRow.updatedAt ?? dbRow.createdAt);
+  // Empate ou local mais novo: preferir local (último save com MySQL offline/parcial).
+  const merged = (localMs >= dbMs ? { ...dbRow, ...local } : { ...local, ...dbRow }) as T;
+  for (const key of MAQUINA_CADASTRO_KEYS) {
+    const localVal = local[key];
+    if (isBlankMaquinaField(localVal)) continue;
+    // Local mais novo: cadastro local sempre vence (evita DB incompleto/stale).
+    // Local mais antigo: só preenche se o valor final ainda estiver em branco.
+    if (localMs >= dbMs || isBlankMaquinaField(merged[key])) {
+      (merged as Record<string, unknown>)[key] = localVal;
+    }
+  }
+  // Garante updatedAt mais recente para o cliente re-hidratar o formulário.
+  if (localMs >= dbMs && local.updatedAt != null) {
+    (merged as Record<string, unknown>).updatedAt = local.updatedAt;
+  }
+  return merged;
+}
+
+/** Bloqueia novos vínculos operacionais em máquinas Inativas. */
+async function assertMaquinaAtivaParaOperacao(
+  userId: number,
+  maquinaId: number,
+  opts?: { allowSameInactiveId?: number | null },
+) {
+  let row: { id: number; status: string | null; dataDesativacao: unknown } | null = null;
+  try {
+    const [found] = await db
+      .select({
+        id: maquinas.id,
+        status: maquinas.status,
+        dataDesativacao: maquinas.dataDesativacao,
+      })
+      .from(maquinas)
+      .where(and(eq(maquinas.id, maquinaId), eq(maquinas.userId, userId)))
+      .limit(1);
+    row = found ?? null;
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    const local = await getLocalMaquina(userId, maquinaId);
+    row = local
+      ? {
+          id: local.id,
+          status: (local.status as string | null) ?? null,
+          dataDesativacao: local.dataDesativacao ?? null,
+        }
+      : null;
+  }
+
+  if (!row) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+  }
+  if (isMaquinaAtivaRow(row)) return;
+  if (opts?.allowSameInactiveId != null && opts.allowSameInactiveId === maquinaId) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "Máquina inativa. Reative a máquina para novos lançamentos operacionais.",
+  });
+}
+
+const MSG_MAQUINA_COM_VINCULOS =
+  "Esta máquina possui registros vinculados e não pode ser excluída. Inative a máquina para impedir novos lançamentos sem perder o histórico.";
+
+/** Verifica abastecimentos, manutenções (custos/históricos) e vínculos operacionais. */
+async function assertMaquinaSemVinculos(userId: number, maquinaId: number): Promise<void> {
+  const [abCount] = await db
+    .select({ c: sql<number>`COUNT(*)` })
+    .from(abastecimentos)
+    .where(and(eq(abastecimentos.maquinaId, maquinaId), eq(abastecimentos.userId, userId)));
+  if (Number(abCount?.c ?? 0) > 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_COM_VINCULOS });
+  }
+
+  const [manCount] = await db
+    .select({ c: sql<number>`COUNT(*)` })
+    .from(manutencoes)
+    .where(and(eq(manutencoes.maquinaId, maquinaId), eq(manutencoes.userId, userId)));
+  if (Number(manCount?.c ?? 0) > 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_COM_VINCULOS });
+  }
+
+  // Movimentações de estoque geradas por abastecimentos desta máquina (histórico operacional).
+  const [movCount] = await db
+    .select({ c: sql<number>`COUNT(*)` })
+    .from(estoqueMovimentacoes)
+    .innerJoin(abastecimentos, eq(estoqueMovimentacoes.abastecimentoId, abastecimentos.id))
+    .where(and(eq(abastecimentos.maquinaId, maquinaId), eq(abastecimentos.userId, userId)));
+  if (Number(movCount?.c ?? 0) > 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_COM_VINCULOS });
+  }
+}
+
+async function listMaquinaIdsComVinculo(userId: number): Promise<number[]> {
+  const abRows = await db
+    .selectDistinct({ maquinaId: abastecimentos.maquinaId })
+    .from(abastecimentos)
+    .where(eq(abastecimentos.userId, userId));
+  const manRows = await db
+    .selectDistinct({ maquinaId: manutencoes.maquinaId })
+    .from(manutencoes)
+    .where(eq(manutencoes.userId, userId));
+  const ids = new Set<number>();
+  for (const row of abRows) {
+    if (row.maquinaId != null) ids.add(row.maquinaId);
+  }
+  for (const row of manRows) {
+    if (row.maquinaId != null) ids.add(row.maquinaId);
+  }
+  return [...ids];
+}
+
 function normalizePlacaIdent(value: string): string {
   return value.trim().replace(/\s+/g, "").toUpperCase();
 }
@@ -3260,17 +3419,41 @@ async function assertMaquinaSemDuplicidade(opts: {
   placa?: string | null;
   excludeId?: number;
 }) {
-  const rows = await db
-    .select({
-      id: maquinas.id,
-      nome: maquinas.nome,
-      placa: maquinas.placa,
-      status: maquinas.status,
-      dataDesativacao: maquinas.dataDesativacao,
-      fazendaId: maquinas.fazendaId,
-    })
-    .from(maquinas)
-    .where(and(eq(maquinas.userId, opts.userId), eq(maquinas.fazendaId, opts.fazendaId)));
+  let rows: Array<{
+    id: number;
+    nome: string | null;
+    placa: string | null;
+    status: string | null;
+    dataDesativacao: unknown;
+    fazendaId: number | null;
+  }>;
+
+  try {
+    rows = await db
+      .select({
+        id: maquinas.id,
+        nome: maquinas.nome,
+        placa: maquinas.placa,
+        status: maquinas.status,
+        dataDesativacao: maquinas.dataDesativacao,
+        fazendaId: maquinas.fazendaId,
+      })
+      .from(maquinas)
+      .where(and(eq(maquinas.userId, opts.userId), eq(maquinas.fazendaId, opts.fazendaId)));
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    const locais = await listLocalMaquinas(opts.userId);
+    rows = locais
+      .filter(m => Number(m.fazendaId) === opts.fazendaId)
+      .map(m => ({
+        id: m.id,
+        nome: m.nome ?? null,
+        placa: m.placa ?? null,
+        status: m.status ?? null,
+        dataDesativacao: m.dataDesativacao ?? null,
+        fazendaId: m.fazendaId ?? null,
+      }));
+  }
 
   const nomeNorm = opts.nome.trim().toLowerCase();
   const placaNorm = opts.placa ? normalizePlacaIdent(opts.placa) : "";
@@ -3510,16 +3693,43 @@ const maquinasRouter = router({
     }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(maquinas).where(eq(maquinas.userId, ctx.user.id)).orderBy(desc(maquinas.createdAt));
+    const locais = await listLocalMaquinas(ctx.user.id).catch(() => [] as Awaited<ReturnType<typeof listLocalMaquinas>>);
+    try {
+      const rows = await db
+        .select()
+        .from(maquinas)
+        .where(eq(maquinas.userId, ctx.user.id))
+        .orderBy(desc(maquinas.createdAt));
+      if (locais.length === 0) return rows;
+      const localById = new Map(locais.map(m => [m.id, m]));
+      const merged = rows.map(row => mergeMaquinaDbComLocal(row, localById.get(row.id)));
+      const rowIds = new Set(rows.map(r => r.id));
+      for (const local of locais) {
+        if (!rowIds.has(local.id)) merged.push(local as (typeof rows)[number]);
+      }
+      return merged.sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt));
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      return locais;
+    }
   }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [row] = await db.select().from(maquinas).where(
-        and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id))
-      );
-      return row ?? null;
+      const local = await getLocalMaquina(ctx.user.id, input.id).catch(() => null);
+      try {
+        const [row] = await db.select().from(maquinas).where(
+          and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id))
+        );
+        if (!row && !local) return null;
+        if (!row) return local;
+        if (!local) return row;
+        return mergeMaquinaDbComLocal(row, local);
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return local;
+      }
     }),
 
   create: protectedProcedure
@@ -3587,26 +3797,40 @@ const maquinasRouter = router({
         ? parseInt(dataAquisicao.slice(0, 4), 10)
         : undefined;
 
+      const row = {
+        userId: ctx.user.id,
+        ...rest,
+        nome: nomeTrim,
+        placa: placaNorm,
+        tipoMedidor,
+        horimetro: leitura,
+        dataAquisicao: dataAquisicao?.trim() || undefined,
+        anoAquisicao: anoFromData && !Number.isNaN(anoFromData) ? anoFromData : rest.anoAquisicao,
+        valor: parseValorNaoNegativo(valor),
+        vidaUtil: vidaUtil?.trim() || undefined,
+        status: "ativo" as const,
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
+      };
+
       try {
-        const result = await db.insert(maquinas).values({
-          userId: ctx.user.id,
-          ...rest,
-          nome: nomeTrim,
-          placa: placaNorm,
-          tipoMedidor,
-          horimetro: leitura,
-          dataAquisicao: dataAquisicao?.trim() || undefined,
-          anoAquisicao: anoFromData && !Number.isNaN(anoFromData) ? anoFromData : rest.anoAquisicao,
-          valor: parseValorNaoNegativo(valor),
-          vidaUtil: vidaUtil?.trim() || undefined,
-          status: "ativo",
-          imagem1: img1,
-          imagem2: img2,
-          imagem3: img3,
-        });
-        return { success: true, id: (result as any)[0]?.insertId };
+        const result = await db.insert(maquinas).values(row);
+        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        if (Number.isFinite(id) && id > 0) {
+          try {
+            await updateLocalMaquina(ctx.user.id, id, row);
+          } catch (mirrorError) {
+            console.warn("[maquinas.create] Espelho local não gravado:", mirrorError);
+          }
+        }
+        return { success: true, id };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
+        if (isDatabaseUnavailable(err)) {
+          const result = await createLocalMaquina(ctx.user.id, row);
+          return { success: true, id: result.id, localFallback: true };
+        }
         console.error("[maquinas.create]", err);
         throw new Error("Não foi possível salvar a máquina. Verifique os dados e tente novamente.");
       }
@@ -3629,13 +3853,26 @@ const maquinasRouter = router({
         placa,
         dataAquisicao,
         vidaUtil,
+        status: _ignoreStatus,
         ...rest
       } = input;
 
-      const [existing] = await db
-        .select()
-        .from(maquinas)
-        .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+      let existing: Record<string, any> | null = null;
+      let usingLocal = false;
+      try {
+        const [row] = await db
+          .select()
+          .from(maquinas)
+          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+        existing = row ?? null;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        usingLocal = true;
+      }
+      if (!existing) {
+        existing = await getLocalMaquina(ctx.user.id, id);
+        if (existing) usingLocal = true;
+      }
       if (!existing) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
       }
@@ -3703,41 +3940,238 @@ const maquinasRouter = router({
         ? parseInt(dataAquisicao.slice(0, 4), 10)
         : undefined;
 
-      await db
-        .update(maquinas)
-        .set({
-          ...rest,
-          ...(nome !== undefined ? { nome: nextNome } : {}),
-          ...(tipo ? { tipo } : {}),
-          ...(marca ? { marca } : {}),
-          ...(fazendaId ? { fazendaId } : {}),
-          ...(placa !== undefined ? { placa: nextPlaca } : {}),
-          ...(tipoMedidor !== undefined ? { tipoMedidor } : {}),
-          ...(leitura !== undefined ? { horimetro: leitura } : {}),
-          ...(dataAquisicao !== undefined
-            ? {
-                dataAquisicao: dataAquisicao.trim() || null,
-                ...(anoFromData && !Number.isNaN(anoFromData) ? { anoAquisicao: anoFromData } : {}),
-              }
-            : {}),
-          ...(valor !== undefined ? { valor: parseValorNaoNegativo(valor) ?? null } : {}),
-          ...(vidaUtil !== undefined ? { vidaUtil: vidaUtil.trim() || null } : {}),
-          ...(dataDesativacao !== undefined
-            ? { dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null }
-            : {}),
-          imagem1: img1,
-          imagem2: img2,
-          imagem3: img3,
-        })
-        .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
-      return { success: true };
+      const patch = {
+        ...rest,
+        ...(nome !== undefined ? { nome: nextNome } : {}),
+        ...(tipo !== undefined ? { tipo: tipo.trim() || null } : {}),
+        ...(marca !== undefined ? { marca: marca.trim() || null } : {}),
+        ...(fazendaId !== undefined ? { fazendaId } : {}),
+        ...(placa !== undefined ? { placa: nextPlaca } : {}),
+        ...(tipoMedidor !== undefined ? { tipoMedidor: tipoMedidor || null } : {}),
+        ...(leitura !== undefined ? { horimetro: leitura } : {}),
+        ...(dataAquisicao !== undefined
+          ? {
+              dataAquisicao: dataAquisicao.trim() || null,
+              ...(anoFromData && !Number.isNaN(anoFromData) ? { anoAquisicao: anoFromData } : {}),
+            }
+          : {}),
+        ...(valor !== undefined ? { valor: parseValorNaoNegativo(valor) ?? null } : {}),
+        ...(vidaUtil !== undefined ? { vidaUtil: vidaUtil.trim() || null } : {}),
+        ...(dataDesativacao !== undefined
+          ? { dataDesativacao: dataDesativacao ? new Date(dataDesativacao) : null }
+          : {}),
+        imagem1: img1,
+        imagem2: img2,
+        imagem3: img3,
+      };
+
+      // Sempre grava no espelho local primeiro — fonte confiável com MySQL offline.
+      await updateLocalMaquina(ctx.user.id, id, patch);
+      const localAfter = await getLocalMaquina(ctx.user.id, id);
+
+      if (usingLocal) {
+        return {
+          success: true,
+          localFallback: true,
+          maquina: localAfter ?? { ...existing, ...patch, id, userId: ctx.user.id },
+        };
+      }
+
+      try {
+        await db
+          .update(maquinas)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+        const [row] = await db
+          .select()
+          .from(maquinas)
+          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
+        return {
+          success: true,
+          maquina: mergeMaquinaDbComLocal(row ?? { ...existing, ...patch, id }, localAfter),
+        };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        if (isDatabaseUnavailable(err)) {
+          return {
+            success: true,
+            localFallback: true,
+            maquina: localAfter ?? { ...existing, ...patch, id, userId: ctx.user.id },
+          };
+        }
+        throw err;
+      }
+    }),
+
+  inativar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const patch = {
+        status: "inativo" as const,
+        dataDesativacao: new Date(),
+      };
+      try {
+        const [existing] = await db
+          .select({ id: maquinas.id })
+          .from(maquinas)
+          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
+          .limit(1);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+        }
+        await db
+          .update(maquinas)
+          .set(patch)
+          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
+        try {
+          await updateLocalMaquina(ctx.user.id, input.id, {
+            status: "inativo",
+            dataDesativacao: new Date().toISOString().slice(0, 10),
+          });
+        } catch (mirrorError) {
+          console.warn("[maquinas.inativar] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        if (isDatabaseUnavailable(err)) {
+          const local = await getLocalMaquina(ctx.user.id, input.id);
+          if (!local) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+          }
+          await updateLocalMaquina(ctx.user.id, input.id, {
+            status: "inativo",
+            dataDesativacao: new Date().toISOString().slice(0, 10),
+          });
+          return { success: true, localFallback: true };
+        }
+        throw err;
+      }
+    }),
+
+  reativar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const patch = {
+        status: "ativo" as const,
+        dataDesativacao: null,
+      };
+      try {
+        const [existing] = await db
+          .select({ id: maquinas.id })
+          .from(maquinas)
+          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
+          .limit(1);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+        }
+        await db
+          .update(maquinas)
+          .set(patch)
+          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
+        try {
+          await updateLocalMaquina(ctx.user.id, input.id, {
+            status: "ativo",
+            dataDesativacao: null,
+          });
+        } catch (mirrorError) {
+          console.warn("[maquinas.reativar] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        if (isDatabaseUnavailable(err)) {
+          const local = await getLocalMaquina(ctx.user.id, input.id);
+          if (!local) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+          }
+          await updateLocalMaquina(ctx.user.id, input.id, {
+            status: "ativo",
+            dataDesativacao: null,
+          });
+          return { success: true, localFallback: true };
+        }
+        throw err;
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(maquinas).where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
-      return { success: true };
+      try {
+        const [existing] = await db
+          .select({ id: maquinas.id })
+          .from(maquinas)
+          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
+          .limit(1);
+        if (!existing) {
+          const local = await getLocalMaquina(ctx.user.id, input.id);
+          if (!local) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+          }
+        }
+
+        // Revalida sempre no momento da exclusão (concorrência / vínculo novo).
+        await assertMaquinaSemVinculos(ctx.user.id, input.id);
+
+        if (existing) {
+          await db
+            .delete(maquinas)
+            .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
+        }
+        try {
+          await deleteLocalMaquina(ctx.user.id, input.id);
+        } catch (mirrorError) {
+          console.warn("[maquinas.delete] Espelho local não removido:", mirrorError);
+        }
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          // Offline: não há espelho local de abastecimentos/manutenções.
+          // Permite excluir só o cadastro local (sem apagar históricos remotos inexistentes aqui).
+          const local = await getLocalMaquina(ctx.user.id, input.id);
+          if (!local) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+          }
+          await deleteLocalMaquina(ctx.user.id, input.id);
+          return { success: true, localFallback: true };
+        }
+        throw error;
+      }
+    }),
+
+  /** IDs de máquinas com abastecimento, manutenção ou histórico operacional. */
+  idsComVinculo: protectedProcedure.query(async ({ ctx }) => {
+    try {
+      return await listMaquinaIdsComVinculo(ctx.user.id);
+    } catch (error) {
+      if (isDatabaseUnavailable(error)) {
+        // Offline: sem tabelas locais de vínculo operacional → nenhum ID bloqueado.
+        return [] as number[];
+      }
+      throw error;
+    }
+  }),
+
+  /** Checagem pontual antes de abrir o modal / confirmar exclusão. */
+  podeExcluir: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        await assertMaquinaSemVinculos(ctx.user.id, input.id);
+        return { podeExcluir: true as const };
+      } catch (error) {
+        if (error instanceof TRPCError && error.message === MSG_MAQUINA_COM_VINCULOS) {
+          return { podeExcluir: false as const };
+        }
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          // Offline: cadastro local pode ser excluído (sem histórico operacional local).
+          return { podeExcluir: true as const };
+        }
+        throw error;
+      }
     }),
 
   // ── Valida linhas antes de importar maquinários ──────────────────────────────
@@ -4081,6 +4515,8 @@ const abastecimentosRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Informe uma quantidade abastecida válida." });
       }
 
+      await assertMaquinaAtivaParaOperacao(ctx.user.id, input.maquinaId);
+
       const total = input.valorTotal
         ?? (input.valorLitro && input.litros
           ? (qtd * parseFloat(input.valorLitro)).toFixed(2)
@@ -4157,6 +4593,11 @@ const abastecimentosRouter = router({
       if (!anterior) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
       }
+
+      const maquinaDestino = rest.maquinaId ?? anterior.maquinaId;
+      await assertMaquinaAtivaParaOperacao(ctx.user.id, maquinaDestino, {
+        allowSameInactiveId: anterior.maquinaId,
+      });
 
       const novosLitros = litros != null
         ? parseFloat(String(litros).replace(",", "."))
@@ -4386,6 +4827,7 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput)
     .mutation(async ({ ctx, input }) => {
       const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId);
       await validarSaldoEstoquePecas(pecas);
       const totais = calcularTotaisManutencao(pecas, valorMaoObra);
       const result = await db.insert(manutencoes).values({
@@ -4418,6 +4860,17 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput.extend({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      const [anterior] = await db
+        .select({ maquinaId: manutencoes.maquinaId })
+        .from(manutencoes)
+        .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
+        .limit(1);
+      if (!anterior) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
+      }
+      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
+        allowSameInactiveId: anterior.maquinaId,
+      });
       await validarSaldoEstoquePecas(pecas);
       const totais = calcularTotaisManutencao(pecas, valorMaoObra);
       await db

@@ -14,6 +14,7 @@ const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
 const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
+const maquinasFile = path.join(dataDir, "maquinas.json");
 const lotesFile = path.join(dataDir, "lotes.json");
 const animaisFile = path.join(dataDir, "animais.json");
 const pesagensFile = path.join(dataDir, "pesagens.json");
@@ -42,8 +43,14 @@ export function isDatabaseUnavailable(error: unknown): boolean {
     "ETIMEDOUT",
     "ENOTFOUND",
     "ECONNRESET",
+    "EHOSTUNREACH",
     "Access denied for user",
     "Failed query:",
+    "Unable to acquire a connection",
+    "Pool is closed",
+    "cannot enqueue",
+    "Connection lost",
+    "Too many connections",
   ].some(marker => text.includes(marker));
 }
 
@@ -306,6 +313,96 @@ export async function deleteLocalBenfeitoria(userId: number, id: number): Promis
     return;
   }
   await writeBenfeitorias(remaining);
+}
+
+export type LocalMaquina = Record<string, any> & {
+  id: number;
+  userId: number;
+  nome: string;
+  fazendaId?: number | null;
+  status?: string | null;
+  dataDesativacao?: string | null;
+  placa?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readMaquinas(): Promise<LocalMaquina[]> {
+  return readJsonFile<LocalMaquina[]>(maquinasFile, []);
+}
+
+async function writeMaquinas(rows: LocalMaquina[]): Promise<void> {
+  await writeJsonFile(maquinasFile, rows);
+}
+
+export async function listLocalMaquinas(userId: number): Promise<LocalMaquina[]> {
+  const rows = await readMaquinas();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+export async function getLocalMaquina(userId: number, id: number): Promise<LocalMaquina | null> {
+  const rows = await readMaquinas();
+  return rows.find(row => row.userId === userId && row.id === id)
+    ?? rows.find(row => row.id === id)
+    ?? null;
+}
+
+export async function createLocalMaquina(
+  userId: number,
+  input: Record<string, any> & { nome: string },
+): Promise<{ id: number }> {
+  const rows = await readMaquinas();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    status: "ativo",
+    ...input,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeMaquinas(rows);
+  return { id };
+}
+
+export async function updateLocalMaquina(userId: number, id: number, input: Record<string, any>): Promise<void> {
+  const rows = await readMaquinas();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const now = new Date().toISOString();
+  const normalized: Record<string, any> = { ...input };
+  for (const key of Object.keys(normalized)) {
+    const val = normalized[key];
+    if (val instanceof Date) {
+      normalized[key] = Number.isNaN(val.getTime()) ? null : val.toISOString();
+    }
+  }
+  if (index === -1) {
+    rows.push({
+      id,
+      userId,
+      nome: normalized.nome ?? `Máquina ${id}`,
+      status: "ativo",
+      ...normalized,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    rows[index] = { ...rows[index], ...normalized, updatedAt: now };
+  }
+  await writeMaquinas(rows);
+}
+
+export async function deleteLocalMaquina(userId: number, id: number): Promise<void> {
+  const rows = await readMaquinas();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeMaquinas(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeMaquinas(remaining);
 }
 
 export type LocalLote = Record<string, any> & {

@@ -168,6 +168,25 @@ export default function AbastecimentoFormPage() {
   const maquinaIdNum = Number(form.maquinaId) || undefined;
 
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
+  const maquinasOperacionais = useMemo(() => {
+    const ativas = maquinas.filter(m => {
+      if ((m as { dataDesativacao?: unknown }).dataDesativacao) return false;
+      if (String(m.status || "").toLowerCase() === "inativo") return false;
+      return true;
+    });
+    // Em edição, mantém a máquina do registro mesmo se estiver Inativa (histórico).
+    if (isEdit && form.maquinaId) {
+      const atual = maquinas.find(m => String(m.id) === form.maquinaId);
+      if (atual && !ativas.some(a => a.id === atual.id)) {
+        return [...ativas, atual].sort((a, b) =>
+          String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"),
+        );
+      }
+    }
+    return [...ativas].sort((a, b) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"),
+    );
+  }, [maquinas, isEdit, form.maquinaId]);
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
   const { data: movimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery();
@@ -589,7 +608,7 @@ export default function AbastecimentoFormPage() {
                 onChange={handleMaquinaChange}
                 placeholder="Selecione a máquina"
                 required
-                options={maquinas.map(m => ({ value: String(m.id), label: m.nome }))}
+                options={maquinasOperacionais.map(m => ({ value: String(m.id), label: m.nome }))}
                 invalid={!!erros.maquinaId}
                 aria-describedby={erros.maquinaId ? "abast-err-maquinaId" : undefined}
               />

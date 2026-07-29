@@ -12,7 +12,7 @@ import {
 
 type ConfirmOptions = {
   title?: string;
-  description?: string;
+  description?: ReactNode;
   confirmText?: string;
   cancelText?: string;
   /** "danger" = exclusão (vermelho). "warning" = inativação/alerta (âmbar). "success" = confirmação positiva (teal). "default" = confirmação neutra. */
@@ -97,9 +97,15 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
               )}
               {title}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600 whitespace-pre-line">
-              {description}
-            </AlertDialogDescription>
+            {typeof description === "string" ? (
+              <AlertDialogDescription className="text-gray-600 whitespace-pre-line">
+                {description}
+              </AlertDialogDescription>
+            ) : (
+              <AlertDialogDescription asChild>
+                <div className="text-sm text-gray-600">{description}</div>
+              </AlertDialogDescription>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
             <AlertDialogCancel
@@ -107,7 +113,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                 e.preventDefault();
                 settle(false);
               }}
-              className="rounded-full"
+              className="rounded-full border-0 bg-gray-100 text-gray-800 shadow-none hover:bg-gray-200 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
               style={{ minHeight: 44 }}
             >
               {cancelText}
@@ -117,7 +123,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                 e.preventDefault();
                 settle(true);
               }}
-              className="rounded-full text-white hover:opacity-95"
+              className="rounded-full text-white hover:opacity-95 focus-visible:ring-2 focus-visible:ring-offset-2"
               style={{
                 minHeight: 44,
                 ...confirmButtonStyle,

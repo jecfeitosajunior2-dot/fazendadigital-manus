@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Calendar, ChevronDown } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
@@ -152,38 +152,27 @@ export function FormNativeSelect({
     return [{ value: current, label: current }, ...options];
   }, [value, options]);
 
+  // Usa Select (Radix) em vez de <select> nativo para forçar abertura para baixo
+  // (o nativo do Windows abre para cima quando a lista é longa).
   return (
-    <FieldBox required={required} variant={variant} invalid={invalid}>
-      <div className="relative">
-        <select
-          id={id}
-          value={value}
-          disabled={disabled}
-          onChange={e => onChange(e.target.value)}
-          aria-invalid={invalid || undefined}
-          aria-describedby={ariaDescribedBy}
-          className={cn(
-            compact ? inputClassCompact : inputClass,
-            variant === "light" && "bg-white",
-            "appearance-none cursor-pointer w-full min-h-[42px] pr-10",
-          )}
-          required={required}
-        >
-          <option value="" disabled={!!value}>
-            {placeholder}
-          </option>
-          {mergedOptions.map(o => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 opacity-70"
-          aria-hidden
-        />
-      </div>
-    </FieldBox>
+    <FormSelect
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+      required={required}
+      compact={compact}
+      variant={variant}
+      id={id}
+      invalid={invalid}
+      aria-describedby={ariaDescribedBy}
+    >
+      {mergedOptions.map(o => (
+        <SelectItem key={o.value} value={o.value}>
+          {o.label}
+        </SelectItem>
+      ))}
+    </FormSelect>
   );
 }
 
@@ -217,13 +206,18 @@ export function FormSelect({
   invalid?: boolean;
   "aria-describedby"?: string;
 }) {
-  // Sempre mantém o Select controlado (nunca passa undefined) para evitar a
-  // troca descontrolado→controlado do Radix que impede a atualização visual.
-  const selectValue = value ?? "";
+  // Radix não aceita value="". Vazio = sem value (placeholder).
+  // `key` remonta o Select ao hidratar edição (evita trigger “preso” no placeholder).
+  const trimmed = String(value ?? "").trim();
 
   return (
     <FieldBox required={required} variant={variant} invalid={invalid}>
-      <Select value={selectValue} onValueChange={onChange} disabled={disabled}>
+      <Select
+        key={trimmed ? `sel:${trimmed}` : "sel:empty"}
+        value={trimmed || undefined}
+        onValueChange={onChange}
+        disabled={disabled}
+      >
         <SelectTrigger
           id={id}
           aria-invalid={invalid || undefined}

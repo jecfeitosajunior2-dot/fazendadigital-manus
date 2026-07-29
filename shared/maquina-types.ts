@@ -38,6 +38,14 @@ export const MAPEAMENTO_TIPO_LEGADO: Record<string, TipoMaquina> = {
   Outro: "Outros",
 };
 
+/** Normaliza tipo legado/atual para o valor do select de cadastro. */
+export function normalizarTipoMaquina(tipo: string | null | undefined): TipoMaquina | "" {
+  const raw = String(tipo || "").trim();
+  if (!raw) return "";
+  if ((TIPOS_MAQUINA as readonly string[]).includes(raw)) return raw as TipoMaquina;
+  return MAPEAMENTO_TIPO_LEGADO[raw] ?? "";
+}
+
 /**
  * Mapeamento Tipo → Marcas específicas.
  * Ao selecionar um tipo, o campo Marca deve exibir EXCLUSIVAMENTE
@@ -328,4 +336,23 @@ export function labelIdentificadorMaquina(tipo: string): string {
     return "Número de série / patrimônio";
   }
   return "Placa ou número de série";
+}
+
+/** Campos obrigatórios ausentes no cadastro da máquina (alerta âmbar). */
+export function camposCadastroIncompletosMaquina(m: {
+  tipo?: string | null;
+  fazendaId?: number | string | null;
+  marca?: string | null;
+  nome?: string | null;
+  tipoMedidor?: string | null;
+}): string[] {
+  const fazendaVazia =
+    m.fazendaId == null || m.fazendaId === "" || String(m.fazendaId).trim() === "";
+  return [
+    !String(m.tipo || "").trim() && "Tipo",
+    fazendaVazia && "Fazenda",
+    !String(m.marca || "").trim() && "Marca",
+    !String(m.nome || "").trim() && "Nome de identificação",
+    !String(m.tipoMedidor || "").trim() && "Tipo de medidor",
+  ].filter(Boolean) as string[];
 }

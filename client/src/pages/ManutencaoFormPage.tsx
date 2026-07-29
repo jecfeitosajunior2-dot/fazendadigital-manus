@@ -112,6 +112,24 @@ export default function ManutencaoFormPage() {
     setForm(f => ({ ...f, [key]: value }));
 
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
+  const maquinasOperacionais = useMemo(() => {
+    const ativas = maquinas.filter(m => {
+      if ((m as { dataDesativacao?: unknown }).dataDesativacao) return false;
+      if (String(m.status || "").toLowerCase() === "inativo") return false;
+      return true;
+    });
+    if (isEdit && form.maquinaId) {
+      const atual = maquinas.find(m => String(m.id) === form.maquinaId);
+      if (atual && !ativas.some(a => a.id === atual.id)) {
+        return [...ativas, atual].sort((a, b) =>
+          String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"),
+        );
+      }
+    }
+    return [...ativas].sort((a, b) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"),
+    );
+  }, [maquinas, isEdit, form.maquinaId]);
   const { data: registro, isLoading } = trpc.manutencoes.get.useQuery(
     { id: editId },
     { enabled: isEdit }
@@ -310,7 +328,7 @@ export default function ManutencaoFormPage() {
                 onChange={v => set("maquinaId", v)}
                 placeholder="Selecione a Máquina"
                 required
-                options={maquinas.map(m => ({ value: String(m.id), label: m.nome }))}
+                options={maquinasOperacionais.map(m => ({ value: String(m.id), label: m.nome }))}
               />
             </div>
             <div>

@@ -22,6 +22,8 @@ import {
   TIPOS_MEDIDOR_LABEL,
   sugerirTipoMedidor,
   labelIdentificadorMaquina,
+  camposCadastroIncompletosMaquina,
+  normalizarTipoMaquina,
   type TipoMedidor,
 } from "@/lib/maquina-types";
 
@@ -197,26 +199,51 @@ export default function MaquinaRegistrationPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const maquinaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
   const isEdit = maquinaId != null && !isNaN(maquinaId);
+  const fazendaIdFromUrl = searchParams.get("fazendaId")?.trim() || "";
 
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: maquina, isLoading: loadingMaquina } = trpc.maquinas.get.useQuery(
     { id: maquinaId! },
-    { enabled: isEdit },
+    { enabled: isEdit, staleTime: 0, refetchOnMount: "always" },
   );
 
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(() =>
+    !isEdit && fazendaIdFromUrl
+      ? { ...emptyForm(), fazendaId: fazendaIdFromUrl }
+      : emptyForm(),
+  );
   const [imageSlots, setImageSlots] = useState<ImageSlot[]>([
     { kind: "empty" },
     { kind: "empty" },
     { kind: "empty" },
   ]);
-  const initializedForId = useRef<number | null>(null);
+  const initializedStamp = useRef<string | null>(null);
+  const [formHydrated, setFormHydrated] = useState(!isEdit);
   const hojeISO = new Date().toISOString().slice(0, 10);
   const anoAtual = new Date().getFullYear();
 
+  // Garante Fazenda da lista no formulário (ID real) após carregar opções.
+  useEffect(() => {
+    if (isEdit || !fazendaIdFromUrl || fazendas.length === 0) return;
+    const existe = fazendas.some(f => String(f.id) === fazendaIdFromUrl);
+    if (!existe) return;
+    setForm(f => (f.fazendaId === fazendaIdFromUrl ? f : { ...f, fazendaId: fazendaIdFromUrl }));
+  }, [isEdit, fazendaIdFromUrl, fazendas]);
   useEffect(() => {
     if (!isEdit || !maquina) return;
-    if (initializedForId.current === maquina.id) return;
+    // Espera fazendas carregarem para o select de Fazenda ter a opção correta.
+    if (maquina.fazendaId != null && loadingFazendas) return;
+
+    const stamp = [
+      maquina.id,
+      String(maquina.updatedAt ?? ""),
+      String(maquina.tipo ?? ""),
+      String(maquina.marca ?? ""),
+      String(maquina.fazendaId ?? ""),
+      String(maquina.tipoMedidor ?? ""),
+      String(maquina.nome ?? ""),
+    ].join("|");
+    if (initializedStamp.current === stamp) return;
 
     const valorCents = maquina.valor
       ? Math.round(parseFloat(parseFloat(String(maquina.valor)).toFixed(2)) * 100)
@@ -225,17 +252,19 @@ export default function MaquinaRegistrationPage() {
     const tipoMedidorRaw = String(maquina.tipoMedidor || "");
     const tipoMedidor: TipoMedidor | "" = TIPOS_MEDIDOR.includes(tipoMedidorRaw as TipoMedidor)
       ? (tipoMedidorRaw as TipoMedidor)
-      : maquina.tipo
-        ? sugerirTipoMedidor(maquina.tipo)
-        : "";
+      : "";
 
     let dataAquisicao = toDateInput(maquina.dataAquisicao);
     if (!dataAquisicao && maquina.anoAquisicao) {
       dataAquisicao = `${maquina.anoAquisicao}-01-01`;
     }
 
+    const tipoNorm = normalizarTipoMaquina(maquina.tipo);
+    // Se o tipo legado não mapeou, mantém o valor bruto para não "sumir" no formulário.
+    const tipoFinal = tipoNorm || String(maquina.tipo || "").trim();
+
     setForm({
-      tipo: maquina.tipo || "",
+      tipo: tipoFinal,
       fazendaId: maquina.fazendaId != null ? String(maquina.fazendaId) : "",
       nome: maquina.nome || "",
       valor: valorCents > 0 ? formatCurrencyBrl(String(valorCents)) : "",
@@ -257,8 +286,9 @@ export default function MaquinaRegistrationPage() {
           : { kind: "empty" as const },
       ),
     );
-    initializedForId.current = maquina.id;
-  }, [isEdit, maquina]);
+    initializedStamp.current = stamp;
+    setFormHydrated(true);
+  }, [isEdit, maquina, loadingFazendas]);
 
   const createMutation = trpc.maquinas.create.useMutation({
     onSuccess: () => {
@@ -270,8 +300,12 @@ export default function MaquinaRegistrationPage() {
   });
 
   const updateMutation = trpc.maquinas.update.useMutation({
-    onSuccess: () => {
-      utils.maquinas.list.invalidate();
+    onSuccess: async (data, variables) => {
+      if (data?.maquina) {
+        utils.maquinas.get.setData({ id: variables.id }, data.maquina as typeof maquina);
+      }
+      await utils.maquinas.get.invalidate({ id: variables.id });
+      await utils.maquinas.list.invalidate();
       toast.success("Máquina atualizada com sucesso.");
       setLocation("/maquinas/visao-geral");
     },
@@ -285,15 +319,23 @@ export default function MaquinaRegistrationPage() {
 
   const marcasDoTipo = form.tipo ? getMarcasPorTipo(form.tipo) : [];
   const marcasOptions = useMemo(() => {
-    const base = [...marcasDoTipo];
-    if (!base.includes("Outra marca") && !base.includes("Outra")) {
+    const base = form.tipo ? [...marcasDoTipo] : [];
+    if (form.tipo && !base.includes("Outra marca") && !base.includes("Outra")) {
       base.push("Outra marca");
     }
     if (form.marca && !base.includes(form.marca)) {
       base.unshift(form.marca);
     }
     return base;
-  }, [marcasDoTipo, form.marca]);
+  }, [marcasDoTipo, form.marca, form.tipo]);
+
+  const tiposOptions = useMemo(() => {
+    const base = TIPOS_MAQUINA.map(t => ({ value: t, label: t }));
+    if (form.tipo && !TIPOS_MAQUINA.includes(form.tipo as (typeof TIPOS_MAQUINA)[number])) {
+      return [{ value: form.tipo, label: form.tipo }, ...base];
+    }
+    return base;
+  }, [form.tipo]);
 
   const handleTipoChange = (novoTipo: string) => {
     const sugerido = sugerirTipoMedidor(novoTipo);
@@ -475,20 +517,20 @@ export default function MaquinaRegistrationPage() {
   };
 
   const camposVazios =
-    isEdit && maquina
-      ? [
-          !form.tipo && "Tipo",
-          !form.fazendaId && "Fazenda",
-          !form.marca && "Marca",
-          !form.nome.trim() && "Nome de identificação",
-          !form.tipoMedidor && "Tipo de medidor",
-        ].filter(Boolean)
+    isEdit && maquina && formHydrated
+      ? camposCadastroIncompletosMaquina({
+          tipo: form.tipo,
+          fazendaId: form.fazendaId,
+          marca: form.marca,
+          nome: form.nome,
+          tipoMedidor: form.tipoMedidor,
+        })
       : [];
 
   const labelIdent = labelIdentificadorMaquina(form.tipo);
   const medidorComLeitura = precisaLeitura;
 
-  if (isEdit && loadingMaquina) {
+  if (isEdit && (loadingMaquina || !formHydrated)) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
@@ -519,17 +561,6 @@ export default function MaquinaRegistrationPage() {
             {isEdit ? "Editar máquina" : "Cadastrar máquina"}
           </h1>
 
-          {camposVazios.length > 0 && (
-            <div className="mb-5 flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded text-[12px] text-amber-800">
-              <span className="material-icons text-[16px] text-amber-500 mt-0.5 shrink-0">info</span>
-              <span>
-                Esta máquina não possui <strong>{camposVazios.join(", ")}</strong> registrado
-                {camposVazios.length > 1 ? "s" : ""}. Complete os campos e salve para atualizar o
-                cadastro.
-              </span>
-            </div>
-          )}
-
           <div className="mb-6">
             <p className="text-[11px] text-gray-600 mb-3">
               Selecione até três fotos para sua máquina
@@ -554,6 +585,7 @@ export default function MaquinaRegistrationPage() {
                 onChange={v => set("nome", v)}
                 placeholder="Ex.: Trator 01, S10 Fazenda, Gerador Galpão"
                 required
+                invalid={camposVazios.includes("Nome de identificação")}
               />
             </div>
             <div>
@@ -563,7 +595,8 @@ export default function MaquinaRegistrationPage() {
                 onChange={handleTipoChange}
                 placeholder="Selecione um tipo de máquina"
                 required
-                options={TIPOS_MAQUINA.map(t => ({ value: t, label: t }))}
+                invalid={camposVazios.includes("Tipo")}
+                options={tiposOptions}
               />
             </div>
           </div>
@@ -576,6 +609,7 @@ export default function MaquinaRegistrationPage() {
                 onChange={v => set("fazendaId", v)}
                 placeholder="Selecione uma fazenda"
                 required
+                invalid={camposVazios.includes("Fazenda")}
                 options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
               />
             </div>
@@ -587,6 +621,7 @@ export default function MaquinaRegistrationPage() {
                 placeholder={form.tipo ? "Selecione a marca" : "Selecione primeiro o tipo"}
                 required
                 disabled={!form.tipo}
+                invalid={camposVazios.includes("Marca")}
                 options={marcasOptions.map(m => ({ value: m, label: m }))}
               />
             </div>
@@ -670,6 +705,7 @@ export default function MaquinaRegistrationPage() {
                 onChange={handleMedidorChange}
                 placeholder="Selecione o tipo de medidor"
                 required
+                invalid={camposVazios.includes("Tipo de medidor")}
                 options={TIPOS_MEDIDOR.map(t => ({
                   value: t,
                   label: TIPOS_MEDIDOR_LABEL[t],

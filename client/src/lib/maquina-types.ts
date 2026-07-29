@@ -12,5 +12,8 @@ export {
   TIPOS_MEDIDOR_LABEL,
   sugerirTipoMedidor,
   labelIdentificadorMaquina,
+  camposCadastroIncompletosMaquina,
+  MAPEAMENTO_TIPO_LEGADO,
+  normalizarTipoMaquina,
 } from "@shared/maquina-types";
 export type { TipoMaquina, MarcaMaquina, TipoMedidor } from "@shared/maquina-types";
