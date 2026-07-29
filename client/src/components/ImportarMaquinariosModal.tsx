@@ -48,7 +48,8 @@ type ResultadoValidacao = {
   validos: number;
   invalidos: number;
   erros: ErroValidacao[];
-  fazendaNomeParaId: Record<string, number>;
+  fazendaId?: number;
+  fazendaNomeParaId?: Record<string, number>;
 };
 
 type ResultadoImportacao = {
@@ -64,9 +65,18 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onImportado?: () => void;
+  /** Fazenda selecionada na lista — destino obrigatório da importação. */
+  fazendaId: number;
+  fazendaNome: string;
 }
 
-export const ImportarMaquinariosModal: React.FC<Props> = ({ open, onClose, onImportado }) => {
+export const ImportarMaquinariosModal: React.FC<Props> = ({
+  open,
+  onClose,
+  onImportado,
+  fazendaId,
+  fazendaNome,
+}) => {
   const [etapa, setEtapa] = useState<Etapa>('upload');
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [linhas, setLinhas] = useState<Record<string, string>[]>([]);
@@ -168,11 +178,17 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({ open, onClose, onImp
 
   // ── Validação ──
   const handleValidar = () => {
+    if (!fazendaId || Number.isNaN(fazendaId)) {
+      toast.error('Selecione uma Fazenda válida antes de importar máquinas.', {
+        id: 'maquinas-importar-sem-fazenda',
+      });
+      return;
+    }
     if (linhas.length === 0) {
       toast.error('Nenhum dado para validar. Faça o upload da planilha primeiro.');
       return;
     }
-    validarMutation.mutate({ linhas }, {
+    validarMutation.mutate({ linhas, fazendaId }, {
       onSuccess: (res) => {
         setValidacao(res);
         setEtapa('validacao');
@@ -184,12 +200,18 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({ open, onClose, onImp
   // ── Importação ──
   const handleImportar = () => {
     if (!validacao) return;
+    if (!fazendaId || Number.isNaN(fazendaId)) {
+      toast.error('Selecione uma Fazenda válida antes de importar máquinas.', {
+        id: 'maquinas-importar-sem-fazenda',
+      });
+      return;
+    }
     // Filtra apenas as linhas sem erros
     const linhasComErro = new Set(validacao.erros.map(e => e.linha - 2)); // -2 para índice 0-based
     const linhasValidas = linhas.filter((_, i) => !linhasComErro.has(i));
 
     importarMutation.mutate(
-      { linhas: linhasValidas, fazendaNomeParaId: validacao.fazendaNomeParaId },
+      { linhas: linhasValidas, fazendaId },
       {
         onSuccess: (res) => {
           setResultado(res);
@@ -206,6 +228,11 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({ open, onClose, onImp
 
   const renderUpload = () => (
     <div className="space-y-6">
+      <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-[12px] text-teal-900">
+        As máquinas importadas serão vinculadas à fazenda{' '}
+        <strong className="font-semibold">{fazendaNome || `Fazenda #${fazendaId}`}</strong>.
+      </div>
+
       {/* Passo 1: Baixar modelo */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
@@ -324,6 +351,11 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({ open, onClose, onImp
 
     return (
       <div className="space-y-5">
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-[12px] text-teal-900">
+          Destino da importação:{' '}
+          <strong className="font-semibold">{fazendaNome || `Fazenda #${fazendaId}`}</strong>
+        </div>
+
         {/* Resumo */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">

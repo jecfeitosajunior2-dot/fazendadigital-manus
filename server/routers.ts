@@ -4178,8 +4178,17 @@ const maquinasRouter = router({
   validarImportacao: protectedProcedure
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
+      fazendaId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const MSG_FAZENDA =
+        "Selecione uma Fazenda válida antes de importar máquinas.";
+
+      const fazendaOk = await fazendaExisteParaImportacao(ctx.user.id, input.fazendaId);
+      if (!fazendaOk) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FAZENDA });
+      }
+
       const {
         normalizarLinha,
         normalizarEstado,
@@ -4200,17 +4209,21 @@ const maquinasRouter = router({
         .map(l => normalizarLinha(l))
         .filter(l => !isLinhaExemplo(l));
 
-      // Busca fazendas do usuário
-      const fazendasUsuario = await db.select({ id: fazendas.id, nome: fazendas.nome })
-        .from(fazendas).where(eq(fazendas.userId, ctx.user.id));
-      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
-
       // Busca placas já existentes no banco (para detectar duplicidade)
-      const placasBanco = await db.select({ placa: maquinas.placa })
-        .from(maquinas).where(eq(maquinas.userId, ctx.user.id));
-      const placasBancoSet = new Set(
-        placasBanco.map(m => (m.placa || '').toLowerCase().trim()).filter(Boolean)
-      );
+      let placasBancoSet = new Set<string>();
+      try {
+        const placasBanco = await db.select({ placa: maquinas.placa })
+          .from(maquinas).where(eq(maquinas.userId, ctx.user.id));
+        placasBancoSet = new Set(
+          placasBanco.map(m => (m.placa || '').toLowerCase().trim()).filter(Boolean)
+        );
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const locais = await listLocalMaquinas(ctx.user.id);
+        placasBancoSet = new Set(
+          locais.map(m => String(m.placa || "").toLowerCase().trim()).filter(Boolean)
+        );
+      }
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
       const validos: typeof input.linhas = [];
@@ -4225,6 +4238,8 @@ const maquinasRouter = router({
         const tipo = (linha.tipo || '').trim();
         if (!tipo) {
           errosLinha.push({ linha: numLinha, campo: 'Tipo', mensagem: 'Tipo (Máquina) é obrigatório' });
+        } else if (!TIPOS_VALIDOS.includes(tipo as (typeof TIPOS_VALIDOS)[number])) {
+          // mantém validação soft — marcas usam o tipo informado
         }
 
         // Marca obrigatória
@@ -4240,12 +4255,10 @@ const maquinasRouter = router({
           });
         }
 
-        // Fazenda obrigatória e deve existir no banco
-        const fazendaNome = (linha.fazendaNome || '').trim();
-        if (!fazendaNome) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
-        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
+        // Coluna Fazenda do arquivo é ignorada: destino = fazendaId da tela.
+        // Remove para não confundir etapas seguintes.
+        if (linha.fazendaNome != null) {
+          delete linha.fazendaNome;
         }
 
         // Placa (opcional, mas sem duplicidade)
@@ -4354,7 +4367,7 @@ const maquinasRouter = router({
         validos: validos.length,
         invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
         erros,
-        fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
+        fazendaId: input.fazendaId,
       };
     }),
 
@@ -4362,9 +4375,17 @@ const maquinasRouter = router({
   importar: protectedProcedure
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
-      fazendaNomeParaId: z.record(z.string(), z.number()),
+      fazendaId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const MSG_FAZENDA =
+        "Selecione uma Fazenda válida antes de importar máquinas.";
+
+      const fazendaOk = await fazendaExisteParaImportacao(ctx.user.id, input.fazendaId);
+      if (!fazendaOk) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FAZENDA });
+      }
+
       const {
         normalizarLinha,
         normalizarEstado,
@@ -4380,8 +4401,8 @@ const maquinasRouter = router({
         const numLinha = i + 2;
         if (isLinhaExemplo(linha)) continue;
         try {
-          const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
-          const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
+          // Destino sempre = Fazenda da tela (coluna do arquivo ignorada).
+          const fazendaId = input.fazendaId;
 
           // ── Conversão de ano ──────────────────────────────────────────────
           const anoNum = linha.ano ? parseInt(String(linha.ano).replace(/[^0-9]/g, ''), 10) : undefined;
@@ -4429,9 +4450,9 @@ const maquinasRouter = router({
           const estadoNorm = normalizarEstado(linha.estado || '');
           const statusNorm = normalizarStatusMaq(linha.status || '');
 
-          const result = await db.insert(maquinas).values({
+          const rowPayload = {
             userId: ctx.user.id,
-            fazendaId: fazendaId || undefined,
+            fazendaId,
             nome: (linha.nome || '').trim() || (linha.marca ? `${linha.marca} ${linha.modelo || ''}`.trim() : 'Sem apelido'),
             tipo: (linha.tipo || '').trim() || undefined,
             marca: (linha.marca || '').trim() || undefined,
@@ -4445,8 +4466,28 @@ const maquinasRouter = router({
             estado: (['novo','usado'].includes(estadoNorm) ? estadoNorm : undefined) as any,
             status: (['ativo','manutencao','inativo'].includes(statusNorm) ? statusNorm : 'ativo') as any,
             observacoes: (linha.observacoes || '').trim() || undefined,
-          });
-          importados.push((result as any)[0]?.insertId);
+          };
+
+          try {
+            const result = await db.insert(maquinas).values(rowPayload);
+            const insertId = (result as any)[0]?.insertId;
+            importados.push(insertId);
+            try {
+              await updateLocalMaquina(ctx.user.id, insertId, {
+                ...rowPayload,
+                id: insertId,
+              });
+            } catch (mirrorError) {
+              console.warn("[maquinas.importar] Espelho local não gravado:", mirrorError);
+            }
+          } catch (dbErr) {
+            if (!isDatabaseUnavailable(dbErr)) throw dbErr;
+            const created = await createLocalMaquina(ctx.user.id, {
+              ...rowPayload,
+              nome: rowPayload.nome,
+            });
+            importados.push(created.id);
+          }
         } catch (err: any) {
           rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
         }

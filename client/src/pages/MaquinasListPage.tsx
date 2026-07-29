@@ -480,6 +480,8 @@ export default function MaquinasListPage() {
   }, [fazendaInitDone, filtroTipo, filtroStatus, search, sortKey, sortAsc, page]);
 
   const onChangeFazenda = (value: string) => {
+    // Troca de Fazenda: fecha importação pendente para não vincular no destino errado.
+    if (importarOpen) setImportarOpen(false);
     setFiltroFazenda(value);
     persistRebanhoFazendaId(value);
     setFiltroTipo("");
@@ -694,10 +696,31 @@ export default function MaquinasListPage() {
             </button>
             <button
               type="button"
-              onClick={() => setImportarOpen(true)}
-              className={secondaryBtnClass}
+              disabled={!fazendaSelecionada}
+              onClick={() => {
+                if (!fazendaSelecionada) return;
+                setImportarOpen(true);
+              }}
+              title={
+                fazendaSelecionada
+                  ? "Importar"
+                  : "Selecione uma Fazenda antes de importar máquinas."
+              }
+              aria-disabled={!fazendaSelecionada}
+              className={cn(
+                secondaryBtnClass,
+                !fazendaSelecionada &&
+                  "opacity-50 cursor-not-allowed bg-gray-50 text-gray-400 hover:bg-gray-50 active:scale-100",
+              )}
             >
-              <span className="material-icons text-[18px] text-gray-500">upload_file</span>
+              <span
+                className={cn(
+                  "material-icons text-[18px]",
+                  fazendaSelecionada ? "text-gray-500" : "text-gray-400",
+                )}
+              >
+                upload_file
+              </span>
               Importar
             </button>
             <ListExportButtons
@@ -1052,7 +1075,10 @@ export default function MaquinasListPage() {
       </div>
 
       <ImportarMaquinariosModal
-        open={importarOpen}
+        key={filtroFazenda || "sem-fazenda"}
+        open={importarOpen && fazendaSelecionada}
+        fazendaId={Number(filtroFazenda)}
+        fazendaNome={fazendaSelecionadaNome || ""}
         onClose={() => setImportarOpen(false)}
         onImportado={() => refetch()}
       />
