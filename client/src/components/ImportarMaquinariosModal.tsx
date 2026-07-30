@@ -41,6 +41,8 @@ type ErroValidacao = {
   linha: number;
   campo: string;
   mensagem: string;
+  valor?: string;
+  esperado?: string;
 };
 
 type ResultadoValidacao = {
@@ -49,7 +51,6 @@ type ResultadoValidacao = {
   invalidos: number;
   erros: ErroValidacao[];
   fazendaId?: number;
-  fazendaNomeParaId?: Record<string, number>;
 };
 
 type ResultadoImportacao = {
@@ -135,16 +136,24 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
         // Prioriza a aba 'Maquinários' se existir; caso contrário usa a primeira aba
         const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('maquin')) ?? wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
+        // raw: true preserva números do Excel (ex.: 100000) sem locale US.
+        // Textos como "100.000" (milhar BR) são interpretados no backend via parseMoedaBr.
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
           defval: '',
-          raw: false,
+          raw: true,
         });
         // Converte todos os valores para string, filtra linhas completamente vazias
         // e remove a linha de EXEMPLO ilustrativa
         const linhasStr = rows
           .map(row =>
             Object.fromEntries(
-              Object.entries(row).map(([k, v]) => [k.trim(), String(v ?? '').trim()])
+              Object.entries(row).map(([k, v]) => {
+                const key = k.trim();
+                if (typeof v === 'number' && Number.isFinite(v)) {
+                  return [key, String(v)];
+                }
+                return [key, String(v ?? '').trim()];
+              })
             )
           )
           .filter(row => Object.values(row).some(v => v !== ''))
@@ -191,13 +200,14 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
     validarMutation.mutate({ linhas, fazendaId }, {
       onSuccess: (res) => {
         setValidacao(res);
+        setMostrarErros(res.erros.length > 0);
         setEtapa('validacao');
       },
       onError: (err) => toast.error(`Erro na validação: ${err.message}`),
     });
   };
 
-  // ── Importação ──
+  // ── Importação (tudo ou nada: só com zero erros) ──
   const handleImportar = () => {
     if (!validacao) return;
     if (!fazendaId || Number.isNaN(fazendaId)) {
@@ -206,12 +216,13 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
       });
       return;
     }
-    // Filtra apenas as linhas sem erros
-    const linhasComErro = new Set(validacao.erros.map(e => e.linha - 2)); // -2 para índice 0-based
-    const linhasValidas = linhas.filter((_, i) => !linhasComErro.has(i));
+    if (validacao.erros.length > 0 || validacao.validos === 0) {
+      toast.error('Corrija os erros da planilha antes de importar. Nenhuma linha será gravada enquanto houver erros.');
+      return;
+    }
 
     importarMutation.mutate(
-      { linhas: linhasValidas, fazendaId },
+      { linhas, fazendaId },
       {
         onSuccess: (res) => {
           setResultado(res);
@@ -229,7 +240,7 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
   const renderUpload = () => (
     <div className="space-y-6">
       <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5 text-[12px] text-teal-900">
-        As máquinas importadas serão vinculadas à fazenda{' '}
+        As máquinas importadas serão vinculadas à{' '}
         <strong className="font-semibold">{fazendaNome || `Fazenda #${fazendaId}`}</strong>.
       </div>
 
@@ -240,8 +251,8 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
           <div className="flex-1">
             <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
             <p className="text-xs text-blue-700 mb-3">
-              Planilha profissional com as colunas do cadastro de maquinários, aba de Instruções,
-              listas suspensas e exemplos. Campos obrigatórios marcados com <strong>*</strong>.
+              Modelo alinhado ao cadastro atual (sem coluna Fazenda — o destino é a fazenda
+              selecionada na tela). Listas suspensas e campos obrigatórios marcados com <strong>*</strong>.
             </p>
             <Button
               type="button"
@@ -390,13 +401,26 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
         ) : (
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm text-amber-800 font-medium">
-                {validacao.invalidos} registro(s) com erro serão ignorados.
+                {validacao.invalidos} registro(s) com erro. Nenhuma máquina será importada.
               </p>
               <p className="text-xs text-amber-700 mt-0.5">
-                Apenas os {validacao.validos} registros válidos serão importados.
+                Corrija a planilha e envie novamente. A importação só ocorre com o arquivo 100% válido.
               </p>
+              <div className="mt-2 space-y-1.5">
+                {validacao.erros.slice(0, 4).map((e, idx) => (
+                  <p key={idx} className="text-xs text-amber-900">
+                    Linha {e.linha} · <span className="font-semibold">{e.campo}</span>: {e.mensagem}
+                    {e.esperado ? ` (esperado: ${e.esperado})` : ''}
+                  </p>
+                ))}
+                {validacao.erros.length > 4 && (
+                  <p className="text-xs text-amber-700">
+                    + {validacao.erros.length - 4} erro(s) — veja a lista completa abaixo.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -419,9 +443,24 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
                   <div key={numLinha} className="p-3 bg-red-50">
                     <p className="text-xs font-bold text-red-800 mb-1">Linha {numLinha}</p>
                     {errosPorLinha[numLinha].map((e, idx) => (
-                      <p key={idx} className="text-xs text-red-700">
-                        • <span className="font-semibold">{e.campo}:</span> {e.mensagem}
-                      </p>
+                      <div key={idx} className="text-xs text-red-700 mb-1.5 last:mb-0">
+                        <p>
+                          • <span className="font-semibold">Campo:</span> {e.campo}
+                        </p>
+                        {e.valor != null && e.valor !== '' && (
+                          <p className="pl-3">
+                            <span className="font-semibold">Valor:</span> {e.valor}
+                          </p>
+                        )}
+                        <p className="pl-3">
+                          <span className="font-semibold">Erro:</span> {e.mensagem}
+                        </p>
+                        {e.esperado && (
+                          <p className="pl-3">
+                            <span className="font-semibold">Esperado:</span> {e.esperado}
+                          </p>
+                        )}
+                      </div>
                     ))}
                   </div>
                 ))}
@@ -444,7 +483,7 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
             <Button type="button" onClick={handleClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800">
               Cancelar
             </Button>
-            {validacao.validos > 0 && (
+            {!temErros && validacao.validos > 0 && (
               <Button
                 type="button"
                 onClick={handleImportar}

@@ -7,6 +7,7 @@ import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   EditActionIcon,
   EstornoActionIcon,
+  ViewActionIcon,
   TableIconButton,
 } from "@/components/icons/FarmActionIcons";
 import EstornarMovimentacaoDialog from "@/components/insumos/EstornarMovimentacaoDialog";
@@ -14,14 +15,19 @@ import { trpc } from "@/lib/trpc";
 import { formatDataBr, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
 import {
   agruparMovimentacoes,
+  classificarMotivoEstornoAbastecimento,
   formatDataResumo,
   formatItensLabel,
   formatQtdItem,
   formatUnidadeItem,
   formatValorResumo,
   isMovimentacaoDeAbastecimento,
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
   rotuloStatusMov,
+  sinalResumoMovimentacao,
   statusBadgeClassMov,
+  textoMotivoEstornoAbastecimentoDetalhe,
   tipoBadgeClassMov,
   tipoExibicaoMov,
   valorProdutoLinha,
@@ -74,11 +80,53 @@ const FILTROS_SECUNDARIOS_VAZIOS: FiltrosSecundarios = {
 const SORT_TIPS: Record<SortKey, string> = {
   data: "Ordenar por data",
   tipo: "Ordenar por tipo",
-  origemDestino: "Ordenar por fornecedor",
+  origemDestino: "Ordenar por referência",
   documento: "Ordenar por documento",
   itens: "Ordenar por quantidade de itens",
   valor: "Ordenar por valor total",
 };
+
+/** Linha secundária: Nome · Placa/Nº de série (sem #id do abastecimento). */
+function rotuloMaquinaReferencia(
+  maquinaNome: string | null | undefined,
+  placaOuSerie: string | null | undefined,
+): string {
+  return [maquinaNome?.trim() || null, placaOuSerie?.trim() || null].filter(Boolean).join(" · ");
+}
+
+const MSG_ABAST_ORIGEM_NAO_ENCONTRADO =
+  "Abastecimento de origem não encontrado. Verifique a integridade do vínculo.";
+
+const MSG_MOV_AUTO_AVISO =
+  "Movimentação automática vinculada a um abastecimento.";
+
+/** Data do abastecimento + hora do registro (quando existir). Não inventa horário. */
+function formatDataHoraAbastecimentoBloco(
+  data: string | null | undefined,
+  createdAt: string | Date | null | undefined,
+): { rotulo: string; valor: string } {
+  const dataFmt = formatDataBr(data) || "—";
+  if (dataFmt === "—") return { rotulo: "Data", valor: "—" };
+
+  if (createdAt == null || createdAt === "") {
+    return { rotulo: "Data", valor: dataFmt };
+  }
+
+  const raw = String(createdAt);
+  const temHoraNoTexto = /T\d{2}:\d{2}/.test(raw) || /\d{2}:\d{2}/.test(raw);
+  if (!temHoraNoTexto && !(createdAt instanceof Date)) {
+    return { rotulo: "Data", valor: dataFmt };
+  }
+
+  const d = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(d.getTime())) {
+    return { rotulo: "Data", valor: dataFmt };
+  }
+
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return { rotulo: "Data e hora", valor: `${dataFmt} às ${hh}:${mm}` };
+}
 
 function formatMoedaOuTraco(valor: number | null): string {
   if (valor == null || !Number.isFinite(valor)) return "—";
@@ -94,6 +142,34 @@ export default function InsumosMovimentacaoPanel() {
   });
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
+  const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
+  const { data: abastecimentos = [] } = trpc.abastecimentos.list.useQuery();
+
+  const placaPorAbastecimentoId = useMemo(() => {
+    const maqById = new Map(
+      maquinas.map(m => [m.id, (m.placa ?? "").trim()] as const),
+    );
+    const map = new Map<number, string>();
+    for (const a of abastecimentos) {
+      const placa = maqById.get(a.maquinaId);
+      if (placa) map.set(a.id, placa);
+    }
+    return map;
+  }, [maquinas, abastecimentos]);
+
+  const abastecimentoPorId = useMemo(() => {
+    const map = new Map<number, (typeof abastecimentos)[number]>();
+    for (const a of abastecimentos) map.set(a.id, a);
+    return map;
+  }, [abastecimentos]);
+
+  const identMaquinaDoResumo = (resumo: MovimentacaoResumo) =>
+    rotuloMaquinaReferencia(
+      resumo.maquinaNome,
+      resumo.abastecimentoId != null
+        ? placaPorAbastecimentoId.get(resumo.abastecimentoId) ?? null
+        : null,
+    );
 
   const estornarMutation = trpc.estoque.estornarMovimentacao.useMutation();
 
@@ -114,10 +190,6 @@ export default function InsumosMovimentacaoPanel() {
   const [estornoAlvo, setEstornoAlvo] = useState<MovimentacaoResumo | null>(null);
   const [estornando, setEstornando] = useState(false);
   const [estornoSubmitError, setEstornoSubmitError] = useState<string | null>(null);
-  const [vinculoAlvo, setVinculoAlvo] = useState<{
-    resumo: MovimentacaoResumo;
-    acao: "editar" | "excluir";
-  } | null>(null);
 
   const filtrosRascunho: FiltrosSecundarios = {
     categoria: fCategoria,
@@ -166,13 +238,37 @@ export default function InsumosMovimentacaoPanel() {
     const periodoIniUrl = params.get("periodoIni")?.trim() ?? "";
     const periodoFimUrl = params.get("periodoFim")?.trim() ?? "";
     const produtoUrl = params.get("produto")?.trim() ?? "";
-    const temFiltrosUrl = Boolean(tipoUrl || fornecedorUrl || periodoIniUrl || periodoFimUrl || produtoUrl);
+    const categoriaUrl = params.get("categoria")?.trim() ?? "";
+    const subcategoriaUrl = params.get("subcategoria")?.trim() ?? "";
+    const destinoUrl = params.get("destino")?.trim() ?? "";
+    const notaFiscalUrl = params.get("notaFiscal")?.trim() ?? "";
+    const buscaUrl = params.get("busca")?.trim() ?? "";
+    const pageUrl = Number(params.get("page") || 0);
+    const sortUrl = params.get("sort")?.trim() ?? "";
+    const sortDirUrl = params.get("sortDir")?.trim() ?? "";
+    const temFiltrosUrl = Boolean(
+      tipoUrl ||
+        fornecedorUrl ||
+        periodoIniUrl ||
+        periodoFimUrl ||
+        produtoUrl ||
+        categoriaUrl ||
+        subcategoriaUrl ||
+        destinoUrl ||
+        notaFiscalUrl ||
+        buscaUrl,
+    );
     if (temFiltrosUrl) {
       setFTipo(tipoUrl);
       setFOrigem(fornecedorUrl);
       setFPeriodoIni(periodoIniUrl);
       setFPeriodoFim(periodoFimUrl);
       setFProduto(produtoUrl);
+      setFCategoria(categoriaUrl);
+      setFSubcategoria(subcategoriaUrl);
+      setFDestino(destinoUrl);
+      setFNotaFiscal(notaFiscalUrl);
+      if (buscaUrl) setBusca(buscaUrl);
       setAplicados({
         ...FILTROS_SECUNDARIOS_VAZIOS,
         tipo: tipoUrl,
@@ -180,9 +276,28 @@ export default function InsumosMovimentacaoPanel() {
         periodoIni: periodoIniUrl,
         periodoFim: periodoFimUrl,
         produto: produtoUrl,
+        categoria: categoriaUrl,
+        subcategoria: subcategoriaUrl,
+        destino: destinoUrl,
+        notaFiscal: notaFiscalUrl,
       });
-      setMaisFiltrosAbertos(true);
+      setMaisFiltrosAbertos(
+        Boolean(categoriaUrl || subcategoriaUrl || destinoUrl || notaFiscalUrl || fornecedorUrl || periodoIniUrl || periodoFimUrl || produtoUrl),
+      );
     }
+    if (pageUrl > 1) setPage(pageUrl);
+    if (
+      sortUrl === "data" ||
+      sortUrl === "tipo" ||
+      sortUrl === "origemDestino" ||
+      sortUrl === "documento" ||
+      sortUrl === "itens" ||
+      sortUrl === "valor"
+    ) {
+      setSortKey(sortUrl);
+    }
+    if (sortDirUrl === "asc") setSortAsc(true);
+    if (sortDirUrl === "desc") setSortAsc(false);
 
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone, loadingFazendas]);
@@ -350,6 +465,25 @@ export default function InsumosMovimentacaoPanel() {
     return rows;
   }, [filtradas, sortKey, sortAsc]);
 
+  /** Totais da lista filtrada: entradas e saídas separadas, sem estornadas. */
+  const totaisLista = useMemo(() => {
+    let entradas = 0;
+    let saidas = 0;
+    let qtdEstornadas = 0;
+    for (const m of ordenadas) {
+      if (m.status === "estornada") {
+        qtdEstornadas += 1;
+        continue;
+      }
+      if (m.valorTotal == null) continue;
+      const valor = Math.abs(m.valorTotal);
+      if (!(valor > 0)) continue;
+      if (sinalResumoMovimentacao(m.tipo) === "saida") saidas += valor;
+      else entradas += valor;
+    }
+    return { entradas, saidas, qtdEstornadas };
+  }, [ordenadas]);
+
   const totalPages = Math.max(1, Math.ceil(ordenadas.length / perPage));
   const paginaAtual = Math.min(page, totalPages);
   const pageSlice = ordenadas.slice((paginaAtual - 1) * perPage, paginaAtual * perPage);
@@ -388,7 +522,9 @@ export default function InsumosMovimentacaoPanel() {
       return;
     }
     if (isMovimentacaoDeAbastecimento(resumo)) {
-      setVinculoAlvo({ resumo, acao: "editar" });
+      toast.error(
+        "Esta movimentação foi gerada automaticamente por um abastecimento. Edite o abastecimento de origem para atualizar as informações.",
+      );
       return;
     }
     setLocation(
@@ -398,16 +534,51 @@ export default function InsumosMovimentacaoPanel() {
 
   const pedirEstorno = (resumo: MovimentacaoResumo) => {
     if (isMovimentacaoDeAbastecimento(resumo)) {
-      setVinculoAlvo({ resumo, acao: "excluir" });
+      toast.error(
+        "Esta movimentação foi gerada por um abastecimento e não pode ser excluída diretamente. Estorne o abastecimento de origem.",
+      );
       return;
     }
     setEstornoAlvo(resumo);
   };
 
+  const buildRetornoMovimentacoesUrl = (opts?: { expandedId?: string }) => {
+    const qs = new URLSearchParams();
+    if (fFazenda) qs.set("fazendaId", fFazenda);
+    if (busca.trim()) qs.set("busca", busca.trim());
+    if (aplicados.tipo) qs.set("tipo", aplicados.tipo);
+    if (aplicados.origem) qs.set("origem", aplicados.origem);
+    if (aplicados.destino) qs.set("destino", aplicados.destino);
+    if (aplicados.categoria) qs.set("categoria", aplicados.categoria);
+    if (aplicados.subcategoria) qs.set("subcategoria", aplicados.subcategoria);
+    if (aplicados.notaFiscal) qs.set("notaFiscal", aplicados.notaFiscal);
+    if (aplicados.produto) qs.set("produto", aplicados.produto);
+    if (aplicados.periodoIni) qs.set("periodoIni", aplicados.periodoIni);
+    if (aplicados.periodoFim) qs.set("periodoFim", aplicados.periodoFim);
+    if (page > 1) qs.set("page", String(page));
+    if (sortKey !== "data") qs.set("sort", sortKey);
+    if (sortAsc) qs.set("sortDir", "asc");
+    if (opts?.expandedId) qs.set("grupoId", opts.expandedId);
+    const q = qs.toString();
+    return q ? `/insumos/movimentacao?${q}` : "/insumos/movimentacao";
+  };
+
   const irParaAbastecimento = (resumo: MovimentacaoResumo) => {
     if (!resumo.abastecimentoId) return;
-    setVinculoAlvo(null);
-    setLocation(`/maquinas/abastecimento/cadastro?id=${resumo.abastecimentoId}`);
+    if (!abastecimentoPorId.has(resumo.abastecimentoId)) {
+      console.warn("[movimentacoes] vínculo de abastecimento quebrado", {
+        movimentacaoId: resumo.movimentacaoId,
+        abastecimentoId: resumo.abastecimentoId,
+      });
+      toast.error(MSG_ABAST_ORIGEM_NAO_ENCONTRADO);
+      return;
+    }
+    const retorno = encodeURIComponent(
+      buildRetornoMovimentacoesUrl({ expandedId: resumo.movimentacaoId }),
+    );
+    setLocation(
+      `/maquinas/abastecimento/cadastro?id=${resumo.abastecimentoId}&retorno=${retorno}`,
+    );
   };
 
   const confirmarEstorno = async (payload: { motivo: string; observacao?: string }) => {
@@ -456,70 +627,106 @@ export default function InsumosMovimentacaoPanel() {
     ? `Movimentações — ${fazendaSelecionadaNome}`
     : "Movimentações";
 
-  /** Colunas do relatório Excel — só o quadro da lista (sem campos de Nova Movimentação). */
+  /** Colunas do relatório Excel — quadro principal (enxuto). */
   const exportHeaders = [
     "Data",
     "Tipo de movimentação",
-    "Origem / Destino",
+    "Referência",
     "Documento",
     "Itens",
     "Valor total",
-    "Situação",
-    "Máquina",
-    "Referência abastecimento",
-    "Data do estorno",
-    "Motivo do estorno",
   ];
-  const exportRows = ordenadas.map(m => [
-    formatDataResumo(m.dataMovimentacao),
-    m.tipo,
-    m.origemDestino,
-    m.documento === "—" ? "" : m.documento,
-    formatItensLabel(m.qtdItens),
-    m.valorTotal != null ? formatValorResumo(m.valorTotal) : "",
-    rotuloStatusMov(m.status === "estornada" ? "estornada" : "ativa"),
-    m.maquinaNome || "",
-    m.abastecimentoId != null ? `Abastecimento #${m.abastecimentoId}` : "",
-    m.status === "estornada" ? (m.infoEstorno?.dataHoraLabel ?? "") : "",
-    m.status === "estornada"
-      ? (m.infoEstorno?.motivo || m.motivoEstorno || "")
-      : "",
-  ]);
+
+  const textoOuTraco = (v: string | null | undefined) => {
+    const t = (v ?? "").trim();
+    return t || "—";
+  };
+
+  const exportDetailRows = useMemo(
+    () =>
+      ordenadas.map(m => {
+        const valor =
+          m.valorTotal != null && Number.isFinite(m.valorTotal)
+            ? formatValorResumo(Math.abs(m.valorTotal))
+            : "";
+        return [
+          m.dataMovimentacao || "",
+          m.tipo,
+          textoOuTraco(m.origemDestino === "—" ? "" : m.origemDestino),
+          textoOuTraco(m.documento === "—" ? "" : m.documento),
+          formatItensLabel(m.qtdItens),
+          valor,
+        ];
+      }),
+    [ordenadas],
+  );
+
+  const exportRows = useMemo(() => {
+    if (exportDetailRows.length === 0) return exportDetailRows;
+    const empty = Array.from({ length: 5 }, () => "");
+    return [
+      ...exportDetailRows,
+      [
+        "Entradas (sem estornadas)",
+        ...empty.slice(0, 4),
+        formatValorResumo(totaisLista.entradas),
+      ],
+      [
+        "Saídas (sem estornadas)",
+        ...empty.slice(0, 4),
+        formatValorResumo(totaisLista.saidas),
+      ],
+    ];
+  }, [exportDetailRows, totaisLista]);
 
   const exportItensHeaders = [
+    "Movimentação Nº",
     "Data",
     "Tipo de movimentação",
-    "Documento",
     "Produto",
     "Quantidade",
     "Unidade",
-    "Valor unitário",
     "Valor total",
   ];
-  const exportItensRows = ordenadas.flatMap(resumo =>
-    resumo.itens.map(item => [
-      formatDataResumo(resumo.dataMovimentacao),
-      resumo.tipo,
-      resumo.documento === "—" ? "" : resumo.documento,
-      item.nome ?? "",
-      formatQtdItem(item.quantidade),
-      formatUnidadeItem(item.unidade),
-      formatMoedaOuTraco(
-        valorUnitarioProdutoLinha(item, { freteLegado: resumo.freteLegado }),
+
+  const exportItensRows = useMemo(
+    () =>
+      ordenadas.flatMap(resumo =>
+        resumo.itens.map(item => {
+          const qtd = Math.abs(Number(item.quantidade ?? 0));
+          const vt = valorProdutoLinha(item, { freteLegado: resumo.freteLegado });
+          return [
+            `Nº ${resumo.editId}`,
+            resumo.dataMovimentacao || "",
+            resumo.tipo,
+            textoOuTraco(item.nome),
+            Number.isFinite(qtd) ? qtd : "",
+            formatUnidadeItem(item.unidade),
+            vt != null && Number.isFinite(vt) ? formatValorResumo(Math.abs(vt)) : "",
+          ];
+        }),
       ),
-      formatMoedaOuTraco(
-        valorProdutoLinha(item, { freteLegado: resumo.freteLegado }),
-      ),
-    ]),
+    [ordenadas],
   );
 
-  /** Título único no padrão Animais do Lote / Lista de Produtos. */
+  /** Título do relatório Excel/PDF. */
   const exportIdentityLine = fazendaSelecionadaNome
-    ? `${fazendaSelecionadaNome} — Movimentações`
+    ? `Movimentações - ${fazendaSelecionadaNome}`
     : "Movimentações";
 
   const exportColumnAligns = exportHeaders.map(() => "center" as const);
   const exportItensColumnAligns = exportItensHeaders.map(() => "center" as const);
+
+  const exportColumnWidths = [12, 22, 28, 16, 12, 16];
+  const exportItensColumnWidths = [16, 12, 20, 28, 12, 10, 16];
+
+  const slugNomeArquivo = (nome: string) =>
+    nome
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "fazenda";
 
   const exportarPlanilhaAgrupada = async () => {
     if (ordenadas.length === 0) {
@@ -527,27 +734,41 @@ export default function InsumosMovimentacaoPanel() {
       return;
     }
     try {
-      const simpleOpts = {
+      /** Mesmo padrão visual de “Animais do Lote”: título central, cabeçalho claro, tudo centralizado. */
+      const reportOpts = {
         blankAfterMeta: false as const,
         autoFilter: false as const,
         plainHeader: true as const,
+        titleSubtleFill: true as const,
+        currencyAsNumber: false as const,
+        headerRowHeight: 28 as const,
       };
+
       const wb = await buildExportSpreadsheetWorkbook(exportHeaders, exportRows, {
         sheetName: "Movimentações",
         reportTitle: exportIdentityLine,
-        columnAligns: exportColumnAligns,
+        columnAligns: [...exportColumnAligns],
+        columnWidths: exportColumnWidths,
         currencyColIndexes: [5],
-        textColIndexes: [0, 1, 2, 3, 4, 6, 7, 8, 9, 10],
-        ...simpleOpts,
+        dateColIndexes: [0],
+        textColIndexes: [1, 2, 3, 4],
+        wrapTextColIndexes: [2],
+        footerRowCount: exportDetailRows.length > 0 ? 2 : 0,
+        // Mescla Data…Itens para o rótulo; valor fica em “Valor total”.
+        footerLabelMergeEndCol: 5,
+        ...reportOpts,
       });
 
       const wbItens = await buildExportSpreadsheetWorkbook(exportItensHeaders, exportItensRows, {
         sheetName: "Itens",
         reportTitle: exportIdentityLine,
-        columnAligns: exportItensColumnAligns,
-        currencyColIndexes: [6, 7],
-        textColIndexes: [0, 1, 2, 3, 5],
-        ...simpleOpts,
+        columnAligns: [...exportItensColumnAligns],
+        columnWidths: exportItensColumnWidths,
+        currencyColIndexes: [6],
+        dateColIndexes: [1],
+        textColIndexes: [0, 2, 3, 5],
+        wrapTextColIndexes: [3],
+        ...reportOpts,
       });
 
       const srcItens = wbItens.getWorksheet("Itens") ?? wbItens.worksheets[0];
@@ -561,6 +782,7 @@ export default function InsumosMovimentacaoPanel() {
             const target = newRow.getCell(colNumber);
             target.value = cell.value;
             target.style = { ...cell.style };
+            if (cell.numFmt) target.numFmt = cell.numFmt;
           });
           newRow.commit?.();
         });
@@ -575,12 +797,12 @@ export default function InsumosMovimentacaoPanel() {
       });
       const agora = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
-      const carimbo = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}_${pad(agora.getHours())}-${pad(agora.getMinutes())}-${pad(agora.getSeconds())}`;
-      const base = `movimentacoes-${(fazendaSelecionadaNome ?? "insumos").toLowerCase().replace(/\s+/g, "-")}`;
+      const dataArquivo = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}`;
+      const base = `movimentacoes-${slugNomeArquivo(fazendaSelecionadaNome ?? "fazenda")}-${dataArquivo}`;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${base}_${carimbo}.xlsx`;
+      link.download = `${base}.xlsx`;
       link.click();
       URL.revokeObjectURL(url);
       toast.success("Planilha exportada!");
@@ -589,14 +811,22 @@ export default function InsumosMovimentacaoPanel() {
       await exportListSpreadsheet(
         exportHeaders,
         exportRows,
-        `movimentacoes-${(fazendaSelecionadaNome ?? "insumos").toLowerCase().replace(/\s+/g, "-")}`,
+        `movimentacoes-${slugNomeArquivo(fazendaSelecionadaNome ?? "fazenda")}`,
         {
           reportTitle: exportIdentityLine,
           blankAfterMeta: false,
           autoFilter: false,
           plainHeader: true,
-          columnAligns: exportColumnAligns,
+          titleSubtleFill: true,
+          currencyAsNumber: false,
+          headerRowHeight: 28,
+          columnAligns: [...exportColumnAligns],
+          columnWidths: exportColumnWidths,
           currencyColIndexes: [5],
+          dateColIndexes: [0],
+          wrapTextColIndexes: [2],
+          footerRowCount: exportDetailRows.length > 0 ? 2 : 0,
+          footerLabelMergeEndCol: 5,
         },
       );
     }
@@ -638,7 +868,7 @@ export default function InsumosMovimentacaoPanel() {
   const colunas: [SortKey, string, string][] = [
     ["data", "Data", "min-w-[96px]"],
     ["tipo", "Tipo de movimentação", "min-w-[140px]"],
-    ["origemDestino", "Fornecedor", "min-w-[200px]"],
+    ["origemDestino", "Referência", "min-w-[200px]"],
     ["documento", "Documento", "min-w-[110px]"],
     ["itens", "Itens", "min-w-[96px]"],
     ["valor", "Valor total", "min-w-[110px]"],
@@ -669,51 +899,7 @@ export default function InsumosMovimentacaoPanel() {
         onClearSubmitError={() => setEstornoSubmitError(null)}
       />
 
-      {vinculoAlvo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="bg-white rounded-lg shadow-xl border border-gray-200 max-w-md w-full p-5"
-          >
-            <h2 className="text-[15px] font-semibold text-gray-900 mb-2">
-              Movimentação vinculada a abastecimento
-            </h2>
-            <p className="text-[13px] text-gray-600 leading-relaxed">
-              {vinculoAlvo.acao === "editar"
-                ? "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original."
-                : "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente."}
-            </p>
-            {vinculoAlvo.resumo.abastecimentoId != null && (
-              <p className="text-[12px] text-gray-500 mt-2">
-                Referência: Abastecimento #{vinculoAlvo.resumo.abastecimentoId}
-                {vinculoAlvo.resumo.maquinaNome ? ` · ${vinculoAlvo.resumo.maquinaNome}` : ""}
-              </p>
-            )}
-            <div className="flex flex-wrap justify-end gap-2 mt-5">
-              <button
-                type="button"
-                onClick={() => setVinculoAlvo(null)}
-                className="px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Fechar
-              </button>
-              {vinculoAlvo.resumo.abastecimentoId != null && (
-                <button
-                  type="button"
-                  onClick={() => irParaAbastecimento(vinculoAlvo.resumo)}
-                  className="px-4 py-2 rounded-lg text-[12px] font-semibold text-white hover:brightness-95"
-                  style={{ backgroundColor: FD_PRIMARY }}
-                >
-                  Ver abastecimento
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Filtros */}
+      {/* Filtros — área acima do quadro */}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden px-4 py-3">
         {/* Linha 1 — Fazenda | Produto */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -861,8 +1047,8 @@ export default function InsumosMovimentacaoPanel() {
               </select>
             </div>
             <div>
-              <label className={labelClass}>Origem</label>
-              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Fornecedor ou fazenda" className={inputClass} />
+              <label className={labelClass}>Referência</label>
+              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Ex.: fornecedor, máquina…" className={inputClass} />
             </div>
             <div>
               <label className={labelClass}>Destino</label>
@@ -900,11 +1086,11 @@ export default function InsumosMovimentacaoPanel() {
               Nova Movimentação
             </button>
             <ListExportButtons
-              title={tituloQuadro}
-              filename={`movimentacoes-${(fazendaSelecionadaNome ?? "insumos").toLowerCase().replace(/\s+/g, "-")}`}
+              title={exportIdentityLine}
+              filename={`movimentacoes-${slugNomeArquivo(fazendaSelecionadaNome ?? "fazenda")}`}
               headers={exportHeaders}
               rows={exportRows}
-              alignRightFrom={5}
+              alignRightCols={[5]}
               variant="secondary"
               disabled={!fazendaSelecionada || ordenadas.length === 0}
               fazendaNome={fazendaSelecionadaNome}
@@ -915,9 +1101,21 @@ export default function InsumosMovimentacaoPanel() {
               spreadsheetAutoFilter={false}
               spreadsheetPlainHeader
               spreadsheetCurrencyCols={[5]}
-              spreadsheetTextCols={[0, 1, 2, 3, 4, 6, 7, 8]}
-              spreadsheetColumnAligns={exportColumnAligns}
-              pdfColumnAligns={exportColumnAligns}
+              spreadsheetTextCols={[1, 2, 3, 4]}
+              spreadsheetColumnAligns={[...exportColumnAligns]}
+              pdfHeaders={exportHeaders}
+              pdfRows={exportRows.map((r, idx) => [
+                idx < exportDetailRows.length
+                  ? formatDataResumo(String(r[0] ?? ""))
+                  : String(r[0] ?? ""),
+                r[1] ?? "",
+                r[2] ?? "",
+                r[3] ?? "",
+                r[4] ?? "",
+                r[5] ?? "",
+              ])}
+              pdfColumnAligns={["center", "center", "center", "center", "center", "center"]}
+              pdfLandscape
               pdfIncludeSpreadsheetTitle={false}
               pdfShowRegistrosSubtitle={false}
               onExportSpreadsheet={() => {
@@ -966,6 +1164,28 @@ export default function InsumosMovimentacaoPanel() {
           <TableHorizontalScroll
             footer={
               <div className="border-t border-gray-100">
+                {!isLoading && ordenadas.length > 0 ? (
+                  <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                    <span>
+                      Totais (sem estornadas):{" "}
+                      <span className="text-gray-500">Entradas</span>{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatValorResumo(totaisLista.entradas)}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      <span className="text-gray-500">Saídas</span>{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatValorResumo(totaisLista.saidas)}
+                      </span>
+                    </span>
+                    {totaisLista.qtdEstornadas > 0 && (
+                      <span className="text-[10px] text-gray-500">
+                        Exclui {totaisLista.qtdEstornadas}{" "}
+                        {totaisLista.qtdEstornadas === 1 ? "estornada" : "estornadas"}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
                 <TablePaginationFooter
                   pageSize={perPage}
                   page={paginaAtual}
@@ -1016,8 +1236,66 @@ export default function InsumosMovimentacaoPanel() {
                 ) : (
                   pageSlice.map(resumo => {
                     const aberto = expandedIds.has(resumo.movimentacaoId);
-                    const podeEditar = resumo.status === "ativa";
-                    const podeEstornar = resumo.status === "ativa";
+                    const automaticaAbastecimento = isMovimentacaoDeAbastecimento(resumo);
+                    const podeEditar = resumo.status === "ativa" && !automaticaAbastecimento;
+                    const podeEstornar = resumo.status === "ativa" && !automaticaAbastecimento;
+                    const abastOrigem =
+                      resumo.abastecimentoId != null
+                        ? abastecimentoPorId.get(resumo.abastecimentoId)
+                        : undefined;
+                    const abastExiste = resumo.abastecimentoId != null && !!abastOrigem;
+                    const abastEstornado =
+                      String(abastOrigem?.status ?? "registrado") === "estornado";
+                    const motivoCodigo = classificarMotivoEstornoAbastecimento(resumo.motivoEstorno);
+                    const estornoPorOrigem =
+                      resumo.status === "estornada" &&
+                      motivoCodigo === MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA;
+                    const estornoPorAbastecimento =
+                      abastEstornado ||
+                      (resumo.status === "estornada" &&
+                        motivoCodigo === MOTIVO_ESTORNO_ABASTECIMENTO);
+                    const soConsultaAbastecimento =
+                      automaticaAbastecimento &&
+                      (resumo.status === "estornada" || abastEstornado || !abastExiste);
+                    const labelAtalhoAbastecimento = !abastExiste
+                      ? MSG_ABAST_ORIGEM_NAO_ENCONTRADO
+                      : estornoPorAbastecimento && !estornoPorOrigem
+                        ? "Ver abastecimento estornado"
+                        : resumo.status === "estornada" || abastEstornado
+                          ? "Ver abastecimento"
+                          : "Editar abastecimento";
+                    const textoMotivoEstornoDetalhe =
+                      resumo.status === "estornada"
+                        ? textoMotivoEstornoAbastecimentoDetalhe(resumo.motivoEstorno)
+                        : null;
+                    const placaOuSerie =
+                      resumo.abastecimentoId != null
+                        ? placaPorAbastecimentoId.get(resumo.abastecimentoId) ?? null
+                        : null;
+                    const responsavelAbastecimento =
+                      abastOrigem?.responsavel?.trim() || "—";
+                    const registradoPorResumo = (resumo.registradoPor || "").trim();
+                    const mostrarRegistradoPor =
+                      !!registradoPorResumo &&
+                      registradoPorResumo !== "—" &&
+                      (responsavelAbastecimento === "—" ||
+                        registradoPorResumo.toLowerCase() !== responsavelAbastecimento.toLowerCase());
+                    const dataHoraAbast = formatDataHoraAbastecimentoBloco(
+                      abastOrigem?.data ?? resumo.dataMovimentacao,
+                      abastOrigem?.createdAt ?? null,
+                    );
+                    const fazendaAbastecimentoNome =
+                      (abastOrigem?.fazendaId != null
+                        ? fazendas.find(f => f.id === abastOrigem.fazendaId)?.nome
+                        : null) ||
+                      fazendaSelecionadaNome ||
+                      "—";
+                    const origemCombustivel =
+                      abastOrigem == null
+                        ? "Estoque da Fazenda"
+                        : abastOrigem.abastecidoNaFazenda
+                          ? "Estoque da Fazenda"
+                          : "Compra externa / Posto";
                     return (
                       <Fragment key={resumo.movimentacaoId}>
                         <tr
@@ -1053,9 +1331,10 @@ export default function InsumosMovimentacaoPanel() {
                                 <span
                                   className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide whitespace-nowrap bg-slate-100 text-slate-600"
                                   title={
-                                    resumo.abastecimentoId
-                                      ? `Abastecimento #${resumo.abastecimentoId}${resumo.maquinaNome ? ` — ${resumo.maquinaNome}` : ""}`
-                                      : "Gerada por abastecimento"
+                                    identMaquinaDoResumo(resumo) ||
+                                    (resumo.abastecimentoId
+                                      ? `Abastecimento #${resumo.abastecimentoId}`
+                                      : "Gerada por abastecimento")
                                   }
                                 >
                                   Automática
@@ -1070,11 +1349,9 @@ export default function InsumosMovimentacaoPanel() {
                           </td>
                           <td className="px-3 py-2.5 text-gray-800 align-middle text-center leading-snug max-w-[280px]">
                             <div>{resumo.origemDestino}</div>
-                            {isMovimentacaoDeAbastecimento(resumo) && (
+                            {automaticaAbastecimento && (
                               <div className="text-[10px] text-gray-500 mt-0.5">
-                                {[resumo.maquinaNome, resumo.abastecimentoId != null ? `#${resumo.abastecimentoId}` : null]
-                                  .filter(Boolean)
-                                  .join(" · ")}
+                                {identMaquinaDoResumo(resumo) || "—"}
                               </div>
                             )}
                           </td>
@@ -1089,6 +1366,21 @@ export default function InsumosMovimentacaoPanel() {
                           </td>
                           <td className="px-2 py-2.5 align-middle text-center" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-0.5">
+                              {automaticaAbastecimento && (
+                                <TableIconButton
+                                  label={labelAtalhoAbastecimento}
+                                  onClick={() => irParaAbastecimento(resumo)}
+                                  tone="neutral"
+                                  compact
+                                  blocked={!abastExiste}
+                                >
+                                  {soConsultaAbastecimento ? (
+                                    <ViewActionIcon size={16} />
+                                  ) : (
+                                    <EditActionIcon size={16} />
+                                  )}
+                                </TableIconButton>
+                              )}
                               {podeEditar && (
                                 <TableIconButton
                                   label="Editar movimentação"
@@ -1115,18 +1407,110 @@ export default function InsumosMovimentacaoPanel() {
                         {aberto && (
                           <tr className="bg-slate-50/80 border-b border-gray-100">
                             <td colSpan={8} className="px-3 py-3">
+                              {automaticaAbastecimento && (
+                                <div className="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                                  <div className="mb-2">
+                                    <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                                      Origem do abastecimento
+                                    </div>
+                                    <p className="text-[11px] text-gray-500 mt-0.5">{MSG_MOV_AUTO_AVISO}</p>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12px]">
+                                    <div className="text-gray-600">
+                                      Tipo de origem:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {resumo.origemDestino || "Abastecimento de máquina"}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Máquina:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {resumo.maquinaNome || "—"}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Identificação da máquina:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {placaOuSerie || "—"}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Abastecimento:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {resumo.abastecimentoId != null
+                                          ? `Nº ${resumo.abastecimentoId}`
+                                          : "—"}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Status do abastecimento:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {abastOrigem
+                                          ? String(abastOrigem.status ?? "registrado") === "estornado"
+                                            ? "Estornado"
+                                            : "Registrado"
+                                          : resumo.abastecimentoId != null
+                                            ? "Não encontrado"
+                                            : "—"}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Responsável pelo abastecimento:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {responsavelAbastecimento}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      {dataHoraAbast.rotulo}:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {dataHoraAbast.valor}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Fazenda:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {fazendaAbastecimentoNome}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      Origem do combustível:{" "}
+                                      <span className="font-medium text-gray-800">
+                                        {origemCombustivel}
+                                      </span>
+                                    </div>
+                                    {estornoPorOrigem && (
+                                      <div className="text-gray-600">
+                                        Origem anterior:{" "}
+                                        <span className="font-medium text-gray-800">
+                                          Estoque da Fazenda
+                                        </span>
+                                      </div>
+                                    )}
+                                    {textoMotivoEstornoDetalhe && (
+                                      <div className="text-gray-600 sm:col-span-2">
+                                        Motivo do estorno:{" "}
+                                        <span className="font-medium text-gray-800">
+                                          {textoMotivoEstornoDetalhe}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {!abastExiste && resumo.abastecimentoId != null && (
+                                    <p className="text-[11px] text-amber-800 mt-2">
+                                      {MSG_ABAST_ORIGEM_NAO_ENCONTRADO}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
                                   Produtos da movimentação
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
-                                  <span>
-                                    Registrado por:{" "}
-                                    <span className="font-medium text-gray-800">{resumo.registradoPor}</span>
-                                  </span>
-                                  {resumo.status === "estornada" && (
-                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${statusBadgeClassMov(resumo.status)}`}>
-                                      {rotuloStatusMov(resumo.status)}
+                                  {(!automaticaAbastecimento || mostrarRegistradoPor) && (
+                                    <span>
+                                      Registrado por:{" "}
+                                      <span className="font-medium text-gray-800">{resumo.registradoPor}</span>
                                     </span>
                                   )}
                                 </div>
@@ -1258,21 +1642,32 @@ export default function InsumosMovimentacaoPanel() {
                                       </div>
                                     )}
                                     <div className="text-gray-600 sm:col-span-2">
-                                      Resultado:{" "}
+                                      Resultado no estoque:{" "}
                                       <span className="font-medium text-gray-800">
                                         {resumo.infoEstorno.resultado}
                                       </span>
                                     </div>
-                                    {resumo.infoEstorno.grupoIdInverso && (
-                                      <div className="text-gray-500 sm:col-span-2 text-[11px]">
-                                        Movimentação inversa:{" "}
-                                        <span className="font-mono text-gray-700">
-                                          {resumo.infoEstorno.grupoIdInverso}
+                                    <div className="text-gray-600 sm:col-span-2">
+                                      {resumo.infoEstorno.referenciaDevolucao === "ok" &&
+                                      resumo.infoEstorno.idInverso != null ? (
+                                        <>
+                                          Movimentação de devolução:{" "}
+                                          <span className="font-medium text-gray-800">
+                                            Nº {resumo.infoEstorno.idInverso}
+                                          </span>
+                                        </>
+                                      ) : resumo.infoEstorno.referenciaDevolucao === "nao_localizada" ? (
+                                        <span className="font-medium text-gray-800">
+                                          Movimentação de devolução não localizada.
                                         </span>
-                                      </div>
-                                    )}
+                                      ) : (
+                                        <span className="font-medium text-gray-800">
+                                          Movimentação de devolução registrada.
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  {resumo.infoEstorno.itensRevertidos.length > 0 && (
+                                  {resumo.infoEstorno.itensRevertidos.length > 1 && (
                                     <div className="mt-2.5 overflow-x-auto rounded border border-gray-100">
                                       <table className="w-full text-[11px] border-collapse">
                                         <thead className="bg-slate-50">

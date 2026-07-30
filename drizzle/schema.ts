@@ -255,6 +255,8 @@ export const abastecimentos = mysqlTable("abastecimentos", {
   fazendaId: int("fazendaId"),
   /** Movimentação de saída gerada automaticamente (quando origem = estoque). */
   movimentacaoEstoqueId: int("movimentacaoEstoqueId"),
+  /** registrado | estornado — estorno preserva o histórico e recompoe o estoque. */
+  status: varchar("status", { length: 20 }).default("registrado"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });

@@ -1332,7 +1332,7 @@ export const devLocalStore = {
       }
       if (mov.abastecimentoId) {
         throw new Error(
-          "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original.",
+          "Esta movimentação foi gerada automaticamente por um abastecimento. Edite o abastecimento de origem para atualizar as informações.",
         );
       }
 
@@ -1480,7 +1480,7 @@ export const devLocalStore = {
 
       if (seeds.some(s => s.abastecimentoId != null)) {
         throw new Error(
-          "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente.",
+          "Esta movimentação foi gerada por um abastecimento e não pode ser excluída diretamente. Estorne o abastecimento de origem.",
         );
       }
 
@@ -1611,7 +1611,7 @@ export const devLocalStore = {
       }
       if (mov.abastecimentoId) {
         throw new Error(
-          "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente.",
+          "Esta movimentação foi gerada por um abastecimento e não pode ser excluída diretamente. Estorne o abastecimento de origem.",
         );
       }
       const item = getItem(data, mov.estoqueId);
@@ -1951,6 +1951,190 @@ export const devLocalStore = {
       if (!row) throw new Error("Pessoa não encontrada.");
       row.ativo = false;
       return { success: true };
+    });
+  },
+
+  /** Cria/atualiza saída de estoque vinculada a abastecimento (modo local sem MySQL). */
+  syncSaidaAbastecimento(input: {
+    abastecimentoId: number;
+    estoqueId: number;
+    fazendaId: number;
+    litros: number;
+    dataISO: string;
+    grupoId: string;
+    maquinaNome: string;
+    registradoPor?: string | null;
+    valor?: string | null;
+    observacoes: string;
+    userId?: number | null;
+  }): number {
+    return withStore(data => {
+      const litros = input.litros;
+      if (!(litros > 0)) throw new Error("Informe uma quantidade abastecida válida.");
+
+      const item = getItem(data, input.estoqueId);
+      if (!item) throw new Error("Não há estoque disponível deste combustível na Fazenda selecionada.");
+
+      const existente = data.movimentacoes.find(
+        m =>
+          m.abastecimentoId === input.abastecimentoId &&
+          (m.status === "ativa" || m.status == null),
+      );
+
+      if (existente) {
+        const oldLitros = Math.abs(parseFloat(String(existente.quantidade ?? 0)));
+        const sameProduct = existente.estoqueId === item.id;
+        const saldoAtual = Number(item.quantidade ?? 0);
+
+        if (sameProduct) {
+          const delta = litros - oldLitros;
+          if (delta > 1e-9 && delta > saldoAtual + 1e-9) {
+            const saldoFmt = saldoAtual.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
+          }
+          item.quantidade = String(Math.max(0, saldoAtual - delta));
+          item.updatedAt = now();
+        } else {
+          const oldItem = getItem(data, existente.estoqueId);
+          if (oldItem) {
+            const oldSaldo = Number(oldItem.quantidade ?? 0);
+            oldItem.quantidade = String(oldSaldo + oldLitros);
+            oldItem.updatedAt = now();
+          }
+          const disponivel = Number(item.quantidade ?? 0);
+          if (litros > disponivel + 1e-9) {
+            const saldoFmt = disponivel.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
+          }
+          item.quantidade = String(Math.max(0, disponivel - litros));
+          item.updatedAt = now();
+        }
+
+        existente.estoqueId = item.id;
+        existente.fazendaId = input.fazendaId;
+        existente.grupoId = input.grupoId;
+        existente.tipo = "Saída";
+        existente.dataMovimentacao = input.dataISO;
+        existente.quantidade = String(-litros);
+        existente.destino = "Abastecimento de máquina";
+        existente.manejo = input.maquinaNome;
+        existente.registradoPor = input.registradoPor?.trim() || null;
+        existente.valor = input.valor ?? null;
+        existente.observacoes = input.observacoes;
+        existente.abastecimentoId = input.abastecimentoId;
+        existente.status = "ativa";
+        existente.userId = input.userId ?? null;
+        existente.updatedAt = now();
+        return existente.id;
+      }
+
+      const atual = Number(item.quantidade ?? 0);
+      if (litros > atual + 1e-9) {
+        const saldoFmt = atual.toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
+      }
+
+      const id = data.nextMovId++;
+      data.movimentacoes.push({
+        id,
+        grupoId: input.grupoId,
+        estoqueId: item.id,
+        abastecimentoId: input.abastecimentoId,
+        fazendaId: input.fazendaId,
+        userId: input.userId ?? null,
+        registradoPor: input.registradoPor?.trim() || null,
+        tipo: "Saída",
+        dataMovimentacao: input.dataISO,
+        quantidade: String(-litros),
+        dataValidade: null,
+        destino: "Abastecimento de máquina",
+        manejo: input.maquinaNome,
+        notaFiscal: null,
+        frete: null,
+        fornecedor: null,
+        valor: input.valor ?? null,
+        observacoes: input.observacoes,
+        status: "ativa",
+        originalGrupoId: null,
+        motivoEstorno: null,
+        createdAt: now(),
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
+      });
+      item.quantidade = String(Math.max(0, atual - litros));
+      item.updatedAt = now();
+      return id;
+    });
+  },
+
+  /** Estorna saída vinculada a abastecimento no store local. */
+  estornarSaidaAbastecimento(input: {
+    abastecimentoId: number;
+    motivo: string;
+    userId?: number | null;
+    registradoPor?: string | null;
+  }): void {
+    return withStore(data => {
+      const ativa = data.movimentacoes.find(
+        m =>
+          m.abastecimentoId === input.abastecimentoId &&
+          (m.status === "ativa" || m.status == null),
+      );
+      if (!ativa) return;
+
+      const litros = Math.abs(parseFloat(String(ativa.quantidade ?? 0)));
+      const item = getItem(data, ativa.estoqueId);
+      if (item && litros > 0) {
+        item.quantidade = String(Number(item.quantidade ?? 0) + litros);
+        item.updatedAt = now();
+      }
+
+      const grupoOriginal = ativa.grupoId?.trim() || `abast-${input.abastecimentoId}`;
+      const estornoGrupoId = `e-abast-${input.abastecimentoId}-${Date.now().toString(36)}`;
+      const hoje = new Date().toISOString().slice(0, 10);
+      const id = data.nextMovId++;
+
+      data.movimentacoes.push({
+        id,
+        grupoId: estornoGrupoId,
+        estoqueId: ativa.estoqueId,
+        abastecimentoId: input.abastecimentoId,
+        fazendaId: ativa.fazendaId,
+        userId: input.userId ?? null,
+        registradoPor: input.registradoPor?.trim() || null,
+        tipo: ativa.tipo || "Saída",
+        dataMovimentacao: hoje,
+        quantidade: String(litros),
+        dataValidade: null,
+        destino: ativa.destino || "Abastecimento de máquina",
+        manejo: ativa.manejo,
+        notaFiscal: null,
+        frete: null,
+        fornecedor: null,
+        valor: ativa.valor,
+        observacoes: `Estorno do abastecimento #${input.abastecimentoId}`,
+        status: "estorno",
+        originalGrupoId: grupoOriginal,
+        motivoEstorno: input.motivo,
+        createdAt: now(),
+        updatedAt: null,
+        updatedByUserId: null,
+        updatedByNome: null,
+      });
+
+      ativa.status = "estornada";
+      ativa.motivoEstorno = input.motivo;
+      ativa.updatedAt = now();
     });
   },
 };

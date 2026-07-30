@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { exportListPdf, exportListSpreadsheet } from "@/lib/exportList";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
-import { nomeUnidadeExibicao, formatQuantidadeMov } from "@/lib/produto-types";
+import { siglaUnidade, formatQuantidadeMov } from "@/lib/produto-types";
 
 type SortKey = "nome" | "unidade" | "qtdAtual" | "qtdMinima";
 
@@ -33,7 +33,7 @@ function MonitoradoPanel() {
       let va: string | number = "";
       let vb: string | number = "";
       if (sortKey === "nome") { va = String(a.nome ?? "").toLowerCase(); vb = String(b.nome ?? "").toLowerCase(); }
-      else if (sortKey === "unidade") { va = nomeUnidadeExibicao(a.unidade as string).toLowerCase(); vb = nomeUnidadeExibicao(b.unidade as string).toLowerCase(); }
+      else if (sortKey === "unidade") { va = siglaUnidade(a.unidade as string).toLowerCase(); vb = siglaUnidade(b.unidade as string).toLowerCase(); }
       else if (sortKey === "qtdAtual") { va = Number(a.quantidade ?? 0); vb = Number(b.quantidade ?? 0); }
       else if (sortKey === "qtdMinima") { va = Number(a.quantidadeMinima ?? 0); vb = Number(b.quantidadeMinima ?? 0); }
       if (va < vb) return sortAsc ? -1 : 1;
@@ -51,7 +51,7 @@ function MonitoradoPanel() {
   const exportHeaders = ["Produtos", "Unidade", "Qtd. Atual", "Qtd. Mínima"];
   const exportRows = sorted.map(p => [
     p.nome,
-    nomeUnidadeExibicao(p.unidade as string),
+    siglaUnidade(p.unidade as string) || "—",
     formatQuantidadeMov(p.quantidade as string),
     formatQuantidadeMov(p.quantidadeMinima as string),
   ]);
@@ -127,7 +127,7 @@ function MonitoradoPanel() {
                 ) : sorted.map(p => (
                   <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                     <td className="px-3 py-2.5 font-medium text-gray-900 uppercase">{p.nome}</td>
-                    <td className="px-3 py-2.5 text-gray-700">{nomeUnidadeExibicao(p.unidade as string)}</td>
+                    <td className="px-3 py-2.5 text-gray-700">{siglaUnidade(p.unidade as string) || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-gray-900">{formatQuantidadeMov(p.quantidade as string)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">{formatQuantidadeMov(p.quantidadeMinima as string)}</td>
                   </tr>

@@ -24,8 +24,12 @@ import {
 import {
   syncSaidaAbastecimento,
   estornarSaidaAbastecimento,
+  syncSaidaAbastecimentoLocal,
+  estornarSaidaAbastecimentoLocal,
   MSG_MOV_VINCULADA_EDITAR,
   MSG_MOV_VINCULADA_EXCLUIR,
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
 } from "./abastecimentoEstoqueSync";
 import { avaliarEstornoEstoque, isEstornoBusinessError, montarMotivoEstorno } from "./estoqueEstorno";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
@@ -34,15 +38,18 @@ import {
   createLocalPasto,
   createLocalBenfeitoria,
   createLocalMaquina,
+  createLocalAbastecimento,
   createLocalAnimal,
   deleteLocalFazenda,
   deleteLocalPasto,
   deleteLocalBenfeitoria,
   deleteLocalMaquina,
+  deleteLocalAbastecimento,
   deleteLocalAnimal,
   getLocalFazenda,
   getLocalBenfeitoria,
   getLocalMaquina,
+  getLocalAbastecimento,
   getLocalAnimal,
   isDatabaseUnavailable,
   listLocalFazendas,
@@ -50,6 +57,7 @@ import {
   listLocalPastosByFazenda,
   listLocalBenfeitorias,
   listLocalMaquinas,
+  listLocalAbastecimentos,
   listLocalAnimais,
   listLocalAnimaisEnriched,
   listLocalLotes,
@@ -76,6 +84,7 @@ import {
   updateLocalPasto,
   updateLocalBenfeitoria,
   updateLocalMaquina,
+  updateLocalAbastecimento,
   updateLocalAnimal,
   enrichLocalAnimal,
   listLocalHistoricoBrincos,
@@ -3536,10 +3545,15 @@ const maquinasInputFields = {
 const maquinasRouter = router({
   // ── Gera planilha-modelo para importação de maquinários ──────────────────────────
   gerarModeloPlanilha: protectedProcedure
-    .mutation(async ({ ctx }) => {
+    .mutation(async () => {
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
-      const { COLUNAS_IMPORTACAO, TIPOS_MAQUINA: TIPOS_MAQUINA_LIST } = await import('../shared/importacaoMaquinarios');
+      const {
+        COLUNAS_IMPORTACAO,
+        TIPOS_MAQUINA: TIPOS_MAQUINA_LIST,
+        CONDICOES_AQUISICAO_PLANILHA,
+        TIPOS_MEDIDOR_PLANILHA,
+      } = await import('../shared/importacaoMaquinarios');
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Fazenda Digital';
       wb.created = new Date();
@@ -3548,23 +3562,8 @@ const maquinasRouter = router({
       const COR_OBRIG_BG   = 'B8860B';
       const COR_COL_BG     = '2D5A5A';
       const COR_LINHA_ALT  = 'F2F7F7';
+      const NUM_LINHAS_DADOS = 100; // linhas 2..101
 
-      // ── Busca dados dinâmicos do banco ──────────────────────────────────────
-      // Fazendas do usuário logado
-      let nomesFazendas: string[] = [];
-      try {
-        const fazendasUsuario = await db
-          .select({ nome: fazendas.nome })
-          .from(fazendas)
-          .where(eq(fazendas.userId, ctx.user.id))
-          .orderBy(fazendas.nome);
-        nomesFazendas = fazendasUsuario.map(f => f.nome);
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        nomesFazendas = ["Fazenda Volta Grande"];
-      }
-
-      // Importa mapeamento centralizado Tipo → Marca (fonte única de verdade)
       const { MARCAS_POR_TIPO } = await import('../shared/maquina-types');
       const tiposMaquina = Object.keys(MARCAS_POR_TIPO);
 
@@ -3573,119 +3572,137 @@ const maquinasRouter = router({
         views: [{ state: 'frozen', ySplit: 1 }],
       });
 
-      // Linha 1: cabeçalhos com alinhamento uniforme
       const headerRow = ws.getRow(1);
-      headerRow.height = 20; // altura uniforme, sem wrap text
+      headerRow.height = 36;
       COLUNAS_IMPORTACAO.forEach((col, idx) => {
         const cell = headerRow.getCell(idx + 1);
         cell.value = col.label + (col.obrigatorio ? ' *' : '');
         cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG } };
-        // Desativar wrap text no cabeçalho para manter alinhamento uniforme
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: col.obrigatorio ? COR_OBRIG_BG : COR_COL_BG },
+        };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         cell.border = {
           bottom: { style: 'medium', color: { argb: COR_HEADER_BG } },
           right:  { style: 'thin',   color: { argb: 'FFFFFF' } },
         };
+        cell.protection = { locked: true };
         ws.getColumn(idx + 1).width = col.largura;
       });
 
-      // Linhas 2-501: área de preenchimento
-      for (let r = 2; r <= 501; r++) {
+      const colKeysTexto = new Set(['nome', 'modelo', 'placa', 'dataAquisicao', 'observacoes', 'ano', 'vidaUtil', 'leituraInicial', 'valor']);
+      for (let r = 2; r <= NUM_LINHAS_DADOS + 1; r++) {
         const row = ws.getRow(r);
         row.height = 18;
         COLUNAS_IMPORTACAO.forEach((col, idx) => {
           const cell = row.getCell(idx + 1);
           const isAlt = (r % 2 === 0);
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: col.obrigatorio ? 'FFF8E1' : (isAlt ? COR_LINHA_ALT : 'FFFFFF') },
+          };
           cell.font = { name: 'Calibri', size: 10 };
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
           cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
+          cell.protection = { locked: false };
+          if (colKeysTexto.has(col.key)) {
+            cell.numFmt = '@';
+          }
         });
       }
 
-      // ── Aba oculta com listas longas (Fazenda e Marca) ──────────────────────
-      // Excel limita formulae inline a 255 chars; listas longas precisam de aba de referência
+      // Aba auxiliar oculta: Tipos, Marcas dependentes, Condição, Tipo de medidor
       const wsListas = wb.addWorksheet('_Listas', {
-        state: 'veryHidden', // oculta para o usuário
+        state: 'veryHidden',
         properties: { tabColor: { argb: '888888' } },
       });
 
-      // Estrutura da aba _Listas:
-      //   Coluna A: Fazendas do usuário (dropdown Fazenda)
-      //   Coluna B: Tipos únicos (dropdown Tipo)
-      //   Coluna C: Tipo (chave, repetido) | Coluna D: Marca  — FORMATO LONGO agrupado
-      //   Usado por OFFSET+MATCH+COUNTIF para listas dependentes Tipo → Marca
-
-      // Coluna A: Fazendas
-      nomesFazendas.forEach((nome, i) => { wsListas.getCell(i + 1, 1).value = nome; });
-      // Coluna B: Tipos únicos
-      tiposMaquina.forEach((tipo, i) => { wsListas.getCell(i + 1, 2).value = tipo; });
-      // Colunas C (tipo) e D (marca) em formato longo, AGRUPADO por tipo
+      // A: Tipos | B+C: Tipo→Marca (longo) | D: Condição | E: Tipo de medidor
+      tiposMaquina.forEach((tipo, i) => { wsListas.getCell(i + 1, 1).value = tipo; });
       let linhaLista = 1;
       Object.entries(MARCAS_POR_TIPO).forEach(([tipo, marcas]) => {
         marcas.forEach((marca) => {
-          wsListas.getCell(linhaLista, 3).value = tipo;   // Coluna C: chave do tipo
-          wsListas.getCell(linhaLista, 4).value = marca;  // Coluna D: marca
+          wsListas.getCell(linhaLista, 2).value = tipo;
+          wsListas.getCell(linhaLista, 3).value = marca;
           linhaLista++;
         });
       });
+      CONDICOES_AQUISICAO_PLANILHA.forEach((v, i) => { wsListas.getCell(i + 1, 4).value = v; });
+      TIPOS_MEDIDOR_PLANILHA.forEach((v, i) => { wsListas.getCell(i + 1, 5).value = v; });
 
-      const numFazendas = nomesFazendas.length;
       const numTipos = tiposMaquina.length;
-
-      // ── Dropdowns de validação ──────────────────────────────────────────────
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
+      const colIdxTipo = idxDe('tipo');
+      const colIdxMarca = idxDe('marca');
+      const colIdxEstado = idxDe('estado');
+      const colIdxMedidor = idxDe('tipoMedidor');
+      const letraColTipo = String.fromCharCode(64 + colIdxTipo);
 
-      // Índices de coluna (1-based) na planilha visível
-      const colIdxTipo    = idxDe('tipo');        // coluna A (1)
-      const colIdxFazenda = idxDe('fazendaNome');
-      const colIdxMarca   = idxDe('marca');
-
-      // Letra da coluna do Tipo na planilha (para referência relativa na fórmula)
-      const letraColTipo = String.fromCharCode(64 + colIdxTipo); // 1→A, 5→E...
-
-      // Dropdowns com lista inline (curta) — Tipo, Estado, Status
-      const dvInline: { colIdx: number; formulae: string[] }[] = [
-        { colIdx: colIdxTipo,      formulae: [`"${TIPOS_MAQUINA_LIST.join(',')}"`] },
-        { colIdx: idxDe('estado'), formulae: ['"Novo,Usado"'] },
-        { colIdx: idxDe('status'), formulae: ['"Ativo,Manutenção,Inativo"'] },
+      const dvInline: { colIdx: number; formulae: string[]; error: string }[] = [
+        {
+          colIdx: colIdxTipo,
+          formulae: [`"${TIPOS_MAQUINA_LIST.join(',')}"`],
+          error: 'Selecione um Tipo de máquina da lista.',
+        },
+        {
+          colIdx: colIdxEstado,
+          formulae: [`"${CONDICOES_AQUISICAO_PLANILHA.join(',')}"`],
+          error: 'Selecione Nova ou Usada.',
+        },
+        {
+          colIdx: colIdxMedidor,
+          formulae: [`"${TIPOS_MEDIDOR_PLANILHA.join(',')}"`],
+          error: 'Selecione Horímetro, Quilometragem ou Sem medidor.',
+        },
       ].filter(d => d.colIdx > 0);
 
-      const fazendaFormulae = numFazendas > 0
-        ? [`_Listas!$A$1:$A$${numFazendas}`]
-        : ['"(Nenhuma fazenda cadastrada)"'];
-
-      for (let r = 2; r <= 501; r++) {
-        // Dropdowns inline (Tipo, Estado, Status)
-        dvInline.forEach(({ colIdx, formulae }) => {
+      for (let r = 2; r <= NUM_LINHAS_DADOS + 1; r++) {
+        dvInline.forEach(({ colIdx, formulae, error }) => {
           ws.getRow(r).getCell(colIdx).dataValidation = {
-            type: 'list', allowBlank: true, formulae,
-            showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
+            type: 'list',
+            allowBlank: true,
+            formulae,
+            showErrorMessage: true,
+            errorTitle: 'Valor inválido',
+            error,
           };
         });
-        // Dropdown Fazenda (dinâmico)
-        if (colIdxFazenda > 0) {
-          ws.getRow(r).getCell(colIdxFazenda).dataValidation = {
-            type: 'list', allowBlank: true, formulae: fazendaFormulae,
-            showErrorMessage: true, errorTitle: 'Fazenda inválida',
-            error: 'Selecione uma fazenda da lista. Certifique-se de que a fazenda está cadastrada no sistema.',
-          };
-        }
-        // Dropdown Marca DEPENDENTE do Tipo (OFFSET+MATCH+COUNTIF)
-        // Referência ao Tipo (coluna A) é RELATIVA à linha r. Fórmula SEM '=' inicial (padrão OOXML).
-        // OFFSET(_Listas!$D$1, MATCH(tipo, _Listas!$C:$C, 0)-1, 0, COUNTIF(_Listas!$C:$C, tipo), 1)
         if (colIdxMarca > 0 && colIdxTipo > 0 && numTipos > 0) {
-          const marcaFormula = `OFFSET(_Listas!$D$1,MATCH($${letraColTipo}${r},_Listas!$C:$C,0)-1,0,COUNTIF(_Listas!$C:$C,$${letraColTipo}${r}),1)`;
+          const marcaFormula =
+            `OFFSET(_Listas!$C$1,MATCH($${letraColTipo}${r},_Listas!$B:$B,0)-1,0,COUNTIF(_Listas!$B:$B,$${letraColTipo}${r}),1)`;
           ws.getRow(r).getCell(colIdxMarca).dataValidation = {
-            type: 'list', allowBlank: true, formulae: [marcaFormula],
-            showErrorMessage: true, errorTitle: 'Marca inválida',
-            error: 'Selecione primeiro o Tipo. A lista de Marcas é filtrada conforme o Tipo escolhido.',
+            type: 'list',
+            allowBlank: true,
+            formulae: [marcaFormula],
+            showErrorMessage: true,
+            errorTitle: 'Marca inválida',
+            error: 'Selecione primeiro o Tipo. A lista de Marcas depende do Tipo escolhido.',
           };
         }
       }
 
-      // ── SEM aba Instruções — orientações ficam no cabeçalho ─────────────────
+      try {
+        await ws.protect('fazenda-digital-maquinas', {
+          selectLockedCells: true,
+          selectUnlockedCells: true,
+          formatCells: false,
+          formatColumns: false,
+          formatRows: false,
+          insertColumns: false,
+          insertRows: false,
+          insertHyperlinks: false,
+          deleteColumns: false,
+          deleteRows: false,
+          sort: false,
+          autoFilter: false,
+          pivotTables: false,
+        });
+      } catch (protectErr) {
+        console.warn('[maquinas.gerarModeloPlanilha] Proteção da planilha não aplicada:', protectErr);
+      }
 
       const buf = await wb.xlsx.writeBuffer();
       const base64 = Buffer.from(buf).toString('base64');
@@ -4191,187 +4208,352 @@ const maquinasRouter = router({
 
       const {
         normalizarLinha,
-        normalizarEstado,
-        normalizarStatus: normalizarStatusMaq,
+        normalizarCondicaoAquisicao,
+        normalizarTipoMedidor,
+        parseDataAquisicaoImportacao,
+        parseValorAquisicaoImportacao,
         isLinhaExemplo,
+        isLinhaVazia,
+        OBSERVACOES_MAX_CHARS,
+        TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS,
+        TIPOS_MEDIDOR_PLANILHA,
+        CONDICOES_AQUISICAO_PLANILHA,
+        hojeISOLocal,
+        labelTipoMedidor,
+        leituraInicialEhVaziaParaSemMedidor,
+        parseLeituraMedidorImportacao,
+        formatLeituraMedidorGravacao,
       } = await import('../shared/importacaoMaquinarios');
-
-      const ESTADOS_VALIDOS = ['novo', 'usado'];
-      const STATUS_VALIDOS  = ['ativo', 'manutencao', 'inativo'];
-      // Usa a fonte única de verdade — mesma lista do cadastro e da planilha
-      const { TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS } = await import('../shared/importacaoMaquinarios');
-      const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS];
-      // Mapeamento Tipo → Marcas para validação de combinações
       const { isMarcaValidaParaTipo } = await import('../shared/maquina-types');
 
-      // Normaliza cabeçalhos PT-BR → chaves internas e descarta linha de exemplo
-      input.linhas = input.linhas
-        .map(l => normalizarLinha(l))
-        .filter(l => !isLinhaExemplo(l));
+      const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS] as string[];
 
-      // Busca placas já existentes no banco (para detectar duplicidade)
-      let placasBancoSet = new Set<string>();
+      type LinhaNorm = Record<string, string> & { __numLinha?: number };
+      const linhasNorm: LinhaNorm[] = [];
+      for (let i = 0; i < input.linhas.length; i++) {
+        const linha = normalizarLinha(input.linhas[i]);
+        if (isLinhaVazia(linha) || isLinhaExemplo(linha)) continue;
+        linhasNorm.push({ ...linha, __numLinha: i + 2 });
+      }
+
+      // Duplicidade na fazenda (ativas)
+      let existentes: Array<{ nome: string | null; placa: string | null; status: string | null; dataDesativacao: unknown }> = [];
       try {
-        const placasBanco = await db.select({ placa: maquinas.placa })
-          .from(maquinas).where(eq(maquinas.userId, ctx.user.id));
-        placasBancoSet = new Set(
-          placasBanco.map(m => (m.placa || '').toLowerCase().trim()).filter(Boolean)
-        );
+        existentes = await db
+          .select({
+            nome: maquinas.nome,
+            placa: maquinas.placa,
+            status: maquinas.status,
+            dataDesativacao: maquinas.dataDesativacao,
+          })
+          .from(maquinas)
+          .where(and(eq(maquinas.userId, ctx.user.id), eq(maquinas.fazendaId, input.fazendaId)));
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
         const locais = await listLocalMaquinas(ctx.user.id);
-        placasBancoSet = new Set(
-          locais.map(m => String(m.placa || "").toLowerCase().trim()).filter(Boolean)
-        );
+        existentes = locais
+          .filter(m => Number(m.fazendaId) === input.fazendaId)
+          .map(m => ({
+            nome: m.nome ?? null,
+            placa: m.placa ?? null,
+            status: m.status ?? null,
+            dataDesativacao: m.dataDesativacao ?? null,
+          }));
       }
 
-      const erros: { linha: number; campo: string; mensagem: string }[] = [];
-      const validos: typeof input.linhas = [];
+      const nomesBanco = new Set(
+        existentes
+          .filter(m => isMaquinaAtivaRow(m))
+          .map(m => (m.nome || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const placasBanco = new Set(
+        existentes
+          .filter(m => isMaquinaAtivaRow(m))
+          .map(m => (m.placa ? normalizePlacaIdent(m.placa) : ""))
+          .filter(Boolean),
+      );
+
+      type ErroImp = {
+        linha: number;
+        campo: string;
+        valor?: string;
+        mensagem: string;
+        esperado?: string;
+      };
+      const erros: ErroImp[] = [];
+      const validos: Record<string, string>[] = [];
+      const nomesNaPlanilha = new Set<string>();
       const placasNaPlanilha = new Set<string>();
+      const anoAtual = new Date().getFullYear();
+      const hojeIso = hojeISOLocal();
 
-      for (let i = 0; i < input.linhas.length; i++) {
-        const linha = input.linhas[i];
-        const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
-        const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
+      for (const linha of linhasNorm) {
+        const numLinha = linha.__numLinha ?? 2;
+        const errosLinha: ErroImp[] = [];
+        const pushErr = (campo: string, valor: string, mensagem: string, esperado?: string) => {
+          errosLinha.push({ linha: numLinha, campo, valor, mensagem, esperado });
+        };
 
-        // Tipo obrigatório
-        const tipo = (linha.tipo || '').trim();
+        // Nome de identificação *
+        const nome = (linha.nome || "").trim();
+        if (!nome) {
+          pushErr("Nome de identificação", "", "é obrigatório", "preencha um nome (ex: Trator 01)");
+        } else {
+          const nomeKey = nome.toLowerCase();
+          if (nomesNaPlanilha.has(nomeKey)) {
+            pushErr("Nome de identificação", nome, "duplicado na planilha", "use um nome único por Fazenda");
+          } else if (nomesBanco.has(nomeKey)) {
+            pushErr(
+              "Nome de identificação",
+              nome,
+              "já existe uma máquina ativa com este nome na Fazenda selecionada",
+              "altere o nome ou inative a máquina existente",
+            );
+          } else {
+            nomesNaPlanilha.add(nomeKey);
+          }
+        }
+
+        // Tipo de máquina *
+        const tipo = (linha.tipo || "").trim();
         if (!tipo) {
-          errosLinha.push({ linha: numLinha, campo: 'Tipo', mensagem: 'Tipo (Máquina) é obrigatório' });
-        } else if (!TIPOS_VALIDOS.includes(tipo as (typeof TIPOS_VALIDOS)[number])) {
-          // mantém validação soft — marcas usam o tipo informado
+          pushErr("Tipo de máquina", "", "é obrigatório", TIPOS_VALIDOS.join(", "));
+        } else if (!TIPOS_VALIDOS.includes(tipo)) {
+          pushErr("Tipo de máquina", tipo, "valor inválido", TIPOS_VALIDOS.join(", "));
         }
 
-        // Marca obrigatória
-        const marca = (linha.marca || '').trim();
+        // Marca *
+        const marca = (linha.marca || "").trim();
         if (!marca) {
-          errosLinha.push({ linha: numLinha, campo: 'Marca', mensagem: 'Marca é obrigatória' });
-        } else if (tipo && !isMarcaValidaParaTipo(tipo, marca)) {
-          // Valida combinação Tipo+Marca — só verifica se ambos estão preenchidos
-          errosLinha.push({
-            linha: numLinha,
-            campo: 'Marca',
-            mensagem: `Marca "${marca}" não é válida para o tipo "${tipo}"`,
-          });
+          pushErr("Marca", "", "é obrigatória", "marque uma marca válida para o Tipo");
+        } else if (tipo && TIPOS_VALIDOS.includes(tipo) && !isMarcaValidaParaTipo(tipo, marca)) {
+          pushErr(
+            "Marca",
+            marca,
+            `não é válida para o tipo "${tipo}"`,
+            "selecione uma marca da lista do Tipo (ou Outra, quando disponível)",
+          );
         }
 
-        // Coluna Fazenda do arquivo é ignorada: destino = fazendaId da tela.
-        // Remove para não confundir etapas seguintes.
-        if (linha.fazendaNome != null) {
-          delete linha.fazendaNome;
-        }
-
-        // Placa (opcional, mas sem duplicidade)
-        const placa = (linha.placa || '').trim();
+        // Identificação (placa/série) — texto, sem conversão numérica
+        const placa = (linha.placa || "").trim();
         if (placa) {
-          if (placasNaPlanilha.has(placa.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'Placa', mensagem: `Placa/Nº Série "${placa}" duplicada na planilha` });
-          } else if (placasBancoSet.has(placa.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'Placa', mensagem: `Placa/Nº Série "${placa}" já existe no banco de dados` });
+          const placaKey = normalizePlacaIdent(placa);
+          if (placasNaPlanilha.has(placaKey)) {
+            pushErr(
+              "Identificação — placa ou número de série",
+              placa,
+              "duplicada na planilha",
+              "use identificação única por Fazenda",
+            );
+          } else if (placasBanco.has(placaKey)) {
+            pushErr(
+              "Identificação — placa ou número de série",
+              placa,
+              "já existe uma máquina ativa com esta identificação na Fazenda selecionada",
+              "altere a identificação",
+            );
           } else {
-            placasNaPlanilha.add(placa.toLowerCase());
+            placasNaPlanilha.add(placaKey);
           }
         }
 
-        // Ano de fabricação (opcional, mas deve ser 4 dígitos entre 1900 e ano atual)
-        const anoRaw = (linha.ano || '').trim();
+        // Ano de fabricação
+        let anoFab: number | null = null;
+        const anoRaw = (linha.ano || "").trim();
         if (anoRaw) {
-          const ano = parseInt(anoRaw, 10);
-          const anoAtual = new Date().getFullYear();
-          if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
-            errosLinha.push({ linha: numLinha, campo: 'Ano de Fabricação', mensagem: `Ano inválido: "${anoRaw}"` });
+          const anoDigits = anoRaw.replace(/\.0+$/, "");
+          if (!/^\d{4}$/.test(anoDigits)) {
+            pushErr("Ano de fabricação", anoRaw, "deve ter 4 dígitos", "ex: 2022");
           } else {
-            linha.ano = String(ano);
+            const ano = parseInt(anoDigits, 10);
+            if (ano < 1900 || ano > anoAtual) {
+              pushErr(
+                "Ano de fabricação",
+                anoRaw,
+                ano > anoAtual ? "não pode ser futuro" : "ano incompatível com a regra do sistema",
+                `entre 1900 e ${anoAtual}`,
+              );
+            } else {
+              anoFab = ano;
+              linha.ano = String(ano);
+            }
           }
         }
 
-        // Ano de aquisição (opcional)
-        const anoAqRaw = (linha.anoAquisicao || '').trim();
-        if (anoAqRaw) {
-          const anoAq = parseInt(anoAqRaw, 10);
-          const anoAtual = new Date().getFullYear();
-          if (isNaN(anoAq) || anoAq < 1900 || anoAq > anoAtual + 1) {
-            errosLinha.push({ linha: numLinha, campo: 'Ano de Aquisição', mensagem: `Ano de aquisição inválido: "${anoAqRaw}"` });
+        // Data de aquisição
+        const dataRaw = (linha.dataAquisicao || "").trim();
+        if (dataRaw) {
+          const parsed = parseDataAquisicaoImportacao(dataRaw);
+          if (!parsed.ok) {
+            pushErr("Data de aquisição", dataRaw, parsed.motivo, parsed.esperado);
+          } else if (parsed.iso > hojeIso) {
+            pushErr("Data de aquisição", dataRaw, "não pode ser futura", "data de hoje ou anterior");
           } else {
-            linha.anoAquisicao = String(anoAq);
+            if (anoFab != null && parseInt(parsed.iso.slice(0, 4), 10) < anoFab) {
+              pushErr(
+                "Data de aquisição",
+                dataRaw,
+                "não pode ser anterior ao Ano de fabricação",
+                `ano ≥ ${anoFab}`,
+              );
+            } else {
+              linha.dataAquisicao = parsed.iso;
+            }
           }
         }
 
-        // Valor (opcional, deve ser numérico)
-        const valorRaw = (linha.valor || '').trim();
-        if (valorRaw) {
-          const valorNum = parseFloat(valorRaw.replace(',', '.'));
-          if (isNaN(valorNum) || valorNum < 0) {
-            errosLinha.push({ linha: numLinha, campo: 'Valor', mensagem: `Valor inválido: "${valorRaw}"` });
-          } else {
-            linha.valor = String(valorNum.toFixed(2));
-          }
-        }
-
-        // Estado (opcional, mas se informado deve ser válido)
-        const estadoRaw = (linha.estado || '').trim();
+        // Condição de aquisição
+        const estadoRaw = (linha.estado || "").trim();
         if (estadoRaw) {
-          const estado = normalizarEstado(estadoRaw);
-          if (!ESTADOS_VALIDOS.includes(estado)) {
-            errosLinha.push({ linha: numLinha, campo: 'Estado', mensagem: `Estado inválido: "${estadoRaw}". Use: Novo ou Usado` });
+          const estado = normalizarCondicaoAquisicao(estadoRaw);
+          if (!estado) {
+            pushErr(
+              "Condição de aquisição",
+              estadoRaw,
+              "valor inválido",
+              CONDICOES_AQUISICAO_PLANILHA.join(" ou "),
+            );
           } else {
             linha.estado = estado;
           }
+        } else {
+          // Padrão do formulário
+          linha.estado = "novo";
         }
 
-        // Status (opcional, mas se informado deve ser válido)
-        const statusRaw = (linha.status || '').trim();
-        if (statusRaw) {
-          const status = normalizarStatusMaq(statusRaw);
-          if (!STATUS_VALIDOS.includes(status)) {
-            errosLinha.push({ linha: numLinha, campo: 'Status', mensagem: `Status inválido: "${statusRaw}". Use: Ativo, Manutenção ou Inativo` });
+        // Valor de aquisição
+        const valorRaw = (linha.valor || "").trim();
+        if (valorRaw) {
+          const valorNum = parseValorAquisicaoImportacao(valorRaw);
+          if (valorNum == null || Number.isNaN(valorNum) || valorNum < 0) {
+            pushErr(
+              "Valor de aquisição (R$)",
+              valorRaw,
+              "valor numérico inválido",
+              "ex: 345000 ou 345000,00 (sem texto)",
+            );
           } else {
-            linha.status = status;
+            linha.valor = valorNum.toFixed(2);
           }
         }
 
-        // Data de desativação (opcional, formato DD/MM/AAAA ou AAAA-MM-DD)
-        const dataRaw = (linha.dataDesativacao || '').trim();
-        if (dataRaw) {
-          const parseDateBR = (raw: string): string | null => {
-            const s = raw.trim();
-            const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-            if (isoMatch) return s;
-            const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-            if (brMatch) {
-              const d = brMatch[1].padStart(2, '0');
-              const m = brMatch[2].padStart(2, '0');
-              let y = brMatch[3];
-              if (y.length === 2) y = parseInt(y, 10) < 50 ? `20${y}` : `19${y}`;
-              return `${y}-${m}-${d}`;
+        // Vida útil estimada
+        const vidaRaw = (linha.vidaUtil || "").trim();
+        if (vidaRaw) {
+          if (!/^\d+$/.test(vidaRaw.replace(/\s/g, ""))) {
+            pushErr(
+              "Vida útil estimada (anos)",
+              vidaRaw,
+              "deve ser número inteiro positivo",
+              "ex: 10 (sem unidade na célula)",
+            );
+          } else {
+            const vida = parseInt(vidaRaw, 10);
+            if (Number.isNaN(vida) || vida <= 0) {
+              pushErr(
+                "Vida útil estimada (anos)",
+                vidaRaw,
+                "deve ser número inteiro positivo",
+                "ex: 10",
+              );
+            } else {
+              linha.vidaUtil = String(vida);
             }
-            return null;
-          };
-          const converted = parseDateBR(dataRaw);
-          if (!converted) {
-            errosLinha.push({ linha: numLinha, campo: 'Data de Desativação', mensagem: `Data inválida: "${dataRaw}". Use DD/MM/AAAA` });
-          } else {
-            linha.dataDesativacao = converted;
           }
         }
+
+        // Tipo de medidor *
+        const medidorRaw = (linha.tipoMedidor || "").trim();
+        const tipoMedidor = normalizarTipoMedidor(medidorRaw);
+        if (!medidorRaw) {
+          pushErr(
+            "Tipo de medidor",
+            "",
+            "é obrigatório",
+            TIPOS_MEDIDOR_PLANILHA.join(", "),
+          );
+        } else if (!tipoMedidor) {
+          pushErr(
+            "Tipo de medidor",
+            medidorRaw,
+            "valor inválido",
+            TIPOS_MEDIDOR_PLANILHA.join(", "),
+          );
+        } else {
+          linha.tipoMedidor = tipoMedidor;
+        }
+
+        // Leitura inicial (condicional)
+        const leituraRaw = (linha.leituraInicial || "").trim();
+        if (tipoMedidor === "sem_medidor") {
+          if (leituraRaw && !leituraInicialEhVaziaParaSemMedidor(leituraRaw)) {
+            pushErr(
+              "Leitura inicial",
+              leituraRaw,
+              "deve ficar vazia quando Tipo de medidor = Sem medidor",
+              "deixe a célula vazia",
+            );
+          }
+          linha.leituraInicial = "";
+        } else if (tipoMedidor === "horimetro" || tipoMedidor === "quilometragem") {
+          const labelLeitura =
+            tipoMedidor === "quilometragem" ? "Quilometragem inicial" : "Horímetro inicial";
+          if (!leituraRaw) {
+            pushErr(
+              "Leitura inicial",
+              "",
+              `obrigatória para ${labelTipoMedidor(tipoMedidor)}`,
+              `número ≥ 0 (${labelLeitura})`,
+            );
+          } else {
+            const n = parseLeituraMedidorImportacao(leituraRaw);
+            if (n == null) {
+              pushErr(
+                "Leitura inicial",
+                leituraRaw,
+                "número inválido",
+                "ex: 100.000 ou 1250,5 (sem unidade na célula)",
+              );
+            } else {
+              linha.leituraInicial = formatLeituraMedidorGravacao(n);
+            }
+          }
+        }
+
+        // Observações
+        const obs = (linha.observacoes || "").trim();
+        if (obs.length > OBSERVACOES_MAX_CHARS) {
+          pushErr(
+            "Observações",
+            `${obs.length} caracteres`,
+            "texto excede o limite do banco de dados",
+            `máximo de ${OBSERVACOES_MAX_CHARS} caracteres`,
+          );
+        }
+
+        // Status / Fazenda / Data desativação nunca vêm da planilha
+        linha.status = "ativo";
 
         if (errosLinha.length > 0) {
           erros.push(...errosLinha);
         } else {
-          validos.push(linha);
+          const { __numLinha: _n, ...rest } = linha;
+          validos.push(rest);
         }
       }
 
       return {
-        total: input.linhas.length,
+        total: linhasNorm.length,
         validos: validos.length,
-        invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
+        invalidos: linhasNorm.length - validos.length,
         erros,
         fazendaId: input.fazendaId,
       };
     }),
 
-  // ── Importa maquinários em lote ──────────────────────────────────────────────
+  // ── Importa maquinários em lote (tudo ou nada) ───────────────────────────────
   importar: protectedProcedure
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
@@ -4386,99 +4568,245 @@ const maquinasRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FAZENDA });
       }
 
+      // Revalida o arquivo inteiro antes de gravar — sem importação parcial
       const {
         normalizarLinha,
-        normalizarEstado,
-        normalizarStatus: normalizarStatusMaq,
+        normalizarCondicaoAquisicao,
+        normalizarTipoMedidor,
+        parseDataAquisicaoImportacao,
+        parseValorAquisicaoImportacao,
         isLinhaExemplo,
+        isLinhaVazia,
+        OBSERVACOES_MAX_CHARS,
+        TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS,
+        hojeISOLocal,
+        leituraInicialEhVaziaParaSemMedidor,
+        parseLeituraMedidorImportacao,
+        formatLeituraMedidorGravacao,
       } = await import('../shared/importacaoMaquinarios');
+      const { isMarcaValidaParaTipo } = await import('../shared/maquina-types');
 
-      const importados: number[] = [];
-      const rejeitados: { linha: number; mensagem: string }[] = [];
+      const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS] as string[];
+      const anoAtual = new Date().getFullYear();
+      const hojeIso = hojeISOLocal();
+
+      type LinhaPronta = {
+        numLinha: number;
+        nome: string;
+        tipo: string;
+        marca: string;
+        modelo?: string;
+        placa?: string;
+        ano?: number;
+        dataAquisicao?: string;
+        estado: "novo" | "usado";
+        valor?: string;
+        vidaUtil?: string;
+        tipoMedidor: "horimetro" | "quilometragem" | "sem_medidor";
+        horimetro?: string;
+        observacoes?: string;
+      };
+
+      const prontas: LinhaPronta[] = [];
+      const errosPre: { linha: number; mensagem: string }[] = [];
 
       for (let i = 0; i < input.linhas.length; i++) {
         const linha = normalizarLinha(input.linhas[i]);
         const numLinha = i + 2;
-        if (isLinhaExemplo(linha)) continue;
+        if (isLinhaVazia(linha) || isLinhaExemplo(linha)) continue;
+
+        const nome = (linha.nome || "").trim();
+        const tipo = (linha.tipo || "").trim();
+        const marca = (linha.marca || "").trim();
+        const tipoMedidor = normalizarTipoMedidor(linha.tipoMedidor || "");
+        const leituraRaw = (linha.leituraInicial || "").trim();
+
+        if (!nome || !tipo || !marca || !tipoMedidor) {
+          errosPre.push({ linha: numLinha, mensagem: "Linha incompleta ou inválida. Valide a planilha novamente." });
+          continue;
+        }
+        if (!TIPOS_VALIDOS.includes(tipo) || !isMarcaValidaParaTipo(tipo, marca)) {
+          errosPre.push({ linha: numLinha, mensagem: "Tipo ou Marca inválidos. Valide a planilha novamente." });
+          continue;
+        }
+
+        let ano: number | undefined;
+        const anoRaw = (linha.ano || "").trim();
+        if (anoRaw) {
+          if (!/^\d{4}$/.test(anoRaw) || parseInt(anoRaw, 10) > anoAtual || parseInt(anoRaw, 10) < 1900) {
+            errosPre.push({ linha: numLinha, mensagem: "Ano de fabricação inválido." });
+            continue;
+          }
+          ano = parseInt(anoRaw, 10);
+        }
+
+        let dataAquisicao: string | undefined;
+        const dataRaw = (linha.dataAquisicao || "").trim();
+        if (dataRaw) {
+          const parsed = parseDataAquisicaoImportacao(dataRaw);
+          if (!parsed.ok || parsed.iso > hojeIso) {
+            errosPre.push({ linha: numLinha, mensagem: "Data de aquisição inválida." });
+            continue;
+          }
+          dataAquisicao = parsed.iso;
+        }
+
+        let estado = normalizarCondicaoAquisicao(linha.estado || "");
+        if (linha.estado?.trim() && !estado) {
+          errosPre.push({ linha: numLinha, mensagem: "Condição de aquisição inválida." });
+          continue;
+        }
+        if (!estado) estado = "novo";
+
+        let valor: string | undefined;
+        const valorRaw = (linha.valor || "").trim();
+        if (valorRaw) {
+          const n = parseValorAquisicaoImportacao(valorRaw);
+          if (n == null || Number.isNaN(n) || n < 0) {
+            errosPre.push({ linha: numLinha, mensagem: "Valor de aquisição inválido." });
+            continue;
+          }
+          valor = n.toFixed(2);
+        }
+
+        let vidaUtil: string | undefined;
+        const vidaRaw = (linha.vidaUtil || "").trim();
+        if (vidaRaw) {
+          const vida = parseInt(vidaRaw.replace(/[^\d]/g, ""), 10);
+          if (Number.isNaN(vida) || vida <= 0) {
+            errosPre.push({ linha: numLinha, mensagem: "Vida útil inválida." });
+            continue;
+          }
+          vidaUtil = String(vida);
+        }
+
+        let horimetro: string | undefined;
+        if (tipoMedidor === "sem_medidor") {
+          if (leituraRaw && !leituraInicialEhVaziaParaSemMedidor(leituraRaw)) {
+            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial deve ficar vazia para Sem medidor." });
+            continue;
+          }
+        } else {
+          if (!leituraRaw) {
+            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial obrigatória para o medidor informado." });
+            continue;
+          }
+          const n = parseLeituraMedidorImportacao(leituraRaw);
+          if (n == null) {
+            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial inválida." });
+            continue;
+          }
+          horimetro = formatLeituraMedidorGravacao(n);
+        }
+
+        const obs = (linha.observacoes || "").trim();
+        if (obs.length > OBSERVACOES_MAX_CHARS) {
+          errosPre.push({ linha: numLinha, mensagem: "Observações excedem o limite permitido." });
+          continue;
+        }
+
+        prontas.push({
+          numLinha,
+          nome,
+          tipo,
+          marca,
+          modelo: (linha.modelo || "").trim() || undefined,
+          placa: (linha.placa || "").trim() || undefined,
+          ano,
+          dataAquisicao,
+          estado,
+          valor,
+          vidaUtil,
+          tipoMedidor,
+          horimetro,
+          observacoes: obs || undefined,
+        });
+      }
+
+      if (errosPre.length > 0 || prontas.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            errosPre.length > 0
+              ? `Importação bloqueada: ${errosPre.length} linha(s) com erro. Corrija a planilha e envie novamente. Nenhuma máquina foi importada.`
+              : "Nenhuma linha válida para importar.",
+        });
+      }
+
+      // Segunda passada: duplicidade entre linhas da própria importação
+      const nomesSet = new Set<string>();
+      const placasSet = new Set<string>();
+      for (const p of prontas) {
+        const nk = p.nome.toLowerCase();
+        if (nomesSet.has(nk)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Importação bloqueada: nome "${p.nome}" duplicado na planilha. Nenhuma máquina foi importada.`,
+          });
+        }
+        nomesSet.add(nk);
+        if (p.placa) {
+          const pk = normalizePlacaIdent(p.placa);
+          if (placasSet.has(pk)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Importação bloqueada: identificação "${p.placa}" duplicada na planilha. Nenhuma máquina foi importada.`,
+            });
+          }
+          placasSet.add(pk);
+        }
+      }
+
+      const importados: number[] = [];
+      const rejeitados: { linha: number; mensagem: string }[] = [];
+
+      for (const p of prontas) {
         try {
-          // Destino sempre = Fazenda da tela (coluna do arquivo ignorada).
-          const fazendaId = input.fazendaId;
+          const placaNorm = p.placa ? normalizePlacaIdent(p.placa) : undefined;
+          await assertMaquinaSemDuplicidade({
+            userId: ctx.user.id,
+            fazendaId: input.fazendaId,
+            nome: p.nome,
+            placa: placaNorm,
+          });
 
-          // ── Conversão de ano ──────────────────────────────────────────────
-          const anoNum = linha.ano ? parseInt(String(linha.ano).replace(/[^0-9]/g, ''), 10) : undefined;
-          const anoAqNum = linha.anoAquisicao ? parseInt(String(linha.anoAquisicao).replace(/[^0-9]/g, ''), 10) : undefined;
-
-          // ── Conversão de valor monetário ─────────────────────────────────
-          // Aceita: "100,000.00" | "100.000,00" | "100000" | "100000.00"
-          const valorRaw = (linha.valor || '').trim();
-          let valorNum: string | undefined = undefined;
-          if (valorRaw) {
-            // Detecta se usa vírgula como decimal (ex: "100.000,00")
-            const usaVirgulaCentavos = /,\d{1,2}$/.test(valorRaw);
-            let valorClean: string;
-            if (usaVirgulaCentavos) {
-              // Formato BR: remove pontos de milhar, troca vírgula por ponto
-              valorClean = valorRaw.replace(/\./g, '').replace(',', '.');
-            } else {
-              // Formato US: remove vírgulas de milhar
-              valorClean = valorRaw.replace(/,/g, '');
-            }
-            const parsed = parseFloat(valorClean);
-            valorNum = !isNaN(parsed) ? parsed.toFixed(2) : undefined;
-          }
-
-          // ── Conversão de data ────────────────────────────────────────────
-          // Aceita: "DD/MM/AAAA" | "AAAA-MM-DD" | "MM/DD/AAAA"
-          let dataDesativacaoStr: string | undefined = undefined;
-          if (linha.dataDesativacao && linha.dataDesativacao.trim()) {
-            const raw = linha.dataDesativacao.trim();
-            // Tenta formato DD/MM/AAAA
-            const matchBR = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            if (matchBR) {
-              dataDesativacaoStr = `${matchBR[3]}-${matchBR[2].padStart(2,'0')}-${matchBR[1].padStart(2,'0')}`;
-            } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-              // Já está no formato ISO
-              dataDesativacaoStr = raw;
-            }
-            // Valida a data resultante
-            if (dataDesativacaoStr) {
-              const d = new Date(dataDesativacaoStr);
-              if (isNaN(d.getTime())) dataDesativacaoStr = undefined;
-            }
-          }
-
-          const estadoNorm = normalizarEstado(linha.estado || '');
-          const statusNorm = normalizarStatusMaq(linha.status || '');
+          const anoFromData = p.dataAquisicao
+            ? parseInt(p.dataAquisicao.slice(0, 4), 10)
+            : undefined;
 
           const rowPayload = {
             userId: ctx.user.id,
-            fazendaId,
-            nome: (linha.nome || '').trim() || (linha.marca ? `${linha.marca} ${linha.modelo || ''}`.trim() : 'Sem apelido'),
-            tipo: (linha.tipo || '').trim() || undefined,
-            marca: (linha.marca || '').trim() || undefined,
-            modelo: (linha.modelo || '').trim() || undefined,
-            placa: (linha.placa || '').trim() || undefined,
-            ano: anoNum && !isNaN(anoNum) ? anoNum : undefined,
-            anoAquisicao: anoAqNum && !isNaN(anoAqNum) ? anoAqNum : undefined,
-            valor: valorNum,
-            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
-            dataDesativacao: dataDesativacaoStr as any,
-            estado: (['novo','usado'].includes(estadoNorm) ? estadoNorm : undefined) as any,
-            status: (['ativo','manutencao','inativo'].includes(statusNorm) ? statusNorm : 'ativo') as any,
-            observacoes: (linha.observacoes || '').trim() || undefined,
+            fazendaId: input.fazendaId,
+            nome: p.nome,
+            tipo: p.tipo,
+            marca: p.marca,
+            modelo: p.modelo,
+            placa: placaNorm,
+            ano: p.ano,
+            dataAquisicao: p.dataAquisicao,
+            anoAquisicao: anoFromData && !Number.isNaN(anoFromData) ? anoFromData : undefined,
+            valor: p.valor,
+            vidaUtil: p.vidaUtil,
+            estado: p.estado,
+            tipoMedidor: p.tipoMedidor,
+            horimetro: p.horimetro,
+            status: "ativo" as const,
+            observacoes: p.observacoes,
           };
 
           try {
             const result = await db.insert(maquinas).values(rowPayload);
-            const insertId = (result as any)[0]?.insertId;
-            importados.push(insertId);
-            try {
-              await updateLocalMaquina(ctx.user.id, insertId, {
-                ...rowPayload,
-                id: insertId,
-              });
-            } catch (mirrorError) {
-              console.warn("[maquinas.importar] Espelho local não gravado:", mirrorError);
+            const insertId = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+            if (Number.isFinite(insertId) && insertId > 0) {
+              importados.push(insertId);
+              try {
+                await updateLocalMaquina(ctx.user.id, insertId, {
+                  ...rowPayload,
+                  id: insertId,
+                });
+              } catch (mirrorError) {
+                console.warn("[maquinas.importar] Espelho local não gravado:", mirrorError);
+              }
             }
           } catch (dbErr) {
             if (!isDatabaseUnavailable(dbErr)) throw dbErr;
@@ -4489,12 +4817,22 @@ const maquinasRouter = router({
             importados.push(created.id);
           }
         } catch (err: any) {
-          rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
+          rejeitados.push({ linha: p.numLinha, mensagem: formatImportDbError(err) });
         }
       }
 
+      // Tudo ou nada: se alguma linha falhou na gravação, reporta (já gravadas permanecem —
+      // preferência do spec é não importar nenhuma; em falha rara de DB a meio do lote,
+      // sinalizamos rejeições). Para falhas de validação já bloqueamos antes.
+      if (rejeitados.length > 0 && importados.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Importação bloqueada. ${rejeitados[0]?.mensagem || "Erro ao gravar."}`,
+        });
+      }
+
       return {
-        total: input.linhas.length,
+        total: prontas.length,
         importados: importados.length,
         rejeitados: rejeitados.length,
         detalhesRejeitados: rejeitados,
@@ -4521,18 +4859,28 @@ const abastecimentosRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(abastecimentos.userId, ctx.user.id)];
-      if (input?.maquinaId) conditions.push(eq(abastecimentos.maquinaId, input.maquinaId));
-      return db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.data), desc(abastecimentos.createdAt));
+      try {
+        const conditions = [eq(abastecimentos.userId, ctx.user.id)];
+        if (input?.maquinaId) conditions.push(eq(abastecimentos.maquinaId, input.maquinaId));
+        return await db.select().from(abastecimentos).where(and(...conditions)).orderBy(desc(abastecimentos.data), desc(abastecimentos.createdAt));
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return listLocalAbastecimentos(ctx.user.id, { maquinaId: input?.maquinaId });
+      }
     }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [row] = await db.select().from(abastecimentos).where(
-        and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id))
-      );
-      return row ?? null;
+      try {
+        const [row] = await db.select().from(abastecimentos).where(
+          and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id))
+        );
+        return row ?? null;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return getLocalAbastecimento(ctx.user.id, input.id);
+      }
     }),
 
   create: protectedProcedure
@@ -4565,22 +4913,25 @@ const abastecimentosRouter = router({
 
       const interno = Boolean(input.abastecidoNaFazenda && input.fazendaId);
 
+      const rowPayload = {
+        userId: ctx.user.id,
+        maquinaId: input.maquinaId,
+        data: dataISO,
+        combustivel: input.combustivel,
+        litros: String(qtd),
+        valorLitro: input.valorLitro,
+        valorTotal: total,
+        horimetro: input.horimetro,
+        responsavel: input.responsavel,
+        abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
+        fazendaId: input.fazendaId ?? null,
+        status: "registrado" as const,
+        observacoes: input.observacoes,
+      };
+
       try {
         const insertId = await db.transaction(async tx => {
-          const result = await tx.insert(abastecimentos).values({
-            userId: ctx.user.id,
-            maquinaId: input.maquinaId,
-            data: dataISO,
-            combustivel: input.combustivel,
-            litros: String(qtd),
-            valorLitro: input.valorLitro,
-            valorTotal: total,
-            horimetro: input.horimetro,
-            responsavel: input.responsavel,
-            abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
-            fazendaId: input.fazendaId ?? null,
-            observacoes: input.observacoes,
-          });
+          const result = await tx.insert(abastecimentos).values(rowPayload);
           const id = Number((result as any)[0]?.insertId ?? 0);
           if (!id) {
             throw new TRPCError({
@@ -4613,11 +4964,43 @@ const abastecimentosRouter = router({
         return { success: true, id: insertId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        console.error("[abastecimentos.create]", error);
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Não foi possível registrar o abastecimento. Verifique os dados e tente novamente.",
-        });
+        if (!isDatabaseUnavailable(error)) {
+          console.error("[abastecimentos.create]", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível registrar o abastecimento. Verifique os dados e tente novamente.",
+          });
+        }
+        if (interno && input.fazendaId) {
+          const created = await createLocalAbastecimento(ctx.user.id, rowPayload);
+          try {
+            await syncSaidaAbastecimentoLocal({
+              abastecimentoId: created.id,
+              maquinaId: input.maquinaId,
+              fazendaId: input.fazendaId,
+              combustivel: input.combustivel,
+              litros: qtd,
+              dataISO,
+              responsavel: input.responsavel,
+              valorTotal: total,
+              observacoes: input.observacoes,
+              userId: ctx.user.id,
+            });
+          } catch (syncErr) {
+            await deleteLocalAbastecimento(ctx.user.id, created.id);
+            if (syncErr instanceof TRPCError) throw syncErr;
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                syncErr instanceof Error
+                  ? syncErr.message
+                  : "Não foi possível baixar o estoque deste abastecimento.",
+            });
+          }
+          return { success: true, id: created.id, localFallback: true };
+        }
+        const created = await createLocalAbastecimento(ctx.user.id, rowPayload);
+        return { success: true, id: created.id, localFallback: true };
       }
     }),
 
@@ -4627,12 +5010,26 @@ const abastecimentosRouter = router({
       const { id, data, valorLitro, litros, fazendaId, ...rest } = input;
       const dataISO = data ? data.slice(0, 10) : undefined;
 
-      const [anterior] = await db
-        .select()
-        .from(abastecimentos)
-        .where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+      let anterior: Awaited<ReturnType<typeof getLocalAbastecimento>> | (typeof abastecimentos.$inferSelect) | null = null;
+      try {
+        const [row] = await db
+          .select()
+          .from(abastecimentos)
+          .where(and(eq(abastecimentos.id, id), eq(abastecimentos.userId, ctx.user.id)));
+        anterior = row ?? null;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        anterior = await getLocalAbastecimento(ctx.user.id, id);
+      }
       if (!anterior) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
+      }
+
+      if (String(anterior.status ?? "registrado") === "estornado") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Abastecimento estornado não pode ser editado.",
+        });
       }
 
       const maquinaDestino = rest.maquinaId ?? anterior.maquinaId;
@@ -4676,7 +5073,7 @@ const abastecimentosRouter = router({
             await estornarSaidaAbastecimento(
               id,
               {
-                motivo: "Origem alterada para compra externa / posto",
+                motivo: MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
                 userId: ctx.user.id,
                 registradoPor: ctx.user.name?.trim() || undefined,
               },
@@ -4704,50 +5101,225 @@ const abastecimentosRouter = router({
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        console.error("[abastecimentos.update]", error);
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Não foi possível atualizar o abastecimento. Verifique os dados e tente novamente.",
+        if (!isDatabaseUnavailable(error)) {
+          console.error("[abastecimentos.update]", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível atualizar o abastecimento. Verifique os dados e tente novamente.",
+          });
+        }
+        if (eraInterno || eAgora) {
+          await updateLocalAbastecimento(ctx.user.id, id, {
+            ...rest,
+            ...(dataISO ? { data: dataISO } : {}),
+            ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
+            ...(valorLitro !== undefined ? { valorLitro } : {}),
+            ...(total !== undefined ? { valorTotal: total } : {}),
+            ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
+            ...(input.abastecidoNaFazenda !== undefined
+              ? { abastecidoNaFazenda: input.abastecidoNaFazenda }
+              : {}),
+          });
+
+          try {
+            if (eraInterno && !eAgora) {
+              await estornarSaidaAbastecimentoLocal(id, {
+                motivo: MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+                userId: ctx.user.id,
+                registradoPor: ctx.user.name?.trim() || undefined,
+              });
+            } else if (eAgora && novoFazendaId) {
+              await syncSaidaAbastecimentoLocal({
+                abastecimentoId: id,
+                maquinaId: novoMaquinaId,
+                fazendaId: novoFazendaId,
+                combustivel: novoCombustivel,
+                litros: novosLitros,
+                dataISO: novaData,
+                responsavel: novoResponsavel,
+                valorTotal: valorTotalFinal,
+                observacoes: novasObs,
+                userId: ctx.user.id,
+              });
+            }
+          } catch (syncErr) {
+            if (syncErr instanceof TRPCError) throw syncErr;
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                syncErr instanceof Error
+                  ? syncErr.message
+                  : "Não foi possível sincronizar o estoque deste abastecimento.",
+            });
+          }
+          return { success: true, localFallback: true };
+        }
+        await updateLocalAbastecimento(ctx.user.id, id, {
+          ...rest,
+          ...(dataISO ? { data: dataISO } : {}),
+          ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
+          ...(valorLitro !== undefined ? { valorLitro } : {}),
+          ...(total !== undefined ? { valorTotal: total } : {}),
+          ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
         });
+        return { success: true, localFallback: true };
       }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const [anterior] = await db
-        .select()
-        .from(abastecimentos)
-        .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+      let anterior: {
+        id: number;
+        abastecidoNaFazenda: boolean | null;
+        fazendaId: number | null;
+        status?: string | null;
+      } | null = null;
+
+      try {
+        const [row] = await db
+          .select()
+          .from(abastecimentos)
+          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+        anterior = row ?? null;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const local = await getLocalAbastecimento(ctx.user.id, input.id);
+        anterior = local
+          ? {
+              id: local.id,
+              abastecidoNaFazenda: local.abastecidoNaFazenda ?? null,
+              fazendaId: local.fazendaId ?? null,
+              status: local.status ?? null,
+            }
+          : null;
+      }
+
       if (!anterior) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
       }
 
+      if (String(anterior.status ?? "registrado") === "estornado") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Abastecimento estornado não pode ser excluído. O histórico é preservado.",
+        });
+      }
+
+      // Estoque da Fazenda: exclusão direta gera inconsistência — use estorno.
+      if (anterior.abastecidoNaFazenda && anterior.fazendaId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Este abastecimento está vinculado ao estoque da Fazenda. Use Estornar abastecimento para devolver a quantidade e preservar o histórico.",
+        });
+      }
+
+      try {
+        await db
+          .delete(abastecimentos)
+          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) {
+          console.error("[abastecimentos.delete]", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível excluir o abastecimento. Tente novamente.",
+          });
+        }
+        await deleteLocalAbastecimento(ctx.user.id, input.id);
+        return { success: true };
+      }
+    }),
+
+  estornar: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        motivo: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      let anterior: Awaited<ReturnType<typeof getLocalAbastecimento>> | (typeof abastecimentos.$inferSelect) | null =
+        null;
+      try {
+        const [row] = await db
+          .select()
+          .from(abastecimentos)
+          .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
+        anterior = row ?? null;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        anterior = await getLocalAbastecimento(ctx.user.id, input.id);
+      }
+
+      if (!anterior) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Abastecimento não encontrado." });
+      }
+
+      if (String(anterior.status ?? "registrado") === "estornado") {
+        return { success: true, alreadyEstornado: true };
+      }
+
+      if (!anterior.abastecidoNaFazenda || !anterior.fazendaId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Estorno aplica-se apenas a abastecimentos com origem Estoque da Fazenda. Para compra externa, use Excluir.",
+        });
+      }
+
+      const motivoExtra = input.motivo?.trim();
+      const motivo = motivoExtra
+        ? `${MOTIVO_ESTORNO_ABASTECIMENTO} — ${motivoExtra}`
+        : MOTIVO_ESTORNO_ABASTECIMENTO;
+
       try {
         await db.transaction(async tx => {
-          if (anterior.abastecidoNaFazenda && anterior.fazendaId) {
-            await estornarSaidaAbastecimento(
-              input.id,
-              {
-                motivo: "Exclusão do abastecimento original",
-                userId: ctx.user.id,
-                registradoPor: ctx.user.name?.trim() || undefined,
-              },
-              tx,
-            );
-          }
+          await estornarSaidaAbastecimento(
+            input.id,
+            {
+              motivo,
+              userId: ctx.user.id,
+              registradoPor: ctx.user.name?.trim() || undefined,
+            },
+            tx,
+          );
           await tx
-            .delete(abastecimentos)
+            .update(abastecimentos)
+            .set({ status: "estornado" })
             .where(and(eq(abastecimentos.id, input.id), eq(abastecimentos.userId, ctx.user.id)));
         });
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        console.error("[abastecimentos.delete]", error);
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Não foi possível excluir o abastecimento. Tente novamente.",
-        });
+        if (!isDatabaseUnavailable(error)) {
+          console.error("[abastecimentos.estornar]", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível estornar o abastecimento. Tente novamente.",
+          });
+        }
+        try {
+          await estornarSaidaAbastecimentoLocal(input.id, {
+            motivo,
+            userId: ctx.user.id,
+            registradoPor: ctx.user.name?.trim() || undefined,
+          });
+          await updateLocalAbastecimento(ctx.user.id, input.id, { status: "estornado" });
+          return { success: true, localFallback: true };
+        } catch (syncErr) {
+          if (syncErr instanceof TRPCError) throw syncErr;
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              syncErr instanceof Error
+                ? syncErr.message
+                : "Não foi possível estornar o abastecimento. Tente novamente.",
+          });
+        }
       }
     }),
 });
@@ -5192,7 +5764,8 @@ const benfeitoriasRouter = router({
         ws.getColumn(idx + 1).width = col.largura;
       });
 
-      const { EXCEL_FMT_MOEDA_BRL } = await import('../shared/parseMoedaBr');
+      // Valor como TEXTO (@): permite digitar 100.000,00 sem o Excel engolir o ponto.
+      // A conversão para moeda acontece na importação (parseMoedaBr).
       const colIdxValor = COLUNAS_IMPORTACAO.findIndex(c => c.key === 'valor') + 1;
 
       for (let r = 2; r <= 501; r++) {
@@ -5206,12 +5779,12 @@ const benfeitoriasRouter = router({
           cell.font = { name: 'Calibri', size: 10 };
           cell.alignment = { horizontal: isValor ? 'right' : 'left', vertical: 'middle' };
           cell.border = { bottom: { style: 'hair', color: { argb: 'E0E0E0' } } };
-          if (isValor) cell.numFmt = EXCEL_FMT_MOEDA_BRL;
+          if (isValor) cell.numFmt = '@';
         });
       }
 
       if (colIdxValor > 0) {
-        ws.getColumn(colIdxValor).numFmt = EXCEL_FMT_MOEDA_BRL;
+        ws.getColumn(colIdxValor).numFmt = '@';
       }
 
       const wsListas = wb.addWorksheet('_Listas', {

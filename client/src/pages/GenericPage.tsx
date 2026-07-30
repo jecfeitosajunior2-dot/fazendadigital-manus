@@ -18,9 +18,10 @@ import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { normalizarUnidade, nomeUnidadeExibicao, formatDataBr } from '@/lib/produto-types';
+import { normalizarUnidade, formatQtdComSigla, formatDataBr } from '@/lib/produto-types';
 import { brl, diasAte } from '@/lib/dashboard-utils';
 import { useDebounce } from '@/hooks/useDebounce';
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ANIMAIS_LIST_FILTERS_STORAGE_KEY,
   INITIAL_ANIMAIS_LIST_FILTERS,
@@ -578,17 +579,8 @@ const numEstoque = (v: unknown) => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-const formatEstoqueComUnidade = (qtd: number, unidade: string | null | undefined) => {
-  const un = nomeUnidadeExibicao(unidade);
-  const abs = Math.abs(qtd);
-  const isWhole = abs % 1 === 0;
-  const formatted = abs.toLocaleString("pt-BR", {
-    minimumFractionDigits: isWhole ? 0 : 2,
-    maximumFractionDigits: isWhole ? 0 : 2,
-  });
-  const signed = qtd < 0 ? `-${formatted}` : formatted;
-  return un ? `${signed} ${un}` : signed;
-};
+const formatEstoqueComUnidade = (qtd: number, unidade: string | null | undefined) =>
+  formatQtdComSigla(qtd, unidade);
 
 const resolverStatusProduto = (
   item: EstoqueItem,
@@ -626,6 +618,102 @@ const rotuloAlertaEstoque = (item: EstoqueItem): string => {
   if (isAcimaEstoqueMaximo(item)) return "Acima do máximo";
   return "—";
 };
+
+/** Badge compacto de alerta operacional (coluna Alerta) — separado do Status. */
+type AlertaEstoqueTipo = "abaixo_minimo" | "acima_maximo" | "validade_proxima" | "vencido";
+
+const ALERTA_ESTOQUE_BADGE_CLASS: Record<AlertaEstoqueTipo, string> = {
+  // Urgência alta — risco de falta
+  abaixo_minimo: "bg-red-50 text-red-800 border border-red-200/90",
+  // Atenção moderada — excesso
+  acima_maximo: "bg-amber-50 text-amber-900 border border-amber-200/90",
+  // Padrão reservado (hierarquia); não inventar alertas novos na coluna
+  validade_proxima: "bg-orange-50 text-orange-800 border border-orange-200/90",
+  vencido: "bg-red-100 text-red-900 border border-red-300/80",
+};
+
+const ALERTA_ESTOQUE_BADGE_BASE =
+  "inline-flex items-center justify-center h-[22px] max-w-full px-2 rounded text-[10px] font-medium leading-none whitespace-nowrap align-middle focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 focus-visible:ring-offset-1";
+
+function tooltipAlertaEstoque(item: EstoqueItem, tipo: AlertaEstoqueTipo): string | null {
+  const atual = formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade);
+  if (tipo === "abaixo_minimo") {
+    const minVal = numEstoque(item.quantidadeMinima);
+    if (item.monitorarEstoque && minVal > 0) {
+      const minimo = formatEstoqueComUnidade(minVal, item.unidade);
+      return `Estoque atual: ${atual}. Mínimo configurado: ${minimo}.`;
+    }
+    // Agregado: não inventar mínimo zero como limite real
+    if (item.alertaAbaixoAgregado) {
+      return `Estoque atual: ${atual}. Abaixo do mínimo em ao menos uma fazenda.`;
+    }
+    return null;
+  }
+  if (tipo === "acima_maximo") {
+    const maxVal = numEstoque(item.quantidadeMaxima);
+    if (!(item.monitorarEstoque && maxVal > 0)) return null;
+    const maximo = formatEstoqueComUnidade(maxVal, item.unidade);
+    return `Estoque atual: ${atual}. Máximo configurado: ${maximo}.`;
+  }
+  return null;
+}
+
+function AlertaEstoqueBadge({
+  tipo,
+  label,
+  tooltip,
+}: {
+  tipo: AlertaEstoqueTipo;
+  label: string;
+  tooltip?: string | null;
+}) {
+  const badgeClass = `${ALERTA_ESTOQUE_BADGE_BASE} ${ALERTA_ESTOQUE_BADGE_CLASS[tipo]}`;
+
+  if (!tooltip) {
+    return <span className={badgeClass}>{label}</span>;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className={badgeClass} aria-label={`${label}. ${tooltip}`}>
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={6}
+        className="max-w-[280px] text-[11px] leading-relaxed"
+      >
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function renderAlertaEstoqueCell(item: EstoqueItem) {
+  // Prioridade: abaixo do mínimo > acima do máximo (incompatíveis entre si).
+  // Validade permanece na coluna Validade — não inventar tipos novos aqui.
+  if (isAbaixoEstoqueMinimo(item)) {
+    return (
+      <AlertaEstoqueBadge
+        tipo="abaixo_minimo"
+        label="Abaixo do mínimo"
+        tooltip={tooltipAlertaEstoque(item, "abaixo_minimo")}
+      />
+    );
+  }
+  if (isAcimaEstoqueMaximo(item)) {
+    return (
+      <AlertaEstoqueBadge
+        tipo="acima_maximo"
+        label="Acima do máximo"
+        tooltip={tooltipAlertaEstoque(item, "acima_maximo")}
+      />
+    );
+  }
+  return <span className="text-gray-400">—</span>;
+}
 
 const statusOperacional = (item: EstoqueItem): "ativo" | "inativo" =>
   item.situacao === "inativo" ? "inativo" : "ativo";
@@ -917,6 +1005,19 @@ export function EstoquePage() {
     return list;
   }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, alertaFiltro, categoriaFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
 
+  /** Soma do valor em estoque da lista filtrada (só produtos com valor > 0). */
+  const valorTotalLista = useMemo(() => {
+    let soma = 0;
+    let comValor = 0;
+    for (const item of filtered) {
+      const valor = valorEmEstoque(item);
+      if (!(valor > 0)) continue;
+      soma += valor;
+      comValor += 1;
+    }
+    return { soma, comValor };
+  }, [filtered, precoMedioImplicit]);
+
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
 
   const acaoEmLote = useMemo((): "ativar" | "inativar" | null => {
@@ -1016,49 +1117,54 @@ export function EstoquePage() {
     if (ok) ativarMutation.mutate({ ids, escopo: "fazenda" });
   };
 
-  const exportStatusLabel =
-    statusFiltro === "ativo" ? "Ativos" : statusFiltro === "inativo" ? "Inativos" : "Todos";
-  const exportAlertaLabel =
-    alertaFiltro === "abaixo_minimo"
-      ? " · Abaixo do mínimo"
-      : alertaFiltro === "acima_maximo"
-        ? " · Acima do máximo"
-        : "";
-
   const exportFazendaNomePdf = fazendaSelecionadaNome;
 
   const buildProdutosExportTitle = () =>
     exportFazendaNomePdf
-      ? `${exportFazendaNomePdf} — Lista de Produtos (${exportStatusLabel}${exportAlertaLabel})`
-      : `Lista de Produtos (${exportStatusLabel}${exportAlertaLabel})`;
+      ? `${exportFazendaNomePdf} — Lista de Produtos`
+      : "Lista de Produtos";
 
   const exportHeaders = [
     "Produto", "Categoria", "Estoque", "Mínimo", "Valor", "Validade", "Status", "Alerta",
   ];
-  const exportRows = useMemo(
-    () =>
-      filtered.map(item => {
-        const validade = validadePorProduto.get(item.id);
-        const statusOp = statusOperacional(item);
-        const valor = valorEmEstoque(item);
-        const minimo =
-          item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
-            ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
-            : "—";
+  const exportRows = useMemo(() => {
+    const detailRows = filtered.map(item => {
+      const validade = validadePorProduto.get(item.id);
+      const statusOp = statusOperacional(item);
+      const valor = valorEmEstoque(item);
+      const minimo =
+        item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
+          ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
+          : "—";
 
-        return [
-          item.nome,
-          item.categoria?.trim() || "—",
-          formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade),
-          minimo,
-          valor > 0 ? valor : "",
-          validade ? formatDataBr(validade) : "—",
-          STATUS_PRODUTO_LABEL[statusOp],
-          rotuloAlertaEstoque(item),
-        ];
-      }),
-    [filtered, validadePorProduto, precoMedioImplicit],
-  );
+      return [
+        item.nome,
+        item.categoria?.trim() || "—",
+        formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade),
+        minimo,
+        valor > 0 ? valor : "",
+        validade ? formatDataBr(validade) : "—",
+        STATUS_PRODUTO_LABEL[statusOp],
+        rotuloAlertaEstoque(item),
+      ];
+    });
+
+    if (detailRows.length === 0) return detailRows;
+
+    return [
+      ...detailRows,
+      [
+        "Valor total",
+        "",
+        "",
+        "",
+        valorTotalLista.soma > 0 ? valorTotalLista.soma : "",
+        "",
+        "",
+        "",
+      ],
+    ];
+  }, [filtered, validadePorProduto, precoMedioImplicit, valorTotalLista]);
 
   const isEmptyCadastro = fazendaSelecionada && !isLoading && items.length === 0;
   const isEmptySemFazenda = !fazendaSelecionada && fazendaInitDone;
@@ -1111,8 +1217,6 @@ export function EstoquePage() {
   const renderProdutoRow = (item: EstoqueItem) => {
     const validade = validadePorProduto.get(item.id);
     const statusOp = statusOperacional(item);
-    const abaixoMinimo = isAbaixoEstoqueMinimo(item);
-    const acimaMaximo = isAcimaEstoqueMaximo(item);
     const valor = valorEmEstoque(item);
     const minimo =
       item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
@@ -1162,17 +1266,7 @@ export function EstoquePage() {
           <StatusProdutoBadge status={statusOp} />
         </td>
         <td className="px-3 py-2 align-middle whitespace-nowrap">
-          {abaixoMinimo ? (
-            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-100 text-orange-700">
-              Abaixo do mínimo
-            </span>
-          ) : acimaMaximo ? (
-            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-              Acima do máximo
-            </span>
-          ) : (
-            <span className="text-gray-400">—</span>
-          )}
+          {renderAlertaEstoqueCell(item)}
         </td>
         <td className="px-2 py-2 align-middle">
           <div className="flex items-center justify-end gap-0.5">
@@ -1427,6 +1521,24 @@ export function EstoquePage() {
           <TableHorizontalScroll
             footer={
               <div className="border-t border-gray-100">
+                {!isLoading && filtered.length > 0 ? (
+                  <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                    <span>
+                      Valor total:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {brl(valorTotalLista.soma)}
+                      </span>
+                    </span>
+                    {valorTotalLista.comValor < filtered.length && (
+                      <span className="text-[10px] text-gray-500">
+                        {filtered.length - valorTotalLista.comValor}{" "}
+                        {filtered.length - valorTotalLista.comValor === 1
+                          ? "produto sem valor"
+                          : "produtos sem valor"}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
                 <TablePaginationFooter
                   pageSize={perPage}
                   page={page}
@@ -1476,7 +1588,7 @@ export function EstoquePage() {
                       return (
                         <Fragment key="status-alerta">
                           {th}
-                          <th className="px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-left min-w-[120px]">
+                          <th className="px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap text-left min-w-[132px]">
                             Alerta
                           </th>
                         </Fragment>

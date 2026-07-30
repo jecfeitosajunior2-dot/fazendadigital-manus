@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   formatDataBr,
   formatQuantidadeMov,
-  nomeUnidadeExibicao,
+  siglaUnidade,
   parseObsMovimentacao,
 } from "@/lib/produto-types";
 
@@ -101,8 +101,8 @@ export default function InsumosHistoricoMovimentacaoPage() {
         va = parseFloat(String(a.quantidade).replace(",", ".")) || 0;
         vb = parseFloat(String(b.quantidade).replace(",", ".")) || 0;
       } else if (sortKey === "unidade") {
-        va = nomeUnidadeExibicao(a.unidade);
-        vb = nomeUnidadeExibicao(b.unidade);
+        va = siglaUnidade(a.unidade);
+        vb = siglaUnidade(b.unidade);
       }
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ? 1 : -1;
@@ -260,7 +260,7 @@ export default function InsumosHistoricoMovimentacaoPage() {
                   const tipo = tipoMovimentacao(mov.observacoes, mov.quantidade);
                   const qtdNum = parseFloat(String(mov.quantidade).replace(",", "."));
                   const qtdAbs = Math.abs(qtdNum);
-                  const unidadeNome = nomeUnidadeExibicao(mov.unidade);
+                  const unidadeNome = siglaUnidade(mov.unidade) || "—";
                   return (
                     <tr
                       key={mov.id}

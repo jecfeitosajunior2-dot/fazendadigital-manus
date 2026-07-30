@@ -1,5 +1,10 @@
 import ExcelJS from "exceljs";
-import { formatValorCelulaMoedaBrlExcel, parseExportInteger } from "./parseMoedaBr";
+import {
+  EXCEL_FMT_MOEDA_BRL,
+  formatValorCelulaMoedaBrlExcel,
+  parseExportInteger,
+  parseExportMoedaNumber,
+} from "./parseMoedaBr";
 import {
   exportDataColRange,
   patchXlsxIgnoreNumberStoredAsText,
@@ -23,15 +28,28 @@ export type GroupedTableHeader = {
   bottomRow: string[];
 };
 
+export type ExportHeaderTheme = "default" | "plain" | "dark";
+
 export type BuildExportSpreadsheetOptions = {
   currencyColIndexes?: number[];
   currencyNumFmt?: string;
+  /**
+   * Quando true, colunas de moeda saem como número Excel com formatação BRL
+   * (em vez de texto "R$ …").
+   */
+  currencyAsNumber?: boolean;
   integerColIndexes?: number[];
   /** Colunas texto (@) — ex.: brinco/RFID com zero à esquerda. */
   textColIndexes?: number[];
+  /** Colunas de data (YYYY-MM-DD ou Date) com formato visual DD/MM/AAAA. */
+  dateColIndexes?: number[];
   /** numFmt por coluna (ex.: { 7: "0.0" } para peso). */
   columnNumFmts?: Partial<Record<number, string>>;
   columnAligns?: ExportColumnAlign[];
+  /** Larguras fixas por coluna (índice 0-based). */
+  columnWidths?: Array<number | undefined>;
+  /** Colunas com quebra de texto. */
+  wrapTextColIndexes?: number[];
   sheetName?: string;
   /** Título do relatório (mesclado sobre a largura da tabela). */
   reportTitle?: string;
@@ -43,8 +61,29 @@ export type BuildExportSpreadsheetOptions = {
   blankAfterMeta?: boolean;
   /** Filtro automático na tabela (padrão: true). */
   autoFilter?: boolean;
+  /**
+   * Quantidade de linhas de dados (após o cabeçalho) incluídas no autofiltro.
+   * Use para excluir linhas de totais no rodapé.
+   */
+  autoFilterDataRowCount?: number;
+  /** Estiliza as N últimas linhas como totais (negrito + fundo cinza + borda superior). */
+  footerRowCount?: number;
+  /**
+   * Nas linhas de rodapé, mescla as colunas 1..N para o rótulo
+   * (o valor permanece na coluna seguinte, em geral a de moeda).
+   */
+  footerLabelMergeEndCol?: number;
+  /** Altura da linha de cabeçalho (padrão: 22 ou 32 no tema dark). */
+  headerRowHeight?: number;
   /** Cabeçalho discreto: negrito + bordas leves, sem preenchimento colorido. */
   plainHeader?: boolean;
+  /**
+   * Tema do cabeçalho. `dark` = fundo petróleo + texto branco.
+   * Se omitido, `plainHeader` continua valendo como antes.
+   */
+  headerTheme?: ExportHeaderTheme;
+  /** Fundo discreto no título mesclado. */
+  titleSubtleFill?: boolean;
   /** Permite exportar com 0 linhas de dados (mantém cabeçalho/tabela vazia). */
   allowEmpty?: boolean;
   /** Cabeçalho em duas linhas (agrupado), como o quadro de Gerenciamento de Lotes. */
@@ -60,7 +99,7 @@ export type ExportSpreadsheetRowMeta = {
   muted?: boolean;
 };
 
-export type ExportSpreadsheetRow = (string | number | null | undefined)[];
+export type ExportSpreadsheetRow = (string | number | Date | null | undefined)[];
 
 const FONT = "Calibri";
 const BORDER_COLOR = "FFD1D5DB";
@@ -69,6 +108,38 @@ const HEADER_BORDER = "FF2D5A5A";
 /** Cinza claro neutro para cabeçalho operacional (#F2F2F2). */
 const PLAIN_HEADER_FILL = "FFF2F2F2";
 const PLAIN_HEADER_BOTTOM = "FFD0D0D0";
+/** Azul-petróleo institucional (#2D5A5A). */
+const DARK_HEADER_FILL = "FF2D5A5A";
+const TITLE_FILL = "FFF0F7F6";
+const FOOTER_FILL = "FFF3F4F6";
+const EXCEL_FMT_DATA_BR = "DD/MM/YYYY";
+
+function resolveHeaderTheme(options?: BuildExportSpreadsheetOptions): ExportHeaderTheme {
+  if (options?.headerTheme) return options.headerTheme;
+  if (options?.plainHeader === true) return "plain";
+  return "default";
+}
+
+function parseExportDate(val: string | number | Date | null | undefined): Date | null {
+  if (val == null || val === "") return null;
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+  if (typeof val === "number" && Number.isFinite(val)) {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const s = String(val).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (iso) {
+    const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (br) {
+    const d = new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
 
 function columnWidth(headers: string[], rows: ExportSpreadsheetRow[], colIndex: number): number {
   let max = String(headers[colIndex] ?? "").length;
@@ -87,12 +158,15 @@ function thinBorder(): Partial<ExcelJS.Borders> {
 
 function applyHeaderCellStyle(
   cell: ExcelJS.Cell,
-  plainHeader: boolean,
+  theme: ExportHeaderTheme,
   horizontal: "left" | "center" | "right" = "center",
 ) {
-  cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
-  cell.alignment = { horizontal, vertical: "middle" };
-  if (plainHeader) {
+  if (theme === "dark") {
+    cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: DARK_HEADER_FILL } };
+    cell.border = thinBorder();
+  } else if (theme === "plain") {
+    cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
     cell.border = {
       top: { style: "thin", color: { argb: BORDER_COLOR } },
@@ -101,18 +175,20 @@ function applyHeaderCellStyle(
       bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
     };
   } else {
+    cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
     cell.border = {
       ...thinBorder(),
       bottom: { style: "thin", color: { argb: HEADER_BORDER } },
     };
   }
+  cell.alignment = { horizontal, vertical: "middle", wrapText: true };
 }
 
 function addGroupedTableHeader(
   ws: ExcelJS.Worksheet,
   grouped: GroupedTableHeader,
-  plainHeader: boolean,
+  theme: ExportHeaderTheme,
 ): number {
   const totalCols = grouped.topRow.reduce((sum, cell) => sum + (cell.colSpan ?? 1), 0);
   const topValues = Array.from({ length: totalCols }, () => "");
@@ -126,7 +202,7 @@ function addGroupedTableHeader(
     const rowSpan = cellDef.rowSpan ?? 1;
     const cell = groupRow.getCell(col);
     cell.value = cellDef.text;
-    applyHeaderCellStyle(cell, plainHeader, "center");
+    applyHeaderCellStyle(cell, theme, "center");
     if (colSpan > 1 || rowSpan > 1) {
       ws.mergeCells(
         groupRow.number,
@@ -158,7 +234,7 @@ function addGroupedTableHeader(
   const subHeaderRow = ws.addRow(bottomValues);
   subHeaderRow.height = 20;
   subHeaderRow.eachCell({ includeEmpty: false }, cell => {
-    applyHeaderCellStyle(cell, plainHeader, "center");
+    applyHeaderCellStyle(cell, theme, "center");
   });
 
   return subHeaderRow.number;
@@ -194,8 +270,16 @@ export async function buildExportSpreadsheetWorkbook(
   const groupedHeader = options?.groupedTableHeader;
   const headerRowCount = groupedHeader ? 2 : 1;
   let headerExcelRow = metaRows + headerRowCount;
-  const plainHeader = options?.plainHeader === true;
+  const headerTheme = resolveHeaderTheme(options);
+  const plainHeader = headerTheme === "plain";
   const enableAutoFilter = options?.autoFilter !== false;
+  const currencyAsNumber = options?.currencyAsNumber === true;
+  const currencyFmt = options?.currencyNumFmt ?? EXCEL_FMT_MOEDA_BRL;
+  const footerRowCount = Math.max(0, options?.footerRowCount ?? 0);
+  const wrapCols = options?.wrapTextColIndexes
+    ? new Set(options.wrapTextColIndexes)
+    : null;
+  const dateCols = options?.dateColIndexes ? new Set(options.dateColIndexes) : null;
 
   const ws = wb.addWorksheet(options?.sheetName ?? "Dados", {
     views: [{ state: "frozen", ySplit: headerExcelRow }],
@@ -210,7 +294,12 @@ export async function buildExportSpreadsheetWorkbook(
   const textCols = options?.textColIndexes ? new Set(options.textColIndexes) : null;
   const columnNumFmts = options?.columnNumFmts ?? null;
 
-  if (currencyCols) {
+  if (options?.columnAligns?.length) {
+    for (let colIdx = 0; colIdx < colCount; colIdx++) {
+      const horizontal = options.columnAligns[colIdx] ?? "left";
+      ws.getColumn(colIdx + 1).alignment = { horizontal, vertical: "middle" };
+    }
+  } else if (currencyCols) {
     for (const colIdx of currencyCols) {
       const horizontal = options?.columnAligns?.[colIdx] ?? "right";
       ws.getColumn(colIdx + 1).alignment = { horizontal, vertical: "middle" };
@@ -219,21 +308,26 @@ export async function buildExportSpreadsheetWorkbook(
 
   if (options?.reportTitle) {
     const titleRow = ws.addRow([options.reportTitle]);
-    titleRow.height = plainHeader ? 20 : 24;
+    titleRow.height = plainHeader ? 20 : 26;
     ws.mergeCells(titleRow.number, 1, titleRow.number, colCount);
     const titleCell = titleRow.getCell(1);
     titleCell.font = {
       name: FONT,
-      size: plainHeader ? 11 : 13,
+      size: plainHeader ? 11 : 14,
       bold: true,
       color: { argb: "FF0F172A" },
     };
     titleCell.alignment = {
-      horizontal: plainHeader ? "center" : "left",
+      horizontal: plainHeader || options?.titleSubtleFill || headerTheme === "dark" ? "center" : "left",
       vertical: "middle",
       indent: 0,
     };
-    if (plainHeader) {
+    if (plainHeader || options?.titleSubtleFill) {
+      titleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: TITLE_FILL },
+      };
       titleCell.border = thinBorder();
     }
   }
@@ -271,41 +365,42 @@ export async function buildExportSpreadsheetWorkbook(
   }
 
   if (groupedHeader) {
-    headerExcelRow = addGroupedTableHeader(ws, groupedHeader, plainHeader);
+    headerExcelRow = addGroupedTableHeader(ws, groupedHeader, headerTheme);
     ws.views = [{ state: "frozen", ySplit: headerExcelRow }];
   } else {
     const headerRow = ws.addRow(headers);
-    headerRow.height = 22;
+    headerRow.height =
+      options?.headerRowHeight ?? (headerTheme === "dark" ? 32 : 22);
     headerRow.eachCell(cell => {
-      cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FF1A1A1A" } };
-      cell.alignment = {
-        horizontal: "center",
-        vertical: "middle",
-      };
-      if (plainHeader) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PLAIN_HEADER_FILL } };
-        cell.border = {
-          top: { style: "thin", color: { argb: BORDER_COLOR } },
-          left: { style: "thin", color: { argb: BORDER_COLOR } },
-          right: { style: "thin", color: { argb: BORDER_COLOR } },
-          bottom: { style: "thin", color: { argb: PLAIN_HEADER_BOTTOM } },
-        };
-      } else {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } };
-        cell.border = {
-          ...thinBorder(),
-          bottom: { style: "thin", color: { argb: HEADER_BORDER } },
-        };
-      }
+      applyHeaderCellStyle(cell, headerTheme, "center");
     });
     headerExcelRow = headerRow.number;
+    ws.views = [{ state: "frozen", ySplit: headerExcelRow }];
   }
+
+  const footerStartIdx = footerRowCount > 0 ? Math.max(0, rows.length - footerRowCount) : rows.length;
+  const footerLabelMergeEndCol = Math.max(
+    0,
+    Math.min(options?.footerLabelMergeEndCol ?? 0, colCount),
+  );
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     const row = rows[rowIdx];
     const meta = options?.rowMeta?.[rowIdx];
+    const isFooter = rowIdx >= footerStartIdx;
     const excelRow = ws.addRow(new Array(headers.length).fill(null));
-    excelRow.height = 18;
+    let rowHeight = isFooter ? 20 : 18;
+    if (!isFooter && wrapCols) {
+      for (const colIdx of wrapCols) {
+        const raw = row[colIdx];
+        if (raw == null || raw === "") continue;
+        const len = String(raw).length;
+        if (len > 36) {
+          rowHeight = Math.max(rowHeight, Math.min(18 + Math.ceil(len / 36) * 14, 96));
+        }
+      }
+    }
+    excelRow.height = rowHeight;
 
     row.forEach((rawCell, colIdx) => {
       const excelCell = excelRow.getCell(colIdx + 1);
@@ -314,30 +409,66 @@ export async function buildExportSpreadsheetWorkbook(
       const isCurrency = currencyCols?.has(colIdx) ?? false;
       const isInteger = integerCols?.has(colIdx) ?? false;
       const isText = textCols?.has(colIdx) ?? false;
+      const isDate = dateCols?.has(colIdx) ?? false;
       const colNumFmt = columnNumFmts?.[colIdx];
       const indent = meta?.colIndents?.[colIdx] ?? 0;
+      const wrapText = Boolean(wrapCols?.has(colIdx) || isObservacoes);
 
       excelCell.font = {
         name: FONT,
         size: 10,
+        ...(isFooter ? { bold: true } : {}),
         ...(meta?.italic ? { italic: true } : {}),
         ...(meta?.muted ? { color: { argb: "FF6B7280" } } : {}),
       };
       excelCell.alignment = {
         horizontal,
         vertical: "middle",
-        wrapText: isObservacoes,
+        wrapText,
         ...(indent > 0 ? { indent } : {}),
       };
-      excelCell.border = thinBorder();
+      excelCell.border = isFooter
+        ? {
+            top: { style: "thin", color: { argb: "FF9CA3AF" } },
+            left: { style: "thin", color: { argb: BORDER_COLOR } },
+            right: { style: "thin", color: { argb: BORDER_COLOR } },
+            bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+          }
+        : thinBorder();
+
+      if (isFooter) {
+        excelCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: FOOTER_FILL },
+        };
+      }
 
       if (rawCell == null || rawCell === "") {
         excelCell.value = "";
       } else if (isCurrency) {
-        excelCell.value = formatValorCelulaMoedaBrlExcel(rawCell);
-        excelCell.numFmt = "@";
+        if (currencyAsNumber) {
+          const n = parseExportMoedaNumber(rawCell as string | number);
+          if (n != null) {
+            excelCell.value = n;
+            excelCell.numFmt = currencyFmt;
+          } else {
+            excelCell.value = String(rawCell);
+          }
+        } else {
+          excelCell.value = formatValorCelulaMoedaBrlExcel(rawCell as string | number);
+          excelCell.numFmt = "@";
+        }
+      } else if (isDate) {
+        const d = parseExportDate(rawCell as string | number | Date);
+        if (d) {
+          excelCell.value = d;
+          excelCell.numFmt = colNumFmt ?? EXCEL_FMT_DATA_BR;
+        } else {
+          excelCell.value = String(rawCell);
+        }
       } else if (isInteger) {
-        const n = parseExportInteger(rawCell);
+        const n = parseExportInteger(rawCell as string | number);
         if (n != null) {
           excelCell.value = n;
           excelCell.numFmt = colNumFmt ?? "0";
@@ -349,6 +480,9 @@ export async function buildExportSpreadsheetWorkbook(
         if (colNumFmt) {
           excelCell.numFmt = colNumFmt;
         }
+      } else if (rawCell instanceof Date) {
+        excelCell.value = rawCell;
+        excelCell.numFmt = colNumFmt ?? EXCEL_FMT_DATA_BR;
       } else if (isText) {
         excelCell.value = String(rawCell);
         excelCell.numFmt = "@";
@@ -358,31 +492,80 @@ export async function buildExportSpreadsheetWorkbook(
     });
   }
 
+  if (footerRowCount > 0 && footerLabelMergeEndCol >= 2) {
+    for (let i = 0; i < footerRowCount; i++) {
+      const excelRowNumber = headerExcelRow + footerStartIdx + 1 + i;
+      const row = ws.getRow(excelRowNumber);
+      const label = row.getCell(1).value;
+      ws.mergeCells(excelRowNumber, 1, excelRowNumber, footerLabelMergeEndCol);
+      const merged = row.getCell(1);
+      merged.value = label;
+      merged.font = { name: FONT, size: 10, bold: true, color: { argb: "FF111827" } };
+      merged.alignment = { horizontal: "right", vertical: "middle", wrapText: true };
+      merged.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: FOOTER_FILL },
+      };
+      merged.border = {
+        top: { style: "thin", color: { argb: "FF9CA3AF" } },
+        left: { style: "thin", color: { argb: BORDER_COLOR } },
+        right: { style: "thin", color: { argb: BORDER_COLOR } },
+        bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+      };
+      // Reaplica borda/fundo nas células mescladas restantes
+      for (let c = 2; c <= footerLabelMergeEndCol; c++) {
+        const cell = row.getCell(c);
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: FOOTER_FILL },
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FF9CA3AF" } },
+          left: { style: "thin", color: { argb: BORDER_COLOR } },
+          right: { style: "thin", color: { argb: BORDER_COLOR } },
+          bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+        };
+      }
+      row.height = 22;
+    }
+  }
+
   if (enableAutoFilter) {
-    const lastDataExcelRow = headerExcelRow + Math.max(rows.length, 0);
-    const filterEndRow = Math.max(lastDataExcelRow, headerExcelRow);
+    const dataRowsForFilter =
+      options?.autoFilterDataRowCount != null
+        ? Math.max(0, options.autoFilterDataRowCount)
+        : Math.max(rows.length - footerRowCount, 0);
+    const filterEndRow = Math.max(headerExcelRow + dataRowsForFilter, headerExcelRow);
     ws.autoFilter = {
       from: { row: headerExcelRow, column: 1 },
       to: { row: filterEndRow, column: colCount },
     };
   }
 
-  if (currencyCols) {
-    headers.forEach((_, colIdx) => {
-      if (!currencyCols.has(colIdx)) return;
+  headers.forEach((_, colIdx) => {
+    const fixed = options?.columnWidths?.[colIdx];
+    if (fixed != null) {
+      ws.getColumn(colIdx + 1).width = fixed;
+      return;
+    }
+    if (currencyCols?.has(colIdx)) {
       let max = String(headers[colIdx] ?? "").length;
       for (const row of rows) {
-        const formatted = formatValorCelulaMoedaBrlExcel(row[colIdx]);
-        if (formatted.length > max) max = formatted.length;
+        if (currencyAsNumber) {
+          const n = parseExportMoedaNumber(row[colIdx] as string | number);
+          const formatted = n != null ? formatValorCelulaMoedaBrlExcel(n) : "";
+          if (formatted.length > max) max = formatted.length;
+        } else {
+          const formatted = formatValorCelulaMoedaBrlExcel(row[colIdx] as string | number);
+          if (formatted.length > max) max = formatted.length;
+        }
       }
       ws.getColumn(colIdx + 1).width = Math.min(Math.max(max + 2, 12), 50);
-    });
-  }
-
-  headers.forEach((_, colIdx) => {
-    if (currencyCols?.has(colIdx)) return;
+      return;
+    }
     const width = columnWidth(headers, rows, colIdx);
-    // plainHeader (export operacional do lote): um pouco mais de folga para não cortar texto.
     ws.getColumn(colIdx + 1).width = plainHeader
       ? Math.min(Math.max(width + 2, 14), 50)
       : width;

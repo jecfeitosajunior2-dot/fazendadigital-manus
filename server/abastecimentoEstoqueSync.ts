@@ -4,10 +4,20 @@
  */
 import { and, eq, isNull, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import {
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+} from "../shared/estoqueEstornoMotivos";
 import { db, abastecimentos, estoque, estoqueMovimentacoes, maquinas } from "./db";
+import { devLocalStore } from "./devLocalStore";
+import { getLocalMaquina, updateLocalAbastecimento } from "./localFallbackStore";
 
 export const DESTINO_ABASTECIMENTO_MAQUINA = "Abastecimento de máquina";
 export const TIPO_SAIDA_ABASTECIMENTO = "Saída";
+export {
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+};
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = typeof db | Tx;
@@ -309,7 +319,7 @@ export async function estornarSaidaAbastecimento(
     observacoes: `Estorno do abastecimento #${abastecimentoId}`,
     status: "estorno",
     originalGrupoId: grupoOriginal,
-    motivoEstorno: options?.motivo ?? "Exclusão ou alteração do abastecimento original",
+    motivoEstorno: options?.motivo ?? MOTIVO_ESTORNO_ABASTECIMENTO,
     abastecimentoId,
   });
 
@@ -317,7 +327,7 @@ export async function estornarSaidaAbastecimento(
     .update(estoqueMovimentacoes)
     .set({
       status: "estornada",
-      motivoEstorno: options?.motivo ?? "Exclusão ou alteração do abastecimento original",
+      motivoEstorno: options?.motivo ?? MOTIVO_ESTORNO_ABASTECIMENTO,
     })
     .where(eq(estoqueMovimentacoes.id, ativa.id));
 
@@ -328,10 +338,97 @@ export async function estornarSaidaAbastecimento(
 }
 
 export const MSG_MOV_VINCULADA_EDITAR =
-  "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original.";
+  "Esta movimentação foi gerada automaticamente por um abastecimento. Edite o abastecimento de origem para atualizar as informações.";
 
 export const MSG_MOV_VINCULADA_EXCLUIR =
-  "Esta movimentação está vinculada a um abastecimento. Exclua o abastecimento original para realizar o estorno corretamente.";
+  "Esta movimentação foi gerada por um abastecimento e não pode ser excluída diretamente. Estorne o abastecimento de origem.";
 
 export const MSG_ORIENTACAO_COMBUSTIVEL_MANUAL =
   "Para abastecimento de máquinas cadastradas, utilize a tela Abastecimentos. A saída de estoque será gerada automaticamente.";
+
+export const MSG_ABAST_ORIGEM_NAO_ENCONTRADO =
+  "Abastecimento de origem não encontrado. Verifique a integridade do vínculo.";
+
+// ─── Fallback local (dev sem MySQL) ───────────────────────────────────────────
+
+function findEstoqueCombustivelLocal(
+  fazendaId: number,
+  combustivel: string,
+): { id: number; quantidade: string | null; nome: string | null } | null {
+  const itens = devLocalStore
+    .listEstoque()
+    .filter(i => Number(i.fazendaId) === fazendaId)
+    .filter(i => String(i.situacao ?? "ativo").toLowerCase() !== "inativo");
+  const match = itens.find(i => matchCombustivel(i, combustivel));
+  return match
+    ? { id: match.id, quantidade: match.quantidade, nome: match.nome }
+    : null;
+}
+
+async function nomeMaquinaLocal(userId: number | null | undefined, maquinaId: number): Promise<string> {
+  if (userId != null) {
+    const m = await getLocalMaquina(userId, maquinaId);
+    if (m?.nome?.trim()) return m.nome.trim();
+  }
+  return `Máquina #${maquinaId}`;
+}
+
+/**
+ * Espelha syncSaidaAbastecimento no store local (.dev-data), para desenvolvimento sem MySQL.
+ */
+export async function syncSaidaAbastecimentoLocal(input: SyncAbastecimentoInput): Promise<number> {
+  const litros = input.litros;
+  if (!(litros > 0)) {
+    friendlyStockError("Informe uma quantidade abastecida válida.");
+  }
+
+  const item = findEstoqueCombustivelLocal(input.fazendaId, input.combustivel);
+  if (!item) {
+    friendlyStockError("Não há estoque disponível deste combustível na Fazenda selecionada.");
+  }
+
+  const maquinaNome = await nomeMaquinaLocal(input.userId, input.maquinaId);
+  const descricao = `Abastecimento da máquina ${maquinaNome}`;
+  const obsUser = input.observacoes?.trim();
+  const observacoes = obsUser ? `${descricao} — ${obsUser}` : descricao;
+  const grupoId = grupoIdAbastecimento(input.abastecimentoId);
+  const registradoPor = input.responsavel?.trim() || null;
+  const valor = input.valorTotal != null && input.valorTotal !== "" ? String(input.valorTotal) : null;
+
+  const movId = devLocalStore.syncSaidaAbastecimento({
+    abastecimentoId: input.abastecimentoId,
+    estoqueId: item.id,
+    fazendaId: input.fazendaId,
+    litros,
+    dataISO: input.dataISO,
+    grupoId,
+    maquinaNome,
+    registradoPor,
+    valor,
+    observacoes,
+    userId: input.userId ?? null,
+  });
+
+  await updateLocalAbastecimento(input.userId ?? 0, input.abastecimentoId, {
+    movimentacaoEstoqueId: movId,
+  });
+
+  return movId;
+}
+
+/** Estorna a saída vinculada no store local e limpa o vínculo no abastecimento. */
+export async function estornarSaidaAbastecimentoLocal(
+  abastecimentoId: number,
+  options?: { motivo?: string; userId?: number; registradoPor?: string },
+): Promise<void> {
+  devLocalStore.estornarSaidaAbastecimento({
+    abastecimentoId,
+    motivo: options?.motivo ?? MOTIVO_ESTORNO_ABASTECIMENTO,
+    userId: options?.userId ?? null,
+    registradoPor: options?.registradoPor ?? null,
+  });
+
+  await updateLocalAbastecimento(options?.userId ?? 0, abastecimentoId, {
+    movimentacaoEstoqueId: null,
+  });
+}

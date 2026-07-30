@@ -214,6 +214,27 @@ export const nomeUnidadeExibicao = (unidade: string | null | undefined): string 
   return opt.legenda.charAt(0).toUpperCase() + opt.legenda.slice(1);
 };
 
+/**
+ * Quantidade + sigla da unidade (ex.: "700 L", "2 un").
+ * Preferível em listagens — evita "700 Litro" / "2 Unidade".
+ */
+export function formatQtdComSigla(
+  qtd: number,
+  unidade: string | null | undefined,
+  opts?: { fractionDigits?: number },
+): string {
+  const abs = Math.abs(qtd);
+  const isWhole = abs % 1 === 0;
+  const digits = opts?.fractionDigits;
+  const formatted = abs.toLocaleString("pt-BR", {
+    minimumFractionDigits: digits ?? (isWhole ? 0 : 2),
+    maximumFractionDigits: digits ?? (isWhole ? 0 : 2),
+  });
+  const signed = qtd < 0 ? `-${formatted}` : formatted;
+  const sigla = siglaUnidade(unidade);
+  return sigla ? `${signed} ${sigla}` : signed;
+}
+
 export const formatQuantidadeMov = (valor: string | number): string => {
   const n = typeof valor === "number" ? valor : parseFloat(String(valor).replace(",", "."));
   if (Number.isNaN(n)) return String(valor);
@@ -439,7 +460,7 @@ export function calcularQuantidadeMovimentacao(opts: {
 export function formatTotalMovimentacao(total: number, unidadeBase?: string): string {
   const abs = Math.abs(total);
   const fmt = abs.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const un = unidadeBase ? ` ${nomeUnidadeExibicao(unidadeBase)}` : "";
+  const un = unidadeBase ? ` ${siglaUnidade(unidadeBase) || nomeUnidadeExibicao(unidadeBase)}` : "";
   const sinal = total < 0 ? "−" : "";
   return `${sinal}${fmt}${un}`.trim();
 }

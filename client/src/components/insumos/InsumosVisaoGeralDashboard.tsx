@@ -50,7 +50,7 @@ import {
   CHART_COLORS,
   type PeriodoChave,
 } from "@/lib/dashboard-utils";
-import { nomeUnidadeExibicao, sinalDoTipo } from "@/lib/produto-types";
+import { nomeUnidadeExibicao, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
 
 const COBERTURA_CRITICA_DIAS = 15;
 const PARADO_DIAS = 90;
@@ -87,11 +87,8 @@ const isTransferencia = (tipo: string | null | undefined) =>
     .replace(/[\u0300-\u036f]/g, "")
     .includes("transfer");
 
-function pluralUnidade(unidade: string | null | undefined, qtd: number): string {
-  const base = (nomeUnidadeExibicao(unidade) || "unidade").toLowerCase();
-  if (Math.abs(qtd) === 1) return base;
-  if (base.endsWith("s")) return base;
-  return `${base}s`;
+function pluralUnidade(unidade: string | null | undefined, _qtd: number): string {
+  return siglaUnidade(unidade) || (nomeUnidadeExibicao(unidade) || "un").toLowerCase();
 }
 
 function formatSaldoMinimo(
@@ -432,7 +429,7 @@ export default function InsumosVisaoGeralDashboard({
         id: p.id,
         nome: p.nome,
         saldo,
-        unidade: nomeUnidadeExibicao(p.unidade) || "—",
+        unidade: siglaUnidade(p.unidade) || "—",
         custoMedio,
         valor: saldo * custoMedio,
         ultimaMov: ult,

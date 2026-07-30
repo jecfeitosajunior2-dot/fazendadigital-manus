@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { ImportarMaquinariosModal } from "@/components/ImportarMaquinariosModal";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter, { type TablePageSize } from "@/components/TablePaginationFooter";
-import { TIPOS_MAQUINA, TIPOS_MEDIDOR_LABEL, camposCadastroIncompletosMaquina } from "@/lib/maquina-types";
+import { TIPOS_MAQUINA, camposCadastroIncompletosMaquina } from "@/lib/maquina-types";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
@@ -188,13 +188,6 @@ function formatValorBrl(valor: string | number | null | undefined): string {
   const n = parseFloat(String(valor));
   if (Number.isNaN(n)) return "—";
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function condicaoAquisicaoLabel(estado: string | null | undefined): string {
-  const e = String(estado || "").toLowerCase();
-  if (e === "novo") return "Nova";
-  if (e === "usado") return "Usada";
-  return "";
 }
 
 function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
@@ -579,6 +572,20 @@ export default function MaquinasListPage() {
     return rows;
   }, [filtered, sortKey, sortAsc]);
 
+  /** Soma dos valores da lista filtrada (só máquinas com valor cadastrado). */
+  const valorTotalLista = useMemo(() => {
+    let soma = 0;
+    let comValor = 0;
+    for (const m of sorted) {
+      if (m.valor == null || m.valor === "") continue;
+      const n = parseFloat(String(m.valor));
+      if (!Number.isFinite(n)) continue;
+      soma += n;
+      comValor += 1;
+    }
+    return { soma, comValor };
+  }, [sorted]);
+
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
 
@@ -601,41 +608,75 @@ export default function MaquinasListPage() {
     "Tipo",
     "Marca",
     "Modelo",
-    "Fazenda",
     "Ano de fabricação",
     "Placa / Número de série",
-    "Condição de aquisição",
-    "Valor de aquisição",
-    "Vida útil estimada",
-    "Tipo de medidor",
+    "Valor",
     "Status",
   ];
 
-  const exportData = useMemo(
-    () =>
-      sorted.map(m => {
-        const medidor = m.tipoMedidor
-          ? TIPOS_MEDIDOR_LABEL[m.tipoMedidor as keyof typeof TIPOS_MEDIDOR_LABEL] || m.tipoMedidor
-          : "";
-        return [
-          nomeExibicaoMaquina(m),
-          m.tipo ?? "",
-          m.marca ?? "",
-          m.modelo ?? "",
-          m.fazendaId ? fazendaMap.get(m.fazendaId) ?? "" : "",
-          m.ano ?? "",
-          m.placa ?? "",
-          condicaoAquisicaoLabel(m.estado),
-          m.valor
-            ? parseFloat(String(m.valor)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
-            : "",
-          m.vidaUtil ?? "",
-          medidor,
-          isMaquinaAtiva(m) ? "Ativa" : "Inativa",
-        ];
-      }),
-    [sorted, fazendaMap],
-  );
+  const exportData = useMemo(() => {
+    const detailRows = sorted.map(m => [
+      nomeExibicaoMaquina(m),
+      m.tipo ?? "",
+      m.marca ?? "",
+      m.modelo ?? "",
+      m.ano != null && m.ano !== "" ? String(m.ano) : "",
+      m.placa ?? "",
+      m.valor != null && m.valor !== ""
+        ? parseFloat(String(m.valor)).toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        : "",
+      isMaquinaAtiva(m) ? "Ativa" : "Inativa",
+    ]);
+
+    if (detailRows.length === 0) return detailRows;
+
+    let soma = 0;
+    for (const m of sorted) {
+      if (m.valor == null || m.valor === "") continue;
+      const n = parseFloat(String(m.valor));
+      if (!Number.isFinite(n)) continue;
+      soma += n;
+    }
+
+    return [
+      ...detailRows,
+      [
+        "Valor total",
+        "",
+        "",
+        "",
+        "",
+        "",
+        soma.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }),
+        "",
+      ],
+    ];
+  }, [sorted]);
+
+  const exportTitleLine = useMemo(() => {
+    const fazenda = (fazendaSelecionadaNome || "").trim() || "Fazenda";
+    return `${fazenda} — Máquinas`;
+  }, [fazendaSelecionadaNome]);
+
+  const exportFilenameBase = useMemo(() => {
+    const nome = (fazendaSelecionadaNome || "maquinas")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "maquinas";
+    return `maquinas-${nome}`;
+  }, [fazendaSelecionadaNome]);
 
   const emptyTotal =
     fazendaSelecionada && !isLoading && maquinasDaFazenda.length === 0;
@@ -725,11 +766,10 @@ export default function MaquinasListPage() {
             </button>
             <ListExportButtons
               title="Máquinas"
-              filename="maquinas"
+              filename={exportFilenameBase}
               headers={exportHeaders}
               rows={fazendaSelecionada ? exportData : []}
               fazendaNome={fazendaSelecionadaNome}
-              alignRightFrom={8}
               variant="secondary"
               disabled={exportDisabled}
               disabledTitle={
@@ -737,6 +777,38 @@ export default function MaquinasListPage() {
                   ? "Selecione uma fazenda para exportar."
                   : "Nenhuma máquina disponível para exportação."
               }
+              spreadsheetSheetName="Máquinas"
+              spreadsheetReportTitle={() => exportTitleLine}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0, 5, 6, 7]}
+              spreadsheetIntegerCols={[4]}
+              spreadsheetColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfHeaders={exportHeaders}
+              pdfRows={fazendaSelecionada ? exportData : []}
+              pdfColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
+              pdfLandscape
             />
           </div>
         </div>
@@ -854,17 +926,35 @@ export default function MaquinasListPage() {
               fitWidth
               footer={
                 !isLoading && sorted.length > 0 ? (
-                  <TablePaginationFooter
-                    pageSize={pageSize}
-                    page={page}
-                    totalItems={sorted.length}
-                    onPageChange={setPage}
-                    onPageSizeChange={size => {
-                      setPageSize(size);
-                      setPage(1);
-                    }}
-                    itemLabel="máquinas"
-                  />
+                  <div className="border-t border-gray-100">
+                    <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                      <span>
+                        Valor total:{" "}
+                        <span className="font-semibold text-gray-800 tabular-nums">
+                          {formatValorBrl(valorTotalLista.soma)}
+                        </span>
+                      </span>
+                      {valorTotalLista.comValor < sorted.length && (
+                        <span className="text-[10px] text-gray-500">
+                          {sorted.length - valorTotalLista.comValor}{" "}
+                          {sorted.length - valorTotalLista.comValor === 1
+                            ? "máquina sem valor"
+                            : "máquinas sem valor"}
+                        </span>
+                      )}
+                    </div>
+                    <TablePaginationFooter
+                      pageSize={pageSize}
+                      page={page}
+                      totalItems={sorted.length}
+                      onPageChange={setPage}
+                      onPageSizeChange={size => {
+                        setPageSize(size);
+                        setPage(1);
+                      }}
+                      itemLabel="máquinas"
+                    />
+                  </div>
                 ) : null
               }
             >

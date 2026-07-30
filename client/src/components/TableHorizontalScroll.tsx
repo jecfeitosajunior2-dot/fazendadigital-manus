@@ -124,7 +124,10 @@ export default function TableHorizontalScroll({
             "fd-table-scroll-track",
             metrics.canScroll ? "cursor-pointer" : "cursor-default",
           )}
-          onClick={e => scrollFromClientX(e.clientX)}
+          onClick={e => {
+            if (!metrics.canScroll) return;
+            scrollFromClientX(e.clientX);
+          }}
           role="scrollbar"
           aria-orientation="horizontal"
           aria-label="Rolagem horizontal da tabela"

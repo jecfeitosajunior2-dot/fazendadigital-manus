@@ -61,8 +61,8 @@ export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
     label: "Valor (R$)",
     obrigatorio: false,
     largura: 16,
-    descricao: "Valor em reais no formato R$ 0,00 (igual ao cadastro)",
-    exemplo: "R$ 150.000,00",
+    descricao: "Valor em reais — digite como texto, ex: 150.000,00 ou 150000",
+    exemplo: "150.000,00",
   },
   {
     key: "vidaUtil",

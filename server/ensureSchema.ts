@@ -288,6 +288,7 @@ export async function ensureSchema() {
     const [abastecimentosTable] = await pool.query(`SHOW TABLES LIKE 'abastecimentos'`);
     if ((abastecimentosTable as unknown[]).length > 0) {
       await ensureColumn(pool, "abastecimentos", "movimentacaoEstoqueId", "int");
+      await ensureColumn(pool, "abastecimentos", "status", "varchar(20) DEFAULT 'registrado'");
     }
 
     const [maquinasTable] = await pool.query(`SHOW TABLES LIKE 'maquinas'`);

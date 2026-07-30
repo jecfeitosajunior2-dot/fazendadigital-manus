@@ -1,5 +1,20 @@
-import { formatDataBr, formatQuantidadeMov, nomeUnidadeExibicao, sinalDoTipo } from "@/lib/produto-types";
+import { formatDataBr, formatQuantidadeMov, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
 import { formatCurrencyBrl } from "@/lib/utils";
+import {
+  classificarMotivoEstornoAbastecimento,
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+  rotuloMotivoEstornoAbastecimento,
+  textoMotivoEstornoAbastecimentoDetalhe,
+} from "@shared/estoqueEstornoMotivos";
+
+export {
+  classificarMotivoEstornoAbastecimento,
+  MOTIVO_ESTORNO_ABASTECIMENTO,
+  MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+  rotuloMotivoEstornoAbastecimento,
+  textoMotivoEstornoAbastecimentoDetalhe,
+};
 
 export type StatusMovimentacao = "ativa" | "estornada" | "estorno";
 
@@ -47,9 +62,25 @@ export type InfoEstornoMovimentacao = {
   usuario: string | null;
   motivo: string | null;
   observacao: string | null;
-  /** Identificador do grupo da movimentação inversa. */
+  /**
+   * Identificador técnico do grupo da movimentação inversa (auditoria).
+   * Não exibir na interface operacional padrão.
+   */
   grupoIdInverso: string | null;
+  /**
+   * ID numérico persistido da movimentação inversa, somente quando o vínculo
+   * foi validado. Nunca derivado de índice/posição/ID técnico textual.
+   */
+  idInverso: number | null;
+  /**
+   * Estado da referência amigável para a UI operacional.
+   * - ok: exibir "Nº {idInverso}"
+   * - registrada: existe efeito, sem ID amigável válido
+   * - nao_localizada: original estornada sem inversa válida vinculada
+   */
+  referenciaDevolucao: "ok" | "registrada" | "nao_localizada";
   itensRevertidos: ItemEstornoRevertido[];
+  /** Texto quantitativo do efeito no estoque (sem o prefixo "Resultado no estoque:"). */
   resultado: string;
 };
 
@@ -290,15 +321,103 @@ export function formatDataHoraEstorno(raw: string | Date | null | undefined): st
   return `${data} às ${hora}`;
 }
 
-function textoResultadoEstorno(itensOriginais: MovimentacaoItemRaw[]): string {
-  const qtds = itensOriginais.map(i => Number(i.quantidade ?? 0));
-  if (qtds.length && qtds.every(q => Number.isFinite(q) && q >= 0)) {
-    return "Entrada de estoque revertida integralmente.";
+/**
+ * Texto quantitativo do efeito no estoque, baseado na quantidade efetivamente revertida
+ * (itens do lançamento inverso), não na quantidade original da movimentação.
+ */
+export function textoResultadoEstornoNoEstoque(
+  itensRevertidos: ItemEstornoRevertido[],
+): string {
+  if (!itensRevertidos.length) {
+    return "devolução registrada ao estoque da Fazenda.";
   }
-  if (qtds.length && qtds.every(q => Number.isFinite(q) && q < 0)) {
-    return "Saída de estoque revertida integralmente.";
+
+  const partes = itensRevertidos.map(it => {
+    const qtd = Number.isFinite(it.quantidade) ? Math.abs(it.quantidade) : 0;
+    const sigla = siglaUnidade(it.unidade) || "un";
+    return `${formatQuantidadeMov(qtd)} ${sigla}`;
+  });
+
+  // Frase neutra evita erro de concordância por unidade (L/un/kg).
+  if (partes.length === 1) {
+    return `devolução de ${partes[0]} ao estoque da Fazenda.`;
   }
-  return "Movimentação revertida integralmente.";
+  return `devolução de ${partes.join(" + ")} ao estoque da Fazenda.`;
+}
+
+function numIdPersistido(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
+  return n;
+}
+
+/**
+ * Valida se o lançamento técnico de estorno é coerente com a movimentação original.
+ * O vínculo principal já vem de originalGrupoId ↔ grupoId; aqui reforçamos integridade.
+ */
+export function estornoInversoCompativel(
+  estorno: MovimentacaoItemRaw,
+  originais: MovimentacaoItemRaw[],
+): boolean {
+  if (normalizarStatusMov(estorno.status) !== "estorno") return false;
+
+  const original =
+    originais.find(
+      o =>
+        o.estoqueId != null &&
+        estorno.estoqueId != null &&
+        Number(o.estoqueId) === Number(estorno.estoqueId),
+    ) ?? (originais.length === 1 ? originais[0] : null);
+
+  if (!original) return false;
+
+  if (
+    original.fazendaId != null &&
+    estorno.fazendaId != null &&
+    Number(original.fazendaId) !== Number(estorno.fazendaId)
+  ) {
+    return false;
+  }
+
+  if (original.abastecimentoId != null) {
+    if (
+      estorno.abastecimentoId == null ||
+      Number(estorno.abastecimentoId) !== Number(original.abastecimentoId)
+    ) {
+      return false;
+    }
+  }
+
+  const qOrig = Number(original.quantidade ?? 0);
+  const qEst = Number(estorno.quantidade ?? 0);
+  if (!Number.isFinite(qEst) || Math.abs(qEst) < 1e-12) return false;
+
+  const tipoOrig = String(original.tipo ?? "").toLowerCase();
+  const pareceSaida =
+    qOrig < 0 ||
+    tipoOrig.includes("saída") ||
+    tipoOrig.includes("saida") ||
+    tipoOrig.includes("consumo");
+  const pareceEntrada =
+    qOrig > 0 ||
+    tipoOrig.includes("compra") ||
+    tipoOrig.includes("entrada") ||
+    tipoOrig.includes("produção") ||
+    tipoOrig.includes("producao");
+
+  // Sentido inverso: saída estornada devolve (qtd > 0); entrada estornada retira (qtd < 0).
+  if (pareceSaida && !(qEst > 0)) return false;
+  if (pareceEntrada && !pareceSaida && !(qEst < 0)) return false;
+
+  return true;
+}
+
+function filtrarEstornosValidos(
+  originais: MovimentacaoItemRaw[],
+  estornos: MovimentacaoItemRaw[],
+): MovimentacaoItemRaw[] {
+  return estornos.filter(e => estornoInversoCompativel(e, originais));
 }
 
 function montarInfoEstorno(
@@ -309,13 +428,38 @@ function montarInfoEstorno(
     return null;
   }
 
-  const headEstorno = [...estornos].sort((a, b) => a.id - b.id)[0];
+  const originaisEstornada = originais.some(o => normalizarStatusMov(o.status) === "estornada");
+  const estornosValidos = filtrarEstornosValidos(originais, estornos);
+
+  if (estornos.length > 0 && estornosValidos.length === 0) {
+    console.warn("[movimentacoes] vínculo de estorno inconsistente — inversa descartada", {
+      originalIds: originais.map(o => o.id),
+      estornoIds: estornos.map(e => e.id),
+      originalGrupoIds: estornos.map(e => e.originalGrupoId),
+    });
+  }
+
+  if (originaisEstornada && estornos.length === 0) {
+    console.warn("[movimentacoes] movimentação estornada sem lançamento inverso vinculado", {
+      originalIds: originais.map(o => o.id),
+      grupoId: originais.map(o => o.grupoId).find(Boolean) ?? null,
+      abastecimentoId:
+        originais.map(o => o.abastecimentoId).find(v => v != null) ?? null,
+    });
+  }
+
+  const headEstorno = [...estornosValidos].sort((a, b) => a.id - b.id)[0];
   const headOriginal = originais[0];
   const motivoRaw =
+    estornosValidos.map(e => e.motivoEstorno?.trim()).find(Boolean) ||
     estornos.map(e => e.motivoEstorno?.trim()).find(Boolean) ||
     originais.map(o => o.motivoEstorno?.trim()).find(Boolean) ||
     null;
-  const { motivo, observacao } = separarMotivoObservacaoEstorno(motivoRaw);
+  const { motivo: motivoSeparado, observacao } = separarMotivoObservacaoEstorno(motivoRaw);
+  const motivo =
+    textoMotivoEstornoAbastecimentoDetalhe(motivoSeparado || motivoRaw) ||
+    rotuloMotivoEstornoAbastecimento(motivoSeparado || motivoRaw) ||
+    motivoSeparado;
 
   const dataRaw =
     headEstorno?.createdAt ||
@@ -329,13 +473,30 @@ function montarInfoEstorno(
     null;
 
   const grupoIdInverso =
-    estornos.map(e => e.grupoId?.trim()).find(Boolean) || null;
+    estornosValidos.map(e => e.grupoId?.trim()).find(Boolean) ||
+    estornos.map(e => e.grupoId?.trim()).find(Boolean) ||
+    null;
 
-  const itensRevertidos: ItemEstornoRevertido[] = (estornos.length ? estornos : originais).map(it => ({
+  const idInverso = numIdPersistido(headEstorno?.id);
+
+  const unidadeFallback =
+    originais.map(o => o.unidade).find(u => Boolean(u?.trim())) ?? null;
+
+  // Quantidade exibida vem apenas da inversa real validada — nunca da original como fallback.
+  const itensRevertidos: ItemEstornoRevertido[] = estornosValidos.map(it => ({
     nome: it.nome?.trim() || `Produto #${it.estoqueId ?? it.id}`,
     quantidade: Math.abs(Number(it.quantidade ?? 0)),
-    unidade: it.unidade ?? null,
+    unidade: it.unidade?.trim() || unidadeFallback,
   }));
+
+  let referenciaDevolucao: InfoEstornoMovimentacao["referenciaDevolucao"];
+  if (idInverso != null) {
+    referenciaDevolucao = "ok";
+  } else if (originaisEstornada && estornosValidos.length === 0) {
+    referenciaDevolucao = "nao_localizada";
+  } else {
+    referenciaDevolucao = "registrada";
+  }
 
   return {
     dataHora: dataRaw ? String(dataRaw) : null,
@@ -344,8 +505,10 @@ function montarInfoEstorno(
     motivo,
     observacao,
     grupoIdInverso,
+    idInverso: referenciaDevolucao === "ok" ? idInverso : null,
+    referenciaDevolucao,
     itensRevertidos,
-    resultado: textoResultadoEstorno(originais),
+    resultado: textoResultadoEstornoNoEstoque(itensRevertidos),
   };
 }
 
@@ -430,14 +593,25 @@ export function agruparMovimentacoes(itens: MovimentacaoItemRaw[]): Movimentacao
         ? ordenados.map(i => i.manejo?.trim()).find(Boolean) || null
         : null;
 
-    const estornosVinculados = grupoId ? (estornosPorOriginal.get(grupoId) ?? []) : [];
+    // Vínculo persistido: originalGrupoId da inversa ↔ grupoId (ou chave solo) da original.
+    const chavesVinculo = new Set<string>();
+    if (grupoId) chavesVinculo.add(grupoId);
+    chavesVinculo.add(movimentacaoId);
+    const estornosVinculados = [
+      ...new Map(
+        [...chavesVinculo]
+          .flatMap(k => estornosPorOriginal.get(k) ?? [])
+          .map(e => [e.id, e] as const),
+      ).values(),
+    ];
     const infoEstorno =
       status === "estornada" || estornosVinculados.length > 0
         ? montarInfoEstorno(ordenados, estornosVinculados)
         : null;
 
+    // Mantém o código/texto bruto gravado (ex.: origem_combustivel_alterada).
     const motivoEstorno =
-      infoEstorno?.motivo ||
+      estornosVinculados.map(e => e.motivoEstorno?.trim()).find(Boolean) ||
       ordenados.map(i => i.motivoEstorno?.trim()).find(Boolean) ||
       null;
 
@@ -487,7 +661,37 @@ export function formatQtdItem(qtd: string | number | null | undefined): string {
 }
 
 export function formatUnidadeItem(unidade?: string | null): string {
-  return nomeUnidadeExibicao(unidade) || "—";
+  return siglaUnidade(unidade) || "—";
+}
+
+/**
+ * Classifica o sentido financeiro/operacional do tipo exibido na lista.
+ * Cobre rótulos como "Saída" (abastecimento) além dos TIPOS_MOVIMENTACAO.
+ */
+export function sinalResumoMovimentacao(tipo: string): "entrada" | "saida" {
+  const norm = tipo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  if (norm.includes("ajuste") && norm.includes("saida")) return "saida";
+  if (norm.includes("ajuste") && norm.includes("entrada")) return "entrada";
+  if (
+    norm.includes("saida") ||
+    norm.includes("consumo") ||
+    norm.includes("venda") ||
+    norm.includes("perda") ||
+    norm.includes("descarte") ||
+    norm.includes("transfer")
+  ) {
+    return "saida";
+  }
+  if (
+    norm.includes("compra") ||
+    norm.includes("entrada") ||
+    norm.includes("producao")
+  ) {
+    return "entrada";
+  }
+
+  return sinalDoTipo(tipo);
 }
 
 export function tipoBadgeClassMov(tipo: string): string {
@@ -508,7 +712,7 @@ export function tipoBadgeClassMov(tipo: string): string {
   }
   if (norm.includes("producao")) return "bg-green-100 text-green-700";
 
-  return sinalDoTipo(tipo) === "entrada"
+  return sinalResumoMovimentacao(tipo) === "entrada"
     ? "bg-green-100 text-green-700"
     : "bg-amber-100 text-amber-800";
 }

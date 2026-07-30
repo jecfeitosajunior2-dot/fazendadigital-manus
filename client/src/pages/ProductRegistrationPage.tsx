@@ -33,10 +33,28 @@ function buildRetornoUrl(retorno: string, produtoId?: number) {
 
 const fmtDecimalInput = (v: string | number | null | undefined): string => {
   if (v == null || v === "") return "";
-  const n = Number(v);
+  const raw = String(v).trim().replace(",", ".");
+  const n = Number(raw);
   if (Number.isNaN(n)) return String(v);
   if (n === 0) return "";
-  return String(n);
+  // Arredonda em 2 casas (escala do banco) para evitar artefato de float (ex.: 499.999 → 500)
+  const rounded = Math.round(n * 100) / 100;
+  return String(rounded);
+};
+
+/** Aceita só dígitos e um separador decimal — evita setinhas/roda do mouse do type=number. */
+const sanitizeQtyInput = (raw: string): string => {
+  const normalized = raw.replace(",", ".");
+  let out = "";
+  let sawDot = false;
+  for (const ch of normalized) {
+    if (ch >= "0" && ch <= "9") out += ch;
+    else if (ch === "." && !sawDot) {
+      out += ".";
+      sawDot = true;
+    }
+  }
+  return out;
 };
 
 const CATEGORIA_SANITARIA = "Farmácia";
@@ -841,14 +859,18 @@ export default function ProductRegistrationPage() {
                               <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
                                 <span className="whitespace-nowrap">Mínimo</span>
                                 <input
-                                  type="number"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={cfg.quantidadeMinima}
                                   onChange={e =>
                                     setForm(prev => ({
                                       ...prev,
                                       configPorFazenda: {
                                         ...prev.configPorFazenda,
-                                        [f.value]: { ...cfg, quantidadeMinima: e.target.value },
+                                        [f.value]: {
+                                          ...cfg,
+                                          quantidadeMinima: sanitizeQtyInput(e.target.value),
+                                        },
                                       },
                                     }))
                                   }
@@ -860,14 +882,18 @@ export default function ProductRegistrationPage() {
                               <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
                                 <span className="whitespace-nowrap">Máximo</span>
                                 <input
-                                  type="number"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={cfg.quantidadeMaxima}
                                   onChange={e =>
                                     setForm(prev => ({
                                       ...prev,
                                       configPorFazenda: {
                                         ...prev.configPorFazenda,
-                                        [f.value]: { ...cfg, quantidadeMaxima: e.target.value },
+                                        [f.value]: {
+                                          ...cfg,
+                                          quantidadeMaxima: sanitizeQtyInput(e.target.value),
+                                        },
                                       },
                                     }))
                                   }

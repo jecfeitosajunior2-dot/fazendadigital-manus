@@ -11,6 +11,7 @@ import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { FD_PRIMARY } from "@/components/FormFields";
 import { FarmRowActionButtons } from "@/components/icons/FarmActionIcons";
+import FazendaLandIcon from "@/components/icons/FazendaLandIcon";
 import {
   montarLinhaExportacaoBenfeitoria,
   montarLinhaPdfBenfeitoria,
@@ -228,13 +229,26 @@ export default function BenfeitoriasListPage() {
     return [...rows].sort((a, b) => compareBenfeitorias(a, b, sortBy));
   }, [byFazenda, estadoFilter, sortBy]);
 
+  /** Soma dos valores da lista filtrada (só benfeitorias com valor cadastrado). */
+  const valorTotalLista = useMemo(() => {
+    let soma = 0;
+    let comValor = 0;
+    for (const b of displayed) {
+      const n = parseValorDecimalBanco(b.valorEstimado);
+      if (n == null || !Number.isFinite(n)) continue;
+      soma += n;
+      comValor += 1;
+    }
+    return { soma, comValor };
+  }, [displayed]);
+
   const fazendaFilterNome = fazendaFilter
     ? fazendas.find(f => f.id === Number(fazendaFilter))?.nome ?? ""
     : "";
 
   const buildBenfeitoriasExportTitle = () =>
     fazendaFilterNome
-      ? `${fazendaFilterNome} — Lista de Benfeitorias`
+      ? `Lista de Benfeitorias - ${fazendaFilterNome}`
       : "Lista de Benfeitorias";
 
   const handleFazendaChange = (v: string) => {
@@ -308,21 +322,41 @@ export default function BenfeitoriasListPage() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  const exportData = useMemo(
-    () =>
-      displayed.map(b =>
-        montarLinhaExportacaoBenfeitoria(
-          b,
-          parseValorDecimalBanco,
-        ),
-      ),
-    [displayed],
-  );
+  const exportData = useMemo(() => {
+    const detailRows = displayed.map(b =>
+      montarLinhaExportacaoBenfeitoria(b, parseValorDecimalBanco),
+    );
+    if (detailRows.length === 0) return detailRows;
+    const empty = Array.from({ length: EXPORT_HEADERS.length - 1 }, () => "");
+    return [
+      ...detailRows,
+      [
+        "Valor total",
+        ...empty.slice(0, EXPORT_VALOR_COL_INDEX - 1),
+        valorTotalLista.soma,
+        ...empty.slice(EXPORT_VALOR_COL_INDEX),
+      ],
+    ];
+  }, [displayed, valorTotalLista]);
 
-  const exportPdfData = useMemo(
-    () => displayed.map(b => montarLinhaPdfBenfeitoria(b, parseValorDecimalBanco)),
-    [displayed],
-  );
+  const exportPdfData = useMemo(() => {
+    const detailRows = displayed.map(b => montarLinhaPdfBenfeitoria(b, parseValorDecimalBanco));
+    if (detailRows.length === 0) return detailRows;
+    const empty = Array.from({ length: BENFEITORIA_PDF_HEADERS.length - 1 }, () => "");
+    const valorFmt = valorTotalLista.soma.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+    return [
+      ...detailRows,
+      [
+        "Valor total",
+        ...empty.slice(0, EXPORT_VALOR_COL_INDEX - 1),
+        valorFmt,
+        ...empty.slice(EXPORT_VALOR_COL_INDEX),
+      ],
+    ];
+  }, [displayed, valorTotalLista]);
 
   const openEdit = (b: BenfeitoriaRow) => {
     const q = new URLSearchParams({ id: String(b.id) });
@@ -341,7 +375,15 @@ export default function BenfeitoriasListPage() {
     if (ok) deleteMutation.mutate({ id: b.id });
   };
 
-  const goCadastro = () => setLocation(cadastroUrl(fazendaFilter));
+  const goCadastro = () => {
+    if (!fazendaFilter) {
+      toast.error("Selecione uma fazenda antes de cadastrar uma benfeitoria.");
+      return;
+    }
+    setLocation(cadastroUrl(fazendaFilter));
+  };
+
+  const semFazendaHint = "Selecione uma fazenda para continuar";
 
   return (
     <AppLayout>
@@ -352,7 +394,14 @@ export default function BenfeitoriasListPage() {
             <button
               type="button"
               onClick={goCadastro}
-              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+              disabled={!hasFazendaFilter}
+              title={!hasFazendaFilter ? semFazendaHint : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+                hasFazendaFilter
+                  ? "hover:brightness-95 active:scale-[0.97]"
+                  : "opacity-50 cursor-not-allowed",
+              )}
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[16px]">add</span>
@@ -362,13 +411,20 @@ export default function BenfeitoriasListPage() {
             <button
               type="button"
               onClick={() => setImportarOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+              disabled={!hasFazendaFilter}
+              title={!hasFazendaFilter ? semFazendaHint : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+                hasFazendaFilter
+                  ? "hover:bg-gray-50 active:scale-[0.97]"
+                  : "opacity-50 cursor-not-allowed",
+              )}
             >
               <span className="material-icons text-[16px] text-gray-500">upload_file</span>
               Importar
             </button>
             <ListExportButtons
-              title="Lista de Benfeitorias"
+              title={buildBenfeitoriasExportTitle()}
               filename="benfeitorias"
               headers={EXPORT_HEADERS}
               rows={exportData}
@@ -390,7 +446,9 @@ export default function BenfeitoriasListPage() {
               spreadsheetColumnAligns={BENFEITORIA_EXPORT_COLUMN_ALIGNS}
               fazendaNome={fazendaFilterNome}
               disabled={!hasFazendaFilter}
+              disabledTitle={semFazendaHint}
               variant="secondary"
+              pdfIncludeSpreadsheetTitle={false}
             />
           </div>
         </div>
@@ -451,17 +509,38 @@ export default function BenfeitoriasListPage() {
         <TableHorizontalScroll
           footer={
             !isEmpty && hasFazendaFilter && displayed.length > 0 ? (
-              <TablePaginationFooter
-                pageSize={pageSize}
-                page={page}
-                totalItems={displayed.length}
-                onPageChange={setPage}
-                onPageSizeChange={size => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                itemLabel="benfeitorias"
-              />
+              <div className="border-t border-gray-100">
+                <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                  <span>
+                    Valor total:{" "}
+                    <span className="font-semibold text-gray-800 tabular-nums">
+                      {valorTotalLista.soma.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}
+                    </span>
+                  </span>
+                  {valorTotalLista.comValor < displayed.length && (
+                    <span className="text-[10px] text-gray-500">
+                      {displayed.length - valorTotalLista.comValor}{" "}
+                      {displayed.length - valorTotalLista.comValor === 1
+                        ? "benfeitoria sem valor"
+                        : "benfeitorias sem valor"}
+                    </span>
+                  )}
+                </div>
+                <TablePaginationFooter
+                  pageSize={pageSize}
+                  page={page}
+                  totalItems={displayed.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={size => {
+                    setPageSize(size);
+                    setPage(1);
+                  }}
+                  itemLabel="benfeitorias"
+                />
+              </div>
             ) : null
           }
         >
@@ -500,33 +579,33 @@ export default function BenfeitoriasListPage() {
 
               {!isLoading && needsFazendaSelection && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-10 text-center text-gray-400 align-middle">
-                    Selecione uma fazenda para visualizar as benfeitorias.
+                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-16 align-middle">
+                    <div className="max-w-md mx-auto text-center">
+                      <FazendaLandIcon className="mx-auto mb-3 h-12 w-12 text-[#B0BEC5]" />
+                      <p className="text-[14px] font-medium text-gray-800">
+                        Selecione uma fazenda para visualizar as benfeitorias.
+                      </p>
+                      <p className="text-[12px] text-gray-500 mt-2 leading-relaxed">
+                        Escolha uma fazenda no filtro acima para consultar, cadastrar, importar e
+                        exportar as benfeitorias.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}
 
               {!isLoading && isFazendaEmpty && (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-12 align-middle">
+                  <td colSpan={TABLE_COLUMNS.length} className="px-4 py-16 align-middle">
                     <div className="max-w-md mx-auto text-center">
-                      <p className="text-[13px] font-medium text-gray-700 mb-2">
+                      <FazendaLandIcon className="mx-auto mb-3 h-12 w-12 text-[#B0BEC5]" />
+                      <p className="text-[14px] font-medium text-gray-800">
                         Nenhuma benfeitoria cadastrada para esta fazenda.
                       </p>
-                      <p className="text-[11px] text-gray-500 leading-relaxed mb-4">
-                        Cadastre estruturas físicas como currais, galpões, poços, cercas, caixas d&apos;água, casas,
-                        estradas, pontes, bebedouros e sistemas de energia.
+                      <p className="text-[12px] text-gray-500 mt-2 leading-relaxed">
+                        Cadastre estruturas físicas como currais, galpões, poços, cercas, caixas
+                        d&apos;água, casas, estradas, pontes, bebedouros e sistemas de energia.
                       </p>
-                      <button
-                        type="button"
-                        onClick={goCadastro}
-                        disabled={!hasFazendaFilter}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-[12px] font-semibold active:scale-[0.97] transition disabled:opacity-50"
-                        style={{ backgroundColor: FD_PRIMARY }}
-                      >
-                        <span className="material-icons text-[16px]">add</span>
-                        Cadastrar Benfeitoria
-                      </button>
                     </div>
                   </td>
                 </tr>

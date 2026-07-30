@@ -707,7 +707,7 @@ export default function InsumosNovaMovimentacaoPage() {
     const abastId = (movimentacao as { abastecimentoId?: number | null }).abastecimentoId;
     if (abastId != null) {
       toast.error(
-        "Esta movimentação foi gerada por um abastecimento de máquina. Para alterá-la, edite o abastecimento original.",
+        "Esta movimentação foi gerada automaticamente por um abastecimento. Edite o abastecimento de origem para atualizar as informações.",
       );
       setLocation(`/maquinas/abastecimento/cadastro?id=${abastId}`);
       return;

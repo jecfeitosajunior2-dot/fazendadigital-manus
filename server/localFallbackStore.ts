@@ -15,6 +15,7 @@ const fazendasFile = path.join(dataDir, "fazendas.json");
 const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
 const maquinasFile = path.join(dataDir, "maquinas.json");
+const abastecimentosFile = path.join(dataDir, "abastecimentos.json");
 const lotesFile = path.join(dataDir, "lotes.json");
 const animaisFile = path.join(dataDir, "animais.json");
 const pesagensFile = path.join(dataDir, "pesagens.json");
@@ -403,6 +404,128 @@ export async function deleteLocalMaquina(userId: number, id: number): Promise<vo
     return;
   }
   await writeMaquinas(remaining);
+}
+
+export type LocalAbastecimento = Record<string, any> & {
+  id: number;
+  userId: number;
+  maquinaId: number;
+  data: string;
+  combustivel: string;
+  litros: string;
+  valorLitro?: string | null;
+  valorTotal?: string | null;
+  horimetro?: string | null;
+  responsavel?: string | null;
+  abastecidoNaFazenda?: boolean | null;
+  fazendaId?: number | null;
+  movimentacaoEstoqueId?: number | null;
+  /** registrado | estornado */
+  status?: string | null;
+  observacoes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readAbastecimentos(): Promise<LocalAbastecimento[]> {
+  return readJsonFile<LocalAbastecimento[]>(abastecimentosFile, []);
+}
+
+async function writeAbastecimentos(rows: LocalAbastecimento[]): Promise<void> {
+  await writeJsonFile(abastecimentosFile, rows);
+}
+
+export async function listLocalAbastecimentos(
+  userId: number,
+  opts?: { maquinaId?: number },
+): Promise<LocalAbastecimento[]> {
+  const rows = await readAbastecimentos();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible
+    .filter(row => (opts?.maquinaId == null ? true : Number(row.maquinaId) === opts.maquinaId))
+    .sort((a, b) => {
+      const byData = String(b.data || "").localeCompare(String(a.data || ""));
+      if (byData !== 0) return byData;
+      return String(b.createdAt).localeCompare(String(a.createdAt));
+    });
+}
+
+export async function getLocalAbastecimento(
+  userId: number,
+  id: number,
+): Promise<LocalAbastecimento | null> {
+  const rows = await readAbastecimentos();
+  return rows.find(row => row.userId === userId && row.id === id)
+    ?? rows.find(row => row.id === id)
+    ?? null;
+}
+
+export async function createLocalAbastecimento(
+  userId: number,
+  input: Record<string, any> & { maquinaId: number; data: string; combustivel: string; litros: string },
+): Promise<{ id: number }> {
+  const rows = await readAbastecimentos();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    ...input,
+    status: input.status ?? "registrado",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeAbastecimentos(rows);
+  return { id };
+}
+
+export async function updateLocalAbastecimento(
+  userId: number,
+  id: number,
+  input: Record<string, any>,
+): Promise<void> {
+  const rows = await readAbastecimentos();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const now = new Date().toISOString();
+  const normalized: Record<string, any> = { ...input };
+  for (const key of Object.keys(normalized)) {
+    const val = normalized[key];
+    if (val instanceof Date) {
+      normalized[key] = Number.isNaN(val.getTime()) ? null : val.toISOString().slice(0, 10);
+    }
+  }
+  if (index === -1) {
+    const fallback = rows.findIndex(row => row.id === id);
+    if (fallback === -1) {
+      rows.push({
+        id,
+        userId,
+        maquinaId: Number(normalized.maquinaId || 0),
+        data: String(normalized.data || now.slice(0, 10)),
+        combustivel: String(normalized.combustivel || "diesel"),
+        litros: String(normalized.litros || "0"),
+        ...normalized,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else {
+      rows[fallback] = { ...rows[fallback], ...normalized, updatedAt: now };
+    }
+  } else {
+    rows[index] = { ...rows[index], ...normalized, updatedAt: now };
+  }
+  await writeAbastecimentos(rows);
+}
+
+export async function deleteLocalAbastecimento(userId: number, id: number): Promise<void> {
+  const rows = await readAbastecimentos();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeAbastecimentos(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeAbastecimentos(remaining);
 }
 
 export type LocalLote = Record<string, any> & {

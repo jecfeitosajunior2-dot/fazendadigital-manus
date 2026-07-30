@@ -88,6 +88,7 @@ export default function ManutencaoFormPage() {
   const [, setLocation] = useLocation();
   const editId = Number(getSearchParam("id") || 0);
   const isEdit = editId > 0;
+  const fazendaIdParam = getSearchParam("fazendaId");
   const initializedForId = useRef<number | null>(null);
 
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -116,6 +117,7 @@ export default function ManutencaoFormPage() {
     const ativas = maquinas.filter(m => {
       if ((m as { dataDesativacao?: unknown }).dataDesativacao) return false;
       if (String(m.status || "").toLowerCase() === "inativo") return false;
+      if (!isEdit && fazendaIdParam && String(m.fazendaId) !== fazendaIdParam) return false;
       return true;
     });
     if (isEdit && form.maquinaId) {
@@ -129,7 +131,7 @@ export default function ManutencaoFormPage() {
     return [...ativas].sort((a, b) =>
       String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"),
     );
-  }, [maquinas, isEdit, form.maquinaId]);
+  }, [maquinas, isEdit, form.maquinaId, fazendaIdParam]);
   const { data: registro, isLoading } = trpc.manutencoes.get.useQuery(
     { id: editId },
     { enabled: isEdit }
