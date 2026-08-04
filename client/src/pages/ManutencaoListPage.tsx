@@ -13,7 +13,7 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn, formatCurrencyBrl } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
+import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,29 +24,20 @@ import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
 } from "@shared/animal-filter-types";
+import {
+  descricaoServicoParaListagem,
+  isDescricaoServicoValida,
+} from "@shared/manutencaoDescricao";
 
 const FD_PRIMARY = "#4ECDC4";
 
-const STATUS_LABEL: Record<string, string> = {
-  agendada: "Agendada",
-  em_andamento: "Em andamento",
-  concluida: "Concluída",
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  agendada: "bg-slate-100 text-slate-600 border border-slate-200",
-  em_andamento: "bg-blue-50 text-blue-700 border border-blue-100",
-  concluida: "bg-emerald-50 text-emerald-700 border border-emerald-100",
-};
-
 const TIPOS_CADASTRO = ["Preventiva", "Corretiva"] as const;
 
-type SortKey = "data" | "valor" | "maquina" | "tipo" | "status";
+type SortKey = "data" | "valor" | "maquina" | "tipo";
 
 type Filtros = {
   tipo: string;
   maquinaId: string;
-  status: string;
   dataInicio: string;
   dataFim: string;
   prestador: string;
@@ -56,14 +47,11 @@ type Filtros = {
 const FILTROS_VAZIOS: Filtros = {
   tipo: "",
   maquinaId: "",
-  status: "",
   dataInicio: "",
   dataFim: "",
   prestador: "",
   comCusto: "",
 };
-
-type MedidorTipo = "horimetro" | "quilometragem";
 
 function dataISO(value: unknown): string {
   if (!value) return "";
@@ -79,54 +67,46 @@ function formatMoney(value: unknown): string {
   return formatCurrencyBrl(String(Math.round(n * 100)));
 }
 
-function inferMedidorPorTipo(tipo?: string | null): MedidorTipo | null {
-  const t = String(tipo ?? "")
-    .trim()
-    .toLowerCase();
-  if (!t) return null;
-  const veiculos = new Set(["carro", "caminhão", "caminhao", "utilitário", "utilitario", "moto"]);
-  const horas = new Set([
-    "trator",
-    "colheitadeira",
-    "máquina",
-    "maquina",
-    "implemento",
-    "plantadeira",
-    "pulverizador",
-  ]);
-  if (veiculos.has(t)) return "quilometragem";
-  if (horas.has(t)) return "horimetro";
-  return null;
-}
-
-function getMedidorTipo(maquina?: {
-  tipo?: string | null;
-  tipoMedidor?: string | null;
-} | null): MedidorTipo | "sem_medidor" | null {
-  if (!maquina) return null;
-  const tm = String(maquina.tipoMedidor ?? "").trim();
-  if (tm === "horimetro") return "horimetro";
-  if (tm === "quilometragem") return "quilometragem";
-  if (tm === "sem_medidor") return "sem_medidor";
-  return inferMedidorPorTipo(maquina.tipo);
-}
-
-function formatMedidorDisplay(
-  horimetro: string | null | undefined,
-  maquina?: { tipo?: string | null; tipoMedidor?: string | null } | null,
+function responsavelManutencaoListagem(
+  prestadorNome?: string | null,
+  oficina?: string | null,
 ): string {
-  const tipo = getMedidorTipo(maquina);
-  if (tipo === "sem_medidor") return "Sem medidor";
-  if (horimetro == null || String(horimetro).trim() === "") return "—";
-  const n = parseFloat(String(horimetro).replace(",", "."));
-  if (Number.isNaN(n)) return "—";
-  const num = n.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  if (tipo === "quilometragem") return `${num} km`;
-  if (tipo === "horimetro") return `${num} h`;
-  return num;
+  const nome = String(prestadorNome ?? "").trim();
+  const ofc = String(oficina ?? "").trim();
+  if (nome && ofc && nome.toLowerCase() !== ofc.toLowerCase()) {
+    return `${nome} · ${ofc}`;
+  }
+  return nome || ofc || "Responsável não informado";
+}
+
+/** Sublinha da máquina: marca / modelo / identificação — sem categoria genérica. */
+function sublinhaMaquinaListagem(maquina?: {
+  marca?: string | null;
+  modelo?: string | null;
+  placa?: string | null;
+  numeroSerie?: string | null;
+  codigo?: string | null;
+  identificacao?: string | null;
+} | null): string {
+  if (!maquina) return "";
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [
+    maquina.marca,
+    maquina.modelo,
+    maquina.placa,
+    maquina.codigo,
+    maquina.numeroSerie,
+    maquina.identificacao,
+  ]) {
+    const v = String(raw ?? "").trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(v);
+  }
+  return parts.join(" · ");
 }
 
 function maquinaAtiva(m: { status?: string | null; dataDesativacao?: unknown }): boolean {
@@ -201,21 +181,48 @@ export default function ManutencaoListPage() {
 
   const deleteMutation = trpc.manutencoes.delete.useMutation({
     onSuccess: () => {
-      toast.success("Manutenção excluída!");
+      toast.success("Manutenção excluída com sucesso.");
       utils.manutencoes.list.invalidate();
+      utils.estoque.listByCategories.invalidate();
+      utils.estoque.list.invalidate();
     },
-    onError: e => toast.error(e.message),
   });
 
   const handleDelete = async (id: number) => {
-    const ok = await confirm({
+    if (deleteMutation.isPending) return;
+
+    let temConsumoEstoque = false;
+    try {
+      const pecas = await utils.manutencoes.listPecas.fetch({ manutencaoId: id });
+      temConsumoEstoque = pecas.some(
+        p => p.estoqueId != null && Number(p.quantidade) > 0,
+      );
+    } catch {
+      temConsumoEstoque = false;
+    }
+
+    const description = temConsumoEstoque
+      ? "Tem certeza de que deseja excluir esta manutenção? Os produtos e peças vinculados serão devolvidos ao estoque conforme a regra atual. Esta ação não poderá ser desfeita."
+      : "Tem certeza de que deseja excluir esta manutenção? Esta ação não poderá ser desfeita.";
+
+    await confirm({
       title: "Excluir manutenção",
-      description: "Tem certeza que deseja excluir esta manutenção? Esta ação não pode ser desfeita.",
+      description,
       confirmText: "Excluir",
       cancelText: "Cancelar",
       variant: "danger",
+      errorFallbackMessage:
+        "Não foi possível excluir a manutenção. Nenhuma alteração foi realizada.",
+      onConfirm: async () => {
+        try {
+          await deleteMutation.mutateAsync({ id });
+        } catch {
+          throw new Error(
+            "Não foi possível excluir a manutenção. Nenhuma alteração foi realizada.",
+          );
+        }
+      },
     });
-    if (ok) deleteMutation.mutate({ id });
   };
 
   const fazendasAtivas = useMemo(
@@ -282,7 +289,7 @@ export default function ManutencaoListPage() {
 
   const irParaCadastro = () => {
     if (!filtroFazenda) {
-      toast.error("Selecione uma Fazenda antes de registrar uma manutenção.");
+      toast.error("Selecione uma fazenda antes de registrar uma manutenção.");
       return;
     }
     setLocation(
@@ -360,7 +367,6 @@ export default function ManutencaoListPage() {
 
       if (aplicados.maquinaId && String(r.maquinaId) !== aplicados.maquinaId) return false;
       if (aplicados.tipo && r.tipo !== aplicados.tipo) return false;
-      if (aplicados.status && r.status !== aplicados.status) return false;
       if (aplicados.dataInicio && dataStr && dataStr < aplicados.dataInicio) return false;
       if (aplicados.dataFim && dataStr && dataStr > aplicados.dataFim) return false;
       if (aplicados.prestador) {
@@ -412,14 +418,21 @@ export default function ManutencaoListPage() {
         cmp = (ma?.nome ?? "").localeCompare(mb?.nome ?? "", "pt-BR");
       } else if (sortKey === "tipo") {
         cmp = (a.tipo ?? "").localeCompare(b.tipo ?? "", "pt-BR");
-      } else if (sortKey === "status") {
-        cmp = (a.status ?? "").localeCompare(b.status ?? "", "pt-BR");
       }
       if (cmp === 0) cmp = b.id - a.id;
       return sortAsc ? cmp : -cmp;
     });
     return list;
   }, [filtered, sortKey, sortAsc, maquinaMap]);
+
+  const totalCusto = useMemo(
+    () =>
+      sorted.reduce((acc, r) => {
+        const v = parseFloat(String(r.valorTotal ?? 0));
+        return acc + (Number.isFinite(v) ? v : 0);
+      }, 0),
+    [sorted],
+  );
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
@@ -451,56 +464,73 @@ export default function ManutencaoListPage() {
   };
 
   const exportHeaders = [
-    "Fazenda",
     "Data",
     "Máquina",
     "Identificação",
-    "Tipo de manutenção",
-    "Descrição",
-    "Fornecedor ou oficina",
-    "Tipo de medidor",
-    "Leitura",
-    "Valor",
-    "Status",
-    "Observações",
+    "Tipo",
+    "Serviço",
+    "Responsável",
+    "Valor total",
   ];
-  const exportData = sorted.map(r => {
-    const maquina = maquinaMap.get(r.maquinaId);
-    const medidorTipo = getMedidorTipo(maquina);
-    const tipoMedidorLabel =
-      medidorTipo === "sem_medidor"
-        ? "Sem medidor"
-        : medidorTipo === "quilometragem"
-          ? "Quilometragem"
-          : medidorTipo === "horimetro"
-            ? "Horímetro"
-            : "";
-    const ident =
-      (maquina as { placa?: string | null })?.placa ||
-      (maquina as { numeroSerie?: string | null })?.numeroSerie ||
-      "";
+
+  const exportData = useMemo(() => {
+    const detailRows = sorted.map(r => {
+      const maquina = maquinaMap.get(r.maquinaId);
+      const ident = sublinhaMaquinaListagem(
+        maquina as {
+          marca?: string | null;
+          modelo?: string | null;
+          placa?: string | null;
+          numeroSerie?: string | null;
+          codigo?: string | null;
+          identificacao?: string | null;
+        } | null,
+      );
+      return [
+        formatDateBR(r.data),
+        maquina?.nome ?? `#${r.maquinaId}`,
+        ident,
+        r.tipo ?? "",
+        descricaoServicoParaListagem(r.descricao),
+        responsavelManutencaoListagem(r.prestadorNome, r.oficina),
+        r.valorTotal != null ? formatMoney(r.valorTotal) : "",
+      ];
+    });
+
+    if (detailRows.length === 0) return detailRows;
+
+    const valorTotal = sorted.reduce((acc, r) => {
+      const v = parseFloat(String(r.valorTotal ?? 0));
+      return acc + (Number.isFinite(v) ? v : 0);
+    }, 0);
+
     return [
-      fazendaSelecionadaNome ?? "",
-      formatDateBR(r.data),
-      maquina?.nome ?? `#${r.maquinaId}`,
-      ident,
-      r.tipo ?? "",
-      r.descricao ?? "",
-      r.prestadorNome || r.oficina || "",
-      tipoMedidorLabel,
-      formatMedidorDisplay(r.horimetro, maquina),
-      r.valorTotal != null ? formatMoney(r.valorTotal) : "",
-      r.status ? STATUS_LABEL[r.status] ?? r.status : "",
-      r.observacoes ?? "",
+      ...detailRows,
+      ["Totais", "", "", "", "", "", formatMoney(valorTotal)],
     ];
-  });
+  }, [sorted, maquinaMap]);
+
+  const exportTitleLine = useMemo(() => {
+    const fazenda = (fazendaSelecionadaNome || "").trim() || "Fazenda";
+    return `${fazenda} — Manutenções`;
+  }, [fazendaSelecionadaNome]);
+
+  const exportFilenameBase = useMemo(() => {
+    const nome = (fazendaSelecionadaNome || "manutencoes")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "manutencoes";
+    return `manutencoes-${nome}`;
+  }, [fazendaSelecionadaNome]);
 
   const selectClass =
     "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
   const inputClass =
     "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
   const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
-  const disabledHint = "Selecione uma Fazenda para usar este filtro";
+  const disabledHint = "Selecione uma fazenda para usar este filtro";
 
   return (
     <AppLayout>
@@ -520,7 +550,7 @@ export default function ManutencaoListPage() {
                   className={selectClass}
                   aria-label="Filtrar por fazenda"
                 >
-                  <option value="">Selecione uma Fazenda</option>
+                  <option value="">Selecione uma fazenda</option>
                   {fazendasAtivas.map(f => (
                     <option key={f.id} value={String(f.id)}>
                       {f.nome}
@@ -590,7 +620,7 @@ export default function ManutencaoListPage() {
                     setSearch(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Buscar máquina, serviço, fornecedor, documento ou responsável"
+                  placeholder="Buscar máquina, serviço, responsável ou documento"
                   className={`${inputClass} pl-8`}
                   disabled={!fazendaSelecionada}
                   title={!fazendaSelecionada ? disabledHint : undefined}
@@ -633,7 +663,7 @@ export default function ManutencaoListPage() {
             </div>
 
             {maisFiltros && fazendaSelecionada && (
-              <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
                   <label className={labelClass}>Tipo</label>
                   <select
@@ -650,20 +680,7 @@ export default function ManutencaoListPage() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Status</label>
-                  <select
-                    value={filtros.status}
-                    onChange={e => setFiltros(f => ({ ...f, status: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    <option value="agendada">Agendada</option>
-                    <option value="em_andamento">Em andamento</option>
-                    <option value="concluida">Concluída</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>Fornecedor / oficina</label>
+                  <label className={labelClass}>Responsável</label>
                   <select
                     value={filtros.prestador}
                     onChange={e => setFiltros(f => ({ ...f, prestador: e.target.value }))}
@@ -715,7 +732,7 @@ export default function ManutencaoListPage() {
                 title={
                   fazendaSelecionada
                     ? "Nova manutenção"
-                    : "Selecione uma Fazenda para registrar manutenções."
+                    : "Selecione uma fazenda para registrar manutenções."
                 }
                 className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
                 style={{ backgroundColor: FD_PRIMARY }}
@@ -725,18 +742,46 @@ export default function ManutencaoListPage() {
               </button>
               <ListExportButtons
                 title={tituloQuadro}
-                filename="manutencoes"
+                filename={exportFilenameBase}
                 headers={exportHeaders}
                 rows={fazendaSelecionada ? exportData : []}
                 fazendaNome={fazendaSelecionadaNome}
                 variant="secondary"
-                alignRightFrom={9}
                 disabled={exportDisabled}
                 disabledTitle={
                   !fazendaSelecionada
-                    ? "Selecione uma Fazenda para exportar."
+                    ? "Selecione uma fazenda para exportar."
                     : "Nenhuma manutenção disponível para exportação."
                 }
+                spreadsheetSheetName="Manutenções"
+                spreadsheetReportTitle={() => exportTitleLine}
+                spreadsheetBlankAfterMeta={false}
+                spreadsheetAutoFilter={false}
+                spreadsheetPlainHeader
+                spreadsheetTextCols={[0, 1, 2, 3, 4, 5]}
+                spreadsheetColumnAligns={[
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                ]}
+                pdfHeaders={exportHeaders}
+                pdfRows={fazendaSelecionada ? exportData : []}
+                pdfColumnAligns={[
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                  "center",
+                ]}
+                pdfShowRegistrosSubtitle={false}
+                pdfIncludeSpreadsheetTitle={false}
+                pdfLandscape
               />
             </div>
           </div>
@@ -757,10 +802,10 @@ export default function ManutencaoListPage() {
                 }}
               />
               <h2 className="text-[16px] font-semibold text-gray-900">
-                Selecione uma Fazenda para visualizar as manutenções.
+                Selecione uma fazenda para visualizar as manutenções.
               </h2>
               <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
-                Selecione uma Fazenda no filtro acima para consultar, registrar e exportar
+                Selecione uma fazenda no filtro acima para consultar, registrar e exportar
                 manutenções.
               </p>
             </div>
@@ -793,97 +838,84 @@ export default function ManutencaoListPage() {
               footer={
                 !isLoading && sorted.length > 0 ? (
                   <div className="border-t border-gray-100">
-                    {totalPages <= 1 ? (
-                      <div className="px-4 py-2.5 text-[10px] text-gray-500">
-                        {sorted.length} {sorted.length === 1 ? "manutenção" : "manutenções"}
-                      </div>
-                    ) : (
-                      <TablePaginationFooter
-                        pageSize={pageSize}
-                        page={page}
-                        totalItems={sorted.length}
-                        onPageChange={setPage}
-                        onPageSizeChange={size => {
-                          setPageSize(size);
-                          setPage(1);
-                        }}
-                        itemLabel="manutenções"
-                      />
-                    )}
+                    <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                      <span>
+                        Valor total:{" "}
+                        <span className="font-semibold text-gray-800 tabular-nums">
+                          {formatMoney(totalCusto)}
+                        </span>
+                      </span>
+                    </div>
+                    <TablePaginationFooter
+                      pageSize={pageSize}
+                      page={page}
+                      totalItems={sorted.length}
+                      onPageChange={setPage}
+                      onPageSizeChange={size => {
+                        setPageSize(size);
+                        setPage(1);
+                      }}
+                      itemLabel="manutenções"
+                    />
                   </div>
                 ) : null
               }
             >
-              <table className="w-full min-w-[900px] table-fixed text-[12px] border-collapse">
+              <table className="w-full min-w-[860px] table-fixed text-[12px] border-collapse">
                 <colgroup>
-                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "110px" }} />
                   <col style={{ width: "22%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "24%" }} />
-                  <col className="hidden lg:table-column" style={{ width: "11%" }} />
-                  <col style={{ width: "11%" }} />
-                  <col style={{ width: "10%" }} />
-                  <col style={{ width: "72px" }} />
+                  <col style={{ width: "110px" }} />
+                  <col />
+                  <col style={{ width: "130px" }} />
+                  <col style={{ width: "88px" }} />
                 </colgroup>
                 <thead className="bg-gray-100 border-b border-gray-200">
                   <tr>
-                    <th className="px-3 py-2.5 text-center">
+                    <th className="px-4 py-3 text-center">
                       <button
                         type="button"
                         onClick={() => toggleSort("data")}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+                        className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide mx-auto"
                       >
                         Data
                         <SortIcon active={sortKey === "data"} asc={sortAsc} />
                       </button>
                     </th>
-                    <th className="px-3 py-2.5 text-left">
+                    <th className="px-4 py-3 text-center">
                       <button
                         type="button"
                         onClick={() => toggleSort("maquina")}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+                        className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide mx-auto"
                       >
                         Máquina
                         <SortIcon active={sortKey === "maquina"} asc={sortAsc} />
                       </button>
                     </th>
-                    <th className="px-3 py-2.5 text-center">
+                    <th className="px-4 py-3 text-center">
                       <button
                         type="button"
                         onClick={() => toggleSort("tipo")}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
+                        className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide mx-auto"
                       >
                         Tipo
                         <SortIcon active={sortKey === "tipo"} asc={sortAsc} />
                       </button>
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Serviço / Fornecedor
+                    <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Serviço / Responsável
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">
-                      Medidor
-                    </th>
-                    <th className="px-3 py-2.5 text-right">
+                    <th className="px-4 py-3 text-center whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => toggleSort("valor")}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide ml-auto"
+                        className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap mx-auto"
                       >
-                        Valor
+                        Custo total
                         <SortIcon active={sortKey === "valor"} asc={sortAsc} />
                       </button>
                     </th>
-                    <th className="px-3 py-2.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => toggleSort("status")}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
-                      >
-                        Status
-                        <SortIcon active={sortKey === "status"} asc={sortAsc} />
-                      </button>
-                    </th>
-                    <th className="px-2 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       Ações
                     </th>
                   </tr>
@@ -891,77 +923,76 @@ export default function ManutencaoListPage() {
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                      <td colSpan={6} className="px-4 py-16 text-center text-gray-400">
                         Carregando...
                       </td>
                     </tr>
                   ) : (
                     pageItems.map(r => {
                       const maquina = maquinaMap.get(r.maquinaId);
-                      const subMaquina = [
-                        maquina?.tipo,
-                        (maquina as { marca?: string | null })?.marca,
-                        (maquina as { modelo?: string | null })?.modelo,
-                      ]
-                        .map(v => (v ?? "").trim())
-                        .filter(Boolean)
-                        .join(" · ");
-                      const servico = (r.descricao ?? "").trim() || (r.tipo ?? "—");
-                      const fornecedor = (r.prestadorNome || r.oficina || "").trim();
+                      const subMaquina = sublinhaMaquinaListagem(
+                        maquina as {
+                          marca?: string | null;
+                          modelo?: string | null;
+                          placa?: string | null;
+                          numeroSerie?: string | null;
+                          codigo?: string | null;
+                          identificacao?: string | null;
+                        } | null,
+                      );
+                      const servico = descricaoServicoParaListagem(r.descricao);
+                      const servicoFallback = !isDescricaoServicoValida(r.descricao);
+                      const responsavel = responsavelManutencaoListagem(
+                        r.prestadorNome,
+                        r.oficina,
+                      );
                       return (
                         <tr
                           key={r.id}
                           className="border-b border-gray-100 hover:bg-[#4ECDC414] transition-colors group"
                         >
-                          <td className="px-3 py-2.5 text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
+                          <td className="px-4 py-3 text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
                             {formatDateBR(r.data)}
                           </td>
-                          <td className="px-3 py-2.5 align-middle text-left">
-                            <div className="font-semibold text-gray-900 truncate" title={maquina?.nome}>
+                          <td className="px-4 py-3 align-middle text-left min-w-0">
+                            <div className="font-semibold text-gray-900 leading-tight truncate" title={maquina?.nome}>
                               {maquina?.nome ?? `#${r.maquinaId}`}
                             </div>
-                            {subMaquina && (
-                              <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                            {subMaquina ? (
+                              <div
+                                className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                                title={subMaquina}
+                              >
                                 {subMaquina}
                               </div>
-                            )}
+                            ) : null}
                           </td>
-                          <td className="px-3 py-2.5 text-center align-middle">
+                          <td className="px-4 py-3 text-center align-middle">
                             <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-50 text-slate-700 border border-slate-100">
                               {r.tipo ?? "—"}
                             </span>
                           </td>
-                          <td className="px-3 py-2.5 align-middle text-left">
-                            <div className="text-gray-800 truncate" title={servico}>
+                          <td className="px-4 py-3 align-middle text-center min-w-0">
+                            <div
+                              className={cn(
+                                "leading-tight truncate",
+                                servicoFallback ? "text-gray-400" : "text-gray-800",
+                              )}
+                              title={servico}
+                            >
                               {servico}
                             </div>
-                            {fornecedor && (
-                              <div className="text-[10px] text-gray-500 truncate mt-0.5 hidden sm:block">
-                                {fornecedor}
-                              </div>
-                            )}
+                            <div
+                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                              title={responsavel}
+                            >
+                              {responsavel}
+                            </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums whitespace-nowrap align-middle hidden lg:table-cell">
-                            {formatMedidorDisplay(r.horimetro, maquina)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right text-gray-900 font-medium tabular-nums whitespace-nowrap align-middle">
+                          <td className="px-4 py-3 text-center text-gray-900 font-medium tabular-nums whitespace-nowrap align-middle">
                             {formatMoney(r.valorTotal)}
                           </td>
-                          <td className="px-3 py-2.5 text-center align-middle">
-                            {r.status ? (
-                              <span
-                                className={cn(
-                                  "inline-block px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap",
-                                  STATUS_STYLE[r.status] ?? "bg-gray-50 text-gray-500",
-                                )}
-                              >
-                                {STATUS_LABEL[r.status] ?? r.status}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="px-2 py-2.5 align-middle text-center" onClick={e => e.stopPropagation()}>
+                          <td className="px-3 py-3 align-middle text-center" onClick={e => e.stopPropagation()}>
                             <div className="inline-flex items-center justify-center gap-0.5">
                               <TableIconButton
                                 label="Editar"
@@ -988,9 +1019,10 @@ export default function ManutencaoListPage() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="min-w-[160px] z-[100]">
                                   <DropdownMenuItem
-                                    className="text-[12px] cursor-pointer text-red-600 focus:text-red-700"
+                                    className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
                                     onSelect={() => handleDelete(r.id)}
                                   >
+                                    <DeleteActionIcon size={16} />
                                     Excluir
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>

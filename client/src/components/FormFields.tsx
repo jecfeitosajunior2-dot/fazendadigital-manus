@@ -76,6 +76,7 @@ export function FormInput({
   list,
   id,
   invalid,
+  readOnly,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -93,6 +94,7 @@ export function FormInput({
   list?: string;
   id?: string;
   invalid?: boolean;
+  readOnly?: boolean;
   "aria-describedby"?: string;
 }) {
   return (
@@ -102,7 +104,11 @@ export function FormInput({
         type={type}
         inputMode={inputMode}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        readOnly={readOnly}
+        onChange={e => {
+          if (readOnly) return;
+          onChange(e.target.value);
+        }}
         onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
         placeholder={placeholder}
         min={min}
@@ -131,6 +137,7 @@ export function FormNativeSelect({
   variant = "default",
   id,
   invalid,
+  modal,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -143,6 +150,8 @@ export function FormNativeSelect({
   variant?: "default" | "light";
   id?: string;
   invalid?: boolean;
+  /** false evita conflito quando o select fica dentro de Popover/Dialog. */
+  modal?: boolean;
   "aria-describedby"?: string;
 }) {
   const mergedOptions = React.useMemo(() => {
@@ -165,6 +174,7 @@ export function FormNativeSelect({
       variant={variant}
       id={id}
       invalid={invalid}
+      modal={modal}
       aria-describedby={ariaDescribedBy}
     >
       {mergedOptions.map(o => (
@@ -189,6 +199,7 @@ export function FormSelect({
   children,
   id,
   invalid,
+  modal = true,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -204,6 +215,8 @@ export function FormSelect({
   children: React.ReactNode;
   id?: string;
   invalid?: boolean;
+  /** false evita conflito quando o select fica dentro de Popover/Dialog. */
+  modal?: boolean;
   "aria-describedby"?: string;
 }) {
   // Radix não aceita value="". Vazio = sem value (placeholder).
@@ -217,6 +230,7 @@ export function FormSelect({
         value={trimmed || undefined}
         onValueChange={onChange}
         disabled={disabled}
+        modal={modal}
       >
         <SelectTrigger
           id={id}
@@ -423,27 +437,41 @@ export function FormDatePicker({
 export function FormTextarea({
   value,
   onChange,
+  onFocus,
   placeholder,
   rows = 4,
   required,
+  invalid,
   className,
   variant = "default",
+  id,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   rows?: number;
   required?: boolean;
+  invalid?: boolean;
   className?: string;
   variant?: "default" | "light";
+  id?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
 }) {
   return (
-    <FieldBox required={required} variant={variant}>
+    <FieldBox required={required} variant={variant} invalid={invalid}>
       <textarea
+        id={id}
         value={value}
         onChange={e => onChange(e.target.value)}
+        onFocus={onFocus}
         placeholder={placeholder}
         rows={rows}
+        aria-invalid={ariaInvalid ?? invalid}
+        aria-describedby={ariaDescribedBy}
         className={cn(inputClassCompact, "resize-y min-h-[80px]", className)}
       />
     </FieldBox>

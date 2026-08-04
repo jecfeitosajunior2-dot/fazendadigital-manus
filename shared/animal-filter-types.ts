@@ -275,8 +275,8 @@ export function readPersistedAnimaisListFilters(): AnimaisListFiltersState {
 }
 
 export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boolean {
+  // fazendaId é escopo obrigatório da lista, não conta como filtro ativo
   return (
-    !!filters.fazendaId ||
     !!filters.raca ||
     !!filters.pesquisa.trim() ||
     !!filters.sexo ||

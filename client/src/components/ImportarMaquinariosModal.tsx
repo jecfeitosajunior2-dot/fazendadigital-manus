@@ -188,7 +188,7 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
   // ── Validação ──
   const handleValidar = () => {
     if (!fazendaId || Number.isNaN(fazendaId)) {
-      toast.error('Selecione uma Fazenda válida antes de importar máquinas.', {
+      toast.error('Selecione uma fazenda válida antes de importar máquinas.', {
         id: 'maquinas-importar-sem-fazenda',
       });
       return;
@@ -211,7 +211,7 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
   const handleImportar = () => {
     if (!validacao) return;
     if (!fazendaId || Number.isNaN(fazendaId)) {
-      toast.error('Selecione uma Fazenda válida antes de importar máquinas.', {
+      toast.error('Selecione uma fazenda válida antes de importar máquinas.', {
         id: 'maquinas-importar-sem-fazenda',
       });
       return;

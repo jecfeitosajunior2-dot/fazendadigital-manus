@@ -1127,7 +1127,19 @@ export default function InsumosMovimentacaoPanel() {
 
         {isEmptySemFazenda ? (
           <div className="py-14 px-6 text-center">
-            <span className="material-icons text-[40px] text-gray-300 block mb-3">swap_horiz</span>
+            <img
+              src="/assets/icon-insumo-saco-green.png"
+              alt="Insumos"
+              width={48}
+              height={48}
+              className="mx-auto mb-3"
+              style={{
+                objectFit: "contain",
+                /* Tom cinza-azulado (#B0BEC5) */
+                filter:
+                  "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+              }}
+            />
             <h2 className="text-[16px] font-semibold text-gray-900">Selecione uma fazenda</h2>
             <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
               Escolha uma fazenda para visualizar e registrar as movimentações de estoque.
@@ -1135,7 +1147,18 @@ export default function InsumosMovimentacaoPanel() {
           </div>
         ) : isEmptyMovimentacoes ? (
           <div className="py-14 px-6 text-center">
-            <span className="material-icons text-[40px] text-gray-300 block mb-3">swap_horiz</span>
+            <img
+              src="/assets/icon-insumo-saco-green.png"
+              alt="Insumos"
+              width={48}
+              height={48}
+              className="mx-auto mb-3"
+              style={{
+                objectFit: "contain",
+                filter:
+                  "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+              }}
+            />
             <h2 className="text-[16px] font-semibold text-gray-900">
               Nenhuma movimentação registrada nesta fazenda.
             </h2>

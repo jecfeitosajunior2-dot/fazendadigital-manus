@@ -259,7 +259,7 @@ describe('Mais Filtros — indicadores e limpar', () => {
     expect(cleared.statusFiltro).toBe('');
     expect(cleared.dataEntradaDe).toBe('');
     expect(cleared.dataEntradaAte).toBe('');
-    expect(hasActiveAnimaisFilters(cleared)).toBe(true);
+    expect(hasActiveAnimaisFilters(cleared)).toBe(false);
     expect(hasActiveMaisFiltrosAvancados(cleared)).toBe(false);
   });
 

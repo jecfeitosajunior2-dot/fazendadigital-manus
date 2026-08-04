@@ -988,6 +988,7 @@ export default function MapaRebanhoPage() {
     FILTERS_KEY,
     initialFilters ?? INITIAL_FILTERS
   );
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
 
   // Se a URL trouxer um fazendaId diferente do estado persistido, sobrescreve
   useEffect(() => {
@@ -1007,12 +1008,28 @@ export default function MapaRebanhoPage() {
   const fazendaId = filters.fazendaId ? Number(filters.fazendaId) : null;
   const pastoId = filters.pastoId ? Number(filters.pastoId) : undefined;
 
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const fazendasList = fazendas as { id: number; nome: string }[];
+  const { data: fazendasData } = trpc.fazendas.list.useQuery();
+  const fazendasList = (fazendasData ?? []) as { id: number; nome: string }[];
+
+  // 1 fazenda → pré-seleciona; várias + vazio → "Todas as fazendas"
+  useEffect(() => {
+    if (fazendaInitDone || fazendasData === undefined) return;
+
+    if (urlFazendaId === "__clear__" || urlFazendaId || filters.fazendaId) {
+      setFazendaInitDone(true);
+      return;
+    }
+
+    if (fazendasData.length === 1) {
+      setFilters(f => ({ ...f, fazendaId: String(fazendasData[0].id), pastoId: "" }));
+    }
+
+    setFazendaInitDone(true);
+  }, [fazendasData, fazendaInitDone, filters.fazendaId, urlFazendaId, setFilters]);
 
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId: fazendaId! },
-    { enabled: !!fazendaId }
+    { enabled: fazendaInitDone && !!fazendaId }
   );
   const pastosList = (pastos as { id: number; nome: string }[]).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
@@ -1023,7 +1040,7 @@ export default function MapaRebanhoPage() {
     refetch: refetchFazenda,
   } = trpc.lotes.mapaRebanhoV2.useQuery(
     { fazendaId: fazendaId!, pastoId, search: debouncedSearch || undefined },
-    { enabled: !!fazendaId }
+    { enabled: fazendaInitDone && !!fazendaId }
   );
 
   // Query para visão geral (todas as fazendas)
@@ -1033,10 +1050,10 @@ export default function MapaRebanhoPage() {
     refetch: refetchGeral,
   } = trpc.lotes.mapaRebanhoGeral.useQuery(
     { search: debouncedSearch || undefined },
-    { enabled: !fazendaId }
+    { enabled: fazendaInitDone && !fazendaId }
   );
 
-  const isLoading = fazendaId ? isLoadingFazenda : isLoadingGeral;
+  const isLoading = !fazendaInitDone || (fazendaId ? isLoadingFazenda : isLoadingGeral);
 
   const subdivisoes: SubdivisaoInfo[] = (mapaData?.subdivisoes ?? []) as SubdivisaoInfo[];
   const semSubdivisao: LoteInfo[] = (mapaData?.semSubdivisao ?? []) as LoteInfo[];
@@ -1280,7 +1297,7 @@ export default function MapaRebanhoPage() {
               value={filters.fazendaId}
               onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
               className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]">
-              <option value="">Selecione uma fazenda</option>
+              <option value="">Todas as fazendas</option>
               {fazendasList.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
             </select>
           </div>

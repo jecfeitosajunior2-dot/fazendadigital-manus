@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
+import {
+  isDescricaoServicoValida,
+  MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+  normalizeDescricaoServico,
+} from "@shared/manutencaoDescricao";
 
 /**
  * Reproduz o pecaInput e manutencaoBaseInput do routers.ts para validar
@@ -12,18 +17,23 @@ import { z } from "zod";
 const pecaInput = z.object({
   nome: z.string().min(1),
   quantidade: z.number().positive(),
-  valorUnitario: z.number().min(0),
+  valorUnitario: z.number().min(0).optional(),
   estoqueId: z.number().int().positive().optional().nullable(),
 });
 
 const manutencaoBaseInput = z.object({
   maquinaId: z.number(),
   tipo: z.string(),
-  descricao: z.string().optional(),
+  descricao: z
+    .string({
+      required_error: MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+      invalid_type_error: MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+    })
+    .transform(v => normalizeDescricaoServico(v))
+    .refine(isDescricaoServicoValida, { message: MSG_DESCRICAO_SERVICO_OBRIGATORIA }),
   data: z.string(),
   horimetro: z.string().optional(),
   proximaManutencao: z.string().optional(),
-  status: z.enum(["agendada", "em_andamento", "concluida"]).optional(),
   prestadorNome: z.string().optional(),
   prestadorContato: z.string().optional(),
   valorMaoObra: z.number().min(0).optional(),
@@ -66,9 +76,9 @@ describe("manutencao payload validation", () => {
       maquinaId: 1,
       tipo: "Preventiva",
       data: "2026-06-04",
+      descricao: "Troca de óleo e limpeza dos bicos",
       proximaManutencao: "2027-01-13",
       horimetro: "500",
-      status: "concluida" as const,
       valorMaoObra: 0,
       pecas: [
         { nome: "Correia de Transmissão", quantidade: 1, valorUnitario: 150, estoqueId: 7 },
@@ -76,15 +86,73 @@ describe("manutencao payload validation", () => {
     };
     const result = manutencaoBaseInput.safeParse(payload);
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as { status?: string }).status).toBeUndefined();
+      expect(result.data.descricao).toBe("Troca de óleo e limpeza dos bicos");
+    }
   });
 
-  it("aceita manutenção sem descricao (campo opcional)", () => {
+  it("ignora status enviado pelo cliente (não faz parte do schema)", () => {
+    const result = manutencaoBaseInput.safeParse({
+      maquinaId: 1,
+      tipo: "Corretiva",
+      data: "2026-06-04",
+      descricao: "Substituição do terminal hidráulico",
+      status: "agendada",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as { status?: string }).status).toBeUndefined();
+    }
+  });
+
+  it("rejeita manutenção sem descrição", () => {
     const result = manutencaoBaseInput.safeParse({
       maquinaId: 1,
       tipo: "Corretiva",
       data: "2026-06-04",
     });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejeita descrição vazia, só espaços ou só o tipo", () => {
+    expect(
+      manutencaoBaseInput.safeParse({
+        maquinaId: 1,
+        tipo: "Corretiva",
+        data: "2026-06-04",
+        descricao: "   ",
+      }).success,
+    ).toBe(false);
+    expect(
+      manutencaoBaseInput.safeParse({
+        maquinaId: 1,
+        tipo: "Corretiva",
+        data: "2026-06-04",
+        descricao: "Corretiva",
+      }).success,
+    ).toBe(false);
+    expect(
+      manutencaoBaseInput.safeParse({
+        maquinaId: 1,
+        tipo: "Corretiva",
+        data: "2026-06-04",
+        descricao: "-",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("aceita manutenção com descrição válida (campo obrigatório)", () => {
+    const result = manutencaoBaseInput.safeParse({
+      maquinaId: 1,
+      tipo: "Corretiva",
+      data: "2026-06-04",
+      descricao: "  Reparo na bomba hidráulica  ",
+    });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.descricao).toBe("Reparo na bomba hidráulica");
+    }
   });
 
   it("rejeita peça com quantidade zero ou negativa", () => {

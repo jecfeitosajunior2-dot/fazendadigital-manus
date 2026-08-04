@@ -624,13 +624,16 @@ function RebanhoOverviewPlaceholderIcon() {
   return (
     <div className="flex justify-center mb-3">
       <img
-        src="/assets/brand/fd-symbol-final-aligned.png"
+        src="/assets/icon-nascimentos-green.png"
         alt=""
         aria-hidden
-        className="h-10 w-10 object-contain opacity-40"
+        width={48}
+        height={48}
+        className="object-contain"
         style={{
-          objectPosition: "center",
-          filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
+          /* Tom cinza-azulado do ícone de rebanho (#B0BEC5) */
+          filter:
+            "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
         }}
       />
     </div>
@@ -653,8 +656,6 @@ export function HerdOverviewPage() {
   const PINK = "#EC4899";
   const AMBER = "#F59E0B";
   const PURPLE = "#8B5CF6";
-
-  const selectedFazenda = fazendaList?.find(f => f.id === fazendaId);
 
   useEffect(() => {
     if (!fazendaList || fazendaInitDone) return;
@@ -687,23 +688,36 @@ export function HerdOverviewPage() {
     setLocation(`/rebanho/lista-animais?${qs.toString()}`);
   };
 
+  const fazendaNome = fazendaList?.find(f => f.id === fazendaId)?.nome;
+
+  // Cabeçalho no mesmo modelo da Visão Geral de Insumos
   const headerBlock = (
     <div className="mb-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[15px] font-semibold text-gray-800">Visão Geral do Rebanho</h1>
-          {!selectedFazenda && (
-            <p className="text-[11px] text-gray-500 mt-1 max-w-xl">
-              Selecione uma fazenda para visualizar os indicadores do rebanho.
-            </p>
-          )}
-        </div>
+      <div className="min-w-0 flex-1">
+        <h1
+          className="text-[20px] font-semibold text-gray-900"
+          style={{ fontFamily: "Fraunces, serif" }}
+        >
+          {fazendaId && fazendaNome
+            ? `Visão Geral do Rebanho — ${fazendaNome}`
+            : "Visão Geral do Rebanho"}
+        </h1>
         {fazendaList && fazendaList.length > 0 && (
-          <FazendaOverviewSelect
-            value={fazendaId != null ? String(fazendaId) : ""}
-            onChange={handleFazendaChange}
-            fazendas={fazendaList}
-          />
+          <div className="mt-3 max-w-xs">
+            <select
+              value={fazendaId != null ? String(fazendaId) : ""}
+              onChange={e => handleFazendaChange(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px]"
+              aria-label="Fazenda"
+            >
+              <option value="">Selecione uma fazenda</option>
+              {fazendaList.map(f => (
+                <option key={f.id} value={String(f.id)}>
+                  {f.nome}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
       </div>
     </div>
@@ -712,13 +726,15 @@ export function HerdOverviewPage() {
   if (fazendaList && fazendaList.length === 0) {
     return (
       <AppLayout>
-        {headerBlock}
-        <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
-          <RebanhoOverviewPlaceholderIcon />
-          <p className="text-[13px] font-semibold text-gray-800 mb-1">Nenhuma fazenda cadastrada</p>
-          <p className="text-[11px] text-gray-500">
-            Cadastre uma fazenda para acompanhar os indicadores do rebanho.
-          </p>
+        <div className="space-y-5 mb-5">
+          {headerBlock}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-12 sm:py-14 text-center">
+            <RebanhoOverviewPlaceholderIcon />
+            <h2 className="text-[16px] font-semibold text-gray-900">Nenhuma fazenda cadastrada</h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Cadastre uma fazenda para acompanhar os indicadores do rebanho.
+            </p>
+          </div>
         </div>
       </AppLayout>
     );
@@ -727,13 +743,15 @@ export function HerdOverviewPage() {
   if (fazendaInitDone && !fazendaId && fazendaList && fazendaList.length > 1) {
     return (
       <AppLayout>
-        {headerBlock}
-        <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-8 text-center max-w-md mx-auto mt-12">
-          <RebanhoOverviewPlaceholderIcon />
-          <p className="text-[13px] font-semibold text-gray-800 mb-1">Escolha uma fazenda</p>
-          <p className="text-[11px] text-gray-500">
-            Use o seletor acima para carregar os indicadores, alertas e ranking desta propriedade.
-          </p>
+        <div className="space-y-5 mb-5">
+          {headerBlock}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-12 sm:py-14 text-center">
+            <RebanhoOverviewPlaceholderIcon />
+            <h2 className="text-[16px] font-semibold text-gray-900">Selecione uma fazenda</h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Escolha uma fazenda para visualizar os indicadores, alertas e ranking do rebanho.
+            </p>
+          </div>
         </div>
       </AppLayout>
     );

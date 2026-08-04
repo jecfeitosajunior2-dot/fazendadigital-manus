@@ -55,11 +55,18 @@ type DisplayCol = {
 };
 
 const TABLE_COLUMNS: DisplayCol[] = [
-  { key: "data", label: "Data", align: "center", width: "12%", sortKey: "data" },
-  { key: "maquina", label: "Máquina", align: "left", headerAlign: "center", width: "34%", sortKey: "maquina" },
-  { key: "qtd", label: "Quantidade", align: "center", width: "14%", sortKey: "quantidade" },
-  { key: "valorL", label: "Valor por litro", align: "center", width: "16%", sortKey: "valorLitro" },
-  { key: "valorTotal", label: "Valor total", align: "center", width: "16%", sortKey: "valorTotal" },
+  { key: "data", label: "Data", align: "center", width: "108px", sortKey: "data" },
+  { key: "maquina", label: "Máquina", align: "left", headerAlign: "center", width: "240px", sortKey: "maquina" },
+  {
+    key: "combustivelOrigem",
+    label: "Combustível / Origem",
+    align: "center",
+    headerAlign: "center",
+    width: "190px",
+  },
+  { key: "qtd", label: "Quantidade", align: "center", width: "118px", sortKey: "quantidade" },
+  { key: "valorL", label: "Valor por litro", align: "center", width: "128px", sortKey: "valorLitro" },
+  { key: "valorTotal", label: "Valor total", align: "center", headerAlign: "center", width: "140px", sortKey: "valorTotal" },
 ];
 
 const alignClass: Record<ColAlign, string> = {
@@ -192,6 +199,38 @@ function labelOrigem(r: { abastecidoNaFazenda?: boolean | null }): string | null
   return null;
 }
 
+/** Sublinha da máquina: marca / modelo / identificação — padrão Manutenções. */
+function sublinhaMaquinaListagem(maquina?: {
+  marca?: string | null;
+  modelo?: string | null;
+  placa?: string | null;
+  numeroSerie?: string | null;
+  codigo?: string | null;
+  identificacao?: string | null;
+  patrimonio?: string | null;
+} | null): string {
+  if (!maquina) return "";
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [
+    maquina.marca,
+    maquina.modelo,
+    maquina.placa,
+    maquina.codigo,
+    maquina.numeroSerie,
+    maquina.identificacao,
+    maquina.patrimonio,
+  ]) {
+    const v = String(raw ?? "").trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(v);
+  }
+  return parts.join(" · ");
+}
+
 function labelStatus(status: string | null | undefined): "registrado" | "estornado" {
   return String(status ?? "registrado") === "estornado" ? "estornado" : "registrado";
 }
@@ -227,7 +266,7 @@ function AbastecimentoRowActions({
 }) {
   const temMenu = podeExcluir || podeEstornar;
   return (
-    <div className="inline-flex items-center justify-center gap-0.5">
+    <div className="inline-flex items-center justify-center gap-1.5">
       {podeEditar && (
         <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
           <EditActionIcon size={16} />
@@ -238,7 +277,7 @@ function AbastecimentoRowActions({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="grid place-items-center h-7 w-6 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
+              className="grid place-items-center h-7 w-7 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
               aria-label="Mais ações"
               title="Mais ações"
             >
@@ -386,7 +425,7 @@ export default function AbastecimentoListPage() {
 
   const irParaCadastro = () => {
     if (!filtroFazenda) {
-      toast.error("Selecione uma Fazenda antes de registrar abastecimentos.");
+      toast.error("Selecione uma fazenda antes de registrar abastecimentos.");
       return;
     }
     setLocation(`/maquinas/abastecimento/cadastro?fazendaId=${encodeURIComponent(filtroFazenda)}`);
@@ -467,7 +506,10 @@ export default function AbastecimentoListPage() {
       if (q) {
         const blob = [
           maquina?.nome ?? "",
+          (maquina as { marca?: string | null })?.marca ?? "",
+          (maquina as { modelo?: string | null })?.modelo ?? "",
           maquina?.placa ?? "",
+          (maquina as { numeroSerie?: string | null })?.numeroSerie ?? "",
           combustivelLbl,
           origemLbl,
           r.responsavel ?? "",
@@ -563,7 +605,9 @@ export default function AbastecimentoListPage() {
   const exportHeaders = [
     "Data",
     "Máquina",
+    "Identificação",
     "Combustível",
+    "Origem",
     "Quantidade",
     "Valor por litro",
     "Valor total",
@@ -574,12 +618,25 @@ export default function AbastecimentoListPage() {
     const detailRows = sorted.map(r => {
       const maquina = maquinaMap.get(r.maquinaId);
       const { valorLitro, valorTotal } = resolveValoresAbastecimento(r, estoque, movimentacoes);
+      const ident = sublinhaMaquinaListagem(
+        maquina as {
+          marca?: string | null;
+          modelo?: string | null;
+          placa?: string | null;
+          numeroSerie?: string | null;
+          codigo?: string | null;
+          identificacao?: string | null;
+          patrimonio?: string | null;
+        } | null,
+      );
       return [
         formatDate(r.data),
         maquina?.nome ?? "",
+        ident,
         r.combustivel
           ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel
           : "Combustível não informado",
+        labelOrigem(r) ?? "",
         formatNum(r.litros) !== "—" ? `${formatNum(r.litros)} L` : "",
         valorLitro != null ? formatMoney(valorLitro) : "",
         valorTotal != null ? formatMoney(valorTotal) : "",
@@ -603,6 +660,8 @@ export default function AbastecimentoListPage() {
       ...detailRows,
       [
         "Totais (somente registrados)",
+        "",
+        "",
         "",
         "",
         `${formatNum(litrosRegistrados)} L`,
@@ -663,8 +722,8 @@ export default function AbastecimentoListPage() {
   const inputClass =
     "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
   const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
-  const disabledHint = "Selecione uma Fazenda para usar este filtro";
-  const headPad = "px-3 py-2.5";
+  const disabledHint = "Selecione uma fazenda para usar este filtro";
+  const headPad = "px-3 py-2.5 whitespace-nowrap";
   const cellPad = "px-3 py-2.5";
 
   return (
@@ -685,7 +744,7 @@ export default function AbastecimentoListPage() {
                   className={selectClass}
                   aria-label="Filtrar por fazenda"
                 >
-                  <option value="">Selecione uma Fazenda</option>
+                  <option value="">Selecione uma fazenda</option>
                   {fazendasAtivas.map(f => (
                     <option key={f.id} value={String(f.id)}>
                       {f.nome}
@@ -894,7 +953,7 @@ export default function AbastecimentoListPage() {
                 title={
                   fazendaSelecionada
                     ? "Novo abastecimento"
-                    : "Selecione uma Fazenda para registrar abastecimentos."
+                    : "Selecione uma fazenda para registrar abastecimentos."
                 }
                 className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
                 style={{ backgroundColor: FD_PRIMARY }}
@@ -912,7 +971,7 @@ export default function AbastecimentoListPage() {
                 disabled={exportDisabled}
                 disabledTitle={
                   !fazendaSelecionada
-                    ? "Selecione uma Fazenda para exportar."
+                    ? "Selecione uma fazenda para exportar."
                     : "Nenhum abastecimento disponível para exportação."
                 }
                 spreadsheetSheetName="Abastecimentos"
@@ -920,8 +979,10 @@ export default function AbastecimentoListPage() {
                 spreadsheetBlankAfterMeta={false}
                 spreadsheetAutoFilter={false}
                 spreadsheetPlainHeader
-                spreadsheetTextCols={[0, 1, 2, 3, 6]}
+                spreadsheetTextCols={[0, 1, 2, 3, 4, 5, 8]}
                 spreadsheetColumnAligns={[
+                  "center",
+                  "center",
                   "center",
                   "center",
                   "center",
@@ -933,6 +994,8 @@ export default function AbastecimentoListPage() {
                 pdfHeaders={exportHeaders}
                 pdfRows={fazendaSelecionada ? exportData : []}
                 pdfColumnAligns={[
+                  "center",
+                  "center",
                   "center",
                   "center",
                   "center",
@@ -964,10 +1027,10 @@ export default function AbastecimentoListPage() {
                 }}
               />
               <h2 className="text-[16px] font-semibold text-gray-900">
-                Selecione uma Fazenda para visualizar os abastecimentos.
+                Selecione uma fazenda para visualizar os abastecimentos.
               </h2>
               <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
-                Selecione uma Fazenda no filtro acima para consultar, registrar e exportar
+                Selecione uma fazenda no filtro acima para consultar, registrar e exportar
                 abastecimentos.
               </p>
             </div>
@@ -1032,12 +1095,12 @@ export default function AbastecimentoListPage() {
                 ) : null
               }
             >
-              <table className="w-full table-fixed text-[12px] border-collapse">
+              <table className="w-full min-w-[960px] table-fixed text-[12px] border-collapse">
                 <colgroup>
                   {TABLE_COLUMNS.map(col => (
                     <col key={col.key} style={{ width: col.width }} />
                   ))}
-                  <col style={{ width: "8%" }} />
+                  <col style={{ width: "86px" }} />
                 </colgroup>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -1061,6 +1124,9 @@ export default function AbastecimentoListPage() {
                             "align-middle text-[11px] font-semibold text-gray-600 uppercase tracking-wide",
                             alignClass[headerAlign],
                             col.hideBelow,
+                            col.key === "data" && "pl-4",
+                            col.key === "valorTotal" && "pr-5",
+                            col.key === "combustivelOrigem" && "whitespace-nowrap",
                           )}
                         >
                           {sortable ? (
@@ -1068,30 +1134,25 @@ export default function AbastecimentoListPage() {
                               type="button"
                               onClick={() => toggleSort(col.sortKey!)}
                               className={cn(
-                                "cursor-pointer hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 rounded",
-                                headerAlign === "left" && "inline-flex items-center gap-0.5",
+                                "uppercase tracking-wide cursor-pointer hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 rounded",
+                                headerAlign === "left" && "inline-flex items-center gap-1",
                                 headerAlign === "right" &&
-                                  "inline-flex w-full items-center justify-end gap-0.5",
+                                  "inline-flex w-full items-center justify-end gap-1",
                                 headerAlign === "center" &&
-                                  "relative mx-auto flex w-full items-center justify-center",
+                                  "inline-flex items-center justify-center gap-1 mx-auto",
                               )}
                             >
-                              {headerAlign === "center" ? (
-                                <span className="relative inline-flex items-center justify-center">
-                                  <span>{col.label}</span>
-                                  <span className="pointer-events-none absolute left-full top-1/2 ml-0.5 -translate-y-1/2">
-                                    <SortIcon active={active} asc={sortAsc} />
-                                  </span>
-                                </span>
-                              ) : (
-                                <>
-                                  <span>{col.label}</span>
-                                  <SortIcon active={active} asc={sortAsc} />
-                                </>
-                              )}
+                              <span>{col.label}</span>
+                              <SortIcon active={active} asc={sortAsc} />
                             </button>
                           ) : (
-                            <span className={cn(headerAlign === "right" && "block text-right")}>
+                            <span
+                              className={cn(
+                                "uppercase tracking-wide",
+                                headerAlign === "right" && "block text-right",
+                                headerAlign === "center" && "block text-center",
+                              )}
+                            >
                               {col.label}
                             </span>
                           )}
@@ -1101,7 +1162,7 @@ export default function AbastecimentoListPage() {
                     <th
                       className={cn(
                         headPad,
-                        "align-middle text-[11px] font-semibold text-gray-600 uppercase tracking-wide text-center",
+                        "align-middle text-[11px] font-semibold text-gray-600 uppercase tracking-wide text-center pl-3 pr-4",
                       )}
                     >
                       Ações
@@ -1129,9 +1190,17 @@ export default function AbastecimentoListPage() {
                     );
                     const combustivelTxt = labelCombustivel(r.combustivel);
                     const origemTxt = labelOrigem(r);
-                    const secundario = origemTxt
-                      ? `${combustivelTxt} · ${origemTxt}`
-                      : combustivelTxt;
+                    const subMaquina = sublinhaMaquinaListagem(
+                      maquina as {
+                        marca?: string | null;
+                        modelo?: string | null;
+                        placa?: string | null;
+                        numeroSerie?: string | null;
+                        codigo?: string | null;
+                        identificacao?: string | null;
+                        patrimonio?: string | null;
+                      } | null,
+                    );
                     const status = labelStatus(r.status);
                     const isEstoque = Boolean(r.abastecidoNaFazenda && r.fazendaId);
                     const isEstornado = status === "estornado";
@@ -1151,28 +1220,52 @@ export default function AbastecimentoListPage() {
                         <td
                           className={cn(
                             cellPad,
-                            "align-middle text-center text-gray-600 tabular-nums whitespace-nowrap",
+                            "align-middle text-center text-gray-600 tabular-nums whitespace-nowrap pl-4",
                           )}
                         >
                           {formatDate(r.data)}
                         </td>
                         <td className={cn(cellPad, "align-middle text-left min-w-0")}>
-                          <div className="font-semibold text-gray-900 leading-tight break-words">
+                          <div
+                            className="font-semibold text-gray-900 leading-tight truncate"
+                            title={maquina?.nome ?? undefined}
+                          >
                             {maquina?.nome ?? `#${r.maquinaId}`}
                           </div>
-                          <div className="text-[11px] text-gray-500 leading-tight mt-0.5 break-words">
-                            {secundario}
-                          </div>
+                          {subMaquina ? (
+                            <div
+                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                              title={subMaquina}
+                            >
+                              {subMaquina}
+                            </div>
+                          ) : null}
                           {isEstornado && (
                             <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
                               Estornado
                             </span>
                           )}
                         </td>
+                        <td className={cn(cellPad, "align-middle text-center min-w-0")}>
+                          <div
+                            className="text-gray-800 leading-tight truncate"
+                            title={combustivelTxt}
+                          >
+                            {combustivelTxt}
+                          </div>
+                          {origemTxt ? (
+                            <div
+                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                              title={origemTxt}
+                            >
+                              {origemTxt}
+                            </div>
+                          ) : null}
+                        </td>
                         <td
                           className={cn(
                             cellPad,
-                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap",
+                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
                           )}
                         >
                           {qtd !== "—" ? `${qtd} L` : "—"}
@@ -1180,7 +1273,7 @@ export default function AbastecimentoListPage() {
                         <td
                           className={cn(
                             cellPad,
-                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap",
+                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
                           )}
                         >
                           {formatMoney(valorLitro)}
@@ -1188,12 +1281,12 @@ export default function AbastecimentoListPage() {
                         <td
                           className={cn(
                             cellPad,
-                            "align-middle text-center text-gray-800 font-semibold tabular-nums whitespace-nowrap",
+                            "align-middle text-center text-gray-800 font-semibold tabular-nums whitespace-nowrap pr-5",
                           )}
                         >
                           {formatMoney(valorTotal)}
                         </td>
-                        <td className={cn(cellPad, "align-middle text-center")}>
+                        <td className={cn(cellPad, "align-middle text-center pl-3 pr-4")}>
                           <AbastecimentoRowActions
                             podeEditar={podeEditar}
                             podeExcluir={podeExcluir}

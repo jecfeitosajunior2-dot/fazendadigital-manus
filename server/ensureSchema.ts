@@ -168,6 +168,9 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
       await ensureColumn(pool, "estoque", "fazenda_id", "int");
       await ensureColumn(pool, "estoque", "produto_id", "int");
+      await ensureColumn(pool, "estoque", "valor_unitario", "decimal(10,2)");
+      await ensureColumn(pool, "estoque", "localizacao", "varchar(200)");
+      await ensureColumn(pool, "estoque", "observacoes", "text");
     }
 
     await pool.query(`

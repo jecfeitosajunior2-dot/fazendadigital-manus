@@ -891,11 +891,11 @@ export default function InsumosVisaoGeralDashboard({
               : "Visão Geral de Insumos"}
           </h1>
           <div className="mt-3 max-w-xs">
-            <label className="block text-[11px] font-medium text-gray-600 mb-1">Fazenda</label>
             <select
               value={fazendaId}
               onChange={e => onChangeFazenda(e.target.value)}
               className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px]"
+              aria-label="Fazenda"
             >
               <option value="">Selecione uma fazenda</option>
               {fazendas.map(f => (

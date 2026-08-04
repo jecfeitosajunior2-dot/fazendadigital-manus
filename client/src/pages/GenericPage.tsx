@@ -21,6 +21,7 @@ import { trpc } from '@/lib/trpc';
 import { normalizarUnidade, formatQtdComSigla, formatDataBr } from '@/lib/produto-types';
 import { brl, diasAte } from '@/lib/dashboard-utils';
 import { useDebounce } from '@/hooks/useDebounce';
+import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ANIMAIS_LIST_FILTERS_STORAGE_KEY,
@@ -185,7 +186,10 @@ export function AnimaisPage() {
     [filters, debouncedPesquisa],
   );
 
-  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery(apiParams);
+  const hasFazendaFilter = !!filters.fazendaId;
+  const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery(apiParams, {
+    enabled: fazendaInitDone && hasFazendaFilter,
+  });
   const utils = trpc.useUtils();
   const deleteMutation = trpc.animais.delete.useMutation({
     onSuccess: () => {
@@ -200,7 +204,13 @@ export function AnimaisPage() {
   const { data: pastosData } = trpc.pastos.list.useQuery();
 
   useEffect(() => {
-    if (!fazendasData?.length || fazendaInitDone) return;
+    if (fazendaInitDone) return;
+    if (fazendasData === undefined) return;
+
+    if (!fazendasData.length) {
+      setFazendaInitDone(true);
+      return;
+    }
 
     if (filters.fazendaId) {
       setFazendaInitDone(true);
@@ -315,7 +325,18 @@ export function AnimaisPage() {
   ]);
 
   const hasActiveFilters = hasActiveAnimaisFilters(filters);
-  const isEmptyList = !isLoading && sortedAnimais.length === 0;
+  const needsFazendaSelection = fazendaInitDone && !hasFazendaFilter;
+  const isListLoading = !fazendaInitDone || (hasFazendaFilter && isLoading);
+  const isEmptyList = fazendaInitDone && hasFazendaFilter && !isLoading && sortedAnimais.length === 0;
+  const semFazendaHint = "Selecione uma fazenda para continuar";
+
+  const goNovoAnimal = () => {
+    if (!hasFazendaFilter) {
+      toast.error("Selecione uma fazenda antes de cadastrar um animal.");
+      return;
+    }
+    setLocation("/rebanho/novo-animal");
+  };
 
   return (
     <AppLayout>
@@ -325,8 +346,15 @@ export function AnimaisPage() {
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           <button
             type="button"
-            onClick={() => setLocation("/rebanho/novo-animal")}
-            className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+            onClick={goNovoAnimal}
+            disabled={!hasFazendaFilter}
+            title={!hasFazendaFilter ? semFazendaHint : undefined}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+              hasFazendaFilter
+                ? "hover:brightness-95 active:scale-[0.97]"
+                : "opacity-50 cursor-not-allowed",
+            )}
             style={{ backgroundColor: FD_PRIMARY }}
           >
             <span className="material-icons text-[16px]">add</span>
@@ -336,7 +364,14 @@ export function AnimaisPage() {
           <button
             type="button"
             onClick={() => setImportarOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+            disabled={!hasFazendaFilter}
+            title={!hasFazendaFilter ? semFazendaHint : undefined}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+              hasFazendaFilter
+                ? "hover:bg-gray-50 active:scale-[0.97]"
+                : "opacity-50 cursor-not-allowed",
+            )}
           >
             <span className="material-icons text-[16px] text-gray-500">upload_file</span>
             Importar
@@ -363,6 +398,8 @@ export function AnimaisPage() {
             spreadsheetIntegerCols={[6]}
             spreadsheetTextCols={[0, 1]}
             spreadsheetColumnNumFmts={{ 7: "0.0", 8: "0.00", 9: "0.000" }}
+            disabled={!hasFazendaFilter}
+            disabledTitle={semFazendaHint}
           />
         </div>
       </div>
@@ -436,14 +473,41 @@ export function AnimaisPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading ? (
+              {isListLoading ? (
                 <tr><td colSpan={12} className="text-center py-8 text-gray-400">Carregando...</td></tr>
+              ) : needsFazendaSelection ? (
+                <tr>
+                  <td colSpan={12} className="px-4 py-16 align-middle">
+                    <div className="max-w-md mx-auto text-center">
+                      <img
+                        src="/assets/icon-nascimentos-green.png"
+                        alt="Rebanho"
+                        width={48}
+                        height={48}
+                        className="mx-auto mb-3"
+                        style={{
+                          objectFit: "contain",
+                          /* Tom cinza-azulado do ícone de rebanho (#B0BEC5) */
+                          filter:
+                            "brightness(0) saturate(100%) invert(84%) sepia(8%) saturate(420%) hue-rotate(169deg) brightness(92%) contrast(88%)",
+                        }}
+                      />
+                      <p className="text-[14px] font-medium text-gray-800">
+                        Selecione uma fazenda para visualizar os animais.
+                      </p>
+                      <p className="text-[12px] text-gray-500 mt-2 leading-relaxed">
+                        Escolha uma fazenda no filtro acima para consultar, cadastrar, importar e
+                        exportar o rebanho.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
               ) : isEmptyList ? (
                 <tr>
                   <td colSpan={12}>
                     <AnimaisListEmptyState
                       hasActiveFilters={hasActiveFilters}
-                      onNovoAnimal={() => setLocation("/rebanho/novo-animal")}
+                      onNovoAnimal={goNovoAnimal}
                       onLimparFiltros={limparFiltros}
                       compact
                     />
@@ -1420,7 +1484,7 @@ export function EstoquePage() {
             }}
             className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[180px]"
           >
-            <option value="">Selecione uma Fazenda</option>
+            <option value="">Selecione uma fazenda</option>
             {fazendas.map(f => (
               <option key={f.id} value={String(f.id)}>{f.nome}</option>
             ))}

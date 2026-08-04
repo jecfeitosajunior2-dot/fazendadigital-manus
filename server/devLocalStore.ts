@@ -3,6 +3,11 @@ import path from "node:path";
 import { buildDevRebanhoSeed, REBANHO_SEED_VERSION, type DevAnimal, type DevLote } from "./devAnimaisSeed";
 import { REBANHO_OVERVIEW_DEMO } from "../shared/rebanhoOverviewDemo";
 import { avaliarEstornoEstoque } from "./estoqueEstorno";
+import {
+  calcularCustoMedioPonderado,
+  formatCustoMedio,
+  parseCustoMedio,
+} from "./custoMedioEstoque";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -657,6 +662,25 @@ export const devLocalStore = {
 
   getEstoque(id: number) {
     return getItem(loadStore(), id) ?? null;
+  },
+
+  /**
+   * Ajusta a quantidade em estoque local (delta positivo = entrada, negativo = saída).
+   * Não altera o custo médio.
+   */
+  ajustarQuantidadeEstoque(estoqueId: number, delta: number) {
+    return withStore(data => {
+      const item = getItem(data, estoqueId);
+      if (!item) return { ok: false as const, reason: "not_found" as const };
+      const atual = Number(item.quantidade ?? 0);
+      const novo = atual + delta;
+      if (!Number.isFinite(novo) || novo < -1e-9) {
+        return { ok: false as const, reason: "insufficient" as const, disponivel: atual };
+      }
+      item.quantidade = String(Math.max(0, Math.round(novo * 100) / 100));
+      item.updatedAt = now();
+      return { ok: true as const, quantidade: item.quantidade };
+    });
   },
 
   createEstoque(input: Record<string, unknown>) {
@@ -1317,6 +1341,19 @@ export const devLocalStore = {
         updatedByNome: null,
       });
       item.quantidade = String(novo);
+      // Entrada com valor → custo médio ponderado. Saída → só saldo.
+      if (qty > 0) {
+        const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
+        if (Number.isFinite(valorTotalEntrada) && valorTotalEntrada > 0) {
+          const medio = calcularCustoMedioPonderado({
+            quantidadeAnterior: atual,
+            custoMedioAnterior: parseCustoMedio(item.valorUnitario),
+            quantidadeEntrada: qty,
+            valorTotalEntrada,
+          });
+          if (medio != null) item.valorUnitario = formatCustoMedio(medio);
+        }
+      }
       item.updatedAt = now();
       return { success: true, id };
     });
@@ -1656,10 +1693,13 @@ export const devLocalStore = {
   },
 
   listByCategories(categorias: string[]) {
+    const set = new Set(categorias.map(c => c.toLowerCase()));
     return loadStore()
-      .estoque.filter(e => e.categoria && categorias.includes(e.categoria))
+      .estoque.filter(e => e.categoria && set.has(String(e.categoria).toLowerCase()))
       .map(e => ({
         id: e.id,
+        produtoId: e.produtoId ?? null,
+        fazendaId: e.fazendaId ?? null,
         nome: e.nome,
         categoria: e.categoria,
         subcategoria: e.subcategoria,
@@ -1667,8 +1707,13 @@ export const devLocalStore = {
         quantidade: e.quantidade,
         valorUnitario: e.valorUnitario,
         fabricante: e.fabricante,
+        situacao: e.situacao ?? "ativo",
+        identificadorUnico: e.identificadorUnico ?? null,
+        observacoes: e.observacoes ?? null,
+        createdAt: e.createdAt ?? null,
+        updatedAt: e.updatedAt ?? null,
       }))
-      .sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? ""));
+      .sort((a, b) => (a.nome ?? "").localeCompare(b.nome ?? "", "pt-BR"));
   },
 
   listContasFinanceiras() {

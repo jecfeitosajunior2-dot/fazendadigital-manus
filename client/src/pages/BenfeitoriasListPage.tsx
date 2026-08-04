@@ -202,7 +202,8 @@ export default function BenfeitoriasListPage() {
   const [sortBy, setSortBy] = useState<SortOption>("mais-recentes");
 
   const { data: list = [], isLoading, refetch } = trpc.benfeitorias.list.useQuery();
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: fazendasData } = trpc.fazendas.list.useQuery();
+  const fazendas = fazendasData ?? [];
   const utils = trpc.useUtils();
   const deleteMutation = trpc.benfeitorias.delete.useMutation({
     onSuccess: () => {
@@ -265,16 +266,23 @@ export default function BenfeitoriasListPage() {
     }
   };
 
+  // Mesmo padrão das outras listas operacionais: 1 fazenda → pré-seleciona;
+  // várias + sem preferência → empty state (não força a primeira).
   useEffect(() => {
-    if (fazendas.length === 0 || fazendaInitDone) return;
+    if (fazendaInitDone || fazendasData === undefined) return;
+
+    if (!fazendasData.length) {
+      setFazendaInitDone(true);
+      return;
+    }
 
     if (fazendaFilter) {
       setFazendaInitDone(true);
       return;
     }
 
-    if (fazendas.length === 1) {
-      const id = String(fazendas[0].id);
+    if (fazendasData.length === 1) {
+      const id = String(fazendasData[0].id);
       setFazendaFilter(id);
       setLocation(benfeitoriasListUrl(id), { replace: true });
       try {
@@ -288,7 +296,7 @@ export default function BenfeitoriasListPage() {
 
     try {
       const stored = localStorage.getItem(BENFEITORIAS_LIST_FAZENDA_KEY);
-      if (stored && fazendas.some(f => String(f.id) === stored)) {
+      if (stored && fazendasData.some(f => String(f.id) === stored)) {
         setFazendaFilter(stored);
         setLocation(benfeitoriasListUrl(stored), { replace: true });
         setFazendaInitDone(true);
@@ -298,24 +306,22 @@ export default function BenfeitoriasListPage() {
       // ignora falha de leitura
     }
 
-    const id = String(fazendas[0].id);
-    setFazendaFilter(id);
-    setLocation(benfeitoriasListUrl(id), { replace: true });
-    try {
-      localStorage.setItem(BENFEITORIAS_LIST_FAZENDA_KEY, id);
-    } catch {
-      // ignora falha de gravação
-    }
-
     setFazendaInitDone(true);
-  }, [fazendas, fazendaFilter, fazendaInitDone, setLocation]);
+  }, [fazendasData, fazendaFilter, fazendaInitDone, setLocation]);
 
   const totalPages = Math.max(1, Math.ceil(displayed.length / pageSize));
   const pageItems = displayed.slice((page - 1) * pageSize, page * pageSize);
   const isEmpty = !isLoading && list.length === 0;
-  const needsFazendaSelection = !isLoading && fazendas.length > 0 && !fazendaFilter;
-  const isFazendaEmpty = !isLoading && !!fazendaFilter && byFazenda.length === 0;
-  const isFilterEmpty = !isLoading && !!fazendaFilter && byFazenda.length > 0 && displayed.length === 0;
+  const needsFazendaSelection =
+    fazendaInitDone && !isLoading && fazendas.length > 0 && !fazendaFilter;
+  const isFazendaEmpty =
+    fazendaInitDone && !isLoading && !!fazendaFilter && byFazenda.length === 0;
+  const isFilterEmpty =
+    fazendaInitDone &&
+    !isLoading &&
+    !!fazendaFilter &&
+    byFazenda.length > 0 &&
+    displayed.length === 0;
   const hasFazendaFilter = !!fazendaFilter;
 
   useEffect(() => {
@@ -569,7 +575,7 @@ export default function BenfeitoriasListPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && (
+              {(isLoading || !fazendaInitDone) && (
                 <tr>
                   <td colSpan={TABLE_COLUMNS.length} className="px-4 py-10 text-center text-gray-400 align-middle">
                     Carregando...
@@ -577,7 +583,7 @@ export default function BenfeitoriasListPage() {
                 </tr>
               )}
 
-              {!isLoading && needsFazendaSelection && (
+              {fazendaInitDone && !isLoading && needsFazendaSelection && (
                 <tr>
                   <td colSpan={TABLE_COLUMNS.length} className="px-4 py-16 align-middle">
                     <div className="max-w-md mx-auto text-center">

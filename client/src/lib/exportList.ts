@@ -461,6 +461,10 @@ export async function exportListPdf(
       }),
     );
 
+    const isTotaisRow = (row: ExportRow) =>
+      /^totais\b/i.test(String(row[0] ?? "").trim());
+    const detailRowsCount = rows.filter(r => !isTotaisRow(r)).length;
+
     const doc = new jsPDF({
       orientation: landscape ? "landscape" : "portrait",
       unit: "mm",
@@ -471,7 +475,10 @@ export async function exportListPdf(
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 10;
-    const { lines: summaryLines, titleOnly } = buildPdfReportSubtitleLines(rows.length, options);
+    const { lines: summaryLines, titleOnly } = buildPdfReportSubtitleLines(
+      detailRowsCount,
+      options,
+    );
     const tableStartY = pdfTableStartY(summaryLines.length, titleOnly);
 
     const drawHeaderFooter = () => {
@@ -483,7 +490,7 @@ export async function exportListPdf(
         fazendaNome,
         periodo,
         title,
-        rowsCount: rows.length,
+        rowsCount: detailRowsCount,
         year: agora.getFullYear(),
         dataFormatada,
         horaFormatada,
@@ -524,6 +531,13 @@ export async function exportListPdf(
       },
       alternateRowStyles: { fillColor: [247, 250, 250] },
       columnStyles,
+      didParseCell: hookData => {
+        if (hookData.section !== "body") return;
+        const raw = rows[hookData.row.index];
+        if (!raw || !isTotaisRow(raw)) return;
+        hookData.cell.styles.fontStyle = "bold";
+        hookData.cell.styles.fillColor = [243, 244, 246];
+      },
       didDrawPage: drawHeaderFooter,
     });
 

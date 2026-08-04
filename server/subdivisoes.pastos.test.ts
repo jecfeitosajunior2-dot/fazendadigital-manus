@@ -26,6 +26,11 @@ describe('animal-filter-types — pastoId', () => {
     expect(hasActiveAnimaisFilters(filters)).toBe(true);
   });
 
+  it('hasActiveAnimaisFilters retorna false quando só fazendaId está preenchido', () => {
+    const filters = { ...INITIAL_ANIMAIS_LIST_FILTERS, fazendaId: '1' };
+    expect(hasActiveAnimaisFilters(filters)).toBe(false);
+  });
+
   it('animaisFiltersToApiParams converte pastoId string para número', () => {
     const filters = { ...INITIAL_ANIMAIS_LIST_FILTERS, pastoId: '7' };
     const params = animaisFiltersToApiParams(filters, '');

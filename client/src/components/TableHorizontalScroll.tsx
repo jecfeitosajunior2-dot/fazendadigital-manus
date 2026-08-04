@@ -45,6 +45,13 @@ export default function TableHorizontalScroll({
     setMetrics({ canScroll, thumbWidth, thumbLeft });
   }, []);
 
+  // Ao montar / recarregar, inicia a rolagem horizontal na posição zero.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = 0;
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
     const track = trackRef.current;

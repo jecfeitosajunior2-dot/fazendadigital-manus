@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, type MouseEvent, type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -19,6 +19,13 @@ type ConfirmOptions = {
   variant?: "danger" | "warning" | "success" | "default";
   /** Fechar pelo X/backdrop resolve null em vez de false. */
   abortOnDismiss?: boolean;
+  /**
+   * Se informado, mantém o modal aberto até a Promise resolver.
+   * Em caso de erro, o modal permanece aberto e exibe a mensagem.
+   */
+  onConfirm?: () => void | Promise<void>;
+  /** Mensagem exibida quando onConfirm rejeita sem Error.message útil. */
+  errorFallbackMessage?: string;
 };
 
 type ConfirmContextValue = (options?: ConfirmOptions) => Promise<boolean | null>;
@@ -32,11 +39,16 @@ const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({});
+  const [busy, setBusy] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const resolverRef = useRef<((value: boolean | null) => void) | null>(null);
   const settledRef = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   const confirm = useCallback<ConfirmContextValue>((opts) => {
     settledRef.current = false;
+    setBusy(false);
+    setSubmitError(null);
     setOptions(opts ?? {});
     setOpen(true);
     return new Promise<boolean | null>((resolve) => {
@@ -45,11 +57,14 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const settle = useCallback((value: boolean | null) => {
+    if (busy && value !== true) return;
     settledRef.current = true;
+    setBusy(false);
+    setSubmitError(null);
     setOpen(false);
     resolverRef.current?.(value);
     resolverRef.current = null;
-  }, []);
+  }, [busy]);
 
   const {
     title = "Confirmar ação",
@@ -58,6 +73,8 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     cancelText = "Cancelar",
     variant = "danger",
     abortOnDismiss = false,
+    onConfirm,
+    errorFallbackMessage = "Não foi possível concluir a operação. Nenhuma alteração foi realizada.",
   } = options;
 
   const confirmButtonStyle = (() => {
@@ -67,6 +84,34 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     return undefined;
   })();
 
+  const handleConfirmClick = async (e: MouseEvent) => {
+    e.preventDefault();
+    if (busy) return;
+
+    if (!onConfirm) {
+      settle(true);
+      return;
+    }
+
+    setBusy(true);
+    setSubmitError(null);
+    try {
+      await onConfirm();
+      settledRef.current = true;
+      setBusy(false);
+      setOpen(false);
+      resolverRef.current?.(true);
+      resolverRef.current = null;
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : errorFallbackMessage;
+      setSubmitError(msg);
+      setBusy(false);
+    }
+  };
+
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
@@ -74,6 +119,10 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
         open={open}
         onOpenChange={(o) => {
           if (o) {
+            setOpen(true);
+            return;
+          }
+          if (busy) {
             setOpen(true);
             return;
           }
@@ -86,7 +135,16 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
           resolverRef.current = null;
         }}
       >
-        <AlertDialogContent className="max-w-[420px]">
+        <AlertDialogContent
+          className="max-w-[420px]"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            cancelRef.current?.focus();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (busy) e.preventDefault();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-gray-900">
               {variant === "danger" && (
@@ -106,30 +164,36 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                 <div className="text-sm text-gray-600">{description}</div>
               </AlertDialogDescription>
             )}
+            {submitError ? (
+              <p className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2 mt-1" role="alert">
+                {submitError}
+              </p>
+            ) : null}
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
             <AlertDialogCancel
+              ref={cancelRef}
+              disabled={busy}
               onClick={(e) => {
                 e.preventDefault();
+                if (busy) return;
                 settle(false);
               }}
-              className="rounded-full border-0 bg-gray-100 text-gray-800 shadow-none hover:bg-gray-200 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2"
+              className="rounded-full border-0 bg-gray-100 text-gray-800 shadow-none hover:bg-gray-200 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2 disabled:opacity-60 disabled:pointer-events-none"
               style={{ minHeight: 44 }}
             >
               {cancelText}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                settle(true);
-              }}
-              className="rounded-full text-white hover:opacity-95 focus-visible:ring-2 focus-visible:ring-offset-2"
+              disabled={busy}
+              onClick={e => void handleConfirmClick(e)}
+              className="rounded-full text-white hover:opacity-95 focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60 disabled:pointer-events-none"
               style={{
                 minHeight: 44,
                 ...confirmButtonStyle,
               }}
             >
-              {confirmText}
+              {busy ? "Aguarde..." : confirmText}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

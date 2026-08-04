@@ -16,6 +16,7 @@ const pastosFile = path.join(dataDir, "pastos.json");
 const benfeitoriasFile = path.join(dataDir, "benfeitorias.json");
 const maquinasFile = path.join(dataDir, "maquinas.json");
 const abastecimentosFile = path.join(dataDir, "abastecimentos.json");
+const manutencoesFile = path.join(dataDir, "manutencoes.json");
 const lotesFile = path.join(dataDir, "lotes.json");
 const animaisFile = path.join(dataDir, "animais.json");
 const pesagensFile = path.join(dataDir, "pesagens.json");
@@ -526,6 +527,174 @@ export async function deleteLocalAbastecimento(userId: number, id: number): Prom
     return;
   }
   await writeAbastecimentos(remaining);
+}
+
+export type LocalManutencaoPeca = {
+  estoqueId?: number | null;
+  nome: string;
+  quantidade: string;
+  valorUnitario: string;
+  valorTotal: string;
+};
+
+export type LocalManutencao = Record<string, any> & {
+  id: number;
+  userId: number;
+  maquinaId: number;
+  tipo: string;
+  descricao?: string | null;
+  data: string;
+  horimetro?: string | null;
+  proximaManutencao?: string | null;
+  status?: string | null;
+  prestadorNome?: string | null;
+  prestadorContato?: string | null;
+  valorMaoObra?: string | null;
+  valorPecas?: string | null;
+  valorTotal?: string | null;
+  custo?: string | null;
+  observacoes?: string | null;
+  pecas: LocalManutencaoPeca[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function readManutencoes(): Promise<LocalManutencao[]> {
+  return readJsonFile<LocalManutencao[]>(manutencoesFile, []);
+}
+
+async function writeManutencoes(rows: LocalManutencao[]): Promise<void> {
+  await writeJsonFile(manutencoesFile, rows);
+}
+
+export async function listLocalManutencoes(
+  userId: number,
+  opts?: { maquinaId?: number },
+): Promise<LocalManutencao[]> {
+  const rows = await readManutencoes();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible
+    .filter(row => (opts?.maquinaId == null ? true : Number(row.maquinaId) === opts.maquinaId))
+    .sort((a, b) => {
+      const byData = String(b.data || "").localeCompare(String(a.data || ""));
+      if (byData !== 0) return byData;
+      return String(b.createdAt).localeCompare(String(a.createdAt));
+    });
+}
+
+export async function getLocalManutencao(
+  userId: number,
+  id: number,
+): Promise<LocalManutencao | null> {
+  const rows = await readManutencoes();
+  return (
+    rows.find(row => row.userId === userId && row.id === id) ??
+    rows.find(row => row.id === id) ??
+    null
+  );
+}
+
+export async function createLocalManutencao(
+  userId: number,
+  input: {
+    maquinaId: number;
+    tipo: string;
+    data: string;
+    descricao?: string;
+    horimetro?: string;
+    proximaManutencao?: string;
+    status?: string;
+    prestadorNome?: string;
+    prestadorContato?: string;
+    valorMaoObra?: string;
+    valorPecas?: string;
+    valorTotal?: string;
+    custo?: string;
+    observacoes?: string;
+    pecas?: LocalManutencaoPeca[];
+  },
+): Promise<{ id: number }> {
+  const rows = await readManutencoes();
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    maquinaId: input.maquinaId,
+    tipo: input.tipo,
+    data: input.data,
+    descricao: input.descricao ?? null,
+    horimetro: input.horimetro ?? null,
+    proximaManutencao: input.proximaManutencao ?? null,
+    status: input.status ?? "concluida",
+    prestadorNome: input.prestadorNome ?? null,
+    prestadorContato: input.prestadorContato ?? null,
+    valorMaoObra: input.valorMaoObra ?? "0",
+    valorPecas: input.valorPecas ?? "0",
+    valorTotal: input.valorTotal ?? "0",
+    custo: input.custo ?? input.valorTotal ?? "0",
+    observacoes: input.observacoes ?? null,
+    pecas: input.pecas ?? [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeManutencoes(rows);
+  return { id };
+}
+
+export async function updateLocalManutencao(
+  userId: number,
+  id: number,
+  input: Partial<Omit<LocalManutencao, "id" | "userId" | "createdAt">>,
+): Promise<void> {
+  const rows = await readManutencoes();
+  const index = rows.findIndex(row => row.userId === userId && row.id === id);
+  const fallback = index >= 0 ? index : rows.findIndex(row => row.id === id);
+  const now = new Date().toISOString();
+  if (fallback < 0) {
+    rows.push({
+      id,
+      userId,
+      maquinaId: Number(input.maquinaId ?? 0),
+      tipo: String(input.tipo ?? "Corretiva"),
+      data: String(input.data ?? now.slice(0, 10)),
+      descricao: input.descricao ?? null,
+      horimetro: input.horimetro ?? null,
+      proximaManutencao: input.proximaManutencao ?? null,
+      status: input.status ?? "concluida",
+      prestadorNome: input.prestadorNome ?? null,
+      prestadorContato: input.prestadorContato ?? null,
+      valorMaoObra: input.valorMaoObra ?? "0",
+      valorPecas: input.valorPecas ?? "0",
+      valorTotal: input.valorTotal ?? "0",
+      custo: input.custo ?? input.valorTotal ?? "0",
+      observacoes: input.observacoes ?? null,
+      pecas: input.pecas ?? [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    await writeManutencoes(rows);
+    return;
+  }
+  rows[fallback] = {
+    ...rows[fallback],
+    ...input,
+    id: rows[fallback].id,
+    userId: rows[fallback].userId,
+    updatedAt: now,
+  };
+  await writeManutencoes(rows);
+}
+
+export async function deleteLocalManutencao(userId: number, id: number): Promise<void> {
+  const rows = await readManutencoes();
+  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
+  if (remaining.length === rows.length) {
+    await writeManutencoes(rows.filter(row => row.id !== id));
+    return;
+  }
+  await writeManutencoes(remaining);
 }
 
 export type LocalLote = Record<string, any> & {

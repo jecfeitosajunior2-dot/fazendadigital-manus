@@ -454,7 +454,7 @@ export default function MaquinasListPage() {
     const ids = fazendasAtivas.map(f => f.id);
     const fromStorage = readPersistedRebanhoFazendaId(ids);
     if (!fromStorage) {
-      // Preferência inválida/inexistente — limpa e fica no estado “Selecione uma Fazenda”.
+      // Preferência inválida/inexistente — limpa e fica no estado “Selecione uma fazenda”.
       persistRebanhoFazendaId("");
     }
     const resolved =
@@ -491,7 +491,7 @@ export default function MaquinasListPage() {
 
   const irParaCadastro = () => {
     if (!fazendaSelecionada) {
-      toast.error("Selecione uma Fazenda antes de cadastrar uma máquina.", {
+      toast.error("Selecione uma fazenda antes de cadastrar uma máquina.", {
         id: "maquinas-cadastrar-sem-fazenda",
       });
       return;
@@ -724,7 +724,7 @@ export default function MaquinasListPage() {
               title={
                 fazendaSelecionada
                   ? "Cadastrar máquina"
-                  : "Selecione uma Fazenda antes de cadastrar uma máquina"
+                  : "Selecione uma fazenda antes de cadastrar uma máquina"
               }
               className={cn(
                 primaryBtnClass,
@@ -745,7 +745,7 @@ export default function MaquinasListPage() {
               title={
                 fazendaSelecionada
                   ? "Importar"
-                  : "Selecione uma Fazenda antes de importar máquinas."
+                  : "Selecione uma fazenda antes de importar máquinas."
               }
               aria-disabled={!fazendaSelecionada}
               className={cn(
@@ -821,7 +821,7 @@ export default function MaquinasListPage() {
               className={filterSelectClass}
               aria-label="Filtrar por fazenda"
             >
-              <option value="">Selecione uma Fazenda</option>
+              <option value="">Selecione uma fazenda</option>
               {fazendasAtivas.map(f => (
                 <option key={f.id} value={String(f.id)}>
                   {f.nome}

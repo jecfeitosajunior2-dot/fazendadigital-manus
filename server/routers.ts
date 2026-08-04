@@ -32,6 +32,11 @@ import {
   MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
 } from "./abastecimentoEstoqueSync";
 import { avaliarEstornoEstoque, isEstornoBusinessError, montarMotivoEstorno } from "./estoqueEstorno";
+import {
+  calcularCustoMedioPonderado,
+  formatCustoMedio,
+  parseCustoMedio,
+} from "./custoMedioEstoque";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
@@ -39,17 +44,20 @@ import {
   createLocalBenfeitoria,
   createLocalMaquina,
   createLocalAbastecimento,
+  createLocalManutencao,
   createLocalAnimal,
   deleteLocalFazenda,
   deleteLocalPasto,
   deleteLocalBenfeitoria,
   deleteLocalMaquina,
   deleteLocalAbastecimento,
+  deleteLocalManutencao,
   deleteLocalAnimal,
   getLocalFazenda,
   getLocalBenfeitoria,
   getLocalMaquina,
   getLocalAbastecimento,
+  getLocalManutencao,
   getLocalAnimal,
   isDatabaseUnavailable,
   listLocalFazendas,
@@ -58,6 +66,7 @@ import {
   listLocalBenfeitorias,
   listLocalMaquinas,
   listLocalAbastecimentos,
+  listLocalManutencoes,
   listLocalAnimais,
   listLocalAnimaisEnriched,
   listLocalLotes,
@@ -85,6 +94,7 @@ import {
   updateLocalBenfeitoria,
   updateLocalMaquina,
   updateLocalAbastecimento,
+  updateLocalManutencao,
   updateLocalAnimal,
   enrichLocalAnimal,
   listLocalHistoricoBrincos,
@@ -99,6 +109,11 @@ import {
   listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
+import {
+  isDescricaoServicoValida,
+  MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+  normalizeDescricaoServico,
+} from "@shared/manutencaoDescricao";
 import {
   mensagemExclusaoLoteBloqueada,
   mensagemInativacaoLoteSucesso,
@@ -5328,18 +5343,25 @@ const abastecimentosRouter = router({
 const pecaInput = z.object({
   nome: z.string().min(1),
   quantidade: z.number().positive(),
-  valorUnitario: z.number().min(0),
+  /** Ignorado no servidor quando há estoqueId — custo médio do estoque é a fonte oficial. */
+  valorUnitario: z.number().min(0).optional(),
   estoqueId: z.number().int().positive().optional().nullable(),
 });
 
 const manutencaoBaseInput = z.object({
   maquinaId: z.number(),
   tipo: z.string(),
-  descricao: z.string().optional(),
+  descricao: z
+    .string({
+      required_error: MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+      invalid_type_error: MSG_DESCRICAO_SERVICO_OBRIGATORIA,
+    })
+    .transform(v => normalizeDescricaoServico(v))
+    .refine(isDescricaoServicoValida, { message: MSG_DESCRICAO_SERVICO_OBRIGATORIA }),
   data: z.string(),
   horimetro: z.string().optional(),
   proximaManutencao: z.string().optional(),
-  status: z.enum(["agendada", "em_andamento", "concluida"]).optional(),
+  // Status não é aceito do frontend — sempre "concluida" no create; preservado no update.
   prestadorNome: z.string().optional(),
   prestadorContato: z.string().optional(),
   valorMaoObra: z.number().min(0).optional(),
@@ -5364,6 +5386,19 @@ export function calcularTotaisManutencao(
   };
 }
 
+export const MSG_MANUT_SEM_CUSTO_MEDIO =
+  "Este produto não possui custo médio registrado. Registre uma entrada de estoque antes de utilizá-lo na manutenção.";
+
+export const MSG_MANUT_SALDO_ALTERADO =
+  "O saldo deste produto foi alterado por outra operação. Revise a quantidade e tente novamente.";
+
+type PecaManutencaoResolvida = {
+  nome: string;
+  quantidade: number;
+  valorUnitario: number;
+  estoqueId: number;
+};
+
 /**
  * Valida se as peças vinculadas ao estoque não ultrapassam o saldo disponível.
  * Soma as quantidades por estoqueId e compara com a quantidade em estoque.
@@ -5373,7 +5408,6 @@ export async function validarSaldoEstoquePecas(
   pecas: { nome: string; quantidade: number; estoqueId?: number | null }[] | undefined
 ) {
   if (!pecas || pecas.length === 0) return;
-  // Agrupa quantidades por estoqueId (ignora itens sem vínculo de estoque)
   const porEstoque = new Map<number, number>();
   for (const p of pecas) {
     if (p.estoqueId == null) continue;
@@ -5388,7 +5422,7 @@ export async function validarSaldoEstoquePecas(
   const mapEstoque = new Map(itens.map(i => [i.id, i]));
   for (const [estoqueId, qtdSolicitada] of porEstoque.entries()) {
     const item = mapEstoque.get(estoqueId);
-    if (!item || item.quantidade == null) continue; // sem controle de estoque
+    if (!item || item.quantidade == null) continue;
     const disponivel = parseFloat(String(item.quantidade));
     if (Number.isNaN(disponivel)) continue;
     if (qtdSolicitada > disponivel) {
@@ -5401,39 +5435,308 @@ export async function validarSaldoEstoquePecas(
   }
 }
 
+/**
+ * Resolve peças com o custo médio vigente do estoque (ignora valorUnitario do frontend).
+ * `creditoPorEstoque` devolve ao saldo as quantidades já consumidas nesta manutenção (edição).
+ * `custoCongeladoPorEstoque` preserva o unitário já gravado em itens existentes (não repreça histórico).
+ */
+export async function resolverPecasComCustoMedioEstoque(
+  pecas: { nome: string; quantidade: number; estoqueId?: number | null }[] | undefined,
+  creditoPorEstoque?: Map<number, number>,
+  custoCongeladoPorEstoque?: Map<number, number>,
+): Promise<PecaManutencaoResolvida[]> {
+  if (!pecas || pecas.length === 0) return [];
+
+  for (const p of pecas) {
+    if (p.estoqueId == null) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Selecione um produto do estoque da Fazenda. Peças sem vínculo de estoque não são permitidas.",
+      });
+    }
+  }
+
+  const ids = Array.from(new Set(pecas.map(p => p.estoqueId!)));
+  type ItemEstoque = {
+    id: number;
+    nome: string | null;
+    quantidade: string | number | null;
+    unidade: string | null;
+    valorUnitario: string | number | null;
+  };
+  const mapEstoque = new Map<number, ItemEstoque>();
+
+  try {
+    const itens = await db
+      .select({
+        id: estoque.id,
+        nome: estoque.nome,
+        quantidade: estoque.quantidade,
+        unidade: estoque.unidade,
+        valorUnitario: estoque.valorUnitario,
+      })
+      .from(estoque)
+      .where(inArray(estoque.id, ids));
+    for (const item of itens) mapEstoque.set(item.id, item);
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
+
+  for (const id of ids) {
+    if (mapEstoque.has(id)) continue;
+    const local = devLocalStore.getEstoque(id);
+    if (!local) continue;
+    mapEstoque.set(id, {
+      id: local.id,
+      nome: local.nome,
+      quantidade: local.quantidade,
+      unidade: local.unidade,
+      valorUnitario: local.valorUnitario,
+    });
+  }
+
+  const solicitados = new Map<number, number>();
+  for (const p of pecas) {
+    const id = p.estoqueId!;
+    solicitados.set(id, (solicitados.get(id) ?? 0) + p.quantidade);
+  }
+
+  for (const [estoqueId, qtdSolicitada] of solicitados.entries()) {
+    const item = mapEstoque.get(estoqueId);
+    if (!item) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
+      });
+    }
+    const custoCongelado = custoCongeladoPorEstoque?.get(estoqueId);
+    const custo =
+      custoCongelado != null && custoCongelado > 0
+        ? custoCongelado
+        : parseCustoMedio(item.valorUnitario);
+    if (custo == null) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: MSG_MANUT_SEM_CUSTO_MEDIO,
+      });
+    }
+    const disponivel =
+      parseFloat(String(item.quantidade ?? 0)) + (creditoPorEstoque?.get(estoqueId) ?? 0);
+    if (Number.isFinite(disponivel) && qtdSolicitada > disponivel + 1e-9) {
+      const unidade = item.unidade ? ` ${item.unidade}` : "";
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Estoque insuficiente para "${item.nome}". Solicitado: ${qtdSolicitada.toLocaleString("pt-BR")}${unidade}, disponível: ${Math.max(0, disponivel).toLocaleString("pt-BR")}${unidade}.`,
+      });
+    }
+  }
+
+  return pecas.map(p => {
+    const item = mapEstoque.get(p.estoqueId!)!;
+    const custoCongelado = custoCongeladoPorEstoque?.get(p.estoqueId!);
+    const custo =
+      custoCongelado != null && custoCongelado > 0
+        ? custoCongelado
+        : parseCustoMedio(item.valorUnitario)!;
+    return {
+      nome: item.nome || p.nome,
+      quantidade: p.quantidade,
+      valorUnitario: custo,
+      estoqueId: p.estoqueId!,
+    };
+  });
+}
+
+function montarDeltasBaixaEstoque(
+  pecasNovas: PecaManutencaoResolvida[],
+  pecasAntigas?: { estoqueId: number | null; quantidade: string | number }[],
+) {
+  const antigo = new Map<number, number>();
+  for (const p of pecasAntigas ?? []) {
+    if (p.estoqueId == null) continue;
+    const q = parseFloat(String(p.quantidade));
+    if (!Number.isFinite(q) || q <= 0) continue;
+    antigo.set(p.estoqueId, (antigo.get(p.estoqueId) ?? 0) + q);
+  }
+  const novo = new Map<number, number>();
+  for (const p of pecasNovas) {
+    novo.set(p.estoqueId, (novo.get(p.estoqueId) ?? 0) + p.quantidade);
+  }
+  const deltas = new Map<number, number>();
+  for (const estoqueId of new Set([...antigo.keys(), ...novo.keys()])) {
+    const delta = (novo.get(estoqueId) ?? 0) - (antigo.get(estoqueId) ?? 0);
+    if (Math.abs(delta) >= 1e-9) deltas.set(estoqueId, delta);
+  }
+  return deltas;
+}
+
+async function aplicarBaixaEstoquePecasManutencao(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  pecasNovas: PecaManutencaoResolvida[],
+  pecasAntigas?: { estoqueId: number | null; quantidade: string | number }[],
+) {
+  const deltas = montarDeltasBaixaEstoque(pecasNovas, pecasAntigas);
+  const pendenteLocal = new Map<number, number>();
+
+  for (const [estoqueId, delta] of deltas.entries()) {
+    let appliedOnDb = false;
+    try {
+      const rows = await tx
+        .select({
+          id: estoque.id,
+          nome: estoque.nome,
+          quantidade: estoque.quantidade,
+          unidade: estoque.unidade,
+        })
+        .from(estoque)
+        .where(eq(estoque.id, estoqueId))
+        .for("update");
+      const item = rows[0];
+      if (item) {
+        const atual = parseFloat(String(item.quantidade ?? 0));
+        const saldo = atual - delta;
+        if (!Number.isFinite(saldo) || saldo < -1e-9) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_MANUT_SALDO_ALTERADO,
+          });
+        }
+        await tx
+          .update(estoque)
+          .set({ quantidade: String(Math.max(0, Math.round(saldo * 100) / 100)) })
+          .where(eq(estoque.id, estoqueId));
+        appliedOnDb = true;
+      }
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      if (!isDatabaseUnavailable(error)) throw error;
+    }
+    if (!appliedOnDb) pendenteLocal.set(estoqueId, delta);
+  }
+
+  return pendenteLocal;
+}
+
+function aplicarBaixaEstoqueLocalPendente(pendenteLocal: Map<number, number>) {
+  for (const [estoqueId, delta] of pendenteLocal.entries()) {
+    const result = devLocalStore.ajustarQuantidadeEstoque(estoqueId, -delta);
+    if (!result.ok) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          result.reason === "insufficient"
+            ? MSG_MANUT_SALDO_ALTERADO
+            : "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
+      });
+    }
+  }
+}
+
+function pecasLocaisFromResolvidas(
+  pecasResolvidas: { estoqueId: number; nome: string; quantidade: number; valorUnitario: number }[],
+) {
+  return pecasResolvidas.map(p => ({
+    estoqueId: p.estoqueId,
+    nome: p.nome,
+    quantidade: p.quantidade.toFixed(2),
+    valorUnitario: p.valorUnitario.toFixed(2),
+    valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+  }));
+}
+
+function manutencaoUpdatedAtMs(row: { updatedAt?: unknown; createdAt?: unknown }): number {
+  const raw = row.updatedAt ?? row.createdAt ?? 0;
+  const ms = new Date(raw as string | Date).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function mergeManutencoesDbLocal<T extends { id: number; updatedAt?: unknown; createdAt?: unknown }>(
+  dbRows: T[],
+  localRows: T[],
+): T[] {
+  const byId = new Map<number, T>();
+  for (const row of dbRows) byId.set(row.id, row);
+  for (const row of localRows) {
+    const existing = byId.get(row.id);
+    if (!existing || manutencaoUpdatedAtMs(row) >= manutencaoUpdatedAtMs(existing)) {
+      byId.set(row.id, row);
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    const byUpdated = manutencaoUpdatedAtMs(b) - manutencaoUpdatedAtMs(a);
+    if (byUpdated !== 0) return byUpdated;
+    return b.id - a.id;
+  });
+}
+
 const manutencoesRouter = router({
   list: protectedProcedure
     .input(z.object({ maquinaId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(manutencoes.userId, ctx.user.id)];
-      if (input?.maquinaId) conditions.push(eq(manutencoes.maquinaId, input.maquinaId));
-      return db.select().from(manutencoes).where(and(...conditions)).orderBy(desc(manutencoes.createdAt));
+      let dbRows: Awaited<ReturnType<typeof listLocalManutencoes>> = [];
+      let dbOk = false;
+      try {
+        const conditions = [eq(manutencoes.userId, ctx.user.id)];
+        if (input?.maquinaId) conditions.push(eq(manutencoes.maquinaId, input.maquinaId));
+        dbRows = (await db
+          .select()
+          .from(manutencoes)
+          .where(and(...conditions))
+          .orderBy(desc(manutencoes.createdAt))) as typeof dbRows;
+        dbOk = true;
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+      const localRows = await listLocalManutencoes(ctx.user.id, { maquinaId: input?.maquinaId });
+      if (!dbOk) return localRows;
+      return mergeManutencoesDbLocal(dbRows, localRows);
     }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [registro] = await db
-        .select()
-        .from(manutencoes)
-        .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
-      if (!registro) return null;
-      const pecas = await db
-        .select()
-        .from(manutencaoPecas)
-        .where(eq(manutencaoPecas.manutencaoId, input.id))
-        .orderBy(manutencaoPecas.id);
-      return { ...registro, pecas };
+      let dbRegistro: (typeof manutencoes.$inferSelect & { pecas: unknown[] }) | null = null;
+      try {
+        const [registro] = await db
+          .select()
+          .from(manutencoes)
+          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
+        if (registro) {
+          const pecas = await db
+            .select()
+            .from(manutencaoPecas)
+            .where(eq(manutencaoPecas.manutencaoId, input.id))
+            .orderBy(manutencaoPecas.id);
+          dbRegistro = { ...registro, pecas };
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return getLocalManutencao(ctx.user.id, input.id);
+      }
+
+      const local = await getLocalManutencao(ctx.user.id, input.id);
+      if (!dbRegistro) return local;
+      if (!local) return dbRegistro;
+      return manutencaoUpdatedAtMs(local) >= manutencaoUpdatedAtMs(dbRegistro)
+        ? local
+        : dbRegistro;
     }),
 
   listPecas: protectedProcedure
     .input(z.object({ manutencaoId: z.number() }))
-    .query(async ({ input }) => {
-      return db
-        .select()
-        .from(manutencaoPecas)
-        .where(eq(manutencaoPecas.manutencaoId, input.manutencaoId))
-        .orderBy(manutencaoPecas.id);
+    .query(async ({ ctx, input }) => {
+      try {
+        return await db
+          .select()
+          .from(manutencaoPecas)
+          .where(eq(manutencaoPecas.manutencaoId, input.manutencaoId))
+          .orderBy(manutencaoPecas.id);
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        const local = await getLocalManutencao(ctx.user.id, input.manutencaoId);
+        return local?.pecas ?? [];
+      }
     }),
 
   create: protectedProcedure
@@ -5441,86 +5744,298 @@ const manutencoesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
       await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId);
-      await validarSaldoEstoquePecas(pecas);
-      const totais = calcularTotaisManutencao(pecas, valorMaoObra);
-      const result = await db.insert(manutencoes).values({
-        userId: ctx.user.id,
-        ...rest,
-        data,
-        proximaManutencao: proximaManutencao || undefined,
-        valorMaoObra: totais.valorMaoObra.toFixed(2),
-        valorPecas: totais.valorPecas.toFixed(2),
-        valorTotal: totais.valorTotal.toFixed(2),
-        custo: totais.valorTotal.toFixed(2),
-      });
-      const manutencaoId = Number((result as any)[0]?.insertId);
-      if (pecas && pecas.length > 0) {
-        await db.insert(manutencaoPecas).values(
-          pecas.map(p => ({
-            manutencaoId,
-            estoqueId: p.estoqueId ?? undefined,
-            nome: p.nome,
-            quantidade: p.quantidade.toFixed(2),
-            valorUnitario: p.valorUnitario.toFixed(2),
-            valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
-          }))
-        );
+      const pecasResolvidas = await resolverPecasComCustoMedioEstoque(pecas);
+      const totais = calcularTotaisManutencao(pecasResolvidas, valorMaoObra);
+      const pecasPayload = pecasLocaisFromResolvidas(pecasResolvidas);
+
+      try {
+        let pendenteLocal = new Map<number, number>();
+        const manutencaoId = await db.transaction(async tx => {
+          const result = await tx.insert(manutencoes).values({
+            userId: ctx.user.id,
+            ...rest,
+            data,
+            status: "concluida",
+            proximaManutencao: proximaManutencao || undefined,
+            valorMaoObra: totais.valorMaoObra.toFixed(2),
+            valorPecas: totais.valorPecas.toFixed(2),
+            valorTotal: totais.valorTotal.toFixed(2),
+            custo: totais.valorTotal.toFixed(2),
+          });
+          const id = Number((result as any)[0]?.insertId);
+          if (pecasResolvidas.length > 0) {
+            await tx.insert(manutencaoPecas).values(
+              pecasResolvidas.map(p => ({
+                manutencaoId: id,
+                estoqueId: p.estoqueId,
+                nome: p.nome,
+                quantidade: p.quantidade.toFixed(2),
+                valorUnitario: p.valorUnitario.toFixed(2),
+                valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+              })),
+            );
+            pendenteLocal = await aplicarBaixaEstoquePecasManutencao(tx, pecasResolvidas);
+          }
+          return id;
+        });
+        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
+        return { success: true, id: manutencaoId };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+
+        const created = await createLocalManutencao(ctx.user.id, {
+          ...rest,
+          data,
+          status: "concluida",
+          proximaManutencao: proximaManutencao || undefined,
+          valorMaoObra: totais.valorMaoObra.toFixed(2),
+          valorPecas: totais.valorPecas.toFixed(2),
+          valorTotal: totais.valorTotal.toFixed(2),
+          custo: totais.valorTotal.toFixed(2),
+          pecas: pecasPayload,
+        });
+        try {
+          aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque(pecasResolvidas));
+        } catch (baixaErr) {
+          await deleteLocalManutencao(ctx.user.id, created.id);
+          throw baixaErr;
+        }
+        return { success: true, id: created.id, localFallback: true };
       }
-      return { success: true, id: manutencaoId };
     }),
 
   update: protectedProcedure
     .input(manutencaoBaseInput.extend({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
-      const [anterior] = await db
-        .select({ maquinaId: manutencoes.maquinaId })
-        .from(manutencoes)
-        .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
-        .limit(1);
-      if (!anterior) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
+
+      let anterior: { maquinaId: number } | null = null;
+      let pecasAntigas: {
+        estoqueId: number | null;
+        quantidade: string | number;
+        valorUnitario?: string | number | null;
+      }[] = [];
+      let fromLocal = false;
+
+      try {
+        const [row] = await db
+          .select({ maquinaId: manutencoes.maquinaId })
+          .from(manutencoes)
+          .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
+          .limit(1);
+        anterior = row ?? null;
+        if (anterior) {
+          pecasAntigas = await db
+            .select({
+              estoqueId: manutencaoPecas.estoqueId,
+              quantidade: manutencaoPecas.quantidade,
+              valorUnitario: manutencaoPecas.valorUnitario,
+            })
+            .from(manutencaoPecas)
+            .where(eq(manutencaoPecas.manutencaoId, id));
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        fromLocal = true;
+        const local = await getLocalManutencao(ctx.user.id, id);
+        if (local) {
+          anterior = { maquinaId: Number(local.maquinaId) };
+          pecasAntigas = (local.pecas ?? []).map(p => ({
+            estoqueId: p.estoqueId ?? null,
+            quantidade: p.quantidade,
+            valorUnitario: p.valorUnitario,
+          }));
+        }
       }
+
+      if (!anterior) {
+        const local = await getLocalManutencao(ctx.user.id, id);
+        if (!local) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
+        }
+        fromLocal = true;
+        anterior = { maquinaId: Number(local.maquinaId) };
+        pecasAntigas = (local.pecas ?? []).map(p => ({
+          estoqueId: p.estoqueId ?? null,
+          quantidade: p.quantidade,
+          valorUnitario: p.valorUnitario,
+        }));
+      }
+
       await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
         allowSameInactiveId: anterior.maquinaId,
       });
-      await validarSaldoEstoquePecas(pecas);
-      const totais = calcularTotaisManutencao(pecas, valorMaoObra);
-      await db
-        .update(manutencoes)
-        .set({
-          ...rest,
-          data,
-          proximaManutencao: proximaManutencao || null,
-          valorMaoObra: totais.valorMaoObra.toFixed(2),
-          valorPecas: totais.valorPecas.toFixed(2),
-          valorTotal: totais.valorTotal.toFixed(2),
-          custo: totais.valorTotal.toFixed(2),
-        })
-        .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
-      // Substitui as peças: remove as antigas e insere as novas
-      await db.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, id));
-      if (pecas && pecas.length > 0) {
-        await db.insert(manutencaoPecas).values(
-          pecas.map(p => ({
-            manutencaoId: id,
-            estoqueId: p.estoqueId ?? undefined,
-            nome: p.nome,
-            quantidade: p.quantidade.toFixed(2),
-            valorUnitario: p.valorUnitario.toFixed(2),
-            valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
-          }))
-        );
+
+      const credito = new Map<number, number>();
+      const custoCongelado = new Map<number, number>();
+      for (const p of pecasAntigas) {
+        if (p.estoqueId == null) continue;
+        const q = parseFloat(String(p.quantidade));
+        if (Number.isFinite(q) && q > 0) {
+          credito.set(p.estoqueId, (credito.get(p.estoqueId) ?? 0) + q);
+        }
+        const vu = parseCustoMedio(p.valorUnitario);
+        if (vu != null && !custoCongelado.has(p.estoqueId)) {
+          custoCongelado.set(p.estoqueId, vu);
+        }
       }
-      return { success: true };
+
+      const pecasResolvidas = await resolverPecasComCustoMedioEstoque(
+        pecas,
+        credito,
+        custoCongelado,
+      );
+      const totais = calcularTotaisManutencao(pecasResolvidas, valorMaoObra);
+      const pecasPayload = pecasLocaisFromResolvidas(pecasResolvidas);
+      const localPayload = {
+        ...rest,
+        data,
+        proximaManutencao: proximaManutencao || null,
+        prestadorNome: rest.prestadorNome ?? null,
+        prestadorContato: rest.prestadorContato ?? null,
+        descricao: rest.descricao ?? null,
+        valorMaoObra: totais.valorMaoObra.toFixed(2),
+        valorPecas: totais.valorPecas.toFixed(2),
+        valorTotal: totais.valorTotal.toFixed(2),
+        custo: totais.valorTotal.toFixed(2),
+        pecas: pecasPayload,
+      };
+
+      if (fromLocal) {
+        await updateLocalManutencao(ctx.user.id, id, localPayload);
+        aplicarBaixaEstoqueLocalPendente(
+          montarDeltasBaixaEstoque(pecasResolvidas, pecasAntigas),
+        );
+        return { success: true, localFallback: true };
+      }
+
+      try {
+        let pendenteLocal = new Map<number, number>();
+        await db.transaction(async tx => {
+          await tx
+            .update(manutencoes)
+            .set({
+              ...rest,
+              data,
+              proximaManutencao: proximaManutencao || null,
+              prestadorNome: rest.prestadorNome ?? null,
+              prestadorContato: rest.prestadorContato ?? null,
+              descricao: rest.descricao ?? null,
+              valorMaoObra: totais.valorMaoObra.toFixed(2),
+              valorPecas: totais.valorPecas.toFixed(2),
+              valorTotal: totais.valorTotal.toFixed(2),
+              custo: totais.valorTotal.toFixed(2),
+            })
+            .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
+
+          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, id));
+          if (pecasResolvidas.length > 0) {
+            await tx.insert(manutencaoPecas).values(
+              pecasResolvidas.map(p => ({
+                manutencaoId: id,
+                estoqueId: p.estoqueId,
+                nome: p.nome,
+                quantidade: p.quantidade.toFixed(2),
+                valorUnitario: p.valorUnitario.toFixed(2),
+                valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+              })),
+            );
+          }
+          pendenteLocal = await aplicarBaixaEstoquePecasManutencao(
+            tx,
+            pecasResolvidas,
+            pecasAntigas,
+          );
+        });
+        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
+        // Mantém espelho local em sincronia (evita edição “sumir” ao reabrir).
+        const localExistente = await getLocalManutencao(ctx.user.id, id);
+        if (localExistente) {
+          await updateLocalManutencao(ctx.user.id, id, localPayload);
+        }
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+
+        await updateLocalManutencao(ctx.user.id, id, localPayload);
+        aplicarBaixaEstoqueLocalPendente(
+          montarDeltasBaixaEstoque(pecasResolvidas, pecasAntigas),
+        );
+        return { success: true, localFallback: true };
+      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
-      await db.delete(manutencoes).where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
-      return { success: true };
+      let pecasAntigas: { estoqueId: number | null; quantidade: string | number }[] = [];
+      let fromLocal = false;
+
+      try {
+        const [row] = await db
+          .select({ id: manutencoes.id })
+          .from(manutencoes)
+          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
+          .limit(1);
+        if (row) {
+          pecasAntigas = await db
+            .select({
+              estoqueId: manutencaoPecas.estoqueId,
+              quantidade: manutencaoPecas.quantidade,
+            })
+            .from(manutencaoPecas)
+            .where(eq(manutencaoPecas.manutencaoId, input.id));
+        } else {
+          fromLocal = true;
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        fromLocal = true;
+      }
+
+      if (fromLocal) {
+        const local = await getLocalManutencao(ctx.user.id, input.id);
+        if (!local) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
+        }
+        pecasAntigas = (local.pecas ?? []).map(p => ({
+          estoqueId: p.estoqueId ?? null,
+          quantidade: p.quantidade,
+        }));
+        // Devolve peças ao estoque (delta negativo = estorno da baixa).
+        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
+        await deleteLocalManutencao(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
+
+      try {
+        let pendenteLocal = new Map<number, number>();
+        await db.transaction(async tx => {
+          // Devolve saldo antes de apagar o registro.
+          pendenteLocal = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
+          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
+          await tx
+            .delete(manutencoes)
+            .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
+        });
+        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        const local = await getLocalManutencao(ctx.user.id, input.id);
+        if (local) {
+          pecasAntigas = (local.pecas ?? []).map(p => ({
+            estoqueId: p.estoqueId ?? null,
+            quantidade: p.quantidade,
+          }));
+        }
+        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
+        await deleteLocalManutencao(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
     }),
 });
 
@@ -7070,7 +7585,21 @@ const estoqueRouter = router({
           status: "ativa",
         });
 
-        await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+        // Entrada com valor → custo médio ponderado. Saída → só saldo.
+        const patch: { quantidade: string; valorUnitario?: string } = { quantidade: String(novo) };
+        if (qty > 0) {
+          const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
+          if (Number.isFinite(valorTotalEntrada) && valorTotalEntrada > 0) {
+            const medio = calcularCustoMedioPonderado({
+              quantidadeAnterior: atual,
+              custoMedioAnterior: parseCustoMedio(item.valorUnitario),
+              quantidadeEntrada: qty,
+              valorTotalEntrada,
+            });
+            if (medio != null) patch.valorUnitario = formatCustoMedio(medio);
+          }
+        }
+        await db.update(estoque).set(patch).where(eq(estoque.id, input.estoqueId));
 
         return {
           success: true,
@@ -7567,20 +8096,40 @@ const estoqueRouter = router({
   listByCategories: protectedProcedure
     .input(z.object({ categorias: z.array(z.string()).min(1) }))
     .query(async ({ input }) => {
-      return db
-        .select({
-          id: estoque.id,
-          nome: estoque.nome,
-          categoria: estoque.categoria,
-          subcategoria: estoque.subcategoria,
-          unidade: estoque.unidade,
-          quantidade: estoque.quantidade,
-          valorUnitario: estoque.valorUnitario,
-          fabricante: estoque.fabricante,
-        })
-        .from(estoque)
-        .where(inArray(estoque.categoria, input.categorias))
-        .orderBy(estoque.nome);
+      const sortByNome = <T extends { nome?: string | null }>(rows: T[]) =>
+        [...rows].sort((a, b) =>
+          String(a.nome ?? "").localeCompare(String(b.nome ?? ""), "pt-BR"),
+        );
+
+      try {
+        const rows = await db
+          .select({
+            id: estoque.id,
+            produtoId: estoque.produtoId,
+            fazendaId: estoque.fazendaId,
+            nome: estoque.nome,
+            categoria: estoque.categoria,
+            subcategoria: estoque.subcategoria,
+            unidade: estoque.unidade,
+            quantidade: estoque.quantidade,
+            valorUnitario: estoque.valorUnitario,
+            fabricante: estoque.fabricante,
+            situacao: estoque.situacao,
+            identificadorUnico: estoque.identificadorUnico,
+            observacoes: estoque.observacoes,
+            createdAt: estoque.createdAt,
+            updatedAt: estoque.updatedAt,
+          })
+          .from(estoque)
+          .where(inArray(estoque.categoria, input.categorias))
+          .orderBy(estoque.nome);
+        const localRows = devLocalStore.listByCategories(input.categorias);
+        if (localRows.length === 0) return rows;
+        return sortByNome(mergeEstoqueListPreferLocal(rows, localRows));
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        return sortByNome(devLocalStore.listByCategories(input.categorias));
+      }
     }),
 });
 
