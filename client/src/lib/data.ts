@@ -50,10 +50,7 @@ export const menuItems: MenuItem[] = [
     icon: "fd_management_checklist",
     children: [
       { label: "Visão Geral", icon: "", path: "/manejo/visao-geral" },
-      { label: "Meus Manejos", icon: "", path: "/manejos/meus" },
-      { label: "Criar Manejo", icon: "", path: "/manejos/criar" },
-      { label: "Listar Manejos", icon: "", path: "/manejos/listar" },
-      { label: "Manejos Básicos", icon: "", path: "/manejos/basicos" },
+      { label: "Registros de Manejo", icon: "", path: "/manejo/registros" },
     ],
   },
   {

@@ -36,7 +36,11 @@ import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import SuppliesManagementPage from "./pages/SuppliesManagementPage";
-import { AdvancedManagementPage } from "./pages/AdvancedManagementPage";
+import {
+  ManejoVisaoGeralPage,
+  ManejoRegistrosPage,
+  ManejoFormPage,
+} from "./pages/ManejoPages";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
@@ -88,12 +92,14 @@ function ProtectedRoutes() {
       <Route path="/rebanho/novo-animal" component={NewAnimalPage} />
       <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
 
-      {/* Manejo — iRancho label + rotas FD */}
-      <Route path="/manejo/visao-geral" component={AdvancedManagementPage} />
-      <Route path="/manejos/meus" component={AdvancedManagementPage} />
-      <Route path="/manejos/criar" component={AdvancedManagementPage} />
-      <Route path="/manejos/listar" component={AdvancedManagementPage} />
-      <Route path="/manejos/basicos" component={AdvancedManagementPage} />
+      {/* Manejo */}
+      <Route path="/manejo/visao-geral" component={ManejoVisaoGeralPage} />
+      <Route path="/manejo/registros/cadastro" component={ManejoFormPage} />
+      <Route path="/manejo/registros" component={ManejoRegistrosPage} />
+      <Route path="/manejos/meus" component={() => <RedirectTo to="/manejo/registros" />} />
+      <Route path="/manejos/listar" component={() => <RedirectTo to="/manejo/registros" />} />
+      <Route path="/manejos/criar" component={() => <RedirectTo to="/manejo/registros/cadastro" />} />
+      <Route path="/manejos/basicos" component={() => <RedirectTo to="/manejo/registros" />} />
 
       {/* Insumos */}
       <Route path="/insumos/visao-geral" component={() => <InsumosVisaoGeralPage />} />

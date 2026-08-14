@@ -2609,7 +2609,7 @@ export function QuickAccessPage() {
           { label: "Cadastrar Rebanho", icon: "__calf__", path: "/rebanho/lista-animais" },
           { label: "Cadastrar Insumo", icon: "fd_supply_bag", path: "/insumos/cadastro" },
           { label: "Cadastrar Máquina", icon: "fd_tractor", path: "/maquinas/visao-geral" },
-          { label: "Lançar Manejo", icon: "fd_management_checklist", path: "/manejos/criar" },
+          { label: "Lançar Manejo", icon: "fd_management_checklist", path: "/manejo/registros/cadastro" },
           { label: "Lançar Financeiro", icon: "fd_finance_cycle", path: "/financeiro/movimentacao" },
         ].map((item, i) => (
           <button

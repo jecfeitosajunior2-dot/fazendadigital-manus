@@ -7,7 +7,7 @@ import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, Heart, Plus, MapPin } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, Weight, Syringe, HeartPulse, Plus, MapPin } from 'lucide-react';
 import {
   FormLabel,
   FieldBox,
@@ -1080,7 +1080,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-gray-800 flex items-center">
-                  <Heart className="w-5 h-5 mr-2 text-pink-600" />
+                  <HeartPulse className="w-5 h-5 mr-2 text-pink-600" />
                   Histórico Reprodutivo
                 </h2>
                 {!loadingRepro && !showReproForm && (
@@ -1269,7 +1269,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                 </div>
               ) : sortedAnimalRepro.length === 0 && !showReproForm ? (
                 <div className="text-center py-10 px-4 text-gray-500">
-                  <Heart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <HeartPulse className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                   <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
                     {reproEmptyState.titulo}
                     <br />

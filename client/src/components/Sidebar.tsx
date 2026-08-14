@@ -352,11 +352,16 @@ function SidebarIcon({ icon, className = "" }: { icon: string; className?: strin
   return <span className={`material-icons ${className}`}>{icon}</span>;
 }
 
+function isMenuPathActive(path: string | undefined, currentPath: string): boolean {
+  if (!path) return false;
+  return currentPath === path || currentPath.startsWith(`${path}/`);
+}
+
 function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: MenuItem; depth?: number; collapsed: boolean; currentPath: string }) {
   const [, setLocation] = useLocation();
   const hasChildren = item.children && item.children.length > 0;
-  const isActive = item.path === currentPath;
-  const isChildActive = item.children?.some(c => c.path === currentPath) || false;
+  const isActive = isMenuPathActive(item.path, currentPath);
+  const isChildActive = item.children?.some(c => isMenuPathActive(c.path, currentPath)) || false;
   const [open, setOpen] = useState(isChildActive);
 
   useEffect(() => {
