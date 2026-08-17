@@ -151,6 +151,13 @@ import {
   resolveEffectiveStatus,
   validarBrincoAtivoImportacao,
 } from "../shared/brincoAtivo";
+import {
+  assertFazendaDoUsuario,
+  assertLoteNaFazenda,
+  assertAnimalNaFazenda,
+  assertRfidUnicoEntreAtivos,
+} from "./manejoContexto";
+import { normalizeBrincoKey } from "../shared/brincoAtivo";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -8846,6 +8853,216 @@ const pessoasRouter = router({
     }),
 });
 
+// ─── MANEJO ROUTER ───────────────────────────────────────────────────────────
+const motivoTrocaBrincoSchema = z.enum([
+  "perda",
+  "danificado",
+  "reidentificacao",
+  "erro_cadastro",
+  "outro",
+]);
+
+const operacaoBrincoSchema = z.enum(["rfid", "brinco", "ambos"]);
+
+const manejoRouter = router({
+  /**
+   * Registro pontual de Brinco Eletrônico.
+   * Responsável = usuário autenticado. Atualiza animal + histórico na mesma operação.
+   */
+  registrarPontualBrinco: protectedProcedure
+    .input(
+      z.object({
+        fazendaId: z.number().int().positive(),
+        data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        loteId: z.number().int().positive().nullable().optional(),
+        animalId: z.number().int().positive(),
+        operacao: operacaoBrincoSchema,
+        novoRfid: z.string().max(80).optional(),
+        novoBrinco: z.string().max(50).optional(),
+        motivo: motivoTrocaBrincoSchema.optional(),
+        observacoes: z.string().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
+      await assertLoteNaFazenda(ctx.user.id, input.fazendaId, input.loteId ?? null);
+      const animal = await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
+
+      const brincoAtual = (animal.brinco ?? "").trim() || null;
+      const rfidAtual = (animal.brincoEletronico ?? "").trim() || null;
+      const novoRfid = (input.novoRfid ?? "").trim() || null;
+      const novoBrinco = (input.novoBrinco ?? "").trim() || null;
+      const obsUser = (input.observacoes ?? "").trim() || null;
+      const alteraRfid = input.operacao === "rfid" || input.operacao === "ambos";
+      const alteraBrinco = input.operacao === "brinco" || input.operacao === "ambos";
+
+      if (alteraRfid) {
+        if (!novoRfid) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o novo RFID." });
+        }
+        if (normalizeBrincoKey(novoRfid) === normalizeBrincoKey(rfidAtual)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O novo RFID é igual ao RFID atual. Não há alteração.",
+          });
+        }
+      }
+      if (alteraBrinco) {
+        if (!novoBrinco) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o novo brinco." });
+        }
+        if (normalizeBrincoKey(novoBrinco) === normalizeBrincoKey(brincoAtual)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O novo brinco é igual ao brinco atual. Não há alteração.",
+          });
+        }
+      }
+
+      const exigeMotivo =
+        alteraBrinco || (alteraRfid && Boolean(rfidAtual));
+      if (exigeMotivo && !input.motivo) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Informe o motivo da troca de identificação.",
+        });
+      }
+      const motivo = input.motivo ?? "reidentificacao";
+
+      const operacaoLabel =
+        input.operacao === "rfid"
+          ? "Vincular / atualizar RFID"
+          : input.operacao === "brinco"
+            ? "Troca de brinco visual"
+            : "Atualizar ambos";
+
+      const assertBrincoOuMensagemAmigavel = async (useLocal: boolean) => {
+        if (!alteraBrinco || !novoBrinco) return;
+        try {
+          await assertBrincoUnicoEntreAtivos(
+            ctx.user.id,
+            novoBrinco,
+            animal.status ?? "ativo",
+            input.animalId,
+            useLocal,
+          );
+        } catch (err) {
+          if (
+            err instanceof TRPCError &&
+            err.message.toLowerCase().includes("já está sendo usado")
+          ) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Este brinco já está vinculado a outro animal.",
+            });
+          }
+          throw err;
+        }
+      };
+
+      const montarPartesObs = () => {
+        const partesObs: string[] = [operacaoLabel];
+        if (alteraRfid) {
+          partesObs.push(`RFID: ${rfidAtual || "Não vinculado"} → ${novoRfid}`);
+        }
+        if (alteraBrinco) {
+          partesObs.push(
+            `Brinco visual: ${brincoAtual || "Não vinculado"} → ${novoBrinco}`,
+          );
+        }
+        if (obsUser) partesObs.push(obsUser);
+        return partesObs;
+      };
+
+      const montarHistoricoRow = () => {
+        const partesObs = montarPartesObs();
+        // brincoNovo é varchar(50): o detalhe do RFID fica nas observações
+        let brincoNovoHist = alteraBrinco
+          ? (novoBrinco as string)
+          : brincoAtual || novoRfid || "—";
+        if (!brincoNovoHist) brincoNovoHist = novoRfid || "—";
+
+        return {
+          userId: ctx.user.id,
+          animalId: input.animalId,
+          brincoAnterior: brincoAtual ? brincoAtual.slice(0, 50) : null,
+          brincoNovo: brincoNovoHist.slice(0, 50),
+          motivo,
+          observacoes: partesObs.join(" · ") || null,
+          dataAlteracao: input.data,
+          usuarioNome: ctx.user.name?.trim() || null,
+        };
+      };
+
+      const runLocal = async () => {
+        await assertBrincoOuMensagemAmigavel(true);
+        if (alteraRfid) {
+          await assertRfidUnicoEntreAtivos(ctx.user.id, novoRfid, input.animalId, true);
+        }
+
+        const setData: Record<string, unknown> = {};
+        if (alteraBrinco) setData.brinco = novoBrinco;
+        if (alteraRfid) setData.brincoEletronico = novoRfid;
+
+        const historicoRow = montarHistoricoRow();
+
+        await updateLocalAnimal(ctx.user.id, input.animalId, setData);
+        try {
+          await createLocalHistoricoBrinco(ctx.user.id, historicoRow);
+        } catch (histErr) {
+          await updateLocalAnimal(ctx.user.id, input.animalId, {
+            brinco: brincoAtual,
+            brincoEletronico: rfidAtual,
+          });
+          throw histErr;
+        }
+        return { success: true as const, localFallback: true as const };
+      };
+
+      try {
+        await assertBrincoOuMensagemAmigavel(false);
+        if (alteraRfid) {
+          await assertRfidUnicoEntreAtivos(ctx.user.id, novoRfid, input.animalId);
+        }
+
+        const setData: Record<string, unknown> = {};
+        if (alteraBrinco) setData.brinco = novoBrinco;
+        if (alteraRfid) setData.brincoEletronico = novoRfid;
+
+        const historicoRow = montarHistoricoRow();
+
+        await db.transaction(async tx => {
+          await tx
+            .update(animais)
+            .set(setData)
+            .where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
+          await tx.insert(historicoBrincos).values(historicoRow);
+        });
+
+        try {
+          await updateLocalAnimal(ctx.user.id, input.animalId, setData);
+          await createLocalHistoricoBrinco(ctx.user.id, historicoRow);
+        } catch (mirrorError) {
+          console.warn("[manejo.registrarPontualBrinco] Espelho local:", mirrorError);
+        }
+
+        return {
+          success: true as const,
+          tipo: "brinco-eletronico" as const,
+          animalId: input.animalId,
+          responsavelId: ctx.user.id,
+          responsavelNome: ctx.user.name?.trim() || null,
+        };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        if (isDatabaseUnavailable(err)) {
+          return runLocal();
+        }
+        throw err;
+      }
+    }),
+});
+
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: authRouter,
@@ -8869,5 +9086,6 @@ export const appRouter = router({
   rebanho: rebanhoOverviewRouter,
   brincos: brincosRouter,
   pessoas: pessoasRouter,
+  manejo: manejoRouter,
 });
 export type AppRouter = typeof appRouter;

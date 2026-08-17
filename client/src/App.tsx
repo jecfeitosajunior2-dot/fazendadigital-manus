@@ -40,6 +40,7 @@ import {
   ManejoVisaoGeralPage,
   ManejoRegistrosPage,
   ManejoFormPage,
+  ManejoSessaoPage,
 } from "./pages/ManejoPages";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
@@ -94,6 +95,7 @@ function ProtectedRoutes() {
 
       {/* Manejo */}
       <Route path="/manejo/visao-geral" component={ManejoVisaoGeralPage} />
+      <Route path="/manejo/registros/sessao" component={ManejoSessaoPage} />
       <Route path="/manejo/registros/cadastro" component={ManejoFormPage} />
       <Route path="/manejo/registros" component={ManejoRegistrosPage} />
       <Route path="/manejos/meus" component={() => <RedirectTo to="/manejo/registros" />} />
