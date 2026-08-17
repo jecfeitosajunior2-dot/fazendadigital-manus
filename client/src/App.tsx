@@ -42,6 +42,7 @@ import {
   ManejoFormPage,
   ManejoSessaoPage,
 } from "./pages/ManejoPages";
+import DiagnosticoAt05Page from "./pages/DiagnosticoAt05Page";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
@@ -102,6 +103,9 @@ function ProtectedRoutes() {
       <Route path="/manejos/listar" component={() => <RedirectTo to="/manejo/registros" />} />
       <Route path="/manejos/criar" component={() => <RedirectTo to="/manejo/registros/cadastro" />} />
       <Route path="/manejos/basicos" component={() => <RedirectTo to="/manejo/registros" />} />
+
+      {/* POC temporária — Diagnóstico AT05 (Web Serial). Sem item de menu. */}
+      <Route path="/diagnostico/at05" component={DiagnosticoAt05Page} />
 
       {/* Insumos */}
       <Route path="/insumos/visao-geral" component={() => <InsumosVisaoGeralPage />} />
