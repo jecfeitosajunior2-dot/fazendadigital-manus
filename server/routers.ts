@@ -774,6 +774,111 @@ const animaisRouter = router({
       return animal ? await enrichLocalAnimal(ctx.user.id, animal) : null;
     }),
 
+  /**
+   * POC AT05 — busca animal por brinco eletrônico com igualdade exata (string).
+   * Não usa LIKE. Não converte RFID para Number.
+   * Somente leitura — sem gravação.
+   */
+  getByBrincoEletronicoExact: protectedProcedure
+    .input(z.object({ brincoEletronico: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const rfid = input.brincoEletronico.trim();
+      if (!rfid) return null;
+
+      try {
+        const [animal] = await db
+          .select()
+          .from(animais)
+          .where(
+            and(
+              eq(animais.userId, ctx.user.id),
+              sql`TRIM(${animais.brincoEletronico}) = ${rfid}`,
+            ),
+          )
+          .limit(1);
+
+        if (!animal) return null;
+
+        let loteNome: string | null = null;
+        if (animal.loteId) {
+          const [lote] = await db
+            .select({ nome: lotes.nome })
+            .from(lotes)
+            .where(eq(lotes.id, animal.loteId))
+            .limit(1);
+          loteNome = lote?.nome ?? null;
+        }
+
+        // Mesma regra do Rebanho: fazenda do animal OU do lote (lote.fazendaId / pasto).
+        let fazendaIdResolvido: number | null =
+          animal.fazendaId != null ? Number(animal.fazendaId) : null;
+        if (fazendaIdResolvido == null && animal.loteId != null) {
+          const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
+          const fromLote = loteFazendaById.get(Number(animal.loteId));
+          fazendaIdResolvido = fromLote != null ? Number(fromLote) : null;
+        }
+
+        let fazendaNome: string | null = null;
+        if (fazendaIdResolvido != null) {
+          const [fazenda] = await db
+            .select({ nome: fazendas.nome })
+            .from(fazendas)
+            .where(eq(fazendas.id, fazendaIdResolvido))
+            .limit(1);
+          fazendaNome = fazenda?.nome ?? null;
+        }
+
+        return {
+          id: animal.id,
+          brinco: animal.brinco,
+          brincoEletronico: animal.brincoEletronico,
+          sexo: animal.sexo,
+          categoria: animal.categoria,
+          status: animal.status,
+          loteId: animal.loteId,
+          loteNome,
+          fazendaId: fazendaIdResolvido,
+          fazendaNome,
+        };
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+      }
+
+      const lista = await listLocalAnimais(ctx.user.id);
+      const local = lista.find(a => (a.brincoEletronico ?? "").trim() === rfid) ?? null;
+      if (!local) return null;
+      const enriched = await enrichLocalAnimal(ctx.user.id, local);
+
+      let fazendaIdLocal: number | null =
+        enriched.fazendaId != null ? Number(enriched.fazendaId) : null;
+      let fazendaNomeLocal: string | null = null;
+      if (fazendaIdLocal == null && enriched.loteId != null) {
+        const lotesLocais = await listLocalLotes(ctx.user.id);
+        const lote = lotesLocais.find(l => l.id === Number(enriched.loteId));
+        if (lote?.fazendaId != null) {
+          fazendaIdLocal = Number(lote.fazendaId);
+        }
+      }
+      if (fazendaIdLocal != null) {
+        const fazendasLocais = await listLocalFazendas(ctx.user.id);
+        fazendaNomeLocal =
+          fazendasLocais.find(f => f.id === fazendaIdLocal)?.nome ?? null;
+      }
+
+      return {
+        id: enriched.id,
+        brinco: enriched.brinco ?? null,
+        brincoEletronico: enriched.brincoEletronico ?? null,
+        sexo: enriched.sexo,
+        categoria: enriched.categoria ?? null,
+        status: enriched.status ?? null,
+        loteId: enriched.loteId ?? null,
+        loteNome: (enriched as { loteNome?: string | null }).loteNome ?? null,
+        fazendaId: fazendaIdLocal,
+        fazendaNome: fazendaNomeLocal,
+      };
+    }),
+
   create: protectedProcedure
     .input(z.object({
       brinco: z.string().optional(),
@@ -8880,6 +8985,8 @@ const manejoRouter = router({
         novoRfid: z.string().max(80).optional(),
         novoBrinco: z.string().max(50).optional(),
         motivo: motivoTrocaBrincoSchema.optional(),
+        /** Complemento obrigatório quando motivo = "outro". Persistido nas observações do histórico. */
+        motivoDetalhe: z.string().max(500).optional(),
         observacoes: z.string().max(2000).optional(),
       }),
     )
@@ -8893,6 +9000,7 @@ const manejoRouter = router({
       const novoRfid = (input.novoRfid ?? "").trim() || null;
       const novoBrinco = (input.novoBrinco ?? "").trim() || null;
       const obsUser = (input.observacoes ?? "").trim() || null;
+      const motivoDetalhe = (input.motivoDetalhe ?? "").trim() || null;
       const alteraRfid = input.operacao === "rfid" || input.operacao === "ambos";
       const alteraBrinco = input.operacao === "brinco" || input.operacao === "ambos";
 
@@ -8925,6 +9033,12 @@ const manejoRouter = router({
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Informe o motivo da troca de identificação.",
+        });
+      }
+      if (exigeMotivo && input.motivo === "outro" && !motivoDetalhe) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Informe o motivo da alteração.",
         });
       }
       const motivo = input.motivo ?? "reidentificacao";
@@ -8969,6 +9083,9 @@ const manejoRouter = router({
           partesObs.push(
             `Brinco visual: ${brincoAtual || "Não vinculado"} → ${novoBrinco}`,
           );
+        }
+        if (motivo === "outro" && motivoDetalhe) {
+          partesObs.push(`Motivo: Outro — ${motivoDetalhe}`);
         }
         if (obsUser) partesObs.push(obsUser);
         return partesObs;
