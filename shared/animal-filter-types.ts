@@ -81,7 +81,7 @@ export type AnimaisListFiltersState = {
   produtorOrigem: string;
   pai: string;
   mae: string;
-  statusFiltro: string; // 'ativo' | 'inativo' | ''
+  statusFiltro: string; // 'ativo' | 'inativo' | 'morto' | 'vendido' | 'transferido' | 'todos'
   // Filtro por data de entrada na fazenda
   dataEntradaDe: string;
   dataEntradaAte: string;
@@ -119,6 +119,32 @@ export function persistRebanhoFazendaId(fazendaId: string): void {
   }
 }
 
+/**
+ * Resolve o parâmetro `status` enviado a `animais.list`.
+ * Padrão operacional: ativos. `todos` = sem filtro de status.
+ * `inativo` = qualquer status diferente de `ativo` (vendido/morto/transferido).
+ */
+export function resolveAnimaisListStatusParam(filters: AnimaisListFiltersState): string | undefined {
+  if (filters.apenasInativos) return 'inativo';
+  const s = (filters.statusFiltro ?? '').trim().toLowerCase();
+  if (!s || s === 'ativo') return 'ativo';
+  if (s === 'todos') return undefined;
+  return s;
+}
+
+/** Compara status do animal com o filtro da lista (ativos por padrão). */
+export function animalMatchesStatusFiltro(
+  animalStatus: string | null | undefined,
+  filtro: string | null | undefined,
+): boolean {
+  const status = ((animalStatus ?? 'ativo').trim().toLowerCase() || 'ativo');
+  const f = (filtro ?? '').trim().toLowerCase();
+  if (!f || f === 'todos') return true;
+  if (f === 'ativo') return status === 'ativo';
+  if (f === 'inativo') return status !== 'ativo';
+  return status === f;
+}
+
 export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   fazendaId: '',
   raca: '',
@@ -151,7 +177,7 @@ export const INITIAL_ANIMAIS_LIST_FILTERS: AnimaisListFiltersState = {
   produtorOrigem: '',
   pai: '',
   mae: '',
-  statusFiltro: '',
+  statusFiltro: 'ativo',
   dataEntradaDe: '',
   dataEntradaAte: '',
   apenasEmCarencia: false,
@@ -182,7 +208,7 @@ export function animaisFiltersToApiParams(filters: AnimaisListFiltersState, debo
     marcadores: filters.marcadores.length > 0 ? filters.marcadores : undefined,
     pastoId: filters.pastoId ? Number(filters.pastoId) : undefined,
     brincoEletronico: filters.rfid || undefined,
-    status: filters.statusFiltro || (filters.apenasInativos ? 'inativo' : undefined),
+    status: resolveAnimaisListStatusParam(filters),
     idadeMesesMin: !filters.semDataNascimento && idadeMin !== undefined && !Number.isNaN(idadeMin) ? idadeMin : undefined,
     idadeMesesMax: !filters.semDataNascimento && idadeMax !== undefined && !Number.isNaN(idadeMax) ? idadeMax : undefined,
     semDataNascimento: filters.semDataNascimento || undefined,
@@ -267,11 +293,21 @@ export function animaisFiltersFromSearchParams(search: string): AnimaisListFilte
 export function readPersistedAnimaisListFilters(): AnimaisListFiltersState {
   try {
     const raw = sessionStorage.getItem(ANIMAIS_LIST_FILTERS_STORAGE_KEY);
-    if (raw) return { ...INITIAL_ANIMAIS_LIST_FILTERS, ...JSON.parse(raw) as Partial<AnimaisListFiltersState> };
+    if (raw) {
+      const parsed = { ...INITIAL_ANIMAIS_LIST_FILTERS, ...JSON.parse(raw) as Partial<AnimaisListFiltersState> };
+      // Sessões antigas usavam "" como "Todos"; padrão operacional passou a ser Ativo.
+      if (!parsed.statusFiltro) parsed.statusFiltro = 'ativo';
+      return parsed;
+    }
   } catch {
     // ignora JSON inválido
   }
   return INITIAL_ANIMAIS_LIST_FILTERS;
+}
+
+function isStatusFiltroDiferenteDoPadrao(statusFiltro: string): boolean {
+  const s = (statusFiltro ?? '').trim().toLowerCase();
+  return Boolean(s) && s !== 'ativo';
 }
 
 export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boolean {
@@ -305,7 +341,7 @@ export function hasActiveAnimaisFilters(filters: AnimaisListFiltersState): boole
     !!filters.produtorOrigem ||
     !!filters.pai ||
     !!filters.mae ||
-    !!filters.statusFiltro ||
+    isStatusFiltroDiferenteDoPadrao(filters.statusFiltro) ||
     !!filters.dataEntradaDe ||
     !!filters.dataEntradaAte ||
     filters.apenasEmCarencia ||
@@ -323,7 +359,7 @@ export function hasActiveMaisFiltrosAvancados(filters: AnimaisListFiltersState):
     !!filters.idadeMesesMin.trim() ||
     !!filters.idadeMesesMax.trim() ||
     !!filters.rfid ||
-    !!filters.statusFiltro ||
+    isStatusFiltroDiferenteDoPadrao(filters.statusFiltro) ||
     !!filters.dataEntradaDe ||
     !!filters.dataEntradaAte ||
     filters.apenasEmCarencia ||

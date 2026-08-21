@@ -183,7 +183,15 @@ export const saudeRegistros = mysqlTable("saude_registros", {
   descricao: text("descricao"),
   medicamento: varchar("medicamento", { length: 200 }),
   dosagem: varchar("dosagem", { length: 100 }),
+  viaAplicacao: varchar("viaAplicacao", { length: 80 }),
+  /** Vínculo com estoque (Insumos) — padrão Manutenção. */
+  estoqueId: int("estoqueId"),
+  /** Quantidade baixada na unidade base do estoque. */
+  quantidadeConsumo: decimal("quantidadeConsumo", { precision: 12, scale: 4 }),
+  /** Custo médio unitário congelado no momento do manejo. */
+  valorUnitario: decimal("valorUnitario", { precision: 10, scale: 2 }),
   veterinario: varchar("veterinario", { length: 200 }),
+  /** Custo total congelado (quantidadeConsumo × valorUnitario). */
   custo: decimal("custo", { precision: 10, scale: 2 }),
   dataRegistro: date("dataRegistro").notNull(),
   proximaData: date("proximaData"),

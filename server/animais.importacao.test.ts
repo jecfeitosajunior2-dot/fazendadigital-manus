@@ -216,7 +216,7 @@ describe('Importação em Massa de Animais — Validação', () => {
   it('rejeita brinco já usado por animal ativo no banco', () => {
     const banco = new Set([normalizeBrincoKey('BR-005')]);
     const { erros } = validarLinhas([{ brinco: 'BR-005', sexo: 'macho' }], banco);
-    expect(erros.some(e => e.mensagem.includes('já está sendo usado por outro animal ativo'))).toBe(true);
+    expect(erros.some(e => e.mensagem.includes('Já existe um animal ativo com o brinco visual'))).toBe(true);
   });
 
   it('permite brinco de animal inativo no banco para novo animal ativo', () => {

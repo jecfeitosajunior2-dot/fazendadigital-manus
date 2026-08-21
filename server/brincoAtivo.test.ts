@@ -77,8 +77,27 @@ describe("brincoAtivo", () => {
   it("monta mensagem clara orientando como resolver o conflito", () => {
     const msg = buildBrincoAtivoConflitoMessage("12", { id: 205, brinco: "12" });
     expect(msg).toBe(
-      'O brinco "12" já está sendo usado por outro animal ativo. Para usar esse número, altere o brinco do animal atual ou inative o registro anterior.',
+      "Já existe um animal ativo com o brinco visual 12 nesta fazenda.",
     );
+  });
+
+  it("permite mesmo brinco ativo em fazendas diferentes quando fazendaId é informado", () => {
+    const lista = [
+      { id: 1, brinco: "25", status: "ativo", fazendaId: 1 },
+      { id: 2, brinco: "25", status: "ativo", fazendaId: 2 },
+    ];
+    const conflito = findActiveBrincoConflict(lista, "25", {
+      fazendaId: 1,
+      effectiveStatus: "ativo",
+    });
+    expect(conflito?.id).toBe(1);
+
+    const livre = findActiveBrincoConflict(lista, "25", {
+      fazendaId: 1,
+      excludeAnimalId: 1,
+      effectiveStatus: "ativo",
+    });
+    expect(livre).toBeNull();
   });
 
   it("resolve status efetivo com fallback ativo", () => {

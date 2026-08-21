@@ -9,6 +9,7 @@ import {
   resolverLocalizacaoAtualLote,
   type MovimentacaoPastoLoteRef,
 } from "../shared/localizacaoAtualLote";
+import { devLocalStore } from "./devLocalStore";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const fazendasFile = path.join(dataDir, "fazendas.json");
@@ -1686,6 +1687,13 @@ export async function createLocalPesagem(
   userId: number,
   input: { animalId: number; peso: string; data: string; observacoes?: string },
 ): Promise<{ id: number }> {
+  const dataISO = normalizePesagemData(input.data);
+  const hoje = new Date();
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  if (dataISO > hojeISO) {
+    throw new Error("A data da pesagem não pode ser futura.");
+  }
+
   const rows = await readPesagens();
   const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
   const now = new Date().toISOString();
@@ -1694,7 +1702,7 @@ export async function createLocalPesagem(
     userId,
     animalId: input.animalId,
     peso: input.peso,
-    data: normalizePesagemData(input.data),
+    data: dataISO,
     observacoes: input.observacoes ?? null,
     createdAt: now,
   });
@@ -1721,6 +1729,10 @@ export type LocalSaudeRegistro = {
   descricao?: string | null;
   medicamento?: string | null;
   dosagem?: string | null;
+  viaAplicacao?: string | null;
+  estoqueId?: number | null;
+  quantidadeConsumo?: string | null;
+  valorUnitario?: string | null;
   veterinario?: string | null;
   custo?: string | null;
   dataRegistro: string;
@@ -1766,6 +1778,10 @@ export async function createLocalSaudeRegistro(
     descricao?: string;
     medicamento?: string;
     dosagem?: string;
+    viaAplicacao?: string;
+    estoqueId?: number;
+    quantidadeConsumo?: string;
+    valorUnitario?: string;
     veterinario?: string;
     custo?: string;
     dataRegistro: string;
@@ -1773,6 +1789,27 @@ export async function createLocalSaudeRegistro(
     observacoes?: string;
   },
 ): Promise<{ id: number }> {
+  const dataISO = normalizeLocalDateField(input.dataRegistro);
+  const hoje = new Date();
+  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  if (dataISO > hojeISO) {
+    throw new Error("A data do manejo sanitário não pode ser futura.");
+  }
+
+  const qtdConsumo =
+    input.quantidadeConsumo != null && String(input.quantidadeConsumo).trim() !== ""
+      ? parseFloat(String(input.quantidadeConsumo).replace(",", "."))
+      : null;
+  if (input.estoqueId != null && qtdConsumo != null && qtdConsumo > 0) {
+    const baixa = devLocalStore.ajustarQuantidadeEstoque(input.estoqueId, -qtdConsumo);
+    if (!baixa.ok) {
+      if (baixa.reason === "insufficient") {
+        throw new Error("Estoque insuficiente para a quantidade informada.");
+      }
+      throw new Error("Produto de estoque não encontrado.");
+    }
+  }
+
   const rows = await readSaudeRegistros();
   const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
   const now = new Date().toISOString();
@@ -1784,9 +1821,13 @@ export async function createLocalSaudeRegistro(
     descricao: input.descricao ?? null,
     medicamento: input.medicamento ?? null,
     dosagem: input.dosagem ?? null,
+    viaAplicacao: input.viaAplicacao ?? null,
+    estoqueId: input.estoqueId ?? null,
+    quantidadeConsumo: input.quantidadeConsumo ?? null,
+    valorUnitario: input.valorUnitario ?? null,
     veterinario: input.veterinario ?? null,
     custo: input.custo ?? null,
-    dataRegistro: normalizeLocalDateField(input.dataRegistro),
+    dataRegistro: dataISO,
     proximaData: input.proximaData ? normalizeLocalDateField(input.proximaData) : null,
     observacoes: input.observacoes ?? null,
     createdAt: now,
@@ -1831,8 +1872,12 @@ export async function listLocalAnimaisEnriched(
   if (input?.sexo && input.sexo !== "") {
     lista = lista.filter(a => a.sexo === input.sexo);
   }
-  if (input?.status && input.status !== "") {
-    lista = lista.filter(a => a.status === input.status);
+  if (input?.status && input.status !== "" && input.status !== "todos") {
+    if (input.status === "inativo") {
+      lista = lista.filter(a => (a.status ?? "ativo") !== "ativo");
+    } else {
+      lista = lista.filter(a => a.status === input.status);
+    }
   }
   if (input?.loteId) lista = lista.filter(a => a.loteId === input.loteId);
   if (input?.raca && input.raca !== "") lista = lista.filter(a => a.raca === input.raca);

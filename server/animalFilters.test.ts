@@ -21,8 +21,13 @@ describe('animaisFiltersToApiParams', () => {
     expect(params.status).toBe('inativo');
   });
 
-  it('não envia status quando apenasInativos é false', () => {
+  it('envia status=ativo por padrão na lista principal', () => {
     const params = animaisFiltersToApiParams(makeFilters({ apenasInativos: false }), '');
+    expect(params.status).toBe('ativo');
+  });
+
+  it('não envia status quando o filtro é Todos', () => {
+    const params = animaisFiltersToApiParams(makeFilters({ statusFiltro: 'todos' }), '');
     expect(params.status).toBeUndefined();
   });
 
@@ -59,10 +64,10 @@ describe('animaisFiltersToApiParams', () => {
     expect(params.search).toBe('boi');
   });
 
-  it('retorna undefined para campos vazios', () => {
+  it('retorna undefined para campos vazios (exceto status padrão ativo)', () => {
     const params = animaisFiltersToApiParams(makeFilters(), '');
     expect(params.brincoEletronico).toBeUndefined();
-    expect(params.status).toBeUndefined();
+    expect(params.status).toBe('ativo');
     expect(params.somenteSisbov).toBeUndefined();
     expect(params.rgn).toBeUndefined();
     expect(params.rgd).toBeUndefined();

@@ -10,7 +10,7 @@ import {
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
-import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like, ne } from "drizzle-orm";
 import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
 import { env } from "./_core/env";
 import { resolveImageSlots } from "./_core/storage";
@@ -37,6 +37,7 @@ import {
   formatCustoMedio,
   parseCustoMedio,
 } from "./custoMedioEstoque";
+import { calcularQuantidadeEstoquePorDose } from "../client/src/lib/produto-types";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
@@ -155,9 +156,11 @@ import {
   assertFazendaDoUsuario,
   assertLoteNaFazenda,
   assertAnimalNaFazenda,
-  assertRfidUnicoEntreAtivos,
+  assertRfidNaoReutilizavel,
 } from "./manejoContexto";
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
+import { normalizeRfidKey } from "../shared/rfidUnicidade";
+import { buildObservacoesHistoricoIdentificacao } from "../shared/historicoIdentificacao";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -531,7 +534,14 @@ const animaisRouter = router({
       try {
       const conditions = [eq(animais.userId, ctx.user.id)];
       if (input?.sexo && input.sexo !== '') conditions.push(eq(animais.sexo, input.sexo as any));
-      if (input?.status && input.status !== '') conditions.push(eq(animais.status, input.status as any));
+      if (input?.status && input.status !== '' && input.status !== 'todos') {
+        if (input.status === 'inativo') {
+          // Qualquer status diferente de ativo (vendido, morto, transferido).
+          conditions.push(ne(animais.status, 'ativo'));
+        } else {
+          conditions.push(eq(animais.status, input.status as any));
+        }
+      }
       if (input?.loteId) conditions.push(eq(animais.loteId, input.loteId));
       if (input?.raca && input.raca !== '') conditions.push(eq(animais.raca, input.raca));
       if (input?.categoria && input.categoria !== '') conditions.push(eq(animais.categoria, input.categoria));
@@ -917,7 +927,16 @@ const animaisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const row = buildAnimalInsertRow(ctx.user.id, input);
       try {
-        await assertBrincoUnicoEntreAtivosDb(ctx.user.id, row.brinco, "ativo");
+        await assertBrincoUnicoEntreAtivosDb(
+          ctx.user.id,
+          row.brinco,
+          "ativo",
+          undefined,
+          row.fazendaId ?? undefined,
+        );
+        if (row.brincoEletronico) {
+          await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico);
+        }
         const result = await db.insert(animais).values(row);
         const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
         if (Number.isFinite(id) && id > 0) {
@@ -931,7 +950,17 @@ const animaisRouter = router({
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isDatabaseUnavailable(err)) {
-          await assertBrincoUnicoEntreAtivos(ctx.user.id, row.brinco, "ativo", undefined, true);
+          await assertBrincoUnicoEntreAtivos(
+            ctx.user.id,
+            row.brinco,
+            "ativo",
+            undefined,
+            true,
+            row.fazendaId ?? undefined,
+          );
+          if (row.brincoEletronico) {
+            await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico, undefined, true);
+          }
           const result = await createLocalAnimal(ctx.user.id, row);
           return { success: true, id: result.id, localFallback: true };
         }
@@ -1030,7 +1059,13 @@ const animaisRouter = router({
       if (fazendaId !== undefined) setData.fazendaId = fazendaId;
       try {
         const [current] = await db
-          .select({ brinco: animais.brinco, status: animais.status })
+          .select({
+            brinco: animais.brinco,
+            brincoEletronico: animais.brincoEletronico,
+            status: animais.status,
+            fazendaId: animais.fazendaId,
+            loteId: animais.loteId,
+          })
           .from(animais)
           .where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)))
           .limit(1);
@@ -1039,16 +1074,35 @@ const animaisRouter = router({
         }
 
         const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
+        const effectiveRfid =
+          brincoEletronico !== undefined ? resolveStr(brincoEletronico) : current.brincoEletronico;
         const effectiveStatus = resolveEffectiveStatus(
           (rest as { status?: string }).status,
           current.status,
         );
+        let effectiveFazendaId: number | undefined =
+          fazendaId !== undefined
+            ? fazendaId ?? undefined
+            : current.fazendaId ?? undefined;
+        if (effectiveFazendaId == null && current.loteId != null) {
+          const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
+          const fromLote = loteFazendaById.get(Number(current.loteId));
+          if (fromLote != null) effectiveFazendaId = fromLote;
+        }
+
         await assertBrincoUnicoEntreAtivosDb(
           ctx.user.id,
           effectiveBrinco,
           effectiveStatus,
           id,
+          effectiveFazendaId,
         );
+
+        const rfidKey = normalizeRfidKey(effectiveRfid);
+        const rfidAtualKey = normalizeRfidKey(current.brincoEletronico);
+        if (rfidKey && rfidKey !== rfidAtualKey) {
+          await assertRfidNaoReutilizavel(ctx.user.id, rfidKey, id);
+        }
 
         await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
         try {
@@ -1065,17 +1119,40 @@ const animaisRouter = router({
             throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
           }
           const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
+          const effectiveRfid =
+            brincoEletronico !== undefined
+              ? resolveStr(brincoEletronico)
+              : current.brincoEletronico;
           const effectiveStatus = resolveEffectiveStatus(
             (rest as { status?: string }).status,
             current.status,
           );
+          let effectiveFazendaId: number | undefined =
+            fazendaId !== undefined
+              ? fazendaId ?? undefined
+              : current.fazendaId ?? undefined;
+          if (effectiveFazendaId == null && current.loteId != null) {
+            try {
+              const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
+              const fromLote = loteFazendaById.get(Number(current.loteId));
+              if (fromLote != null) effectiveFazendaId = fromLote;
+            } catch {
+              /* mantém undefined — validação sem escopo de fazenda */
+            }
+          }
           await assertBrincoUnicoEntreAtivos(
             ctx.user.id,
             effectiveBrinco,
             effectiveStatus,
             id,
             true,
+            effectiveFazendaId,
           );
+          const rfidKey = normalizeRfidKey(effectiveRfid);
+          const rfidAtualKey = normalizeRfidKey(current.brincoEletronico);
+          if (rfidKey && rfidKey !== rfidAtualKey) {
+            await assertRfidNaoReutilizavel(ctx.user.id, rfidKey, id, true);
+          }
           await updateLocalAnimal(ctx.user.id, id, setData);
           return { success: true, localFallback: true };
         }
@@ -1639,6 +1716,7 @@ const animaisRouter = router({
                 statusImport,
                 undefined,
                 true,
+                animalRow.fazendaId,
               );
               const { id } = await createLocalAnimal(ctx.user.id, animalRow);
               importados.push(id);
@@ -3224,30 +3302,315 @@ const saudeRouter = router({
   create: protectedProcedure
     .input(z.object({
       animalId: z.number(),
-      tipo: z.string(),
-      descricao: z.string().optional(),
-      medicamento: z.string().optional(),
-      dosagem: z.string().optional(),
+      fazendaId: z.number().int().positive(),
+      tipo: z.string().min(1).max(50),
+      descricao: z.string().max(2000).optional(),
+      /** Snapshot do nome; preenchido no servidor a partir do estoque quando há estoqueId. */
+      medicamento: z.string().max(200).optional(),
+      dosagem: z.string().max(100).optional(),
+      doseValor: z.string().max(40).optional(),
+      doseUnidade: z.string().max(20).optional(),
+      viaAplicacao: z.string().max(80).optional(),
+      estoqueId: z.number().int().positive().optional(),
       veterinario: z.string().optional(),
-      custo: z.string().optional(),
       dataRegistro: z.string(),
       proximaData: z.string().optional(),
-      observacoes: z.string().optional(),
+      observacoes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const MSG_ESTOQUE_INSUFICIENTE = "Estoque insuficiente para a quantidade informada.";
+
+      // Comparação por data civil (YYYY-MM-DD) — mesma estratégia de Pesagem/Identificação.
+      const hoje = new Date();
+      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+      const dataISO = String(input.dataRegistro).trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataISO)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Data do manejo sanitário inválida." });
+      }
+      if (dataISO > hojeISO) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A data do manejo sanitário não pode ser futura.",
+        });
+      }
+
+      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
+      await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
+
+      const tipo = input.tipo.trim();
+      if (!tipo) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o tipo de manejo sanitário." });
+      }
+      const descricao = (input.descricao ?? "").trim() || undefined;
+      if (tipo === "Outro" && !descricao) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Descreva o manejo sanitário.",
+        });
+      }
+
+      const exigeProduto = tipo !== "Outro";
+      const estoqueId = input.estoqueId ?? null;
+      if (exigeProduto && estoqueId == null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Selecione um produto / medicamento do estoque da Fazenda.",
+        });
+      }
+
+      const doseValorRaw = (input.doseValor ?? "").trim();
+      const doseUnidadeRaw = (input.doseUnidade ?? "").trim();
+      const viaAplicacao = (input.viaAplicacao ?? "").trim() || undefined;
+      const observacoes = (input.observacoes ?? "").trim() || undefined;
+      const dosagemTextoCliente = (input.dosagem ?? "").trim() || undefined;
+
+      let medicamento = (input.medicamento ?? "").trim() || undefined;
+      let dosagem = dosagemTextoCliente;
+      let quantidadeConsumo: string | undefined;
+      let valorUnitario: string | undefined;
+      let custo: string | undefined;
+
+      if (estoqueId != null) {
+        if (!doseValorRaw || !doseUnidadeRaw) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Informe a dose (valor e unidade) para baixar o estoque.",
+          });
+        }
+        let doseNum = Number.NaN;
+        {
+          let normalized = doseValorRaw;
+          if (doseValorRaw.includes(",")) {
+            normalized = doseValorRaw.replace(/\./g, "").replace(",", ".");
+          }
+          doseNum = Number(normalized);
+        }
+        if (!Number.isFinite(doseNum) || doseNum <= 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Informe um valor de dose válido maior que zero.",
+          });
+        }
+
+        type ItemEstoqueSaude = {
+          id: number;
+          nome: string | null;
+          quantidade: string | number | null;
+          unidade: string | null;
+          valorUnitario: string | number | null;
+          fazendaId: number | null;
+          categoria: string | null;
+          situacao: string | null;
+          embalagens: string | null;
+        };
+
+        let item: ItemEstoqueSaude | null = null;
+        try {
+          const rows = await db
+            .select({
+              id: estoque.id,
+              nome: estoque.nome,
+              quantidade: estoque.quantidade,
+              unidade: estoque.unidade,
+              valorUnitario: estoque.valorUnitario,
+              fazendaId: estoque.fazendaId,
+              categoria: estoque.categoria,
+              situacao: estoque.situacao,
+              embalagens: estoque.embalagens,
+            })
+            .from(estoque)
+            .where(eq(estoque.id, estoqueId))
+            .limit(1);
+          item = rows[0] ?? null;
+        } catch (error) {
+          if (!isDatabaseUnavailable(error)) throw error;
+        }
+        if (!item) {
+          const local = devLocalStore.getEstoque(estoqueId);
+          if (local) {
+            item = {
+              id: local.id,
+              nome: local.nome,
+              quantidade: local.quantidade,
+              unidade: local.unidade,
+              valorUnitario: local.valorUnitario,
+              fazendaId: local.fazendaId ?? null,
+              categoria: local.categoria ?? null,
+              situacao: local.situacao ?? null,
+              embalagens: local.embalagens ?? null,
+            };
+          }
+        }
+        if (!item) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
+          });
+        }
+        if (Number(item.fazendaId) !== Number(input.fazendaId)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O produto selecionado não pertence à Fazenda do manejo.",
+          });
+        }
+        const sit = String(item.situacao || "ativo").toLowerCase();
+        if (sit === "inativo") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O produto selecionado está inativo no estoque.",
+          });
+        }
+        if (String(item.categoria || "").trim().toLowerCase() !== "farmácia") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Selecione um produto da categoria Farmácia.",
+          });
+        }
+
+        const custoMedio = parseCustoMedio(item.valorUnitario);
+        if (custoMedio == null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Este produto ainda não possui custo médio no estoque. Registre uma entrada com valor antes de usá-lo no manejo sanitário.",
+          });
+        }
+
+        const conv = calcularQuantidadeEstoquePorDose({
+          doseValor: doseNum,
+          doseUnidade: doseUnidadeRaw,
+          unidadeEstoque: item.unidade,
+          embalagensRaw: item.embalagens,
+        });
+        if ("erro" in conv) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: conv.erro });
+        }
+
+        const qtd = Math.round(conv.quantidade * 10000) / 10000;
+        const disponivel = parseFloat(String(item.quantidade ?? 0));
+        if (!Number.isFinite(disponivel) || qtd > disponivel + 1e-9) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_ESTOQUE_INSUFICIENTE,
+          });
+        }
+
+        const custoTotal = Math.round(qtd * custoMedio * 100) / 100;
+        medicamento = (item.nome || "").trim() || medicamento;
+        dosagem =
+          dosagemTextoCliente ||
+          `${Number.isInteger(doseNum) ? String(doseNum) : String(doseNum).replace(".", ",")} ${doseUnidadeRaw}`;
+        quantidadeConsumo = String(qtd);
+        valorUnitario = formatCustoMedio(custoMedio);
+        custo = formatCustoMedio(custoTotal);
+
+        const payload = {
+          animalId: input.animalId,
+          tipo,
+          descricao,
+          medicamento,
+          dosagem,
+          viaAplicacao,
+          estoqueId,
+          quantidadeConsumo,
+          valorUnitario,
+          custo,
+          dataRegistro: dataISO,
+          proximaData: input.proximaData,
+          observacoes,
+        };
+
+        try {
+          const insertId = await db.transaction(async tx => {
+            const locked = await tx
+              .select({
+                id: estoque.id,
+                quantidade: estoque.quantidade,
+              })
+              .from(estoque)
+              .where(eq(estoque.id, estoqueId))
+              .for("update");
+            const row = locked[0];
+            if (!row) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
+              });
+            }
+            const atual = parseFloat(String(row.quantidade ?? 0));
+            const saldo = atual - qtd;
+            if (!Number.isFinite(saldo) || saldo < -1e-9) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: MSG_ESTOQUE_INSUFICIENTE,
+              });
+            }
+            await tx
+              .update(estoque)
+              .set({ quantidade: String(Math.max(0, Math.round(saldo * 100) / 100)) })
+              .where(eq(estoque.id, estoqueId));
+
+            const result = await tx.insert(saudeRegistros).values({
+              userId: ctx.user.id,
+              animalId: payload.animalId,
+              tipo: payload.tipo,
+              descricao: payload.descricao,
+              medicamento: payload.medicamento,
+              dosagem: payload.dosagem,
+              viaAplicacao: payload.viaAplicacao,
+              estoqueId: payload.estoqueId,
+              quantidadeConsumo: payload.quantidadeConsumo,
+              valorUnitario: payload.valorUnitario,
+              custo: payload.custo,
+              dataRegistro: new Date(payload.dataRegistro),
+              proximaData: payload.proximaData ? new Date(payload.proximaData) : undefined,
+              observacoes: payload.observacoes,
+            });
+            return (result as any)[0]?.insertId as number | undefined;
+          });
+          return { success: true as const, id: insertId };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          if (!isDatabaseUnavailable(error)) throw error;
+          const result = await createLocalSaudeRegistro(ctx.user.id, payload);
+          return { success: true as const, id: result.id, localFallback: true as const };
+        }
+      }
+
+      // Sem estoque (ex.: Tipo Outro sem produto) — sem baixa e sem custo automático.
+      if (exigeProduto) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Selecione um produto / medicamento do estoque da Fazenda.",
+        });
+      }
+
+      const payloadSemEstoque = {
+        animalId: input.animalId,
+        tipo,
+        descricao,
+        medicamento,
+        dosagem: dosagemTextoCliente,
+        viaAplicacao,
+        dataRegistro: dataISO,
+        proximaData: input.proximaData,
+        observacoes,
+      };
+
       try {
-        const { dataRegistro, proximaData, ...rest } = input;
         const result = await db.insert(saudeRegistros).values({
           userId: ctx.user.id,
-          ...rest,
-          dataRegistro: new Date(dataRegistro),
-          proximaData: proximaData ? new Date(proximaData) : undefined,
+          ...payloadSemEstoque,
+          dataRegistro: new Date(payloadSemEstoque.dataRegistro),
+          proximaData: payloadSemEstoque.proximaData
+            ? new Date(payloadSemEstoque.proximaData)
+            : undefined,
         });
-        return { success: true, id: (result as any)[0]?.insertId };
+        return { success: true as const, id: (result as any)[0]?.insertId };
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        const result = await createLocalSaudeRegistro(ctx.user.id, input);
-        return { success: true, id: result.id, localFallback: true };
+        const result = await createLocalSaudeRegistro(ctx.user.id, payloadSemEstoque);
+        return { success: true as const, id: result.id, localFallback: true as const };
       }
     }),
 
@@ -6179,6 +6542,20 @@ const pesagensRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Comparação por data civil (YYYY-MM-DD), sem horário/timezone.
+      const hoje = new Date();
+      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+      const dataISO = String(input.data).trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataISO)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Data da pesagem inválida." });
+      }
+      if (dataISO > hojeISO) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A data da pesagem não pode ser futura.",
+        });
+      }
+
       try {
         const { data, ...rest } = input;
         const result = await db.insert(pesagens).values({
@@ -8225,6 +8602,7 @@ const estoqueRouter = router({
             unidade: estoque.unidade,
             quantidade: estoque.quantidade,
             valorUnitario: estoque.valorUnitario,
+            embalagens: estoque.embalagens,
             fabricante: estoque.fabricante,
             situacao: estoque.situacao,
             identificadorUnico: estoque.identificadorUnico,
@@ -8991,6 +9369,20 @@ const manejoRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Comparação por data civil (YYYY-MM-DD), mesma estratégia da Pesagem — sem horário/timezone.
+      const hoje = new Date();
+      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+      const dataISO = String(input.data).trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataISO)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Data da identificação inválida." });
+      }
+      if (dataISO > hojeISO) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A data da identificação não pode ser futura.",
+        });
+      }
+
       await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
       await assertLoteNaFazenda(ctx.user.id, input.fazendaId, input.loteId ?? null);
       const animal = await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
@@ -9027,8 +9419,8 @@ const manejoRouter = router({
         }
       }
 
-      const exigeMotivo =
-        alteraBrinco || (alteraRfid && Boolean(rfidAtual));
+      // Motivo obrigatório também em Vincular RFID (sem RFID atual).
+      const exigeMotivo = alteraBrinco || alteraRfid;
       if (exigeMotivo && !input.motivo) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -9043,61 +9435,34 @@ const manejoRouter = router({
       }
       const motivo = input.motivo ?? "reidentificacao";
 
-      const operacaoLabel =
-        input.operacao === "rfid"
-          ? "Vincular / atualizar RFID"
-          : input.operacao === "brinco"
-            ? "Troca de brinco visual"
-            : "Atualizar ambos";
-
       const assertBrincoOuMensagemAmigavel = async (useLocal: boolean) => {
         if (!alteraBrinco || !novoBrinco) return;
-        try {
-          await assertBrincoUnicoEntreAtivos(
-            ctx.user.id,
-            novoBrinco,
-            animal.status ?? "ativo",
-            input.animalId,
-            useLocal,
-          );
-        } catch (err) {
-          if (
-            err instanceof TRPCError &&
-            err.message.toLowerCase().includes("já está sendo usado")
-          ) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: "Este brinco já está vinculado a outro animal.",
-            });
-          }
-          throw err;
-        }
+        await assertBrincoUnicoEntreAtivos(
+          ctx.user.id,
+          novoBrinco,
+          animal.status ?? "ativo",
+          input.animalId,
+          useLocal,
+          input.fazendaId,
+        );
       };
 
-      const montarPartesObs = () => {
-        const partesObs: string[] = [operacaoLabel];
-        if (alteraRfid) {
-          partesObs.push(`RFID: ${rfidAtual || "Não vinculado"} → ${novoRfid}`);
-        }
-        if (alteraBrinco) {
-          partesObs.push(
-            `Brinco visual: ${brincoAtual || "Não vinculado"} → ${novoBrinco}`,
-          );
-        }
-        if (motivo === "outro" && motivoDetalhe) {
-          partesObs.push(`Motivo: Outro — ${motivoDetalhe}`);
-        }
-        if (obsUser) partesObs.push(obsUser);
-        return partesObs;
+      const assertRfidOuMensagem = async (useLocal: boolean) => {
+        if (!alteraRfid || !novoRfid) return;
+        await assertRfidNaoReutilizavel(
+          ctx.user.id,
+          novoRfid,
+          input.animalId,
+          useLocal,
+        );
       };
 
       const montarHistoricoRow = () => {
-        const partesObs = montarPartesObs();
-        // brincoNovo é varchar(50): o detalhe do RFID fica nas observações
+        // brincoNovo é NOT NULL / varchar(50): o detalhe do RFID fica nas observações
         let brincoNovoHist = alteraBrinco
           ? (novoBrinco as string)
-          : brincoAtual || novoRfid || "—";
-        if (!brincoNovoHist) brincoNovoHist = novoRfid || "—";
+          : brincoAtual || "—";
+        if (!brincoNovoHist) brincoNovoHist = "—";
 
         return {
           userId: ctx.user.id,
@@ -9105,17 +9470,26 @@ const manejoRouter = router({
           brincoAnterior: brincoAtual ? brincoAtual.slice(0, 50) : null,
           brincoNovo: brincoNovoHist.slice(0, 50),
           motivo,
-          observacoes: partesObs.join(" · ") || null,
+          observacoes: buildObservacoesHistoricoIdentificacao({
+            operacao: input.operacao,
+            tinhaRfid: Boolean(rfidAtual),
+            rfidAnterior: rfidAtual,
+            rfidNovo: novoRfid,
+            brincoAnterior: brincoAtual,
+            brincoNovo: novoBrinco,
+            motivo,
+            motivoDetalhe,
+            observacoesUsuario: obsUser,
+          }),
           dataAlteracao: input.data,
           usuarioNome: ctx.user.name?.trim() || null,
         };
       };
 
       const runLocal = async () => {
+        // Valida os dois antes de gravar (atomicidade: tudo ou nada).
         await assertBrincoOuMensagemAmigavel(true);
-        if (alteraRfid) {
-          await assertRfidUnicoEntreAtivos(ctx.user.id, novoRfid, input.animalId, true);
-        }
+        await assertRfidOuMensagem(true);
 
         const setData: Record<string, unknown> = {};
         if (alteraBrinco) setData.brinco = novoBrinco;
@@ -9137,10 +9511,9 @@ const manejoRouter = router({
       };
 
       try {
+        // Valida brinco + RFID antes de qualquer gravação (operação conjunta atômica).
         await assertBrincoOuMensagemAmigavel(false);
-        if (alteraRfid) {
-          await assertRfidUnicoEntreAtivos(ctx.user.id, novoRfid, input.animalId);
-        }
+        await assertRfidOuMensagem(false);
 
         const setData: Record<string, unknown> = {};
         if (alteraBrinco) setData.brinco = novoBrinco;

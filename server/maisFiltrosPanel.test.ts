@@ -74,7 +74,13 @@ function applyAnimaisPreFilters(animais: EnrichedAnimal[], input: ReturnType<typ
   if (input.categoria) lista = lista.filter(a => a.categoria === input.categoria);
   if (input.loteId) lista = lista.filter(a => a.loteId === input.loteId);
   if (input.raca) lista = lista.filter(a => a.raca === input.raca);
-  if (input.status) lista = lista.filter(a => a.status === input.status);
+  if (input.status && input.status !== 'todos') {
+    if (input.status === 'inativo') {
+      lista = lista.filter(a => a.status !== 'ativo');
+    } else {
+      lista = lista.filter(a => a.status === input.status);
+    }
+  }
   if (input.brincoEletronico?.trim()) {
     const q = input.brincoEletronico.trim().toLowerCase();
     lista = lista.filter(a => (a.brincoEletronico ?? '').toLowerCase().includes(q));
@@ -214,7 +220,8 @@ describe('Mais Filtros — indicadores e limpar', () => {
     expect(hasActiveMaisFiltrosAvancados(makeFilters({ pesoInicial: '100' }))).toBe(true);
     expect(hasActiveMaisFiltrosAvancados(makeFilters({ idadeMesesMax: '12' }))).toBe(true);
     expect(hasActiveMaisFiltrosAvancados(makeFilters({ rfid: 'X' }))).toBe(true);
-    expect(hasActiveMaisFiltrosAvancados(makeFilters({ statusFiltro: 'ativo' }))).toBe(true);
+    expect(hasActiveMaisFiltrosAvancados(makeFilters({ statusFiltro: 'ativo' }))).toBe(false);
+    expect(hasActiveMaisFiltrosAvancados(makeFilters({ statusFiltro: 'morto' }))).toBe(true);
     expect(hasActiveMaisFiltrosAvancados(makeFilters({ dataEntradaDe: '2024-01-01' }))).toBe(true);
     expect(hasActiveMaisFiltrosAvancados(makeFilters())).toBe(false);
   });
@@ -256,7 +263,7 @@ describe('Mais Filtros — indicadores e limpar', () => {
     expect(cleared.idadeMesesMin).toBe('');
     expect(cleared.idadeMesesMax).toBe('');
     expect(cleared.rfid).toBe('');
-    expect(cleared.statusFiltro).toBe('');
+    expect(cleared.statusFiltro).toBe('ativo');
     expect(cleared.dataEntradaDe).toBe('');
     expect(cleared.dataEntradaAte).toBe('');
     expect(hasActiveAnimaisFilters(cleared)).toBe(false);
@@ -303,7 +310,10 @@ describe('Mais Filtros — lógica de filtragem', () => {
   });
 
   it('Raça — filtra por raça exata', () => {
-    const params = animaisFiltersToApiParams(makeFilters({ raca: 'Nelore Mocho' }), '');
+    const params = animaisFiltersToApiParams(
+      makeFilters({ raca: 'Nelore Mocho', statusFiltro: 'todos' }),
+      '',
+    );
     const ids = applyAnimaisPreFilters(SAMPLE, params).map(a => a.id);
     expect(ids).toEqual([1, 3, 4]);
   });
@@ -345,14 +355,24 @@ describe('Mais Filtros — lógica de filtragem', () => {
   });
 
   it('Data de Entrada — inicial, final e intervalo', () => {
-    const de = animaisFiltersToApiParams(makeFilters({ dataEntradaDe: '2024-03-01' }), '');
+    const de = animaisFiltersToApiParams(
+      makeFilters({ dataEntradaDe: '2024-03-01', statusFiltro: 'todos' }),
+      '',
+    );
     expect(applyAnimaisPreFilters(SAMPLE, de).map(a => a.id)).toEqual([2, 4]);
 
-    const ate = animaisFiltersToApiParams(makeFilters({ dataEntradaAte: '2024-01-31' }), '');
+    const ate = animaisFiltersToApiParams(
+      makeFilters({ dataEntradaAte: '2024-01-31', statusFiltro: 'todos' }),
+      '',
+    );
     expect(applyAnimaisPreFilters(SAMPLE, ate).map(a => a.id)).toEqual([1, 3]);
 
     const intervalo = animaisFiltersToApiParams(
-      makeFilters({ dataEntradaDe: '2024-01-01', dataEntradaAte: '2024-03-31' }),
+      makeFilters({
+        dataEntradaDe: '2024-01-01',
+        dataEntradaAte: '2024-03-31',
+        statusFiltro: 'todos',
+      }),
       '',
     );
     expect(applyAnimaisPreFilters(SAMPLE, intervalo).map(a => a.id)).toEqual([1, 2]);

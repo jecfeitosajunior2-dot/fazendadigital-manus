@@ -412,13 +412,16 @@ export default function ListaAnimaisFiltros({
 
             <FilterCard label="Status">
               <select
-                value={value.statusFiltro}
+                value={value.statusFiltro || "ativo"}
                 onChange={e => onChange(patch(value, { statusFiltro: e.target.value }))}
                 className={selectClass}
               >
-                <option value="">Todos</option>
                 <option value="ativo">Ativo</option>
-                <option value="inativo">Inativo</option>
+                <option value="inativo">Inativos (todos)</option>
+                <option value="morto">Morto</option>
+                <option value="vendido">Vendido</option>
+                <option value="transferido">Transferido</option>
+                <option value="todos">Todos</option>
               </select>
             </FilterCard>
 

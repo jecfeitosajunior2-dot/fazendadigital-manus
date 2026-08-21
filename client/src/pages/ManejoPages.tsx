@@ -1,9 +1,18 @@
 import AppLayout from "@/components/AppLayout";
 import { CorralGateIcon } from "@/components/icons/CorralGateIcon";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useLocation, useSearch } from "wouter";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  Nfc,
+  Tag,
   Weight,
   Syringe,
   HeartPulse,
@@ -11,11 +20,20 @@ import {
   Stethoscope,
   MilkOff,
   Bluetooth,
+  AlertCircle,
   type LucideProps,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAt05Reader } from "@/hooks/useAt05Reader";
+import { formatDateBR } from "@/lib/date-utils";
+import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
+import { sortPesagensDesc } from "@/lib/fichaAnimalDisplay";
+import {
+  calcularQuantidadeEstoquePorDose,
+  calcularCustoReferenciaPorUnidadeDose,
+  siglaUnidade,
+} from "@/lib/produto-types";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
@@ -29,9 +47,9 @@ const ICON_STROKE = 2;
 export const TIPOS_MANEJO = [
   {
     id: "brinco-eletronico",
-    label: "Brinco Eletrônico",
-    icon: Nfc,
-    descricao: "Brincos, chip e identificação eletrônica do animal",
+    label: "Identificação",
+    icon: Tag,
+    descricao: "Brinco visual, RFID e identificação do animal",
   },
   {
     id: "pesagem",
@@ -85,6 +103,68 @@ function todayISODate() {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+const MSG_PESAGEM_DATA_FUTURA = "A data da pesagem não pode ser futura.";
+const MSG_IDENTIFICACAO_DATA_FUTURA = "A data da identificação não pode ser futura.";
+const MSG_SANITARIO_DATA_FUTURA = "A data do manejo sanitário não pode ser futura.";
+const MSG_SANITARIO_ESTOQUE_INSUFICIENTE =
+  "Estoque insuficiente para a quantidade informada.";
+const CATEGORIA_SANITARIO_INSUMOS = "Farmácia";
+
+function parseCustoMedioClient(raw: unknown): number | null {
+  if (raw == null || String(raw).trim() === "") return null;
+  const n = parseFloat(String(raw).replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function formatMoedaBrlSanitario(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+type EstoqueSanitarioItem = {
+  id: number;
+  nome: string | null;
+  categoria?: string | null;
+  subcategoria?: string | null;
+  unidade?: string | null;
+  quantidade?: string | number | null;
+  valorUnitario?: string | number | null;
+  fabricante?: string | null;
+  fazendaId?: number | null;
+  situacao?: string | null;
+  embalagens?: string | null;
+};
+
+/** Tipos do manejo sanitário pontual (valores persistidos em saude_registros.tipo). */
+const TIPOS_SANITARIO_MANEJO = [
+  { value: "Vacinação", label: "Vacinação" },
+  { value: "Vermifugação", label: "Vermifugação" },
+  { value: "Tratamento", label: "Tratamento" },
+  { value: "Outro", label: "Outro" },
+] as const;
+
+type TipoSanitarioManejo = (typeof TIPOS_SANITARIO_MANEJO)[number]["value"];
+
+/** Vias de aplicação — lista local (não havia enum no projeto). */
+const VIAS_APLICACAO_SANITARIO = [
+  { value: "Intramuscular", label: "Intramuscular" },
+  { value: "Subcutânea", label: "Subcutânea" },
+  { value: "Oral", label: "Oral" },
+  { value: "Tópica", label: "Tópica" },
+  { value: "Pour-on", label: "Pour-on" },
+  { value: "Intravenosa", label: "Intravenosa" },
+  { value: "Outra", label: "Outra" },
+] as const;
+
+/** Unidades de dose do manejo sanitário (persistidas junto ao valor em `dosagem`). */
+const UNIDADES_DOSE_SANITARIO = [
+  { value: "mL", label: "mL" },
+  { value: "L", label: "L" },
+  { value: "mg", label: "mg" },
+  { value: "g", label: "g" },
+  { value: "dose", label: "dose" },
+] as const;
 
 function newSessaoId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -328,6 +408,14 @@ export function ManejoFormPage() {
     return <ManejoBrincoEletronicoForm />;
   }
 
+  if (tipo.id === "pesagem") {
+    return <ManejoPesagemForm />;
+  }
+
+  if (tipo.id === "sanitario") {
+    return <ManejoSanitarioForm />;
+  }
+
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -482,17 +570,60 @@ function FormDownSelect({
   );
 }
 
-const MOTIVO_TROCA_OPCOES = [
-  { value: "perda", label: "Perda do brinco" },
-  { value: "danificado", label: "Brinco danificado" },
-  // Label separado do valor interno — permite renomear a UI sem migrar enum.
-  { value: "reidentificacao", label: "Reidentificação" },
-  { value: "erro_cadastro", label: "Erro de cadastro" },
-  { value: "outro", label: "Outro" },
+const MOTIVO_TROCA_VALUES = [
+  "perda",
+  "danificado",
+  "reidentificacao",
+  "erro_cadastro",
+  "outro",
 ] as const;
 
-type MotivoTrocaBrinco = (typeof MOTIVO_TROCA_OPCOES)[number]["value"];
+type MotivoTrocaBrinco = (typeof MOTIVO_TROCA_VALUES)[number];
 type OperacaoBrinco = "rfid" | "brinco" | "ambos";
+
+/** Labels de motivo conforme a operação (valores internos preservados). */
+function motivosPorOperacao(
+  operacao: OperacaoBrinco,
+): ReadonlyArray<{ value: MotivoTrocaBrinco; label: string }> {
+  if (operacao === "rfid") {
+    return [
+      { value: "perda", label: "Perda do RFID" },
+      { value: "danificado", label: "RFID danificado" },
+      { value: "reidentificacao", label: "Reidentificação" },
+      { value: "erro_cadastro", label: "Erro de cadastro" },
+      { value: "outro", label: "Outro" },
+    ];
+  }
+  if (operacao === "ambos") {
+    return [
+      { value: "perda", label: "Perda da identificação" },
+      { value: "danificado", label: "Identificação danificada" },
+      { value: "reidentificacao", label: "Reidentificação" },
+      { value: "erro_cadastro", label: "Erro de cadastro" },
+      { value: "outro", label: "Outro" },
+    ];
+  }
+  return [
+    { value: "perda", label: "Perda do brinco" },
+    { value: "danificado", label: "Brinco danificado" },
+    { value: "reidentificacao", label: "Reidentificação" },
+    { value: "erro_cadastro", label: "Erro de cadastro" },
+    { value: "outro", label: "Outro" },
+  ];
+}
+
+/** Bloqueios de regra de negócio da Identificação → modal central (não toast). */
+function isBloqueioNegocioIdentificacao(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("já existe um animal ativo com o brinco visual") ||
+    m.includes("já está sendo usado por outro animal ativo") ||
+    m.includes("rfid já está vinculado") ||
+    m.includes("rfid já foi vinculado") ||
+    m.includes("não pode ser reutilizado") ||
+    m.includes("data da identificação não pode ser futura")
+  );
+}
 
 /**
  * Status visual do bastão AnimalTAG AT05 (UI do Brinco Eletrônico).
@@ -519,40 +650,53 @@ type AnimalBuscaRow = {
   fazendaId?: number | null;
   status?: string | null;
   sexo?: string | null;
+  ultimoPeso?: number | null;
 };
 
+/**
+ * Nome útil nesta tela: texto real (ex. "Estrela"), não número puro.
+ * Números em `nome` costumam ser cópia antiga do brinco e geram ambiguidade (ex. "100 · 01").
+ */
+function isNomeAnimalUtil(nome: string | null | undefined, brinco: string | null | undefined) {
+  const n = nome?.trim() || "";
+  const b = brinco?.trim() || "";
+  if (!n) return false;
+  if (b && n.localeCompare(b, undefined, { sensitivity: "accent" }) === 0) return false;
+  if (/^\d+$/.test(n)) return false;
+  return true;
+}
+
+/** Título da sugestão de busca: brinco visual atual (nunca um número legado em `nome`). */
 function labelAnimalBusca(a: AnimalBuscaRow) {
-  const nome = a.nome?.trim();
-  const brinco = a.brinco?.trim();
+  const brinco = a.brinco?.trim() || "";
+  const nome = a.nome?.trim() || "";
+  if (brinco && isNomeAnimalUtil(nome, brinco)) return `${brinco} · ${nome}`;
+  if (brinco) return brinco;
+  if (isNomeAnimalUtil(nome, null)) return nome;
   if (nome) return nome;
-  if (brinco) return `Brinco ${brinco}`;
   return `#${a.id}`;
 }
 
 function subtituloAnimalBusca(a: AnimalBuscaRow) {
   const partes: string[] = [];
-  const nome = a.nome?.trim();
   const brinco = a.brinco?.trim();
   const rfid = a.brincoEletronico?.trim();
-  if (nome && brinco) partes.push(`Brinco ${brinco}`);
+  if (brinco) partes.push(`Brinco visual ${brinco}`);
   if (rfid) partes.push(`RFID ${rfid}`);
   if (a.loteNome?.trim()) partes.push(`Lote ${a.loteNome.trim()}`);
   else if (a.loteId) partes.push(`Lote #${a.loteId}`);
   return partes.join(" · ");
 }
 
-/** Identificador principal do animal selecionado (sem prefixo "Animal"). */
+/** Identificador principal do animal selecionado: brinco visual atual. */
 function labelAnimalSelecionado(a: AnimalBuscaRow) {
-  const nome = a.nome?.trim() || "";
   const brinco = a.brinco?.trim() || "";
-  const identificador = brinco || nome || String(a.id);
-
-  const nomeUtil =
-    Boolean(nome) &&
-    nome.localeCompare(identificador, undefined, { sensitivity: "accent" }) !== 0;
-
-  if (nomeUtil) return `${identificador} · ${nome}`;
-  return identificador;
+  const nome = a.nome?.trim() || "";
+  if (brinco && isNomeAnimalUtil(nome, brinco)) return `${brinco} · ${nome}`;
+  if (brinco) return brinco;
+  if (isNomeAnimalUtil(nome, null)) return nome;
+  if (nome) return nome;
+  return String(a.id);
 }
 
 function loteAnimalSelecionado(a: AnimalBuscaRow) {
@@ -565,6 +709,1409 @@ function sexoDotClass(sexo?: string | null) {
   if (sexo === "macho") return "bg-blue-400";
   if (sexo === "femea") return "bg-pink-400";
   return "bg-gray-300";
+}
+
+/** Normaliza peso digitado (pt-BR ou US) para decimal do banco. Null se inválido/≤0. */
+function parsePesoKgParaPersistir(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  // "300,5" / "1.300,5" → parseMoedaBr; "300.5" também.
+  let normalized = t;
+  if (t.includes(",")) {
+    normalized = t.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+/**
+ * Valor numérico da dose sanitária (pt-BR ou US).
+ * Retorna string de exibição (ex.: "5", "2,5") ou null se vazio/inválido/≤0.
+ */
+function parseDoseValorSanitario(raw: string): string | null {
+  const t = raw.trim();
+  if (!t) return null;
+  let normalized = t;
+  if (t.includes(",")) {
+    normalized = t.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const rounded = Math.round(n * 1000) / 1000;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(rounded).replace(".", ",");
+}
+
+/** Combina valor + unidade em um único texto para `saude_registros.dosagem` (ex.: "5 mL"). */
+function montarDosagemSanitaria(valorRaw: string, unidadeRaw: string): {
+  dosagem: string | undefined;
+  erro: string | null;
+} {
+  const valorTrim = valorRaw.trim();
+  const unidade = unidadeRaw.trim();
+  if (!valorTrim && !unidade) return { dosagem: undefined, erro: null };
+  if (valorTrim && !unidade) {
+    return { dosagem: undefined, erro: "Informe a unidade da dose." };
+  }
+  if (!valorTrim && unidade) {
+    return { dosagem: undefined, erro: "Informe o valor da dose." };
+  }
+  const valor = parseDoseValorSanitario(valorTrim);
+  if (!valor) {
+    return { dosagem: undefined, erro: "Informe um valor de dose válido maior que zero." };
+  }
+  return { dosagem: `${valor} ${unidade}`, erro: null };
+}
+
+/** Manejo pontual — Pesagem (mesmo padrão visual da Identificação). */
+function ManejoPesagemForm() {
+  const [, setLocation] = useLocation();
+  const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
+
+  const [fazendaId, setFazendaId] = useState("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [data, setData] = useState(todayISODate);
+  const [buscaAnimal, setBuscaAnimal] = useState("");
+  const [animalId, setAnimalId] = useState<number | null>(null);
+  const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
+  const [novoPeso, setNovoPeso] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+  const [erroFazenda, setErroFazenda] = useState("");
+  const [listaAberta, setListaAberta] = useState(false);
+  /** Modal central para bloqueios de regra de negócio (não limpa o formulário). */
+  const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
+  const buscaRef = useRef<HTMLDivElement>(null);
+
+  const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
+
+  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
+    {
+      fazendaId: fazendaNum || undefined,
+      status: "ativo",
+      search: buscaAnimal.trim() || undefined,
+    },
+    { enabled: buscaAtiva },
+  );
+
+  const { data: pesagensAnimal = [] } = trpc.pesagens.list.useQuery(
+    { animalId: animalId! },
+    { enabled: Boolean(animalId) },
+  );
+
+  const saveMutation = trpc.pesagens.create.useMutation({
+    onSuccess: () => {
+      toast.success("Pesagem registrada com sucesso.");
+      setLocation("/manejo/registros");
+    },
+    onError: err => {
+      const msg = err.message || "Não foi possível salvar a pesagem.";
+      if (msg.includes("não pode ser futura")) {
+        setBloqueioNegocioMsg(MSG_PESAGEM_DATA_FUTURA);
+        return;
+      }
+      toast.error(msg);
+    },
+  });
+
+  useEffect(() => {
+    if (loadingFazendas || fazendaInitDone) return;
+    if (!fazendas.length) {
+      setFazendaInitDone(true);
+      return;
+    }
+    const ids = fazendas.map(f => f.id);
+    const fromStorage = readPersistedRebanhoFazendaId(ids);
+    const resolved = fromStorage || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setFazendaId(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone, loadingFazendas]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== REBANHO_FAZENDA_STORAGE_KEY) return;
+      const ids = fazendas.map(f => f.id);
+      const next = readPersistedRebanhoFazendaId(ids);
+      if (!next || next === fazendaId) return;
+      setFazendaId(next);
+      setAnimalId(null);
+      setAnimalSel(null);
+      setBuscaAnimal("");
+      setListaAberta(false);
+      setNovoPeso("");
+      setObservacoes("");
+      setErroFazenda("");
+      toast.message("Fazenda do contexto atualizada. Dados dependentes foram limpos.");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [fazendas, fazendaId]);
+
+  useEffect(() => {
+    if (!listaAberta) return;
+    const onDoc = (e: MouseEvent) => {
+      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
+        setListaAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [listaAberta]);
+
+  const onChangeFazenda = (next: string) => {
+    setFazendaId(next);
+    persistRebanhoFazendaId(next);
+    setErroFazenda("");
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    setNovoPeso("");
+    setObservacoes("");
+  };
+
+  const limparAnimal = useCallback(() => {
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    setNovoPeso("");
+    setObservacoes("");
+  }, []);
+
+  const selecionarAnimal = useCallback((a: AnimalBuscaRow) => {
+    setAnimalId(a.id);
+    setAnimalSel(a);
+    setBuscaAnimal(labelAnimalBusca(a));
+    setListaAberta(false);
+    setNovoPeso("");
+    setObservacoes("");
+  }, []);
+
+  const resultadosBusca = useMemo(() => {
+    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
+  }, [animaisBusca]);
+
+  const ultimaPesagem = useMemo(() => {
+    if (!animalId || !pesagensAnimal.length) return null;
+    const desc = sortPesagensDesc(
+      pesagensAnimal.map(p => ({
+        id: p.id,
+        peso: p.peso,
+        data: p.data,
+        observacoes: p.observacoes,
+        createdAt: p.createdAt,
+      })),
+    );
+    return desc[0] ?? null;
+  }, [animalId, pesagensAnimal]);
+
+  const brincoAtual = animalSel?.brinco?.trim() || "";
+  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
+  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
+  const ultimoPesoNum =
+    ultimaPesagem?.peso != null && Number.isFinite(Number(ultimaPesagem.peso))
+      ? Number(ultimaPesagem.peso)
+      : animalSel?.ultimoPeso != null && Number.isFinite(animalSel.ultimoPeso)
+        ? animalSel.ultimoPeso
+        : null;
+  const ultimoPesoFmt = formatUltimoPesoKg(ultimoPesoNum);
+  const ultimaPesagemDataFmt = ultimaPesagem?.data
+    ? formatDateBR(ultimaPesagem.data)
+    : null;
+
+  const unicaFazenda = fazendas.length === 1;
+  const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+
+  const fecharBloqueioNegocio = () => setBloqueioNegocioMsg(null);
+
+  const handleSalvar = () => {
+    if (!fazendaId) {
+      setErroFazenda("Selecione uma Fazenda");
+      toast.error("Selecione uma Fazenda");
+      return;
+    }
+    if (!animalId || !animalSel) {
+      toast.error("Selecione um animal válido.");
+      return;
+    }
+    if (!data) {
+      toast.error("Informe a data da pesagem.");
+      return;
+    }
+    // Data civil YYYY-MM-DD vs hoje local — não usa timestamp/horário.
+    if (data > todayISODate()) {
+      setBloqueioNegocioMsg(MSG_PESAGEM_DATA_FUTURA);
+      return;
+    }
+    const pesoPersistir = parsePesoKgParaPersistir(novoPeso);
+    if (!pesoPersistir) {
+      toast.error("Informe um peso válido maior que zero.");
+      return;
+    }
+
+    saveMutation.mutate({
+      animalId,
+      peso: pesoPersistir,
+      data,
+      observacoes: observacoes.trim() || undefined,
+    });
+  };
+
+  const sectionTitleCls =
+    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
+
+  return (
+    <AppLayout>
+      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
+            Manejo pontual
+          </p>
+          <h1
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Pesagem
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLocation("/manejo/registros")}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSalvar}
+            disabled={saveMutation.isPending || !animalId || !animalSel}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            {saveMutation.isPending ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
+        <div>
+          <p className={sectionTitleCls}>Contexto</p>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+            {unicaFazenda && fazendaId && nomeFazenda ? (
+              <div className="min-w-0">
+                <label className={labelCls}>Fazenda</label>
+                <div
+                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
+                >
+                  {nomeFazenda}
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <label className={labelCls}>
+                  Fazenda<span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={fazendaId}
+                  onChange={e => onChangeFazenda(e.target.value)}
+                  className={fieldCls}
+                  disabled={loadingFazendas || !fazendaInitDone}
+                >
+                  <option value="">Selecione uma Fazenda</option>
+                  {fazendas.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome}
+                    </option>
+                  ))}
+                </select>
+                {erroFazenda ? (
+                  <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
+                ) : null}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <label className={labelCls}>
+                Data<span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={data}
+                max={todayISODate()}
+                onChange={e => setData(e.target.value)}
+                className={fieldCls}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <p className={sectionTitleCls}>Animal</p>
+          {animalSel ? (
+            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
+                      title={
+                        animalSel.sexo === "macho"
+                          ? "Macho"
+                          : animalSel.sexo === "femea"
+                            ? "Fêmea"
+                            : undefined
+                      }
+                      aria-hidden
+                    />
+                    <span className="text-[13px] font-semibold text-gray-900">
+                      {labelAnimalSelecionado(animalSel)}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    Brinco visual{" "}
+                    <span className="font-medium text-gray-800">
+                      {brincoAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    RFID{" "}
+                    <span className="font-medium text-gray-800">
+                      {rfidAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  {loteAtual ? (
+                    <>
+                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                        |
+                      </span>
+                      <span className="shrink-0">
+                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
+                      </span>
+                    </>
+                  ) : null}
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    Último peso{" "}
+                    <span className="font-medium text-gray-800">
+                      {ultimoPesoFmt
+                        ? `${ultimoPesoFmt} kg${ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}`
+                        : "—"}
+                    </span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={limparAnimal}
+                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                >
+                  Alterar animal
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative" ref={buscaRef}>
+              <input
+                type="search"
+                value={buscaAnimal}
+                onChange={e => {
+                  setBuscaAnimal(e.target.value);
+                  setListaAberta(true);
+                }}
+                onFocus={() => setListaAberta(true)}
+                disabled={!fazendaId}
+                placeholder="Buscar por brinco, RFID ou nome..."
+                className={fieldCls}
+                autoComplete="off"
+              />
+              {listaAberta && buscaAtiva ? (
+                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {buscandoAnimais ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
+                  ) : resultadosBusca.length === 0 ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                      Nenhum animal encontrado.
+                    </li>
+                  ) : (
+                    resultadosBusca.map(a => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          onClick={() => selecionarAnimal(a)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
+                        >
+                          <div className="text-[13px] font-semibold text-gray-900">
+                            {labelAnimalBusca(a)}
+                          </div>
+                          {subtituloAnimalBusca(a) ? (
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              {subtituloAnimalBusca(a)}
+                            </div>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {animalSel ? (
+          <div className="border-t border-gray-100 pt-5 space-y-4">
+            <p className={sectionTitleCls}>Pesagem</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>
+                  Novo peso (kg)<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={novoPeso}
+                  onChange={e => setNovoPeso(e.target.value)}
+                  placeholder="Ex.: 320 ou 320,5"
+                  className={fieldCls}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Observações</label>
+              <textarea
+                rows={3}
+                value={observacoes}
+                onChange={e => setObservacoes(e.target.value)}
+                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                placeholder="Opcional"
+                maxLength={2000}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Bloqueio de regra de negócio — mesmo padrão visual da Identificação */}
+      <Dialog open={Boolean(bloqueioNegocioMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioNegocioMsg}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={fecharBloqueioNegocio}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
+  );
+}
+
+/** Manejo pontual — Sanitário (mesmo padrão visual de Identificação/Pesagem). */
+function ManejoSanitarioForm() {
+  const [, setLocation] = useLocation();
+  const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
+
+  const [fazendaId, setFazendaId] = useState("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [data, setData] = useState(todayISODate);
+  const [buscaAnimal, setBuscaAnimal] = useState("");
+  const [animalId, setAnimalId] = useState<number | null>(null);
+  const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
+  const [tipoSanitario, setTipoSanitario] = useState<TipoSanitarioManejo | "">("");
+  const [estoqueId, setEstoqueId] = useState<number | null>(null);
+  /** Snapshot do insumo selecionado (não depende só da lista filtrada). */
+  const [produtoSel, setProdutoSel] = useState<EstoqueSanitarioItem | null>(null);
+  const [buscaProduto, setBuscaProduto] = useState("");
+  const [listaProdutoAberta, setListaProdutoAberta] = useState(false);
+  const [doseValor, setDoseValor] = useState("");
+  const [doseUnidade, setDoseUnidade] = useState("");
+  const [viaAplicacao, setViaAplicacao] = useState("");
+  const [descricaoOutro, setDescricaoOutro] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+  const [erroFazenda, setErroFazenda] = useState("");
+  const [erroDose, setErroDose] = useState("");
+  const [erroProduto, setErroProduto] = useState("");
+  const [listaAberta, setListaAberta] = useState(false);
+  const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
+  const buscaRef = useRef<HTMLDivElement>(null);
+  const produtoRef = useRef<HTMLDivElement>(null);
+
+  const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
+  const exigeProduto = Boolean(tipoSanitario) && tipoSanitario !== "Outro";
+  const exigeDescricaoOutro = tipoSanitario === "Outro";
+
+  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
+    {
+      fazendaId: fazendaNum || undefined,
+      status: "ativo",
+      search: buscaAnimal.trim() || undefined,
+    },
+    { enabled: buscaAtiva },
+  );
+
+  const { data: estoqueFarmácia = [], isFetching: loadingEstoque } =
+    trpc.estoque.listByCategories.useQuery(
+      { categorias: [CATEGORIA_SANITARIO_INSUMOS] },
+      { enabled: Boolean(fazendaNum) && Boolean(animalSel) },
+    );
+
+  const produtosFazenda = useMemo(() => {
+    if (!fazendaNum) return [];
+    return (estoqueFarmácia as EstoqueSanitarioItem[]).filter(item => {
+      const sit = String(item.situacao || "ativo").toLowerCase();
+      if (sit === "inativo") return false;
+      const fid = Number(item.fazendaId);
+      return Number.isFinite(fid) && fid === fazendaNum;
+    });
+  }, [estoqueFarmácia, fazendaNum]);
+
+  const produtosFiltrados = useMemo(() => {
+    const q = buscaProduto.trim().toLowerCase();
+    if (!q) return produtosFazenda.slice(0, 40);
+    return produtosFazenda
+      .filter(p => {
+        const nome = String(p.nome || "").toLowerCase();
+        const sub = String(p.subcategoria || "").toLowerCase();
+        const fab = String(p.fabricante || "").toLowerCase();
+        return nome.includes(q) || sub.includes(q) || fab.includes(q);
+      })
+      .slice(0, 40);
+  }, [produtosFazenda, buscaProduto]);
+
+  const custoMedioProduto = produtoSel
+    ? parseCustoMedioClient(produtoSel.valorUnitario)
+    : null;
+
+  const doseNumParsed = useMemo(() => {
+    const raw = doseValor.trim();
+    if (!raw) return null;
+    const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
+    const n = Number(normalized);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+  }, [doseValor]);
+
+  /** Custo de referência na unidade da dose (ex.: R$/mL), quando conversão é segura. */
+  const custoReferenciaDose = useMemo(() => {
+    if (!produtoSel || custoMedioProduto == null) return null;
+    if (!doseUnidade.trim()) {
+      return {
+        tipo: "estoque" as const,
+        valor: custoMedioProduto,
+        rotulo: siglaUnidade(produtoSel.unidade) || produtoSel.unidade || "un",
+      };
+    }
+    const ref = calcularCustoReferenciaPorUnidadeDose({
+      custoMedioEstoque: custoMedioProduto,
+      unidadeEstoque: produtoSel.unidade,
+      unidadeDose: doseUnidade,
+      embalagensRaw: produtoSel.embalagens,
+    });
+    if ("erro" in ref) return { tipo: "erro" as const, erro: ref.erro };
+    return {
+      tipo: "dose" as const,
+      valor: ref.custoPorUnidadeDose,
+      rotulo: ref.rotuloUnidadeDose,
+    };
+  }, [produtoSel, custoMedioProduto, doseUnidade]);
+
+  const consumoCalc = useMemo(() => {
+    if (!produtoSel || doseNumParsed == null || !doseUnidade.trim()) return null;
+    return calcularQuantidadeEstoquePorDose({
+      doseValor: doseNumParsed,
+      doseUnidade,
+      unidadeEstoque: produtoSel.unidade,
+      embalagensRaw: produtoSel.embalagens,
+    });
+  }, [produtoSel, doseNumParsed, doseUnidade]);
+
+  const custoEstimado = useMemo(() => {
+    if (custoReferenciaDose?.tipo === "dose" && doseNumParsed != null) {
+      return Math.round(doseNumParsed * custoReferenciaDose.valor * 100) / 100;
+    }
+    if (consumoCalc && "quantidade" in consumoCalc && custoMedioProduto != null) {
+      return Math.round(consumoCalc.quantidade * custoMedioProduto * 100) / 100;
+    }
+    return null;
+  }, [custoReferenciaDose, doseNumParsed, consumoCalc, custoMedioProduto]);
+
+  const selecionarProduto = (p: EstoqueSanitarioItem) => {
+    setEstoqueId(p.id);
+    setProdutoSel(p);
+    setBuscaProduto(p.nome || "");
+    setListaProdutoAberta(false);
+    setErroProduto("");
+  };
+
+  const limparProduto = () => {
+    setEstoqueId(null);
+    setProdutoSel(null);
+    setBuscaProduto("");
+    setErroProduto("");
+  };
+
+  const trpcUtils = trpc.useUtils();
+  const saveMutation = trpc.saude.create.useMutation({
+    onSuccess: () => {
+      toast.success("Registro sanitário salvo com sucesso.");
+      void trpcUtils.estoque.listByCategories.invalidate();
+      void trpcUtils.estoque.list.invalidate();
+      setLocation("/manejo/registros");
+    },
+    onError: err => {
+      const msg = err.message || "Não foi possível salvar o registro sanitário.";
+      if (msg.includes("não pode ser futura")) {
+        setBloqueioNegocioMsg(MSG_SANITARIO_DATA_FUTURA);
+        return;
+      }
+      if (
+        msg.toLowerCase().includes("estoque insuficiente") ||
+        msg.toLowerCase().includes("não é possível converter") ||
+        msg.toLowerCase().includes("custo médio")
+      ) {
+        setBloqueioNegocioMsg(msg);
+        return;
+      }
+      toast.error(msg);
+    },
+  });
+
+  useEffect(() => {
+    if (loadingFazendas || fazendaInitDone) return;
+    if (!fazendas.length) {
+      setFazendaInitDone(true);
+      return;
+    }
+    const ids = fazendas.map(f => f.id);
+    const fromStorage = readPersistedRebanhoFazendaId(ids);
+    const resolved = fromStorage || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setFazendaId(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone, loadingFazendas]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== REBANHO_FAZENDA_STORAGE_KEY) return;
+      const ids = fazendas.map(f => f.id);
+      const next = readPersistedRebanhoFazendaId(ids);
+      if (!next || next === fazendaId) return;
+      setFazendaId(next);
+      setAnimalId(null);
+      setAnimalSel(null);
+      setBuscaAnimal("");
+      setListaAberta(false);
+      setTipoSanitario("");
+      setEstoqueId(null);
+      setProdutoSel(null);
+      setBuscaProduto("");
+      setListaProdutoAberta(false);
+      setDoseValor("");
+      setDoseUnidade("");
+      setViaAplicacao("");
+      setDescricaoOutro("");
+      setObservacoes("");
+      setErroFazenda("");
+      setErroDose("");
+      setErroProduto("");
+      toast.message("Fazenda do contexto atualizada. Dados dependentes foram limpos.");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [fazendas, fazendaId]);
+
+  useEffect(() => {
+    if (!listaAberta) return;
+    const onDoc = (e: MouseEvent) => {
+      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
+        setListaAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [listaAberta]);
+
+  useEffect(() => {
+    if (!listaProdutoAberta) return;
+    const onDoc = (e: MouseEvent) => {
+      if (produtoRef.current && !produtoRef.current.contains(e.target as Node)) {
+        setListaProdutoAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [listaProdutoAberta]);
+
+  /** Atualiza saldo/custo do snapshot quando a lista de estoque refresca. */
+  useEffect(() => {
+    if (!estoqueId) return;
+    const fresh = produtosFazenda.find(p => p.id === estoqueId);
+    if (fresh) setProdutoSel(fresh);
+  }, [produtosFazenda, estoqueId]);
+
+  const onChangeFazenda = (next: string) => {
+    setFazendaId(next);
+    persistRebanhoFazendaId(next);
+    setErroFazenda("");
+    setErroDose("");
+    setErroProduto("");
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    setTipoSanitario("");
+    setEstoqueId(null);
+    setProdutoSel(null);
+    setBuscaProduto("");
+    setListaProdutoAberta(false);
+    setDoseValor("");
+    setDoseUnidade("");
+    setViaAplicacao("");
+    setDescricaoOutro("");
+    setObservacoes("");
+  };
+
+  const limparAnimal = () => {
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    setTipoSanitario("");
+    setEstoqueId(null);
+    setProdutoSel(null);
+    setBuscaProduto("");
+    setListaProdutoAberta(false);
+    setDoseValor("");
+    setDoseUnidade("");
+    setViaAplicacao("");
+    setDescricaoOutro("");
+    setObservacoes("");
+    setErroDose("");
+    setErroProduto("");
+  };
+
+  const selecionarAnimal = useCallback((a: AnimalBuscaRow) => {
+    setAnimalId(a.id);
+    setAnimalSel(a);
+    setBuscaAnimal(labelAnimalBusca(a));
+    setListaAberta(false);
+  }, []);
+
+  const resultadosBusca = useMemo(() => {
+    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
+  }, [animaisBusca]);
+
+  const brincoAtual = animalSel?.brinco?.trim() || "";
+  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
+  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
+  const unicaFazenda = fazendas.length === 1;
+  const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+
+  const fecharBloqueioNegocio = () => setBloqueioNegocioMsg(null);
+
+  const handleSalvar = () => {
+    if (!fazendaId) {
+      setErroFazenda("Selecione uma Fazenda");
+      toast.error("Selecione uma Fazenda");
+      return;
+    }
+    if (!animalId || !animalSel) {
+      toast.error("Selecione um animal válido.");
+      return;
+    }
+    if (!data) {
+      toast.error("Informe a data do manejo sanitário.");
+      return;
+    }
+    if (data > todayISODate()) {
+      setBloqueioNegocioMsg(MSG_SANITARIO_DATA_FUTURA);
+      return;
+    }
+    if (!tipoSanitario) {
+      toast.error("Selecione o tipo de manejo sanitário.");
+      return;
+    }
+    if (exigeDescricaoOutro && !descricaoOutro.trim()) {
+      toast.error("Descreva o manejo sanitário.");
+      return;
+    }
+    if (exigeProduto && !estoqueId) {
+      setErroProduto("Selecione um produto / medicamento do estoque.");
+      toast.error("Selecione um produto / medicamento do estoque.");
+      return;
+    }
+    if (estoqueId) {
+      const doseMontada = montarDosagemSanitaria(doseValor, doseUnidade);
+      if (doseMontada.erro) {
+        setErroDose(doseMontada.erro);
+        return;
+      }
+      setErroDose("");
+      if (consumoCalc && "erro" in consumoCalc) {
+        setBloqueioNegocioMsg(consumoCalc.erro);
+        return;
+      }
+      if (custoMedioProduto == null) {
+        setBloqueioNegocioMsg(
+          "Este produto ainda não possui custo médio no estoque. Registre uma entrada com valor antes de usá-lo no manejo sanitário.",
+        );
+        return;
+      }
+      if (consumoCalc && "quantidade" in consumoCalc && produtoSel) {
+        const disponivel = parseFloat(String(produtoSel.quantidade ?? 0));
+        if (Number.isFinite(disponivel) && consumoCalc.quantidade > disponivel + 1e-9) {
+          setBloqueioNegocioMsg(MSG_SANITARIO_ESTOQUE_INSUFICIENTE);
+          return;
+        }
+      }
+    } else {
+      const doseMontada = montarDosagemSanitaria(doseValor, doseUnidade);
+      if (doseMontada.erro) {
+        setErroDose(doseMontada.erro);
+        return;
+      }
+      setErroDose("");
+    }
+
+    const doseMontada = montarDosagemSanitaria(doseValor, doseUnidade);
+
+    saveMutation.mutate({
+      animalId,
+      fazendaId: Number(fazendaId),
+      tipo: tipoSanitario,
+      estoqueId: estoqueId ?? undefined,
+      dosagem: doseMontada.dosagem,
+      doseValor: doseValor.trim() || undefined,
+      doseUnidade: doseUnidade.trim() || undefined,
+      viaAplicacao: viaAplicacao.trim() || undefined,
+      descricao: exigeDescricaoOutro ? descricaoOutro.trim() : undefined,
+      dataRegistro: data,
+      observacoes: observacoes.trim() || undefined,
+    });
+  };
+
+  const sectionTitleCls =
+    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
+
+  return (
+    <AppLayout>
+      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
+            Manejo pontual
+          </p>
+          <h1
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Sanitário
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLocation("/manejo/registros")}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSalvar}
+            disabled={saveMutation.isPending || !animalId || !animalSel}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            {saveMutation.isPending ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
+        <div>
+          <p className={sectionTitleCls}>Contexto</p>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+            {unicaFazenda && fazendaId && nomeFazenda ? (
+              <div className="min-w-0">
+                <label className={labelCls}>Fazenda</label>
+                <div
+                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
+                >
+                  {nomeFazenda}
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <label className={labelCls}>
+                  Fazenda<span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={fazendaId}
+                  onChange={e => onChangeFazenda(e.target.value)}
+                  className={fieldCls}
+                  disabled={loadingFazendas || !fazendaInitDone}
+                >
+                  <option value="">Selecione uma Fazenda</option>
+                  {fazendas.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome}
+                    </option>
+                  ))}
+                </select>
+                {erroFazenda ? (
+                  <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
+                ) : null}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <label className={labelCls}>
+                Data<span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={data}
+                max={todayISODate()}
+                onChange={e => setData(e.target.value)}
+                className={fieldCls}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <p className={sectionTitleCls}>Animal</p>
+          {animalSel ? (
+            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
+                      title={
+                        animalSel.sexo === "macho"
+                          ? "Macho"
+                          : animalSel.sexo === "femea"
+                            ? "Fêmea"
+                            : undefined
+                      }
+                      aria-hidden
+                    />
+                    <span className="text-[13px] font-semibold text-gray-900">
+                      {labelAnimalSelecionado(animalSel)}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    Brinco visual{" "}
+                    <span className="font-medium text-gray-800">
+                      {brincoAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    RFID{" "}
+                    <span className="font-medium text-gray-800">
+                      {rfidAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  {loteAtual ? (
+                    <>
+                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                        |
+                      </span>
+                      <span className="shrink-0">
+                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={limparAnimal}
+                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                >
+                  Alterar animal
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative" ref={buscaRef}>
+              <input
+                type="search"
+                value={buscaAnimal}
+                onChange={e => {
+                  setBuscaAnimal(e.target.value);
+                  setListaAberta(true);
+                }}
+                onFocus={() => setListaAberta(true)}
+                disabled={!fazendaId}
+                placeholder="Buscar por brinco, RFID ou nome..."
+                className={fieldCls}
+                autoComplete="off"
+              />
+              {listaAberta && buscaAtiva ? (
+                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {buscandoAnimais ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
+                  ) : resultadosBusca.length === 0 ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                      Nenhum animal encontrado.
+                    </li>
+                  ) : (
+                    resultadosBusca.map(a => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          onClick={() => selecionarAnimal(a)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
+                        >
+                          <div className="text-[13px] font-semibold text-gray-900">
+                            {labelAnimalBusca(a)}
+                          </div>
+                          {subtituloAnimalBusca(a) ? (
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              {subtituloAnimalBusca(a)}
+                            </div>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {animalSel ? (
+          <div className="border-t border-gray-100 pt-5 space-y-4">
+            <p className={sectionTitleCls}>Manejo sanitário</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>
+                  Tipo de manejo sanitário<span className="text-red-500">*</span>
+                </label>
+                <FormDownSelect
+                  value={tipoSanitario}
+                  onChange={v => {
+                    setTipoSanitario(v as TipoSanitarioManejo | "");
+                    if (v !== "Outro") setDescricaoOutro("");
+                  }}
+                  placeholder="Selecione o tipo"
+                  options={TIPOS_SANITARIO_MANEJO}
+                />
+              </div>
+              {(exigeProduto || tipoSanitario === "Outro") ? (
+                <div className={exigeProduto ? "" : "sm:col-span-2"}>
+                  <label className={labelCls}>
+                    Produto / medicamento
+                    {exigeProduto ? <span className="text-red-500">*</span> : null}
+                    {!exigeProduto ? (
+                      <span className="text-gray-400 font-normal"> (opcional)</span>
+                    ) : null}
+                  </label>
+                  {produtoSel ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-semibold text-gray-900 truncate">
+                            {produtoSel.nome}
+                          </p>
+                          <p className="text-[11px] text-gray-500 mt-0.5">
+                            {produtoSel.subcategoria || "Farmácia"}
+                            {produtoSel.unidade
+                              ? ` · estoque em ${siglaUnidade(produtoSel.unidade) || produtoSel.unidade}`
+                              : ""}
+                            {produtoSel.quantidade != null
+                              ? ` · saldo ${Number(produtoSel.quantidade).toLocaleString("pt-BR")}`
+                              : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                          onClick={limparProduto}
+                        >
+                          Alterar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative" ref={produtoRef}>
+                      <input
+                        type="search"
+                        value={buscaProduto}
+                        onChange={e => {
+                          const next = e.target.value;
+                          // Digitar não mantém seleção: exige clique na lista (estoqueId).
+                          if (estoqueId != null || produtoSel) {
+                            setEstoqueId(null);
+                            setProdutoSel(null);
+                          }
+                          setBuscaProduto(next);
+                          setListaProdutoAberta(true);
+                          if (erroProduto) setErroProduto("");
+                        }}
+                        onFocus={() => setListaProdutoAberta(true)}
+                        placeholder="Buscar e selecionar insumo da Farmácia…"
+                        className={fieldCls}
+                        autoComplete="off"
+                      />
+                      {listaProdutoAberta ? (
+                        <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                          {loadingEstoque ? (
+                            <li className="px-3 py-2.5 text-[11px] text-gray-400">Carregando…</li>
+                          ) : produtosFiltrados.length === 0 ? (
+                            <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                              Nenhum produto Farmácia nesta Fazenda. Cadastre em Insumos.
+                            </li>
+                          ) : (
+                            produtosFiltrados.map(p => (
+                              <li key={p.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => selecionarProduto(p)}
+                                  className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
+                                >
+                                  <div className="text-[13px] font-semibold text-gray-900">
+                                    {p.nome}
+                                  </div>
+                                  <div className="text-[11px] text-gray-500 mt-0.5">
+                                    {p.subcategoria || "Farmácia"}
+                                    {p.unidade
+                                      ? ` · ${siglaUnidade(p.unidade) || p.unidade}`
+                                      : ""}
+                                    {parseCustoMedioClient(p.valorUnitario) != null
+                                      ? ` · ${formatMoedaBrlSanitario(parseCustoMedioClient(p.valorUnitario)!)}`
+                                      : ""}
+                                  </div>
+                                </button>
+                              </li>
+                            ))
+                          )}
+                        </ul>
+                      ) : null}
+                      {buscaProduto.trim() && !estoqueId ? (
+                        <p className="text-[11px] text-amber-700 mt-1">
+                          Selecione o produto na lista para vincular ao estoque e calcular o custo.
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                  {erroProduto ? (
+                    <p className="text-[11px] text-red-600 mt-1">{erroProduto}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {exigeDescricaoOutro ? (
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>
+                    Descreva o manejo<span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={descricaoOutro}
+                    onChange={e => setDescricaoOutro(e.target.value)}
+                    placeholder="Descreva o manejo sanitário realizado"
+                    className={fieldCls}
+                    maxLength={2000}
+                    autoComplete="off"
+                  />
+                </div>
+              ) : null}
+              <div>
+                <label className={labelCls}>
+                  Dose
+                  {estoqueId ? <span className="text-red-500">*</span> : null}
+                </label>
+                <div className="flex gap-2 items-start min-w-0">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={doseValor}
+                    onChange={e => {
+                      setDoseValor(e.target.value);
+                      if (erroDose) setErroDose("");
+                    }}
+                    placeholder="Ex.: 5"
+                    className={`${fieldCls} min-w-0 flex-1`}
+                    autoComplete="off"
+                  />
+                  <div className="w-[7.25rem] shrink-0">
+                    <FormDownSelect
+                      value={doseUnidade}
+                      onChange={v => {
+                        setDoseUnidade(v);
+                        if (erroDose) setErroDose("");
+                      }}
+                      placeholder="Unidade"
+                      options={UNIDADES_DOSE_SANITARIO}
+                    />
+                  </div>
+                </div>
+                {erroDose ? (
+                  <p className="text-[11px] text-red-600 mt-1">{erroDose}</p>
+                ) : null}
+                {consumoCalc && "erro" in consumoCalc && doseValor.trim() && doseUnidade ? (
+                  <p className="text-[11px] text-amber-700 mt-1">{consumoCalc.erro}</p>
+                ) : null}
+              </div>
+              <div>
+                <label className={labelCls}>Via de aplicação</label>
+                <FormDownSelect
+                  value={viaAplicacao}
+                  onChange={setViaAplicacao}
+                  placeholder="Selecione a via (opcional)"
+                  options={VIAS_APLICACAO_SANITARIO}
+                />
+              </div>
+            </div>
+            {produtoSel ? (
+              <div className="rounded-lg border border-[#4ECDC4]/30 bg-[#4ECDC4]/[0.06] px-3 py-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">
+                    Custo de referência
+                  </p>
+                  <p className="text-[15px] text-gray-900 font-semibold tabular-nums">
+                    {custoMedioProduto == null
+                      ? "Sem custo médio cadastrado"
+                      : custoReferenciaDose?.tipo === "erro"
+                        ? "—"
+                        : custoReferenciaDose
+                          ? `${formatMoedaBrlSanitario(custoReferenciaDose.valor)} / ${custoReferenciaDose.rotulo}`
+                          : "—"}
+                  </p>
+                  {custoReferenciaDose?.tipo === "estoque" && !doseUnidade.trim() ? (
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      Informe a unidade da dose para ver o custo por mL/g/dose.
+                    </p>
+                  ) : null}
+                  {custoReferenciaDose?.tipo === "erro" ? (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      Não foi possível calcular o custo para esta unidade.
+                    </p>
+                  ) : null}
+                  {produtoSel.quantidade != null ? (
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Estoque disponível:{" "}
+                      {Number(produtoSel.quantidade).toLocaleString("pt-BR", {
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      {siglaUnidade(produtoSel.unidade) || produtoSel.unidade || ""}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">
+                    Custo estimado do manejo
+                  </p>
+                  <p className="text-[15px] text-gray-900 font-semibold tabular-nums">
+                    {custoEstimado != null ? formatMoedaBrlSanitario(custoEstimado) : "—"}
+                  </p>
+                  {consumoCalc && "quantidade" in consumoCalc && custoEstimado != null ? (
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      Consumo no estoque:{" "}
+                      {consumoCalc.quantidade.toLocaleString("pt-BR", {
+                        maximumFractionDigits: 4,
+                      })}{" "}
+                      {siglaUnidade(produtoSel.unidade) || produtoSel.unidade || ""}
+                    </p>
+                  ) : null}
+                  {consumoCalc && "erro" in consumoCalc && doseValor.trim() && doseUnidade ? (
+                    <p className="text-[11px] text-amber-700 mt-1">{consumoCalc.erro}</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <div>
+              <label className={labelCls}>Observações</label>
+              <textarea
+                rows={3}
+                value={observacoes}
+                onChange={e => setObservacoes(e.target.value)}
+                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                placeholder="Opcional — reação, reforço previsto, condição observada…"
+                maxLength={2000}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <Dialog open={Boolean(bloqueioNegocioMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioNegocioMsg}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={fecharBloqueioNegocio}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
+  );
 }
 
 /** Manejo pontual — Brinco Eletrônico (fluxo funcional). */
@@ -585,6 +2132,8 @@ function ManejoBrincoEletronicoForm() {
   const [motivo, setMotivo] = useState<MotivoTrocaBrinco | "">("");
   const [motivoOutro, setMotivoOutro] = useState("");
   const [erroFazenda, setErroFazenda] = useState("");
+  /** Modal central para bloqueios de regra de negócio (não limpa o formulário). */
+  const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
   const [listaAberta, setListaAberta] = useState(false);
   const [at05Feedback, setAt05Feedback] = useState<string | null>(null);
   const [at05LookupBusy, setAt05LookupBusy] = useState(false);
@@ -621,13 +2170,21 @@ function ManejoBrincoEletronicoForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível salvar.";
-      if (msg.toLowerCase().includes("já está sendo usado")) {
-        toast.error("Este brinco já está vinculado a outro animal.");
+      if (isBloqueioNegocioIdentificacao(msg)) {
+        setBloqueioNegocioMsg(msg);
         return;
       }
       toast.error(msg);
     },
   });
+
+  const fecharBloqueioNegocio = useCallback(() => {
+    setBloqueioNegocioMsg(null);
+  }, []);
+
+  const avisarBloqueioNegocio = useCallback((msg: string) => {
+    setBloqueioNegocioMsg(msg);
+  }, []);
 
   const limparOperacao = useCallback(() => {
     setOperacao("");
@@ -749,10 +2306,9 @@ function ManejoBrincoEletronicoForm() {
   const temRfidAtual = Boolean(rfidAtual);
   const mostraNovoRfid = operacao === "rfid" || operacao === "ambos";
   const mostraNovoBrinco = operacao === "brinco" || operacao === "ambos";
+  // Motivo obrigatório em todas as operações de Identificação (inclui Vincular RFID).
   const exigeMotivo =
-    operacao === "brinco" ||
-    operacao === "ambos" ||
-    (operacao === "rfid" && temRfidAtual);
+    operacao === "brinco" || operacao === "ambos" || operacao === "rfid";
 
   /** Captura Novo RFID (Trocar RFID / Trocar brinco e RFID). Não troca selectedAnimal. */
   const handleNewRfidCapture = useCallback(
@@ -788,9 +2344,15 @@ function ManejoBrincoEletronicoForm() {
           if (seq !== captureSeqRef.current) return;
 
           if (linked && Number(linked.id) !== currentAnimalId) {
-            setNovoRfid("");
-            setNovoRfidError("Este RFID já está vinculado a outro animal.");
-            toast.error("Este RFID já está vinculado a outro animal.");
+            const status = (linked.status ?? "").toString().trim().toLowerCase();
+            const msg =
+              status === "ativo"
+                ? "Este RFID já está vinculado a outro animal ativo nesta fazenda."
+                : "Este RFID já foi vinculado a outro animal e não pode ser reutilizado.";
+            // Mantém o RFID no campo para o usuário corrigir; bloqueio só no modal (sem erro inline).
+            setNovoRfid(rfid);
+            setNovoRfidError(null);
+            avisarBloqueioNegocio(msg);
             setAt05Feedback(
               `RFID ${rfid} já vinculado a outro animal — seleção atual preservada.`,
             );
@@ -819,7 +2381,7 @@ function ManejoBrincoEletronicoForm() {
         }
       })();
     },
-    [setReadRoute, trpcUtils],
+    [setReadRoute, trpcUtils, avisarBloqueioNegocio],
   );
 
   /** Identificação normal do animal (modo identify-animal). */
@@ -962,12 +2524,12 @@ function ManejoBrincoEletronicoForm() {
     : at05UiStatus === "connecting"
       ? "Conectando…"
       : at05UiStatus === "listening" || at05UiStatus === "connected"
-        ? "AT05 conectado"
+        ? "Conectado"
         : at05UiStatus === "error"
           ? at05Error
             ? `Erro: ${at05Error}`
             : "Erro na conexão"
-          : "AT05 não conectado";
+          : "Não conectado";
 
   const at05LastEventText =
     at05ReadRoute === "capture-new-rfid"
@@ -1031,12 +2593,27 @@ function ManejoBrincoEletronicoForm() {
       toast.error("Selecione um animal válido.");
       return;
     }
+    if (!data) {
+      toast.error("Informe a data da identificação.");
+      return;
+    }
+    // Data civil YYYY-MM-DD vs hoje local — mesma estratégia da Pesagem (sem horário/timezone).
+    if (data > todayISODate()) {
+      avisarBloqueioNegocio(MSG_IDENTIFICACAO_DATA_FUTURA);
+      return;
+    }
     if (!operacao) {
       toast.error("Selecione a operação.");
       return;
     }
     if (mostraNovoRfid && novoRfidError) {
-      toast.error(novoRfidError);
+      if (isBloqueioNegocioIdentificacao(novoRfidError)) {
+        // Bloqueio de negócio: só modal, sem manter erro inline.
+        setNovoRfidError(null);
+        avisarBloqueioNegocio(novoRfidError);
+      } else {
+        toast.error(novoRfidError);
+      }
       return;
     }
     if (mostraNovoRfid && !novoRfid.trim()) {
@@ -1087,7 +2664,7 @@ function ManejoBrincoEletronicoForm() {
             className="text-[20px] font-semibold text-gray-900"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Brinco Eletrônico
+            Identificação
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -1156,6 +2733,7 @@ function ManejoBrincoEletronicoForm() {
               <input
                 type="date"
                 value={data}
+                max={todayISODate()}
                 onChange={e => setData(e.target.value)}
                 className={fieldCls}
               />
@@ -1190,7 +2768,7 @@ function ManejoBrincoEletronicoForm() {
                     |
                   </span>
                   <span className="shrink-0">
-                    Brinco{" "}
+                    Brinco visual{" "}
                     <span className="font-medium text-gray-800">
                       {brincoAtual || "Não vinculado"}
                     </span>
@@ -1272,11 +2850,14 @@ function ManejoBrincoEletronicoForm() {
             </div>
           )}
 
-          {/* Integração discreta AT05 — identifica animal (não salva manejo) */}
+          {/* Leitura RFID via bastão — implementação atual: AT05 (não salva manejo) */}
           <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
-            <p className="text-[12px] font-semibold text-gray-800">Brinco eletrônico / AT05</p>
+            <p className="text-[12px] font-semibold text-gray-800">Leitura RFID / Bastão</p>
             <p className="text-[12px] text-gray-600" aria-live="polite">
-              Conexão: {at05ConnectionText}
+              Dispositivo: AT05
+            </p>
+            <p className="text-[12px] text-gray-600" aria-live="polite">
+              Status: {at05ConnectionText}
             </p>
             {at05LastEventText ? (
               <p className="text-[12px] text-gray-600" aria-live="polite">
@@ -1314,7 +2895,7 @@ function ManejoBrincoEletronicoForm() {
                   }`}
                 >
                   <Bluetooth className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-                  Conectar AT05
+                  Conectar bastão
                 </button>
               )}
             </div>
@@ -1332,16 +2913,16 @@ function ManejoBrincoEletronicoForm() {
             placeholder="Selecione a operação"
             disabled={!animalSel}
             options={[
+              { value: "brinco", label: "Trocar brinco visual" },
               {
                 value: "rfid",
                 label: temRfidAtual ? "Trocar RFID" : "Vincular RFID",
               },
-              { value: "brinco", label: "Trocar brinco" },
               {
                 value: "ambos",
                 label: temRfidAtual
-                  ? "Trocar brinco e RFID"
-                  : "Trocar brinco e vincular RFID",
+                  ? "Trocar brinco visual e RFID"
+                  : "Trocar brinco visual e vincular RFID",
               },
             ]}
             onChange={next => {
@@ -1361,10 +2942,25 @@ function ManejoBrincoEletronicoForm() {
                 <div
                   className={
                     mostraNovoRfid && mostraNovoBrinco
-                      ? "grid grid-cols-1 md:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-4 items-start"
+                      ? "grid grid-cols-1 md:grid-cols-[minmax(0,9fr)_minmax(0,11fr)] gap-4 items-start"
                       : "grid grid-cols-1 gap-4"
                   }
                 >
+                  {mostraNovoBrinco ? (
+                    <div className="min-w-0">
+                      <label className={labelCls}>
+                        Novo brinco visual<span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={novoBrinco}
+                        onChange={e => setNovoBrinco(e.target.value)}
+                        className={fieldCls}
+                        placeholder="Informe o brinco visual"
+                        autoComplete="off"
+                      />
+                    </div>
+                  ) : null}
                   {mostraNovoRfid ? (
                     <div className="min-w-0">
                       <label className={labelCls}>
@@ -1412,7 +3008,7 @@ function ManejoBrincoEletronicoForm() {
                             : "Ler com bastão"}
                         </button>
                       </div>
-                      {novoRfidError ? (
+                      {novoRfidError && !isBloqueioNegocioIdentificacao(novoRfidError) ? (
                         <p className="text-[11px] text-red-600 mt-1.5">{novoRfidError}</p>
                       ) : null}
                       <p className="text-[10px] text-gray-400 mt-1.5 min-h-[1rem]" aria-live="polite">
@@ -1424,23 +3020,8 @@ function ManejoBrincoEletronicoForm() {
                               ? "Modo captura ativo — aproxime o novo brinco eletrônico do bastão."
                               : at05SessionActive
                                 ? "Clique em “Ler com bastão” para capturar o Novo RFID (não troca o animal)."
-                                : "Clique em “Ler com bastão” para conectar e capturar o Novo RFID."}
+                                : "Clique em “Ler com bastão” para capturar o Novo RFID."}
                       </p>
-                    </div>
-                  ) : null}
-                  {mostraNovoBrinco ? (
-                    <div className="min-w-0">
-                      <label className={labelCls}>
-                        Novo brinco<span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={novoBrinco}
-                        onChange={e => setNovoBrinco(e.target.value)}
-                        className={fieldCls}
-                        placeholder="Informe o brinco visual"
-                        autoComplete="off"
-                      />
                     </div>
                   ) : null}
                 </div>
@@ -1454,7 +3035,7 @@ function ManejoBrincoEletronicoForm() {
                     <FormDownSelect
                       value={motivo}
                       placeholder="Selecione o motivo"
-                      options={MOTIVO_TROCA_OPCOES.map(o => ({
+                      options={(operacao ? motivosPorOperacao(operacao) : []).map(o => ({
                         value: o.value,
                         label: o.label,
                       }))}
@@ -1468,7 +3049,7 @@ function ManejoBrincoEletronicoForm() {
                   {motivo === "outro" ? (
                     <div>
                       <label className={labelCls}>
-                        Informe o motivo<span className="text-red-500">*</span>
+                        Descreva o motivo<span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -1487,6 +3068,38 @@ function ManejoBrincoEletronicoForm() {
           ) : null}
         </div>
       </div>
+
+      {/* Bloqueio de regra de negócio — mesmo padrão visual de FazendaDeleteBlockedDialog */}
+      <Dialog open={Boolean(bloqueioNegocioMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioNegocioMsg}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={fecharBloqueioNegocio}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

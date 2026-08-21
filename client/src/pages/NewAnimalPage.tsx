@@ -152,8 +152,10 @@ const FieldInput: React.FC<{
   error?: boolean;
   min?: string;
   step?: string;
-}> = ({ value, onChange, placeholder, type = 'text', required, error, min, step }) => (
-  <FieldBox required={required} className={cn(error && 'border-l-red-500')}>
+  readOnly?: boolean;
+  disabled?: boolean;
+}> = ({ value, onChange, placeholder, type = 'text', required, error, min, step, readOnly, disabled }) => (
+  <FieldBox required={required} className={cn(error && 'border-l-red-500', (readOnly || disabled) && 'bg-gray-50')}>
     <input
       type={type}
       value={value}
@@ -161,7 +163,14 @@ const FieldInput: React.FC<{
       placeholder={placeholder}
       min={min}
       step={step}
-      className={cn(inputClass, 'min-h-[42px]', error && 'text-red-600')}
+      readOnly={readOnly}
+      disabled={disabled}
+      className={cn(
+        inputClass,
+        'min-h-[42px]',
+        error && 'text-red-600',
+        (readOnly || disabled) && 'cursor-default text-gray-700 bg-transparent',
+      )}
     />
   </FieldBox>
 );
@@ -171,13 +180,19 @@ const FieldSelect: React.FC<{
   onChange: (v: string) => void;
   required?: boolean;
   error?: boolean;
+  disabled?: boolean;
   children: React.ReactNode;
-}> = ({ value, onChange, required, error, children }) => (
-  <FieldBox required={required} className={cn(error && 'border-l-red-500')}>
+}> = ({ value, onChange, required, error, disabled, children }) => (
+  <FieldBox required={required} className={cn(error && 'border-l-red-500', disabled && 'bg-gray-50')}>
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]')}
+      disabled={disabled}
+      className={cn(
+        inputClass,
+        'appearance-none min-h-[42px]',
+        disabled ? 'cursor-default text-gray-700' : 'cursor-pointer',
+      )}
     >
       {children}
     </select>
@@ -188,16 +203,22 @@ const Checkbox: React.FC<{
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
-}> = ({ checked, onChange, label }) => (
-  <label className="flex items-center gap-2.5 cursor-pointer select-none h-[42px]">
+  disabled?: boolean;
+}> = ({ checked, onChange, label, disabled }) => (
+  <label className={cn('flex items-center gap-2.5 select-none h-[42px]', disabled ? 'cursor-default opacity-80' : 'cursor-pointer')}>
     <input
       type="checkbox"
       checked={checked}
       onChange={e => onChange(e.target.checked)}
+      disabled={disabled}
       className="w-4 h-4 rounded border-gray-300 text-[#4ECDC4] focus:ring-[#4ECDC4] accent-[#4ECDC4]"
     />
     <span className="text-[12px] font-semibold text-gray-700 uppercase tracking-wide">{label}</span>
   </label>
+);
+
+const ManejoCampoHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="mt-1 text-[11px] text-gray-500 leading-snug">{children}</p>
 );
 
 // ─── Constantes de motivo de troca de brinco ────────────────────────────────
@@ -610,12 +631,19 @@ const AnimalFormPage: React.FC = () => {
       const payload = buildPayload();
       // Em modo edição: campos vazios enviam null para limpar o valor no banco
       const resolveStr = (v: string) => v.trim() ? v.trim() : null;
+      // Campos operacionais NÃO são alterados aqui — vão por Manejo.
+      const {
+        brinco: _brincoOp,
+        brincoEletronico: _rfidOp,
+        loteId: _loteOp,
+        pastoId: _pastoOp,
+        castrado: _castradoOp,
+        dataDesmama: _desmamaOp,
+        ...cadastralPayload
+      } = payload as Record<string, unknown>;
+
       const editPayload = {
-        ...payload,
-        loteId: form.loteId ? parseInt(form.loteId) : null,
-        pastoId: pastoId ? parseInt(pastoId) : null,
-        // Campos de texto: null limpa, string atualiza
-        brincoEletronico: resolveStr(form.brincoEletronico),
+        ...cadastralPayload,
         raca: resolveStr(form.raca),
         pelagem: resolveStr(form.pelagem),
         marca: resolveStr(form.marca),
@@ -630,19 +658,6 @@ const AnimalFormPage: React.FC = () => {
         mae: resolveStr(form.mae),
         observacoes: resolveStr(form.observacoes),
       };
-
-      // Detecta mudança de brinco: abre modal de motivo antes de salvar
-      const brincoOriginal = animal?.brinco ?? null;
-      const brincoNovo = form.brinco.trim();
-      if (brincoOriginal && brincoNovo && brincoNovo !== brincoOriginal) {
-        // Armazena payload e abre modal de confirmação de troca
-        setPendingSavePayload({ id: animalId!, payload: editPayload as Record<string, unknown>, brincoAnterior: brincoOriginal });
-        setMotivoTroca('reidentificacao');
-        setObsTroca('');
-        setObsTrocaError('');
-        setShowConfirmarTrocaModal(true);
-        return; // Aguarda confirmação no modal
-      }
 
       updateMutation.mutate({ id: animalId!, ...editPayload }, {
         onSuccess: () => {
@@ -756,7 +771,7 @@ const AnimalFormPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Fazenda</FormLabel>
-                  <FieldBox required className={cn(errors.fazenda && 'border-l-red-500')}>
+                  <FieldBox required className={cn(errors.fazenda && 'border-l-red-500', isEditMode && 'bg-gray-50')}>
                     <select
                       value={fazendaId}
                       onChange={e => {
@@ -765,7 +780,13 @@ const AnimalFormPage: React.FC = () => {
                         setPastoId('');
                         if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
                       }}
-                      className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', errors.fazenda && 'text-red-600')}
+                      disabled={isEditMode}
+                      className={cn(
+                        inputClass,
+                        'appearance-none min-h-[42px]',
+                        isEditMode ? 'cursor-default text-gray-700' : 'cursor-pointer',
+                        errors.fazenda && 'text-red-600',
+                      )}
                     >
                       <option value="">Selecione uma Fazenda</option>
                       {fazendas?.map(f => (
@@ -774,6 +795,11 @@ const AnimalFormPage: React.FC = () => {
                     </select>
                   </FieldBox>
                   {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
+                  {isEditMode && (
+                    <ManejoCampoHint>
+                      Alterações de fazenda/lote são realizadas em Manejo → Troca de Lote.
+                    </ManejoCampoHint>
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -801,8 +827,14 @@ const AnimalFormPage: React.FC = () => {
                     placeholder="ex: BR-12345"
                     required
                     error={!!errors.brinco}
+                    readOnly={isEditMode}
                   />
                   {errors.brinco && <p className="text-xs text-red-600 mt-1">{errors.brinco}</p>}
+                  {isEditMode && (
+                    <ManejoCampoHint>
+                      Alterações de brinco são realizadas em Manejo → Identificação.
+                    </ManejoCampoHint>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -834,21 +866,35 @@ const AnimalFormPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel>Lote</FormLabel>
-                  <FieldSelect value={form.loteId} onChange={handleLoteSelectChange}>
+                  <FieldSelect
+                    value={form.loteId}
+                    onChange={handleLoteSelectChange}
+                    disabled={isEditMode}
+                  >
                     <option value="">Sem lote</option>
                     {lotesFiltrados.map(l => (
                       <option key={l.id} value={l.id}>{l.nome}</option>
                     ))}
                   </FieldSelect>
+                  {isEditMode && (
+                    <ManejoCampoHint>
+                      Alterações de lote são realizadas em Manejo → Troca de Lote.
+                    </ManejoCampoHint>
+                  )}
                 </div>
                 <div>
                   <FormLabel>Subdivisão</FormLabel>
-                  <FieldBox>
+                  <FieldBox className={cn(isEditMode && 'bg-gray-50')}>
                     <select
                       value={pastoId}
                       onChange={e => setPastoId(e.target.value)}
-                      disabled={!fazendaId}
-                      className={cn(inputClass, 'appearance-none cursor-pointer min-h-[42px]', !fazendaId && 'opacity-50 cursor-not-allowed')}
+                      disabled={!fazendaId || isEditMode}
+                      className={cn(
+                        inputClass,
+                        'appearance-none min-h-[42px]',
+                        (!fazendaId || isEditMode) && 'opacity-50 cursor-not-allowed',
+                        !isEditMode && fazendaId && 'cursor-pointer',
+                      )}
                     >
                       <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
                       {(pastos ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' })).map(p => (
@@ -856,6 +902,11 @@ const AnimalFormPage: React.FC = () => {
                       ))}
                     </select>
                   </FieldBox>
+                  {isEditMode && (
+                    <ManejoCampoHint>
+                      Alterações de subdivisão são realizadas em Manejo → Troca de Lote.
+                    </ManejoCampoHint>
+                  )}
                 </div>
               </div>
             </div>
@@ -902,14 +953,41 @@ const AnimalFormPage: React.FC = () => {
               </div>
               <div>
                 <FormLabel>Data de Desmama</FormLabel>
-                <FormDatePicker
-                  value={form.dataDesmama}
-                  onChange={v => set('dataDesmama', v)}
-                  placeholder="dd/mm/aaaa"
-                />
+                {isEditMode ? (
+                  <>
+                    <FieldBox className="bg-gray-50">
+                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                        {form.dataDesmama
+                          ? form.dataDesmama.split('-').reverse().join('/')
+                          : '—'}
+                      </div>
+                    </FieldBox>
+                    <ManejoCampoHint>
+                      Desmama é registrada em Manejo → Desmama.
+                    </ManejoCampoHint>
+                  </>
+                ) : (
+                  <FormDatePicker
+                    value={form.dataDesmama}
+                    onChange={v => set('dataDesmama', v)}
+                    placeholder="dd/mm/aaaa"
+                  />
+                )}
               </div>
               <div className="flex items-end">
-                <Checkbox checked={form.castrado} onChange={v => set('castrado', v)} label="Castrado" />
+                <div>
+                  <Checkbox
+                    checked={form.castrado}
+                    onChange={v => set('castrado', v)}
+                    label="Castrado"
+                    disabled={isEditMode}
+                  />
+                  {isEditMode && (
+                    <ManejoCampoHint>
+                      Castração é registrada em Manejo → Castração.
+                    </ManejoCampoHint>
+                  )}
+                </div>
               </div>
             </div>
           </SectionCard>
@@ -968,10 +1046,17 @@ const AnimalFormPage: React.FC = () => {
                   value={form.brincoEletronico}
                   onChange={v => set('brincoEletronico', v)}
                   placeholder="ex: 076000000000001 ou código RFID"
+                  readOnly={isEditMode}
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
-                </p>
+                {isEditMode ? (
+                  <ManejoCampoHint>
+                    Alterações de RFID são realizadas em Manejo → Identificação.
+                  </ManejoCampoHint>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
+                  </p>
+                )}
               </div>
             </div>
           </CollapsibleSectionCard>

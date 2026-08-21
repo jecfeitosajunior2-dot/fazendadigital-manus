@@ -186,6 +186,9 @@ export const normalizarUnidade = (unidade: string | null | undefined): string =>
     grama: "g",
     saco: "sc",
     frasco: "fr",
+    mL: "ml",
+    ML: "ml",
+    Ml: "ml",
   };
   const trimmed = unidade.trim();
   if (UNIDADES_BASE.includes(trimmed as typeof UNIDADES_BASE[number])) return trimmed;
@@ -463,4 +466,81 @@ export function formatTotalMovimentacao(total: number, unidadeBase?: string): st
   const un = unidadeBase ? ` ${siglaUnidade(unidadeBase) || nomeUnidadeExibicao(unidadeBase)}` : "";
   const sinal = total < 0 ? "−" : "";
   return `${sinal}${fmt}${un}`.trim();
+}
+
+/**
+ * Converte dose sanitária (valor + unidade) para quantidade na unidade base do estoque.
+ * Reutiliza converterUnidade; se o estoque for contagem (un/fr/sc), tenta volume da embalagem.
+ * Não aproxima quando a conversão não é segura.
+ */
+export function calcularQuantidadeEstoquePorDose(opts: {
+  doseValor: number;
+  doseUnidade: string;
+  unidadeEstoque: string | null | undefined;
+  embalagensRaw?: string | null;
+}): { quantidade: number } | { erro: string } {
+  if (!(opts.doseValor > 0) || !Number.isFinite(opts.doseValor)) {
+    return { erro: "Informe um valor de dose válido maior que zero." };
+  }
+  const uDose = normalizarUnidade(opts.doseUnidade);
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  if (!uDose) return { erro: "Informe a unidade da dose." };
+  if (!uEst) {
+    return { erro: "Produto sem unidade de estoque cadastrada. Ajuste o cadastro do insumo." };
+  }
+
+  const direto = converterUnidade(opts.doseValor, uDose, uEst);
+  if (direto != null && Number.isFinite(direto) && direto > 0) {
+    return { quantidade: direto };
+  }
+
+  const unidadesContagem = new Set(["un", "fr", "sc"]);
+  if (unidadesContagem.has(uEst)) {
+    const embalagens = parseEmbalagens(opts.embalagensRaw);
+    for (const emb of embalagens) {
+      if (emb.volume == null || !(emb.volume > 0) || !emb.unidade) continue;
+      const doseNaUnEmb = converterUnidade(opts.doseValor, uDose, emb.unidade);
+      if (doseNaUnEmb == null || !(doseNaUnEmb > 0)) continue;
+      const qtd = doseNaUnEmb / emb.volume;
+      if (Number.isFinite(qtd) && qtd > 0) return { quantidade: qtd };
+    }
+  }
+
+  const rotuloEst = siglaUnidade(uEst) || uEst;
+  const rotuloDose = siglaUnidade(uDose) || uDose;
+  return {
+    erro:
+      `Não é possível converter a dose (${rotuloDose}) para a unidade do estoque (${rotuloEst}) com segurança. ` +
+      `Use a mesma família de unidade ou cadastre o volume da embalagem no insumo.`,
+  };
+}
+
+/**
+ * Custo de referência por 1 unidade da dose (ex.: R$/mL), a partir do custo médio do estoque.
+ * Usa a mesma conversão segura de `calcularQuantidadeEstoquePorDose`.
+ */
+export function calcularCustoReferenciaPorUnidadeDose(opts: {
+  custoMedioEstoque: number;
+  unidadeEstoque: string | null | undefined;
+  unidadeDose: string;
+  embalagensRaw?: string | null;
+}): { custoPorUnidadeDose: number; rotuloUnidadeDose: string } | { erro: string } {
+  if (!(opts.custoMedioEstoque > 0)) {
+    return { erro: "Produto sem custo médio cadastrado." };
+  }
+  const conv = calcularQuantidadeEstoquePorDose({
+    doseValor: 1,
+    doseUnidade: opts.unidadeDose,
+    unidadeEstoque: opts.unidadeEstoque,
+    embalagensRaw: opts.embalagensRaw,
+  });
+  if ("erro" in conv) return { erro: conv.erro };
+  const custo = opts.custoMedioEstoque * conv.quantidade;
+  if (!Number.isFinite(custo) || !(custo > 0)) {
+    return { erro: "Não foi possível calcular o custo para esta unidade." };
+  }
+  return {
+    custoPorUnidadeDose: Math.round(custo * 10000) / 10000,
+    rotuloUnidadeDose: siglaUnidade(opts.unidadeDose) || opts.unidadeDose,
+  };
 }

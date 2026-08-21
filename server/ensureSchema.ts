@@ -388,6 +388,25 @@ export async function ensureSchema() {
 
     await ensureColumn(pool, "pessoas", "documento", "varchar(20)");
     await ensureColumn(pool, "pessoas", "endereco", "varchar(255)");
+
+    // Sanitário: via de aplicação + vínculo com estoque/custo (padrão Manutenção)
+    const [saudeTable] = await pool.query(`SHOW TABLES LIKE 'saude_registros'`);
+    if ((saudeTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "saude_registros", "viaAplicacao", "varchar(80)");
+      await ensureColumn(pool, "saude_registros", "estoqueId", "int");
+      await ensureColumn(
+        pool,
+        "saude_registros",
+        "quantidadeConsumo",
+        "decimal(12,4)",
+      );
+      await ensureColumn(
+        pool,
+        "saude_registros",
+        "valorUnitario",
+        "decimal(10,2)",
+      );
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

@@ -5,7 +5,13 @@ import { formatValorCelulaMoedaBrlExcel, formatMoedaBrlExcel, parseMoedaBr, pars
 
 export { EM_CARENCIA_SIM_BADGE_CLASS };
 
-export type PesagemRow = { peso: string | null; data: string | Date | null };
+export type PesagemRow = {
+  id?: number;
+  peso: string | null;
+  data: string | Date | null;
+  observacoes?: string | null;
+  createdAt?: string | Date | null;
+};
 
 export const STATUS_LABELS: Record<string, string> = {
   ativo: "Ativo",
@@ -67,15 +73,72 @@ export function formatIdadeResumo(meses: number | null | undefined): string {
 }
 
 export function sortPesagensAsc(pesagens: PesagemRow[]): PesagemRow[] {
-  return [...pesagens].sort(
-    (a, b) => (parseLocalDate(a.data)?.getTime() ?? 0) - (parseLocalDate(b.data)?.getTime() ?? 0),
-  );
+  return [...pesagens].sort((a, b) => {
+    const ta = parseLocalDate(a.data)?.getTime() ?? 0;
+    const tb = parseLocalDate(b.data)?.getTime() ?? 0;
+    if (ta !== tb) return ta - tb;
+    const ida = Number(a.id) || 0;
+    const idb = Number(b.id) || 0;
+    if (ida !== idb) return ida - idb;
+    return (parseLocalDate(a.createdAt)?.getTime() ?? 0) - (parseLocalDate(b.createdAt)?.getTime() ?? 0);
+  });
 }
 
 export function sortPesagensDesc(pesagens: PesagemRow[]): PesagemRow[] {
-  return [...pesagens].sort(
-    (a, b) => (parseLocalDate(b.data)?.getTime() ?? 0) - (parseLocalDate(a.data)?.getTime() ?? 0),
-  );
+  return [...pesagens].sort((a, b) => {
+    const ta = parseLocalDate(a.data)?.getTime() ?? 0;
+    const tb = parseLocalDate(b.data)?.getTime() ?? 0;
+    if (tb !== ta) return tb - ta;
+    const ida = Number(a.id) || 0;
+    const idb = Number(b.id) || 0;
+    if (idb !== ida) return idb - ida;
+    return (parseLocalDate(b.createdAt)?.getTime() ?? 0) - (parseLocalDate(a.createdAt)?.getTime() ?? 0);
+  });
+}
+
+/** Dias calendário entre duas datas de pesagem (null se inválidas). */
+export function diasEntrePesagens(
+  dataAnterior: string | Date | null | undefined,
+  dataAtual: string | Date | null | undefined,
+): number | null {
+  const d1 = parseLocalDate(dataAnterior);
+  const d2 = parseLocalDate(dataAtual);
+  if (!d1 || !d2) return null;
+  return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * GMD entre duas pesagens consecutivas (variação / dias).
+ * Mesma data (0 dias) ou intervalo inválido → null (não divide por zero).
+ */
+export function calcularGmdEntrePesagens(
+  pesoAnterior: string | number | null | undefined,
+  pesoAtual: string | number | null | undefined,
+  dataAnterior: string | Date | null | undefined,
+  dataAtual: string | Date | null | undefined,
+): number | null {
+  if (pesoAnterior == null || pesoAtual == null || pesoAnterior === "" || pesoAtual === "") {
+    return null;
+  }
+  const p1 = Number(pesoAnterior);
+  const p2 = Number(pesoAtual);
+  if (!Number.isFinite(p1) || !Number.isFinite(p2)) return null;
+  const dias = diasEntrePesagens(dataAnterior, dataAtual);
+  if (dias == null || dias <= 0) return null;
+  return Math.round(((p2 - p1) / dias) * 1000) / 1000;
+}
+
+export function calcularVariacaoPesagem(
+  pesoAnterior: string | number | null | undefined,
+  pesoAtual: string | number | null | undefined,
+): number | null {
+  if (pesoAnterior == null || pesoAtual == null || pesoAnterior === "" || pesoAtual === "") {
+    return null;
+  }
+  const p1 = Number(pesoAnterior);
+  const p2 = Number(pesoAtual);
+  if (!Number.isFinite(p1) || !Number.isFinite(p2)) return null;
+  return Math.round((p2 - p1) * 10) / 10;
 }
 
 export type ResumoPesoAnimal = {

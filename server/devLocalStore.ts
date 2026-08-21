@@ -1706,6 +1706,7 @@ export const devLocalStore = {
         unidade: e.unidade,
         quantidade: e.quantidade,
         valorUnitario: e.valorUnitario,
+        embalagens: e.embalagens ?? null,
         fabricante: e.fabricante,
         situacao: e.situacao ?? "ativo",
         identificadorUnico: e.identificadorUnico ?? null,
@@ -1819,8 +1820,12 @@ export const devLocalStore = {
     if (input?.sexo && input.sexo !== "") {
       lista = lista.filter(a => a.sexo === input.sexo);
     }
-    if (input?.status && input.status !== "") {
-      lista = lista.filter(a => a.status === input.status);
+    if (input?.status && input.status !== "" && input.status !== "todos") {
+      if (input.status === "inativo") {
+        lista = lista.filter(a => (a.status ?? "ativo") !== "ativo");
+      } else {
+        lista = lista.filter(a => a.status === input.status);
+      }
     }
     if (input?.loteId) lista = lista.filter(a => a.loteId === input.loteId);
     if (input?.raca && input.raca !== "") lista = lista.filter(a => a.raca === input.raca);

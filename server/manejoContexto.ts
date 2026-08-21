@@ -11,7 +11,11 @@ import {
 } from "./localFallbackStore";
 import { loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import { assertBrincoUnicoEntreAtivos } from "./brincoAtivoValidation";
-import { normalizeBrincoKey } from "../shared/brincoAtivo";
+import {
+  buildRfidConflitoMessage,
+  findRfidConflict,
+  normalizeRfidKey,
+} from "../shared/rfidUnicidade";
 
 /** Garante que a fazenda existe e pertence ao usuário. */
 export async function assertFazendaDoUsuario(userId: number, fazendaId: number) {
@@ -127,26 +131,27 @@ export async function assertAnimalNaFazenda(
   return local;
 }
 
-export async function assertRfidUnicoEntreAtivos(
+/**
+ * RFID não reutilizável: bloqueia se OUTRO animal (ativo ou inativo) já tiver o RFID.
+ * Exclui o próprio animal. Comparação exata como string (trim), sem Number/parseInt.
+ * Escopo: todos os animais do usuário (unicidade global ≥ fazenda — não enfraquece).
+ */
+export async function assertRfidNaoReutilizavel(
   userId: number,
   rfid: string | null | undefined,
   excludeAnimalId?: number,
   useLocal = false,
 ) {
-  const key = normalizeBrincoKey(rfid);
+  const key = normalizeRfidKey(rfid);
   if (!key) return;
 
   if (useLocal) {
     const lista = await listLocalAnimais(userId);
-    const conflito = lista.find(a => {
-      if (a.status === "inativo") return false;
-      if (excludeAnimalId != null && a.id === excludeAnimalId) return false;
-      return normalizeBrincoKey(a.brincoEletronico) === key;
-    });
+    const conflito = findRfidConflict(lista, key, { excludeAnimalId });
     if (conflito) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Este RFID já está vinculado a outro animal.",
+        message: buildRfidConflitoMessage(conflito),
       });
     }
     return;
@@ -155,26 +160,28 @@ export async function assertRfidUnicoEntreAtivos(
   try {
     const conditions = [
       eq(animais.userId, userId),
-      eq(animais.status, "ativo"),
-      sql`LOWER(TRIM(${animais.brincoEletronico})) = ${key}`,
+      sql`TRIM(${animais.brincoEletronico}) = ${key}`,
     ];
     if (excludeAnimalId != null) conditions.push(ne(animais.id, excludeAnimalId));
     const [row] = await db
-      .select({ id: animais.id })
+      .select({ id: animais.id, status: animais.status })
       .from(animais)
       .where(and(...conditions))
       .limit(1);
     if (row) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Este RFID já está vinculado a outro animal.",
+        message: buildRfidConflitoMessage(row),
       });
     }
   } catch (error) {
     if (error instanceof TRPCError) throw error;
     if (!isDatabaseUnavailable(error)) throw error;
-    await assertRfidUnicoEntreAtivos(userId, rfid, excludeAnimalId, true);
+    await assertRfidNaoReutilizavel(userId, rfid, excludeAnimalId, true);
   }
 }
+
+/** Alias histórico — agora aplica a regra definitiva (ativo + inativo). */
+export const assertRfidUnicoEntreAtivos = assertRfidNaoReutilizavel;
 
 export { assertBrincoUnicoEntreAtivos };
