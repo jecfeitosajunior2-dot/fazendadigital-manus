@@ -99,7 +99,13 @@ export const animais = mysqlTable("animais", {
   rgd: varchar("rgd", { length: 50 }),
   rastreadoNascimento: boolean("rastreadoNascimento").default(false),
   // Genealogia
+  /** Referência estruturada à mãe (fonte principal para novos nascimentos). */
+  maeId: int("maeId"),
+  /** Referência estruturada ao pai interno, quando conhecido. */
+  paiId: int("paiId"),
+  /** Legado — texto livre; não usar como fonte principal em novos cadastros. */
   pai: varchar("pai", { length: 200 }),
+  /** Legado — texto livre; não usar como fonte principal em novos cadastros. */
   mae: varchar("mae", { length: 200 }),
   observacoes: text("observacoes"),
   fotoUrl: text("fotoUrl"),
@@ -212,6 +218,16 @@ export const reproducaoRegistros = mysqlTable("reproducao_registros", {
   resultado: varchar("resultado", { length: 50 }),
   filhotes: int("filhotes"),
   observacoes: text("observacoes"),
+  createdAt: timestamp("createdAt").defaultNow(),
+});
+
+/** Vínculo relacional entre evento Parto e cada cria gerada (tabela de relação). */
+export const partoCrias = mysqlTable("parto_crias", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  partoRegistroId: int("partoRegistroId").notNull(),
+  criaAnimalId: int("criaAnimalId").notNull(),
+  ordem: int("ordem").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

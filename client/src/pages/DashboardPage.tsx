@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { getFichaAnimalPath } from "@/lib/fichaAnimalRoute";
 import {
   SectionCard,
   KpiCard,
@@ -42,6 +43,7 @@ import {
   faixaEtaria,
   PERIODOS,
   CHART_COLORS,
+  formatFemeaAlertaTexto,
   type PeriodoChave,
 } from "@/lib/dashboard-utils";
 
@@ -142,6 +144,8 @@ export default function DashboardPage() {
 
   // ── Central de Alertas ───────────────────────────────────────────────────────
   const alertas = useMemo(() => {
+    const animaisPorId = new Map(animais.map(a => [a.id, a]));
+
     // Estoque baixo
     const estoqueBaixo = estoque.baixo.map(p => ({
       texto: p.nome,
@@ -183,8 +187,9 @@ export default function DashboardPage() {
       .filter(x => x.dias != null && x.dias <= 45 && x.dias >= -15)
       .sort((a, b) => (a.dias ?? 0) - (b.dias ?? 0))
       .map(({ r }) => ({
-        texto: `Fêmea #${r.femeaId}`,
+        texto: formatFemeaAlertaTexto(r.femeaId, animaisPorId.get(r.femeaId)),
         detalhe: prazoRelativo(r.dataPrevistoParto),
+        animalId: r.femeaId,
       }));
 
     // Manutenções próximas (≤30 dias, não concluídas)
@@ -210,7 +215,7 @@ export default function DashboardPage() {
       estoqueBaixo.length + validade.length + sanidade.length + partos.length + manut.length + pendentes.length;
 
     return { estoqueBaixo, validade, sanidade, partos, manut, pendentes, total };
-  }, [estoque.baixo, movEstoque, saude, reproducao, manutencoes, movimentacoes]);
+  }, [estoque.baixo, movEstoque, saude, reproducao, manutencoes, movimentacoes, animais]);
 
   // ── Pastos (ocupação) ────────────────────────────────────────────────────────
   const ocupacao = useMemo(
@@ -437,7 +442,10 @@ export default function DashboardPage() {
               titulo="Partos previstos"
               severidade="info"
               itens={alertas.partos}
-              onClick={() => setLocation("/reproducao/visao-geral")}
+              onItemClick={(item) => {
+                if (item.animalId == null || item.animalId <= 0) return;
+                setLocation(getFichaAnimalPath(item.animalId, "reproducao"));
+              }}
             />
             <AlertGroup
               icon="build"

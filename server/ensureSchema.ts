@@ -366,7 +366,25 @@ export async function ensureSchema() {
     if ((animaisTable as unknown[]).length > 0) {
       await ensureColumn(pool, "animais", "fazendaId", "int");
       await ensureColumn(pool, "animais", "pastoId", "int");
+      await ensureColumn(pool, "animais", "maeId", "int");
+      await ensureColumn(pool, "animais", "paiId", "int");
     }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`parto_crias\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`partoRegistroId\` int NOT NULL,
+        \`criaAnimalId\` int NOT NULL,
+        \`ordem\` int NOT NULL DEFAULT 1,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`parto_crias_parto_cria_uq\` (\`partoRegistroId\`, \`criaAnimalId\`),
+        UNIQUE KEY \`parto_crias_cria_uq\` (\`criaAnimalId\`),
+        UNIQUE KEY \`parto_crias_parto_ordem_uq\` (\`partoRegistroId\`, \`ordem\`),
+        INDEX \`parto_crias_user_id_idx\` (\`userId\`)
+      )
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`pessoas\` (

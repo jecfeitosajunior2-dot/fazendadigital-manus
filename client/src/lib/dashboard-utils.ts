@@ -249,3 +249,15 @@ export function faixaEtaria(anos: number | null): string {
 
 /** Paleta para gráficos, alinhada à identidade Fazenda Digital. */
 export const CHART_COLORS = ["#1BC5BD", "#0891B2", "#164E63", "#D4AF37", "#14B8A6", "#64748B", "#F5A623"];
+
+/** Rótulo de fêmea para alertas do painel — prioriza brinco visual, depois nome, depois ID interno. */
+export function formatFemeaAlertaTexto(
+  animalId: number,
+  animal?: { brinco?: string | null; nome?: string | null } | null,
+): string {
+  const brinco = animal?.brinco?.trim();
+  if (brinco) return `Fêmea ${brinco}`;
+  const nome = animal?.nome?.trim();
+  if (nome) return `Fêmea ${nome}`;
+  return `Fêmea #${animalId}`;
+}

@@ -21,6 +21,8 @@ import {
   MilkOff,
   Bluetooth,
   AlertCircle,
+  Plus,
+  Trash2,
   type LucideProps,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +41,41 @@ import {
   readPersistedRebanhoFazendaId,
   REBANHO_FAZENDA_STORAGE_KEY,
 } from "@shared/animal-filter-types";
+import {
+  calcPrevisaoParto283,
+  getReproRelacionadoLabel,
+  getReproRelacionadoPlaceholder,
+  getReproResultadoOptions,
+  isReproResultadoRequiredManejo,
+  MSG_REPRO_RESULTADO_INCOMPATIVEL,
+  shouldCalcPrevisaoParto,
+  shouldShowPrevisaoPartoForm,
+  showReproDescricaoOutroManejo,
+  showReproDescricaoResultadoOutroManejo,
+  showReproReprodutorFieldManejo,
+  showReproResultadoFieldManejo,
+  validateReproResultadoForSave,
+} from "@shared/reproRegistroMeta";
+import {
+  buildReproAnimalElegibilidadeInput,
+  getReproTipoOptionsElegiveis,
+  hasCategoriaIdadeMismatchRepro,
+  isFemeaReprodutivamenteMadura,
+  isReproTipoPermitidoParaAnimal,
+  MSG_REPRO_INELEGIVEL,
+} from "@shared/reproElegibilidade";
+import {
+  MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
+  MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS,
+  MSG_REPRO_LOTE_INELEGIVEL,
+  MSG_REPRO_MATRIZ_INELEGIVEL,
+  showReproCoberturaAlvoFieldManejo,
+} from "@shared/reproCoberturaAlvo";
+import {
+  getCategoriasPorSexo,
+  isCategoriaValidaParaSexo,
+  RACAS,
+} from "@shared/animal-types";
 
 const FD_PRIMARY = "#4ECDC4";
 const ICON_CLASS = "h-5 w-5 shrink-0";
@@ -107,6 +144,7 @@ function todayISODate() {
 const MSG_PESAGEM_DATA_FUTURA = "A data da pesagem não pode ser futura.";
 const MSG_IDENTIFICACAO_DATA_FUTURA = "A data da identificação não pode ser futura.";
 const MSG_SANITARIO_DATA_FUTURA = "A data do manejo sanitário não pode ser futura.";
+const MSG_REPRODUTIVO_DATA_FUTURA = "A data do manejo reprodutivo não pode ser futura.";
 const MSG_SANITARIO_ESTOQUE_INSUFICIENTE =
   "Estoque insuficiente para a quantidade informada.";
 const CATEGORIA_SANITARIO_INSUMOS = "Farmácia";
@@ -416,6 +454,10 @@ export function ManejoFormPage() {
     return <ManejoSanitarioForm />;
   }
 
+  if (tipo.id === "reprodutivo") {
+    return <ManejoReprodutivoForm />;
+  }
+
   return (
     <AppLayout>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -650,6 +692,9 @@ type AnimalBuscaRow = {
   fazendaId?: number | null;
   status?: string | null;
   sexo?: string | null;
+  categoria?: string | null;
+  idadeMeses?: number | null;
+  dataNascimento?: string | null;
   ultimoPeso?: number | null;
 };
 
@@ -2073,6 +2118,1578 @@ function ManejoSanitarioForm() {
                 onChange={e => setObservacoes(e.target.value)}
                 className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
                 placeholder="Opcional — reação, reforço previsto, condição observada…"
+                maxLength={2000}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <Dialog open={Boolean(bloqueioNegocioMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioNegocioMsg}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={fecharBloqueioNegocio}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
+  );
+}
+
+type CriaPartoSexo = "" | "macho" | "femea";
+
+type CriaPartoFormRow = {
+  brinco: string;
+  sexo: CriaPartoSexo;
+  categoria: string;
+  pesoNascimento: string;
+  brincoEletronico: string;
+  raca: string;
+};
+
+type CriaPartoFieldErrors = Partial<
+  Record<keyof CriaPartoFormRow, string>
+>;
+
+function emptyCriaPartoRow(): CriaPartoFormRow {
+  return {
+    brinco: "",
+    sexo: "",
+    categoria: "",
+    pesoNascimento: "",
+    brincoEletronico: "",
+    raca: "",
+  };
+}
+
+function sexoCriaFormParaCadastro(sexo: CriaPartoSexo): string {
+  if (sexo === "macho") return "Macho";
+  if (sexo === "femea") return "Fêmea";
+  return "";
+}
+
+function ManejoReprodutivoForm() {
+  const [, setLocation] = useLocation();
+  const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
+
+  const [fazendaId, setFazendaId] = useState("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [data, setData] = useState(todayISODate);
+  const [buscaAnimal, setBuscaAnimal] = useState("");
+  const [animalId, setAnimalId] = useState<number | null>(null);
+  const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
+  const [tipoReprodutivo, setTipoReprodutivo] = useState("");
+  const [resultado, setResultado] = useState("");
+  const [reprodutorSemen, setReprodutorSemen] = useState("");
+  const [descricaoOutro, setDescricaoOutro] = useState("");
+  const [descricaoResultadoOutro, setDescricaoResultadoOutro] = useState("");
+  const [observacoes, setObservacoes] = useState("");
+  const [erroFazenda, setErroFazenda] = useState("");
+  const [erroResultado, setErroResultado] = useState("");
+  const [erroDescricaoOutro, setErroDescricaoOutro] = useState("");
+  const [erroDescricaoResultadoOutro, setErroDescricaoResultadoOutro] = useState("");
+  const [coberturaSelecaoModo, setCoberturaSelecaoModo] = useState<"" | "individual" | "lote">("");
+  const [matrizBusca, setMatrizBusca] = useState("");
+  const [matrizSel, setMatrizSel] = useState<AnimalBuscaRow | null>(null);
+  const [matrizListaAberta, setMatrizListaAberta] = useState(false);
+  const [loteCoberturaId, setLoteCoberturaId] = useState("");
+  const [matrizesLoteSelecionadas, setMatrizesLoteSelecionadas] = useState<number[]>([]);
+  const [erroCoberturaAlvo, setErroCoberturaAlvo] = useState("");
+  const [listaAberta, setListaAberta] = useState(false);
+  const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
+  const [registrarCrias, setRegistrarCrias] = useState(true);
+  const [crias, setCrias] = useState<CriaPartoFormRow[]>([emptyCriaPartoRow()]);
+  const [erroCrias, setErroCrias] = useState<Record<number, CriaPartoFieldErrors>>({});
+  const buscaRef = useRef<HTMLDivElement>(null);
+  const matrizBuscaRef = useRef<HTMLDivElement>(null);
+
+  const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
+  const animalSexo = animalSel?.sexo ?? null;
+
+  const reproElegibilidadeAnimal = useMemo(
+    () => (animalSel ? buildReproAnimalElegibilidadeInput(animalSel) : null),
+    [animalSel],
+  );
+
+  const reproTipoOptions = useMemo(
+    () => (reproElegibilidadeAnimal ? getReproTipoOptionsElegiveis(reproElegibilidadeAnimal) : []),
+    [reproElegibilidadeAnimal],
+  );
+
+  const categoriaIdadeMismatch = useMemo(
+    () =>
+      reproElegibilidadeAnimal ? hasCategoriaIdadeMismatchRepro(reproElegibilidadeAnimal) : false,
+    [reproElegibilidadeAnimal],
+  );
+
+  const reproResultadoOptions = useMemo(
+    () => getReproResultadoOptions(animalSexo, tipoReprodutivo, resultado),
+    [animalSexo, tipoReprodutivo, resultado],
+  );
+
+  const showReprodutor = showReproReprodutorFieldManejo(tipoReprodutivo, animalSexo);
+  const showCoberturaAlvo = showReproCoberturaAlvoFieldManejo(tipoReprodutivo, animalSexo);
+  const showResultado = showReproResultadoFieldManejo(tipoReprodutivo, animalSexo);
+  const exigeResultado = isReproResultadoRequiredManejo(tipoReprodutivo, animalSexo);
+  const showDescricaoOutro = showReproDescricaoOutroManejo(tipoReprodutivo);
+  const showDescricaoResultadoOutro = showReproDescricaoResultadoOutroManejo(
+    tipoReprodutivo,
+    resultado,
+  );
+  const showPrevisaoParto =
+    shouldShowPrevisaoPartoForm(animalSexo) &&
+    shouldCalcPrevisaoParto(tipoReprodutivo, animalSexo);
+  const isDadosCobertura = tipoReprodutivo === "Cobertura";
+  const isDadosInseminacao = tipoReprodutivo === "Inseminação";
+  const showBlocoCoberturaInseminacao = isDadosCobertura || isDadosInseminacao;
+  const isParto = tipoReprodutivo === "Parto";
+  const isPartoCriaViva =
+    isParto && (resultado === "Normal" || resultado === "Com assistência");
+  const isPartoNatimorto = isParto && resultado === "Natimorto";
+  const showPartoCriasSection = isPartoCriaViva;
+  const usePartoComCriasEndpoint =
+    isPartoNatimorto || (isPartoCriaViva && registrarCrias);
+  const previsaoPartoEstimada = useMemo(() => {
+    if (!showPrevisaoParto || !data) return null;
+    return calcPrevisaoParto283(data);
+  }, [showPrevisaoParto, data]);
+  const previsaoPartoEstimadaFmt = previsaoPartoEstimada
+    ? formatDateBR(previsaoPartoEstimada)
+    : null;
+  const reproRelacionadoLabel = getReproRelacionadoLabel(animalSexo);
+  const reproRelacionadoPlaceholder = getReproRelacionadoPlaceholder(animalSexo);
+
+  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
+    {
+      fazendaId: fazendaNum || undefined,
+      status: "ativo",
+      search: buscaAnimal.trim() || undefined,
+    },
+    { enabled: buscaAtiva },
+  );
+
+  const { data: lotesTodos = [] } = trpc.lotes.list.useQuery(
+    { somenteAtivos: true },
+    { enabled: Boolean(fazendaNum) && showCoberturaAlvo },
+  );
+
+  const { data: animaisFazenda = [] } = trpc.animais.list.useQuery(
+    { fazendaId: fazendaNum || undefined, status: "ativo" },
+    { enabled: Boolean(fazendaNum) && showCoberturaAlvo },
+  );
+
+  const matrizBuscaAtiva =
+    showCoberturaAlvo &&
+    coberturaSelecaoModo === "individual" &&
+    Boolean(fazendaNum) &&
+    matrizBusca.trim().length >= 1 &&
+    !matrizSel;
+
+  const { data: matrizesBuscaRaw = [], isFetching: buscandoMatrizes } = trpc.animais.list.useQuery(
+    {
+      fazendaId: fazendaNum || undefined,
+      status: "ativo",
+      sexo: "femea",
+      search: matrizBusca.trim() || undefined,
+    },
+    { enabled: matrizBuscaAtiva },
+  );
+
+  const matrizesElegiveisPorLote = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const a of animaisFazenda as AnimalBuscaRow[]) {
+      if (a.sexo !== "femea") continue;
+      if (!isFemeaReprodutivamenteMadura(buildReproAnimalElegibilidadeInput(a))) continue;
+      if (!a.loteId) continue;
+      map.set(a.loteId, (map.get(a.loteId) ?? 0) + 1);
+    }
+    return map;
+  }, [animaisFazenda]);
+
+  const lotesDaFazenda = useMemo(() => {
+    return lotesTodos.filter(l => {
+      if (!fazendaNum) return false;
+      return l.fazendaId == null || l.fazendaId === fazendaNum;
+    });
+  }, [lotesTodos, fazendaNum]);
+
+  const lotesCoberturaElegiveis = useMemo(() => {
+    return lotesDaFazenda.filter(l => (matrizesElegiveisPorLote.get(l.id) ?? 0) > 0);
+  }, [lotesDaFazenda, matrizesElegiveisPorLote]);
+
+  const matrizesBusca = useMemo(() => {
+    return (matrizesBuscaRaw as AnimalBuscaRow[])
+      .filter(a => isFemeaReprodutivamenteMadura(buildReproAnimalElegibilidadeInput(a)))
+      .slice(0, 40);
+  }, [matrizesBuscaRaw]);
+
+  const matrizesDoLoteElegiveis = useMemo(() => {
+    const loteNum = loteCoberturaId ? Number(loteCoberturaId) : 0;
+    if (!loteNum) return [];
+    return (animaisFazenda as AnimalBuscaRow[])
+      .filter(a => {
+        if (a.loteId !== loteNum) return false;
+        if (a.sexo !== "femea") return false;
+        return isFemeaReprodutivamenteMadura(buildReproAnimalElegibilidadeInput(a));
+      })
+      .sort((a, b) => labelAnimalBusca(a).localeCompare(labelAnimalBusca(b), "pt-BR"));
+  }, [animaisFazenda, loteCoberturaId]);
+
+  const limparCoberturaAlvo = useCallback(() => {
+    setCoberturaSelecaoModo("");
+    setMatrizBusca("");
+    setMatrizSel(null);
+    setMatrizListaAberta(false);
+    setLoteCoberturaId("");
+    setMatrizesLoteSelecionadas([]);
+    setErroCoberturaAlvo("");
+  }, []);
+
+  const limparPartoCriasState = useCallback(() => {
+    setRegistrarCrias(true);
+    setCrias([emptyCriaPartoRow()]);
+    setErroCrias({});
+  }, []);
+
+  const limparReproCondicionais = useCallback(() => {
+    setTipoReprodutivo("");
+    setResultado("");
+    setReprodutorSemen("");
+    setDescricaoOutro("");
+    setDescricaoResultadoOutro("");
+    setObservacoes("");
+    setErroResultado("");
+    setErroDescricaoOutro("");
+    setErroDescricaoResultadoOutro("");
+    limparCoberturaAlvo();
+    limparPartoCriasState();
+  }, [limparCoberturaAlvo, limparPartoCriasState]);
+
+  const trpcUtils = trpc.useUtils();
+
+  const invalidatePosReproSave = useCallback(() => {
+    void trpcUtils.reproducao.list.invalidate();
+    void trpcUtils.animais.list.invalidate();
+    void trpcUtils.dashboard.stats.invalidate();
+    void trpcUtils.pesagens.list.invalidate();
+  }, [trpcUtils]);
+
+  const saveMutation = trpc.reproducao.create.useMutation({
+    onSuccess: () => {
+      toast.success("Registro reprodutivo salvo com sucesso.");
+      invalidatePosReproSave();
+      setLocation("/manejo/registros");
+    },
+    onError: err => {
+      const msg = err.message || "Não foi possível salvar o registro reprodutivo.";
+      if (msg.includes("não pode ser futura")) {
+        setBloqueioNegocioMsg(MSG_REPRODUTIVO_DATA_FUTURA);
+        return;
+      }
+      if (msg.includes(MSG_REPRO_INELEGIVEL)) {
+        setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+        return;
+      }
+      if (
+        msg.includes(MSG_REPRO_MATRIZ_INELEGIVEL) ||
+        msg.includes(MSG_REPRO_LOTE_INELEGIVEL) ||
+        msg.includes(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO) ||
+        msg.includes(MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS)
+      ) {
+        setBloqueioNegocioMsg(msg);
+        return;
+      }
+      if (msg.includes(MSG_REPRO_RESULTADO_INCOMPATIVEL)) {
+        setBloqueioNegocioMsg(MSG_REPRO_RESULTADO_INCOMPATIVEL);
+        return;
+      }
+      toast.error(msg);
+    },
+  });
+
+  const savePartoComCriasMutation = trpc.reproducao.registrarPartoComCrias.useMutation({
+    onSuccess: () => {
+      toast.success("Parto registrado com sucesso.");
+      invalidatePosReproSave();
+      setLocation("/manejo/registros");
+    },
+    onError: err => {
+      const msg = err.message || "Não foi possível registrar o parto.";
+      if (msg.includes("não pode ser futura")) {
+        setBloqueioNegocioMsg(MSG_REPRODUTIVO_DATA_FUTURA);
+        return;
+      }
+      if (msg.includes(MSG_REPRO_INELEGIVEL)) {
+        setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+        return;
+      }
+      if (msg.includes(MSG_REPRO_RESULTADO_INCOMPATIVEL)) {
+        setBloqueioNegocioMsg(MSG_REPRO_RESULTADO_INCOMPATIVEL);
+        return;
+      }
+      toast.error(msg);
+    },
+  });
+
+  useEffect(() => {
+    if (loadingFazendas || fazendaInitDone) return;
+    if (!fazendas.length) {
+      setFazendaInitDone(true);
+      return;
+    }
+    const ids = fazendas.map(f => f.id);
+    const fromStorage = readPersistedRebanhoFazendaId(ids);
+    const resolved = fromStorage || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setFazendaId(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone, loadingFazendas]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== REBANHO_FAZENDA_STORAGE_KEY) return;
+      const ids = fazendas.map(f => f.id);
+      const next = readPersistedRebanhoFazendaId(ids);
+      if (!next || next === fazendaId) return;
+      setFazendaId(next);
+      limparReproCondicionais();
+      setAnimalId(null);
+      setAnimalSel(null);
+      setBuscaAnimal("");
+      setListaAberta(false);
+      setErroFazenda("");
+      toast.message("Fazenda do contexto atualizada. Dados dependentes foram limpos.");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [fazendas, fazendaId, limparReproCondicionais]);
+
+  useEffect(() => {
+    if (!listaAberta) return;
+    const onDoc = (e: MouseEvent) => {
+      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
+        setListaAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [listaAberta]);
+
+  useEffect(() => {
+    if (!matrizListaAberta) return;
+    const onDoc = (e: MouseEvent) => {
+      if (matrizBuscaRef.current && !matrizBuscaRef.current.contains(e.target as Node)) {
+        setMatrizListaAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [matrizListaAberta]);
+
+  const onChangeFazenda = (next: string) => {
+    setFazendaId(next);
+    persistRebanhoFazendaId(next);
+    setErroFazenda("");
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    limparReproCondicionais();
+  };
+
+  const limparAnimal = () => {
+    setAnimalId(null);
+    setAnimalSel(null);
+    setBuscaAnimal("");
+    setListaAberta(false);
+    limparReproCondicionais();
+  };
+
+  const selecionarAnimal = useCallback(
+    (a: AnimalBuscaRow) => {
+      setAnimalId(a.id);
+      setAnimalSel(a);
+      setBuscaAnimal(labelAnimalBusca(a));
+      setListaAberta(false);
+      limparReproCondicionais();
+    },
+    [limparReproCondicionais],
+  );
+
+  const onChangeTipo = (newTipo: string) => {
+    setTipoReprodutivo(newTipo);
+    setResultado("");
+    setReprodutorSemen("");
+    setDescricaoOutro("");
+    setDescricaoResultadoOutro("");
+    limparCoberturaAlvo();
+    limparPartoCriasState();
+    setErroResultado("");
+    setErroDescricaoOutro("");
+    setErroDescricaoResultadoOutro("");
+  };
+
+  const onChangeResultado = (v: string) => {
+    setResultado(v);
+    if (v !== "Outro") setDescricaoResultadoOutro("");
+    if (erroResultado) setErroResultado("");
+    if (erroDescricaoResultadoOutro) setErroDescricaoResultadoOutro("");
+
+    if (tipoReprodutivo === "Parto") {
+      if (v === "Natimorto" || v === "Outro") {
+        setRegistrarCrias(true);
+        setCrias([]);
+        setErroCrias({});
+      } else if (v === "Normal" || v === "Com assistência") {
+        setRegistrarCrias(true);
+        setCrias([emptyCriaPartoRow()]);
+        setErroCrias({});
+      }
+    }
+  };
+
+  const addCriaParto = () => {
+    setCrias(prev => [...prev, emptyCriaPartoRow()]);
+  };
+
+  const removeCriaParto = (index: number) => {
+    setCrias(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+    setErroCrias(prev => {
+      const next: Record<number, CriaPartoFieldErrors> = {};
+      for (const [key, val] of Object.entries(prev)) {
+        const i = Number(key);
+        if (i < index) next[i] = val;
+        else if (i > index) next[i - 1] = val;
+      }
+      return next;
+    });
+  };
+
+  const onChangeCriaField = (
+    index: number,
+    field: keyof CriaPartoFormRow,
+    value: string,
+  ) => {
+    setCrias(prev =>
+      prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)),
+    );
+    setErroCrias(prev => {
+      if (!prev[index]?.[field]) return prev;
+      const row = { ...prev[index] };
+      delete row[field];
+      const next = { ...prev };
+      if (Object.keys(row).length === 0) delete next[index];
+      else next[index] = row;
+      return next;
+    });
+  };
+
+  const onChangeCriaSexo = (index: number, sexo: "macho" | "femea") => {
+    setCrias(prev =>
+      prev.map((c, i) =>
+        i === index
+          ? {
+              ...c,
+              sexo,
+              categoria: sexo === "macho" ? "Bezerro" : "Bezerra",
+            }
+          : c,
+      ),
+    );
+    setErroCrias(prev => {
+      if (!prev[index]) return prev;
+      const row = { ...prev[index] };
+      delete row.sexo;
+      delete row.categoria;
+      const next = { ...prev };
+      if (Object.keys(row).length === 0) delete next[index];
+      else next[index] = row;
+      return next;
+    });
+  };
+
+  const onChangeCoberturaSelecaoModo = (next: "" | "individual" | "lote") => {
+    setCoberturaSelecaoModo(next);
+    setMatrizBusca("");
+    setMatrizSel(null);
+    setMatrizListaAberta(false);
+    setLoteCoberturaId("");
+    setMatrizesLoteSelecionadas([]);
+    setErroCoberturaAlvo("");
+  };
+
+  const onChangeLoteCobertura = (loteId: string) => {
+    setLoteCoberturaId(loteId);
+    setMatrizesLoteSelecionadas([]);
+    if (erroCoberturaAlvo) setErroCoberturaAlvo("");
+  };
+
+  const toggleMatrizLote = (id: number) => {
+    setMatrizesLoteSelecionadas(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      return [...prev, id];
+    });
+    if (erroCoberturaAlvo) setErroCoberturaAlvo("");
+  };
+
+  const toggleSelecionarTodasMatrizesLote = () => {
+    const todosIds = matrizesDoLoteElegiveis.map(a => a.id);
+    setMatrizesLoteSelecionadas(prev =>
+      prev.length === todosIds.length && todosIds.every(id => prev.includes(id)) ? [] : todosIds,
+    );
+    if (erroCoberturaAlvo) setErroCoberturaAlvo("");
+  };
+
+  const selecionarMatriz = useCallback((a: AnimalBuscaRow) => {
+    setMatrizSel(a);
+    setMatrizBusca(labelAnimalBusca(a));
+    setMatrizListaAberta(false);
+    setErroCoberturaAlvo("");
+  }, []);
+
+  const resultadosBusca = useMemo(() => {
+    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
+  }, [animaisBusca]);
+
+  const brincoAtual = animalSel?.brinco?.trim() || "";
+  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
+  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
+  const unicaFazenda = fazendas.length === 1;
+  const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+
+  const fecharBloqueioNegocio = () => setBloqueioNegocioMsg(null);
+
+  const handleSalvar = () => {
+    if (!fazendaId) {
+      setErroFazenda("Selecione uma Fazenda");
+      toast.error("Selecione uma Fazenda");
+      return;
+    }
+    if (!animalId || !animalSel) {
+      toast.error("Selecione um animal válido.");
+      return;
+    }
+    if (!data) {
+      toast.error("Informe a data do manejo reprodutivo.");
+      return;
+    }
+    if (data > todayISODate()) {
+      setBloqueioNegocioMsg(MSG_REPRODUTIVO_DATA_FUTURA);
+      return;
+    }
+    if (!tipoReprodutivo) {
+      toast.error("Selecione o tipo de manejo reprodutivo.");
+      return;
+    }
+    if (
+      reproElegibilidadeAnimal &&
+      !isReproTipoPermitidoParaAnimal(reproElegibilidadeAnimal, tipoReprodutivo)
+    ) {
+      setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+      return;
+    }
+    if (exigeResultado && !resultado.trim()) {
+      setErroResultado("Informe o resultado do manejo reprodutivo.");
+      toast.error("Informe o resultado do manejo reprodutivo.");
+      return;
+    }
+    if (showDescricaoOutro && !descricaoOutro.trim()) {
+      setErroDescricaoOutro("Descreva o manejo reprodutivo.");
+      return;
+    }
+    if (showDescricaoResultadoOutro && !descricaoResultadoOutro.trim()) {
+      setErroDescricaoResultadoOutro("Descreva o resultado do manejo reprodutivo.");
+      return;
+    }
+
+    const validacaoResultado = validateReproResultadoForSave({
+      sexo: animalSel.sexo,
+      tipo: tipoReprodutivo,
+      resultado: showResultado ? resultado : undefined,
+      descricaoResultadoOutro: showDescricaoResultadoOutro
+        ? descricaoResultadoOutro
+        : undefined,
+    });
+    if (!validacaoResultado.ok) {
+      if (validacaoResultado.message.includes("Descreva o resultado")) {
+        setErroDescricaoResultadoOutro(validacaoResultado.message);
+      } else if (validacaoResultado.message.includes("Informe o resultado")) {
+        setErroResultado(validacaoResultado.message);
+      } else {
+        setBloqueioNegocioMsg(validacaoResultado.message);
+      }
+      return;
+    }
+
+    if (showCoberturaAlvo) {
+      if (!coberturaSelecaoModo) {
+        setErroCoberturaAlvo(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO);
+        toast.error(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO);
+        return;
+      }
+      if (coberturaSelecaoModo === "individual" && !matrizSel) {
+        setErroCoberturaAlvo("Selecione uma matriz elegível.");
+        toast.error("Selecione uma matriz elegível.");
+        return;
+      }
+      if (coberturaSelecaoModo === "lote") {
+        if (!loteCoberturaId) {
+          setErroCoberturaAlvo("Selecione um lote.");
+          toast.error("Selecione um lote.");
+          return;
+        }
+        if (matrizesLoteSelecionadas.length === 0) {
+          setErroCoberturaAlvo(MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS);
+          toast.error(MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS);
+          return;
+        }
+      }
+    }
+
+    const coberturaMatrizIds =
+      showCoberturaAlvo && coberturaSelecaoModo === "individual" && matrizSel
+        ? [matrizSel.id]
+        : showCoberturaAlvo && coberturaSelecaoModo === "lote"
+          ? matrizesLoteSelecionadas
+          : undefined;
+
+    if (usePartoComCriasEndpoint) {
+      if (isPartoCriaViva && registrarCrias) {
+        const erros: Record<number, CriaPartoFieldErrors> = {};
+        let hasErr = false;
+        const brincosLower = new Set<string>();
+
+        crias.forEach((c, i) => {
+          const rowErr: CriaPartoFieldErrors = {};
+          const brinco = c.brinco.trim();
+          if (!brinco) {
+            rowErr.brinco = "Brinco é obrigatório.";
+            hasErr = true;
+          }
+          if (!c.sexo) {
+            rowErr.sexo = "Selecione o sexo.";
+            hasErr = true;
+          }
+          const categoria = c.categoria.trim();
+          if (!categoria) {
+            rowErr.categoria = "Selecione a categoria.";
+            hasErr = true;
+          } else if (
+            c.sexo &&
+            !isCategoriaValidaParaSexo(sexoCriaFormParaCadastro(c.sexo), categoria)
+          ) {
+            rowErr.categoria = "Categoria incompatível com o sexo.";
+            hasErr = true;
+          }
+          const pesoRaw = c.pesoNascimento.trim();
+          if (pesoRaw) {
+            const pesoNum = Number(pesoRaw.replace(",", "."));
+            if (!Number.isFinite(pesoNum) || pesoNum <= 0) {
+              rowErr.pesoNascimento = "Informe um peso positivo.";
+              hasErr = true;
+            }
+          }
+          const bKey = brinco.toLowerCase();
+          if (bKey) {
+            if (brincosLower.has(bKey)) {
+              rowErr.brinco = "Brinco repetido neste parto.";
+              hasErr = true;
+            }
+            brincosLower.add(bKey);
+          }
+          if (Object.keys(rowErr).length > 0) erros[i] = rowErr;
+        });
+
+        if (hasErr) {
+          setErroCrias(erros);
+          toast.error("Revise os dados das crias.");
+          return;
+        }
+      }
+
+      savePartoComCriasMutation.mutate({
+        femeaId: animalId,
+        fazendaId: fazendaNum,
+        dataParto: data,
+        resultado: resultado as "Normal" | "Com assistência" | "Natimorto" | "Outro",
+        descricaoResultadoOutro: showDescricaoResultadoOutro
+          ? descricaoResultadoOutro.trim()
+          : undefined,
+        observacoes: observacoes.trim() || undefined,
+        crias:
+          isPartoNatimorto || !registrarCrias
+            ? undefined
+            : crias.map(c => ({
+                brinco: c.brinco.trim(),
+                sexo: c.sexo as "macho" | "femea",
+                categoria: c.categoria.trim(),
+                pesoNascimento: c.pesoNascimento.trim()
+                  ? c.pesoNascimento.trim().replace(",", ".")
+                  : undefined,
+                brincoEletronico: c.brincoEletronico.trim() || undefined,
+                raca: c.raca.trim() || undefined,
+              })),
+      });
+      return;
+    }
+
+    saveMutation.mutate({
+      animalId,
+      fazendaId: fazendaNum || undefined,
+      tipo: tipoReprodutivo,
+      dataCobertura: data,
+      resultado: showResultado && resultado.trim() ? resultado.trim() : undefined,
+      reprodutorSemen:
+        showDescricaoOutro
+          ? descricaoOutro.trim()
+          : showReprodutor && reprodutorSemen.trim()
+            ? reprodutorSemen.trim()
+            : undefined,
+      coberturaSelecaoModo:
+        showCoberturaAlvo && coberturaSelecaoModo ? coberturaSelecaoModo : undefined,
+      coberturaMatrizIds,
+      coberturaLoteId:
+        showCoberturaAlvo && coberturaSelecaoModo === "lote" && loteCoberturaId
+          ? Number(loteCoberturaId)
+          : undefined,
+      descricaoResultadoOutro: showDescricaoResultadoOutro
+        ? descricaoResultadoOutro.trim()
+        : undefined,
+      observacoes: observacoes.trim() || undefined,
+      dataPrevistoParto:
+        showPrevisaoParto && previsaoPartoEstimada ? previsaoPartoEstimada : undefined,
+    });
+  };
+
+  const coberturaAlvoCompleto =
+    !showCoberturaAlvo ||
+    (coberturaSelecaoModo === "individual" && Boolean(matrizSel)) ||
+    (coberturaSelecaoModo === "lote" &&
+      Boolean(loteCoberturaId) &&
+      matrizesLoteSelecionadas.length > 0);
+
+  const partoCriasValidas =
+    !showPartoCriasSection ||
+    !registrarCrias ||
+    (crias.length > 0 &&
+      crias.every(c => {
+        const pesoRaw = c.pesoNascimento.trim();
+        const pesoOk =
+          !pesoRaw || Number(pesoRaw.replace(",", ".")) > 0;
+        return (
+          Boolean(c.brinco.trim()) &&
+          Boolean(c.sexo) &&
+          Boolean(c.categoria.trim()) &&
+          isCategoriaValidaParaSexo(
+            sexoCriaFormParaCadastro(c.sexo),
+            c.categoria.trim(),
+          ) &&
+          pesoOk
+        );
+      }));
+
+  const isSaving = saveMutation.isPending || savePartoComCriasMutation.isPending;
+
+  const podeSalvar =
+    Boolean(animalId && animalSel && tipoReprodutivo && data) &&
+    coberturaAlvoCompleto &&
+    (!exigeResultado || Boolean(resultado.trim())) &&
+    (!showDescricaoOutro || Boolean(descricaoOutro.trim())) &&
+    (!showDescricaoResultadoOutro || Boolean(descricaoResultadoOutro.trim())) &&
+    partoCriasValidas;
+
+  const sectionTitleCls =
+    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
+
+  return (
+    <AppLayout>
+      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
+            Manejo pontual
+          </p>
+          <h1
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Reprodutivo
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLocation("/manejo/registros")}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSalvar}
+            disabled={isSaving || !podeSalvar}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            {isSaving ? "Salvando…" : "Salvar"}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
+        <div>
+          <p className={sectionTitleCls}>Contexto</p>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+            {unicaFazenda && fazendaId && nomeFazenda ? (
+              <div className="min-w-0">
+                <label className={labelCls}>Fazenda</label>
+                <div
+                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
+                >
+                  {nomeFazenda}
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <label className={labelCls}>
+                  Fazenda<span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={fazendaId}
+                  onChange={e => onChangeFazenda(e.target.value)}
+                  className={fieldCls}
+                  disabled={loadingFazendas || !fazendaInitDone}
+                >
+                  <option value="">Selecione uma Fazenda</option>
+                  {fazendas.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome}
+                    </option>
+                  ))}
+                </select>
+                {erroFazenda ? (
+                  <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
+                ) : null}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <label className={labelCls}>
+                Data<span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={data}
+                max={todayISODate()}
+                onChange={e => setData(e.target.value)}
+                className={fieldCls}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <p className={sectionTitleCls}>Animal</p>
+          {animalSel ? (
+            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
+                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
+                      title={
+                        animalSel.sexo === "macho"
+                          ? "Macho"
+                          : animalSel.sexo === "femea"
+                            ? "Fêmea"
+                            : undefined
+                      }
+                      aria-hidden
+                    />
+                    <span className="text-[13px] font-semibold text-gray-900">
+                      {labelAnimalSelecionado(animalSel)}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    Brinco visual{" "}
+                    <span className="font-medium text-gray-800">
+                      {brincoAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                    |
+                  </span>
+                  <span className="shrink-0">
+                    RFID{" "}
+                    <span className="font-medium text-gray-800">
+                      {rfidAtual || "Não vinculado"}
+                    </span>
+                  </span>
+                  {loteAtual ? (
+                    <>
+                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                        |
+                      </span>
+                      <span className="shrink-0">
+                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={limparAnimal}
+                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                >
+                  Alterar animal
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative" ref={buscaRef}>
+              <input
+                type="search"
+                value={buscaAnimal}
+                onChange={e => {
+                  setBuscaAnimal(e.target.value);
+                  setListaAberta(true);
+                }}
+                onFocus={() => setListaAberta(true)}
+                placeholder="Buscar por brinco, RFID ou nome…"
+                className={fieldCls}
+                disabled={!fazendaNum}
+                autoComplete="off"
+              />
+              {!fazendaNum ? (
+                <p className="text-[11px] text-gray-400 mt-1">Selecione uma Fazenda primeiro.</p>
+              ) : null}
+              {listaAberta && fazendaNum && buscaAnimal.trim() ? (
+                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {buscandoAnimais ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
+                  ) : resultadosBusca.length === 0 ? (
+                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                      Nenhum animal ativo encontrado.
+                    </li>
+                  ) : (
+                    resultadosBusca.map(a => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          onClick={() => selecionarAnimal(a)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
+                        >
+                          <div className="text-[13px] font-semibold text-gray-900">
+                            {labelAnimalBusca(a)}
+                          </div>
+                          <div className="text-[11px] text-gray-500">{subtituloAnimalBusca(a)}</div>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {animalSel ? (
+          <div className="border-t border-gray-100 pt-5 space-y-4">
+            <p className={sectionTitleCls}>Manejo reprodutivo</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className={labelCls}>
+                  Tipo de manejo reprodutivo<span className="text-red-500">*</span>
+                </label>
+                <FormDownSelect
+                  value={tipoReprodutivo}
+                  onChange={onChangeTipo}
+                  placeholder="Selecione o tipo"
+                  options={reproTipoOptions.map(t => ({ value: t, label: t }))}
+                />
+                {reproTipoOptions.length === 0 ? (
+                  <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
+                    Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
+                  </p>
+                ) : null}
+                {categoriaIdadeMismatch && reproTipoOptions.length > 0 ? (
+                  <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                    Categoria pode estar desatualizada para a idade do animal.
+                  </p>
+                ) : null}
+              </div>
+
+              {showBlocoCoberturaInseminacao ? (
+                <div className="sm:col-span-2 space-y-4 border-t border-gray-100 pt-4">
+                  <p className={sectionTitleCls}>
+                    {isDadosCobertura ? "Dados da cobertura" : "Dados da inseminação"}
+                  </p>
+                  <div>
+                    <label className={labelCls}>
+                      {isDadosCobertura ? "Reprodutor / Touro" : "Sêmen / Reprodutor"}
+                    </label>
+                    <input
+                      type="text"
+                      value={reprodutorSemen}
+                      onChange={e => setReprodutorSemen(e.target.value)}
+                      placeholder={reproRelacionadoPlaceholder}
+                      className={fieldCls}
+                      maxLength={500}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {showResultado ? (
+                      <div>
+                        <label className={labelCls}>
+                          Resultado
+                          {exigeResultado ? <span className="text-red-500">*</span> : null}
+                          {!exigeResultado ? (
+                            <span className="text-gray-400 font-normal"> (opcional)</span>
+                          ) : null}
+                        </label>
+                        <FormDownSelect
+                          value={resultado}
+                          onChange={v => {
+                            setResultado(v);
+                            if (v !== "Outro") setDescricaoResultadoOutro("");
+                            if (erroResultado) setErroResultado("");
+                            if (erroDescricaoResultadoOutro) setErroDescricaoResultadoOutro("");
+                          }}
+                          placeholder={
+                            exigeResultado ? "Selecione o resultado" : "Selecione (opcional)"
+                          }
+                          options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
+                        />
+                        {erroResultado ? (
+                          <p className="text-[11px] text-red-600 mt-1">{erroResultado}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {showPrevisaoParto ? (
+                      <div>
+                        <label className={labelCls}>Previsão estimada de parto</label>
+                        <div
+                          className={`${fieldCls} bg-gray-50 text-gray-800 tabular-nums flex items-center`}
+                        >
+                          {previsaoPartoEstimadaFmt || "—"}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Estimativa automática: data do evento + 283 dias.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {showCoberturaAlvo ? (
+                    <div className="sm:col-span-2 space-y-4 border-t border-gray-100 pt-4">
+                      <p className={sectionTitleCls}>Matrizes atendidas</p>
+                      <div>
+                        <label className={labelCls}>
+                          Forma de seleção<span className="text-red-500">*</span>
+                        </label>
+                        <FormDownSelect
+                          value={coberturaSelecaoModo}
+                          onChange={v =>
+                            onChangeCoberturaSelecaoModo(v as "" | "individual" | "lote")
+                          }
+                          placeholder="Selecione a forma de seleção"
+                          options={[
+                            { value: "individual", label: "Matriz individual" },
+                            { value: "lote", label: "Por lote" },
+                          ]}
+                        />
+                      </div>
+
+                      {coberturaSelecaoModo === "individual" ? (
+                        <div className="relative" ref={matrizBuscaRef}>
+                          <label className={labelCls}>
+                            Matriz<span className="text-red-500">*</span>
+                          </label>
+                          {matrizSel ? (
+                            <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                              <span className="text-[12px] font-medium text-gray-800">
+                                {labelAnimalBusca(matrizSel)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMatrizSel(null);
+                                  setMatrizBusca("");
+                                  setMatrizListaAberta(false);
+                                }}
+                                className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                              >
+                                Alterar
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <input
+                                type="search"
+                                value={matrizBusca}
+                                onChange={e => {
+                                  setMatrizBusca(e.target.value);
+                                  setMatrizListaAberta(true);
+                                }}
+                                onFocus={() => setMatrizListaAberta(true)}
+                                placeholder="Buscar fêmea elegível por brinco, RFID ou nome…"
+                                className={fieldCls}
+                                autoComplete="off"
+                              />
+                              {matrizListaAberta && matrizBusca.trim() ? (
+                                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                                  {buscandoMatrizes ? (
+                                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                                      Buscando…
+                                    </li>
+                                  ) : matrizesBusca.length === 0 ? (
+                                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
+                                      Nenhuma matriz elegível encontrada.
+                                    </li>
+                                  ) : (
+                                    matrizesBusca.map(a => (
+                                      <li key={a.id}>
+                                        <button
+                                          type="button"
+                                          onClick={() => selecionarMatriz(a)}
+                                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
+                                        >
+                                          <div className="text-[13px] font-semibold text-gray-900">
+                                            {labelAnimalBusca(a)}
+                                          </div>
+                                          <div className="text-[11px] text-gray-500">
+                                            {subtituloAnimalBusca(a)}
+                                          </div>
+                                        </button>
+                                      </li>
+                                    ))
+                                  )}
+                                </ul>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {coberturaSelecaoModo === "lote" ? (
+                        <div className="space-y-4">
+                          <div>
+                            <label className={labelCls}>
+                              Lote<span className="text-red-500">*</span>
+                            </label>
+                            <FormDownSelect
+                              value={loteCoberturaId}
+                              onChange={onChangeLoteCobertura}
+                              placeholder="Selecione um lote"
+                              options={lotesCoberturaElegiveis.map(l => ({
+                                value: String(l.id),
+                                label: `${l.nome} · ${matrizesElegiveisPorLote.get(l.id) ?? 0} matriz(es) elegível(eis)`,
+                              }))}
+                            />
+                            {lotesCoberturaElegiveis.length === 0 ? (
+                              <p className="text-[11px] text-amber-600 mt-1">
+                                Nenhum lote com matrizes elegíveis nesta fazenda.
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {loteCoberturaId ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className={labelCls}>
+                                  Matrizes elegíveis<span className="text-red-500">*</span>
+                                </label>
+                                {matrizesDoLoteElegiveis.length > 0 ? (
+                                  <span className="text-[11px] text-gray-500">
+                                    {matrizesDoLoteElegiveis.length} matriz(es) elegível(eis) neste
+                                    lote
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              {matrizesDoLoteElegiveis.length === 0 ? (
+                                <p className="text-[11px] text-amber-600">
+                                  Nenhuma matriz elegível neste lote.
+                                </p>
+                              ) : (
+                                <div className="rounded-lg border border-gray-200 divide-y divide-gray-100">
+                                  <label className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 cursor-pointer hover:bg-gray-100/80">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        matrizesLoteSelecionadas.length > 0 &&
+                                        matrizesLoteSelecionadas.length ===
+                                          matrizesDoLoteElegiveis.length
+                                      }
+                                      onChange={toggleSelecionarTodasMatrizesLote}
+                                      className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                    <span className="text-[12px] font-semibold text-gray-700">
+                                      Selecionar todas as matrizes elegíveis
+                                    </span>
+                                  </label>
+                                  {matrizesDoLoteElegiveis.map(a => (
+                                    <label
+                                      key={a.id}
+                                      className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-[#4ECDC4]/[0.05]"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={matrizesLoteSelecionadas.includes(a.id)}
+                                        onChange={() => toggleMatrizLote(a.id)}
+                                        className="h-4 w-4 mt-0.5 rounded border-gray-300"
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="block text-[13px] font-semibold text-gray-900">
+                                          {labelAnimalBusca(a)}
+                                        </span>
+                                        {subtituloAnimalBusca(a) ? (
+                                          <span className="block text-[11px] text-gray-500">
+                                            {subtituloAnimalBusca(a)}
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {erroCoberturaAlvo ? (
+                        <p className="text-[11px] text-red-600">{erroCoberturaAlvo}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {showReprodutor ? (
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>{reproRelacionadoLabel}</label>
+                      <input
+                        type="text"
+                        value={reprodutorSemen}
+                        onChange={e => setReprodutorSemen(e.target.value)}
+                        placeholder={reproRelacionadoPlaceholder}
+                        className={fieldCls}
+                        maxLength={500}
+                      />
+                    </div>
+                  ) : null}
+
+                  {showResultado ? (
+                    <div>
+                      <label className={labelCls}>
+                        Resultado
+                        {exigeResultado ? <span className="text-red-500">*</span> : null}
+                        {!exigeResultado ? (
+                          <span className="text-gray-400 font-normal"> (opcional)</span>
+                        ) : null}
+                      </label>
+                      <FormDownSelect
+                        value={resultado}
+                        onChange={onChangeResultado}
+                        placeholder={
+                          exigeResultado ? "Selecione o resultado" : "Selecione (opcional)"
+                        }
+                        options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
+                      />
+                      {erroResultado ? (
+                        <p className="text-[11px] text-red-600 mt-1">{erroResultado}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {showPrevisaoParto ? (
+                    <div>
+                      <label className={labelCls}>Previsão estimada de parto</label>
+                      <div
+                        className={`${fieldCls} bg-gray-50 text-gray-800 tabular-nums flex items-center`}
+                      >
+                        {previsaoPartoEstimadaFmt || "—"}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        Estimativa automática: data do evento + 283 dias.
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              {showDescricaoResultadoOutro ? (
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>
+                    Descreva o resultado<span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={descricaoResultadoOutro}
+                    onChange={e => {
+                      setDescricaoResultadoOutro(e.target.value);
+                      if (erroDescricaoResultadoOutro) setErroDescricaoResultadoOutro("");
+                    }}
+                    className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                    placeholder="Descreva o resultado do exame ou da coleta..."
+                    maxLength={2000}
+                  />
+                  {erroDescricaoResultadoOutro ? (
+                    <p className="text-[11px] text-red-600 mt-1">{erroDescricaoResultadoOutro}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {showDescricaoOutro ? (
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>
+                    Descreva o manejo<span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={descricaoOutro}
+                    onChange={e => {
+                      setDescricaoOutro(e.target.value);
+                      if (erroDescricaoOutro) setErroDescricaoOutro("");
+                    }}
+                    className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                    placeholder="Descreva o manejo reprodutivo realizado..."
+                    maxLength={2000}
+                  />
+                  {erroDescricaoOutro ? (
+                    <p className="text-[11px] text-red-600 mt-1">{erroDescricaoOutro}</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            {showPartoCriasSection ? (
+              <div className="border-t border-gray-100 pt-5 space-y-4">
+                <p className={sectionTitleCls}>Dados da(s) cria(s)</p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={registrarCrias}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setRegistrarCrias(checked);
+                      if (checked && crias.length === 0) {
+                        setCrias([emptyCriaPartoRow()]);
+                      }
+                      setErroCrias({});
+                    }}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span className="text-[12px] font-semibold text-gray-700">
+                    Registrar cria(s) no Rebanho
+                  </span>
+                </label>
+
+                {registrarCrias ? (
+                  <div className="space-y-4">
+                    {crias.map((cria, index) => {
+                      const categoriasCria = cria.sexo
+                        ? getCategoriasPorSexo(sexoCriaFormParaCadastro(cria.sexo))
+                        : [];
+                      const rowErr = erroCrias[index] ?? {};
+                      return (
+                        <div
+                          key={index}
+                          className="rounded-lg border border-gray-100 bg-gray-50/40 p-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[12px] font-semibold text-gray-800 uppercase tracking-wide">
+                              Cria {index + 1}
+                            </p>
+                            {crias.length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => removeCriaParto(index)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Remover cria
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className={labelCls}>
+                                Brinco visual<span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={cria.brinco}
+                                onChange={e =>
+                                  onChangeCriaField(index, "brinco", e.target.value)
+                                }
+                                className={fieldCls}
+                                placeholder="Ex.: 301"
+                                maxLength={50}
+                              />
+                              {rowErr.brinco ? (
+                                <p className="text-[11px] text-red-600 mt-1">{rowErr.brinco}</p>
+                              ) : null}
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>
+                                Sexo<span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={cria.sexo}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  if (v === "macho" || v === "femea") {
+                                    onChangeCriaSexo(index, v);
+                                  } else {
+                                    onChangeCriaField(index, "sexo", "");
+                                    onChangeCriaField(index, "categoria", "");
+                                  }
+                                }}
+                                className={fieldCls}
+                              >
+                                <option value="">Selecione</option>
+                                <option value="macho">Macho</option>
+                                <option value="femea">Fêmea</option>
+                              </select>
+                              {rowErr.sexo ? (
+                                <p className="text-[11px] text-red-600 mt-1">{rowErr.sexo}</p>
+                              ) : null}
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>
+                                Categoria<span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={cria.categoria}
+                                onChange={e =>
+                                  onChangeCriaField(index, "categoria", e.target.value)
+                                }
+                                className={fieldCls}
+                                disabled={!cria.sexo}
+                              >
+                                <option value="">
+                                  {cria.sexo ? "Selecione" : "Selecione o sexo primeiro"}
+                                </option>
+                                {categoriasCria.map(cat => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                              {rowErr.categoria ? (
+                                <p className="text-[11px] text-red-600 mt-1">
+                                  {rowErr.categoria}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>Peso ao nascimento (kg)</label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={cria.pesoNascimento}
+                                onChange={e =>
+                                  onChangeCriaField(index, "pesoNascimento", e.target.value)
+                                }
+                                className={fieldCls}
+                                placeholder="Opcional — ex.: 32,5"
+                              />
+                              {rowErr.pesoNascimento ? (
+                                <p className="text-[11px] text-red-600 mt-1">
+                                  {rowErr.pesoNascimento}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>RFID</label>
+                              <input
+                                type="text"
+                                value={cria.brincoEletronico}
+                                onChange={e =>
+                                  onChangeCriaField(index, "brincoEletronico", e.target.value)
+                                }
+                                className={fieldCls}
+                                placeholder="Opcional"
+                                maxLength={50}
+                              />
+                            </div>
+
+                            <div>
+                              <label className={labelCls}>Raça</label>
+                              <select
+                                value={cria.raca}
+                                onChange={e => onChangeCriaField(index, "raca", e.target.value)}
+                                className={fieldCls}
+                              >
+                                <option value="">Opcional</option>
+                                {RACAS.map(r => (
+                                  <option key={r} value={r}>
+                                    {r}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={addCriaParto}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-gray-300 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Adicionar outra cria
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div>
+              <label className={labelCls}>Observações</label>
+              <textarea
+                rows={3}
+                value={observacoes}
+                onChange={e => setObservacoes(e.target.value)}
+                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                placeholder="Opcional — contexto adicional que não cabe nos campos estruturados…"
                 maxLength={2000}
               />
             </div>

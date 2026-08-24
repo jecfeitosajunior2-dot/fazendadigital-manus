@@ -23,6 +23,7 @@ const animaisFile = path.join(dataDir, "animais.json");
 const pesagensFile = path.join(dataDir, "pesagens.json");
 const saudeRegistrosFile = path.join(dataDir, "saude-registros.json");
 const reproducaoRegistrosFile = path.join(dataDir, "reproducao-registros.json");
+const partoCriasFile = path.join(dataDir, "parto-crias.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
 const animalLoteMovimentacoesFile = path.join(dataDir, "animal-lote-movimentacoes.json");
 const lotePastoMovimentacoesFile = path.join(dataDir, "lote-pasto-movimentacoes.json");
@@ -1335,6 +1336,8 @@ export type LocalAnimal = Record<string, any> & {
   userId: number;
   sexo: "macho" | "femea";
   status: "ativo" | "vendido" | "morto" | "transferido";
+  maeId?: number | null;
+  paiId?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -2197,6 +2200,26 @@ export async function updateLocalReproducaoRegistro(
   await writeReproducaoRegistros(rows);
 }
 
+/** Marca dataPartoReal em gestações abertas da matriz (Dashboard / alertas). */
+export async function fecharPrevisoesPartoLocal(
+  userId: number,
+  femeaId: number,
+  dataPartoReal: string,
+): Promise<number> {
+  const rows = await readReproducaoRegistros();
+  let updated = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (row.userId !== userId) continue;
+    if (row.femeaId !== femeaId) continue;
+    if (!row.dataPrevistoParto || row.dataPartoReal) continue;
+    rows[i] = { ...row, dataPartoReal: normalizeLocalDateField(dataPartoReal) };
+    updated += 1;
+  }
+  if (updated > 0) await writeReproducaoRegistros(rows);
+  return updated;
+}
+
 export async function deleteLocalReproducaoRegistro(userId: number, id: number): Promise<void> {
   const rows = await readReproducaoRegistros();
   const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
@@ -2205,6 +2228,119 @@ export async function deleteLocalReproducaoRegistro(userId: number, id: number):
     return;
   }
   await writeReproducaoRegistros(remaining);
+}
+
+export type LocalPartoCria = {
+  id: number;
+  userId: number;
+  partoRegistroId: number;
+  criaAnimalId: number;
+  ordem: number;
+  createdAt: string;
+};
+
+async function readPartoCrias(): Promise<LocalPartoCria[]> {
+  return readJsonFile<LocalPartoCria[]>(partoCriasFile, []);
+}
+
+async function writePartoCrias(rows: LocalPartoCria[]): Promise<void> {
+  await writeJsonFile(partoCriasFile, rows);
+}
+
+export async function listLocalPartoCrias(userId: number): Promise<LocalPartoCria[]> {
+  const rows = await readPartoCrias();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  return visible.sort((a, b) => a.ordem - b.ordem || a.id - b.id);
+}
+
+export async function listLocalPartoCriasByParto(
+  userId: number,
+  partoRegistroId: number,
+): Promise<LocalPartoCria[]> {
+  const rows = await listLocalPartoCrias(userId);
+  return rows.filter(row => row.partoRegistroId === partoRegistroId);
+}
+
+export async function getLocalPartoCriaByAnimal(
+  userId: number,
+  criaAnimalId: number,
+): Promise<LocalPartoCria | null> {
+  const rows = await listLocalPartoCrias(userId);
+  return rows.find(row => row.criaAnimalId === criaAnimalId) ?? null;
+}
+
+export async function createLocalPartoCria(
+  userId: number,
+  input: {
+    partoRegistroId: number;
+    criaAnimalId: number;
+    ordem?: number;
+  },
+): Promise<{ id: number }> {
+  const rows = await readPartoCrias();
+  if (rows.some(row => row.partoRegistroId === input.partoRegistroId && row.criaAnimalId === input.criaAnimalId)) {
+    throw new Error("Esta cria já está vinculada a este parto.");
+  }
+  if (rows.some(row => row.criaAnimalId === input.criaAnimalId)) {
+    throw new Error("Esta cria já possui vínculo de parto registrado.");
+  }
+  const ordem = input.ordem ?? 1;
+  if (rows.some(row => row.partoRegistroId === input.partoRegistroId && row.ordem === ordem)) {
+    throw new Error("Já existe cria com esta ordem neste parto.");
+  }
+  const id = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+  rows.push({
+    id,
+    userId,
+    partoRegistroId: input.partoRegistroId,
+    criaAnimalId: input.criaAnimalId,
+    ordem,
+    createdAt: now,
+  });
+  await writePartoCrias(rows);
+  return { id };
+}
+
+export async function createLocalPartoCriasBatch(
+  userId: number,
+  items: Array<{
+    partoRegistroId: number;
+    criaAnimalId: number;
+    ordem?: number;
+  }>,
+): Promise<Array<{ id: number }>> {
+  const rows = await readPartoCrias();
+  const results: Array<{ id: number }> = [];
+  let nextId = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  const now = new Date().toISOString();
+
+  for (const input of items) {
+    if (rows.some(row => row.partoRegistroId === input.partoRegistroId && row.criaAnimalId === input.criaAnimalId)) {
+      throw new Error("Esta cria já está vinculada a este parto.");
+    }
+    if (rows.some(row => row.criaAnimalId === input.criaAnimalId)) {
+      throw new Error("Esta cria já possui vínculo de parto registrado.");
+    }
+    const ordem = input.ordem ?? 1;
+    if (rows.some(row => row.partoRegistroId === input.partoRegistroId && row.ordem === ordem)) {
+      throw new Error("Já existe cria com esta ordem neste parto.");
+    }
+    rows.push({
+      id: nextId,
+      userId,
+      partoRegistroId: input.partoRegistroId,
+      criaAnimalId: input.criaAnimalId,
+      ordem,
+      createdAt: now,
+    });
+    results.push({ id: nextId });
+    nextId += 1;
+  }
+
+  await writePartoCrias(rows);
+  return results;
 }
 
 type MapaLoteRow = {

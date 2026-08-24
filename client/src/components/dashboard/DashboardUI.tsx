@@ -84,18 +84,27 @@ export function KpiCard({
 
 export type Severidade = "critico" | "alerta" | "info";
 
+export type AlertItem = {
+  texto: string;
+  detalhe: string;
+  /** ID interno do animal — habilita clique individual quando `onItemClick` é usado. */
+  animalId?: number;
+};
+
 export function AlertGroup({
   icon,
   titulo,
   itens,
   severidade,
   onClick,
+  onItemClick,
 }: {
   icon: string;
   titulo: string;
-  itens: { texto: string; detalhe: string }[];
+  itens: AlertItem[];
   severidade: Severidade;
   onClick?: () => void;
+  onItemClick?: (item: AlertItem, index: number) => void;
 }) {
   const cfg = {
     critico: { color: RED, bg: "#FEF2F2", border: "#FECACA" },
@@ -105,37 +114,79 @@ export function AlertGroup({
 
   if (itens.length === 0) return null;
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-left rounded-lg border p-3 hover:shadow-sm transition-shadow w-full"
-      style={{ backgroundColor: cfg.bg, borderColor: cfg.border }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <span className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: cfg.color }}>
-          <span className="material-icons text-[16px]">{icon}</span>
-          {titulo}
-        </span>
-        <span className="text-[11px] font-bold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: cfg.color }}>
-          {itens.length}
-        </span>
-      </div>
-      <ul className="space-y-1.5">
-        {itens.slice(0, 3).map((it, i) => (
+  const cardClassName =
+    "text-left rounded-lg border p-3 hover:shadow-sm transition-shadow w-full";
+  const cardStyle = { backgroundColor: cfg.bg, borderColor: cfg.border };
+
+  const header = (
+    <div className="flex items-center justify-between mb-2">
+      <span className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: cfg.color }}>
+        <span className="material-icons text-[16px]">{icon}</span>
+        {titulo}
+      </span>
+      <span className="text-[11px] font-bold rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: cfg.color }}>
+        {itens.length}
+      </span>
+    </div>
+  );
+
+  const list = (
+    <ul className="space-y-1.5">
+      {itens.slice(0, 3).map((it, i) => {
+        const itemClickable =
+          onItemClick != null &&
+          it.animalId != null &&
+          Number.isFinite(it.animalId) &&
+          it.animalId > 0;
+
+        if (itemClickable) {
+          return (
+            <li key={`${it.animalId}-${i}`}>
+              <button
+                type="button"
+                onClick={() => onItemClick(it, i)}
+                className="w-full text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 cursor-pointer min-w-0"
+                aria-label={`Ver ficha: ${it.texto}`}
+              >
+                <div className="text-[11px] text-gray-700 truncate font-medium">{it.texto}</div>
+                {it.detalhe ? (
+                  <div className="text-[11px] text-gray-500 leading-snug">{it.detalhe}</div>
+                ) : null}
+              </button>
+            </li>
+          );
+        }
+
+        return (
           <li key={i} className="text-[11px] min-w-0">
             <div className="text-gray-700 truncate font-medium">{it.texto}</div>
             {it.detalhe ? (
               <div className="text-gray-500 leading-snug">{it.detalhe}</div>
             ) : null}
           </li>
-        ))}
-        {itens.length > 3 && (
-          <li className="text-[11px] font-medium pt-0.5" style={{ color: cfg.color }}>
-            + {itens.length - 3} {itens.length - 3 === 1 ? "outro" : "outros"}
-          </li>
-        )}
-      </ul>
+        );
+      })}
+      {itens.length > 3 && (
+        <li className="text-[11px] font-medium pt-0.5" style={{ color: cfg.color }}>
+          + {itens.length - 3} {itens.length - 3 === 1 ? "outro" : "outros"}
+        </li>
+      )}
+    </ul>
+  );
+
+  if (onItemClick) {
+    return (
+      <div className={cardClassName} style={cardStyle}>
+        {header}
+        {list}
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={cardClassName} style={cardStyle}>
+      {header}
+      {list}
     </button>
   );
 }

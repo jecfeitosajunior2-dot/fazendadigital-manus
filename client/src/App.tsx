@@ -31,7 +31,6 @@ import AlocacaoAnimaisPage from "./pages/AlocacaoAnimaisPage";
 import { NewLotePage } from "./pages/LoteFormPage";
 import EditLotePage from "./pages/EditLotePage";
 import { SaudePage } from "./pages/ReproductionManagementPage";
-import { ReproductionManagementPage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
@@ -56,9 +55,14 @@ import InsumosNovaMovimentacaoPage from "./pages/InsumosNovaMovimentacaoPage";
 import InsumosHistoricoMovimentacaoPage from "./pages/InsumosHistoricoMovimentacaoPage";
 import ManutencaoListPage from "./pages/ManutencaoListPage";
 import ManutencaoFormPage from "./pages/ManutencaoFormPage";
+import { MANEJO_REPRODUTIVO_PATH } from "./const";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
+}
+
+function RedirectReproducaoLegado() {
+  return <Redirect to={MANEJO_REPRODUTIVO_PATH} replace />;
 }
 
 function ProtectedRoutes() {
@@ -127,11 +131,13 @@ function ProtectedRoutes() {
       <Route path="/maquinas/manutencao/cadastro" component={ManutencaoFormPage} />
       <Route path="/maquinas/manutencao" component={ManutencaoListPage} />
 
-      {/* Reproduction & Saude */}
-      <Route path="/reproducao/visao-geral" component={ReproductionManagementPage} />
-      <Route path="/reproducao/protocolos" component={ReproductionManagementPage} />
-      <Route path="/reproducao/semen" component={ReproductionManagementPage} />
-      <Route path="/reproducao/embrioes" component={ReproductionManagementPage} />
+      {/* Reprodução legada — redireciona para Manejo → Reprodutivo */}
+      <Route path="/reproducao" component={RedirectReproducaoLegado} />
+      <Route path="/reproducao/visao-geral" component={RedirectReproducaoLegado} />
+      <Route path="/reproducao/protocolos" component={RedirectReproducaoLegado} />
+      <Route path="/reproducao/semen" component={RedirectReproducaoLegado} />
+      <Route path="/reproducao/embrioes" component={RedirectReproducaoLegado} />
+      <Route path="/reproducao/*" component={RedirectReproducaoLegado} />
       <Route path="/saude/registros" component={SaudePage} />
 
       {/* Nutrition */}

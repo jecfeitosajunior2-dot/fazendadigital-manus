@@ -1562,7 +1562,11 @@ export function MachineryListPage() {
 
 function ReproductionTabs({ active }: { active: string }) {
   const tabs = ["Estoque Biológico", "Exposição", "Colheitas"];
-  const paths = ["/reproducao/protocolos", "/reproducao/semen", "/reproducao/embrioes"];
+  const paths = [
+    "/manejo/registros/cadastro?tipo=reprodutivo",
+    "/manejo/registros/cadastro?tipo=reprodutivo",
+    "/manejo/registros/cadastro?tipo=reprodutivo",
+  ];
   return (
     <div className="flex border-b border-gray-200 mb-4">
       {tabs.map((tab, i) => (

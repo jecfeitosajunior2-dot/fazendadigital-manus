@@ -1,5 +1,5 @@
-import { useState, useEffect, type ReactNode } from 'react';
-import { useLocation } from 'wouter';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useLocation, useSearch } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,8 +13,6 @@ import {
   FieldBox,
   FormDatePicker,
   FormInput,
-  FormNativeSelect,
-  FormTextarea,
   inputClassCompact,
 } from '@/components/FormFields';
 import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
@@ -43,23 +41,15 @@ import {
   statusBadgeClass,
   statusLabel,
 } from '@/lib/fichaAnimalDisplay';
-import { DeleteActionIcon, EditActionIcon, TableIconButton } from '@/components/icons/FarmActionIcons';
-import { useConfirm } from '@/components/ConfirmDialog';
 import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
 import {
-  calcPrevisaoParto283,
+  deriveResumoReprodutivoMacho,
+  deriveSituacaoReprodutivaAtual,
+  formatReproDetalhesTabela,
+  formatReproResultadoTabela,
   formatTipoReproTabelaDisplay,
-  getReproRelacionadoLabel,
-  getReproRelacionadoPlaceholder,
-  getReproRelacionadoTabelaHeader,
-  getReproResultadoOptions,
-  getReproTipoOptions,
-  isReproResultadoValidForTipo,
-  reproRegistroToFormValues,
-  shouldCalcPrevisaoParto,
-  shouldShowPrevisaoColumn,
-  shouldShowPrevisaoPartoForm,
+  getReproDetalhesTabelaHeader,
   unpackReproObservacoes,
 } from '@shared/reproRegistroMeta';
 import {
@@ -68,18 +58,13 @@ import {
   sortHistoricoIdentificacaoDesc,
   type HistoricoBrincoRow,
 } from '@shared/historicoIdentificacao';
+import {
+  FICHA_ANIMAL_DEFAULT_TAB,
+  parseFichaAnimalTab,
+  type FichaAnimalTab,
+} from '@/lib/fichaAnimalRoute';
 
 const FD_ACTION = '#4ECDC4';
-
-const EMPTY_REPRO_FORM = {
-  tipo: '',
-  data: new Date().toISOString().split('T')[0],
-  resultado: '',
-  reprodutorSemen: '',
-  previsaoParto: '',
-  responsavel: '',
-  observacoes: '',
-};
 
 const TAB_TRIGGER_CLASS =
   'rounded-md border border-transparent px-2 py-2 text-[12px] font-medium text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#2D5A5A] data-[state=active]:shadow-sm data-[state=active]:border-[#4ECDC4]/35';
@@ -258,14 +243,37 @@ function ResumoField({
 
 export const CattleDetailPageExpanded: React.FC = () => {
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState('identificacao');
-  const utils = trpc.useUtils();
-  const confirm = useConfirm();
-
-  // Get animal ID from URL
-  const urlParams = new URLSearchParams(window.location.search);
+  const search = useSearch();
+  const urlParams = useMemo(() => new URLSearchParams(search), [search]);
   const cattleIdParam = urlParams.get('id');
-  const animalId = cattleIdParam ? parseInt(cattleIdParam) : null;
+  const tabParam = urlParams.get('tab');
+  const animalId = cattleIdParam ? parseInt(cattleIdParam, 10) : null;
+
+  const [activeTab, setActiveTab] = useState<FichaAnimalTab>(() =>
+    parseFichaAnimalTab(new URLSearchParams(window.location.search).get("tab")),
+  );
+
+  useEffect(() => {
+    setActiveTab(parseFichaAnimalTab(tabParam));
+  }, [tabParam, animalId]);
+
+  const handleTabChange = (tab: string) => {
+    const nextTab = parseFichaAnimalTab(tab);
+    setActiveTab(nextTab);
+    if (animalId == null || Number.isNaN(animalId)) return;
+
+    const params = new URLSearchParams(search);
+    params.set('id', String(animalId));
+    if (nextTab === FICHA_ANIMAL_DEFAULT_TAB) {
+      params.delete('tab');
+    } else {
+      params.set('tab', nextTab);
+    }
+    const qs = params.toString();
+    window.history.replaceState(null, '', `/rebanho/detalhes-animal${qs ? `?${qs}` : ''}`);
+  };
+
+  const utils = trpc.useUtils();
 
   const { containerRef, state } = usePullToRefresh({
     onRefresh: async () => {
@@ -321,32 +329,8 @@ export const CattleDetailPageExpanded: React.FC = () => {
     r => r.femeaId === animalId || r.machoId === animalId
   ) || [];
 
-  // ─── Mutations ────────────────────────────────────────────────────────────
-  const deleteReproMutation = trpc.reproducao.delete.useMutation({
-    onSuccess: () => {
-      toast.success('Registro reprodutivo removido!');
-      utils.reproducao.list.invalidate();
-    },
-    onError: (err) => toast.error(`Erro: ${err.message}`),
-  });
-
-  const handleDeleteRepro = async (reg: { id: number }) => {
-    const ok = await confirm({
-      title: 'Excluir registro reprodutivo',
-      description: 'Tem certeza que deseja excluir este registro reprodutivo? Esta ação não pode ser desfeita.',
-      confirmText: 'Excluir',
-      cancelText: 'Cancelar',
-      variant: 'danger',
-    });
-    if (ok) deleteReproMutation.mutate({ id: reg.id });
-  };
-
   // ─── Add Pesagem Form ─────────────────────────────────────────────────────
   const [showPesagemForm, setShowPesagemForm] = useState(false);
-  const [showReproForm, setShowReproForm] = useState(false);
-  const [editingReproId, setEditingReproId] = useState<number | null>(null);
-  const [reproForm, setReproForm] = useState({ ...EMPTY_REPRO_FORM });
-  const [previsaoPartoManual, setPrevisaoPartoManual] = useState(false);
   const [pesagemForm, setPesagemForm] = useState({
     peso: '',
     data: new Date().toISOString().split('T')[0],
@@ -364,54 +348,6 @@ export const CattleDetailPageExpanded: React.FC = () => {
     },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
-
-  const resetReproFormState = () => {
-    setShowReproForm(false);
-    setEditingReproId(null);
-    setReproForm({ ...EMPTY_REPRO_FORM, data: new Date().toISOString().split('T')[0] });
-    setPrevisaoPartoManual(false);
-  };
-
-  const handleEditRepro = (reg: {
-    id: number;
-    tipo: string;
-    dataCobertura: Date | string | null;
-    dataPrevistoParto?: Date | string | null;
-    resultado?: string | null;
-    observacoes?: string | null;
-  }) => {
-    const values = reproRegistroToFormValues(reg);
-    setEditingReproId(reg.id);
-    setReproForm(values);
-    setPrevisaoPartoManual(Boolean(values.previsaoParto));
-    setShowReproForm(true);
-  };
-
-  const updateReproMutation = trpc.reproducao.update.useMutation({
-    onSuccess: () => {
-      toast.success('Registro reprodutivo atualizado!');
-      resetReproFormState();
-      utils.reproducao.list.invalidate();
-    },
-    onError: (err) => toast.error(`Erro: ${err.message}`),
-  });
-
-  const animalSexo = animal?.sexo as string | null | undefined;
-
-  useEffect(() => {
-    if (previsaoPartoManual || !shouldShowPrevisaoPartoForm(animalSexo)) {
-      if (!shouldShowPrevisaoPartoForm(animalSexo)) {
-        setReproForm(p => (p.previsaoParto ? { ...p, previsaoParto: '' } : p));
-      }
-      return;
-    }
-    if (shouldCalcPrevisaoParto(reproForm.tipo, animalSexo) && reproForm.data) {
-      const calc = calcPrevisaoParto283(reproForm.data);
-      setReproForm(p => ({ ...p, previsaoParto: calc ?? '' }));
-    } else {
-      setReproForm(p => ({ ...p, previsaoParto: '' }));
-    }
-  }, [reproForm.tipo, reproForm.data, previsaoPartoManual, animalSexo]);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
   const formatDate = (date: Date | string | null | undefined) => formatDateBR(date);
@@ -477,28 +413,23 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const custoSanitarioResumo = computeCustoSanitarioResumo(sortedSaude);
 
-  const sortedAnimalRepro = [...animalRepro].sort(
-    (a, b) =>
-      (parseLocalDate(b.dataCobertura)?.getTime() ?? 0) -
-      (parseLocalDate(a.dataCobertura)?.getTime() ?? 0),
-  );
+  const sortedAnimalRepro = [...animalRepro].sort((a, b) => {
+    const tb = parseLocalDate(b.dataCobertura)?.getTime() ?? 0;
+    const ta = parseLocalDate(a.dataCobertura)?.getTime() ?? 0;
+    if (tb !== ta) return tb - ta;
+    return (b.id ?? 0) - (a.id ?? 0);
+  });
 
-  const reproEmptyState = getReproEmptyStateMessage(animal.sexo);
-  const reproTipoOptions = getReproTipoOptions(animal.sexo);
-  const reproResultadoOptions = getReproResultadoOptions(
-    animal.sexo,
-    reproForm.tipo,
-    reproForm.resultado,
+  const reproEmptyState = getReproEmptyStateMessage(animal.sexo as string | null | undefined);
+  const reproDetalhesTabelaHeader = getReproDetalhesTabelaHeader();
+  const situacaoReprodutiva = deriveSituacaoReprodutivaAtual(
+    animalRepro,
+    animal.sexo as string | null | undefined,
   );
-  const reproRelacionadoLabel = getReproRelacionadoLabel(animal.sexo);
-  const reproRelacionadoPlaceholder = getReproRelacionadoPlaceholder(animal.sexo);
-  const reproRelacionadoTabelaHeader = getReproRelacionadoTabelaHeader(animal.sexo);
-  const showPrevisaoPartoForm = shouldShowPrevisaoPartoForm(animal.sexo);
-  const isReproMacho = animal.sexo === 'macho';
-  const showPrevisaoColumn = shouldShowPrevisaoColumn(animal.sexo, sortedAnimalRepro);
-  const reproFormValid = Boolean(reproForm.tipo && reproForm.data);
-  const isEditingRepro = editingReproId != null;
-  const reproFormPending = updateReproMutation.isPending;
+  const resumoReprodutivoMacho = deriveResumoReprodutivoMacho(
+    animalRepro,
+    animal.sexo as string | null | undefined,
+  );
 
   const carenciaResumo = (() => {
     const ateLista = (animalListRow as { fimCarenciaAte?: string | null } | undefined)?.fimCarenciaAte;
@@ -622,6 +553,54 @@ export const CattleDetailPageExpanded: React.FC = () => {
                     value={diasNaFazenda != null ? `${diasNaFazenda} dias` : '—'}
                   />
                 </div>
+
+                {animal.sexo === 'femea' && situacaoReprodutiva ? (
+                  <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Reprodução
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <ResumoField
+                        label="Situação reprodutiva"
+                        value={situacaoReprodutiva.situacao}
+                      />
+                      {situacaoReprodutiva.previsaoPartoISO ? (
+                        <ResumoField
+                          label="Previsão estimada de parto"
+                          value={formatDateBR(situacaoReprodutiva.previsaoPartoISO)}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {animal.sexo === 'macho' && resumoReprodutivoMacho ? (
+                  <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Reprodução
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {resumoReprodutivoMacho.situacaoReprodutiva ? (
+                        <ResumoField
+                          label="Situação reprodutiva"
+                          value={resumoReprodutivoMacho.situacaoReprodutiva}
+                        />
+                      ) : null}
+                      {resumoReprodutivoMacho.ultimoExameResultado ? (
+                        <ResumoField
+                          label="Último exame andrológico"
+                          value={resumoReprodutivoMacho.ultimoExameResultado}
+                        />
+                      ) : null}
+                      {resumoReprodutivoMacho.ultimoExameDataISO ? (
+                        <ResumoField
+                          label="Data do último exame"
+                          value={formatDateBR(resumoReprodutivoMacho.ultimoExameDataISO)}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* Métricas + ação */}
@@ -667,7 +646,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
         </Card>
 
         {/* Abas de histórico */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full h-auto grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-4 gap-1 rounded-lg border border-gray-200 bg-gray-50/80 p-1">
             <TabsTrigger value="identificacao" className={TAB_TRIGGER_CLASS}>Identificação</TabsTrigger>
             <TabsTrigger value="pesagens" className={TAB_TRIGGER_CLASS}>Pesagens</TabsTrigger>
@@ -950,169 +929,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                 </h2>
               </div>
 
-              {showReproForm && isEditingRepro && (
-                <div className={INLINE_FORM_CARD}>
-                  <h3 className={INLINE_FORM_TITLE}>
-                    {isEditingRepro ? 'Editar Registro Reprodutivo' : 'Novo Registro Reprodutivo'}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <FormLabel required className="mb-1">Tipo de Registro</FormLabel>
-                      <FormNativeSelect
-                        value={reproForm.tipo}
-                        onChange={newTipo => {
-                          setPrevisaoPartoManual(false);
-                          setReproForm(p => {
-                            const resultado = isReproResultadoValidForTipo(
-                              animal.sexo,
-                              newTipo,
-                              p.resultado,
-                            )
-                              ? p.resultado
-                              : '';
-                            return { ...p, tipo: newTipo, resultado };
-                          });
-                        }}
-                        placeholder="Selecione"
-                        required
-                        compact
-                        variant="light"
-                        options={reproTipoOptions.map(tipo => ({ value: tipo, label: tipo }))}
-                      />
-                    </div>
-                    <div>
-                      <FormLabel required className="mb-1">Data</FormLabel>
-                      <FormDatePicker
-                        value={reproForm.data}
-                        onChange={v => {
-                          setPrevisaoPartoManual(false);
-                          setReproForm(p => ({ ...p, data: v }));
-                        }}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <FormLabel className="mb-1">Resultado / Status</FormLabel>
-                      <FormNativeSelect
-                        value={reproForm.resultado}
-                        onChange={v => setReproForm(p => ({ ...p, resultado: v }))}
-                        placeholder="Selecione (opcional)"
-                        compact
-                        variant="light"
-                        options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
-                      />
-                    </div>
-                    <div>
-                      <FormLabel className="mb-1">{reproRelacionadoLabel}</FormLabel>
-                      <FormInput
-                        value={reproForm.reprodutorSemen}
-                        onChange={v => setReproForm(p => ({ ...p, reprodutorSemen: v }))}
-                        placeholder={reproRelacionadoPlaceholder}
-                        compact
-                        variant="light"
-                      />
-                    </div>
-                    {showPrevisaoPartoForm ? (
-                      <>
-                        <div>
-                          <FormLabel className="mb-1">Previsão de Parto</FormLabel>
-                          <FormDatePicker
-                            value={reproForm.previsaoParto}
-                            onChange={v => {
-                              setPrevisaoPartoManual(true);
-                              setReproForm(p => ({ ...p, previsaoParto: v }));
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <FormLabel className="mb-1">Responsável</FormLabel>
-                          <FormInput
-                            value={reproForm.responsavel}
-                            onChange={v => setReproForm(p => ({ ...p, responsavel: v }))}
-                            placeholder="Ex: Paulo Gomes"
-                            compact
-                            variant="light"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <div>
-                        <FormLabel className="mb-1">Responsável</FormLabel>
-                        <FormInput
-                          value={reproForm.responsavel}
-                          onChange={v => setReproForm(p => ({ ...p, responsavel: v }))}
-                          placeholder="Ex: Paulo Gomes"
-                          compact
-                          variant="light"
-                        />
-                      </div>
-                    )}
-                    <div className="md:col-span-2">
-                      <FormLabel className="mb-1">Observações</FormLabel>
-                      <FormTextarea
-                        value={reproForm.observacoes}
-                        onChange={v => setReproForm(p => ({ ...p, observacoes: v }))}
-                        placeholder="Descreva detalhes do registro reprodutivo..."
-                        rows={3}
-                        variant="light"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (!reproFormValid) {
-                          toast.error('Preencha Tipo de Registro e Data.');
-                          return;
-                        }
-                        const commonPayload = {
-                          tipo: reproForm.tipo,
-                          dataCobertura: reproForm.data,
-                          resultado: reproForm.resultado || undefined,
-                          reprodutorSemen: reproForm.reprodutorSemen || undefined,
-                          responsavel: reproForm.responsavel || undefined,
-                          observacoes: reproForm.observacoes || undefined,
-                        };
-                        if (!isEditingRepro || editingReproId == null) {
-                          toast.error('Novos registros reprodutivos são feitos em Manejo → Reprodutivo.');
-                          return;
-                        }
-                        updateReproMutation.mutate({
-                          id: editingReproId,
-                          ...commonPayload,
-                          dataPrevistoParto: showPrevisaoPartoForm && reproForm.previsaoParto
-                            ? reproForm.previsaoParto
-                            : null,
-                        });
-                      }}
-                      disabled={!reproFormValid || reproFormPending}
-                      className="text-white text-xs"
-                      style={{ backgroundColor: FD_ACTION }}
-                    >
-                      {reproFormPending ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        'Salvar Alterações'
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={resetReproFormState}
-                      className="text-xs"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               {loadingRepro ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-[#4ECDC4]" />
                 </div>
-              ) : sortedAnimalRepro.length === 0 && !showReproForm ? (
+              ) : sortedAnimalRepro.length === 0 ? (
                 <div className="text-center py-10 px-4 text-gray-500">
                   <HeartPulse className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                   <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
@@ -1121,35 +942,20 @@ export const CattleDetailPageExpanded: React.FC = () => {
                     {reproEmptyState.orientacao}
                   </p>
                 </div>
-              ) : sortedAnimalRepro.length > 0 && !showReproForm ? (
+              ) : (
                 <>
                   <p className="mb-3 text-[11px] text-gray-500">
                     {sortedAnimalRepro.length} registro{sortedAnimalRepro.length !== 1 ? 's' : ''} reprodutivo{sortedAnimalRepro.length !== 1 ? 's' : ''}
                     <span className="text-gray-400"> · mais recente primeiro</span>
                   </p>
                   <div className="overflow-x-auto rounded-lg border border-gray-100">
-                    <table className="w-full table-fixed border-separate border-spacing-0 text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
+                    <table className="w-full table-fixed border-collapse text-[12px] [&_th]:px-3 [&_th]:py-2.5 [&_td]:px-3 [&_td]:py-2.5 [&_th]:align-middle [&_td]:align-middle [&_th]:text-center [&_td]:text-center">
                       <colgroup>
-                        {showPrevisaoColumn ? (
-                          <>
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '16%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '15%' }} />
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '23%' }} />
-                            <col style={{ width: '12%' }} />
-                          </>
-                        ) : (
-                          <>
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '18%' }} />
-                            <col style={{ width: '13%' }} />
-                            <col style={{ width: '22%' }} />
-                            <col style={{ width: '23%' }} />
-                            <col style={{ width: '12%' }} />
-                          </>
-                        )}
+                        <col style={{ width: '11%' }} />
+                        <col style={{ width: '18%' }} />
+                        <col style={{ width: '21%' }} />
+                        <col style={{ width: '13%' }} />
+                        <col style={{ width: '37%' }} />
                       </colgroup>
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
@@ -1159,22 +965,14 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                             Tipo
                           </th>
+                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide text-left">
+                            {reproDetalhesTabelaHeader}
+                          </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                             Resultado
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                            {reproRelacionadoTabelaHeader}
-                          </th>
-                          {showPrevisaoColumn && (
-                            <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                              Previsão
-                            </th>
-                          )}
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                             Observações
-                          </th>
-                          <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Ações
                           </th>
                         </tr>
                       </thead>
@@ -1182,69 +980,59 @@ export const CattleDetailPageExpanded: React.FC = () => {
                         {sortedAnimalRepro.map(reg => {
                           const meta = unpackReproObservacoes(reg.observacoes);
                           const tipoDisplay = formatTipoReproTabelaDisplay(reg.tipo);
+                          const detalhes = formatReproDetalhesTabela(reg, meta, formatDate);
+                          const detalhesLinhas = detalhes
+                            ? detalhes.split(" · ").filter(Boolean)
+                            : [];
                           return (
-                          <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
-                            <td className="text-gray-800 tabular-nums whitespace-nowrap">
-                              {formatDate(reg.dataCobertura)}
-                            </td>
-                            <td className="overflow-hidden">
-                              <span
-                                className="inline-block max-w-full truncate px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-pink-50 text-pink-700 border border-pink-100"
-                                title={tipoDisplay.tituloCompleto}
-                              >
-                                {tipoDisplay.label}
-                              </span>
-                            </td>
-                            <td className="text-gray-600 whitespace-nowrap">
-                              {reg.resultado || '—'}
-                            </td>
-                            <td className="max-w-0">
-                              <span
-                                className="block truncate max-w-full text-gray-600 text-[11px]"
-                                title={meta.reprodutorSemen || undefined}
-                              >
-                                {meta.reprodutorSemen || '—'}
-                              </span>
-                            </td>
-                            {showPrevisaoColumn && (
-                              <td className="text-gray-600 tabular-nums whitespace-nowrap">
-                                {reg.dataPrevistoParto ? formatDate(reg.dataPrevistoParto) : '—'}
+                            <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                              <td className="text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
+                                {formatDate(reg.dataCobertura)}
                               </td>
-                            )}
-                            <td className="max-w-0">
-                              <span
-                                className="block truncate max-w-full text-gray-600 text-[11px]"
-                                title={meta.observacoes || undefined}
-                              >
-                                {meta.observacoes || '—'}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="inline-flex items-center justify-center gap-1">
-                                <TableIconButton
-                                  label="Editar registro reprodutivo"
-                                  onClick={() => handleEditRepro(reg)}
-                                  tone="neutral"
+                              <td className="text-center align-middle">
+                                <div className="flex justify-center">
+                                  <span
+                                    className="inline-block px-2 py-0.5 rounded text-[10px] font-medium leading-snug bg-pink-50 text-pink-700 border border-pink-100 whitespace-normal break-words text-center"
+                                    title={tipoDisplay.tituloCompleto}
+                                  >
+                                    {tipoDisplay.label}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="text-center align-middle">
+                                {detalhesLinhas.length > 0 ? (
+                                  <div className="text-center text-gray-600 text-[11px] leading-snug break-words whitespace-normal">
+                                    {detalhesLinhas.map((linha, i) => (
+                                      <div key={i}>{linha}</div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className="text-center text-gray-600 align-middle whitespace-normal break-words">
+                                {formatReproResultadoTabela(
+                                  reg,
+                                  meta,
+                                  animal.sexo as string | null | undefined,
+                                )}
+                              </td>
+                              <td className="text-center align-middle">
+                                <div
+                                  className="text-center text-gray-600 break-words whitespace-normal leading-snug text-[11px]"
+                                  title={meta.observacoes || undefined}
                                 >
-                                  <EditActionIcon size={17} />
-                                </TableIconButton>
-                                <TableIconButton
-                                  label="Excluir registro reprodutivo"
-                                  onClick={() => void handleDeleteRepro(reg)}
-                                  tone="danger"
-                                >
-                                  <DeleteActionIcon size={17} />
-                                </TableIconButton>
-                              </div>
-                            </td>
-                          </tr>
+                                  {meta.observacoes || '—'}
+                                </div>
+                              </td>
+                            </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
                 </>
-              ) : null}
+              )}
             </Card>
           </TabsContent>
 

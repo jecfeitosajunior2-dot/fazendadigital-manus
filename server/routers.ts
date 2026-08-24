@@ -132,7 +132,32 @@ import {
   executarExclusaoLote,
   executarInativacaoLote,
 } from "./loteExclusaoCheck";
-import { packReproObservacoes } from "../shared/reproRegistroMeta";
+import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
+import {
+  buildReproAnimalElegibilidadeInput,
+  isReproTipoPermitidoParaAnimal,
+  MSG_REPRO_INELEGIVEL,
+} from "../shared/reproElegibilidade";
+import {
+  isCoberturaRealizadaMacho,
+  resolveReproducaoAnimalId,
+  resolveReproducaoMachoIdPersistido,
+} from "./reproducaoCreateInput";
+import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
+import {
+  executeRegistrarPartoComCrias,
+  registrarPartoComCriasInputSchema,
+} from "./registrarPartoComCrias";
+import {
+  enrichReproducaoListPartoCriasDb,
+  enrichReproducaoListPartoCriasLocal,
+} from "./enrichReproducaoListPartoCrias";
+import {
+  MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
+  MSG_REPRO_LOTE_INELEGIVEL,
+  MSG_REPRO_MATRIZ_INELEGIVEL,
+} from "../shared/reproCoberturaAlvo";
+import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
 import { devLocalStore } from "./devLocalStore";
 import {
@@ -279,6 +304,8 @@ function buildAnimalInsertRow(userId: number, input: {
   rgn?: string;
   rgd?: string;
   rastreadoNascimento?: boolean;
+  maeId?: number | null;
+  paiId?: number | null;
   pai?: string;
   mae?: string;
   fazendaId?: number;
@@ -310,6 +337,8 @@ function buildAnimalInsertRow(userId: number, input: {
     rgn: input.rgn,
     rgd: input.rgd,
     rastreadoNascimento: input.rastreadoNascimento,
+    maeId: input.maeId ?? undefined,
+    paiId: input.paiId ?? undefined,
     pai: input.pai,
     mae: input.mae,
     fazendaId: input.fazendaId,
@@ -919,6 +948,8 @@ const animaisRouter = router({
       rgd: z.string().optional(),
       rastreadoNascimento: z.boolean().optional(),
       // Genealogia
+      maeId: z.number().nullable().optional(),
+      paiId: z.number().nullable().optional(),
       pai: z.string().optional(),
       mae: z.string().optional(),
       fazendaId: z.number().optional(),
@@ -997,6 +1028,8 @@ const animaisRouter = router({
       rgn: z.string().nullable().optional(),
       rgd: z.string().nullable().optional(),
       rastreadoNascimento: z.boolean().optional(),
+      maeId: z.number().nullable().optional(),
+      paiId: z.number().nullable().optional(),
       pai: z.string().nullable().optional(),
       mae: z.string().nullable().optional(),
       fazendaId: z.number().nullable().optional(),
@@ -1008,7 +1041,7 @@ const animaisRouter = router({
         loteId, pastoId, pesoEntrada, pesoAtual,
         brinco, brincoEletronico, nome, raca, categoria, observacoes,
         pelagem, marca, produtorOrigem, precoKg, frete,
-        sisbov, rgn, rgd, pai, mae, fazendaId,
+        sisbov, rgn, rgd, pai, mae, maeId, paiId, fazendaId,
         ...rest
       } = input;
 
@@ -1057,6 +1090,8 @@ const animaisRouter = router({
       if (loteId !== undefined) setData.loteId = loteId;
       if (pastoId !== undefined) setData.pastoId = pastoId;
       if (fazendaId !== undefined) setData.fazendaId = fazendaId;
+      if (maeId !== undefined) setData.maeId = maeId;
+      if (paiId !== undefined) setData.paiId = paiId;
       try {
         const [current] = await db
           .select({
@@ -3637,33 +3672,114 @@ const reproducaoRouter = router({
         .from(reproducaoRegistros)
         .where(eq(reproducaoRegistros.userId, ctx.user.id))
         .orderBy(desc(reproducaoRegistros.createdAt));
-      if (rows.length > 0) return rows;
+      if (rows.length > 0) {
+        return enrichReproducaoListPartoCriasDb(ctx.user.id, rows);
+      }
     } catch (error) {
       if (!isDatabaseUnavailable(error)) throw error;
     }
-    return listLocalReproducaoRegistros(ctx.user.id);
+    const localRows = await listLocalReproducaoRegistros(ctx.user.id);
+    return enrichReproducaoListPartoCriasLocal(ctx.user.id, localRows);
   }),
 
   create: protectedProcedure
     .input(z.object({
-      femeaId: z.number(),
+      /** Animal principal do registro (preferencial). */
+      animalId: z.number().optional(),
+      /** @deprecated Use `animalId`. Mantido para compatibilidade; persiste na coluna `femeaId`. */
+      femeaId: z.number().optional(),
+      /** Reprodutor em eventos femininos; omitir quando o principal já é o macho. */
       machoId: z.number().optional(),
       tipo: z.string(),
       dataCobertura: z.string(),
       dataPrevistoParto: z.string().optional(),
       resultado: z.string().optional(),
       reprodutorSemen: z.string().optional(),
+      descricaoResultadoOutro: z.string().optional(),
       responsavel: z.string().optional(),
       observacoes: z.string().optional(),
+      fazendaId: z.number().optional(),
+      coberturaSelecaoModo: z.enum(["individual", "lote"]).optional(),
+      coberturaMatrizIds: z.array(z.number()).optional(),
+      coberturaLoteId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { dataCobertura, dataPrevistoParto, reprodutorSemen, responsavel, observacoes, ...rest } = input;
+      const animalId = resolveReproducaoAnimalId(input);
+      if (!animalId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Informe o animal do registro reprodutivo (animalId).",
+        });
+      }
+
+      const { animal: animalAlvo } = await validateReproducaoCreatePreconditions(
+        ctx.user.id,
+        {
+          animalId,
+          fazendaId: input.fazendaId,
+          dataCobertura: input.dataCobertura,
+        },
+      );
+
+      const elegInput = buildReproAnimalElegibilidadeInput(animalAlvo);
+      if (!isReproTipoPermitidoParaAnimal(elegInput, input.tipo)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_INELEGIVEL });
+      }
+
+      const validacaoResultado = validateReproResultadoForSave({
+        sexo: animalAlvo.sexo,
+        tipo: input.tipo,
+        resultado: input.resultado,
+        descricaoResultadoOutro: input.descricaoResultadoOutro,
+      });
+      if (!validacaoResultado.ok) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: validacaoResultado.message });
+      }
+
+      let coberturaAlvoPersistida = null as Awaited<
+        ReturnType<typeof resolveAndValidateCoberturaAlvo>
+      > | null;
+
+      if (isCoberturaRealizadaMacho(input.tipo, animalAlvo.sexo)) {
+        const fazendaCtx = input.fazendaId ?? null;
+        if (!fazendaCtx) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
+          });
+        }
+        coberturaAlvoPersistida = await resolveAndValidateCoberturaAlvo({
+          userId: ctx.user.id,
+          fazendaId: fazendaCtx,
+          coberturaSelecaoModo: input.coberturaSelecaoModo,
+          coberturaMatrizIds: input.coberturaMatrizIds,
+          coberturaLoteId: input.coberturaLoteId,
+        });
+      }
+
+      const machoIdPersistido = resolveReproducaoMachoIdPersistido(
+        animalAlvo.sexo,
+        animalId,
+        input.machoId,
+      );
+      const observacoesPersistidas = packReproObservacoes(
+        input.observacoes,
+        coberturaAlvoPersistida ? undefined : input.reprodutorSemen,
+        input.responsavel,
+        input.descricaoResultadoOutro,
+        coberturaAlvoPersistida,
+      );
       const payload = {
         userId: ctx.user.id,
-        ...rest,
-        observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
-        dataCobertura: new Date(dataCobertura),
-        dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : undefined,
+        femeaId: animalId,
+        machoId: machoIdPersistido,
+        tipo: input.tipo,
+        resultado: input.resultado,
+        observacoes: observacoesPersistidas,
+        dataCobertura: new Date(input.dataCobertura),
+        dataPrevistoParto: input.dataPrevistoParto
+          ? new Date(input.dataPrevistoParto)
+          : undefined,
       };
       try {
         const result = await db.insert(reproducaoRegistros).values(payload);
@@ -3671,17 +3787,21 @@ const reproducaoRouter = router({
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
         const result = await createLocalReproducaoRegistro(ctx.user.id, {
-          femeaId: input.femeaId,
-          machoId: input.machoId,
+          femeaId: animalId,
+          machoId: machoIdPersistido,
           tipo: input.tipo,
           dataCobertura: input.dataCobertura,
           dataPrevistoParto: input.dataPrevistoParto,
           resultado: input.resultado,
-          observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
+          observacoes: observacoesPersistidas,
         });
         return { success: true, id: result.id, localFallback: true };
       }
     }),
+
+  registrarPartoComCrias: protectedProcedure
+    .input(registrarPartoComCriasInputSchema)
+    .mutation(async ({ ctx, input }) => executeRegistrarPartoComCrias(ctx.user.id, input)),
 
   update: protectedProcedure
     .input(z.object({
