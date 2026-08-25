@@ -56,3 +56,31 @@ describe("parseLocalDate", () => {
     expect(result).toBe(d);
   });
 });
+
+/** Réplica da conversão dd/mm/aaaa digitada no FormDatePicker (Novo Lote / manejos). */
+function formDatePickerDigitsToISO(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  const iso = `${yyyy}-${mm}-${dd}`;
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : iso;
+}
+
+describe("FormDatePicker — contrato operacional dos manejos", () => {
+  it("exibe DD/MM/AAAA a partir de ISO interno", () => {
+    expect(formatDateBR("2026-08-25")).toBe("25/08/2026");
+  });
+
+  it("converte digitação 25082026 para ISO YYYY-MM-DD", () => {
+    expect(formDatePickerDigitsToISO("25082026")).toBe("2026-08-25");
+  });
+
+  it("não desloca o dia por timezone (25/08/2026 permanece 25)", () => {
+    expect(formatDateBR("2026-08-25")).toBe("25/08/2026");
+    expect(formatDateBR("2026-08-25")).not.toBe("24/08/2026");
+    expect(formatDateBR("2026-08-25")).not.toBe("26/08/2026");
+  });
+});

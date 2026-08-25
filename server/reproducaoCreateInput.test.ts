@@ -31,6 +31,11 @@ describe("resolveReproducaoMachoIdPersistido", () => {
   it("fêmea sem reprodutor informado fica undefined", () => {
     expect(resolveReproducaoMachoIdPersistido("femea", 27, undefined)).toBeUndefined();
   });
+
+  it("registro legado textual (machoId ausente) persiste sem machoId estruturado", () => {
+    expect(resolveReproducaoMachoIdPersistido("femea", 58, undefined)).toBeUndefined();
+    expect(resolveReproducaoMachoIdPersistido("femea", 58, null)).toBeUndefined();
+  });
 });
 
 describe("isCoberturaRealizadaMacho", () => {

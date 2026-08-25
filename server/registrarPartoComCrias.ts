@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { animais, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
 import {
+  getReproFemeaSameDayStagePriority,
   packReproObservacoes,
   reproDataToInputISO,
   validateReproResultadoForSave,
@@ -78,12 +79,59 @@ export const registrarPartoComCriasInputSchema = z.object({
 export type RegistrarPartoComCriasInput = z.infer<typeof registrarPartoComCriasInputSchema>;
 
 export type ReproRegistroPaiRef = {
+  id?: number;
   tipo: string;
   machoId?: number | null;
   dataCobertura: string | Date;
+  resultado?: string | null;
+  createdAt?: string | Date | null;
 };
 
-/** Resolve pai interno a partir da última concepção com macho cadastrado. */
+type ReproRegistroPaiRefComData = ReproRegistroPaiRef & { dataISO: string };
+
+function reproCreatedAtMs(value: string | Date | null | undefined): number {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Parto e Aborto confirmado/outro encerram o ciclo; Aborto Suspeito não. */
+export function isReproCycleClosingEvent(reg: ReproRegistroPaiRef): boolean {
+  const tipo = String(reg.tipo).trim();
+  if (tipo === "Parto") return true;
+  if (tipo === "Aborto") {
+    const resultado = String(reg.resultado ?? "").trim();
+    return resultado !== "Suspeito";
+  }
+  return false;
+}
+
+function compareReproRegistrosDesc(a: ReproRegistroPaiRefComData, b: ReproRegistroPaiRefComData): number {
+  const cmp = String(b.dataISO).localeCompare(String(a.dataISO));
+  if (cmp !== 0) return cmp;
+  const pa = getReproFemeaSameDayStagePriority(a.tipo);
+  const pb = getReproFemeaSameDayStagePriority(b.tipo);
+  if (pa !== pb) return pb - pa;
+  const ca = reproCreatedAtMs(a.createdAt);
+  const cb = reproCreatedAtMs(b.createdAt);
+  if (ca !== cb) return cb - ca;
+  return (b.id ?? 0) - (a.id ?? 0);
+}
+
+/** Data exclusiva do último encerramento de gestação anterior ao Parto atual. */
+export function resolveCycleStartExclusiveISO(
+  registros: ReproRegistroPaiRef[],
+  dataPartoISO: string,
+): string | null {
+  const closings = registros
+    .filter(isReproCycleClosingEvent)
+    .map(r => ({ ...r, dataISO: reproDataToInputISO(r.dataCobertura) ?? "" }))
+    .filter(r => r.dataISO && r.dataISO <= dataPartoISO)
+    .sort(compareReproRegistrosDesc);
+  return closings[0]?.dataISO ?? null;
+}
+
+/** Resolve pai interno a partir da última concepção estruturada do ciclo aberto. */
 export function resolvePaiIdFromRegistros(
   registros: ReproRegistroPaiRef[],
   dataPartoISO: string,
@@ -93,11 +141,17 @@ export function resolvePaiIdFromRegistros(
     return machoIdOverride;
   }
 
+  const cycleStartExclusive = resolveCycleStartExclusiveISO(registros, dataPartoISO);
+
   const concepcoes = registros
     .filter(r => TIPOS_CONCEPCAO.has(String(r.tipo).trim()))
-    .map(r => ({ ...r, dataISO: reproDataToInputISO(r.dataCobertura) }))
-    .filter(r => r.dataISO && r.dataISO <= dataPartoISO)
-    .sort((a, b) => String(b.dataISO).localeCompare(String(a.dataISO)));
+    .map(r => ({ ...r, dataISO: reproDataToInputISO(r.dataCobertura) ?? "" }))
+    .filter(r => {
+      if (!r.dataISO || r.dataISO > dataPartoISO) return false;
+      if (cycleStartExclusive && r.dataISO <= cycleStartExclusive) return false;
+      return true;
+    })
+    .sort(compareReproRegistrosDesc);
 
   for (const c of concepcoes) {
     if (c.machoId != null && c.machoId > 0) return c.machoId;
@@ -218,6 +272,8 @@ async function loadReproRegistrosFemea(userId: number, femeaId: number) {
         dataCobertura: reproducaoRegistros.dataCobertura,
         dataPrevistoParto: reproducaoRegistros.dataPrevistoParto,
         dataPartoReal: reproducaoRegistros.dataPartoReal,
+        resultado: reproducaoRegistros.resultado,
+        createdAt: reproducaoRegistros.createdAt,
       })
       .from(reproducaoRegistros)
       .where(and(eq(reproducaoRegistros.userId, userId), eq(reproducaoRegistros.femeaId, femeaId)))
@@ -234,6 +290,8 @@ async function loadReproRegistrosFemea(userId: number, femeaId: number) {
         dataCobertura: r.dataCobertura,
         dataPrevistoParto: r.dataPrevistoParto ?? null,
         dataPartoReal: r.dataPartoReal ?? null,
+        resultado: r.resultado ?? null,
+        createdAt: r.createdAt,
       }));
   }
 }

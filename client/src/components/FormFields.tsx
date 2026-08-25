@@ -323,6 +323,7 @@ export function FormDatePicker({
   max,
   id,
   invalid,
+  minHeight = 34,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -333,6 +334,8 @@ export function FormDatePicker({
   max?: string;
   id?: string;
   invalid?: boolean;
+  /** Altura mínima do campo — 42 em formulários de cadastro, 34 em filtros/manejos. */
+  minHeight?: 34 | 42;
   "aria-describedby"?: string;
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
@@ -392,7 +395,10 @@ export function FormDatePicker({
 
   return (
     <FieldBox required={required} variant="light" invalid={invalid}>
-      <div className="flex w-full items-center justify-start gap-2 min-h-[34px] pl-1.5 pr-2">
+      <div
+        className="flex w-full items-center justify-start gap-2 pl-1.5 pr-2"
+        style={{ minHeight: minHeight }}
+      >
         <button
           type="button"
           tabIndex={-1}

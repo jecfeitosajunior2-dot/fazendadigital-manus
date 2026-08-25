@@ -40,7 +40,18 @@ import {
   statusAccentClass,
   statusBadgeClass,
   statusLabel,
+  resolveGenealogiaFichaExibicao,
 } from '@/lib/fichaAnimalDisplay';
+import {
+  DESCENDENTES_PREVIEW_LIMIT,
+  formatDescendenteBrinco,
+  formatDescendenteNascimento,
+  formatDescendenteSexoCategoria,
+  formatDescendentesContagem,
+  sliceDescendentesPreview,
+} from '@/lib/fichaAnimalDescendentes';
+import { getFichaAnimalPath } from '@/lib/fichaAnimalRoute';
+import type { DescendenteRow } from '@shared/animalDescendentes';
 import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
 import {
@@ -288,6 +299,12 @@ export const CattleDetailPageExpanded: React.FC = () => {
     enabled: !!animalId,
   });
 
+  const [showAllDescendentes, setShowAllDescendentes] = useState(false);
+
+  useEffect(() => {
+    setShowAllDescendentes(false);
+  }, [animalId]);
+
   // ─── tRPC Queries ─────────────────────────────────────────────────────────
   const { data: animal, isLoading: loadingAnimal, error: animalError } = trpc.animais.getById.useQuery(
     { id: animalId! },
@@ -474,6 +491,19 @@ export const CattleDetailPageExpanded: React.FC = () => {
     ?? histPastos.find(h => historicoSubdivisaoEstaAtual(h))?.pastoDestinoNome
     ?? null;
 
+  const genealogiaExibicao = resolveGenealogiaFichaExibicao(
+    (animal as { genealogiaDisplay?: { mae?: string; pai?: string } }).genealogiaDisplay,
+  );
+
+  const descendentesTotal =
+    (animal as { descendentes?: DescendenteRow[] }).descendentes?.length ?? 0;
+  const descendentesLista = sliceDescendentesPreview(
+    (animal as { descendentes?: DescendenteRow[] }).descendentes ?? [],
+    showAllDescendentes,
+  );
+  const temMaisDescendentes =
+    descendentesTotal > DESCENDENTES_PREVIEW_LIMIT && !showAllDescendentes;
+
   const idadeMesesAnimal =
     animalListRow?.idadeMeses != null
       ? animalListRow.idadeMeses
@@ -601,6 +631,81 @@ export const CattleDetailPageExpanded: React.FC = () => {
                     </div>
                   </div>
                 ) : null}
+
+                <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                    Genealogia
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <ResumoField label="Mãe (Matriz)" value={genealogiaExibicao.mae} />
+                    <ResumoField label="Pai (Reprodutor)" value={genealogiaExibicao.pai} />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                  <div className="mb-2">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                      Descendentes
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      Filhos registrados no rebanho · {formatDescendentesContagem(descendentesTotal)}
+                    </p>
+                  </div>
+                  {descendentesTotal === 0 ? (
+                    <p className="text-[12px] text-gray-500">
+                      Nenhum filho vinculado por genealogia estruturada.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {descendentesLista.map(d => (
+                          <button
+                            key={d.animalId}
+                            type="button"
+                            onClick={() => setLocation(getFichaAnimalPath(d.animalId))}
+                            className="rounded-md border border-gray-200/80 bg-white px-3 py-2 text-left transition-colors hover:border-[#4ECDC4]/50 hover:bg-[#4ECDC4]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-[14px] font-bold text-gray-800 tabular-nums">
+                                {formatDescendenteBrinco(d.brinco)}
+                              </p>
+                              <span
+                                className={cn(
+                                  'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
+                                  statusBadgeClass(d.status),
+                                )}
+                              >
+                                {statusLabel(d.status)}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-gray-600">
+                              {formatDescendenteSexoCategoria(d.sexo, d.categoria)}
+                            </p>
+                            <p className="mt-0.5 text-[10px] text-gray-400 tabular-nums">
+                              Nascimento:{' '}
+                              {formatDescendenteNascimento(d.dataNascimento) === '—'
+                                ? '—'
+                                : formatDateBR(d.dataNascimento)}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                      {temMaisDescendentes ? (
+                        <div className="mt-2 flex justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 text-[11px] font-semibold text-[#2D5A5A] hover:text-[#2D5A5A]"
+                            onClick={() => setShowAllDescendentes(true)}
+                          >
+                            Ver todos ({descendentesTotal})
+                          </Button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* Métricas + ação */}

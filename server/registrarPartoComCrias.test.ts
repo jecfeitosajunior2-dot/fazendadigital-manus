@@ -49,6 +49,118 @@ describe("resolvePaiIdFromRegistros", () => {
     );
     expect(pai).toBeNull();
   });
+
+  it("E) concepção mais recente vence concepção antiga no mesmo ciclo", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+        { tipo: "Cobertura", machoId: 20, dataCobertura: "2025-03-01" },
+      ],
+      "2025-10-01",
+    );
+    expect(pai).toBe(20);
+  });
+
+  it("F) novo ciclo após Parto usa concepção do ciclo aberto, não macho A", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+        { tipo: "Parto", machoId: null, dataCobertura: "2025-10-01", resultado: "Normal" },
+        { tipo: "Cobertura", machoId: 20, dataCobertura: "2025-11-01" },
+      ],
+      "2026-08-01",
+    );
+    expect(pai).toBe(20);
+  });
+
+  it("F crítico) Parto posterior sem nova concepção após encerramento → paiId null", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+        { tipo: "Parto", machoId: null, dataCobertura: "2025-10-01", resultado: "Normal" },
+      ],
+      "2026-06-01",
+    );
+    expect(pai).toBeNull();
+  });
+
+  it("matriz 58 — Parto 24/08/2026 com cobertura textual antiga permanece paiId null", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: null, dataCobertura: "2025-11-14" },
+        { tipo: "Parto", machoId: null, dataCobertura: "2026-08-24", resultado: "Normal" },
+        { tipo: "Cobertura", machoId: 7, dataCobertura: "2026-08-25" },
+      ],
+      "2026-08-24",
+    );
+    expect(pai).toBeNull();
+  });
+
+  it("matriz 58 — Parto após nova Cobertura estruturada usa machoId 7, não brinco 16", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: null, dataCobertura: "2025-11-14" },
+        { tipo: "Parto", machoId: null, dataCobertura: "2026-08-24", resultado: "Normal" },
+        { tipo: "Cobertura", machoId: 7, dataCobertura: "2026-08-25" },
+      ],
+      "2027-06-04",
+    );
+    expect(pai).toBe(7);
+    expect(pai).not.toBe(16);
+  });
+
+  it("B) Inseminação estruturada no ciclo aberto resolve machoId", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [{ tipo: "Inseminação", machoId: 7, dataCobertura: "2026-03-01" }],
+      "2026-12-01",
+    );
+    expect(pai).toBe(7);
+  });
+
+  it("C) legado textual sem machoId → paiId null", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [{ tipo: "Cobertura", machoId: null, dataCobertura: "2025-11-14" }],
+      "2026-08-24",
+    );
+    expect(pai).toBeNull();
+  });
+
+  it("Aborto Confirmado encerra ciclo — Parto posterior sem nova concepção → null", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+        { tipo: "Aborto", machoId: null, dataCobertura: "2025-06-01", resultado: "Confirmado" },
+      ],
+      "2025-10-01",
+    );
+    expect(pai).toBeNull();
+  });
+
+  it("Aborto Suspeito NÃO encerra ciclo — concepção anterior ainda vale", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+        { tipo: "Aborto", machoId: null, dataCobertura: "2025-06-01", resultado: "Suspeito" },
+      ],
+      "2025-10-01",
+    );
+    expect(pai).toBe(10);
+  });
+
+  it("machoId estruturado vence reprodutorSemen textual (sem inferência por texto)", () => {
+    const pai = resolvePaiIdFromRegistros(
+      [
+        {
+          tipo: "Cobertura",
+          machoId: 7,
+          dataCobertura: "2026-08-25",
+        },
+      ],
+      "2027-06-04",
+    );
+    expect(pai).toBe(7);
+    expect(pai).not.toBe(16);
+  });
 });
 
 describe("validateRegistrarPartoComCriasBusinessRules", () => {

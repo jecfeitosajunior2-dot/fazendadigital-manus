@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
+import { resolveGenealogiaDisplay } from "../shared/genealogiaDisplay";
 import { animais, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
 
 const mockValidatePreconditions = vi.fn();
@@ -24,9 +25,11 @@ let brincoFailAfter = Infinity;
 let brincoCall = 0;
 let pesagemShouldFail = false;
 let reproRegistrosFemea: Array<{
+  id?: number;
   tipo: string;
   machoId: number | null;
   dataCobertura: string;
+  resultado?: string | null;
 }> = [];
 
 vi.mock("./reproducaoCreateValidate", () => ({
@@ -124,11 +127,11 @@ describe("executeRegistrarPartoComCrias — transação MySQL (mock)", () => {
     brincoCall = 0;
     brincoFailAfter = Infinity;
     pesagemShouldFail = false;
-    mockValidatePreconditions.mockResolvedValue({
+    mockValidatePreconditions.mockImplementation(async (_userId, input) => ({
       animal: { sexo: "femea", loteId: 5, pastoId: 9, categoria: "Vaca" },
-      dataISO: "2025-08-24",
+      dataISO: String(input.dataCobertura).trim().slice(0, 10),
       fazendaId: 1,
-    });
+    }));
     mockAssertBrincoDb.mockImplementation(async () => {
       brincoCall += 1;
       if (brincoCall >= brincoFailAfter) {
@@ -375,5 +378,114 @@ describe("executeRegistrarPartoComCrias — transação MySQL (mock)", () => {
 
     expect(transactionCommitted).toBe(false);
     expect(txOps).toHaveLength(0);
+  });
+
+  it("A/H) Cobertura estruturada id=7 brinco=16 → cria.paiId=7, nunca 16", async () => {
+    reproRegistrosFemea = [
+      { tipo: "Cobertura", machoId: 7, dataCobertura: "2026-08-25" },
+    ];
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2027-06-04",
+      resultado: "Normal",
+      crias: [{ brinco: "TEST-PAI-001", sexo: "macho", categoria: "Bezerro" }],
+    });
+
+    const animalRow = inserts(animais)[0]?.values;
+    expect(animalRow?.maeId).toBe(15);
+    expect(animalRow?.paiId).toBe(7);
+    expect(animalRow?.paiId).not.toBe(16);
+  });
+
+  it("B) Inseminação estruturada → cria.paiId=7", async () => {
+    reproRegistrosFemea = [
+      { tipo: "Inseminação", machoId: 7, dataCobertura: "2026-03-01" },
+    ];
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2026-12-01",
+      resultado: "Normal",
+      crias: [{ brinco: "TEST-INS-001", sexo: "macho", categoria: "Bezerro" }],
+    });
+
+    expect(inserts(animais)[0]?.values.paiId).toBe(7);
+  });
+
+  it("D) duas crias recebem o mesmo paiId e ordem 1/2", async () => {
+    reproRegistrosFemea = [
+      { tipo: "Cobertura", machoId: 7, dataCobertura: "2026-08-25" },
+    ];
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2027-06-04",
+      resultado: "Normal",
+      crias: [
+        { brinco: "DUA-1", sexo: "macho", categoria: "Bezerro" },
+        { brinco: "DUA-2", sexo: "femea", categoria: "Bezerra" },
+      ],
+    });
+
+    const animalRows = inserts(animais);
+    expect(animalRows).toHaveLength(2);
+    expect(animalRows.every(op => op.values.maeId === 15)).toBe(true);
+    expect(animalRows.every(op => op.values.paiId === 7)).toBe(true);
+    expect(inserts(partoCrias).map(op => op.values.ordem)).toEqual([1, 2]);
+    const partoId = inserts(reproducaoRegistros)[0]?.values;
+    expect(partoId?.tipo).toBe("Parto");
+    expect(inserts(partoCrias).every(op => op.values.partoRegistroId != null)).toBe(true);
+  });
+
+  it("G) genealogiaDisplay — mãe 58, pai 16 a partir de PKs estruturadas", () => {
+    const parentMap = new Map([
+      [15, { id: 15, brinco: "58" }],
+      [7, { id: 7, brinco: "16" }],
+    ]);
+    const display = resolveGenealogiaDisplay(
+      { maeId: 15, paiId: 7, mae: "x", pai: "y" },
+      parentMap,
+    );
+    expect(display).toEqual({ mae: "58", pai: "16" });
+    expect(display.pai).not.toBe("7");
+    expect(display.mae).not.toBe("15");
+  });
+
+  it("crias 300/301 — Parto 24/08/2026 sem machoId estruturado no ciclo → paiId null", async () => {
+    reproRegistrosFemea = [
+      { tipo: "Cobertura", machoId: null, dataCobertura: "2025-11-14" },
+    ];
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2026-08-24",
+      resultado: "Normal",
+      crias: [{ brinco: "300", sexo: "macho", categoria: "Bezerro" }],
+    });
+
+    expect(inserts(animais)[0]?.values.paiId).toBeUndefined();
+    expect(inserts(animais)[0]?.values.maeId).toBe(15);
+  });
+
+  it("F) ciclo antigo encerrado por Parto — sem nova concepção → paiId null", async () => {
+    reproRegistrosFemea = [
+      { tipo: "Cobertura", machoId: 10, dataCobertura: "2025-01-01" },
+      { tipo: "Parto", machoId: null, dataCobertura: "2025-10-01", resultado: "Normal" },
+    ];
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2026-06-01",
+      resultado: "Normal",
+      crias: [{ brinco: "POS-PARTO", sexo: "macho", categoria: "Bezerro" }],
+    });
+
+    expect(inserts(animais)[0]?.values.paiId).toBeUndefined();
   });
 });

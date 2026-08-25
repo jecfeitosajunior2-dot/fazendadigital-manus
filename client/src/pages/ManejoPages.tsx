@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAt05Reader } from "@/hooks/useAt05Reader";
 import { formatDateBR } from "@/lib/date-utils";
+import { shouldLoadSemenPartidasParaInseminacao } from "@/lib/semenInseminacaoQuery";
+import { invalidateSemenQueriesAfterConsumo } from "@/lib/invalidateSemenAfterConsumo";
 import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { sortPesagensDesc } from "@/lib/fichaAnimalDisplay";
 import {
@@ -61,9 +63,31 @@ import {
   getReproTipoOptionsElegiveis,
   hasCategoriaIdadeMismatchRepro,
   isFemeaReprodutivamenteMadura,
+  isMachoReprodutivamenteMaduro,
   isReproTipoPermitidoParaAnimal,
   MSG_REPRO_INELEGIVEL,
 } from "@shared/reproElegibilidade";
+import { buildReproReprodutorPayload } from "@shared/reproReprodutorPersist";
+import { validateReproEcc, sanitizeReproEccInputString } from "@shared/reproInseminacao";
+import {
+  formatSemenCustoTotalDisplay,
+  formatSemenPartidaInseminacaoOptionLabel,
+  SEMEN_ORIGEM_EXTERNO,
+  SEMEN_ORIGEM_INTERNO,
+} from "@shared/semenEstoque";
+import {
+  filterMachosReprodutoresCandidatos,
+  resolveMachoIdFromSelecao,
+} from "@shared/reproMachoSelect";
+import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
+import {
+  labelAnimalBusca,
+  subtituloAnimalBusca,
+  subtituloMachoReprodutor,
+} from "@shared/animalBuscaDisplay";
+import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
+import { FormDatePicker, FormLabel } from "@/components/FormFields";
+import { ManejoAnimalField } from "@/components/ManejoAnimalField";
 import {
   MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
   MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS,
@@ -698,64 +722,6 @@ type AnimalBuscaRow = {
   ultimoPeso?: number | null;
 };
 
-/**
- * Nome útil nesta tela: texto real (ex. "Estrela"), não número puro.
- * Números em `nome` costumam ser cópia antiga do brinco e geram ambiguidade (ex. "100 · 01").
- */
-function isNomeAnimalUtil(nome: string | null | undefined, brinco: string | null | undefined) {
-  const n = nome?.trim() || "";
-  const b = brinco?.trim() || "";
-  if (!n) return false;
-  if (b && n.localeCompare(b, undefined, { sensitivity: "accent" }) === 0) return false;
-  if (/^\d+$/.test(n)) return false;
-  return true;
-}
-
-/** Título da sugestão de busca: brinco visual atual (nunca um número legado em `nome`). */
-function labelAnimalBusca(a: AnimalBuscaRow) {
-  const brinco = a.brinco?.trim() || "";
-  const nome = a.nome?.trim() || "";
-  if (brinco && isNomeAnimalUtil(nome, brinco)) return `${brinco} · ${nome}`;
-  if (brinco) return brinco;
-  if (isNomeAnimalUtil(nome, null)) return nome;
-  if (nome) return nome;
-  return `#${a.id}`;
-}
-
-function subtituloAnimalBusca(a: AnimalBuscaRow) {
-  const partes: string[] = [];
-  const brinco = a.brinco?.trim();
-  const rfid = a.brincoEletronico?.trim();
-  if (brinco) partes.push(`Brinco visual ${brinco}`);
-  if (rfid) partes.push(`RFID ${rfid}`);
-  if (a.loteNome?.trim()) partes.push(`Lote ${a.loteNome.trim()}`);
-  else if (a.loteId) partes.push(`Lote #${a.loteId}`);
-  return partes.join(" · ");
-}
-
-/** Identificador principal do animal selecionado: brinco visual atual. */
-function labelAnimalSelecionado(a: AnimalBuscaRow) {
-  const brinco = a.brinco?.trim() || "";
-  const nome = a.nome?.trim() || "";
-  if (brinco && isNomeAnimalUtil(nome, brinco)) return `${brinco} · ${nome}`;
-  if (brinco) return brinco;
-  if (isNomeAnimalUtil(nome, null)) return nome;
-  if (nome) return nome;
-  return String(a.id);
-}
-
-function loteAnimalSelecionado(a: AnimalBuscaRow) {
-  if (a.loteNome?.trim()) return a.loteNome.trim();
-  if (a.loteId) return `#${a.loteId}`;
-  return null;
-}
-
-function sexoDotClass(sexo?: string | null) {
-  if (sexo === "macho") return "bg-blue-400";
-  if (sexo === "femea") return "bg-pink-400";
-  return "bg-gray-300";
-}
-
 /** Normaliza peso digitado (pt-BR ou US) para decimal do banco. Null se inválido/≤0. */
 function parsePesoKgParaPersistir(raw: string): string | null {
   const t = raw.trim();
@@ -817,28 +783,21 @@ function ManejoPesagemForm() {
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
-  const [buscaAnimal, setBuscaAnimal] = useState("");
   const [animalId, setAnimalId] = useState<number | null>(null);
   const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [novoPeso, setNovoPeso] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [erroFazenda, setErroFazenda] = useState("");
-  const [listaAberta, setListaAberta] = useState(false);
   /** Modal central para bloqueios de regra de negócio (não limpa o formulário). */
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
-  const buscaRef = useRef<HTMLDivElement>(null);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
-  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
 
-  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
-    {
-      fazendaId: fazendaNum || undefined,
-      status: "ativo",
-      search: buscaAnimal.trim() || undefined,
-    },
-    { enabled: buscaAtiva },
-  );
+  const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
+    trpc.animais.list.useQuery(
+      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { enabled: Boolean(fazendaNum) },
+    );
 
   const { data: pesagensAnimal = [] } = trpc.pesagens.list.useQuery(
     { animalId: animalId! },
@@ -885,8 +844,6 @@ function ManejoPesagemForm() {
       setFazendaId(next);
       setAnimalId(null);
       setAnimalSel(null);
-      setBuscaAnimal("");
-      setListaAberta(false);
       setNovoPeso("");
       setObservacoes("");
       setErroFazenda("");
@@ -896,50 +853,29 @@ function ManejoPesagemForm() {
     return () => window.removeEventListener("storage", onStorage);
   }, [fazendas, fazendaId]);
 
-  useEffect(() => {
-    if (!listaAberta) return;
-    const onDoc = (e: MouseEvent) => {
-      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
-        setListaAberta(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [listaAberta]);
-
   const onChangeFazenda = (next: string) => {
     setFazendaId(next);
     persistRebanhoFazendaId(next);
     setErroFazenda("");
     setAnimalId(null);
     setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
     setNovoPeso("");
     setObservacoes("");
   };
 
-  const limparAnimal = useCallback(() => {
-    setAnimalId(null);
-    setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
-    setNovoPeso("");
-    setObservacoes("");
-  }, []);
-
-  const selecionarAnimal = useCallback((a: AnimalBuscaRow) => {
-    setAnimalId(a.id);
+  const handleAnimalSelect = useCallback((a: AnimalBuscaRow | null) => {
+    if (!a) {
+      setAnimalId(null);
+      setAnimalSel(null);
+      setNovoPeso("");
+      setObservacoes("");
+      return;
+    }
+    setAnimalId(resolveAnimalIdFromSelecao(a) ?? null);
     setAnimalSel(a);
-    setBuscaAnimal(labelAnimalBusca(a));
-    setListaAberta(false);
     setNovoPeso("");
     setObservacoes("");
   }, []);
-
-  const resultadosBusca = useMemo(() => {
-    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
-  }, [animaisBusca]);
 
   const ultimaPesagem = useMemo(() => {
     if (!animalId || !pesagensAnimal.length) return null;
@@ -955,9 +891,6 @@ function ManejoPesagemForm() {
     return desc[0] ?? null;
   }, [animalId, pesagensAnimal]);
 
-  const brincoAtual = animalSel?.brinco?.trim() || "";
-  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
-  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
   const ultimoPesoNum =
     ultimaPesagem?.peso != null && Number.isFinite(Number(ultimaPesagem.peso))
       ? Number(ultimaPesagem.peso)
@@ -980,7 +913,7 @@ function ManejoPesagemForm() {
       toast.error("Selecione uma Fazenda");
       return;
     }
-    if (!animalId || !animalSel) {
+    if (!resolveAnimalIdFromSelecao(animalSel) || !animalSel) {
       toast.error("Selecione um animal válido.");
       return;
     }
@@ -1000,7 +933,7 @@ function ManejoPesagemForm() {
     }
 
     saveMutation.mutate({
-      animalId,
+      animalId: resolveAnimalIdFromSelecao(animalSel)!,
       peso: pesoPersistir,
       data,
       observacoes: observacoes.trim() || undefined,
@@ -1082,139 +1015,39 @@ function ManejoPesagemForm() {
             )}
 
             <div className="min-w-0">
-              <label className={labelCls}>
-                Data<span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
                 value={data}
+                onChange={setData}
                 max={todayISODate()}
-                onChange={e => setData(e.target.value)}
-                className={fieldCls}
+                required
               />
             </div>
           </div>
         </div>
 
-        <div className="border-t border-gray-100 pt-5">
-          <p className={sectionTitleCls}>Animal</p>
-          {animalSel ? (
-            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
-                  <span className="inline-flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
-                      title={
-                        animalSel.sexo === "macho"
-                          ? "Macho"
-                          : animalSel.sexo === "femea"
-                            ? "Fêmea"
-                            : undefined
-                      }
-                      aria-hidden
-                    />
-                    <span className="text-[13px] font-semibold text-gray-900">
-                      {labelAnimalSelecionado(animalSel)}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    Brinco visual{" "}
-                    <span className="font-medium text-gray-800">
-                      {brincoAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    RFID{" "}
-                    <span className="font-medium text-gray-800">
-                      {rfidAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  {loteAtual ? (
-                    <>
-                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                        |
-                      </span>
-                      <span className="shrink-0">
-                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
-                      </span>
-                    </>
-                  ) : null}
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    Último peso{" "}
-                    <span className="font-medium text-gray-800">
-                      {ultimoPesoFmt
-                        ? `${ultimoPesoFmt} kg${ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}`
-                        : "—"}
-                    </span>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={limparAnimal}
-                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
-                >
-                  Alterar animal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative" ref={buscaRef}>
-              <input
-                type="search"
-                value={buscaAnimal}
-                onChange={e => {
-                  setBuscaAnimal(e.target.value);
-                  setListaAberta(true);
-                }}
-                onFocus={() => setListaAberta(true)}
-                disabled={!fazendaId}
-                placeholder="Buscar por brinco, RFID ou nome..."
-                className={fieldCls}
-                autoComplete="off"
-              />
-              {listaAberta && buscaAtiva ? (
-                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {buscandoAnimais ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
-                  ) : resultadosBusca.length === 0 ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
-                      Nenhum animal encontrado.
-                    </li>
-                  ) : (
-                    resultadosBusca.map(a => (
-                      <li key={a.id}>
-                        <button
-                          type="button"
-                          onClick={() => selecionarAnimal(a)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
-                        >
-                          <div className="text-[13px] font-semibold text-gray-900">
-                            {labelAnimalBusca(a)}
-                          </div>
-                          {subtituloAnimalBusca(a) ? (
-                            <div className="text-[11px] text-gray-500 mt-0.5">
-                              {subtituloAnimalBusca(a)}
-                            </div>
-                          ) : null}
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <ManejoAnimalField
+          selected={animalSel}
+          onSelect={handleAnimalSelect}
+          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+          loading={carregandoAnimaisFazenda}
+          disabled={!fazendaNum}
+          selectedExtra={
+            <>
+              <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                |
+              </span>
+              <span className="shrink-0">
+                Último peso{" "}
+                <span className="font-medium text-gray-800">
+                  {ultimoPesoFmt
+                    ? `${ultimoPesoFmt} kg${ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}`
+                    : "—"}
+                </span>
+              </span>
+            </>
+          }
+        />
 
         {animalSel ? (
           <div className="border-t border-gray-100 pt-5 space-y-4">
@@ -1293,7 +1126,6 @@ function ManejoSanitarioForm() {
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
-  const [buscaAnimal, setBuscaAnimal] = useState("");
   const [animalId, setAnimalId] = useState<number | null>(null);
   const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [tipoSanitario, setTipoSanitario] = useState<TipoSanitarioManejo | "">("");
@@ -1310,24 +1142,18 @@ function ManejoSanitarioForm() {
   const [erroFazenda, setErroFazenda] = useState("");
   const [erroDose, setErroDose] = useState("");
   const [erroProduto, setErroProduto] = useState("");
-  const [listaAberta, setListaAberta] = useState(false);
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
-  const buscaRef = useRef<HTMLDivElement>(null);
   const produtoRef = useRef<HTMLDivElement>(null);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
-  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
   const exigeProduto = Boolean(tipoSanitario) && tipoSanitario !== "Outro";
   const exigeDescricaoOutro = tipoSanitario === "Outro";
 
-  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
-    {
-      fazendaId: fazendaNum || undefined,
-      status: "ativo",
-      search: buscaAnimal.trim() || undefined,
-    },
-    { enabled: buscaAtiva },
-  );
+  const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
+    trpc.animais.list.useQuery(
+      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { enabled: Boolean(fazendaNum) },
+    );
 
   const { data: estoqueFarmácia = [], isFetching: loadingEstoque } =
     trpc.estoque.listByCategories.useQuery(
@@ -1481,8 +1307,6 @@ function ManejoSanitarioForm() {
       setFazendaId(next);
       setAnimalId(null);
       setAnimalSel(null);
-      setBuscaAnimal("");
-      setListaAberta(false);
       setTipoSanitario("");
       setEstoqueId(null);
       setProdutoSel(null);
@@ -1501,17 +1325,6 @@ function ManejoSanitarioForm() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [fazendas, fazendaId]);
-
-  useEffect(() => {
-    if (!listaAberta) return;
-    const onDoc = (e: MouseEvent) => {
-      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
-        setListaAberta(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [listaAberta]);
 
   useEffect(() => {
     if (!listaProdutoAberta) return;
@@ -1539,8 +1352,6 @@ function ManejoSanitarioForm() {
     setErroProduto("");
     setAnimalId(null);
     setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
     setTipoSanitario("");
     setEstoqueId(null);
     setProdutoSel(null);
@@ -1553,11 +1364,7 @@ function ManejoSanitarioForm() {
     setObservacoes("");
   };
 
-  const limparAnimal = () => {
-    setAnimalId(null);
-    setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
+  const limparSanitarioDependentes = useCallback(() => {
     setTipoSanitario("");
     setEstoqueId(null);
     setProdutoSel(null);
@@ -1570,22 +1377,22 @@ function ManejoSanitarioForm() {
     setObservacoes("");
     setErroDose("");
     setErroProduto("");
-  };
-
-  const selecionarAnimal = useCallback((a: AnimalBuscaRow) => {
-    setAnimalId(a.id);
-    setAnimalSel(a);
-    setBuscaAnimal(labelAnimalBusca(a));
-    setListaAberta(false);
   }, []);
 
-  const resultadosBusca = useMemo(() => {
-    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
-  }, [animaisBusca]);
+  const handleAnimalSelect = useCallback(
+    (a: AnimalBuscaRow | null) => {
+      if (!a) {
+        setAnimalId(null);
+        setAnimalSel(null);
+        limparSanitarioDependentes();
+        return;
+      }
+      setAnimalId(resolveAnimalIdFromSelecao(a) ?? null);
+      setAnimalSel(a);
+    },
+    [limparSanitarioDependentes],
+  );
 
-  const brincoAtual = animalSel?.brinco?.trim() || "";
-  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
-  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
 
@@ -1597,7 +1404,8 @@ function ManejoSanitarioForm() {
       toast.error("Selecione uma Fazenda");
       return;
     }
-    if (!animalId || !animalSel) {
+    const animalIdSelecionado = resolveAnimalIdFromSelecao(animalSel);
+    if (!animalIdSelecionado || !animalSel) {
       toast.error("Selecione um animal válido.");
       return;
     }
@@ -1658,7 +1466,7 @@ function ManejoSanitarioForm() {
     const doseMontada = montarDosagemSanitaria(doseValor, doseUnidade);
 
     saveMutation.mutate({
-      animalId,
+      animalId: animalIdSelecionado,
       fazendaId: Number(fazendaId),
       tipo: tipoSanitario,
       estoqueId: estoqueId ?? undefined,
@@ -1747,128 +1555,25 @@ function ManejoSanitarioForm() {
             )}
 
             <div className="min-w-0">
-              <label className={labelCls}>
-                Data<span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
                 value={data}
+                onChange={setData}
                 max={todayISODate()}
-                onChange={e => setData(e.target.value)}
-                className={fieldCls}
+                required
               />
             </div>
           </div>
         </div>
 
-        <div className="border-t border-gray-100 pt-5">
-          <p className={sectionTitleCls}>Animal</p>
-          {animalSel ? (
-            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
-                  <span className="inline-flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
-                      title={
-                        animalSel.sexo === "macho"
-                          ? "Macho"
-                          : animalSel.sexo === "femea"
-                            ? "Fêmea"
-                            : undefined
-                      }
-                      aria-hidden
-                    />
-                    <span className="text-[13px] font-semibold text-gray-900">
-                      {labelAnimalSelecionado(animalSel)}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    Brinco visual{" "}
-                    <span className="font-medium text-gray-800">
-                      {brincoAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    RFID{" "}
-                    <span className="font-medium text-gray-800">
-                      {rfidAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  {loteAtual ? (
-                    <>
-                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                        |
-                      </span>
-                      <span className="shrink-0">
-                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={limparAnimal}
-                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
-                >
-                  Alterar animal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative" ref={buscaRef}>
-              <input
-                type="search"
-                value={buscaAnimal}
-                onChange={e => {
-                  setBuscaAnimal(e.target.value);
-                  setListaAberta(true);
-                }}
-                onFocus={() => setListaAberta(true)}
-                disabled={!fazendaId}
-                placeholder="Buscar por brinco, RFID ou nome..."
-                className={fieldCls}
-                autoComplete="off"
-              />
-              {listaAberta && buscaAtiva ? (
-                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {buscandoAnimais ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
-                  ) : resultadosBusca.length === 0 ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
-                      Nenhum animal encontrado.
-                    </li>
-                  ) : (
-                    resultadosBusca.map(a => (
-                      <li key={a.id}>
-                        <button
-                          type="button"
-                          onClick={() => selecionarAnimal(a)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
-                        >
-                          <div className="text-[13px] font-semibold text-gray-900">
-                            {labelAnimalBusca(a)}
-                          </div>
-                          {subtituloAnimalBusca(a) ? (
-                            <div className="text-[11px] text-gray-500 mt-0.5">
-                              {subtituloAnimalBusca(a)}
-                            </div>
-                          ) : null}
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <ManejoAnimalField
+          selected={animalSel}
+          onSelect={handleAnimalSelect}
+          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+          loading={carregandoAnimaisFazenda}
+          disabled={!fazendaNum}
+          onAfterClear={limparSanitarioDependentes}
+        />
 
         {animalSel ? (
           <div className="border-t border-gray-100 pt-5 space-y-4">
@@ -2198,15 +1903,22 @@ function ManejoReprodutivoForm() {
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
-  const [buscaAnimal, setBuscaAnimal] = useState("");
   const [animalId, setAnimalId] = useState<number | null>(null);
   const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [tipoReprodutivo, setTipoReprodutivo] = useState("");
   const [resultado, setResultado] = useState("");
   const [reprodutorSemen, setReprodutorSemen] = useState("");
+  const [reprodutorOrigem, setReprodutorOrigem] = useState<"" | "interno" | "externo">("");
+  const [machoSel, setMachoSel] = useState<AnimalBuscaRow | null>(null);
+  const [erroMacho, setErroMacho] = useState("");
   const [descricaoOutro, setDescricaoOutro] = useState("");
   const [descricaoResultadoOutro, setDescricaoResultadoOutro] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [partidaSemen, setPartidaSemen] = useState("");
+  const [semenPartidaId, setSemenPartidaId] = useState<number | null>(null);
+  const [inseminador, setInseminador] = useState("");
+  const [eccMatriz, setEccMatriz] = useState("");
+  const [erroEcc, setErroEcc] = useState("");
   const [erroFazenda, setErroFazenda] = useState("");
   const [erroResultado, setErroResultado] = useState("");
   const [erroDescricaoOutro, setErroDescricaoOutro] = useState("");
@@ -2218,17 +1930,22 @@ function ManejoReprodutivoForm() {
   const [loteCoberturaId, setLoteCoberturaId] = useState("");
   const [matrizesLoteSelecionadas, setMatrizesLoteSelecionadas] = useState<number[]>([]);
   const [erroCoberturaAlvo, setErroCoberturaAlvo] = useState("");
-  const [listaAberta, setListaAberta] = useState(false);
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
   const [registrarCrias, setRegistrarCrias] = useState(true);
   const [crias, setCrias] = useState<CriaPartoFormRow[]>([emptyCriaPartoRow()]);
   const [erroCrias, setErroCrias] = useState<Record<number, CriaPartoFieldErrors>>({});
-  const buscaRef = useRef<HTMLDivElement>(null);
   const matrizBuscaRef = useRef<HTMLDivElement>(null);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
-  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
   const animalSexo = animalSel?.sexo ?? null;
+
+  const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
+    trpc.animais.list.useQuery(
+      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { enabled: Boolean(fazendaNum) },
+    );
+
+  const animaisFazenda = animaisFazendaAtivos;
 
   const reproElegibilidadeAnimal = useMemo(
     () => (animalSel ? buildReproAnimalElegibilidadeInput(animalSel) : null),
@@ -2266,6 +1983,39 @@ function ManejoReprodutivoForm() {
   const isDadosCobertura = tipoReprodutivo === "Cobertura";
   const isDadosInseminacao = tipoReprodutivo === "Inseminação";
   const showBlocoCoberturaInseminacao = isDadosCobertura || isDadosInseminacao;
+  const showReprodutorFemea =
+    showBlocoCoberturaInseminacao && animalSexo === "femea";
+  const reprodutorModoInterno =
+    isDadosCobertura || (isDadosInseminacao && reprodutorOrigem === "interno");
+  const reprodutorModoExterno = isDadosInseminacao && reprodutorOrigem === "externo";
+  const machoIdReproInseminacao = machoSel ? resolveMachoIdFromSelecao(machoSel) : null;
+
+  const partidasSemenQueryEnabled = shouldLoadSemenPartidasParaInseminacao({
+    tipoReprodutivo,
+    fazendaId: fazendaNum,
+    origemReprodutor: reprodutorOrigem,
+    machoId: machoIdReproInseminacao,
+    reprodutorTextoExterno: reprodutorSemen,
+  });
+
+  const { data: partidasSemenDisponiveis = [], isFetching: carregandoPartidasSemen } =
+    trpc.semen.listDisponiveisParaInseminacao.useQuery(
+      {
+        fazendaId: fazendaNum,
+        origemReprodutor:
+          reprodutorOrigem === "interno" ? SEMEN_ORIGEM_INTERNO : SEMEN_ORIGEM_EXTERNO,
+        machoId:
+          reprodutorOrigem === "interno" ? machoIdReproInseminacao ?? undefined : undefined,
+        reprodutorTexto:
+          reprodutorOrigem === "externo" ? reprodutorSemen.trim() : undefined,
+      },
+      { enabled: partidasSemenQueryEnabled },
+    );
+
+  const partidaSemenSelecionada = useMemo(
+    () => partidasSemenDisponiveis.find(p => p.id === semenPartidaId) ?? null,
+    [partidasSemenDisponiveis, semenPartidaId],
+  );
   const isParto = tipoReprodutivo === "Parto";
   const isPartoCriaViva =
     isParto && (resultado === "Normal" || resultado === "Com assistência");
@@ -2283,22 +2033,17 @@ function ManejoReprodutivoForm() {
   const reproRelacionadoLabel = getReproRelacionadoLabel(animalSexo);
   const reproRelacionadoPlaceholder = getReproRelacionadoPlaceholder(animalSexo);
 
-  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
-    {
-      fazendaId: fazendaNum || undefined,
-      status: "ativo",
-      search: buscaAnimal.trim() || undefined,
-    },
-    { enabled: buscaAtiva },
+  const filterMachoReprodutor = useCallback(
+    (a: AnimalBuscaRow) =>
+      filterMachosReprodutoresCandidatos([a], {
+        fazendaId: fazendaNum,
+        excludeAnimalId: animalId,
+      }).length > 0,
+    [fazendaNum, animalId],
   );
 
   const { data: lotesTodos = [] } = trpc.lotes.list.useQuery(
     { somenteAtivos: true },
-    { enabled: Boolean(fazendaNum) && showCoberturaAlvo },
-  );
-
-  const { data: animaisFazenda = [] } = trpc.animais.list.useQuery(
-    { fazendaId: fazendaNum || undefined, status: "ativo" },
     { enabled: Boolean(fazendaNum) && showCoberturaAlvo },
   );
 
@@ -2375,6 +2120,12 @@ function ManejoReprodutivoForm() {
     setErroCrias({});
   }, []);
 
+  const limparReprodutorMacho = useCallback(() => {
+    setReprodutorOrigem("");
+    setMachoSel(null);
+    setErroMacho("");
+  }, []);
+
   const limparReproCondicionais = useCallback(() => {
     setTipoReprodutivo("");
     setResultado("");
@@ -2382,12 +2133,18 @@ function ManejoReprodutivoForm() {
     setDescricaoOutro("");
     setDescricaoResultadoOutro("");
     setObservacoes("");
+    setPartidaSemen("");
+    setSemenPartidaId(null);
+    setInseminador("");
+    setEccMatriz("");
+    setErroEcc("");
     setErroResultado("");
     setErroDescricaoOutro("");
     setErroDescricaoResultadoOutro("");
     limparCoberturaAlvo();
     limparPartoCriasState();
-  }, [limparCoberturaAlvo, limparPartoCriasState]);
+    limparReprodutorMacho();
+  }, [limparCoberturaAlvo, limparPartoCriasState, limparReprodutorMacho]);
 
   const trpcUtils = trpc.useUtils();
 
@@ -2399,9 +2156,14 @@ function ManejoReprodutivoForm() {
   }, [trpcUtils]);
 
   const saveMutation = trpc.reproducao.create.useMutation({
-    onSuccess: () => {
+    onSuccess: async (_data, variables) => {
       toast.success("Registro reprodutivo salvo com sucesso.");
       invalidatePosReproSave();
+      if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
+        await invalidateSemenQueriesAfterConsumo(trpcUtils, {
+          partidaId: variables.semenPartidaId,
+        });
+      }
       setLocation("/manejo/registros");
     },
     onError: err => {
@@ -2481,25 +2243,12 @@ function ManejoReprodutivoForm() {
       limparReproCondicionais();
       setAnimalId(null);
       setAnimalSel(null);
-      setBuscaAnimal("");
-      setListaAberta(false);
       setErroFazenda("");
       toast.message("Fazenda do contexto atualizada. Dados dependentes foram limpos.");
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [fazendas, fazendaId, limparReproCondicionais]);
-
-  useEffect(() => {
-    if (!listaAberta) return;
-    const onDoc = (e: MouseEvent) => {
-      if (buscaRef.current && !buscaRef.current.contains(e.target as Node)) {
-        setListaAberta(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [listaAberta]);
 
   useEffect(() => {
     if (!matrizListaAberta) return;
@@ -2518,29 +2267,30 @@ function ManejoReprodutivoForm() {
     setErroFazenda("");
     setAnimalId(null);
     setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
     limparReproCondicionais();
   };
 
-  const limparAnimal = () => {
-    setAnimalId(null);
-    setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
-    limparReproCondicionais();
-  };
-
-  const selecionarAnimal = useCallback(
-    (a: AnimalBuscaRow) => {
-      setAnimalId(a.id);
+  const handleAnimalSelect = useCallback(
+    (a: AnimalBuscaRow | null) => {
+      if (!a) {
+        setAnimalId(null);
+        setAnimalSel(null);
+        limparReproCondicionais();
+        return;
+      }
+      setAnimalId(resolveAnimalIdFromSelecao(a) ?? null);
       setAnimalSel(a);
-      setBuscaAnimal(labelAnimalBusca(a));
-      setListaAberta(false);
       limparReproCondicionais();
     },
     [limparReproCondicionais],
   );
+
+  const handleMachoSelect = useCallback((a: AnimalBuscaRow | null) => {
+    setMachoSel(a);
+    setSemenPartidaId(null);
+    setPartidaSemen("");
+    setErroMacho("");
+  }, []);
 
   const onChangeTipo = (newTipo: string) => {
     setTipoReprodutivo(newTipo);
@@ -2550,9 +2300,22 @@ function ManejoReprodutivoForm() {
     setDescricaoResultadoOutro("");
     limparCoberturaAlvo();
     limparPartoCriasState();
+    limparReprodutorMacho();
+    if (newTipo === "Cobertura") {
+      setReprodutorOrigem("interno");
+    }
     setErroResultado("");
     setErroDescricaoOutro("");
     setErroDescricaoResultadoOutro("");
+  };
+
+  const onChangeReprodutorOrigem = (next: "" | "interno" | "externo") => {
+    setReprodutorOrigem(next);
+    setMachoSel(null);
+    setReprodutorSemen("");
+    setSemenPartidaId(null);
+    setPartidaSemen("");
+    setErroMacho("");
   };
 
   const onChangeResultado = (v: string) => {
@@ -2673,13 +2436,6 @@ function ManejoReprodutivoForm() {
     setErroCoberturaAlvo("");
   }, []);
 
-  const resultadosBusca = useMemo(() => {
-    return (animaisBusca as AnimalBuscaRow[]).slice(0, 40);
-  }, [animaisBusca]);
-
-  const brincoAtual = animalSel?.brinco?.trim() || "";
-  const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
-  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
 
@@ -2691,7 +2447,8 @@ function ManejoReprodutivoForm() {
       toast.error("Selecione uma Fazenda");
       return;
     }
-    if (!animalId || !animalSel) {
+    const animalIdSelecionado = resolveAnimalIdFromSelecao(animalSel);
+    if (!animalIdSelecionado || !animalSel) {
       toast.error("Selecione um animal válido.");
       return;
     }
@@ -2745,6 +2502,33 @@ function ManejoReprodutivoForm() {
         setBloqueioNegocioMsg(validacaoResultado.message);
       }
       return;
+    }
+
+    if (showReprodutorFemea && reprodutorModoInterno && !machoSel) {
+      setErroMacho("Selecione um reprodutor da lista.");
+      toast.error("Selecione um reprodutor da lista.");
+      return;
+    }
+
+    if (showReprodutorFemea && isDadosInseminacao && !reprodutorOrigem) {
+      toast.error("Selecione a origem do reprodutor.");
+      return;
+    }
+
+    if (showReprodutorFemea && reprodutorModoExterno && !reprodutorSemen.trim()) {
+      toast.error("Informe o reprodutor ou sêmen externo.");
+      return;
+    }
+
+    let eccPersistido: number | undefined;
+    if (isDadosInseminacao && eccMatriz.trim()) {
+      const validacaoEcc = validateReproEcc(eccMatriz);
+      if (!validacaoEcc.ok) {
+        setErroEcc(validacaoEcc.message);
+        toast.error(validacaoEcc.message);
+        return;
+      }
+      eccPersistido = validacaoEcc.value;
     }
 
     if (showCoberturaAlvo) {
@@ -2834,7 +2618,7 @@ function ManejoReprodutivoForm() {
       }
 
       savePartoComCriasMutation.mutate({
-        femeaId: animalId,
+        femeaId: animalIdSelecionado,
         fazendaId: fazendaNum,
         dataParto: data,
         resultado: resultado as "Normal" | "Com assistência" | "Natimorto" | "Outro",
@@ -2859,18 +2643,33 @@ function ManejoReprodutivoForm() {
       return;
     }
 
+    const reprodutorPayload = (() => {
+      if (showDescricaoOutro) {
+        return { reprodutorSemen: descricaoOutro.trim() || undefined };
+      }
+      if (showReprodutorFemea) {
+        return buildReproReprodutorPayload({
+          tipo: tipoReprodutivo,
+          animalSexo: animalSel.sexo,
+          machoId: resolveMachoIdFromSelecao(machoSel),
+          machoLabel: machoSel ? labelAnimalBusca(machoSel) : undefined,
+          textoExterno: reprodutorSemen,
+          origem: isDadosCobertura ? "interno" : reprodutorOrigem,
+        });
+      }
+      if (showReprodutor && reprodutorSemen.trim()) {
+        return { reprodutorSemen: reprodutorSemen.trim() };
+      }
+      return {};
+    })();
+
     saveMutation.mutate({
-      animalId,
+      animalId: animalIdSelecionado,
       fazendaId: fazendaNum || undefined,
       tipo: tipoReprodutivo,
       dataCobertura: data,
       resultado: showResultado && resultado.trim() ? resultado.trim() : undefined,
-      reprodutorSemen:
-        showDescricaoOutro
-          ? descricaoOutro.trim()
-          : showReprodutor && reprodutorSemen.trim()
-            ? reprodutorSemen.trim()
-            : undefined,
+      ...reprodutorPayload,
       coberturaSelecaoModo:
         showCoberturaAlvo && coberturaSelecaoModo ? coberturaSelecaoModo : undefined,
       coberturaMatrizIds,
@@ -2882,6 +2681,13 @@ function ManejoReprodutivoForm() {
         ? descricaoResultadoOutro.trim()
         : undefined,
       observacoes: observacoes.trim() || undefined,
+      partidaSemen: isDadosInseminacao
+        ? partidaSemenSelecionada?.partida ?? undefined
+        : undefined,
+      semenPartidaId:
+        isDadosInseminacao && semenPartidaId != null ? semenPartidaId : undefined,
+      inseminador: isDadosInseminacao ? inseminador.trim() || undefined : undefined,
+      ecc: eccPersistido,
       dataPrevistoParto:
         showPrevisaoParto && previsaoPartoEstimada ? previsaoPartoEstimada : undefined,
     });
@@ -2916,9 +2722,26 @@ function ManejoReprodutivoForm() {
 
   const isSaving = saveMutation.isPending || savePartoComCriasMutation.isPending;
 
+  const reprodutorInternoCompleto =
+    !showReprodutorFemea || !reprodutorModoInterno || Boolean(machoSel);
+
+  const reprodutorExternoCompleto =
+    !showReprodutorFemea || !reprodutorModoExterno || Boolean(reprodutorSemen.trim());
+
+  const inseminacaoEstoqueCompleto = (() => {
+    if (!isDadosInseminacao || !showReprodutorFemea || !reprodutorOrigem) return true;
+    if (!partidasSemenQueryEnabled) return true;
+    if (carregandoPartidasSemen) return false;
+    if (partidasSemenDisponiveis.length === 0) return false;
+    return Boolean(semenPartidaId);
+  })();
+
   const podeSalvar =
     Boolean(animalId && animalSel && tipoReprodutivo && data) &&
     coberturaAlvoCompleto &&
+    reprodutorInternoCompleto &&
+    reprodutorExternoCompleto &&
+    inseminacaoEstoqueCompleto &&
     (!exigeResultado || Boolean(resultado.trim())) &&
     (!showDescricaoOutro || Boolean(descricaoOutro.trim())) &&
     (!showDescricaoResultadoOutro || Boolean(descricaoResultadoOutro.trim())) &&
@@ -2999,127 +2822,24 @@ function ManejoReprodutivoForm() {
             )}
 
             <div className="min-w-0">
-              <label className={labelCls}>
-                Data<span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
                 value={data}
+                onChange={setData}
                 max={todayISODate()}
-                onChange={e => setData(e.target.value)}
-                className={fieldCls}
+                required
               />
             </div>
           </div>
         </div>
 
-        <div className="border-t border-gray-100 pt-5">
-          <p className={sectionTitleCls}>Animal</p>
-          {animalSel ? (
-            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
-                  <span className="inline-flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
-                      title={
-                        animalSel.sexo === "macho"
-                          ? "Macho"
-                          : animalSel.sexo === "femea"
-                            ? "Fêmea"
-                            : undefined
-                      }
-                      aria-hidden
-                    />
-                    <span className="text-[13px] font-semibold text-gray-900">
-                      {labelAnimalSelecionado(animalSel)}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    Brinco visual{" "}
-                    <span className="font-medium text-gray-800">
-                      {brincoAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    RFID{" "}
-                    <span className="font-medium text-gray-800">
-                      {rfidAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  {loteAtual ? (
-                    <>
-                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                        |
-                      </span>
-                      <span className="shrink-0">
-                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={limparAnimal}
-                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
-                >
-                  Alterar animal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative" ref={buscaRef}>
-              <input
-                type="search"
-                value={buscaAnimal}
-                onChange={e => {
-                  setBuscaAnimal(e.target.value);
-                  setListaAberta(true);
-                }}
-                onFocus={() => setListaAberta(true)}
-                placeholder="Buscar por brinco, RFID ou nome…"
-                className={fieldCls}
-                disabled={!fazendaNum}
-                autoComplete="off"
-              />
-              {!fazendaNum ? (
-                <p className="text-[11px] text-gray-400 mt-1">Selecione uma Fazenda primeiro.</p>
-              ) : null}
-              {listaAberta && fazendaNum && buscaAnimal.trim() ? (
-                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {buscandoAnimais ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
-                  ) : resultadosBusca.length === 0 ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
-                      Nenhum animal ativo encontrado.
-                    </li>
-                  ) : (
-                    resultadosBusca.map(a => (
-                      <li key={a.id}>
-                        <button
-                          type="button"
-                          onClick={() => selecionarAnimal(a)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
-                        >
-                          <div className="text-[13px] font-semibold text-gray-900">
-                            {labelAnimalBusca(a)}
-                          </div>
-                          <div className="text-[11px] text-gray-500">{subtituloAnimalBusca(a)}</div>
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <ManejoAnimalField
+          selected={animalSel}
+          onSelect={handleAnimalSelect}
+          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+          loading={carregandoAnimaisFazenda}
+          disabled={!fazendaNum}
+        />
 
         {animalSel ? (
           <div className="border-t border-gray-100 pt-5 space-y-4">
@@ -3152,19 +2872,189 @@ function ManejoReprodutivoForm() {
                   <p className={sectionTitleCls}>
                     {isDadosCobertura ? "Dados da cobertura" : "Dados da inseminação"}
                   </p>
-                  <div>
-                    <label className={labelCls}>
-                      {isDadosCobertura ? "Reprodutor / Touro" : "Sêmen / Reprodutor"}
-                    </label>
-                    <input
-                      type="text"
-                      value={reprodutorSemen}
-                      onChange={e => setReprodutorSemen(e.target.value)}
-                      placeholder={reproRelacionadoPlaceholder}
-                      className={fieldCls}
-                      maxLength={500}
-                    />
-                  </div>
+
+                  {showReprodutorFemea ? (
+                    <div className="space-y-4">
+                      {isDadosInseminacao ? (
+                        <div>
+                          <label className={labelCls}>Origem do reprodutor</label>
+                          <FormDownSelect
+                            value={reprodutorOrigem}
+                            onChange={v =>
+                              onChangeReprodutorOrigem(v as "" | "interno" | "externo")
+                            }
+                            placeholder="Selecione a origem"
+                            options={[
+                              { value: "interno", label: "Animal do rebanho" },
+                              { value: "externo", label: "Sêmen / reprodutor externo" },
+                            ]}
+                          />
+                        </div>
+                      ) : null}
+
+                      {reprodutorModoInterno ? (
+                        <AnimalAutocomplete
+                          label={
+                            isDadosCobertura ? "Reprodutor / Touro" : "Macho do rebanho"
+                          }
+                          required
+                          selected={machoSel}
+                          onSelect={handleMachoSelect}
+                          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+                          loading={carregandoAnimaisFazenda}
+                          disabled={!fazendaNum}
+                          inputClassName={fieldCls}
+                          placeholder="Busque pelo brinco ou nome do touro"
+                          emptyMessage="Nenhum reprodutor elegível encontrado."
+                          errorMessage={erroMacho || undefined}
+                          hintMessage={
+                            erroMacho
+                              ? undefined
+                              : "Digite e selecione um touro da lista. Somente machos ativos e elegíveis desta fazenda."
+                          }
+                          filterCandidate={filterMachoReprodutor}
+                          getOptionSubtitle={subtituloMachoReprodutor}
+                        />
+                      ) : null}
+
+                      {reprodutorModoExterno ? (
+                        <div>
+                          <label className={labelCls}>
+                            Reprodutor / Sêmen<span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={reprodutorSemen}
+                            onChange={e => {
+                              setReprodutorSemen(e.target.value);
+                              setSemenPartidaId(null);
+                              setPartidaSemen("");
+                            }}
+                            placeholder="Ex.: GSC-7117 ou REM Armador"
+                            className={fieldCls}
+                            maxLength={500}
+                          />
+                        </div>
+                      ) : null}
+
+                      {isDadosInseminacao && reprodutorOrigem ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="sm:col-span-2">
+                            <label className={labelCls}>
+                              Partida / lote do sêmen<span className="text-red-500">*</span>
+                            </label>
+                            {!partidasSemenQueryEnabled ? (
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                Selecione o reprodutor para consultar o estoque.
+                              </p>
+                            ) : carregandoPartidasSemen ? (
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                Consultando partidas disponíveis…
+                              </p>
+                            ) : partidasSemenDisponiveis.length === 0 ? (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-2">
+                                <p className="text-[12px] text-amber-800">
+                                  Nenhuma dose disponível para este reprodutor.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setLocation("/reproducao/estoque-semen")}
+                                  className="text-[12px] font-semibold text-amber-900 underline underline-offset-2"
+                                >
+                                  Cadastrar entrada de sêmen
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <FormDownSelect
+                                  value={semenPartidaId != null ? String(semenPartidaId) : ""}
+                                  onChange={v => {
+                                    const id = v ? Number(v) : null;
+                                    setSemenPartidaId(id);
+                                    const sel = partidasSemenDisponiveis.find(p => p.id === id);
+                                    setPartidaSemen(sel?.partida ?? "");
+                                  }}
+                                  placeholder="Selecione uma partida"
+                                  options={partidasSemenDisponiveis.map(p => ({
+                                    value: String(p.id),
+                                    label: `${p.partida} — ${formatSemenPartidaInseminacaoOptionLabel({
+                                      partida: p.partida,
+                                      saldoDoses: p.saldoDoses,
+                                      custoUnitario: p.custoUnitario,
+                                      centralOrigem: p.centralOrigem,
+                                    })}`,
+                                  }))}
+                                />
+                                {partidaSemenSelecionada ? (
+                                  <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-[11px] text-gray-700 space-y-1">
+                                    <p>
+                                      Saldo disponível:{" "}
+                                      <span className="font-semibold">
+                                        {partidaSemenSelecionada.saldoDoses} doses
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Custo da dose:{" "}
+                                      <span className="font-semibold">
+                                        {formatSemenCustoTotalDisplay(
+                                          partidaSemenSelecionada.custoUnitario,
+                                        )}
+                                      </span>
+                                    </p>
+                                    {partidaSemenSelecionada.centralOrigem ? (
+                                      <p>
+                                        Central:{" "}
+                                        <span className="font-semibold">
+                                          {partidaSemenSelecionada.centralOrigem}
+                                        </span>
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                          <div>
+                            <label className={labelCls}>Inseminador</label>
+                            <input
+                              type="text"
+                              value={inseminador}
+                              onChange={e => setInseminador(e.target.value)}
+                              placeholder="Ex.: João Silva"
+                              className={fieldCls}
+                              maxLength={200}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>ECC da matriz</label>
+                            <input
+                              type="text"
+                              inputMode="text"
+                              value={eccMatriz}
+                              onChange={e => {
+                                setEccMatriz(sanitizeReproEccInputString(e.target.value));
+                                if (erroEcc) setErroEcc("");
+                              }}
+                              placeholder="1 a 5 (ex.: 3 ou 3,5)"
+                              className={fieldCls}
+                              maxLength={4}
+                              autoComplete="off"
+                              spellCheck={false}
+                              name="repro-ecc-matriz"
+                            />
+                            {erroEcc ? (
+                              <p className="text-[11px] text-red-600 mt-1">{erroEcc}</p>
+                            ) : (
+                              <p className="text-[10px] text-gray-400 mt-1">
+                                Escore de condição corporal — escala 1 a 5.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {showResultado ? (
                       <div>
@@ -3740,7 +3630,6 @@ function ManejoBrincoEletronicoForm() {
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
-  const [buscaAnimal, setBuscaAnimal] = useState("");
   const [animalId, setAnimalId] = useState<number | null>(null);
   const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [operacao, setOperacao] = useState<OperacaoBrinco | "">("");
@@ -3751,14 +3640,12 @@ function ManejoBrincoEletronicoForm() {
   const [erroFazenda, setErroFazenda] = useState("");
   /** Modal central para bloqueios de regra de negócio (não limpa o formulário). */
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
-  const [listaAberta, setListaAberta] = useState(false);
   const [at05Feedback, setAt05Feedback] = useState<string | null>(null);
   const [at05LookupBusy, setAt05LookupBusy] = useState(false);
   const [at05ReadSeq, setAt05ReadSeq] = useState(0);
   /** Roteamento explícito: identificar animal × capturar Novo RFID. */
   const [at05ReadRoute, setAt05ReadRoute] = useState<At05ReadRoute>("identify-animal");
   const [novoRfidError, setNovoRfidError] = useState<string | null>(null);
-  const buscaRef = useRef<HTMLDivElement | null>(null);
   const at05ReadRouteRef = useRef<At05ReadRoute>("identify-animal");
   const fazendaNumRef = useRef(0);
   const nomeFazendaRef = useRef<string | undefined>(undefined);
@@ -3769,16 +3656,12 @@ function ManejoBrincoEletronicoForm() {
   const captureSeqRef = useRef(0);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
-  const buscaAtiva = Boolean(fazendaNum) && buscaAnimal.trim().length >= 1 && !animalSel;
 
-  const { data: animaisBusca = [], isFetching: buscandoAnimais } = trpc.animais.list.useQuery(
-    {
-      fazendaId: fazendaNum || undefined,
-      status: "ativo",
-      search: buscaAnimal.trim() || undefined,
-    },
-    { enabled: buscaAtiva },
-  );
+  const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
+    trpc.animais.list.useQuery(
+      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { enabled: Boolean(fazendaNum) },
+    );
 
   const saveMutation = trpc.manejo.registrarPontualBrinco.useMutation({
     onSuccess: () => {
@@ -3819,10 +3702,26 @@ function ManejoBrincoEletronicoForm() {
     animalRfidRef.current = "";
     setAnimalId(null);
     setAnimalSel(null);
-    setBuscaAnimal("");
-    setListaAberta(false);
     limparOperacao();
   }, [limparOperacao]);
+
+  const handleAnimalSelect = useCallback(
+    (a: AnimalBuscaRow | null) => {
+      if (!a) {
+        limparAnimal();
+        return;
+      }
+      const id = resolveAnimalIdFromSelecao(a) ?? a.id;
+      animalIdRef.current = id;
+      animalRfidRef.current = a.brincoEletronico?.trim() || "";
+      setAnimalId(id);
+      setAnimalSel(a);
+      limparOperacao();
+    },
+    [limparAnimal, limparOperacao],
+  );
+
+  const selecionarAnimal = handleAnimalSelect;
 
   const limparDependentesFazenda = () => {
     limparAnimal();
@@ -3858,8 +3757,6 @@ function ManejoBrincoEletronicoForm() {
       setFazendaId(next);
       setAnimalId(null);
       setAnimalSel(null);
-      setBuscaAnimal("");
-      setListaAberta(false);
       setOperacao("");
       setNovoRfid("");
       setNovoBrinco("");
@@ -3872,17 +3769,6 @@ function ManejoBrincoEletronicoForm() {
     return () => window.removeEventListener("storage", onStorage);
   }, [fazendas, fazendaId]);
 
-  useEffect(() => {
-    if (!listaAberta) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!buscaRef.current?.contains(e.target as Node)) {
-        setListaAberta(false);
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [listaAberta]);
-
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
 
@@ -3892,10 +3778,6 @@ function ManejoBrincoEletronicoForm() {
   animalRfidRef.current = animalSel?.brincoEletronico?.trim() || "";
   operacaoRef.current = operacao;
 
-  const resultadosBusca = useMemo(() => {
-    return (animaisBusca as AnimalBuscaRow[]).slice(0, 20);
-  }, [animaisBusca]);
-
   const onChangeFazenda = (value: string) => {
     setFazendaId(value);
     setErroFazenda("");
@@ -3904,22 +3786,7 @@ function ManejoBrincoEletronicoForm() {
     else persistRebanhoFazendaId("");
   };
 
-  const selecionarAnimal = useCallback(
-    (a: AnimalBuscaRow) => {
-      animalIdRef.current = a.id;
-      animalRfidRef.current = a.brincoEletronico?.trim() || "";
-      setAnimalId(a.id);
-      setAnimalSel(a);
-      setBuscaAnimal(labelAnimalBusca(a));
-      setListaAberta(false);
-      limparOperacao();
-    },
-    [limparOperacao],
-  );
-
-  const brincoAtual = animalSel?.brinco?.trim() || "";
   const rfidAtual = animalSel?.brincoEletronico?.trim() || "";
-  const loteAtual = animalSel ? loteAnimalSelecionado(animalSel) : null;
   const temRfidAtual = Boolean(rfidAtual);
   const mostraNovoRfid = operacao === "rfid" || operacao === "ambos";
   const mostraNovoBrinco = operacao === "brinco" || operacao === "ambos";
@@ -4206,7 +4073,8 @@ function ManejoBrincoEletronicoForm() {
       toast.error("Selecione uma Fazenda");
       return;
     }
-    if (!animalId || !animalSel) {
+    const animalIdSelecionado = resolveAnimalIdFromSelecao(animalSel);
+    if (!animalIdSelecionado || !animalSel) {
       toast.error("Selecione um animal válido.");
       return;
     }
@@ -4257,7 +4125,7 @@ function ManejoBrincoEletronicoForm() {
     saveMutation.mutate({
       fazendaId: Number(fazendaId),
       data,
-      animalId,
+      animalId: animalIdSelecionado,
       operacao,
       novoRfid: mostraNovoRfid ? novoRfid.trim() : undefined,
       novoBrinco: mostraNovoBrinco ? novoBrinco.trim() : undefined,
@@ -4346,129 +4214,28 @@ function ManejoBrincoEletronicoForm() {
             )}
 
             <div className="min-w-0">
-              <label className={labelCls}>Data</label>
-              <input
-                type="date"
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
                 value={data}
+                onChange={setData}
                 max={todayISODate()}
-                onChange={e => setData(e.target.value)}
-                className={fieldCls}
+                required
               />
             </div>
           </div>
         </div>
 
-        {/* Animal */}
-        <div className="border-t border-gray-100 pt-5">
-          <p className={sectionTitleCls}>Animal</p>
-          {animalSel ? (
-            <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
-                  <span className="inline-flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(animalSel.sexo)}`}
-                      title={
-                        animalSel.sexo === "macho"
-                          ? "Macho"
-                          : animalSel.sexo === "femea"
-                            ? "Fêmea"
-                            : undefined
-                      }
-                      aria-hidden
-                    />
-                    <span className="text-[13px] font-semibold text-gray-900">
-                      {labelAnimalSelecionado(animalSel)}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    Brinco visual{" "}
-                    <span className="font-medium text-gray-800">
-                      {brincoAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                    |
-                  </span>
-                  <span className="shrink-0">
-                    RFID{" "}
-                    <span className="font-medium text-gray-800">
-                      {rfidAtual || "Não vinculado"}
-                    </span>
-                  </span>
-                  {loteAtual ? (
-                    <>
-                      <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                        |
-                      </span>
-                      <span className="shrink-0">
-                        Lote <span className="font-medium text-gray-800">{loteAtual}</span>
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={limparAnimal}
-                  className="text-[11px] font-semibold text-gray-600 underline shrink-0"
-                >
-                  Alterar animal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative" ref={buscaRef}>
-              <input
-                type="search"
-                value={buscaAnimal}
-                onChange={e => {
-                  setBuscaAnimal(e.target.value);
-                  setListaAberta(true);
-                }}
-                onFocus={() => setListaAberta(true)}
-                disabled={!fazendaId}
-                placeholder="Buscar por brinco, RFID ou nome..."
-                className={fieldCls}
-                autoComplete="off"
-              />
-              {listaAberta && buscaAtiva ? (
-                <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                  {buscandoAnimais ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
-                  ) : resultadosBusca.length === 0 ? (
-                    <li className="px-3 py-2.5 text-[11px] text-gray-400">
-                      Nenhum animal encontrado.
-                    </li>
-                  ) : (
-                    resultadosBusca.map(a => (
-                      <li key={a.id}>
-                        <button
-                          type="button"
-                          onClick={() => selecionarAnimal(a)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-[#4ECDC4]/[0.08] transition"
-                        >
-                          <div className="text-[13px] font-semibold text-gray-900">
-                            {labelAnimalBusca(a)}
-                          </div>
-                          {subtituloAnimalBusca(a) ? (
-                            <div className="text-[11px] text-gray-500 mt-0.5">
-                              {subtituloAnimalBusca(a)}
-                            </div>
-                          ) : null}
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              ) : null}
-            </div>
-          )}
+        <ManejoAnimalField
+          selected={animalSel}
+          onSelect={handleAnimalSelect}
+          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+          loading={carregandoAnimaisFazenda}
+          disabled={!fazendaNum}
+          onAfterClear={limparOperacao}
+        />
 
-          {/* Leitura RFID via bastão — implementação atual: AT05 (não salva manejo) */}
-          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
+        {/* Leitura RFID via bastão — implementação atual: AT05 (não salva manejo) */}
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
             <p className="text-[12px] font-semibold text-gray-800">Leitura RFID / Bastão</p>
             <p className="text-[12px] text-gray-600" aria-live="polite">
               Dispositivo: AT05
@@ -4517,7 +4284,6 @@ function ManejoBrincoEletronicoForm() {
               )}
             </div>
           </div>
-        </div>
 
         {/* Operação */}
         <div className="border-t border-gray-100 pt-5">

@@ -407,6 +407,52 @@ export async function ensureSchema() {
     await ensureColumn(pool, "pessoas", "documento", "varchar(20)");
     await ensureColumn(pool, "pessoas", "endereco", "varchar(255)");
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`semen_partidas\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`fazenda_id\` int NOT NULL,
+        \`origem_reprodutor\` varchar(20) NOT NULL,
+        \`reprodutor_key\` varchar(120) NOT NULL,
+        \`macho_id\` int,
+        \`reprodutor_texto\` varchar(500),
+        \`partida\` varchar(120) NOT NULL,
+        \`central_origem\` varchar(150),
+        \`saldo_doses\` int NOT NULL DEFAULT 0,
+        \`custo_unitario\` decimal(12,2),
+        \`status\` varchar(20) NOT NULL DEFAULT 'disponivel',
+        \`observacoes\` text,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`semen_partidas_uq\` (\`user_id\`, \`fazenda_id\`, \`reprodutor_key\`, \`partida\`),
+        INDEX \`semen_partidas_user_id_idx\` (\`user_id\`),
+        INDEX \`semen_partidas_fazenda_id_idx\` (\`fazenda_id\`),
+        INDEX \`semen_partidas_macho_id_idx\` (\`macho_id\`),
+        INDEX \`semen_partidas_status_idx\` (\`status\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`semen_movimentacoes\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`partida_id\` int NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`fazenda_id\` int NOT NULL,
+        \`tipo\` varchar(20) NOT NULL DEFAULT 'ENTRADA',
+        \`data_entrada\` date NOT NULL,
+        \`quantidade_doses\` int NOT NULL,
+        \`custo_total\` decimal(12,2) NOT NULL,
+        \`custo_unitario\` decimal(12,2) NOT NULL,
+        \`observacoes\` text,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        INDEX \`semen_mov_partida_id_idx\` (\`partida_id\`),
+        INDEX \`semen_mov_user_id_idx\` (\`user_id\`),
+        INDEX \`semen_mov_fazenda_id_idx\` (\`fazenda_id\`)
+      )
+    `);
+
     // Sanitário: via de aplicação + vínculo com estoque/custo (padrão Manutenção)
     const [saudeTable] = await pool.query(`SHOW TABLES LIKE 'saude_registros'`);
     if ((saudeTable as unknown[]).length > 0) {

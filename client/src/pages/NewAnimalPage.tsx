@@ -9,7 +9,7 @@
  *   NewAnimalPage   → /rebanho/novo-animal
  *   EditAnimalPage  → /rebanho/editar-animal?id=X
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -391,6 +391,27 @@ const AnimalFormPage: React.FC = () => {
       { enabled: isEditMode }
     );
 
+  const genealogiaExibicao = useMemo(() => {
+    if (!isEditMode || !animal) {
+      return { mae: form.mae, pai: form.pai };
+    }
+    const display = (animal as { genealogiaDisplay?: { mae?: string; pai?: string } })
+      .genealogiaDisplay;
+    return {
+      mae: display?.mae ?? '',
+      pai: display?.pai ?? '',
+    };
+  }, [isEditMode, animal, form.mae, form.pai]);
+
+  const temMaeEstruturada =
+    isEditMode &&
+    (animal as { maeId?: number | null } | undefined)?.maeId != null &&
+    Number((animal as { maeId?: number | null }).maeId) > 0;
+  const temPaiEstruturado =
+    isEditMode &&
+    (animal as { paiId?: number | null } | undefined)?.paiId != null &&
+    Number((animal as { paiId?: number | null }).paiId) > 0;
+
   // ── Fazendas ──
   const [fazendaId, setFazendaId] = useState('');
   const { data: fazendas } = trpc.fazendas.list.useQuery();
@@ -446,8 +467,8 @@ const AnimalFormPage: React.FC = () => {
       rgn: (animal as any).rgn || '',
       rgd: (animal as any).rgd || '',
       rastreadoNascimento: !!(animal as any).rastreadoNascimento,
-      pai: (animal as any).pai || '',
-      mae: (animal as any).mae || '',
+      pai: (animal as any).paiId ? '' : ((animal as any).pai || ''),
+      mae: (animal as any).maeId ? '' : ((animal as any).mae || ''),
       status: animal.status || 'ativo',
       observacoes: animal.observacoes || '',
     });
@@ -654,8 +675,8 @@ const AnimalFormPage: React.FC = () => {
         sisbov: resolveStr(form.sisbov),
         rgn: resolveStr(form.rgn),
         rgd: resolveStr(form.rgd),
-        pai: resolveStr(form.pai),
-        mae: resolveStr(form.mae),
+        ...(temMaeEstruturada ? {} : { mae: resolveStr(form.mae) }),
+        ...(temPaiEstruturado ? {} : { pai: resolveStr(form.pai) }),
         observacoes: resolveStr(form.observacoes),
       };
 
@@ -937,16 +958,16 @@ const AnimalFormPage: React.FC = () => {
                     <span className="ml-1 text-[11px] text-gray-400 font-normal">(ou Data de Entrada)</span>
                   )}
                 </FormLabel>
-                <div className={cn(errors.dataNascimento && 'ring-1 ring-red-400 rounded-sm')}>
-                  <FormDatePicker
-                    value={form.dataNascimento}
-                    onChange={v => {
-                      set('dataNascimento', v);
-                      clearDataReferenciaErrors(v, form.dataEntrada);
-                    }}
-                    placeholder="dd/mm/aaaa"
-                  />
-                </div>
+                <FormDatePicker
+                  value={form.dataNascimento}
+                  onChange={v => {
+                    set('dataNascimento', v);
+                    clearDataReferenciaErrors(v, form.dataEntrada);
+                  }}
+                  required={!form.dataEntrada}
+                  invalid={!!errors.dataNascimento}
+                  minHeight={42}
+                />
                 {errors.dataNascimento && (
                   <p className="mt-1 text-[11px] text-red-500">{errors.dataNascimento}</p>
                 )}
@@ -970,7 +991,7 @@ const AnimalFormPage: React.FC = () => {
                   <FormDatePicker
                     value={form.dataDesmama}
                     onChange={v => set('dataDesmama', v)}
-                    placeholder="dd/mm/aaaa"
+                    minHeight={42}
                   />
                 )}
               </div>
@@ -1002,16 +1023,16 @@ const AnimalFormPage: React.FC = () => {
                     <span className="ml-1 text-[11px] text-gray-400 font-normal">(ou Data de Nascimento)</span>
                   )}
                 </FormLabel>
-                <div className={cn(errors.dataEntrada && 'ring-1 ring-red-400 rounded-sm')}>
-                  <FormDatePicker
-                    value={form.dataEntrada}
-                    onChange={v => {
-                      set('dataEntrada', v);
-                      clearDataReferenciaErrors(form.dataNascimento, v);
-                    }}
-                    placeholder="dd/mm/aaaa"
-                  />
-                </div>
+                <FormDatePicker
+                  value={form.dataEntrada}
+                  onChange={v => {
+                    set('dataEntrada', v);
+                    clearDataReferenciaErrors(form.dataNascimento, v);
+                  }}
+                  required={!form.dataNascimento}
+                  invalid={!!errors.dataEntrada}
+                  minHeight={42}
+                />
                 {errors.dataEntrada && (
                   <p className="mt-1 text-[11px] text-red-500">{errors.dataEntrada}</p>
                 )}
@@ -1104,7 +1125,11 @@ const AnimalFormPage: React.FC = () => {
               </div>
               <div>
                 <FormLabel>Data RND</FormLabel>
-                <FormDatePicker value={form.dataRnd} onChange={v => set('dataRnd', v)} placeholder="dd/mm/aaaa" />
+                <FormDatePicker
+                  value={form.dataRnd}
+                  onChange={v => set('dataRnd', v)}
+                  minHeight={42}
+                />
               </div>
               <div>
                 <FormLabel>RGN</FormLabel>
@@ -1132,11 +1157,23 @@ const AnimalFormPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
               <div>
                 <FormLabel>Pai (Reprodutor)</FormLabel>
-                <FieldInput value={form.pai} onChange={v => set('pai', v)} placeholder="Nome / brinco do pai" />
+                <FieldInput
+                  value={isEditMode ? genealogiaExibicao.pai : form.pai}
+                  onChange={v => set('pai', v)}
+                  readOnly={isEditMode}
+                  disabled={isEditMode}
+                  placeholder={isEditMode ? '—' : 'Nome / brinco do pai'}
+                />
               </div>
               <div>
                 <FormLabel>Mãe (Matriz)</FormLabel>
-                <FieldInput value={form.mae} onChange={v => set('mae', v)} placeholder="Nome / brinco da mãe" />
+                <FieldInput
+                  value={isEditMode ? genealogiaExibicao.mae : form.mae}
+                  onChange={v => set('mae', v)}
+                  readOnly={isEditMode}
+                  disabled={isEditMode}
+                  placeholder={isEditMode ? '—' : 'Nome / brinco da mãe'}
+                />
               </div>
             </div>
           </CollapsibleSectionCard>

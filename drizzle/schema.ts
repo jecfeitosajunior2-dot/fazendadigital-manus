@@ -519,6 +519,40 @@ export const vendas = mysqlTable("vendas", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+/** Estoque de sêmen — partidas por reprodutor + lote. */
+export const semenPartidas = mysqlTable("semen_partidas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  fazendaId: int("fazenda_id").notNull(),
+  origemReprodutor: varchar("origem_reprodutor", { length: 20 }).notNull(),
+  reprodutorKey: varchar("reprodutor_key", { length: 120 }).notNull(),
+  machoId: int("macho_id"),
+  reprodutorTexto: varchar("reprodutor_texto", { length: 500 }),
+  partida: varchar("partida", { length: 120 }).notNull(),
+  centralOrigem: varchar("central_origem", { length: 150 }),
+  saldoDoses: int("saldo_doses").notNull().default(0),
+  custoUnitario: decimal("custo_unitario", { precision: 12, scale: 2 }),
+  status: varchar("status", { length: 20 }).notNull().default("disponivel"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+/** Movimentações de sêmen (V1: apenas ENTRADA). */
+export const semenMovimentacoes = mysqlTable("semen_movimentacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  partidaId: int("partida_id").notNull(),
+  userId: int("user_id").notNull(),
+  fazendaId: int("fazenda_id").notNull(),
+  tipo: varchar("tipo", { length: 20 }).notNull().default("ENTRADA"),
+  dataEntrada: date("data_entrada", { mode: "string" }).notNull(),
+  quantidadeDoses: int("quantidade_doses").notNull(),
+  custoTotal: decimal("custo_total", { precision: 12, scale: 2 }).notNull(),
+  custoUnitario: decimal("custo_unitario", { precision: 12, scale: 2 }).notNull(),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 /** Cadastro central de parceiros — fornecedores, clientes e funcionários. */
 export const pessoas = mysqlTable("pessoas", {
   id: int("id").primaryKey().autoincrement(),

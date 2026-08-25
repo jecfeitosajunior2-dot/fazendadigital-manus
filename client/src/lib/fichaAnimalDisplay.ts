@@ -344,3 +344,25 @@ export function carenciaDiasToProximaDataISO(
   const fim = calcFimCarenciaFromDias(dataRegistro, dias);
   return fim ? toLocalDateISO(fim) : undefined;
 }
+
+export type GenealogiaDisplayPayload = {
+  mae?: string | null;
+  pai?: string | null;
+};
+
+/** Campo read-only de genealogia na ficha — nunca null, undefined ou string vazia. */
+export function formatGenealogiaFichaCampo(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "—";
+  return trimmed;
+}
+
+/** Exibição de genealogia na ficha a partir de `genealogiaDisplay` já resolvido pelo backend. */
+export function resolveGenealogiaFichaExibicao(
+  display: GenealogiaDisplayPayload | null | undefined,
+): { mae: string; pai: string } {
+  return {
+    mae: formatGenealogiaFichaCampo(display?.mae),
+    pai: formatGenealogiaFichaCampo(display?.pai),
+  };
+}

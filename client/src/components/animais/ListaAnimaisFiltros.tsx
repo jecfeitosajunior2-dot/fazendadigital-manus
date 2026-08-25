@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { Switch } from '@/components/ui/switch';
-import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG } from '@/components/FormFields';
+import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG, FormDatePicker } from '@/components/FormFields';
 import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 import type { AnimaisListFiltersState } from '@shared/animal-filter-types';
@@ -427,19 +427,19 @@ export default function ListaAnimaisFiltros({
 
             <FilterCard label="Data de Entrada">
               <div className="flex items-center gap-1">
-                <input
-                  type="date"
-                  value={value.dataEntradaDe}
-                  onChange={e => onChange(patch(value, { dataEntradaDe: e.target.value }))}
-                  className={`${inputClass} flex-1 min-w-0`}
-                />
+                <div className="flex-1 min-w-0">
+                  <FormDatePicker
+                    value={value.dataEntradaDe}
+                    onChange={v => onChange(patch(value, { dataEntradaDe: v }))}
+                  />
+                </div>
                 <span className="text-gray-400 text-[10px] shrink-0">–</span>
-                <input
-                  type="date"
-                  value={value.dataEntradaAte}
-                  onChange={e => onChange(patch(value, { dataEntradaAte: e.target.value }))}
-                  className={`${inputClass} flex-1 min-w-0`}
-                />
+                <div className="flex-1 min-w-0">
+                  <FormDatePicker
+                    value={value.dataEntradaAte}
+                    onChange={v => onChange(patch(value, { dataEntradaAte: v }))}
+                  />
+                </div>
               </div>
             </FilterCard>
           </div>

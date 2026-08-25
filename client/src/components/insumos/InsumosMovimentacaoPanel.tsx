@@ -11,6 +11,7 @@ import {
   TableIconButton,
 } from "@/components/icons/FarmActionIcons";
 import EstornarMovimentacaoDialog from "@/components/insumos/EstornarMovimentacaoDialog";
+import { FormDatePicker, FormLabel } from "@/components/FormFields";
 import { trpc } from "@/lib/trpc";
 import { formatDataBr, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
 import {
@@ -37,7 +38,7 @@ import {
 } from "@/lib/movimentacao-resumo";
 import { exportListSpreadsheet } from "@/lib/exportList";
 import { buildExportSpreadsheetWorkbook } from "@shared/buildExportSpreadsheet";
-import { formatCurrencyBrl } from "@/lib/utils";
+import { cn, formatCurrencyBrl } from "@/lib/utils";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
@@ -952,26 +953,24 @@ export default function InsumosMovimentacaoPanel() {
               ))}
             </select>
           </div>
-          <div>
-            <label className={labelClass}>Data inicial</label>
-            <input
-              type="date"
+          <div
+            className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+          >
+            <FormLabel>Data inicial</FormLabel>
+            <FormDatePicker
               value={fPeriodoIni}
-              onChange={e => setFPeriodoIni(e.target.value)}
-              className={inputClass}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? disabledHint : undefined}
+              onChange={setFPeriodoIni}
             />
           </div>
-          <div>
-            <label className={labelClass}>Data final</label>
-            <input
-              type="date"
+          <div
+            className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+          >
+            <FormLabel>Data final</FormLabel>
+            <FormDatePicker
               value={fPeriodoFim}
-              onChange={e => setFPeriodoFim(e.target.value)}
-              className={inputClass}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? disabledHint : undefined}
+              onChange={setFPeriodoFim}
             />
           </div>
         </div>

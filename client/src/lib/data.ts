@@ -1,5 +1,3 @@
-import { MANEJO_REPRODUTIVO_PATH } from "@/const";
-
 // Menu — iRancho (estrutura/labels) + funcionalidades extras Fazenda Digital
 export interface MenuItem {
   label: string;
@@ -59,8 +57,7 @@ export const menuItems: MenuItem[] = [
     label: "Reprodução",
     icon: "fd_dna",
     children: [
-      { label: "Registrar manejo", icon: "", path: MANEJO_REPRODUTIVO_PATH },
-      { label: "Registros de Manejo", icon: "", path: "/manejo/registros" },
+      { label: "Estoque de sêmen", icon: "", path: "/reproducao/estoque-semen" },
     ],
   },
   {

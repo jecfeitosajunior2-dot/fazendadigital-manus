@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import { FormDatePicker, FormLabel } from "@/components/FormFields";
 import ListExportButtons from "@/components/ListExportButtons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter, {
@@ -583,26 +584,24 @@ export default function ManutencaoListPage() {
             </div>
 
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <div>
-                <label className={labelClass}>Data inicial</label>
-                <input
-                  type="date"
+              <div
+                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data inicial</FormLabel>
+                <FormDatePicker
                   value={filtros.dataInicio}
-                  onChange={e => setFiltros(f => ({ ...f, dataInicio: e.target.value }))}
-                  className={inputClass}
-                  disabled={!fazendaSelecionada}
-                  title={!fazendaSelecionada ? disabledHint : undefined}
+                  onChange={v => setFiltros(f => ({ ...f, dataInicio: v }))}
                 />
               </div>
-              <div>
-                <label className={labelClass}>Data final</label>
-                <input
-                  type="date"
+              <div
+                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data final</FormLabel>
+                <FormDatePicker
                   value={filtros.dataFim}
-                  onChange={e => setFiltros(f => ({ ...f, dataFim: e.target.value }))}
-                  className={inputClass}
-                  disabled={!fazendaSelecionada}
-                  title={!fazendaSelecionada ? disabledHint : undefined}
+                  onChange={v => setFiltros(f => ({ ...f, dataFim: v }))}
                 />
               </div>
             </div>

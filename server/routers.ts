@@ -133,6 +133,24 @@ import {
   executarInativacaoLote,
 } from "./loteExclusaoCheck";
 import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
+import { validateReproEcc } from "../shared/reproInseminacao";
+import {
+  MSG_SEMEN_NENHUMA_DOSE_REPRODUTOR,
+  MSG_SEMEN_PARTIDA_IA_OBRIGATORIA,
+  MSG_SEMEN_PARTIDA_INCOMPATIVEL,
+  MSG_SEMEN_PARTIDA_NAO_ENCONTRADA,
+  MSG_SEMEN_SEM_DOSES,
+  SEMEN_ORIGEM_EXTERNO,
+  SEMEN_ORIGEM_INTERNO,
+} from "../shared/semenEstoque";
+import {
+  listSemenPartidasDisponiveisInseminacaoDb,
+  registrarInseminacaoComSemenDb,
+} from "./semenEstoqueDb";
+import {
+  listSemenPartidasDisponiveisInseminacaoLocal,
+  registrarInseminacaoComSemenLocal,
+} from "./semenEstoqueLocal";
 import {
   buildReproAnimalElegibilidadeInput,
   isReproTipoPermitidoParaAnimal,
@@ -152,6 +170,15 @@ import {
   enrichReproducaoListPartoCriasDb,
   enrichReproducaoListPartoCriasLocal,
 } from "./enrichReproducaoListPartoCrias";
+import {
+  enrichAnimalGenealogiaDisplayDb,
+  enrichAnimalGenealogiaDisplayLocal,
+} from "./enrichAnimalGenealogiaDisplay";
+import {
+  enrichAnimalDescendentesDb,
+  enrichAnimalDescendentesLocal,
+} from "./enrichAnimalDescendentes";
+import { validateReproMachoIdForFemeaEvent } from "./validateReproMachoId";
 import {
   MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
   MSG_REPRO_LOTE_INELEGIVEL,
@@ -803,14 +830,20 @@ const animaisRouter = router({
           const diasNaFazenda = animal.createdAt
             ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
             : null;
-          return { ...animal, loteNome, diasNaFazenda };
+          const genealogiaDisplay = await enrichAnimalGenealogiaDisplayDb(ctx.user.id, animal);
+          const descendentes = await enrichAnimalDescendentesDb(ctx.user.id, animal.id);
+          return { ...animal, loteNome, diasNaFazenda, genealogiaDisplay, descendentes };
         }
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
       }
 
       const animal = await getLocalAnimal(ctx.user.id, input.id);
-      return animal ? await enrichLocalAnimal(ctx.user.id, animal) : null;
+      if (!animal) return null;
+      const enriched = await enrichLocalAnimal(ctx.user.id, animal);
+      const genealogiaDisplay = await enrichAnimalGenealogiaDisplayLocal(ctx.user.id, animal);
+      const descendentes = await enrichAnimalDescendentesLocal(ctx.user.id, animal.id);
+      return { ...enriched, genealogiaDisplay, descendentes };
     }),
 
   /**
@@ -3697,6 +3730,10 @@ const reproducaoRouter = router({
       reprodutorSemen: z.string().optional(),
       descricaoResultadoOutro: z.string().optional(),
       responsavel: z.string().optional(),
+      partidaSemen: z.string().max(200).optional(),
+      semenPartidaId: z.number().int().positive().optional(),
+      inseminador: z.string().max(200).optional(),
+      ecc: z.number().min(1).max(5).optional(),
       observacoes: z.string().optional(),
       fazendaId: z.number().optional(),
       coberturaSelecaoModo: z.enum(["individual", "lote"]).optional(),
@@ -3736,6 +3773,28 @@ const reproducaoRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: validacaoResultado.message });
       }
 
+      if (input.tipo.trim() === "Inseminação" && input.ecc != null) {
+        const validacaoEcc = validateReproEcc(input.ecc);
+        if (!validacaoEcc.ok) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: validacaoEcc.message });
+        }
+      }
+
+      const fazendaCtx = input.fazendaId;
+      if (
+        input.machoId != null &&
+        input.machoId > 0 &&
+        animalAlvo.sexo === "femea" &&
+        fazendaCtx
+      ) {
+        await validateReproMachoIdForFemeaEvent(ctx.user.id, {
+          matrizId: animalId,
+          fazendaId: fazendaCtx,
+          machoId: input.machoId,
+          tipo: input.tipo,
+        });
+      }
+
       let coberturaAlvoPersistida = null as Awaited<
         ReturnType<typeof resolveAndValidateCoberturaAlvo>
       > | null;
@@ -3762,12 +3821,146 @@ const reproducaoRouter = router({
         animalId,
         input.machoId,
       );
+
+      const isInseminacao = input.tipo.trim() === "Inseminação";
+      const fazendaCtxInseminacao = input.fazendaId ?? null;
+      const origemSemenInseminacao: typeof SEMEN_ORIGEM_INTERNO | typeof SEMEN_ORIGEM_EXTERNO | null =
+        isInseminacao && animalAlvo.sexo === "femea"
+          ? input.machoId != null && input.machoId > 0
+            ? SEMEN_ORIGEM_INTERNO
+            : input.reprodutorSemen?.trim()
+              ? SEMEN_ORIGEM_EXTERNO
+              : null
+          : null;
+
+      const packInseminacaoObservacoes = (
+        observacoes: string | null | undefined,
+        extras: {
+          partidaSemen: string;
+          inseminador?: string;
+          ecc?: number;
+          semenPartidaId: number;
+          custoDoseSemen: number | null;
+        },
+      ) =>
+        packReproObservacoes(
+          observacoes,
+          coberturaAlvoPersistida ? undefined : input.reprodutorSemen,
+          input.responsavel,
+          input.descricaoResultadoOutro,
+          coberturaAlvoPersistida,
+          {
+            partidaSemen: extras.partidaSemen,
+            inseminador: extras.inseminador ?? input.inseminador,
+            ecc: extras.ecc ?? input.ecc,
+            semenPartidaId: extras.semenPartidaId,
+            custoDoseSemen: extras.custoDoseSemen,
+          },
+        );
+
+      if (isInseminacao && origemSemenInseminacao && fazendaCtxInseminacao) {
+        let disponiveis: Awaited<ReturnType<typeof listSemenPartidasDisponiveisInseminacaoDb>>;
+        try {
+          disponiveis = await listSemenPartidasDisponiveisInseminacaoDb(ctx.user.id, {
+            fazendaId: fazendaCtxInseminacao,
+            origem: origemSemenInseminacao,
+            machoId: origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : undefined,
+            reprodutorTexto:
+              origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO
+                ? input.reprodutorSemen
+                : undefined,
+          });
+        } catch (error) {
+          if (!isDatabaseUnavailable(error)) throw error;
+          disponiveis = await listSemenPartidasDisponiveisInseminacaoLocal(ctx.user.id, {
+            fazendaId: fazendaCtxInseminacao,
+            origem: origemSemenInseminacao,
+            machoId: origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : undefined,
+            reprodutorTexto:
+              origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO
+                ? input.reprodutorSemen
+                : undefined,
+          });
+        }
+
+        if (disponiveis.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_SEMEN_NENHUMA_DOSE_REPRODUTOR,
+          });
+        }
+        if (!input.semenPartidaId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_SEMEN_PARTIDA_IA_OBRIGATORIA,
+          });
+        }
+
+        const inseminacaoParams = {
+          fazendaId: fazendaCtxInseminacao,
+          femeaId: animalId,
+          machoId: machoIdPersistido,
+          dataCobertura: new Date(input.dataCobertura),
+          dataPrevistoParto: input.dataPrevistoParto
+            ? new Date(input.dataPrevistoParto)
+            : null,
+          resultado: input.resultado ?? null,
+          observacoes: input.observacoes ?? null,
+          inseminador: input.inseminador,
+          ecc: input.ecc,
+          semenPartidaId: input.semenPartidaId,
+          origemReprodutor: origemSemenInseminacao,
+          machoIdReprodutor:
+            origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : null,
+          reprodutorTextoExterno:
+            origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO ? input.reprodutorSemen : null,
+        };
+
+        try {
+          const result = await registrarInseminacaoComSemenDb(
+            ctx.user.id,
+            inseminacaoParams,
+            packInseminacaoObservacoes,
+          );
+          return { success: true, id: result.id, movimentacaoId: result.movimentacaoId };
+        } catch (error) {
+          const msg =
+            error instanceof Error ? error.message : "Não foi possível registrar a inseminação.";
+          if (
+            msg === MSG_SEMEN_SEM_DOSES ||
+            msg === MSG_SEMEN_PARTIDA_INCOMPATIVEL ||
+            msg === MSG_SEMEN_PARTIDA_NAO_ENCONTRADA
+          ) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: msg });
+          }
+          if (!isDatabaseUnavailable(error)) throw error;
+          const result = await registrarInseminacaoComSemenLocal(
+            ctx.user.id,
+            inseminacaoParams,
+            packInseminacaoObservacoes,
+          );
+          return {
+            success: true,
+            id: result.id,
+            movimentacaoId: result.movimentacaoId,
+            localFallback: true,
+          };
+        }
+      }
+
       const observacoesPersistidas = packReproObservacoes(
         input.observacoes,
         coberturaAlvoPersistida ? undefined : input.reprodutorSemen,
         input.responsavel,
         input.descricaoResultadoOutro,
         coberturaAlvoPersistida,
+        input.tipo.trim() === "Inseminação"
+          ? {
+              partidaSemen: input.partidaSemen,
+              inseminador: input.inseminador,
+              ecc: input.ecc,
+            }
+          : undefined,
       );
       const payload = {
         userId: ctx.user.id,
@@ -9673,7 +9866,7 @@ const manejoRouter = router({
     }),
 });
 
-// ─── APP ROUTER ───────────────────────────────────────────────────────────────
+import { semenRouter } from "./semenRouter";
 export const appRouter = router({
   auth: authRouter,
   animais: animaisRouter,
@@ -9697,5 +9890,6 @@ export const appRouter = router({
   brincos: brincosRouter,
   pessoas: pessoasRouter,
   manejo: manejoRouter,
+  semen: semenRouter,
 });
 export type AppRouter = typeof appRouter;

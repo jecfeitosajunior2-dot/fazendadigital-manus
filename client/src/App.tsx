@@ -55,6 +55,8 @@ import InsumosNovaMovimentacaoPage from "./pages/InsumosNovaMovimentacaoPage";
 import InsumosHistoricoMovimentacaoPage from "./pages/InsumosHistoricoMovimentacaoPage";
 import ManutencaoListPage from "./pages/ManutencaoListPage";
 import ManutencaoFormPage from "./pages/ManutencaoFormPage";
+import SemenEstoquePage from "./pages/SemenEstoquePage";
+import SemenEntradaResumoPage from "./pages/SemenEntradaResumoPage";
 import { MANEJO_REPRODUTIVO_PATH } from "./const";
 
 function RedirectTo({ to }: { to: string }) {
@@ -131,11 +133,16 @@ function ProtectedRoutes() {
       <Route path="/maquinas/manutencao/cadastro" component={ManutencaoFormPage} />
       <Route path="/maquinas/manutencao" component={ManutencaoListPage} />
 
+      {/* Reprodução — estoque de sêmen V1 */}
+      <Route path="/reproducao/estoque-semen/entrada/:movimentacaoId" component={SemenEntradaResumoPage} />
+      <Route path="/reproducao/estoque-semen/:id" component={SemenEstoquePage} />
+      <Route path="/reproducao/estoque-semen" component={SemenEstoquePage} />
+      <Route path="/reproducao/semen" component={() => <RedirectTo to="/reproducao/estoque-semen" />} />
+
       {/* Reprodução legada — redireciona para Manejo → Reprodutivo */}
       <Route path="/reproducao" component={RedirectReproducaoLegado} />
       <Route path="/reproducao/visao-geral" component={RedirectReproducaoLegado} />
       <Route path="/reproducao/protocolos" component={RedirectReproducaoLegado} />
-      <Route path="/reproducao/semen" component={RedirectReproducaoLegado} />
       <Route path="/reproducao/embrioes" component={RedirectReproducaoLegado} />
       <Route path="/reproducao/*" component={RedirectReproducaoLegado} />
       <Route path="/saude/registros" component={SaudePage} />
