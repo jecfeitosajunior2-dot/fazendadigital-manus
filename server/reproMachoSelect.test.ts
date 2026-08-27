@@ -130,6 +130,25 @@ describe("filterMachosReprodutoresCandidatos", () => {
     ).toEqual({});
   });
 
+  it("busca vazia mostra machos elegíveis 16 e 20 da fazenda 1", () => {
+    const macho20 = {
+      id: 21,
+      brinco: "20",
+      sexo: "macho" as const,
+      status: "ativo" as const,
+      categoria: "Boi",
+      idadeMeses: 36,
+      fazendaId: 1,
+    };
+    const found = filterMachosReprodutoresCandidatos(
+      [machoElegivelFazenda1, macho20, femea58, machoInativo, machoJovem, machoOutraFazenda],
+      { fazendaId: 1, search: "" },
+    );
+    expect(found.map(a => a.brinco)).toEqual(["16", "20"]);
+    expect(found.find(a => a.brinco === "16")?.id).toBe(7);
+    expect(found.find(a => a.brinco === "16")?.id).not.toBe(16);
+  });
+
   it("J) zero resultados retorna lista vazia", () => {
     expect(
       filterMachosReprodutoresCandidatos([machoElegivelFazenda1], {

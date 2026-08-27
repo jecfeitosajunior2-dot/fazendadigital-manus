@@ -77,6 +77,8 @@ export type BuildExportSpreadsheetOptions = {
   headerRowHeight?: number;
   /** Cabeçalho discreto: negrito + bordas leves, sem preenchimento colorido. */
   plainHeader?: boolean;
+  /** Quebra de texto no cabeçalho (padrão true). */
+  headerWrapText?: boolean;
   /**
    * Tema do cabeçalho. `dark` = fundo petróleo + texto branco.
    * Se omitido, `plainHeader` continua valendo como antes.
@@ -97,6 +99,8 @@ export type ExportSpreadsheetRowMeta = {
   colIndents?: Partial<Record<number, number>>;
   italic?: boolean;
   muted?: boolean;
+  /** Faixa visual de seção (ex.: dia de manejo) — negrito + fundo discreto, sem mesclar. */
+  section?: boolean;
 };
 
 export type ExportSpreadsheetRow = (string | number | Date | null | undefined)[];
@@ -112,6 +116,9 @@ const PLAIN_HEADER_BOTTOM = "FFD0D0D0";
 const DARK_HEADER_FILL = "FF2D5A5A";
 const TITLE_FILL = "FFF0F7F6";
 const FOOTER_FILL = "FFF3F4F6";
+/** Fundo discreto da faixa de seção (dia de manejo). */
+const SECTION_FILL = "FFEEF1F2";
+const SECTION_BOTTOM = "FF9CA3AF";
 const EXCEL_FMT_DATA_BR = "DD/MM/YYYY";
 
 function resolveHeaderTheme(options?: BuildExportSpreadsheetOptions): ExportHeaderTheme {
@@ -160,6 +167,7 @@ function applyHeaderCellStyle(
   cell: ExcelJS.Cell,
   theme: ExportHeaderTheme,
   horizontal: "left" | "center" | "right" = "center",
+  wrapText = true,
 ) {
   if (theme === "dark") {
     cell.font = { name: FONT, size: 11, bold: true, color: { argb: "FFFFFFFF" } };
@@ -182,7 +190,7 @@ function applyHeaderCellStyle(
       bottom: { style: "thin", color: { argb: HEADER_BORDER } },
     };
   }
-  cell.alignment = { horizontal, vertical: "middle", wrapText: true };
+  cell.alignment = { horizontal, vertical: "middle", wrapText };
 }
 
 function addGroupedTableHeader(
@@ -267,6 +275,7 @@ export async function buildExportSpreadsheetWorkbook(
     || (options?.reportInfo?.length ?? 0) > 0,
   );
   const blankAfterMeta = hasMeta && options?.blankAfterMeta !== false;
+  const headerWrapText = options?.headerWrapText !== false;
   const groupedHeader = options?.groupedTableHeader;
   const headerRowCount = groupedHeader ? 2 : 1;
   let headerExcelRow = metaRows + headerRowCount;
@@ -308,7 +317,11 @@ export async function buildExportSpreadsheetWorkbook(
 
   if (options?.reportTitle) {
     const titleRow = ws.addRow([options.reportTitle]);
+    const titleLen = options.reportTitle.length;
     titleRow.height = plainHeader ? 20 : 26;
+    if (titleLen > 64) {
+      titleRow.height = Math.max(titleRow.height ?? 0, 36);
+    }
     ws.mergeCells(titleRow.number, 1, titleRow.number, colCount);
     const titleCell = titleRow.getCell(1);
     titleCell.font = {
@@ -320,6 +333,7 @@ export async function buildExportSpreadsheetWorkbook(
     titleCell.alignment = {
       horizontal: plainHeader || options?.titleSubtleFill || headerTheme === "dark" ? "center" : "left",
       vertical: "middle",
+      wrapText: true,
       indent: 0,
     };
     if (plainHeader || options?.titleSubtleFill) {
@@ -372,7 +386,7 @@ export async function buildExportSpreadsheetWorkbook(
     headerRow.height =
       options?.headerRowHeight ?? (headerTheme === "dark" ? 32 : 22);
     headerRow.eachCell(cell => {
-      applyHeaderCellStyle(cell, headerTheme, "center");
+      applyHeaderCellStyle(cell, headerTheme, "center", headerWrapText);
     });
     headerExcelRow = headerRow.number;
     ws.views = [{ state: "frozen", ySplit: headerExcelRow }];
@@ -388,8 +402,9 @@ export async function buildExportSpreadsheetWorkbook(
     const row = rows[rowIdx];
     const meta = options?.rowMeta?.[rowIdx];
     const isFooter = rowIdx >= footerStartIdx;
+    const isSection = Boolean(meta?.section);
     const excelRow = ws.addRow(new Array(headers.length).fill(null));
-    let rowHeight = isFooter ? 20 : 18;
+    let rowHeight = isFooter || isSection ? 20 : 18;
     if (!isFooter && wrapCols) {
       for (const colIdx of wrapCols) {
         const raw = row[colIdx];
@@ -416,16 +431,17 @@ export async function buildExportSpreadsheetWorkbook(
 
       excelCell.font = {
         name: FONT,
-        size: 10,
-        ...(isFooter ? { bold: true } : {}),
+        size: isSection ? 11 : 10,
+        ...(isFooter || isSection ? { bold: true } : {}),
         ...(meta?.italic ? { italic: true } : {}),
-        ...(meta?.muted ? { color: { argb: "FF6B7280" } } : {}),
+        ...(meta?.muted && !isSection ? { color: { argb: "FF6B7280" } } : {}),
+        ...(isSection ? { color: { argb: "FF111827" } } : {}),
       };
       excelCell.alignment = {
-        horizontal,
+        horizontal: isSection ? "center" : horizontal,
         vertical: "middle",
         wrapText,
-        ...(indent > 0 ? { indent } : {}),
+        ...(indent > 0 && !isSection ? { indent } : {}),
       };
       excelCell.border = isFooter
         ? {
@@ -434,13 +450,26 @@ export async function buildExportSpreadsheetWorkbook(
             right: { style: "thin", color: { argb: BORDER_COLOR } },
             bottom: { style: "thin", color: { argb: BORDER_COLOR } },
           }
-        : thinBorder();
+        : isSection
+          ? {
+              top: { style: "thin", color: { argb: BORDER_COLOR } },
+              left: { style: "thin", color: { argb: BORDER_COLOR } },
+              right: { style: "thin", color: { argb: BORDER_COLOR } },
+              bottom: { style: "thin", color: { argb: SECTION_BOTTOM } },
+            }
+          : thinBorder();
 
       if (isFooter) {
         excelCell.fill = {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: FOOTER_FILL },
+        };
+      } else if (isSection) {
+        excelCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: SECTION_FILL },
         };
       }
 

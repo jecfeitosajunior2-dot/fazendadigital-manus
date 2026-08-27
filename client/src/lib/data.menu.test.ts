@@ -22,9 +22,12 @@ describe("menu lateral — Manejo vs Reprodução", () => {
     expect(childPaths("Manejo")).toContain("/manejo/registros");
   });
 
-  it("Reprodução contém Estoque de sêmen", () => {
-    expect(childLabels("Reprodução")).toContain("Estoque de sêmen");
-    expect(childPaths("Reprodução")).toContain("/reproducao/estoque-semen");
+  it("Reprodução contém apenas Sêmen utilizado, sem cadastro separado nem estoque", () => {
+    expect(childLabels("Reprodução")).toContain("Sêmen utilizado");
+    expect(childPaths("Reprodução")).toContain("/reproducao/semen-utilizado");
+    expect(childLabels("Reprodução")).not.toContain("Cadastro de sêmen");
+    expect(childPaths("Reprodução")).not.toContain("/reproducao/cadastro-semen");
+    expect(childLabels("Reprodução")).not.toContain("Estoque de sêmen");
   });
 
   it("Reprodução NÃO contém Registrar manejo", () => {
@@ -38,7 +41,7 @@ describe("menu lateral — Manejo vs Reprodução", () => {
   });
 
   it("Reprodução tem apenas recursos de apoio (sem duplicar Manejo)", () => {
-    expect(childLabels("Reprodução")).toEqual(["Estoque de sêmen"]);
+    expect(childLabels("Reprodução")).toEqual(["Sêmen utilizado"]);
   });
 });
 
@@ -47,7 +50,7 @@ describe("rotas oficiais — manejo reprodutivo e estoque", () => {
     expect(MANEJO_REPRODUTIVO_PATH).toBe("/manejo/registros/cadastro?tipo=reprodutivo");
   });
 
-  it("rota oficial do estoque de sêmen permanece em Reprodução", () => {
-    expect(childPaths("Reprodução")).toContain("/reproducao/estoque-semen");
+  it("rota oficial de sêmen utilizado permanece em Reprodução", () => {
+    expect(childPaths("Reprodução")).toContain("/reproducao/semen-utilizado");
   });
 });

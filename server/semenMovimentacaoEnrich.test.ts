@@ -50,6 +50,9 @@ describe("enrichSemenMovimentacoesDisplayLocal", () => {
           custoUnitario: "150.00",
           observacoes: "Inseminação — matriz #15 · registro repro #27",
           createdAt: new Date("2026-08-25") as unknown as Date,
+          movimentacaoOrigemId: null,
+          grupoCorrecaoId: null,
+          motivoCorrecao: null,
         },
       ],
       nextPartidaId: 3,
@@ -69,6 +72,9 @@ describe("enrichSemenMovimentacoesDisplayLocal", () => {
         custoUnitario: "150.00",
         observacoes: "Inseminação — matriz #15 · registro repro #27",
         createdAt: new Date("2026-08-25") as unknown as Date,
+        movimentacaoOrigemId: null,
+        grupoCorrecaoId: null,
+        motivoCorrecao: null,
       },
     ]);
 

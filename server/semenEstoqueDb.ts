@@ -1,10 +1,12 @@
 import { and, desc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { toDateOnlyISO } from "../shared/carenciaAnimal";
 import {
   applySemenEntradaAgregacao,
   applySemenSaidaIa,
-  buildSemenReprodutorKey,
   formatSemenReprodutorDisplay,
   formatSemenStatusLabel,
+  resolveSemenMachoDisplayLabel,
   SEMEN_MOV_TIPO_ENTRADA,
   SEMEN_MOV_TIPO_SAIDA_IA,
   SEMEN_ORIGEM_EXTERNO,
@@ -12,11 +14,27 @@ import {
   type SemenEntradaValidada,
   type SemenOrigemReprodutor,
   type SemenPartidaDisponivelInseminacao,
+  type SemenReprodutorExternoDisponivel,
   type SemenStatus,
   validateSemenPartidaReprodutorCompat,
+  aggregateSemenReprodutoresExternosDisponiveis,
+  resolveSemenReprodutorKeyExternoConsulta,
   MSG_SEMEN_PARTIDA_INCOMPATIVEL,
   MSG_SEMEN_PARTIDA_NAO_ENCONTRADA,
 } from "../shared/semenEstoque";
+import {
+  evaluateSemenCorrecaoEntrada,
+  validateSemenCorrecaoDados,
+  validateSemenCorrecaoMotivo,
+  withSemenCorrecaoFields,
+} from "../shared/semenEstoqueLedger";
+import { sortSemenPartidasByMovimentacoes } from "../shared/semenPartidaSort";
+import { calcularValorAtualEstoqueSemen, calcularValorAtualEstoqueSemenPorPartida } from "../shared/semenEstoqueValor";
+import {
+  buildSemenAjusteMovimentacao,
+  evaluateSemenAjusteEstoque,
+  validateSemenAjusteMotivo,
+} from "../shared/semenEstoqueAjuste";
 import { animais, db, reproducaoRegistros, semenMovimentacoes, semenPartidas } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import { validateSemenMachoInterno } from "./validateSemenMachoId";
@@ -31,6 +49,7 @@ export type SemenMovimentacaoRow = typeof semenMovimentacoes.$inferSelect;
 export type SemenPartidaListItem = SemenPartidaRow & {
   reprodutorDisplay: string;
   statusLabel: string;
+  valorAtualEstoque: number;
 };
 
 function readMysqlInsertId(result: unknown): number {
@@ -86,9 +105,7 @@ async function enrichPartidasComDisplay(
       .from(animais)
       .where(and(eq(animais.userId, userId), inArray(animais.id, machoIds)));
     for (const m of machos) {
-      const brinco = m.brinco?.trim();
-      const nome = m.nome?.trim();
-      machoMap.set(m.id, brinco && nome ? `${brinco} — ${nome}` : brinco || nome || "—");
+      machoMap.set(m.id, resolveSemenMachoDisplayLabel({ brinco: m.brinco, nome: m.nome }));
     }
   }
 
@@ -100,9 +117,22 @@ async function enrichPartidasComDisplay(
       machoDisplay: row.machoId != null ? machoMap.get(row.machoId) ?? row.reprodutorTexto : null,
     }),
     statusLabel: formatSemenStatusLabel(row.status as SemenStatus),
+    valorAtualEstoque: 0,
   }));
 }
 
+function withValorAtualEstoqueSemen(
+  partidas: SemenPartidaListItem[],
+  movimentacoes: Array<Parameters<typeof calcularValorAtualEstoqueSemenPorPartida>[0][number]>,
+): SemenPartidaListItem[] {
+  const valores = calcularValorAtualEstoqueSemenPorPartida(movimentacoes);
+  return partidas.map(p => ({
+    ...p,
+    valorAtualEstoque: valores.get(p.id) ?? 0,
+  }));
+}
+
+/** Lista filtrada, ordenada por última movimentação (antes da paginação no cliente). */
 export async function listSemenPartidasDb(
   userId: number,
   input: {
@@ -134,13 +164,35 @@ export async function listSemenPartidasDb(
     );
   }
 
-  const rows = await db
-    .select()
-    .from(semenPartidas)
-    .where(and(...conditions))
-    .orderBy(desc(semenPartidas.updatedAt), desc(semenPartidas.id));
+  const rows = await db.select().from(semenPartidas).where(and(...conditions));
 
-  return enrichPartidasComDisplay(userId, rows);
+  if (!rows.length) return [];
+
+  const movimentacoes = await db
+    .select({
+      id: semenMovimentacoes.id,
+      partidaId: semenMovimentacoes.partidaId,
+      tipo: semenMovimentacoes.tipo,
+      quantidadeDoses: semenMovimentacoes.quantidadeDoses,
+      custoTotal: semenMovimentacoes.custoTotal,
+      dataEntrada: semenMovimentacoes.dataEntrada,
+      createdAt: semenMovimentacoes.createdAt,
+      movimentacaoOrigemId: semenMovimentacoes.movimentacaoOrigemId,
+    })
+    .from(semenMovimentacoes)
+    .where(
+      and(
+        eq(semenMovimentacoes.userId, userId),
+        inArray(
+          semenMovimentacoes.partidaId,
+          rows.map(r => r.id),
+        ),
+      ),
+    );
+
+  const sorted = sortSemenPartidasByMovimentacoes(rows, movimentacoes);
+  const enriched = await enrichPartidasComDisplay(userId, sorted);
+  return withValorAtualEstoqueSemen(enriched, movimentacoes);
 }
 
 export async function listSemenPartidasDisponiveisInseminacaoDb(
@@ -150,6 +202,7 @@ export async function listSemenPartidasDisponiveisInseminacaoDb(
     origem: SemenOrigemReprodutor;
     machoId?: number;
     reprodutorTexto?: string;
+    reprodutorKey?: string;
   },
 ): Promise<SemenPartidaDisponivelInseminacao[]> {
   await assertFazendaDoUsuario(userId, input.fazendaId);
@@ -166,17 +219,11 @@ export async function listSemenPartidasDisponiveisInseminacaoDb(
     conditions.push(eq(semenPartidas.origemReprodutor, SEMEN_ORIGEM_INTERNO));
     conditions.push(eq(semenPartidas.machoId, machoId));
   } else {
-    const reprodutorTexto = input.reprodutorTexto?.trim();
-    if (!reprodutorTexto) return [];
-    let reprodutorKey: string;
-    try {
-      reprodutorKey = buildSemenReprodutorKey({
-        origem: SEMEN_ORIGEM_EXTERNO,
-        reprodutorTexto,
-      });
-    } catch {
-      return [];
-    }
+    const reprodutorKey = resolveSemenReprodutorKeyExternoConsulta({
+      reprodutorKey: input.reprodutorKey,
+      reprodutorTexto: input.reprodutorTexto,
+    });
+    if (!reprodutorKey) return [];
     conditions.push(eq(semenPartidas.origemReprodutor, SEMEN_ORIGEM_EXTERNO));
     conditions.push(eq(semenPartidas.reprodutorKey, reprodutorKey));
   }
@@ -196,6 +243,32 @@ export async function listSemenPartidasDisponiveisInseminacaoDb(
     custoUnitario: row.custoUnitario,
     reprodutorDisplay: row.reprodutorDisplay,
   }));
+}
+
+export async function listSemenReprodutoresExternosDisponiveisDb(
+  userId: number,
+  fazendaId: number,
+): Promise<SemenReprodutorExternoDisponivel[]> {
+  await assertFazendaDoUsuario(userId, fazendaId);
+
+  const rows = await db
+    .select({
+      origemReprodutor: semenPartidas.origemReprodutor,
+      reprodutorKey: semenPartidas.reprodutorKey,
+      reprodutorTexto: semenPartidas.reprodutorTexto,
+      saldoDoses: semenPartidas.saldoDoses,
+    })
+    .from(semenPartidas)
+    .where(
+      and(
+        eq(semenPartidas.userId, userId),
+        eq(semenPartidas.fazendaId, fazendaId),
+        eq(semenPartidas.origemReprodutor, SEMEN_ORIGEM_EXTERNO),
+        gt(semenPartidas.saldoDoses, 0),
+      ),
+    );
+
+  return aggregateSemenReprodutoresExternosDisponiveis(rows);
 }
 
 export type RegistrarInseminacaoComSemenParams = {
@@ -230,6 +303,7 @@ export async function registrarInseminacaoComSemenDb(
       ecc?: number;
       semenPartidaId: number;
       custoDoseSemen: number | null;
+      centralOrigem?: string | null;
     },
   ) => string | null,
 ): Promise<RegistrarInseminacaoComSemenResult> {
@@ -279,6 +353,7 @@ export async function registrarInseminacaoComSemenDb(
       ecc: params.ecc,
       semenPartidaId: params.semenPartidaId,
       custoDoseSemen: custoDoseSnapshot,
+      centralOrigem: partida.centralOrigem,
     });
 
     const reproResult = await tx.insert(reproducaoRegistros).values({
@@ -346,7 +421,11 @@ export async function getSemenPartidaByIdDb(
 
   const movimentacoes = await enrichSemenMovimentacoesDisplayDb(userId, movimentacoesRaw);
 
-  return { ...enriched, movimentacoes };
+  return {
+    ...enriched,
+    movimentacoes,
+    valorAtualEstoque: calcularValorAtualEstoqueSemen(movimentacoesRaw),
+  };
 }
 
 function buildSemenEntradaResumo(
@@ -517,6 +596,226 @@ export async function registrarEntradaSemenDb(
       novaEntrada: true,
       saldoAtual: agreg.novoSaldo,
       custoMedioAtual: agreg.novoCustoUnitario,
+    };
+  });
+}
+
+export type SemenCorrigirEntradaInput = {
+  movimentacaoId: number;
+  quantidadeDoses: unknown;
+  custoTotal: unknown;
+  dataEntrada?: unknown;
+  motivoCodigo: unknown;
+  motivoDescricao?: unknown;
+};
+
+export type SemenCorrigirEntradaResult = {
+  partidaId: number;
+  estornoId: number;
+  novaEntradaId: number;
+  saldoAtual: number;
+  custoMedioAtual: string | null;
+};
+
+export type SemenAjustarEstoqueInput = {
+  partidaId: number;
+  modo: unknown;
+  saldoNovo?: unknown;
+  valorNovo?: unknown;
+  motivoCodigo: unknown;
+  motivoDescricao?: unknown;
+  observacao?: unknown;
+};
+
+export type SemenAjustarEstoqueResult = {
+  partidaId: number;
+  movimentacaoId: number;
+  saldoAtual: number;
+  custoMedioAtual: string | null;
+  valorAtualEstoque: number;
+};
+
+export async function corrigirEntradaSemenDb(
+  userId: number,
+  input: SemenCorrigirEntradaInput,
+): Promise<SemenCorrigirEntradaResult> {
+  const motivo = validateSemenCorrecaoMotivo(input.motivoCodigo, input.motivoDescricao);
+  if (!motivo.ok) throw new Error(motivo.message);
+  const dados = validateSemenCorrecaoDados({
+    quantidadeDoses: input.quantidadeDoses,
+    custoTotal: input.custoTotal,
+    dataEntrada: input.dataEntrada,
+  });
+  if (!dados.ok) throw new Error(dados.message);
+
+  return db.transaction(async tx => {
+    const [original] = await tx
+      .select()
+      .from(semenMovimentacoes)
+      .where(and(eq(semenMovimentacoes.id, input.movimentacaoId), eq(semenMovimentacoes.userId, userId)))
+      .limit(1);
+
+    if (!original) {
+      throw new Error("Movimentação de entrada não encontrada.");
+    }
+
+    const locked = await tx
+      .select()
+      .from(semenPartidas)
+      .where(and(eq(semenPartidas.id, original.partidaId), eq(semenPartidas.userId, userId)))
+      .for("update");
+
+    const partida = locked[0];
+    if (!partida) {
+      throw new Error(MSG_SEMEN_PARTIDA_NAO_ENCONTRADA);
+    }
+
+    const movimentacoes = await tx
+      .select()
+      .from(semenMovimentacoes)
+      .where(and(eq(semenMovimentacoes.partidaId, partida.id), eq(semenMovimentacoes.userId, userId)));
+
+    const now = new Date();
+    const maxId = movimentacoes.reduce((m, row) => Math.max(m, row.id), 0);
+    const evaluated = evaluateSemenCorrecaoEntrada({
+      original: withSemenCorrecaoFields(original),
+      movimentacoes: movimentacoes.map(withSemenCorrecaoFields),
+      saldoAtual: partida.saldoDoses,
+      dadosNovos: dados.value,
+      dataCorrecao: toDateOnlyISO(now),
+      nowIso: now.toISOString(),
+      nextEstornoId: maxId + 1,
+      nextEntradaId: maxId + 2,
+      grupoCorrecaoId: randomUUID(),
+      motivoTexto: motivo.texto,
+    });
+    if (!evaluated.ok) throw new Error(evaluated.message);
+
+    const estornoResult = await tx.insert(semenMovimentacoes).values({
+      partidaId: partida.id,
+      userId,
+      fazendaId: partida.fazendaId,
+      tipo: evaluated.estorno.tipo,
+      dataEntrada: evaluated.estorno.dataEntrada,
+      quantidadeDoses: evaluated.estorno.quantidadeDoses,
+      custoTotal: evaluated.estorno.custoTotal,
+      custoUnitario: evaluated.estorno.custoUnitario,
+      observacoes: evaluated.estorno.observacoes,
+      movimentacaoOrigemId: evaluated.estorno.movimentacaoOrigemId,
+      grupoCorrecaoId: evaluated.estorno.grupoCorrecaoId,
+      motivoCorrecao: evaluated.estorno.motivoCorrecao,
+    });
+    const estornoId = readMysqlInsertId(estornoResult);
+
+    const novaResult = await tx.insert(semenMovimentacoes).values({
+      partidaId: partida.id,
+      userId,
+      fazendaId: partida.fazendaId,
+      tipo: evaluated.novaEntrada.tipo,
+      dataEntrada: evaluated.novaEntrada.dataEntrada,
+      quantidadeDoses: evaluated.novaEntrada.quantidadeDoses,
+      custoTotal: evaluated.novaEntrada.custoTotal,
+      custoUnitario: evaluated.novaEntrada.custoUnitario,
+      observacoes: evaluated.novaEntrada.observacoes,
+      movimentacaoOrigemId: evaluated.novaEntrada.movimentacaoOrigemId,
+      grupoCorrecaoId: evaluated.novaEntrada.grupoCorrecaoId,
+      motivoCorrecao: evaluated.novaEntrada.motivoCorrecao,
+    });
+    const novaEntradaId = readMysqlInsertId(novaResult);
+
+    await tx
+      .update(semenPartidas)
+      .set({
+        saldoDoses: evaluated.estadoFinal.saldoDoses,
+        custoUnitario: evaluated.estadoFinal.custoUnitario,
+        status: evaluated.estadoFinal.status,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(semenPartidas.id, partida.id));
+
+    return {
+      partidaId: partida.id,
+      estornoId,
+      novaEntradaId,
+      saldoAtual: evaluated.estadoFinal.saldoDoses,
+      custoMedioAtual: evaluated.estadoFinal.custoUnitario,
+    };
+  });
+}
+
+export async function ajustarEstoqueSemenDb(
+  userId: number,
+  input: SemenAjustarEstoqueInput,
+): Promise<SemenAjustarEstoqueResult> {
+  const motivo = validateSemenAjusteMotivo(input.motivoCodigo, input.motivoDescricao);
+  if (!motivo.ok) throw new Error(motivo.message);
+
+  return db.transaction(async tx => {
+    const locked = await tx
+      .select()
+      .from(semenPartidas)
+      .where(and(eq(semenPartidas.id, input.partidaId), eq(semenPartidas.userId, userId)))
+      .for("update");
+
+    const partida = locked[0];
+    if (!partida) {
+      throw new Error(MSG_SEMEN_PARTIDA_NAO_ENCONTRADA);
+    }
+
+    const movimentacoes = await tx
+      .select()
+      .from(semenMovimentacoes)
+      .where(and(eq(semenMovimentacoes.partidaId, partida.id), eq(semenMovimentacoes.userId, userId)));
+
+    const valorAtual = calcularValorAtualEstoqueSemen(movimentacoes.map(withSemenCorrecaoFields));
+    const estado = evaluateSemenAjusteEstoque({
+      saldoAtual: partida.saldoDoses,
+      custoMedioAtual: partida.custoUnitario,
+      valorAtual,
+      modo: input.modo,
+      saldoNovo: input.saldoNovo,
+      valorNovo: input.valorNovo,
+    });
+    if (!estado.ok) throw new Error(estado.message);
+
+    const now = new Date();
+    const draft = buildSemenAjusteMovimentacao({
+      estado: estado.value,
+      dataOperacional: toDateOnlyISO(now),
+      motivoTexto: motivo.texto,
+      observacao: String(input.observacao ?? "").trim() || null,
+    });
+
+    const movResult = await tx.insert(semenMovimentacoes).values({
+      partidaId: partida.id,
+      userId,
+      fazendaId: partida.fazendaId,
+      tipo: draft.tipo,
+      dataEntrada: draft.dataEntrada,
+      quantidadeDoses: draft.quantidadeDoses,
+      custoTotal: draft.custoTotal,
+      custoUnitario: draft.custoUnitario,
+      observacoes: draft.observacoes,
+      motivoCorrecao: draft.motivoCorrecao,
+    });
+    const movimentacaoId = readMysqlInsertId(movResult);
+
+    await tx
+      .update(semenPartidas)
+      .set({
+        saldoDoses: estado.value.saldoNovo,
+        custoUnitario: estado.value.custoMedioNovo,
+        status: estado.value.status,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(semenPartidas.id, partida.id));
+
+    return {
+      partidaId: partida.id,
+      movimentacaoId,
+      saldoAtual: estado.value.saldoNovo,
+      custoMedioAtual: estado.value.custoMedioNovo,
+      valorAtualEstoque: estado.value.valorNovo,
     };
   });
 }

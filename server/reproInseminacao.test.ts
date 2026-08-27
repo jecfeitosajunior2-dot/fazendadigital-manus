@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertCustoDoseInseminacaoCreate,
+  custoDoseInseminacaoExternaInformado,
   formatReproEccDisplay,
+  MSG_REPRO_CUSTO_DOSE_EXTERNO_OBRIGATORIO,
   parseReproEccInput,
+  resolveOrigemSemenInseminacao,
   sanitizeReproEccInputString,
+  validateReproCustoDoseInseminacaoExterna,
   validateReproEcc,
 } from "../shared/reproInseminacao";
+import { parseSemenCustoTotal, SEMEN_ORIGEM_EXTERNO, SEMEN_ORIGEM_INTERNO } from "../shared/semenEstoque";
 import { buildReproReprodutorPayload } from "../shared/reproReprodutorPersist";
 import {
   formatInseminacaoDetalhesParts,
@@ -29,6 +35,111 @@ describe("validateReproEcc", () => {
   it("ausência é válida", () => {
     expect(validateReproEcc("")).toEqual({ ok: true });
     expect(validateReproEcc(null)).toEqual({ ok: true });
+  });
+});
+
+describe("validateReproCustoDoseInseminacaoExterna", () => {
+  it("teste A/I — vazio, zero, negativo e inválido bloqueiam", () => {
+    expect(validateReproCustoDoseInseminacaoExterna(undefined).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(null).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(0).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(-10).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(Number.NaN).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(undefined)).toEqual({
+      ok: false,
+      message: MSG_REPRO_CUSTO_DOSE_EXTERNO_OBRIGATORIO,
+    });
+  });
+
+  it("teste B/J — custo positivo é aceito, inclusive centavos", () => {
+    expect(validateReproCustoDoseInseminacaoExterna(90)).toEqual({ ok: true, value: 90 });
+    expect(validateReproCustoDoseInseminacaoExterna(90.5)).toEqual({ ok: true, value: 90.5 });
+    expect(validateReproCustoDoseInseminacaoExterna(138.89)).toEqual({ ok: true, value: 138.89 });
+  });
+
+  it("normaliza 90,50 / 90.50 e rejeita texto", () => {
+    expect(parseSemenCustoTotal("90,50")).toBe(90.5);
+    expect(parseSemenCustoTotal("90.50")).toBe(90.5);
+    expect(validateReproCustoDoseInseminacaoExterna(parseSemenCustoTotal("90,50")).ok).toBe(true);
+    expect(validateReproCustoDoseInseminacaoExterna(parseSemenCustoTotal("abc")).ok).toBe(false);
+    expect(validateReproCustoDoseInseminacaoExterna(parseSemenCustoTotal("")).ok).toBe(false);
+  });
+});
+
+describe("origem + custo no create (backend)", () => {
+  it("detecta externo por reprodutorSemen sem machoId", () => {
+    expect(
+      resolveOrigemSemenInseminacao({
+        tipo: "Inseminação",
+        sexoAnimal: "femea",
+        reprodutorSemen: "GSI-2222",
+      }),
+    ).toBe(SEMEN_ORIGEM_EXTERNO);
+  });
+
+  it("detecta interno por machoId", () => {
+    expect(
+      resolveOrigemSemenInseminacao({
+        tipo: "Inseminação",
+        sexoAnimal: "femea",
+        machoId: 7,
+        reprodutorSemen: "16",
+      }),
+    ).toBe(SEMEN_ORIGEM_INTERNO);
+  });
+
+  it("teste H — mutation externa sem custo é rejeitada", () => {
+    const origem = resolveOrigemSemenInseminacao({
+      tipo: "Inseminação",
+      sexoAnimal: "femea",
+      reprodutorSemen: "GSI-2222",
+    });
+    expect(assertCustoDoseInseminacaoCreate(origem, undefined)).toEqual({
+      ok: false,
+      message: MSG_REPRO_CUSTO_DOSE_EXTERNO_OBRIGATORIO,
+    });
+    expect(assertCustoDoseInseminacaoCreate(origem, 0).ok).toBe(false);
+  });
+
+  it("teste D — interna sem custo não é bloqueada", () => {
+    const origem = resolveOrigemSemenInseminacao({
+      tipo: "Inseminação",
+      sexoAnimal: "femea",
+      machoId: 7,
+    });
+    expect(assertCustoDoseInseminacaoCreate(origem, undefined)).toEqual({ ok: true });
+  });
+
+  it("Cio/Diagnóstico/Parto não exigem custo", () => {
+    for (const tipo of ["Cio", "Diagnóstico de prenhez", "Parto", "Aborto", "Outro"]) {
+      const origem = resolveOrigemSemenInseminacao({
+        tipo,
+        sexoAnimal: "femea",
+        reprodutorSemen: "GSI-2222",
+      });
+      expect(origem).toBeNull();
+      expect(assertCustoDoseInseminacaoCreate(origem, undefined).ok).toBe(true);
+    }
+  });
+});
+
+describe("custoDoseInseminacaoExternaInformado (frontend Salvar)", () => {
+  it("teste A — externo vazio desabilita", () => {
+    expect(custoDoseInseminacaoExternaInformado(true, "")).toBe(false);
+    expect(custoDoseInseminacaoExternaInformado(true, "   ")).toBe(false);
+    expect(custoDoseInseminacaoExternaInformado(true, "abc")).toBe(false);
+    expect(custoDoseInseminacaoExternaInformado(true, "-10")).toBe(false);
+    expect(custoDoseInseminacaoExternaInformado(true, "0")).toBe(false);
+  });
+
+  it("teste B/J — 90,00 e 90,50 habilitam", () => {
+    expect(custoDoseInseminacaoExternaInformado(true, "90,00")).toBe(true);
+    expect(custoDoseInseminacaoExternaInformado(true, "90,50")).toBe(true);
+    expect(custoDoseInseminacaoExternaInformado(true, "R$ 90,00")).toBe(true);
+  });
+
+  it("teste D — interno sem custo permanece livre", () => {
+    expect(custoDoseInseminacaoExternaInformado(false, "")).toBe(true);
   });
 });
 
@@ -92,6 +203,33 @@ describe("Inseminação — payload externo", () => {
     expect(meta.partidaSemen).toBe("P-889");
     expect(meta.inseminador).toBe("Carlos");
     expect(meta.ecc).toBe(3);
+  });
+});
+
+describe("snapshot de custo por IA", () => {
+  it("teste C — 90 e 105 permanecem independentes", () => {
+    const ia90 = unpackReproObservacoes(
+      packReproObservacoes(undefined, "GSI-2222", undefined, undefined, null, {
+        custoDoseSemen: 90,
+      }),
+    );
+    const ia105 = unpackReproObservacoes(
+      packReproObservacoes(undefined, "GSI-2222", undefined, undefined, null, {
+        custoDoseSemen: 105,
+      }),
+    );
+    expect(ia90.custoDoseSemen).toBe(90);
+    expect(ia105.custoDoseSemen).toBe(105);
+  });
+
+  it("teste E — legado sem custo fica null, sem R$ 0,00", () => {
+    const meta = unpackReproObservacoes(
+      packReproObservacoes(undefined, "GSI-2222"),
+    );
+    expect(meta.custoDoseSemen).toBeNull();
+    const detalhes = formatInseminacaoDetalhesParts(meta, {});
+    expect(detalhes.join(" · ")).not.toMatch(/Custo da dose/);
+    expect(detalhes.join(" · ")).not.toMatch(/R\$\s*0/);
   });
 });
 
@@ -200,6 +338,69 @@ describe("formatInseminacaoDetalhesParts / histórico", () => {
     const meta = unpackReproObservacoes(packReproObservacoes(undefined, "ABC"));
     const detalhes = formatReproDetalhesTabela({ tipo: "Inseminação" }, meta);
     expect(detalhes).toBe("Reprodutor: ABC");
+  });
+
+  it("teste A/D — P-10FAZ legado não aparece como Reprodutor", () => {
+    const meta = unpackReproObservacoes(
+      `\n__fd_repro__${JSON.stringify({
+        r: "P-10FAZ",
+        ps: "P-10FAZ",
+        cds: 90,
+      })}__end__`,
+    );
+    const detalhes = formatReproDetalhesTabela(
+      { tipo: "Inseminação", dataPrevistoParto: "2027-06-05" },
+      meta,
+      iso => String(iso).split("-").reverse().join("/"),
+    );
+    expect(detalhes).toContain("Reprodutor: Não informado");
+    expect(detalhes).toContain("Partida: P-10FAZ");
+    expect(detalhes).toMatch(/Custo da dose: R\$\s*90,00/);
+    expect(detalhes).not.toContain("Reprodutor: P-10FAZ");
+    expect(detalhes).not.toMatch(/machoId|animalId|reprodutor_key|semenPartidaId/i);
+  });
+
+  it("teste B — GSC-7117 / Sem lote permanece", () => {
+    const meta = unpackReproObservacoes(
+      packReproObservacoes(undefined, "GSC-7117", undefined, undefined, null, {
+        partidaSemen: "Sem lote",
+        custoDoseSemen: 138.89,
+        inseminador: "Junior",
+      }),
+    );
+    const detalhes = formatReproDetalhesTabela({ tipo: "Inseminação" }, meta);
+    expect(detalhes).toContain("Reprodutor: GSC-7117");
+    expect(detalhes).toContain("Partida: Sem lote");
+    expect(detalhes).toContain("Inseminador: Junior");
+    expect(detalhes).toContain("138,89");
+  });
+
+  it("teste C — interno usa brinco do macho e nunca a partida", () => {
+    const meta = unpackReproObservacoes(
+      `\n__fd_repro__${JSON.stringify({
+        r: "P-10FAZ",
+        ps: "P-10FAZ",
+        cds: 150,
+      })}__end__`,
+    );
+    const detalhes = formatReproDetalhesTabela(
+      { tipo: "Inseminação", machoId: 16 },
+      meta,
+      undefined,
+      { macho: { brinco: "16", nome: "Touro Teste" } },
+    );
+    expect(detalhes).toContain("Reprodutor: 16");
+    expect(detalhes).toContain("Partida: P-10FAZ");
+    expect(detalhes).not.toContain("Reprodutor: P-10FAZ");
+    expect(detalhes).not.toContain("#16");
+  });
+
+  it("não altera Cobertura — continua usando o texto persistido", () => {
+    const meta = unpackReproObservacoes(
+      `\n__fd_repro__${JSON.stringify({ r: "P-10FAZ" })}__end__`,
+    );
+    const detalhes = formatReproDetalhesTabela({ tipo: "Cobertura" }, meta);
+    expect(detalhes).toBe("P-10FAZ");
   });
 });
 

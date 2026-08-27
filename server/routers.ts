@@ -133,24 +133,21 @@ import {
   executarInativacaoLote,
 } from "./loteExclusaoCheck";
 import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
-import { validateReproEcc } from "../shared/reproInseminacao";
 import {
-  MSG_SEMEN_NENHUMA_DOSE_REPRODUTOR,
-  MSG_SEMEN_PARTIDA_IA_OBRIGATORIA,
+  assertCustoDoseInseminacaoCreate,
+  resolveOrigemSemenInseminacao,
+  validateReproEcc,
+} from "../shared/reproInseminacao";
+import {
   MSG_SEMEN_PARTIDA_INCOMPATIVEL,
   MSG_SEMEN_PARTIDA_NAO_ENCONTRADA,
   MSG_SEMEN_SEM_DOSES,
   SEMEN_ORIGEM_EXTERNO,
   SEMEN_ORIGEM_INTERNO,
 } from "../shared/semenEstoque";
-import {
-  listSemenPartidasDisponiveisInseminacaoDb,
-  registrarInseminacaoComSemenDb,
-} from "./semenEstoqueDb";
-import {
-  listSemenPartidasDisponiveisInseminacaoLocal,
-  registrarInseminacaoComSemenLocal,
-} from "./semenEstoqueLocal";
+import { shouldConsumirEstoqueSemenNaInseminacao } from "../shared/semenUtilizado";
+import { registrarInseminacaoComSemenDb } from "./semenEstoqueDb";
+import { registrarInseminacaoComSemenLocal } from "./semenEstoqueLocal";
 import {
   buildReproAnimalElegibilidadeInput,
   isReproTipoPermitidoParaAnimal,
@@ -3732,6 +3729,8 @@ const reproducaoRouter = router({
       responsavel: z.string().optional(),
       partidaSemen: z.string().max(200).optional(),
       semenPartidaId: z.number().int().positive().optional(),
+      custoDoseSemen: z.number().finite().optional(),
+      centralOrigem: z.string().max(150).optional(),
       inseminador: z.string().max(200).optional(),
       ecc: z.number().min(1).max(5).optional(),
       observacoes: z.string().optional(),
@@ -3824,14 +3823,20 @@ const reproducaoRouter = router({
 
       const isInseminacao = input.tipo.trim() === "Inseminação";
       const fazendaCtxInseminacao = input.fazendaId ?? null;
-      const origemSemenInseminacao: typeof SEMEN_ORIGEM_INTERNO | typeof SEMEN_ORIGEM_EXTERNO | null =
-        isInseminacao && animalAlvo.sexo === "femea"
-          ? input.machoId != null && input.machoId > 0
-            ? SEMEN_ORIGEM_INTERNO
-            : input.reprodutorSemen?.trim()
-              ? SEMEN_ORIGEM_EXTERNO
-              : null
-          : null;
+      const origemSemenInseminacao = resolveOrigemSemenInseminacao({
+        tipo: input.tipo,
+        sexoAnimal: animalAlvo.sexo,
+        machoId: input.machoId,
+        reprodutorSemen: input.reprodutorSemen,
+      });
+
+      const validacaoCustoExterno = assertCustoDoseInseminacaoCreate(
+        origemSemenInseminacao,
+        input.custoDoseSemen,
+      );
+      if (!validacaoCustoExterno.ok) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: validacaoCustoExterno.message });
+      }
 
       const packInseminacaoObservacoes = (
         observacoes: string | null | undefined,
@@ -3841,6 +3846,7 @@ const reproducaoRouter = router({
           ecc?: number;
           semenPartidaId: number;
           custoDoseSemen: number | null;
+          centralOrigem?: string | null;
         },
       ) =>
         packReproObservacoes(
@@ -3855,47 +3861,16 @@ const reproducaoRouter = router({
             ecc: extras.ecc ?? input.ecc,
             semenPartidaId: extras.semenPartidaId,
             custoDoseSemen: extras.custoDoseSemen,
+            centralOrigem: extras.centralOrigem ?? input.centralOrigem,
           },
         );
 
-      if (isInseminacao && origemSemenInseminacao && fazendaCtxInseminacao) {
-        let disponiveis: Awaited<ReturnType<typeof listSemenPartidasDisponiveisInseminacaoDb>>;
-        try {
-          disponiveis = await listSemenPartidasDisponiveisInseminacaoDb(ctx.user.id, {
-            fazendaId: fazendaCtxInseminacao,
-            origem: origemSemenInseminacao,
-            machoId: origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : undefined,
-            reprodutorTexto:
-              origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO
-                ? input.reprodutorSemen
-                : undefined,
-          });
-        } catch (error) {
-          if (!isDatabaseUnavailable(error)) throw error;
-          disponiveis = await listSemenPartidasDisponiveisInseminacaoLocal(ctx.user.id, {
-            fazendaId: fazendaCtxInseminacao,
-            origem: origemSemenInseminacao,
-            machoId: origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : undefined,
-            reprodutorTexto:
-              origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO
-                ? input.reprodutorSemen
-                : undefined,
-          });
-        }
-
-        if (disponiveis.length === 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: MSG_SEMEN_NENHUMA_DOSE_REPRODUTOR,
-          });
-        }
-        if (!input.semenPartidaId) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: MSG_SEMEN_PARTIDA_IA_OBRIGATORIA,
-          });
-        }
-
+      if (
+        isInseminacao &&
+        origemSemenInseminacao &&
+        fazendaCtxInseminacao &&
+        shouldConsumirEstoqueSemenNaInseminacao(input.semenPartidaId)
+      ) {
         const inseminacaoParams = {
           fazendaId: fazendaCtxInseminacao,
           femeaId: animalId,
@@ -3908,7 +3883,7 @@ const reproducaoRouter = router({
           observacoes: input.observacoes ?? null,
           inseminador: input.inseminador,
           ecc: input.ecc,
-          semenPartidaId: input.semenPartidaId,
+          semenPartidaId: input.semenPartidaId!,
           origemReprodutor: origemSemenInseminacao,
           machoIdReprodutor:
             origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : null,
@@ -3959,6 +3934,8 @@ const reproducaoRouter = router({
               partidaSemen: input.partidaSemen,
               inseminador: input.inseminador,
               ecc: input.ecc,
+              custoDoseSemen: input.custoDoseSemen,
+              centralOrigem: input.centralOrigem,
             }
           : undefined,
       );

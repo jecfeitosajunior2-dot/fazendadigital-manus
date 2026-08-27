@@ -75,7 +75,6 @@ describe("shouldLoadSemenPartidasParaInseminacao", () => {
         fazendaId: 1,
         origemReprodutor: "interno",
         machoId: 7,
-        reprodutorTextoExterno: "GSC-7117",
       }),
     ).toBe(true);
 
@@ -85,18 +84,17 @@ describe("shouldLoadSemenPartidasParaInseminacao", () => {
         fazendaId: 1,
         origemReprodutor: "interno",
         machoId: undefined,
-        reprodutorTextoExterno: "GSC-7117",
       }),
     ).toBe(false);
   });
 
-  it("origem externa habilitada somente com texto", () => {
+  it("origem externa habilitada somente com reprodutorKey", () => {
     expect(
       shouldLoadSemenPartidasParaInseminacao({
         tipoReprodutivo: "Inseminação",
         fazendaId: 1,
         origemReprodutor: "externo",
-        reprodutorTextoExterno: "GSC-7117",
+        reprodutorKeyExterno: "e:gsc-7117",
       }),
     ).toBe(true);
 
@@ -105,7 +103,7 @@ describe("shouldLoadSemenPartidasParaInseminacao", () => {
         tipoReprodutivo: "Inseminação",
         fazendaId: 1,
         origemReprodutor: "externo",
-        reprodutorTextoExterno: "   ",
+        reprodutorKeyExterno: "   ",
       }),
     ).toBe(false);
 

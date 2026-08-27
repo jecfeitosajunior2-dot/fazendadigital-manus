@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { exportListPdf, exportListSpreadsheet, type ExportRow, type PdfHeadCell } from "@/lib/exportList";
-import type { GroupedTableHeader } from "@shared/buildExportSpreadsheet";
+import type { GroupedTableHeader, ExportReportInfoLine, ExportSpreadsheetRowMeta } from "@shared/buildExportSpreadsheet";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
 import { cn } from "@/lib/utils";
-import type { ExportReportInfoLine } from "@shared/buildExportSpreadsheet";
 
 type Props = {
   title: string;
@@ -28,6 +27,7 @@ type Props = {
   spreadsheetTextCols?: number[];
   spreadsheetColumnNumFmts?: Partial<Record<number, string>>;
   spreadsheetColumnAligns?: ("left" | "center" | "right")[];
+  spreadsheetColumnWidths?: Array<number | undefined>;
   /** Nome da aba do Excel. */
   spreadsheetSheetName?: string;
   /** Título mesclado no topo da planilha. */
@@ -44,9 +44,15 @@ type Props = {
   spreadsheetAutoFilter?: boolean;
   /** Cabeçalho discreto sem preenchimento colorido. */
   spreadsheetPlainHeader?: boolean;
+  spreadsheetHeaderWrapText?: boolean;
+  /** Estiliza as N últimas linhas como totais (negrito + fundo cinza). */
+  spreadsheetFooterRowCount?: number;
   spreadsheetGroupedTableHeader?: GroupedTableHeader;
+  spreadsheetRowMeta?: ExportSpreadsheetRowMeta[];
+  spreadsheetCurrencyAsNumber?: boolean;
   pdfHeaders?: string[];
   pdfRows?: ExportRow[];
+  pdfRowMeta?: ExportSpreadsheetRowMeta[];
   pdfHeadRows?: PdfHeadCell[][];
   pdfColumnAligns?: ("left" | "center" | "right")[];
   pdfLandscape?: boolean;
@@ -125,6 +131,7 @@ export default function ListExportButtons({
   spreadsheetTextCols,
   spreadsheetColumnNumFmts,
   spreadsheetColumnAligns,
+  spreadsheetColumnWidths,
   spreadsheetSheetName,
   spreadsheetReportTitle,
   spreadsheetReportSubtitles,
@@ -133,9 +140,14 @@ export default function ListExportButtons({
   spreadsheetBlankAfterMeta,
   spreadsheetAutoFilter,
   spreadsheetPlainHeader,
+  spreadsheetHeaderWrapText,
+  spreadsheetFooterRowCount,
   spreadsheetGroupedTableHeader,
+  spreadsheetRowMeta,
+  spreadsheetCurrencyAsNumber,
   pdfHeaders,
   pdfRows,
+  pdfRowMeta,
   pdfHeadRows,
   pdfColumnAligns,
   pdfLandscape,
@@ -227,6 +239,7 @@ export default function ListExportButtons({
                 textColIndexes: spreadsheetTextCols,
                 columnNumFmts: spreadsheetColumnNumFmts,
                 columnAligns: spreadsheetColumnAligns,
+                columnWidths: spreadsheetColumnWidths,
                 sheetName: spreadsheetSheetName,
                 reportTitle: typeof spreadsheetReportTitle === "function"
                   ? spreadsheetReportTitle()
@@ -241,7 +254,11 @@ export default function ListExportButtons({
                 blankAfterMeta: spreadsheetBlankAfterMeta,
                 autoFilter: spreadsheetAutoFilter,
                 plainHeader: spreadsheetPlainHeader,
+                headerWrapText: spreadsheetHeaderWrapText,
+                footerRowCount: spreadsheetFooterRowCount,
                 groupedTableHeader: spreadsheetGroupedTableHeader,
+                rowMeta: spreadsheetRowMeta,
+                currencyAsNumber: spreadsheetCurrencyAsNumber,
               });
             }}
           />
@@ -261,6 +278,7 @@ export default function ListExportButtons({
                 alignRightCols,
                 fazendaNome,
                 groupByCol,
+                rowMeta: pdfRowMeta ?? (pdfRows == null ? spreadsheetRowMeta : undefined),
                 landscape: pdfLandscape ?? landscape,
                 currencyColIndexes: spreadsheetCurrencyCols,
                 integerColIndexes: spreadsheetIntegerCols,

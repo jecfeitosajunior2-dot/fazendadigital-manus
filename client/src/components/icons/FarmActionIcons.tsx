@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Ban, CircleCheck, Eye, SquarePen, Trash2, Undo2 } from "lucide-react";
+import { Ban, CircleCheck, Eye, Plus, SquarePen, Trash2, Undo2 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 export const FD_EDIT_ACTION_COLOR = "#586168";
@@ -24,6 +24,19 @@ export function ViewActionIcon({ size = 17, className = "", style }: IconProps) 
       strokeWidth={ICON_STROKE}
       className={cn("shrink-0 text-inherit", className)}
       style={style}
+      aria-hidden
+    />
+  );
+}
+
+/** Nova entrada / adicionar — ícone discreto para tabelas */
+export function AddActionIcon({ size = 17, className = "", style }: IconProps) {
+  return (
+    <Plus
+      size={size}
+      strokeWidth={ICON_STROKE}
+      className={cn("shrink-0 text-inherit", className)}
+      style={{ color: FD_EDIT_ACTION_COLOR, ...style }}
       aria-hidden
     />
   );

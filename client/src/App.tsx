@@ -56,8 +56,10 @@ import InsumosHistoricoMovimentacaoPage from "./pages/InsumosHistoricoMovimentac
 import ManutencaoListPage from "./pages/ManutencaoListPage";
 import ManutencaoFormPage from "./pages/ManutencaoFormPage";
 import SemenEstoquePage from "./pages/SemenEstoquePage";
+import SemenUtilizadoPage from "./pages/SemenUtilizadoPage";
 import SemenEntradaResumoPage from "./pages/SemenEntradaResumoPage";
 import { MANEJO_REPRODUTIVO_PATH } from "./const";
+import { SEMEN_CADASTRO_PATH, SEMEN_UTILIZADO_PATH } from "./lib/semenRoutes";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -133,11 +135,14 @@ function ProtectedRoutes() {
       <Route path="/maquinas/manutencao/cadastro" component={ManutencaoFormPage} />
       <Route path="/maquinas/manutencao" component={ManutencaoListPage} />
 
-      {/* Reprodução — estoque de sêmen V1 */}
+      {/* Reprodução — Sêmen utilizado (Fase 1). Rotas antigas de estoque ficam fora do menu. */}
+      <Route path="/reproducao/semen-utilizado/:key" component={SemenUtilizadoPage} />
+      <Route path="/reproducao/semen-utilizado" component={SemenUtilizadoPage} />
+      <Route path={SEMEN_CADASTRO_PATH} component={() => <Redirect to={SEMEN_UTILIZADO_PATH} replace />} />
       <Route path="/reproducao/estoque-semen/entrada/:movimentacaoId" component={SemenEntradaResumoPage} />
       <Route path="/reproducao/estoque-semen/:id" component={SemenEstoquePage} />
-      <Route path="/reproducao/estoque-semen" component={SemenEstoquePage} />
-      <Route path="/reproducao/semen" component={() => <RedirectTo to="/reproducao/estoque-semen" />} />
+      <Route path="/reproducao/estoque-semen" component={() => <RedirectTo to="/reproducao/semen-utilizado" />} />
+      <Route path="/reproducao/semen" component={() => <RedirectTo to="/reproducao/semen-utilizado" />} />
 
       {/* Reprodução legada — redireciona para Manejo → Reprodutivo */}
       <Route path="/reproducao" component={RedirectReproducaoLegado} />

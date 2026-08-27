@@ -1,6 +1,11 @@
 import type { CoberturaAlvoPersistido } from "./reproCoberturaAlvo";
 import { formatCoberturaAlvoDetalhes } from "./reproCoberturaAlvo";
 import { formatReproEccDisplay } from "./reproInseminacao";
+import {
+  resolveReproReprodutorDisplay,
+  SEMEN_REPRODUTOR_NAO_INFORMADO_LABEL,
+} from "./reproReprodutorDisplay";
+import { normalizeSemenPartida, SEMEN_PARTIDA_SEM_LOTE } from "./semenEstoque";
 
 const META_PREFIX = "\n__fd_repro__";
 const META_SUFFIX = "__end__";
@@ -279,6 +284,7 @@ export type ReproObservacoesMeta = {
   ecc: number | null;
   semenPartidaId: number | null;
   custoDoseSemen: number | null;
+  centralOrigem: string | null;
 };
 
 export type ReproObservacoesExtras = {
@@ -287,6 +293,7 @@ export type ReproObservacoesExtras = {
   ecc?: number | null;
   semenPartidaId?: number | null;
   custoDoseSemen?: number | null;
+  centralOrigem?: string | null;
 };
 
 /** Converte data do registro para valor de input type="date". */
@@ -330,10 +337,18 @@ export function packReproObservacoes(
   extras?: ReproObservacoesExtras | null,
 ): string | undefined {
   const obsTrim = observacoes?.trim() || "";
-  const reprodutor = reprodutorSemen?.trim() || undefined;
   const resp = responsavel?.trim() || undefined;
   const descResOutro = descricaoResultadoOutro?.trim() || undefined;
   const partidaSemen = extras?.partidaSemen?.trim() || undefined;
+  let reprodutor = reprodutorSemen?.trim() || undefined;
+  if (
+    reprodutor &&
+    partidaSemen &&
+    normalizeSemenPartida(partidaSemen) !== SEMEN_PARTIDA_SEM_LOTE &&
+    normalizeSemenPartida(reprodutor) === normalizeSemenPartida(partidaSemen)
+  ) {
+    reprodutor = undefined;
+  }
   const inseminador = extras?.inseminador?.trim() || undefined;
   const ecc =
     extras?.ecc != null && Number.isFinite(extras.ecc) ? extras.ecc : undefined;
@@ -342,9 +357,12 @@ export function packReproObservacoes(
       ? extras.semenPartidaId
       : undefined;
   const custoDoseSemen =
-    extras?.custoDoseSemen != null && Number.isFinite(extras.custoDoseSemen)
+    extras?.custoDoseSemen != null &&
+    Number.isFinite(extras.custoDoseSemen) &&
+    extras.custoDoseSemen > 0
       ? extras.custoDoseSemen
       : undefined;
+  const centralOrigem = extras?.centralOrigem?.trim() || undefined;
   const hasCoberturaAlvo = Boolean(
     (coberturaAlvo?.animalIds?.length ?? 0) > 0 || coberturaAlvo?.tipo,
   );
@@ -357,7 +375,8 @@ export function packReproObservacoes(
     inseminador ||
     ecc != null ||
     semenPartidaId != null ||
-    custoDoseSemen != null;
+    custoDoseSemen != null ||
+    centralOrigem;
   if (!hasMeta && !obsTrim) return undefined;
   if (!hasMeta) return obsTrim;
   const metaPayload: Record<string, unknown> = { r: reprodutor, p: resp, o: descResOutro };
@@ -366,6 +385,7 @@ export function packReproObservacoes(
   if (ecc != null) metaPayload.e = ecc;
   if (semenPartidaId != null) metaPayload.spi = semenPartidaId;
   if (custoDoseSemen != null) metaPayload.cds = custoDoseSemen;
+  if (centralOrigem) metaPayload.co = centralOrigem;
   if (hasCoberturaAlvo && coberturaAlvo) {
     metaPayload.csm = coberturaAlvo.selectionMode;
     metaPayload.caids = coberturaAlvo.animalIds;
@@ -523,12 +543,25 @@ export function getReproDetalhesTabelaHeader(): string {
 /** Linhas de detalhe para Inseminação (histórico). */
 export function formatInseminacaoDetalhesParts(
   meta: ReproObservacoesMeta,
-  reg: { dataPrevistoParto?: Date | string | null },
+  reg: { dataPrevistoParto?: Date | string | null; machoId?: number | null },
   formatDate?: (value: Date | string) => string,
+  ctx?: {
+    macho?: { brinco?: string | null; nome?: string | null } | null;
+    cadastro?: { reprodutorTexto?: string | null; reprodutorKey?: string | null } | null;
+  },
 ): string[] {
   const parts: string[] = [];
-  if (meta.reprodutorSemen) parts.push(`Reprodutor: ${meta.reprodutorSemen}`);
+  const resolved = resolveReproReprodutorDisplay({
+    machoId: reg.machoId,
+    reprodutorSemen: meta.reprodutorSemen,
+    partidaSemen: meta.partidaSemen,
+    macho: ctx?.macho,
+    cadastro: ctx?.cadastro,
+  });
+  const reprodutorLabel = resolved.reprodutorDisplay || SEMEN_REPRODUTOR_NAO_INFORMADO_LABEL;
+  parts.push(`Reprodutor: ${reprodutorLabel}`);
   if (meta.partidaSemen) parts.push(`Partida: ${meta.partidaSemen}`);
+  if (meta.centralOrigem) parts.push(`Central: ${meta.centralOrigem}`);
   if (meta.custoDoseSemen != null) {
     parts.push(
       `Custo da dose: ${meta.custoDoseSemen.toLocaleString("pt-BR", {
@@ -553,9 +586,14 @@ export function formatReproDetalhesTabela(
     tipo?: string | null;
     dataPrevistoParto?: Date | string | null;
     crias?: ReproPartoCriaDetalhe[];
+    machoId?: number | null;
   },
   meta: ReproObservacoesMeta,
   formatDate?: (value: Date | string) => string,
+  ctx?: {
+    macho?: { brinco?: string | null; nome?: string | null } | null;
+    cadastro?: { reprodutorTexto?: string | null; reprodutorKey?: string | null } | null;
+  },
 ): string {
   const parts: string[] = [];
   const tipo = (reg.tipo ?? "").trim();
@@ -563,7 +601,7 @@ export function formatReproDetalhesTabela(
   if (coberturaDetalhe) {
     parts.push(coberturaDetalhe);
   } else if (tipo === "Inseminação") {
-    parts.push(...formatInseminacaoDetalhesParts(meta, reg, formatDate));
+    parts.push(...formatInseminacaoDetalhesParts(meta, reg, formatDate, ctx));
   } else if (meta.reprodutorSemen) {
     parts.push(meta.reprodutorSemen);
   }
@@ -593,6 +631,7 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
     ecc: null,
     semenPartidaId: null,
     custoDoseSemen: null,
+    centralOrigem: null,
   };
   if (!raw) return empty;
   const idx = raw.indexOf(META_PREFIX);
@@ -615,6 +654,9 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
       ps?: string;
       i?: string;
       e?: number;
+      spi?: number;
+      cds?: number;
+      co?: string;
       cat?: string;
       csm?: string;
       cai?: number;
@@ -671,6 +713,7 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
         meta.spi != null && Number.isFinite(meta.spi) && meta.spi > 0 ? meta.spi : null,
       custoDoseSemen:
         meta.cds != null && Number.isFinite(meta.cds) && meta.cds > 0 ? meta.cds : null,
+      centralOrigem: meta.co?.trim() || null,
     };
   } catch {
     const trimmed = raw.trim();

@@ -1,13 +1,25 @@
 import {
   filterAnimalAutocompleteCandidates,
   shouldClearAutocompleteSelection,
+  shouldShowAnimalAutocompleteDropdown,
   type AnimalAutocompleteRow,
 } from "@shared/animalAutocomplete";
 import {
   labelAnimalBusca,
+  labelSexoAnimal,
+  sexoDotClassName,
   subtituloAnimalBusca,
+  withSexoNoSubtitulo,
 } from "@shared/animalBuscaDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+function SexoBolinha({ sexo }: { sexo?: string | null }) {
+  const cls = sexoDotClassName(sexo);
+  if (!cls) return null;
+  return (
+    <span className={`w-2 h-2 rounded-full shrink-0 ${cls}`} aria-hidden />
+  );
+}
 
 const defaultInputCls =
   "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
@@ -68,7 +80,11 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
     [animals, search, limit, filterCandidate],
   );
 
-  const dropdownVisible = open && !disabled && search.trim().length >= 1 && !selected;
+  const dropdownVisible = shouldShowAnimalAutocompleteDropdown({
+    open,
+    disabled,
+    selected,
+  });
 
   useEffect(() => {
     if (!dropdownVisible) setHighlightIndex(0);
@@ -113,6 +129,10 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!dropdownVisible) {
       if (e.key === "Escape") setOpen(false);
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !disabled) {
+        e.preventDefault();
+        setOpen(true);
+      }
       return;
     }
 
@@ -149,7 +169,12 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
           </label>
         ) : null}
         <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="text-[12px] font-semibold text-gray-800">{getOptionLabel(selected)}</span>
+          <span className="inline-flex items-center gap-1.5 min-w-0">
+            <SexoBolinha sexo={selected.sexo} />
+            <span className="text-[12px] font-semibold text-gray-800 truncate">
+              {getOptionLabel(selected)}
+            </span>
+          </span>
           <button
             type="button"
             onClick={handleClear}
@@ -195,25 +220,41 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
           ) : options.length === 0 ? (
             <li className="px-3 py-2.5 text-[11px] text-gray-400">{emptyMessage}</li>
           ) : (
-            options.map((a, index) => (
-              <li key={a.id} role="option" aria-selected={index === highlightIndex}>
-                <button
-                  type="button"
-                  onMouseEnter={() => setHighlightIndex(index)}
-                  onClick={() => handlePick(a)}
-                  className={`w-full text-left px-3 py-2.5 transition border-b border-gray-50 last:border-0 ${
-                    index === highlightIndex
-                      ? "bg-[#4ECDC4]/[0.12]"
-                      : "hover:bg-[#4ECDC4]/[0.08]"
-                  }`}
-                >
-                  <div className="text-[13px] font-semibold text-gray-900">{getOptionLabel(a)}</div>
-                  {getOptionSubtitle(a) ? (
-                    <div className="text-[11px] text-gray-500">{getOptionSubtitle(a)}</div>
-                  ) : null}
-                </button>
-              </li>
-            ))
+            options.map((a, index) => {
+              const titulo = getOptionLabel(a);
+              const sexoLabel = labelSexoAnimal(a.sexo);
+              const temBolinha = Boolean(sexoDotClassName(a.sexo));
+              const subtitle = withSexoNoSubtitulo(a.sexo, getOptionSubtitle(a) ?? "");
+              return (
+                <li key={a.id} role="option" aria-selected={index === highlightIndex}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHighlightIndex(index)}
+                    onClick={() => handlePick(a)}
+                    aria-label={sexoLabel ? `${titulo} — ${sexoLabel}` : titulo}
+                    className={`w-full text-left px-3 py-2.5 transition border-b border-gray-50 last:border-0 ${
+                      index === highlightIndex
+                        ? "bg-[#4ECDC4]/[0.12]"
+                        : "hover:bg-[#4ECDC4]/[0.08]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <SexoBolinha sexo={a.sexo} />
+                      <span className="text-[13px] font-semibold text-gray-900 truncate">
+                        {titulo}
+                      </span>
+                    </div>
+                    {subtitle ? (
+                      <div
+                        className={`text-[11px] text-gray-500 ${temBolinha ? "pl-3.5" : ""}`}
+                      >
+                        {subtitle}
+                      </div>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })
           )}
         </ul>
       ) : null}

@@ -95,6 +95,8 @@ export type ExportPdfOptions = {
   skipSubtitle?: boolean;
   /** Exibe "X registros encontrados" (padrão: true, exceto skipSubtitle). */
   showRegistrosSubtitle?: boolean;
+  /** Estilo por linha (ex.: faixa de dia com Custo total). */
+  rowMeta?: ExportSpreadsheetRowMeta[];
 };
 
 function buildPdfReportSubtitleLines(
@@ -499,10 +501,20 @@ export async function exportListPdf(
       });
     };
 
+    const columnAligns = options?.columnAligns;
+    const allColumnsCentered =
+      Array.isArray(columnAligns) &&
+      columnAligns.length >= columnCount &&
+      columnAligns.slice(0, columnCount).every(align => align === "center");
+
     const columnStyles = Array.from({ length: columnCount }, (_, i) => i).reduce<
       Record<number, { halign: "left" | "center" | "right" }>
     >((acc, i) => {
-      acc[i] = { halign: pdfCellAlign(i, alignOpts) as "left" | "center" | "right" };
+      acc[i] = {
+        halign: allColumnsCentered
+          ? "center"
+          : (pdfCellAlign(i, alignOpts) as "left" | "center" | "right"),
+      };
       return acc;
     }, {});
 
@@ -519,6 +531,7 @@ export async function exportListPdf(
         minCellHeight: 5,
         overflow: "linebreak",
         valign: "middle",
+        ...(allColumnsCentered ? { halign: "center" as const } : {}),
         textColor: [34, 34, 34],
         lineColor: [232, 237, 237],
         lineWidth: 0.1,
@@ -532,9 +545,19 @@ export async function exportListPdf(
       alternateRowStyles: { fillColor: [247, 250, 250] },
       columnStyles,
       didParseCell: hookData => {
+        if (allColumnsCentered) {
+          hookData.cell.styles.halign = "center";
+          hookData.cell.styles.valign = "middle";
+        }
         if (hookData.section !== "body") return;
         const raw = rows[hookData.row.index];
-        if (!raw || !isTotaisRow(raw)) return;
+        if (!raw) return;
+        if (options?.rowMeta?.[hookData.row.index]?.section) {
+          hookData.cell.styles.fontStyle = "bold";
+          hookData.cell.styles.fillColor = [238, 241, 242];
+          return;
+        }
+        if (!isTotaisRow(raw)) return;
         hookData.cell.styles.fontStyle = "bold";
         hookData.cell.styles.fillColor = [243, 244, 246];
       },

@@ -538,7 +538,21 @@ export const semenPartidas = mysqlTable("semen_partidas", {
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
 
-/** Movimentações de sêmen (V1: apenas ENTRADA). */
+/** Cadastro reutilizável de reprodutor/sêmen externo — identidade sem partida/estoque. */
+export const semenReprodutoresExternos = mysqlTable("semen_reprodutores_externos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  fazendaId: int("fazenda_id").notNull(),
+  reprodutorKey: varchar("reprodutor_key", { length: 120 }).notNull(),
+  reprodutorTexto: varchar("reprodutor_texto", { length: 500 }).notNull(),
+  centralPadrao: varchar("central_padrao", { length: 150 }),
+  observacoes: text("observacoes"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+});
+
+/** Movimentações de sêmen (ENTRADA, SAIDA_IA, ESTORNO_ENTRADA, AJUSTE_ESTOQUE). */
 export const semenMovimentacoes = mysqlTable("semen_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),
   partidaId: int("partida_id").notNull(),
@@ -550,6 +564,12 @@ export const semenMovimentacoes = mysqlTable("semen_movimentacoes", {
   custoTotal: decimal("custo_total", { precision: 12, scale: 2 }).notNull(),
   custoUnitario: decimal("custo_unitario", { precision: 12, scale: 2 }).notNull(),
   observacoes: text("observacoes"),
+  /** Vínculo auditável: estorno e nova entrada apontam para a ENTRADA original. */
+  movimentacaoOrigemId: int("movimentacao_origem_id"),
+  /** Agrupa original (via origem) + estorno + nova entrada da mesma correção. */
+  grupoCorrecaoId: varchar("grupo_correcao_id", { length: 40 }),
+  /** Motivo humano da correção (persistido no estorno). */
+  motivoCorrecao: varchar("motivo_correcao", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

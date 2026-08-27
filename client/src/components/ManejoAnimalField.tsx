@@ -1,7 +1,9 @@
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import {
   labelAnimalSelecionado,
+  labelSexoAnimal,
   loteAnimalSelecionado,
+  sexoDotClassName,
 } from "@shared/animalBuscaDisplay";
 
 const fieldCls =
@@ -25,12 +27,6 @@ export type ManejoAnimalRow = {
   dataNascimento?: string | null;
   ultimoPeso?: number | null;
 };
-
-function sexoDotClass(sexo?: string | null) {
-  if (sexo === "macho") return "bg-blue-400";
-  if (sexo === "femea") return "bg-pink-400";
-  return "bg-gray-300";
-}
 
 type ManejoAnimalFieldProps<T extends ManejoAnimalRow> = {
   selected: T | null;
@@ -71,24 +67,22 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
           hintMessage ??
           (disabled
             ? "Selecione uma Fazenda primeiro."
-            : "Digite e selecione um animal da lista.")
+            : "Clique para ver animais ou digite para filtrar.")
         }
-        renderSelected={(a, onClear) => (
+        renderSelected={(a, onClear) => {
+          const sexoDot = sexoDotClassName(a.sexo);
+          return (
           <div className="rounded-lg border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-[12px] text-gray-600">
                 <span className="inline-flex items-center gap-1.5 shrink-0">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${sexoDotClass(a.sexo)}`}
-                    title={
-                      a.sexo === "macho"
-                        ? "Macho"
-                        : a.sexo === "femea"
-                          ? "Fêmea"
-                          : undefined
-                    }
-                    aria-hidden
-                  />
+                  {sexoDot ? (
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${sexoDot}`}
+                      title={labelSexoAnimal(a.sexo) ?? undefined}
+                      aria-hidden
+                    />
+                  ) : null}
                   <span className="text-[13px] font-semibold text-gray-900">
                     {labelAnimalSelecionado(a)}
                   </span>
@@ -138,7 +132,8 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
               </button>
             </div>
           </div>
-        )}
+          );
+        }}
       />
     </div>
   );

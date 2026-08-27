@@ -1,4 +1,7 @@
 export const SEMEN_ESTOQUE_PATH = "/reproducao/estoque-semen";
+export const SEMEN_UTILIZADO_PATH = "/reproducao/semen-utilizado";
+/** Rota antiga do cadastro — redireciona para Sêmen utilizado. */
+export const SEMEN_CADASTRO_PATH = "/reproducao/cadastro-semen";
 
 export function isValidSemenMovimentacaoId(id: unknown): id is number {
   return typeof id === "number" && Number.isFinite(id) && id > 0;
@@ -19,4 +22,12 @@ export function parseSemenMovimentacaoIdFromRoute(raw: string | undefined): numb
 
 export function semenPartidaDetalhePath(partidaId: number): string {
   return `${SEMEN_ESTOQUE_PATH}/${partidaId}`;
+}
+
+export function encodeSemenUtilizadoRouteKey(key: string): string {
+  return encodeURIComponent(key);
+}
+
+export function semenUtilizadoDetalhePath(key: string): string {
+  return `${SEMEN_UTILIZADO_PATH}/${encodeSemenUtilizadoRouteKey(key)}`;
 }

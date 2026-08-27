@@ -28,9 +28,10 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAt05Reader } from "@/hooks/useAt05Reader";
+import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateBR } from "@/lib/date-utils";
 import { shouldLoadSemenPartidasParaInseminacao } from "@/lib/semenInseminacaoQuery";
-import { invalidateSemenQueriesAfterConsumo } from "@/lib/invalidateSemenAfterConsumo";
+import { invalidateSemenQueriesAfterConsumo, invalidateSemenUtilizadoQueries } from "@/lib/invalidateSemenAfterConsumo";
 import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { sortPesagensDesc } from "@/lib/fichaAnimalDisplay";
 import {
@@ -68,12 +69,18 @@ import {
   MSG_REPRO_INELEGIVEL,
 } from "@shared/reproElegibilidade";
 import { buildReproReprodutorPayload } from "@shared/reproReprodutorPersist";
-import { validateReproEcc, sanitizeReproEccInputString } from "@shared/reproInseminacao";
+import {
+  custoDoseInseminacaoExternaInformado,
+  sanitizeReproEccInputString,
+  validateReproCustoDoseInseminacaoExterna,
+  validateReproEcc,
+} from "@shared/reproInseminacao";
 import {
   formatSemenCustoTotalDisplay,
-  formatSemenPartidaInseminacaoOptionLabel,
+  parseSemenCustoTotal,
   SEMEN_ORIGEM_EXTERNO,
   SEMEN_ORIGEM_INTERNO,
+  tryBuildSemenReprodutorKeyExterno,
 } from "@shared/semenEstoque";
 import {
   filterMachosReprodutoresCandidatos,
@@ -86,7 +93,10 @@ import {
   subtituloMachoReprodutor,
 } from "@shared/animalBuscaDisplay";
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
-import { FormDatePicker, FormLabel } from "@/components/FormFields";
+import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExternoField";
+import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
+import { FormDatePicker, FormInput, FormLabel } from "@/components/FormFields";
+import { formatCurrencyBrl } from "@/lib/utils";
 import { ManejoAnimalField } from "@/components/ManejoAnimalField";
 import {
   MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
@@ -1916,9 +1926,13 @@ function ManejoReprodutivoForm() {
   const [observacoes, setObservacoes] = useState("");
   const [partidaSemen, setPartidaSemen] = useState("");
   const [semenPartidaId, setSemenPartidaId] = useState<number | null>(null);
+  const [centralOrigemSemen, setCentralOrigemSemen] = useState("");
+  const [custoDoseSemen, setCustoDoseSemen] = useState("");
   const [inseminador, setInseminador] = useState("");
   const [eccMatriz, setEccMatriz] = useState("");
   const [erroEcc, setErroEcc] = useState("");
+  const [erroCustoDose, setErroCustoDose] = useState("");
+  const [cadastrarSemenAberto, setCadastrarSemenAberto] = useState(false);
   const [erroFazenda, setErroFazenda] = useState("");
   const [erroResultado, setErroResultado] = useState("");
   const [erroDescricaoOutro, setErroDescricaoOutro] = useState("");
@@ -1989,13 +2003,27 @@ function ManejoReprodutivoForm() {
     isDadosCobertura || (isDadosInseminacao && reprodutorOrigem === "interno");
   const reprodutorModoExterno = isDadosInseminacao && reprodutorOrigem === "externo";
   const machoIdReproInseminacao = machoSel ? resolveMachoIdFromSelecao(machoSel) : null;
+  const reprodutorSemenDebounced = useDebounce(reprodutorSemen, 300);
+  const reprodutorKeyExterno = useMemo(
+    () =>
+      reprodutorOrigem === "externo"
+        ? tryBuildSemenReprodutorKeyExterno(reprodutorSemenDebounced)
+        : null,
+    [reprodutorOrigem, reprodutorSemenDebounced],
+  );
+
+  const { data: reprodutoresExternosCatalogo = [], isFetching: carregandoReprodutoresExternos } =
+    trpc.semen.listCatalogoExternos.useQuery(
+      { fazendaId: fazendaNum },
+      { enabled: isDadosInseminacao && reprodutorOrigem === "externo" && fazendaNum > 0 },
+    );
 
   const partidasSemenQueryEnabled = shouldLoadSemenPartidasParaInseminacao({
     tipoReprodutivo,
     fazendaId: fazendaNum,
     origemReprodutor: reprodutorOrigem,
     machoId: machoIdReproInseminacao,
-    reprodutorTextoExterno: reprodutorSemen,
+    reprodutorKeyExterno,
   });
 
   const { data: partidasSemenDisponiveis = [], isFetching: carregandoPartidasSemen } =
@@ -2006,8 +2034,9 @@ function ManejoReprodutivoForm() {
           reprodutorOrigem === "interno" ? SEMEN_ORIGEM_INTERNO : SEMEN_ORIGEM_EXTERNO,
         machoId:
           reprodutorOrigem === "interno" ? machoIdReproInseminacao ?? undefined : undefined,
+        reprodutorKey: reprodutorOrigem === "externo" ? reprodutorKeyExterno ?? undefined : undefined,
         reprodutorTexto:
-          reprodutorOrigem === "externo" ? reprodutorSemen.trim() : undefined,
+          reprodutorOrigem === "externo" ? reprodutorSemenDebounced.trim() : undefined,
       },
       { enabled: partidasSemenQueryEnabled },
     );
@@ -2135,9 +2164,12 @@ function ManejoReprodutivoForm() {
     setObservacoes("");
     setPartidaSemen("");
     setSemenPartidaId(null);
+    setCentralOrigemSemen("");
+    setCustoDoseSemen("");
     setInseminador("");
     setEccMatriz("");
     setErroEcc("");
+    setErroCustoDose("");
     setErroResultado("");
     setErroDescricaoOutro("");
     setErroDescricaoResultadoOutro("");
@@ -2153,7 +2185,21 @@ function ManejoReprodutivoForm() {
     void trpcUtils.animais.list.invalidate();
     void trpcUtils.dashboard.stats.invalidate();
     void trpcUtils.pesagens.list.invalidate();
+    void invalidateSemenUtilizadoQueries(trpcUtils);
+    void trpcUtils.semen.listCatalogoExternos.invalidate();
   }, [trpcUtils]);
+
+  const aplicarReprodutorExternoCatalogo = useCallback(
+    (item: { reprodutorTexto: string; centralPadrao: string | null }) => {
+      setReprodutorSemen(item.reprodutorTexto);
+      setSemenPartidaId(null);
+      setPartidaSemen("");
+      setCentralOrigemSemen(item.centralPadrao ?? "");
+      setCustoDoseSemen("");
+      setErroCustoDose("");
+    },
+    [],
+  );
 
   const saveMutation = trpc.reproducao.create.useMutation({
     onSuccess: async (_data, variables) => {
@@ -2289,7 +2335,10 @@ function ManejoReprodutivoForm() {
     setMachoSel(a);
     setSemenPartidaId(null);
     setPartidaSemen("");
+    setCentralOrigemSemen("");
+    setCustoDoseSemen("");
     setErroMacho("");
+    setErroCustoDose("");
   }, []);
 
   const onChangeTipo = (newTipo: string) => {
@@ -2315,7 +2364,10 @@ function ManejoReprodutivoForm() {
     setReprodutorSemen("");
     setSemenPartidaId(null);
     setPartidaSemen("");
+    setCentralOrigemSemen("");
+    setCustoDoseSemen("");
     setErroMacho("");
+    setErroCustoDose("");
   };
 
   const onChangeResultado = (v: string) => {
@@ -2520,6 +2572,17 @@ function ManejoReprodutivoForm() {
       return;
     }
 
+    if (reprodutorModoExterno) {
+      const validacaoCusto = validateReproCustoDoseInseminacaoExterna(
+        parseSemenCustoTotal(custoDoseSemen),
+      );
+      if (!validacaoCusto.ok) {
+        setErroCustoDose(validacaoCusto.message);
+        toast.error(validacaoCusto.message);
+        return;
+      }
+    }
+
     let eccPersistido: number | undefined;
     if (isDadosInseminacao && eccMatriz.trim()) {
       const validacaoEcc = validateReproEcc(eccMatriz);
@@ -2682,10 +2745,14 @@ function ManejoReprodutivoForm() {
         : undefined,
       observacoes: observacoes.trim() || undefined,
       partidaSemen: isDadosInseminacao
-        ? partidaSemenSelecionada?.partida ?? undefined
+        ? partidaSemenSelecionada?.partida ?? (partidaSemen.trim() || undefined)
         : undefined,
       semenPartidaId:
         isDadosInseminacao && semenPartidaId != null ? semenPartidaId : undefined,
+      custoDoseSemen: isDadosInseminacao
+        ? parseSemenCustoTotal(custoDoseSemen) ?? undefined
+        : undefined,
+      centralOrigem: isDadosInseminacao ? centralOrigemSemen.trim() || undefined : undefined,
       inseminador: isDadosInseminacao ? inseminador.trim() || undefined : undefined,
       ecc: eccPersistido,
       dataPrevistoParto:
@@ -2728,20 +2795,17 @@ function ManejoReprodutivoForm() {
   const reprodutorExternoCompleto =
     !showReprodutorFemea || !reprodutorModoExterno || Boolean(reprodutorSemen.trim());
 
-  const inseminacaoEstoqueCompleto = (() => {
-    if (!isDadosInseminacao || !showReprodutorFemea || !reprodutorOrigem) return true;
-    if (!partidasSemenQueryEnabled) return true;
-    if (carregandoPartidasSemen) return false;
-    if (partidasSemenDisponiveis.length === 0) return false;
-    return Boolean(semenPartidaId);
-  })();
+  const custoDoseExternoCompleto = custoDoseInseminacaoExternaInformado(
+    reprodutorModoExterno,
+    custoDoseSemen,
+  );
 
   const podeSalvar =
     Boolean(animalId && animalSel && tipoReprodutivo && data) &&
     coberturaAlvoCompleto &&
     reprodutorInternoCompleto &&
     reprodutorExternoCompleto &&
-    inseminacaoEstoqueCompleto &&
+    custoDoseExternoCompleto &&
     (!exigeResultado || Boolean(resultado.trim())) &&
     (!showDescricaoOutro || Boolean(descricaoOutro.trim())) &&
     (!showDescricaoResultadoOutro || Boolean(descricaoResultadoOutro.trim())) &&
@@ -2910,7 +2974,7 @@ function ManejoReprodutivoForm() {
                           hintMessage={
                             erroMacho
                               ? undefined
-                              : "Digite e selecione um touro da lista. Somente machos ativos e elegíveis desta fazenda."
+                              : "Clique para ver touros ou digite para filtrar. Somente machos ativos e elegíveis desta fazenda."
                           }
                           filterCandidate={filterMachoReprodutor}
                           getOptionSubtitle={subtituloMachoReprodutor}
@@ -2918,54 +2982,38 @@ function ManejoReprodutivoForm() {
                       ) : null}
 
                       {reprodutorModoExterno ? (
-                        <div>
-                          <label className={labelCls}>
-                            Reprodutor / Sêmen<span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={reprodutorSemen}
-                            onChange={e => {
-                              setReprodutorSemen(e.target.value);
-                              setSemenPartidaId(null);
-                              setPartidaSemen("");
-                            }}
-                            placeholder="Ex.: GSC-7117 ou REM Armador"
-                            className={fieldCls}
-                            maxLength={500}
-                          />
-                        </div>
+                        <SemenReprodutorExternoField
+                          value={reprodutorSemen}
+                          onChange={texto => {
+                            setReprodutorSemen(texto);
+                            setSemenPartidaId(null);
+                            setPartidaSemen("");
+                            setCentralOrigemSemen("");
+                            setCustoDoseSemen("");
+                          }}
+                          onSelect={aplicarReprodutorExternoCatalogo}
+                          onCadastrarNovo={() => setCadastrarSemenAberto(true)}
+                          options={reprodutoresExternosCatalogo}
+                          disabled={!fazendaNum}
+                          loading={carregandoReprodutoresExternos}
+                          inputClassName={fieldCls}
+                          labelClassName={labelCls}
+                        />
                       ) : null}
 
                       {isDadosInseminacao && reprodutorOrigem ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="sm:col-span-2">
-                            <label className={labelCls}>
-                              Partida / lote do sêmen<span className="text-red-500">*</span>
-                            </label>
-                            {!partidasSemenQueryEnabled ? (
-                              <p className="text-[11px] text-gray-500 mt-1">
-                                Selecione o reprodutor para consultar o estoque.
-                              </p>
-                            ) : carregandoPartidasSemen ? (
-                              <p className="text-[11px] text-gray-500 mt-1">
-                                Consultando partidas disponíveis…
-                              </p>
-                            ) : partidasSemenDisponiveis.length === 0 ? (
-                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-2">
-                                <p className="text-[12px] text-amber-800">
-                                  Nenhuma dose disponível para este reprodutor.
+                          {partidasSemenQueryEnabled && partidasSemenDisponiveis.length > 0 ? (
+                            <div className="sm:col-span-2">
+                              <label className={labelCls}>
+                                Partida cadastrada
+                                <span className="text-gray-400 font-normal"> (opcional)</span>
+                              </label>
+                              {carregandoPartidasSemen ? (
+                                <p className="text-[11px] text-gray-500 mt-1">
+                                  Consultando cadastros conhecidos…
                                 </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setLocation("/reproducao/estoque-semen")}
-                                  className="text-[12px] font-semibold text-amber-900 underline underline-offset-2"
-                                >
-                                  Cadastrar entrada de sêmen
-                                </button>
-                              </div>
-                            ) : (
-                              <>
+                              ) : (
                                 <FormDownSelect
                                   value={semenPartidaId != null ? String(semenPartidaId) : ""}
                                   onChange={v => {
@@ -2973,46 +3021,80 @@ function ManejoReprodutivoForm() {
                                     setSemenPartidaId(id);
                                     const sel = partidasSemenDisponiveis.find(p => p.id === id);
                                     setPartidaSemen(sel?.partida ?? "");
+                                    setCentralOrigemSemen(sel?.centralOrigem ?? "");
+                                    setCustoDoseSemen(
+                                      sel && parseSemenCustoTotal(sel.custoUnitario) != null
+                                        ? formatSemenCustoTotalDisplay(sel.custoUnitario)
+                                        : "",
+                                    );
                                   }}
-                                  placeholder="Selecione uma partida"
+                                  placeholder="Informar sêmen manualmente"
                                   options={partidasSemenDisponiveis.map(p => ({
                                     value: String(p.id),
-                                    label: `${p.partida} — ${formatSemenPartidaInseminacaoOptionLabel({
-                                      partida: p.partida,
-                                      saldoDoses: p.saldoDoses,
-                                      custoUnitario: p.custoUnitario,
-                                      centralOrigem: p.centralOrigem,
-                                    })}`,
+                                    label: `${p.partida}${
+                                      p.centralOrigem ? ` · ${p.centralOrigem}` : ""
+                                    }`,
                                   }))}
                                 />
-                                {partidaSemenSelecionada ? (
-                                  <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-[11px] text-gray-700 space-y-1">
-                                    <p>
-                                      Saldo disponível:{" "}
-                                      <span className="font-semibold">
-                                        {partidaSemenSelecionada.saldoDoses} doses
-                                      </span>
-                                    </p>
-                                    <p>
-                                      Custo da dose:{" "}
-                                      <span className="font-semibold">
-                                        {formatSemenCustoTotalDisplay(
-                                          partidaSemenSelecionada.custoUnitario,
-                                        )}
-                                      </span>
-                                    </p>
-                                    {partidaSemenSelecionada.centralOrigem ? (
-                                      <p>
-                                        Central:{" "}
-                                        <span className="font-semibold">
-                                          {partidaSemenSelecionada.centralOrigem}
-                                        </span>
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
+                              )}
+                            </div>
+                          ) : null}
+                          <div>
+                            <label className={labelCls}>
+                              Partida / lote
+                              <span className="text-gray-400 font-normal"> (opcional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={partidaSemen}
+                              onChange={e => {
+                                setPartidaSemen(e.target.value);
+                                setSemenPartidaId(null);
+                              }}
+                              placeholder="Ex.: P-10FAZ"
+                              className={fieldCls}
+                              maxLength={120}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>
+                              Central
+                              <span className="text-gray-400 font-normal"> (opcional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={centralOrigemSemen}
+                              onChange={e => {
+                                setCentralOrigemSemen(e.target.value);
+                                setSemenPartidaId(null);
+                              }}
+                              placeholder="Ex.: Alta"
+                              className={fieldCls}
+                              maxLength={150}
+                            />
+                          </div>
+                          <div>
+                            <FormLabel required={reprodutorModoExterno}>
+                              Custo da dose (R$)
+                              {!reprodutorModoExterno ? (
+                                <span className="text-gray-400 font-normal"> (opcional)</span>
+                              ) : null}
+                            </FormLabel>
+                            <FormInput
+                              inputMode="decimal"
+                              value={custoDoseSemen}
+                              onChange={v => {
+                                const digits = v.replace(/\D/g, "");
+                                setCustoDoseSemen(digits ? formatCurrencyBrl(v) : "");
+                                if (erroCustoDose) setErroCustoDose("");
+                              }}
+                              placeholder="R$ 0,00"
+                              variant="light"
+                              invalid={Boolean(erroCustoDose)}
+                            />
+                            {erroCustoDose ? (
+                              <p className="text-[11px] text-red-600 mt-1">{erroCustoDose}</p>
+                            ) : null}
                           </div>
                           <div>
                             <label className={labelCls}>Inseminador</label>
@@ -3586,6 +3668,16 @@ function ManejoReprodutivoForm() {
           </div>
         ) : null}
       </div>
+
+      <CadastrarSemenExternoDialog
+        open={cadastrarSemenAberto}
+        onOpenChange={setCadastrarSemenAberto}
+        fazendaId={fazendaNum}
+        onCreated={item => {
+          aplicarReprodutorExternoCatalogo(item);
+          toast.success("Reprodutor selecionado.");
+        }}
+      />
 
       <Dialog open={Boolean(bloqueioNegocioMsg)}>
         <DialogContent

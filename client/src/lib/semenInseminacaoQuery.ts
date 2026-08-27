@@ -3,7 +3,7 @@ export type ShouldLoadSemenPartidasInput = {
   fazendaId: number;
   origemReprodutor: "" | "interno" | "externo";
   machoId?: number | null;
-  reprodutorTextoExterno?: string | null;
+  reprodutorKeyExterno?: string | null;
 };
 
 /** Condição de execução da query `semen.listDisponiveisParaInseminacao` — sempre boolean. */
@@ -21,7 +21,8 @@ export function shouldLoadSemenPartidasParaInseminacao(
   }
 
   if (input.origemReprodutor === "externo") {
-    return (input.reprodutorTextoExterno ?? "").trim().length > 0;
+    const key = (input.reprodutorKeyExterno ?? "").trim();
+    return key.startsWith("e:") && key.length > 2;
   }
 
   return false;

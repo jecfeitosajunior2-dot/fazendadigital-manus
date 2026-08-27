@@ -730,14 +730,14 @@ export default function ManutencaoListPage() {
                 disabled={!fazendaSelecionada}
                 title={
                   fazendaSelecionada
-                    ? "Nova manutenção"
+                    ? "Nova Manutenção"
                     : "Selecione uma fazenda para registrar manutenções."
                 }
                 className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 <span className="material-icons text-[16px]">add</span>
-                Nova manutenção
+                Nova Manutenção
               </button>
               <ListExportButtons
                 title={tituloQuadro}

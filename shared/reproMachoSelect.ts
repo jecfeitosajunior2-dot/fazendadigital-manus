@@ -1,4 +1,5 @@
 import {
+  compareBrincoCrescente,
   matchesAnimalAutocompleteBusca,
   resolveAnimalIdFromSelecao,
   type AnimalAutocompleteRow,
@@ -48,6 +49,7 @@ export function filterMachosReprodutoresCandidatos(
   return animais
     .filter(a => isMachoReprodutorCandidato(a, opts))
     .filter(a => (search ? matchesAnimalAutocompleteBusca(a, search) : true))
+    .sort(compareBrincoCrescente)
     .slice(0, limit);
 }
 

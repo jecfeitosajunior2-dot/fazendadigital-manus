@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   applySemenEntradaAgregacao,
   applySemenSaidaIa,
-  buildSemenReprodutorKey,
   formatSemenReprodutorDisplay,
   formatSemenStatusLabel,
   MSG_SEMEN_PARTIDA_INCOMPATIVEL,
@@ -15,12 +14,34 @@ import {
   type SemenEntradaValidada,
   type SemenOrigemReprodutor,
   type SemenPartidaDisponivelInseminacao,
+  type SemenReprodutorExternoDisponivel,
   type SemenStatus,
   validateSemenPartidaReprodutorCompat,
+  aggregateSemenReprodutoresExternosDisponiveis,
+  resolveSemenReprodutorKeyExternoConsulta,
 } from "../shared/semenEstoque";
+import { toDateOnlyISO } from "../shared/carenciaAnimal";
+import {
+  evaluateSemenCorrecaoEntrada,
+  SEMEN_CORRECAO_LINK_VAZIO,
+  validateSemenCorrecaoDados,
+  validateSemenCorrecaoMotivo,
+  withSemenCorrecaoFields,
+  type SemenCorrecaoLinkFields,
+} from "../shared/semenEstoqueLedger";
+import {
+  buildSemenAjusteMovimentacao,
+  evaluateSemenAjusteEstoque,
+  validateSemenAjusteMotivo,
+} from "../shared/semenEstoqueAjuste";
+import { randomUUID } from "node:crypto";
 import { createLocalReproducaoRegistro } from "./localFallbackStore";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import type {
+  SemenAjustarEstoqueInput,
+  SemenAjustarEstoqueResult,
+  SemenCorrigirEntradaInput,
+  SemenCorrigirEntradaResult,
   SemenEntradaResumo,
   SemenMovimentacaoRow,
   SemenPartidaDetalhe,
@@ -32,6 +53,8 @@ import type {
 } from "./semenEstoqueDb";
 import { validateSemenMachoInterno } from "./validateSemenMachoId";
 import { enrichSemenMovimentacoesDisplayLocal } from "./semenMovimentacaoEnrich";
+import { sortSemenPartidasByMovimentacoes } from "../shared/semenPartidaSort";
+import { calcularValorAtualEstoqueSemen, calcularValorAtualEstoqueSemenPorPartida } from "../shared/semenEstoqueValor";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
 const partidasFile = path.join(dataDir, "semen-partidas.json");
@@ -40,6 +63,9 @@ const movimentacoesFile = path.join(dataDir, "semen-movimentacoes.json");
 /** Transação real só é garantida no MySQL; fallback local não é atômico. */
 export const MSG_SEMEN_LOCAL_NAO_ATOMICO =
   "Modo local: persistência em arquivo JSON sem transação atômica.";
+
+type SemenMovimentacaoSeed = Omit<SemenMovimentacaoRow, keyof SemenCorrecaoLinkFields> &
+  Partial<SemenCorrecaoLinkFields>;
 
 type LocalStore = {
   partidas: SemenPartidaRow[];
@@ -69,7 +95,8 @@ async function loadStore(): Promise<LocalStore> {
   if (memoryStore) return memoryStore;
 
   const partidas = await readJsonFile<SemenPartidaRow[]>(partidasFile, []);
-  const movimentacoes = await readJsonFile<SemenMovimentacaoRow[]>(movimentacoesFile, []);
+  const movimentacoesRaw = await readJsonFile<SemenMovimentacaoSeed[]>(movimentacoesFile, []);
+  const movimentacoes = movimentacoesRaw.map(withSemenCorrecaoFields);
   const maxPartidaId = partidas.reduce((m, p) => Math.max(m, p.id), 0);
   const maxMovId = movimentacoes.reduce((m, p) => Math.max(m, p.id), 0);
 
@@ -80,6 +107,32 @@ async function loadStore(): Promise<LocalStore> {
     nextMovId: maxMovId + 1,
   };
   return memoryStore;
+}
+
+/** Resumo mínimo para enriquecer central em Sêmen utilizado (sem saldo). */
+export async function listSemenPartidasCentralLocal(
+  userId: number,
+): Promise<
+  {
+    id: number;
+    centralOrigem: string | null;
+    reprodutorTexto: string | null;
+    reprodutorKey: string | null;
+    origemReprodutor: string | null;
+    machoId: number | null;
+  }[]
+> {
+  const store = await loadStore();
+  return store.partidas
+    .filter(p => p.userId === userId)
+    .map(p => ({
+      id: p.id,
+      centralOrigem: p.centralOrigem ?? null,
+      reprodutorTexto: p.reprodutorTexto ?? null,
+      reprodutorKey: p.reprodutorKey ?? null,
+      origemReprodutor: p.origemReprodutor ?? null,
+      machoId: p.machoId ?? null,
+    }));
 }
 
 async function persistStore(store: LocalStore): Promise<void> {
@@ -98,10 +151,15 @@ export function __resetSemenLocalStoreForTests(): void {
 }
 
 /** Apenas para testes — injeta estado em memória. */
-export function __seedSemenLocalStoreForTests(seed: Partial<LocalStore>): void {
+export function __seedSemenLocalStoreForTests(seed: {
+  partidas?: SemenPartidaRow[];
+  movimentacoes?: SemenMovimentacaoSeed[];
+  nextPartidaId?: number;
+  nextMovId?: number;
+}): void {
   memoryStore = {
     partidas: seed.partidas ?? [],
-    movimentacoes: seed.movimentacoes ?? [],
+    movimentacoes: (seed.movimentacoes ?? []).map(withSemenCorrecaoFields),
     nextPartidaId: seed.nextPartidaId ?? 1,
     nextMovId: seed.nextMovId ?? 1,
   };
@@ -116,6 +174,7 @@ function enrichLocalPartida(row: SemenPartidaRow): SemenPartidaListItem {
       machoDisplay: row.origemReprodutor === SEMEN_ORIGEM_INTERNO ? row.reprodutorTexto : null,
     }),
     statusLabel: formatSemenStatusLabel(row.status as SemenStatus),
+    valorAtualEstoque: 0,
   };
 }
 
@@ -131,7 +190,7 @@ export async function listSemenPartidasLocal(
   const store = await loadStore();
   const search = input.search?.trim().toLowerCase();
 
-  return store.partidas
+  const filtradas = store.partidas
     .filter(p => p.userId === userId && p.fazendaId === input.fazendaId)
     .filter(p => {
       if (input.status && input.status !== "todos" && p.status !== input.status) return false;
@@ -141,14 +200,16 @@ export async function listSemenPartidasLocal(
         (p.reprodutorTexto ?? "").toLowerCase().includes(search) ||
         (p.centralOrigem ?? "").toLowerCase().includes(search)
       );
-    })
-    .sort((a, b) => {
-      const ua = String(a.updatedAt ?? a.createdAt ?? "");
-      const ub = String(b.updatedAt ?? b.createdAt ?? "");
-      if (ua !== ub) return ub.localeCompare(ua);
-      return b.id - a.id;
-    })
-    .map(enrichLocalPartida);
+    });
+
+  const sorted = sortSemenPartidasByMovimentacoes(filtradas, store.movimentacoes).map(enrichLocalPartida);
+  const valores = calcularValorAtualEstoqueSemenPorPartida(
+    store.movimentacoes.filter(m => m.userId === userId),
+  );
+  return sorted.map(p => ({
+    ...p,
+    valorAtualEstoque: valores.get(p.id) ?? 0,
+  }));
 }
 
 export async function listSemenPartidasDisponiveisInseminacaoLocal(
@@ -158,6 +219,7 @@ export async function listSemenPartidasDisponiveisInseminacaoLocal(
     origem: SemenOrigemReprodutor;
     machoId?: number;
     reprodutorTexto?: string;
+    reprodutorKey?: string;
   },
 ): Promise<SemenPartidaDisponivelInseminacao[]> {
   await assertFazendaDoUsuario(userId, input.fazendaId);
@@ -168,16 +230,11 @@ export async function listSemenPartidasDisponiveisInseminacaoLocal(
     const machoId = Number(input.machoId);
     if (!Number.isFinite(machoId) || machoId <= 0) return [];
   } else {
-    const reprodutorTexto = input.reprodutorTexto?.trim();
-    if (!reprodutorTexto) return [];
-    try {
-      reprodutorKey = buildSemenReprodutorKey({
-        origem: SEMEN_ORIGEM_EXTERNO,
-        reprodutorTexto,
-      });
-    } catch {
-      return [];
-    }
+    reprodutorKey = resolveSemenReprodutorKeyExternoConsulta({
+      reprodutorKey: input.reprodutorKey,
+      reprodutorTexto: input.reprodutorTexto,
+    });
+    if (!reprodutorKey) return [];
   }
 
   return store.partidas
@@ -208,6 +265,17 @@ export async function listSemenPartidasDisponiveisInseminacaoLocal(
     });
 }
 
+export async function listSemenReprodutoresExternosDisponiveisLocal(
+  userId: number,
+  fazendaId: number,
+): Promise<SemenReprodutorExternoDisponivel[]> {
+  await assertFazendaDoUsuario(userId, fazendaId);
+  const store = await loadStore();
+  return aggregateSemenReprodutoresExternosDisponiveis(
+    store.partidas.filter(p => p.userId === userId && p.fazendaId === fazendaId),
+  );
+}
+
 export async function registrarInseminacaoComSemenLocal(
   userId: number,
   params: RegistrarInseminacaoComSemenParams,
@@ -219,6 +287,7 @@ export async function registrarInseminacaoComSemenLocal(
       ecc?: number;
       semenPartidaId: number;
       custoDoseSemen: number | null;
+      centralOrigem?: string | null;
     },
   ) => string | null,
 ): Promise<RegistrarInseminacaoComSemenResult> {
@@ -255,6 +324,7 @@ export async function registrarInseminacaoComSemenLocal(
     ecc: params.ecc,
     semenPartidaId: params.semenPartidaId,
     custoDoseSemen: custoDoseSnapshot,
+    centralOrigem: partida.centralOrigem,
   });
 
   const repro = await createLocalReproducaoRegistro(userId, {
@@ -291,6 +361,7 @@ export async function registrarInseminacaoComSemenLocal(
     custoUnitario: custoUnitarioStr,
     observacoes: `Inseminação — matriz #${params.femeaId} · registro repro #${repro.id}`,
     createdAt: now as unknown as Date,
+    ...SEMEN_CORRECAO_LINK_VAZIO,
   });
 
   await persistStore(store);
@@ -314,7 +385,11 @@ export async function getSemenPartidaByIdLocal(
 
   const movimentacoes = await enrichSemenMovimentacoesDisplayLocal(userId, movimentacoesRaw);
 
-  return { ...enrichLocalPartida(row), movimentacoes };
+  return {
+    ...enrichLocalPartida(row),
+    movimentacoes,
+    valorAtualEstoque: calcularValorAtualEstoqueSemen(movimentacoesRaw),
+  };
 }
 
 export async function getSemenEntradaResumoLocal(
@@ -404,6 +479,7 @@ export async function registrarEntradaSemenLocal(
       custoUnitario: entrada.custoUnitario,
       observacoes: entrada.observacoes,
       createdAt: now as unknown as Date,
+      ...SEMEN_CORRECAO_LINK_VAZIO,
     });
 
     await persistStore(store);
@@ -455,6 +531,7 @@ export async function registrarEntradaSemenLocal(
     custoUnitario: entrada.custoUnitario,
     observacoes: entrada.observacoes,
     createdAt: now as unknown as Date,
+    ...SEMEN_CORRECAO_LINK_VAZIO,
   });
 
   await persistStore(store);
@@ -464,5 +541,169 @@ export async function registrarEntradaSemenLocal(
     novaEntrada: true,
     saldoAtual: agreg.novoSaldo,
     custoMedioAtual: agreg.novoCustoUnitario,
+  };
+}
+
+/**
+ * Semântica equivalente ao MySQL.
+ * Limitação: persistência em dois arquivos JSON não é atômica (ver MSG_SEMEN_LOCAL_NAO_ATOMICO).
+ */
+export async function corrigirEntradaSemenLocal(
+  userId: number,
+  input: SemenCorrigirEntradaInput,
+): Promise<SemenCorrigirEntradaResult> {
+  const motivo = validateSemenCorrecaoMotivo(input.motivoCodigo, input.motivoDescricao);
+  if (!motivo.ok) throw new Error(motivo.message);
+  const dados = validateSemenCorrecaoDados({
+    quantidadeDoses: input.quantidadeDoses,
+    custoTotal: input.custoTotal,
+    dataEntrada: input.dataEntrada,
+  });
+  if (!dados.ok) throw new Error(dados.message);
+
+  const store = await loadStore();
+  const original = store.movimentacoes.find(m => m.id === input.movimentacaoId && m.userId === userId);
+  if (!original) throw new Error("Movimentação de entrada não encontrada.");
+
+  const partida = store.partidas.find(p => p.id === original.partidaId && p.userId === userId);
+  if (!partida) throw new Error(MSG_SEMEN_PARTIDA_NAO_ENCONTRADA);
+
+  const daPartida = store.movimentacoes.filter(m => m.partidaId === partida.id && m.userId === userId);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const estornoId = store.nextMovId++;
+  const novaEntradaId = store.nextMovId++;
+
+  const evaluated = evaluateSemenCorrecaoEntrada({
+    original: withSemenCorrecaoFields(original),
+    movimentacoes: daPartida.map(withSemenCorrecaoFields),
+    saldoAtual: partida.saldoDoses,
+    dadosNovos: dados.value,
+    dataCorrecao: toDateOnlyISO(now),
+    nowIso,
+    nextEstornoId: estornoId,
+    nextEntradaId: novaEntradaId,
+    grupoCorrecaoId: randomUUID(),
+    motivoTexto: motivo.texto,
+  });
+  if (!evaluated.ok) {
+    store.nextMovId -= 2;
+    throw new Error(evaluated.message);
+  }
+
+  const createdAt = nowIso as unknown as Date;
+  store.movimentacoes.push({
+    id: estornoId,
+    partidaId: partida.id,
+    userId,
+    fazendaId: partida.fazendaId,
+    tipo: evaluated.estorno.tipo,
+    dataEntrada: evaluated.estorno.dataEntrada,
+    quantidadeDoses: evaluated.estorno.quantidadeDoses,
+    custoTotal: evaluated.estorno.custoTotal,
+    custoUnitario: evaluated.estorno.custoUnitario,
+    observacoes: evaluated.estorno.observacoes,
+    createdAt,
+    movimentacaoOrigemId: evaluated.estorno.movimentacaoOrigemId,
+    grupoCorrecaoId: evaluated.estorno.grupoCorrecaoId,
+    motivoCorrecao: evaluated.estorno.motivoCorrecao,
+  });
+  store.movimentacoes.push({
+    id: novaEntradaId,
+    partidaId: partida.id,
+    userId,
+    fazendaId: partida.fazendaId,
+    tipo: evaluated.novaEntrada.tipo,
+    dataEntrada: evaluated.novaEntrada.dataEntrada,
+    quantidadeDoses: evaluated.novaEntrada.quantidadeDoses,
+    custoTotal: evaluated.novaEntrada.custoTotal,
+    custoUnitario: evaluated.novaEntrada.custoUnitario,
+    observacoes: evaluated.novaEntrada.observacoes,
+    createdAt,
+    movimentacaoOrigemId: evaluated.novaEntrada.movimentacaoOrigemId,
+    grupoCorrecaoId: evaluated.novaEntrada.grupoCorrecaoId,
+    motivoCorrecao: evaluated.novaEntrada.motivoCorrecao,
+  });
+
+  partida.saldoDoses = evaluated.estadoFinal.saldoDoses;
+  partida.custoUnitario = evaluated.estadoFinal.custoUnitario;
+  partida.status = evaluated.estadoFinal.status;
+  partida.updatedAt = createdAt;
+
+  await persistStore(store);
+  return {
+    partidaId: partida.id,
+    estornoId,
+    novaEntradaId,
+    saldoAtual: evaluated.estadoFinal.saldoDoses,
+    custoMedioAtual: evaluated.estadoFinal.custoUnitario,
+  };
+}
+
+/**
+ * Semântica equivalente ao MySQL.
+ * Limitação: persistência em dois arquivos JSON não é atômica (ver MSG_SEMEN_LOCAL_NAO_ATOMICO).
+ */
+export async function ajustarEstoqueSemenLocal(
+  userId: number,
+  input: SemenAjustarEstoqueInput,
+): Promise<SemenAjustarEstoqueResult> {
+  const motivo = validateSemenAjusteMotivo(input.motivoCodigo, input.motivoDescricao);
+  if (!motivo.ok) throw new Error(motivo.message);
+
+  const store = await loadStore();
+  const partida = store.partidas.find(p => p.id === input.partidaId && p.userId === userId);
+  if (!partida) throw new Error(MSG_SEMEN_PARTIDA_NAO_ENCONTRADA);
+
+  const daPartida = store.movimentacoes.filter(m => m.partidaId === partida.id && m.userId === userId);
+  const valorAtual = calcularValorAtualEstoqueSemen(daPartida.map(withSemenCorrecaoFields));
+  const estado = evaluateSemenAjusteEstoque({
+    saldoAtual: partida.saldoDoses,
+    custoMedioAtual: partida.custoUnitario,
+    valorAtual,
+    modo: input.modo,
+    saldoNovo: input.saldoNovo,
+    valorNovo: input.valorNovo,
+  });
+  if (!estado.ok) throw new Error(estado.message);
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const movId = store.nextMovId++;
+  const draft = buildSemenAjusteMovimentacao({
+    estado: estado.value,
+    dataOperacional: toDateOnlyISO(now),
+    motivoTexto: motivo.texto,
+    observacao: String(input.observacao ?? "").trim() || null,
+  });
+
+  store.movimentacoes.push({
+    id: movId,
+    partidaId: partida.id,
+    userId,
+    fazendaId: partida.fazendaId,
+    tipo: draft.tipo,
+    dataEntrada: draft.dataEntrada,
+    quantidadeDoses: draft.quantidadeDoses,
+    custoTotal: draft.custoTotal,
+    custoUnitario: draft.custoUnitario,
+    observacoes: draft.observacoes,
+    createdAt: nowIso as unknown as Date,
+    ...SEMEN_CORRECAO_LINK_VAZIO,
+    motivoCorrecao: draft.motivoCorrecao,
+  });
+
+  partida.saldoDoses = estado.value.saldoNovo;
+  partida.custoUnitario = estado.value.custoMedioNovo;
+  partida.status = estado.value.status;
+  partida.updatedAt = nowIso as unknown as Date;
+
+  await persistStore(store);
+  return {
+    partidaId: partida.id,
+    movimentacaoId: movId,
+    saldoAtual: estado.value.saldoNovo,
+    custoMedioAtual: estado.value.custoMedioNovo,
+    valorAtualEstoque: estado.value.valorNovo,
   };
 }

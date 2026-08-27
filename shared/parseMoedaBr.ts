@@ -1,5 +1,8 @@
-/** Formato de célula Excel para moeda BRL (modelo de importação / ExcelJS). */
-export const EXCEL_FMT_MOEDA_BRL = '"R$" #.##0,00';
+/**
+ * Formato numérico Excel (OOXML): ponto = decimal, vírgula = milhar.
+ * No Excel em pt-BR aparece como R$ 83,33 — nunca R$ 83,33000.
+ */
+export const EXCEL_FMT_MOEDA_BRL = '"R$" #,##0.00';
 
 /** Valor monetário formatado para exportação Excel (sempre "R$ 1.234,56"). */
 export function formatMoedaBrlExcel(val: number): string {

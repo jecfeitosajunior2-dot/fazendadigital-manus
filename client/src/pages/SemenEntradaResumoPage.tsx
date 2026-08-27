@@ -66,8 +66,6 @@ export default function SemenEntradaResumoPage() {
   return (
     <AppLayout>
       <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
-        <p className="text-[11px] font-medium text-gray-500">Reprodução</p>
-
         {isLoading ? (
           <p className="text-sm text-gray-500">Carregando resumo…</p>
         ) : isError || !resumo ? (

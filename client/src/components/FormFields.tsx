@@ -161,8 +161,8 @@ export function FormNativeSelect({
     return [{ value: current, label: current }, ...options];
   }, [value, options]);
 
-  // Usa Select (Radix) em vez de <select> nativo para forçar abertura para baixo
-  // (o nativo do Windows abre para cima quando a lista é longa).
+  // Usa Select (Radix/shadcn) em vez de <select> nativo: Portal, teclado e
+  // posicionamento ficam no FormSelect (colisão automática dentro de Dialog).
   return (
     <FormSelect
       value={value}
@@ -248,7 +248,13 @@ export function FormSelect({
             <SelectValue placeholder={placeholder} />
           )}
         </SelectTrigger>
-        <SelectContent className="max-h-60" side="bottom" avoidCollisions={false}>
+        <SelectContent
+          className="max-h-[min(15rem,var(--radix-select-content-available-height,15rem))]"
+          side="bottom"
+          sideOffset={4}
+          collisionPadding={8}
+          avoidCollisions={modal === false}
+        >
           {children}
         </SelectContent>
       </Select>

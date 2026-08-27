@@ -723,7 +723,7 @@ export default function MaquinasListPage() {
               aria-disabled={!fazendaSelecionada}
               title={
                 fazendaSelecionada
-                  ? "Cadastrar máquina"
+                  ? "Cadastrar Máquina"
                   : "Selecione uma fazenda antes de cadastrar uma máquina"
               }
               className={cn(
@@ -733,7 +733,7 @@ export default function MaquinasListPage() {
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[18px]">add</span>
-              Cadastrar máquina
+              Cadastrar Máquina
             </button>
             <button
               type="button"

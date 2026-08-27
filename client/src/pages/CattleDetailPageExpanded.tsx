@@ -54,6 +54,7 @@ import { getFichaAnimalPath } from '@/lib/fichaAnimalRoute';
 import type { DescendenteRow } from '@shared/animalDescendentes';
 import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
+import { formatMoedaBrlExcel } from '@shared/parseMoedaBr';
 import {
   deriveResumoReprodutivoMacho,
   deriveSituacaoReprodutivaAtual,
@@ -63,6 +64,7 @@ import {
   getReproDetalhesTabelaHeader,
   unpackReproObservacoes,
 } from '@shared/reproRegistroMeta';
+import { calcularResumoCustosSemenAnimal } from '@shared/resumoCustosSemenAnimal';
 import {
   getLinhasAlteracaoIdentificacao,
   mapHistoricoBrincoToDisplay,
@@ -228,6 +230,11 @@ function getReproEmptyStateMessage(sexo: string | null | undefined): { titulo: s
   };
 }
 
+function formatCustoSemenResumo(val: number | null): string {
+  if (val == null) return '—';
+  return formatMoedaBrlExcel(val);
+}
+
 function ResumoField({
   label,
   value,
@@ -336,10 +343,22 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: !!animalId });
 
-  const { data: animalListRow } = trpc.animais.list.useQuery(undefined, {
+  const { data: animaisLista = [] } = trpc.animais.list.useQuery(undefined, {
     enabled: !!animalId,
-    select: rows => rows.find(r => r.id === animalId),
   });
+
+  const animalListRow = useMemo(
+    () => animaisLista.find(r => r.id === animalId),
+    [animaisLista, animalId],
+  );
+
+  const animaisById = useMemo(() => {
+    const map = new Map<number, (typeof animaisLista)[number]>();
+    for (const row of animaisLista) {
+      if (row?.id != null) map.set(row.id, row);
+    }
+    return map;
+  }, [animaisLista]);
 
   // Filter reproduction records for this animal
   const animalRepro = reproducaoRegistros?.filter(
@@ -439,6 +458,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const reproEmptyState = getReproEmptyStateMessage(animal.sexo as string | null | undefined);
   const reproDetalhesTabelaHeader = getReproDetalhesTabelaHeader();
+  const resumoCustosSemen = calcularResumoCustosSemenAnimal(animalRepro);
   const situacaoReprodutiva = deriveSituacaoReprodutivaAtual(
     animalRepro,
     animal.sexo as string | null | undefined,
@@ -1027,6 +1047,28 @@ export const CattleDetailPageExpanded: React.FC = () => {
           {/* ─── Reprodução Tab ────────────────────────────────────────────── */}
           <TabsContent value="reproducao">
             <Card className="p-6">
+              {animal.sexo === 'femea' && !loadingRepro ? (
+                <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                  <div>
+                    <p className="text-[11px] text-gray-500">Inseminações</p>
+                    <p className="mt-0.5 text-[13px] font-semibold text-gray-900 tabular-nums">
+                      {resumoCustosSemen.totalInseminacoes}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-500">Custo total com sêmen</p>
+                    <p className="mt-0.5 text-[13px] font-semibold text-gray-900 tabular-nums">
+                      {formatCustoSemenResumo(resumoCustosSemen.custoTotal)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-500">Custo médio</p>
+                    <p className="mt-0.5 text-[13px] font-semibold text-gray-900 tabular-nums">
+                      {formatCustoSemenResumo(resumoCustosSemen.custoMedio)}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-gray-800 flex items-center">
                   <HeartPulse className="w-5 h-5 mr-2 text-pink-600" />
@@ -1085,7 +1127,15 @@ export const CattleDetailPageExpanded: React.FC = () => {
                         {sortedAnimalRepro.map(reg => {
                           const meta = unpackReproObservacoes(reg.observacoes);
                           const tipoDisplay = formatTipoReproTabelaDisplay(reg.tipo);
-                          const detalhes = formatReproDetalhesTabela(reg, meta, formatDate);
+                          const machoRow = reg.machoId != null ? animaisById.get(reg.machoId) : undefined;
+                          const detalhes = formatReproDetalhesTabela(reg, meta, formatDate, {
+                            macho: machoRow
+                              ? {
+                                  brinco: (machoRow as { brinco?: string | null }).brinco,
+                                  nome: (machoRow as { nome?: string | null }).nome,
+                                }
+                              : undefined,
+                          });
                           const detalhesLinhas = detalhes
                             ? detalhes.split(" · ").filter(Boolean)
                             : [];

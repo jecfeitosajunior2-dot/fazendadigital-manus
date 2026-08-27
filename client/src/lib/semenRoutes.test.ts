@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   SEMEN_ESTOQUE_PATH,
+  SEMEN_UTILIZADO_PATH,
+  SEMEN_CADASTRO_PATH,
   isValidSemenMovimentacaoId,
   parseSemenMovimentacaoIdFromRoute,
   semenEntradaResumoPath,
   semenPartidaDetalhePath,
+  semenUtilizadoDetalhePath,
 } from "./semenRoutes";
 
 describe("semenRoutes", () => {
@@ -38,5 +41,18 @@ describe("semenRoutes", () => {
 
   it("Voltar ao estoque usa rota correta", () => {
     expect(SEMEN_ESTOQUE_PATH).toBe("/reproducao/estoque-semen");
+  });
+
+  it("nova rota principal é Sêmen utilizado", () => {
+    expect(SEMEN_UTILIZADO_PATH).toBe("/reproducao/semen-utilizado");
+    expect(semenUtilizadoDetalhePath("externo|e:gsc-7117|P-01")).toBe(
+      "/reproducao/semen-utilizado/externo%7Ce%3Agsc-7117%7CP-01",
+    );
+  });
+
+  it("cadastro de sêmen legado redireciona para Sêmen utilizado", () => {
+    expect(SEMEN_CADASTRO_PATH).toBe("/reproducao/cadastro-semen");
+    expect(SEMEN_CADASTRO_PATH).not.toContain("estoque");
+    expect(SEMEN_UTILIZADO_PATH).toBe("/reproducao/semen-utilizado");
   });
 });

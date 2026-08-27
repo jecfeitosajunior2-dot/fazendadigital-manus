@@ -1,4 +1,5 @@
 import { toDateOnlyISO } from "./carenciaAnimal";
+import { isNomeAnimalUtil } from "./animalBuscaDisplay";
 import { formatMoedaBrlExcel, parseMoedaBr, parseValorDecimalBanco } from "./parseMoedaBr";
 
 function parseCustoMedio(raw: unknown): number | null {
@@ -44,9 +45,13 @@ export type SemenStatus = typeof SEMEN_STATUS_DISPONIVEL | typeof SEMEN_STATUS_E
 
 export const SEMEN_MOV_TIPO_ENTRADA = "ENTRADA" as const;
 export const SEMEN_MOV_TIPO_SAIDA_IA = "SAIDA_IA" as const;
+export const SEMEN_MOV_TIPO_ESTORNO_ENTRADA = "ESTORNO_ENTRADA" as const;
+export const SEMEN_MOV_TIPO_AJUSTE_ESTOQUE = "AJUSTE_ESTOQUE" as const;
 export type SemenMovimentacaoTipo =
   | typeof SEMEN_MOV_TIPO_ENTRADA
-  | typeof SEMEN_MOV_TIPO_SAIDA_IA;
+  | typeof SEMEN_MOV_TIPO_SAIDA_IA
+  | typeof SEMEN_MOV_TIPO_ESTORNO_ENTRADA
+  | typeof SEMEN_MOV_TIPO_AJUSTE_ESTOQUE;
 
 export const MSG_SEMEN_SEM_DOSES = "Não há doses disponíveis nesta partida.";
 export const MSG_SEMEN_PARTIDA_INCOMPATIVEL =
@@ -92,6 +97,87 @@ export function buildSemenReprodutorKey(params: {
   const texto = normalizeSemenReprodutorExterno(String(params.reprodutorTexto ?? ""));
   if (!texto) throw new Error(MSG_SEMEN_REPRODUTOR_EXTERNO_OBRIGATORIO);
   return `e:${texto.toLowerCase()}`;
+}
+
+/** Reutiliza `buildSemenReprodutorKey` sem lançar — para consulta de estoque externo. */
+export function tryBuildSemenReprodutorKeyExterno(
+  raw: string | null | undefined,
+): string | null {
+  try {
+    return buildSemenReprodutorKey({
+      origem: SEMEN_ORIGEM_EXTERNO,
+      reprodutorTexto: raw,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function isSemenReprodutorKeyExternoFormat(raw: string): boolean {
+  return raw.startsWith("e:") && raw.length > 2;
+}
+
+/**
+ * Identidade estrutural da consulta externa.
+ * Prefere `reprodutorKey`; se vier junto com texto, ambos precisam coincidir.
+ * Nunca faz match parcial.
+ */
+export function resolveSemenReprodutorKeyExternoConsulta(input: {
+  reprodutorKey?: string | null;
+  reprodutorTexto?: string | null;
+}): string | null {
+  const fromText = tryBuildSemenReprodutorKeyExterno(input.reprodutorTexto);
+  const fromKey = String(input.reprodutorKey ?? "").trim();
+  if (fromKey) {
+    if (!isSemenReprodutorKeyExternoFormat(fromKey)) return null;
+    if (fromText && fromText !== fromKey) return null;
+    return fromKey;
+  }
+  return fromText;
+}
+
+export type SemenReprodutorExternoDisponivel = {
+  reprodutorKey: string;
+  reprodutorTexto: string;
+  saldoDoses: number;
+};
+
+export function aggregateSemenReprodutoresExternosDisponiveis(
+  partidas: ReadonlyArray<{
+    origemReprodutor: string;
+    reprodutorKey: string;
+    reprodutorTexto?: string | null;
+    saldoDoses: number;
+  }>,
+): SemenReprodutorExternoDisponivel[] {
+  const map = new Map<string, SemenReprodutorExternoDisponivel>();
+  for (const p of partidas) {
+    if (p.origemReprodutor !== SEMEN_ORIGEM_EXTERNO) continue;
+    if (!(p.saldoDoses > 0)) continue;
+    const existing = map.get(p.reprodutorKey);
+    if (existing) {
+      existing.saldoDoses += p.saldoDoses;
+      continue;
+    }
+    map.set(p.reprodutorKey, {
+      reprodutorKey: p.reprodutorKey,
+      reprodutorTexto: p.reprodutorTexto?.trim() || p.reprodutorKey.slice(2),
+      saldoDoses: p.saldoDoses,
+    });
+  }
+  return [...map.values()].sort((a, b) =>
+    a.reprodutorTexto.localeCompare(b.reprodutorTexto, "pt-BR"),
+  );
+}
+
+/** Filtro só de sugestão (UX). Consumo continua por `reprodutor_key` exato. */
+export function filterSemenReprodutoresExternosSugestao(
+  items: ReadonlyArray<SemenReprodutorExternoDisponivel>,
+  search: string,
+): SemenReprodutorExternoDisponivel[] {
+  const q = search.trim().toLowerCase();
+  if (!q) return [...items];
+  return items.filter(i => i.reprodutorTexto.toLowerCase().includes(q));
 }
 
 export function deriveSemenStatus(saldoDoses: number): SemenStatus {
@@ -400,20 +486,40 @@ export function formatSemenReprodutorDisplay(params: {
   reprodutorTexto?: string | null;
   machoDisplay?: string | null;
 }): string {
-  if (params.origem === SEMEN_ORIGEM_INTERNO) {
-    return params.machoDisplay?.trim() || params.reprodutorTexto?.trim() || "—";
+  const raw =
+    params.origem === SEMEN_ORIGEM_INTERNO
+      ? params.machoDisplay?.trim() || params.reprodutorTexto?.trim() || "—"
+      : params.reprodutorTexto?.trim() || "—";
+  return collapseSemenIdentificadorDuplicado(raw);
+}
+
+/** Evita "16 — 16" quando nome = brinco visual. */
+export function collapseSemenIdentificadorDuplicado(label: string): string {
+  const m = label.match(/^(.+?)\s+[—\-·]\s+(.+)$/);
+  if (!m) return label;
+  const left = m[1]!.trim();
+  const right = m[2]!.trim();
+  if (
+    left &&
+    right &&
+    left.localeCompare(right, undefined, { sensitivity: "accent" }) === 0
+  ) {
+    return left;
   }
-  return params.reprodutorTexto?.trim() || "—";
+  return label;
 }
 
 export function resolveSemenMachoDisplayLabel(animal: {
   brinco?: string | null;
   nome?: string | null;
 }): string {
-  const brinco = animal.brinco?.trim();
-  const nome = animal.nome?.trim();
-  if (brinco && nome) return `${brinco} — ${nome}`;
-  return brinco || nome || "—";
+  const brinco = animal.brinco?.trim() || "";
+  const nome = animal.nome?.trim() || "";
+  if (brinco && isNomeAnimalUtil(nome, brinco)) return `${brinco} — ${nome}`;
+  if (brinco) return brinco;
+  if (isNomeAnimalUtil(nome, null)) return nome;
+  if (nome) return nome;
+  return "—";
 }
 
 export {

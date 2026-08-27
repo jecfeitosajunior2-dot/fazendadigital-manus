@@ -434,6 +434,25 @@ export async function ensureSchema() {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`semen_reprodutores_externos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`fazenda_id\` int NOT NULL,
+        \`reprodutor_key\` varchar(120) NOT NULL,
+        \`reprodutor_texto\` varchar(500) NOT NULL,
+        \`central_padrao\` varchar(150),
+        \`observacoes\` text,
+        \`ativo\` boolean NOT NULL DEFAULT true,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`semen_reprod_ext_uq\` (\`user_id\`, \`fazenda_id\`, \`reprodutor_key\`),
+        INDEX \`semen_reprod_ext_user_id_idx\` (\`user_id\`),
+        INDEX \`semen_reprod_ext_fazenda_id_idx\` (\`fazenda_id\`)
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS \`semen_movimentacoes\` (
         \`id\` int AUTO_INCREMENT NOT NULL,
         \`partida_id\` int NOT NULL,
@@ -445,6 +464,9 @@ export async function ensureSchema() {
         \`custo_total\` decimal(12,2) NOT NULL,
         \`custo_unitario\` decimal(12,2) NOT NULL,
         \`observacoes\` text,
+        \`movimentacao_origem_id\` int,
+        \`grupo_correcao_id\` varchar(40),
+        \`motivo_correcao\` varchar(255),
         \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(\`id\`),
         INDEX \`semen_mov_partida_id_idx\` (\`partida_id\`),
@@ -452,6 +474,13 @@ export async function ensureSchema() {
         INDEX \`semen_mov_fazenda_id_idx\` (\`fazenda_id\`)
       )
     `);
+
+    const [semenMovTable] = await pool.query(`SHOW TABLES LIKE 'semen_movimentacoes'`);
+    if ((semenMovTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "semen_movimentacoes", "movimentacao_origem_id", "int");
+      await ensureColumn(pool, "semen_movimentacoes", "grupo_correcao_id", "varchar(40)");
+      await ensureColumn(pool, "semen_movimentacoes", "motivo_correcao", "varchar(255)");
+    }
 
     // Sanitário: via de aplicação + vínculo com estoque/custo (padrão Manutenção)
     const [saudeTable] = await pool.query(`SHOW TABLES LIKE 'saude_registros'`);

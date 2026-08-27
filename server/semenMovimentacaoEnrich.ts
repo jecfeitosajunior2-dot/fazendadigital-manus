@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { annotateSemenMovimentacoesHistorico, type SemenMovimentacaoHistoricoFlags } from "../shared/semenEstoqueLedger";
 import {
   buildSemenMovimentacoesDisplay,
   buildSemenReproContextMapsFromRows,
@@ -12,7 +13,13 @@ export type SemenMovimentacaoComDisplay = SemenMovimentacaoRow & {
   tipoLabel: string;
   quantidadeLabel: string;
   contextoDisplay: string | null;
-};
+} & SemenMovimentacaoHistoricoFlags;
+
+function withHistoricoFlags(
+  rows: Array<SemenMovimentacaoRow & { tipoLabel: string; quantidadeLabel: string; contextoDisplay: string | null }>,
+): SemenMovimentacaoComDisplay[] {
+  return annotateSemenMovimentacoesHistorico(rows);
+}
 
 export async function enrichSemenMovimentacoesDisplayDb(
   userId: number,
@@ -20,7 +27,7 @@ export async function enrichSemenMovimentacoesDisplayDb(
 ): Promise<SemenMovimentacaoComDisplay[]> {
   const reproIds = collectSemenMovimentacaoReproRegistroIds(movimentacoes);
   if (!reproIds.length) {
-    return buildSemenMovimentacoesDisplay(movimentacoes, new Map(), new Map());
+    return withHistoricoFlags(buildSemenMovimentacoesDisplay(movimentacoes, new Map(), new Map()));
   }
 
   const registros = await db
@@ -46,7 +53,7 @@ export async function enrichSemenMovimentacoesDisplayDb(
     animais: animaisRows,
   });
 
-  return buildSemenMovimentacoesDisplay(movimentacoes, reproById, brincoByAnimalId);
+  return withHistoricoFlags(buildSemenMovimentacoesDisplay(movimentacoes, reproById, brincoByAnimalId));
 }
 
 export async function enrichSemenMovimentacoesDisplayLocal(
@@ -55,7 +62,7 @@ export async function enrichSemenMovimentacoesDisplayLocal(
 ): Promise<SemenMovimentacaoComDisplay[]> {
   const reproIds = collectSemenMovimentacaoReproRegistroIds(movimentacoes);
   if (!reproIds.length) {
-    return buildSemenMovimentacoesDisplay(movimentacoes, new Map(), new Map());
+    return withHistoricoFlags(buildSemenMovimentacoesDisplay(movimentacoes, new Map(), new Map()));
   }
 
   const reproIdSet = new Set(reproIds);
@@ -77,5 +84,5 @@ export async function enrichSemenMovimentacoesDisplayLocal(
     animais: animaisRows,
   });
 
-  return buildSemenMovimentacoesDisplay(movimentacoes, reproById, brincoByAnimalId);
+  return withHistoricoFlags(buildSemenMovimentacoesDisplay(movimentacoes, reproById, brincoByAnimalId));
 }

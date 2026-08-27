@@ -5,6 +5,7 @@ import {
   MSG_SEMEN_PARTIDA_INCOMPATIVEL,
   MSG_SEMEN_SEM_DOSES,
   SEMEN_MOV_TIPO_SAIDA_IA,
+  SEMEN_ORIGEM_EXTERNO,
   SEMEN_ORIGEM_INTERNO,
   SEMEN_PARTIDA_SEM_LOTE,
   SEMEN_STATUS_DISPONIVEL,
@@ -29,6 +30,8 @@ vi.mock("./localFallbackStore", () => ({
   createLocalReproducaoRegistro: vi.fn(async (_userId: number, input: { femeaId: number }) => ({
     id: 9001,
   })),
+  listLocalReproducaoRegistros: vi.fn(async () => []),
+  listLocalAnimais: vi.fn(async () => []),
 }));
 
 import { createLocalReproducaoRegistro } from "./localFallbackStore";
@@ -79,6 +82,7 @@ function packIaObs(
     ecc?: number;
     semenPartidaId: number;
     custoDoseSemen: number | null;
+    centralOrigem?: string | null;
   },
 ) {
   return packReproObservacoes(observacoes, undefined, undefined, undefined, undefined, {
@@ -87,6 +91,7 @@ function packIaObs(
     ecc: extras.ecc,
     semenPartidaId: extras.semenPartidaId,
     custoDoseSemen: extras.custoDoseSemen,
+    centralOrigem: extras.centralOrigem,
   });
 }
 
@@ -333,6 +338,69 @@ describe("semen Inseminação V2 — local", () => {
     expect(partida?.saldoDoses).toBe(0);
     expect(partida?.movimentacoes.filter(m => m.tipo === SEMEN_MOV_TIPO_SAIDA_IA)).toHaveLength(1);
   });
+
+  it("GSC-7117 consome 1 dose, machoId permanece null e custo 200", async () => {
+    __seedSemenLocalStoreForTests({
+      partidas: [
+        {
+          id: 4,
+          userId: USER_ID,
+          fazendaId: FAZENDA_ID,
+          origemReprodutor: SEMEN_ORIGEM_EXTERNO,
+          reprodutorKey: "e:gsc-7117",
+          machoId: null,
+          reprodutorTexto: "GSC-7117",
+          partida: SEMEN_PARTIDA_SEM_LOTE,
+          centralOrigem: "Alta",
+          saldoDoses: 5,
+          custoUnitario: "200.00",
+          status: SEMEN_STATUS_DISPONIVEL,
+          observacoes: null,
+          createdAt: new Date("2026-08-26") as unknown as Date,
+          updatedAt: new Date("2026-08-26") as unknown as Date,
+        },
+      ],
+      movimentacoes: [],
+      nextPartidaId: 5,
+      nextMovId: 1,
+    });
+
+    const disponiveis = await listSemenPartidasDisponiveisInseminacaoLocal(USER_ID, {
+      fazendaId: FAZENDA_ID,
+      origem: SEMEN_ORIGEM_EXTERNO,
+      reprodutorKey: "e:gsc-7117",
+      reprodutorTexto: "GSC-7117",
+    });
+    expect(disponiveis).toHaveLength(1);
+
+    const result = await registrarInseminacaoComSemenLocal(
+      USER_ID,
+      {
+        fazendaId: FAZENDA_ID,
+        femeaId: 15,
+        machoId: null,
+        dataCobertura: new Date("2026-08-26"),
+        semenPartidaId: 4,
+        origemReprodutor: SEMEN_ORIGEM_EXTERNO,
+        reprodutorTextoExterno: "GSC-7117",
+      },
+      packIaObs,
+    );
+
+    expect(result.movimentacaoId).toBe(1);
+    const persistido = vi.mocked(createLocalReproducaoRegistro).mock.calls[0]?.[1];
+    expect(persistido?.machoId).toBeUndefined();
+
+    const partida = await getSemenPartidaByIdLocal(USER_ID, 4);
+    expect(partida?.saldoDoses).toBe(4);
+    expect(partida?.custoUnitario).toBe("200.00");
+    expect(partida?.machoId).toBeNull();
+
+    const meta = unpackReproObservacoes(persistido?.observacoes);
+    expect(meta.semenPartidaId).toBe(4);
+    expect(meta.partidaSemen).toBe(SEMEN_PARTIDA_SEM_LOTE);
+    expect(meta.custoDoseSemen).toBe(200);
+  });
 });
 
 describe("applySemenSaidaIa", () => {
@@ -355,13 +423,24 @@ describe("validateSemenPartidaReprodutorCompat", () => {
     ).toBe(true);
   });
 
-  it("rejeita macho divergente", () => {
+  it("aceita reprodutor externo pela chave", () => {
     expect(
       validateSemenPartidaReprodutorCompat({
-        origem: SEMEN_ORIGEM_INTERNO,
-        partidaMachoId: 8,
-        partidaReprodutorKey: "m:8",
-        machoId: 7,
+        origem: SEMEN_ORIGEM_EXTERNO,
+        partidaMachoId: null,
+        partidaReprodutorKey: "e:gsc-7117",
+        reprodutorTexto: "GSC-7117",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejeita match parcial externo", () => {
+    expect(
+      validateSemenPartidaReprodutorCompat({
+        origem: SEMEN_ORIGEM_EXTERNO,
+        partidaMachoId: null,
+        partidaReprodutorKey: "e:gsc-7117",
+        reprodutorTexto: "GSC-711",
       }),
     ).toBe(false);
   });
