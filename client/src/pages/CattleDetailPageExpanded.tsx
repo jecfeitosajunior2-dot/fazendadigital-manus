@@ -22,6 +22,11 @@ import {
   statusMovimentacaoLote,
   type StatusMovimentacaoLote,
 } from '@shared/historicoMovimentacaoLote';
+import {
+  formatLinhaMovimentacaoTrocaLote,
+  formatLinhaPastoHistoricoLote,
+  montarTooltipTrocaLote,
+} from '@shared/transferirAnimaisEntreLotes';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   computeResumoPeso,
@@ -95,6 +100,9 @@ type HistoricoSubdivisaoRow = {
   pastoDestinoNome?: string | null;
   observacoes?: string | null;
   responsavel?: string | null;
+  loteOrigemId?: number | null;
+  loteOrigemNome?: string | null;
+  loteDestinoNome?: string | null;
 };
 
 function historicoSubdivisaoTexto(value: string | null | undefined): string {
@@ -108,6 +116,13 @@ function historicoSubdivisaoDestino(row: HistoricoSubdivisaoRow): string | null 
 }
 
 function historicoSubdivisaoMovimentacao(row: HistoricoSubdivisaoRow): string {
+  if (row.tipo === 'transferencia_lote') {
+    return formatLinhaMovimentacaoTrocaLote({
+      loteOrigemId: row.loteOrigemId,
+      loteOrigemNome: row.loteOrigemNome,
+      loteDestinoNome: row.loteDestinoNome,
+    });
+  }
   const origem = row.pastoOrigemNome?.trim();
   const destino = historicoSubdivisaoDestino(row);
   if (origem && origem !== '—' && destino) return `${origem} → ${destino}`;
@@ -198,16 +213,26 @@ function historicoSubdivisaoTooltipDetalhe(
   movimentacao: string,
   row: HistoricoSubdivisaoRow,
 ): string | undefined {
-  const linhas: string[] = [];
-  if (movimentacao !== '—') {
-    linhas.push(
-      row.tipo === 'transferencia_lote'
-        ? `${movimentacao} · Transferência entre lotes`
-        : movimentacao,
-    );
+  if (row.tipo === 'transferencia_lote') {
+    return montarTooltipTrocaLote({
+      loteOrigemId: row.loteOrigemId,
+      loteOrigemNome: row.loteOrigemNome,
+      loteDestinoNome: row.loteDestinoNome,
+      dataFormatada: row.dataEntrada ? formatDateBR(row.dataEntrada) : null,
+      responsavel: row.responsavel,
+      observacoes: row.observacoes,
+    });
   }
+  const linhas: string[] = [];
+  if (movimentacao !== '—') linhas.push(movimentacao);
   const responsavel = row.responsavel?.trim();
   if (responsavel) linhas.push(`Responsável: ${responsavel}`);
+  const observacoes = row.observacoes?.trim();
+  if (observacoes) {
+    linhas.push('');
+    linhas.push('Observações:');
+    linhas.push(observacoes);
+  }
   return linhas.length > 0 ? linhas.join('\n') : undefined;
 }
 
@@ -506,9 +531,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
     (animal.loteId ? `#${animal.loteId}` : null);
 
   const histPastos = historicoPastos as HistoricoSubdivisaoRow[];
+  const histLotes = histPastos.filter(h => h.tipo === 'transferencia_lote');
+  const histSubdivisoes = histPastos.filter(h => h.tipo === 'lote_pasto');
   const subdivisaoAtual =
     animalListRow?.pastoNome
-    ?? histPastos.find(h => historicoSubdivisaoEstaAtual(h))?.pastoDestinoNome
+    ?? histSubdivisoes.find(h => historicoSubdivisaoEstaAtual(h))?.pastoDestinoNome
     ?? null;
 
   const genealogiaExibicao = resolveGenealogiaFichaExibicao(
@@ -1400,15 +1427,60 @@ export const CattleDetailPageExpanded: React.FC = () => {
           {/* ─── Subdivisão Tab ─────────────────────────────────────────────────── */}
           <TabsContent value="pastos">
             <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-gray-800 mb-1 flex items-center gap-2">
                 <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#7CB342' }} />
-                Histórico de Subdivisões
+                Histórico de Lotes
               </h2>
+              {fazendaNome ? (
+                <p className="mb-4 text-[11px] text-gray-500">{fazendaNome}</p>
+              ) : (
+                <div className="mb-4" />
+              )}
               {loadingPastos ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="animate-spin w-6 h-6 text-[#7CB342]" />
                 </div>
-              ) : histPastos.length === 0 ? (
+              ) : histLotes.length === 0 ? (
+                <div className="text-center py-8 px-4 mb-6">
+                  <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
+                    Nenhuma troca de lote registrada para este animal.
+                  </p>
+                  <p className="text-[13px] text-gray-500 mt-2 leading-relaxed max-w-md mx-auto">
+                    Movimentações feitas em Manejo → Troca de Lote ou em Lotes → Transferir aparecerão aqui.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-8 divide-y divide-gray-100 border-t border-gray-100">
+                  {histLotes.map(m => {
+                    const loteLinha = formatLinhaMovimentacaoTrocaLote({
+                      loteOrigemId: m.loteOrigemId,
+                      loteOrigemNome: m.loteOrigemNome,
+                      loteDestinoNome: m.loteDestinoNome,
+                    });
+                    const pastoLinha = formatLinhaPastoHistoricoLote({
+                      pastoOrigemNome: m.pastoOrigemNome,
+                      pastoDestinoNome: m.pastoDestinoNome,
+                    });
+                    return (
+                      <div key={m.id} className="py-3">
+                        <p className="text-[11px] text-gray-500 tabular-nums">
+                          {m.dataEntrada ? formatDate(m.dataEntrada) : '—'}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-semibold text-gray-800">{loteLinha}</p>
+                        {pastoLinha ? (
+                          <p className="mt-0.5 text-[12px] text-gray-500">{pastoLinha}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#7CB342' }} />
+                Histórico de Subdivisões
+              </h2>
+              {loadingPastos ? null : histSubdivisoes.length === 0 ? (
                 <div className="text-center py-10 px-4">
                   <MapPin className="w-12 h-12 mx-auto mb-3 text-[#7CB342]/40" />
                   <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
@@ -1421,7 +1493,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
               ) : (
                 <>
                   <p className="mb-3 text-[11px] text-gray-500">
-                    {histPastos.length} movimenta{histPastos.length !== 1 ? 'ções' : 'ção'} registrada{histPastos.length !== 1 ? 's' : ''}
+                    {histSubdivisoes.length} movimenta{histSubdivisoes.length !== 1 ? 'ções' : 'ção'} registrada{histSubdivisoes.length !== 1 ? 's' : ''}
                     <span className="text-gray-400"> · mais recente primeiro</span>
                   </p>
                   <div className="rounded-lg border border-gray-100 overflow-x-auto lg:overflow-x-visible">
@@ -1447,7 +1519,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {histPastos.map(m => {
+                        {histSubdivisoes.map(m => {
                           const movimentacao = historicoSubdivisaoMovimentacao(m);
                           const status = historicoSubdivisaoStatus(m);
                           const atual = status === 'atual';

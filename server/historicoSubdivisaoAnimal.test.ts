@@ -132,6 +132,83 @@ describe("buildHistoricoSubdivisaoAnimal", () => {
 
     expect(rows.every(r => r.dataEntrada !== "2026-02-01")).toBe(true);
   });
+
+  it("sempre inclui troca de lote mesmo sem mudança de pasto", () => {
+    const rows = buildHistoricoSubdivisaoAnimal({
+      currentLoteId: 20,
+      transfers: [
+        {
+          id: 7,
+          loteOrigemId: 10,
+          loteDestinoId: 20,
+          pastoOrigemId: 1,
+          pastoDestinoId: 1,
+          dataMovimentacao: "2026-08-28",
+          usuarioNome: "Pedro",
+          observacoes: "Movido após desmama.",
+        },
+      ],
+      lotePastoMovs: [],
+      pastoMap,
+      loteNomeMap: { 10: "Bezerros", 20: "Novilhos" },
+    });
+
+    const troca = rows.find(r => r.tipo === "transferencia_lote");
+    expect(troca).toMatchObject({
+      loteOrigemNome: "Bezerros",
+      loteDestinoNome: "Novilhos",
+      responsavel: "Pedro",
+      observacoes: "Movido após desmama.",
+    });
+  });
+
+  it("animal sem lote registra origem nula", () => {
+    const rows = buildHistoricoSubdivisaoAnimal({
+      currentLoteId: 10,
+      transfers: [
+        {
+          id: 8,
+          loteOrigemId: null,
+          loteDestinoId: 10,
+          dataMovimentacao: "2026-08-28",
+        },
+      ],
+      lotePastoMovs: [],
+      pastoMap,
+      loteNomeMap: { 10: "Bezerros" },
+    });
+
+    expect(rows.some(r => r.tipo === "transferencia_lote" && r.loteOrigemId == null)).toBe(true);
+    expect(rows.find(r => r.tipo === "transferencia_lote")?.loteDestinoNome).toBe("Bezerros");
+  });
+
+  it("ordena trocas de lote da mais recente para a mais antiga", () => {
+    const rows = buildHistoricoSubdivisaoAnimal({
+      currentLoteId: 30,
+      transfers: [
+        {
+          id: 1,
+          loteOrigemId: 10,
+          loteDestinoId: 20,
+          dataMovimentacao: "2026-07-15",
+        },
+        {
+          id: 2,
+          loteOrigemId: 20,
+          loteDestinoId: 30,
+          dataMovimentacao: "2026-08-28",
+        },
+      ],
+      lotePastoMovs: [],
+      pastoMap,
+      loteNomeMap: { 10: "Bezerros", 20: "Novilhos", 30: "Recria" },
+    });
+
+    const trocas = rows.filter(r => r.tipo === "transferencia_lote");
+    expect(trocas.map(r => r.dataEntrada)).toEqual(["2026-08-28", "2026-07-15"]);
+    expect(trocas[0].loteOrigemNome).toBe("Novilhos");
+    expect(trocas[0].loteDestinoNome).toBe("Recria");
+  });
 });
 
 describe("dateInLotePeriod", () => {

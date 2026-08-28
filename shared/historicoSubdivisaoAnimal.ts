@@ -12,12 +12,15 @@ export type LotePastoMovInput = {
 /** Transferência individual de animal entre lotes. */
 export type AnimalLoteMovInput = {
   id: number;
-  loteOrigemId: number;
+  loteOrigemId?: number | null;
   loteDestinoId: number;
   pastoOrigemId?: number | null;
   pastoDestinoId?: number | null;
   dataMovimentacao: string;
   usuarioNome?: string | null;
+  observacoes?: string | null;
+  loteOrigemNome?: string | null;
+  loteDestinoNome?: string | null;
 };
 
 export type HistoricoSubdivisaoAnimalRow = {
@@ -34,6 +37,9 @@ export type HistoricoSubdivisaoAnimalRow = {
   observacoes?: string | null;
   responsavel?: string | null;
   loteId?: number | null;
+  loteOrigemId?: number | null;
+  loteOrigemNome?: string | null;
+  loteDestinoNome?: string | null;
 };
 
 type LotePeriod = {
@@ -59,13 +65,15 @@ export function buildLotePeriodsForAnimal(
     return currentLoteId ? [{ loteId: currentLoteId, fromInclusive: null, toExclusive: null }] : [];
   }
 
-  const periods: LotePeriod[] = [
-    {
-      loteId: sorted[0].loteOrigemId,
+  const periods: LotePeriod[] = [];
+  const firstOrigem = sorted[0].loteOrigemId;
+  if (firstOrigem != null && firstOrigem > 0) {
+    periods.push({
+      loteId: firstOrigem,
       fromInclusive: null,
       toExclusive: sorted[0].dataMovimentacao,
-    },
-  ];
+    });
+  }
 
   for (let i = 0; i < sorted.length; i++) {
     periods.push({
@@ -95,15 +103,16 @@ function resolvePastoNome(
 /**
  * Monta o histórico de subdivisões do animal:
  * - movimentações de subdivisão dos lotes em que esteve;
- * - transferências de lote com mudança de subdivisão.
+ * - trocas de lote (sempre, mesmo sem mudança de pasto).
  */
 export function buildHistoricoSubdivisaoAnimal(input: {
   currentLoteId: number | null;
   transfers: AnimalLoteMovInput[];
   lotePastoMovs: LotePastoMovInput[];
   pastoMap: Record<number, string>;
+  loteNomeMap?: Record<number, string>;
 }): HistoricoSubdivisaoAnimalRow[] {
-  const { currentLoteId, transfers, lotePastoMovs, pastoMap } = input;
+  const { currentLoteId, transfers, lotePastoMovs, pastoMap, loteNomeMap = {} } = input;
   const periods = buildLotePeriodsForAnimal(currentLoteId, transfers);
   const relevantLoteIds = new Set(periods.map(p => p.loteId));
   const rows: HistoricoSubdivisaoAnimalRow[] = [];
@@ -134,7 +143,13 @@ export function buildHistoricoSubdivisaoAnimal(input: {
   for (const transfer of transfers) {
     const origemId = transfer.pastoOrigemId ?? null;
     const destinoId = transfer.pastoDestinoId ?? null;
-    if (origemId === destinoId) continue;
+    const loteOrigemNome =
+      transfer.loteOrigemNome?.trim() ||
+      (transfer.loteOrigemId != null && transfer.loteOrigemId > 0
+        ? loteNomeMap[transfer.loteOrigemId] ?? null
+        : null);
+    const loteDestinoNome =
+      transfer.loteDestinoNome?.trim() || loteNomeMap[transfer.loteDestinoId] || null;
 
     rows.push({
       id: `transfer-${transfer.id}`,
@@ -146,9 +161,12 @@ export function buildHistoricoSubdivisaoAnimal(input: {
       pastoDestinoId: destinoId,
       pastoOrigemNome: resolvePastoNome(origemId, pastoMap),
       pastoDestinoNome: resolvePastoNome(destinoId, pastoMap),
-      observacoes: "Transferência entre lotes",
+      observacoes: transfer.observacoes?.trim() || null,
       responsavel: transfer.usuarioNome?.trim() || null,
       loteId: transfer.loteDestinoId,
+      loteOrigemId: transfer.loteOrigemId ?? null,
+      loteOrigemNome,
+      loteDestinoNome,
     });
   }
 

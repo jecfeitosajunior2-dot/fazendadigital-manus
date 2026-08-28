@@ -1415,13 +1415,14 @@ export type LocalAnimalLoteMovimentacao = {
   id: number;
   userId: number;
   animalId: number;
-  loteOrigemId: number;
+  loteOrigemId: number | null;
   loteDestinoId: number;
   pastoOrigemId: number | null;
   pastoDestinoId: number | null;
   fazendaId: number | null;
   dataMovimentacao: string;
   usuarioNome: string;
+  observacoes?: string | null;
   createdAt: string;
 };
 
@@ -1448,10 +1449,10 @@ export async function listLocalHistoricoPastosAnimal(userId: number, animalId: n
   const loteIds = new Set<number>();
   if (animal.loteId) loteIds.add(Number(animal.loteId));
   for (const transfer of transfers) {
-    loteIds.add(transfer.loteOrigemId);
+    if (transfer.loteOrigemId) loteIds.add(transfer.loteOrigemId);
     loteIds.add(transfer.loteDestinoId);
   }
-  if (loteIds.size === 0) return [];
+  if (loteIds.size === 0 && transfers.length === 0) return [];
 
   const lotePastoMovs = (await readLotePastoMovimentacoes()).filter(
     row => row.userId === userId && loteIds.has(row.loteId),
@@ -1461,11 +1462,18 @@ export async function listLocalHistoricoPastosAnimal(userId: number, animalId: n
   const pastoMap: Record<number, string> = {};
   for (const pasto of pastos) pastoMap[pasto.id] = String(pasto.nome);
 
+  const loteNomeMap: Record<number, string> = {};
+  const lotesLocais = await listLocalLotes(userId);
+  for (const lote of lotesLocais) {
+    if (loteIds.has(lote.id)) loteNomeMap[lote.id] = String(lote.nome);
+  }
+
   return buildHistoricoSubdivisaoAnimal({
     currentLoteId: animal.loteId != null ? Number(animal.loteId) : null,
     transfers,
     lotePastoMovs,
     pastoMap,
+    loteNomeMap,
   });
 }
 
@@ -1473,35 +1481,51 @@ export async function listLocalHistoricoPastosAnimal(userId: number, animalId: n
 export async function movimentarAnimaisLocalLote(
   userId: number,
   input: {
-    loteOrigemId: number;
+    loteOrigemId?: number;
     loteDestinoId: number;
     animalIds: number[];
     dataMovimentacao: string;
+    responsavel?: string;
+    observacoes?: string;
   },
   usuarioNome: string,
 ): Promise<{ success: true; count: number; loteDestinoNome: string; localFallback: true }> {
-  if (input.loteOrigemId === input.loteDestinoId) {
-    throw new Error("O lote de destino deve ser diferente do lote de origem.");
+  const {
+    assertDataMovimentacaoNaoFutura,
+    isLoteDestinoMesmaFazenda,
+    isMesmoLoteDestino,
+    MSG_TROCA_LOTE_DESTINO_IGUAL_ORIGEM,
+    MSG_TROCA_LOTE_DESTINO_INATIVO,
+    MSG_TROCA_LOTE_FAZENDA,
+    MSG_TROCA_LOTE_MESMO_LOTE,
+    MSG_TROCA_LOTE_SEM_ANIMAIS_ORIGEM,
+  } = await import("../shared/transferirAnimaisEntreLotes");
+
+  const dataOk = assertDataMovimentacaoNaoFutura(input.dataMovimentacao);
+  if (!dataOk.ok) throw new Error(dataOk.message);
+
+  if (input.loteOrigemId != null && input.loteOrigemId === input.loteDestinoId) {
+    throw new Error(MSG_TROCA_LOTE_DESTINO_IGUAL_ORIGEM);
   }
 
-  const hoje = new Date();
-  const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-  if (input.dataMovimentacao > hojeISO) {
-    throw new Error("A data da movimentação não pode ser futura.");
-  }
+  const lotesAll = await listLocalLotes(userId);
+  const loteById = new Map(lotesAll.map(l => [l.id, l]));
 
-  const loteOrigem = await getLocalLote(userId, input.loteOrigemId);
-  if (!loteOrigem) throw new Error("Lote de origem não encontrado.");
+  const loteOrigem = input.loteOrigemId != null
+    ? loteById.get(input.loteOrigemId) ?? null
+    : null;
+  if (input.loteOrigemId != null && !loteOrigem) throw new Error("Lote de origem não encontrado.");
 
-  const loteDestino = await getLocalLote(userId, input.loteDestinoId);
+  const loteDestino = loteById.get(input.loteDestinoId);
   if (!loteDestino) throw new Error("Lote de destino não encontrado.");
   if (loteDestino.ativo === false) {
-    throw new Error("O lote de destino não está ativo.");
+    throw new Error(MSG_TROCA_LOTE_DESTINO_INATIVO);
   }
   if (
-    loteOrigem.fazendaId != null
-    && loteDestino.fazendaId != null
-    && Number(loteOrigem.fazendaId) !== Number(loteDestino.fazendaId)
+    loteOrigem &&
+    loteOrigem.fazendaId != null &&
+    loteDestino.fazendaId != null &&
+    Number(loteOrigem.fazendaId) !== Number(loteDestino.fazendaId)
   ) {
     throw new Error("A transferência entre lotes só é permitida dentro da mesma fazenda.");
   }
@@ -1510,23 +1534,59 @@ export async function movimentarAnimaisLocalLote(
   const byUser = rows.filter(row => row.userId === userId);
   const searchPool = byUser.length > 0 ? byUser : rows;
   const wanted = new Set(input.animalIds);
-  const valid = searchPool.filter(
-    a => wanted.has(a.id) && Number(a.loteId) === Number(input.loteOrigemId),
-  );
+  const encontrados = searchPool.filter(a => wanted.has(a.id));
+  const valid = input.loteOrigemId != null
+    ? encontrados.filter(a => Number(a.loteId) === Number(input.loteOrigemId))
+    : encontrados;
   if (valid.length === 0) {
-    throw new Error("Nenhum animal selecionado pertence ao lote de origem.");
+    throw new Error(
+      input.loteOrigemId != null
+        ? MSG_TROCA_LOTE_SEM_ANIMAIS_ORIGEM
+        : "Nenhum animal válido foi encontrado para a troca de lote.",
+    );
   }
 
-  const validIds = new Set(valid.map(a => a.id));
   const pastosRows = await listLocalPastos(userId);
-  const { buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } = await import("./animaisPorFazenda");
+  const { buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote, resolveLoteFazendaId } = await import("./animaisPorFazenda");
   const pastoFazendaMap = buildPastoFazendaMap(pastosRows);
   const { fazendaId: fazendaIdDestino, pastoId: pastoDestinoId } = resolveAnimalLocalizacaoFromLote(
     loteDestino,
     pastoFazendaMap,
   );
-  const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? fazendaIdDestino ?? null;
+  const fazendaDestinoId = fazendaIdDestino ?? loteDestino.fazendaId ?? loteOrigem?.fazendaId ?? null;
+
+  for (const animal of valid) {
+    if (animal.status && animal.status !== "ativo") {
+      throw new Error("Só é possível transferir animais ativos.");
+    }
+    if (isMesmoLoteDestino(animal.loteId != null ? Number(animal.loteId) : null, input.loteDestinoId)) {
+      throw new Error(MSG_TROCA_LOTE_MESMO_LOTE);
+    }
+    const loteDoAnimal =
+      animal.loteId != null ? loteById.get(Number(animal.loteId)) : undefined;
+    const fazendaAnimal =
+      animal.fazendaId ??
+      (loteDoAnimal ? resolveLoteFazendaId(loteDoAnimal, pastoFazendaMap) : null);
+    if (!isLoteDestinoMesmaFazenda(fazendaAnimal, fazendaDestinoId)) {
+      throw new Error(MSG_TROCA_LOTE_FAZENDA);
+    }
+  }
+
+  const snapshots = valid.map(animal => {
+    const origemId =
+      animal.loteId != null && Number(animal.loteId) > 0 ? Number(animal.loteId) : null;
+    const loteDoAnimal = origemId != null ? loteById.get(origemId) : undefined;
+    return {
+      animalId: animal.id,
+      loteOrigemId: origemId,
+      pastoOrigemId: loteDoAnimal?.pastoAtualId ?? animal.pastoId ?? null,
+    };
+  });
+
+  const validIds = new Set(valid.map(a => a.id));
   const now = new Date().toISOString();
+  const nomeResponsavel = input.responsavel?.trim() || usuarioNome;
+  const observacoes = input.observacoes?.trim() || null;
 
   for (let i = 0; i < rows.length; i++) {
     if (!validIds.has(rows[i].id)) continue;
@@ -1534,7 +1594,7 @@ export async function movimentarAnimaisLocalLote(
       ...rows[i],
       loteId: input.loteDestinoId,
       pastoId: pastoDestinoId,
-      ...(fazendaIdDestino != null ? { fazendaId: fazendaIdDestino } : {}),
+      ...(fazendaDestinoId != null ? { fazendaId: fazendaDestinoId } : {}),
       updatedAt: now,
     };
   }
@@ -1542,18 +1602,19 @@ export async function movimentarAnimaisLocalLote(
 
   const historico = await readAnimalLoteMovimentacoes();
   let nextId = historico.reduce((max, row) => Math.max(max, row.id), 0) + 1;
-  for (const animalId of validIds) {
+  for (const snap of snapshots) {
     historico.push({
       id: nextId++,
       userId,
-      animalId,
-      loteOrigemId: input.loteOrigemId,
+      animalId: snap.animalId,
+      loteOrigemId: snap.loteOrigemId,
       loteDestinoId: input.loteDestinoId,
-      pastoOrigemId: loteOrigem.pastoAtualId ?? null,
+      pastoOrigemId: snap.pastoOrigemId,
       pastoDestinoId,
-      fazendaId: fazendaIdHistorico,
+      fazendaId: fazendaDestinoId,
       dataMovimentacao: input.dataMovimentacao,
-      usuarioNome,
+      usuarioNome: nomeResponsavel,
+      observacoes,
       createdAt: now,
     });
   }

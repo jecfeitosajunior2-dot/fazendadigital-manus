@@ -155,13 +155,15 @@ export const animalLoteMovimentacoes = mysqlTable("animal_lote_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),
   userId: int("userId").notNull(),
   animalId: int("animalId").notNull(),
-  loteOrigemId: int("loteOrigemId").notNull(),
+  /** Null quando o animal não tinha lote (origem = Sem lote). */
+  loteOrigemId: int("loteOrigemId"),
   loteDestinoId: int("loteDestinoId").notNull(),
   pastoOrigemId: int("pastoOrigemId"),
   pastoDestinoId: int("pastoDestinoId"),
   fazendaId: int("fazendaId"),
   dataMovimentacao: date("dataMovimentacao", { mode: "string" }).notNull(),
   usuarioNome: varchar("usuarioNome", { length: 200 }),
+  observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

@@ -109,6 +109,7 @@ import {
   cancelarLocalEstadiaSinteticaLote,
   listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
+import { transferirAnimaisEntreLotesDb } from "./transferirAnimaisEntreLotes";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import {
   isDescricaoServicoValida,
@@ -518,16 +519,18 @@ const animaisRouter = router({
         const loteIds = new Set<number>();
         if (animal.loteId) loteIds.add(animal.loteId);
         for (const transfer of transfers) {
-          loteIds.add(transfer.loteOrigemId);
+          if (transfer.loteOrigemId) loteIds.add(transfer.loteOrigemId);
           loteIds.add(transfer.loteDestinoId);
         }
-        if (loteIds.size === 0) return [];
+        if (loteIds.size === 0 && transfers.length === 0) return [];
 
-        const lotePastoRows = await db.select().from(lotePastoMovimentacoes)
-          .where(and(
-            eq(lotePastoMovimentacoes.userId, ctx.user.id),
-            inArray(lotePastoMovimentacoes.loteId, [...loteIds]),
-          ));
+        const lotePastoRows = loteIds.size
+          ? await db.select().from(lotePastoMovimentacoes)
+            .where(and(
+              eq(lotePastoMovimentacoes.userId, ctx.user.id),
+              inArray(lotePastoMovimentacoes.loteId, [...loteIds]),
+            ))
+          : [];
 
         const pastoIds = [
           ...new Set([
@@ -543,6 +546,14 @@ const animaisRouter = router({
           pastosRows.forEach(p => { pastoMap[p.id] = p.nome; });
         }
 
+        const loteNomeMap: Record<number, string> = {};
+        if (loteIds.size) {
+          const lotesRows = await db.select({ id: lotes.id, nome: lotes.nome })
+            .from(lotes)
+            .where(inArray(lotes.id, [...loteIds]));
+          lotesRows.forEach(l => { loteNomeMap[l.id] = l.nome; });
+        }
+
         return buildHistoricoSubdivisaoAnimal({
           currentLoteId: animal.loteId ?? null,
           transfers: transfers.map(t => ({
@@ -553,6 +564,7 @@ const animaisRouter = router({
             pastoDestinoId: t.pastoDestinoId,
             dataMovimentacao: t.dataMovimentacao,
             usuarioNome: t.usuarioNome,
+            observacoes: t.observacoes,
           })),
           lotePastoMovs: lotePastoRows.map(r => ({
             id: r.id,
@@ -564,6 +576,7 @@ const animaisRouter = router({
             observacoes: r.observacoes,
           })),
           pastoMap,
+          loteNomeMap,
         });
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
@@ -2531,114 +2544,18 @@ const lotesRouter = router({
 
   movimentarAnimais: protectedProcedure
     .input(z.object({
-      loteOrigemId: z.number(),
+      /** Obrigatório no Editar Lote; omitido no Manejo Pontual (origem vem do animal). */
+      loteOrigemId: z.number().optional(),
       loteDestinoId: z.number(),
       animalIds: z.array(z.number()).min(1),
       dataMovimentacao: z.string(),
+      responsavel: z.string().max(200).optional(),
+      observacoes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (input.loteOrigemId === input.loteDestinoId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino deve ser diferente do lote de origem." });
-      }
-
-      const hoje = new Date();
-      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-      if (input.dataMovimentacao > hojeISO) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A data da movimentação não pode ser futura.",
-        });
-      }
-
       const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
-
       try {
-        const [loteOrigem] = await db.select().from(lotes)
-          .where(and(eq(lotes.id, input.loteOrigemId), eq(lotes.userId, ctx.user.id)))
-          .limit(1);
-        if (!loteOrigem) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Lote de origem não encontrado." });
-        }
-
-        const [loteDestino] = await db.select().from(lotes)
-          .where(and(eq(lotes.id, input.loteDestinoId), eq(lotes.userId, ctx.user.id)))
-          .limit(1);
-        if (!loteDestino) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
-        }
-        if (loteDestino.ativo === false) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
-        }
-        if (
-          loteOrigem.fazendaId != null
-          && loteDestino.fazendaId != null
-          && loteOrigem.fazendaId !== loteDestino.fazendaId
-        ) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "A transferência entre lotes só é permitida dentro da mesma fazenda.",
-          });
-        }
-
-        const animaisRows = await db.select({ id: animais.id })
-          .from(animais)
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            eq(animais.loteId, input.loteOrigemId),
-            inArray(animais.id, input.animalIds),
-          ));
-
-        if (animaisRows.length === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence ao lote de origem." });
-        }
-
-        const animalIds = animaisRows.map(a => a.id);
-        const pastoFazendaMap = buildPastoFazendaMap(
-          loteDestino.pastoAtualId
-            ? (await db.select({ id: pastos.id, fazendaId: pastos.fazendaId })
-              .from(pastos)
-              .where(and(eq(pastos.id, loteDestino.pastoAtualId), eq(pastos.userId, ctx.user.id)))
-              .limit(1))
-            : [],
-        );
-        const { fazendaId: fazendaIdDestino, pastoId: pastoDestinoId } = resolveAnimalLocalizacaoFromLote(
-          loteDestino,
-          pastoFazendaMap,
-        );
-        const fazendaIdHistorico = loteOrigem.fazendaId ?? loteDestino.fazendaId ?? fazendaIdDestino ?? null;
-
-        // Sincroniza fazenda, lote e subdivisão do destino.
-        await db.update(animais)
-          .set({
-            loteId: input.loteDestinoId,
-            pastoId: pastoDestinoId,
-            ...(fazendaIdDestino != null ? { fazendaId: fazendaIdDestino } : {}),
-          })
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            eq(animais.loteId, input.loteOrigemId),
-            inArray(animais.id, animalIds),
-          ));
-
-        await db.insert(animalLoteMovimentacoes).values(
-          animalIds.map(animalId => ({
-            userId: ctx.user.id,
-            animalId,
-            loteOrigemId: input.loteOrigemId,
-            loteDestinoId: input.loteDestinoId,
-            pastoOrigemId: loteOrigem.pastoAtualId ?? null,
-            pastoDestinoId,
-            fazendaId: fazendaIdHistorico,
-            dataMovimentacao: input.dataMovimentacao,
-            usuarioNome,
-          })),
-        );
-
-        return {
-          success: true,
-          count: animalIds.length,
-          loteDestinoNome: loteDestino.nome,
-        };
+        return await transferirAnimaisEntreLotesDb(ctx.user.id, usuarioNome, input);
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
@@ -2647,7 +2564,7 @@ const lotesRouter = router({
         } catch (localError) {
           const message = localError instanceof Error
             ? localError.message
-            : "Não foi possível transferir os animais.";
+            : "Não foi possível concluir a troca de lote.";
           throw new TRPCError({
             code: message.includes("não encontrado") ? "NOT_FOUND" : "BAD_REQUEST",
             message,
@@ -2774,7 +2691,7 @@ const lotesRouter = router({
         .where(and(...conditions))
         .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao), desc(animalLoteMovimentacoes.createdAt));
 
-      const loteIds = [...new Set(rows.flatMap(r => [r.loteOrigemId, r.loteDestinoId]))];
+      const loteIds = [...new Set(rows.flatMap(r => [r.loteOrigemId, r.loteDestinoId].filter((id): id is number => id != null && id > 0)))];
       const loteMap = new Map<number, string>();
       if (loteIds.length) {
         const lotesRows = await db.select({ id: lotes.id, nome: lotes.nome })
@@ -2785,7 +2702,7 @@ const lotesRouter = router({
 
       return rows.map(r => ({
         ...r,
-        loteOrigemNome: loteMap.get(r.loteOrigemId) ?? null,
+        loteOrigemNome: r.loteOrigemId != null ? (loteMap.get(r.loteOrigemId) ?? null) : "Sem lote",
         loteDestinoNome: loteMap.get(r.loteDestinoId) ?? null,
       }));
     }),

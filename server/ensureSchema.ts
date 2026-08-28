@@ -60,13 +60,14 @@ export async function ensureSchema() {
         \`id\` int AUTO_INCREMENT NOT NULL,
         \`userId\` int NOT NULL,
         \`animalId\` int NOT NULL,
-        \`loteOrigemId\` int NOT NULL,
+        \`loteOrigemId\` int,
         \`loteDestinoId\` int NOT NULL,
         \`pastoOrigemId\` int,
         \`pastoDestinoId\` int,
         \`fazendaId\` int,
         \`dataMovimentacao\` date NOT NULL,
         \`usuarioNome\` varchar(200),
+        \`observacoes\` text,
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(\`id\`)
       )
@@ -77,6 +78,17 @@ export async function ensureSchema() {
       await ensureColumn(pool, "animal_lote_movimentacoes", "pastoOrigemId", "int");
       await ensureColumn(pool, "animal_lote_movimentacoes", "pastoDestinoId", "int");
       await ensureColumn(pool, "animal_lote_movimentacoes", "fazendaId", "int");
+      await ensureColumn(pool, "animal_lote_movimentacoes", "observacoes", "text");
+      const [origemCols] = await pool.query(
+        "SHOW COLUMNS FROM `animal_lote_movimentacoes` LIKE 'loteOrigemId'",
+      );
+      const origemCol = (origemCols as { Null?: string }[])[0];
+      if (origemCol && String(origemCol.Null).toUpperCase() === "NO") {
+        await pool.query(
+          "ALTER TABLE `animal_lote_movimentacoes` MODIFY COLUMN `loteOrigemId` int NULL",
+        );
+        console.log("[schema] Coluna ajustada: animal_lote_movimentacoes.loteOrigemId (nullable)");
+      }
     }
 
     const [fazendasTable] = await pool.query(`SHOW TABLES LIKE 'fazendas'`);

@@ -98,6 +98,7 @@ import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenEx
 import { FormDatePicker, FormInput, FormLabel } from "@/components/FormFields";
 import { formatCurrencyBrl } from "@/lib/utils";
 import { ManejoAnimalField } from "@/components/ManejoAnimalField";
+import { ManejoTrocaLoteForm } from "./ManejoTrocaLoteForm";
 import {
   MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
   MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS,
@@ -490,6 +491,10 @@ export function ManejoFormPage() {
 
   if (tipo.id === "reprodutivo") {
     return <ManejoReprodutivoForm />;
+  }
+
+  if (tipo.id === "troca-lote") {
+    return <ManejoTrocaLoteForm />;
   }
 
   return (

@@ -73,8 +73,12 @@ export default function MovimentarAnimaisLoteDialog({
         `Transferência realizada com sucesso.\n${data.count} ${data.count === 1 ? "animal foi transferido" : "animais foram transferidos"} para o Lote ${data.loteDestinoNome}.`,
       );
       utils.animais.list.invalidate();
+      utils.animais.getById.invalidate();
+      utils.animais.historicoPastos.invalidate();
       utils.lotes.gerenciamento.invalidate();
       utils.lotes.list.invalidate();
+      utils.lotes.listHistoricoMovimentacoesAnimais.invalidate();
+      utils.lotes.ultimaMovimentacaoPorAnimais.invalidate();
       onSuccess();
       onClose();
     },
