@@ -16,6 +16,7 @@ import {
 import { isCategoriaValidaParaSexo } from "../shared/animal-types";
 import { db } from "./db";
 import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
+import { assertManejoPermitidoNaData } from "./animalBaixa";
 import {
   assertBrincoUnicoEntreAtivos,
   assertBrincoUnicoEntreAtivosDb,
@@ -302,6 +303,7 @@ export async function executeRegistrarPartoComCrias(
 ) {
   const { matriz, dataISO, fazendaId, isNatimorto } =
     await validateRegistrarPartoComCriasPreconditions(userId, input);
+  await assertManejoPermitidoNaData(userId, input.femeaId, dataISO);
 
   const registrosFemea = await loadReproRegistrosFemea(userId, input.femeaId);
   const paiId = resolvePaiIdFromRegistros(registrosFemea, dataISO, input.machoId);

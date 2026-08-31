@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -138,6 +138,7 @@ export function FormNativeSelect({
   id,
   invalid,
   modal,
+  itemClassName,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -152,6 +153,8 @@ export function FormNativeSelect({
   invalid?: boolean;
   /** false evita conflito quando o select fica dentro de Popover/Dialog. */
   modal?: boolean;
+  /** Estilo da opção destacada na lista aberta. */
+  itemClassName?: string;
   "aria-describedby"?: string;
 }) {
   const mergedOptions = React.useMemo(() => {
@@ -178,11 +181,90 @@ export function FormNativeSelect({
       aria-describedby={ariaDescribedBy}
     >
       {mergedOptions.map(o => (
-        <SelectItem key={o.value} value={o.value}>
+        <SelectItem key={o.value} value={o.value} className={itemClassName}>
           {o.label}
         </SelectItem>
       ))}
     </FormSelect>
+  );
+}
+
+const formDownSelectCls =
+  "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
+
+/** Select customizado: mesma aparência dos campos nativos e lista sempre abaixo. */
+export function FormDownSelect({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  options: ReadonlyArray<{ value: string; label: string }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div className="relative w-full min-w-0 max-w-full" ref={rootRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        className={`${formDownSelectCls} flex items-center justify-between gap-2 text-left disabled:opacity-60 disabled:cursor-not-allowed`}
+      >
+        <span className={`truncate ${selected ? "text-gray-700" : "text-gray-400"}`}>
+          {selected?.label ?? placeholder}
+        </span>
+        <span className="material-icons text-[18px] text-gray-400 shrink-0" aria-hidden>
+          {open ? "expand_less" : "expand_more"}
+        </span>
+      </button>
+      {open && !disabled ? (
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg"
+        >
+          {options.map(o => (
+            <li key={o.value} role="option" aria-selected={o.value === value}>
+              <button
+                type="button"
+                className={`w-full text-left px-3 py-2 text-[12px] hover:bg-[#4ECDC4]/[0.08] ${
+                  o.value === value ? "font-semibold text-gray-900" : "text-gray-700"
+                }`}
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+              >
+                {o.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

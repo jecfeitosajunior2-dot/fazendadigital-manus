@@ -1,27 +1,26 @@
 import AppLayout from "@/components/AppLayout";
-import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { BloqueioNegocioDialog } from "@/components/BloqueioNegocioDialog";
+import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import {
   FieldBox,
   FormDatePicker,
   FormDownSelect,
+  FormInput,
   FormLabel,
 } from "@/components/FormFields";
 import { trpc } from "@/lib/trpc";
 import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
+import { persistRebanhoFazendaId } from "@shared/animal-filter-types";
+import { formatLoteAtualDisplay } from "@shared/transferirAnimaisEntreLotes";
 import {
-  persistRebanhoFazendaId,
-} from "@shared/animal-filter-types";
-import {
-  filtrarLotesDestinoTroca,
-  formatLoteAtualDisplay,
-  isMesmoLoteDestino,
-  labelLoteDestinoComPasto,
-  MSG_TROCA_LOTE_GENERICO,
-  MSG_TROCA_LOTE_MESMO_LOTE,
-  podeSalvarTrocaLote,
-} from "@shared/transferirAnimaisEntreLotes";
+  filtrarMachosElegiveisCastracao,
+  METODOS_CASTRACAO,
+  MSG_CASTRACAO_GENERICO,
+  MSG_CASTRACAO_SUCESSO,
+  podeSalvarCastracao,
+  type MetodoCastracao,
+} from "@shared/castracaoManejo";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -31,8 +30,6 @@ const FD_PRIMARY = "#4ECDC4";
 const fieldCls =
   "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
 const labelCls = "block text-[11px] text-gray-600 font-medium mb-1";
-const sectionTitleCls =
-  "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
 
 function todayISODate() {
   const d = new Date();
@@ -42,15 +39,13 @@ function todayISODate() {
   return `${y}-${m}-${day}`;
 }
 
-type LoteDestinoOpt = {
+type LoteOpt = {
   id: number;
   nome: string;
-  fazendaId?: number | null;
-  ativo?: boolean | null;
   pastoNome?: string | null;
 };
 
-type AnimalTrocaLoteRow = {
+type AnimalCastracaoRow = {
   id: number;
   brinco?: string | null;
   nome?: string | null;
@@ -61,32 +56,37 @@ type AnimalTrocaLoteRow = {
   fazendaId?: number | null;
   pastoNome?: string | null;
   status?: string | null;
+  castrado?: boolean | number | null;
+  categoria?: string | null;
 };
 
-export function ManejoTrocaLoteForm() {
+const metodoOptions = METODOS_CASTRACAO.map(m => ({ value: m.value, label: m.label }));
+
+export function ManejoCastracaoForm() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
-  const { data: lotes = [], isLoading: lotesLoading } = trpc.lotes.list.useQuery({
-    somenteAtivos: true,
-  });
+  const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
 
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
-  const [animalSel, setAnimalSel] = useState<AnimalTrocaLoteRow | null>(null);
-  const [dataMovimentacao, setDataMovimentacao] = useState(todayISODate);
-  const [loteDestinoId, setLoteDestinoId] = useState("");
+  const [animalSel, setAnimalSel] = useState<AnimalCastracaoRow | null>(null);
+  const [dataCastracao, setDataCastracao] = useState(todayISODate);
+  const [metodo, setMetodo] = useState("");
+  const [descricaoMetodo, setDescricaoMetodo] = useState("");
+  const [observacoes, setObservacoes] = useState("");
   const [bloqueioMsg, setBloqueioMsg] = useState<string | null>(null);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+  const metodoOutro = metodo === "outro";
 
   const { data: animais = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery(
     {
       fazendaId: fazendaNum || undefined,
       status: "ativo",
-      dataManejo: dataMovimentacao,
+      dataManejo: dataCastracao,
     },
     { enabled: Boolean(fazendaNum) },
   );
@@ -105,11 +105,19 @@ export function ManejoTrocaLoteForm() {
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone, loadingFazendas]);
 
+  const machos = useMemo(
+    () =>
+      filtrarMachosElegiveisCastracao(
+        (animais as AnimalCastracaoRow[]).map(animal => ({ ...animal, status: "ativo" })),
+      ),
+    [animais],
+  );
+
   const animalId = resolveAnimalIdFromSelecao(animalSel);
 
   const loteAtualDoAnimal = useMemo(() => {
     if (!animalSel?.loteId) return null;
-    return lotes.find(l => l.id === animalSel.loteId) ?? null;
+    return (lotes as LoteOpt[]).find(l => l.id === animalSel.loteId) ?? null;
   }, [animalSel?.loteId, lotes]);
 
   const loteAtualId =
@@ -124,63 +132,26 @@ export function ManejoTrocaLoteForm() {
     });
   }, [animalSel, loteAtualDoAnimal, loteAtualId]);
 
-  const lotesDestino = useMemo(() => {
-    if (!fazendaNum) return [];
-    return filtrarLotesDestinoTroca(lotes as LoteDestinoOpt[], {
-      fazendaAnimalId: fazendaNum,
-      loteAtualId,
-    }).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [lotes, fazendaNum, loteAtualId]);
+  const podeSalvar = podeSalvarCastracao({
+    fazendaId: fazendaNum || null,
+    animalId,
+    dataCastracao,
+    metodo,
+    descricaoMetodo,
+  });
 
-  const destinoOptions = useMemo(
-    () =>
-      lotesDestino.map(l => ({
-        value: String(l.id),
-        label: labelLoteDestinoComPasto(l.nome, l.pastoNome),
-      })),
-    [lotesDestino],
-  );
-
-  const loteDestino = useMemo(
-    () => lotesDestino.find(l => String(l.id) === loteDestinoId) ?? null,
-    [lotesDestino, loteDestinoId],
-  );
-
-  const destinoSelectValue = loteDestino ? String(loteDestino.id) : "";
-
-  useEffect(() => {
-    if (!loteDestinoId) return;
-    if (!loteDestino) setLoteDestinoId("");
-  }, [loteDestinoId, loteDestino]);
-
-  const destinoIdNum = loteDestino?.id ?? null;
-  const mesmoLote = isMesmoLoteDestino(loteAtualId, destinoIdNum ?? 0);
-
-  const podeSalvar =
-    podeSalvarTrocaLote({
-      fazendaId: fazendaNum || null,
-      animalId,
-      dataMovimentacao,
-      loteDestinoId: destinoIdNum,
-      loteAtualId,
-    }) && Boolean(loteDestino);
-
-  const mutation = trpc.lotes.movimentarAnimais.useMutation({
-    onSuccess: async data => {
-      toast.success(`Animal transferido para o lote ${data.loteDestinoNome}.`);
+  const mutation = trpc.saude.registrarCastracao.useMutation({
+    onSuccess: async () => {
+      toast.success(MSG_CASTRACAO_SUCESSO);
       await Promise.all([
         utils.animais.list.invalidate(),
         utils.animais.getById.invalidate(),
-        utils.animais.historicoPastos.invalidate(),
-        utils.lotes.list.invalidate(),
-        utils.lotes.gerenciamento.invalidate(),
-        utils.lotes.listHistoricoMovimentacoesAnimais.invalidate(),
-        utils.lotes.ultimaMovimentacaoPorAnimais.invalidate(),
+        utils.saude.list.invalidate(),
       ]);
       setLocation("/manejo/registros");
     },
     onError: err => {
-      const message = err.message || MSG_TROCA_LOTE_GENERICO;
+      const message = err.message || MSG_CASTRACAO_GENERICO;
       if (isMensagemBloqueioBaixa(message)) {
         setBloqueioMsg(message);
         return;
@@ -189,59 +160,47 @@ export function ManejoTrocaLoteForm() {
     },
   });
 
+  const limparDependentes = () => {
+    setAnimalSel(null);
+    setMetodo("");
+    setDescricaoMetodo("");
+  };
+
   const onChangeFazenda = (next: string) => {
     setFazendaId(next);
     persistRebanhoFazendaId(next);
-    setAnimalSel(null);
-    setLoteDestinoId("");
+    limparDependentes();
   };
 
-  const handleAnimalSelect = useCallback((a: AnimalTrocaLoteRow | null) => {
+  const handleAnimalSelect = useCallback((a: AnimalCastracaoRow | null) => {
     setAnimalSel(a);
   }, []);
 
   const handleDataChange = (v: string) => {
     if (v && v > todayISODate()) {
-      toast.error("A data da movimentação não pode ser futura.");
+      toast.error("A data da castração não pode ser futura.");
       return;
     }
-    setDataMovimentacao(v);
+    setDataCastracao(v);
+  };
+
+  const handleMetodoChange = (next: string) => {
+    setMetodo(next);
+    if (next !== "outro") setDescricaoMetodo("");
   };
 
   const handleSalvar = () => {
-    if (!fazendaNum) {
-      toast.error("Selecione uma Fazenda.");
-      return;
-    }
-    if (!animalId || !animalSel) {
-      toast.error("Selecione um animal válido.");
-      return;
-    }
-    if (!dataMovimentacao) {
-      toast.error("Data da movimentação é obrigatória.");
-      return;
-    }
-    if (dataMovimentacao > todayISODate()) {
-      toast.error("A data da movimentação não pode ser futura.");
-      return;
-    }
-    if (!loteDestino) {
-      toast.error("Selecione o lote de destino.");
-      return;
-    }
-    if (isMesmoLoteDestino(loteAtualId, loteDestino.id)) {
-      toast.error(MSG_TROCA_LOTE_MESMO_LOTE);
-      return;
-    }
-
+    if (!podeSalvar || !animalId || !isMetodo(metodo)) return;
     mutation.mutate({
-      animalIds: [animalId],
-      loteDestinoId: loteDestino.id,
-      dataMovimentacao,
+      fazendaId: fazendaNum,
+      animalId,
+      dataCastracao,
+      metodo,
+      descricaoMetodo: metodoOutro ? descricaoMetodo.trim() : undefined,
+      observacoes: observacoes.trim() || undefined,
     });
   };
 
-  const destinoDisabled = !fazendaNum || mutation.isPending;
   const salvarDisabled = !podeSalvar || mutation.isPending;
 
   return (
@@ -255,7 +214,7 @@ export function ManejoTrocaLoteForm() {
             className="text-[20px] font-semibold text-gray-900"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Troca de Lote
+            Castração
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -280,47 +239,44 @@ export function ManejoTrocaLoteForm() {
       </div>
 
       <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
-          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
-            {unicaFazenda && fazendaId && nomeFazenda ? (
-              <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
-              </div>
-            ) : (
-              <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
-                  disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+          {unicaFazenda && fazendaId && nomeFazenda ? (
             <div className="min-w-0">
-              <FormLabel required>Data</FormLabel>
-              <FormDatePicker
-                value={dataMovimentacao}
-                onChange={handleDataChange}
-                max={todayISODate()}
-              />
+              <label className={labelCls}>Fazenda</label>
+              <div
+                className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
+              >
+                {nomeFazenda}
+              </div>
             </div>
+          ) : (
+            <div className="min-w-0">
+              <label className={labelCls}>
+                Fazenda<span className="text-red-500">*</span>
+              </label>
+              <select
+                value={fazendaId}
+                onChange={e => onChangeFazenda(e.target.value)}
+                className={fieldCls}
+                disabled={loadingFazendas || !fazendaInitDone}
+              >
+                <option value="">Selecione uma Fazenda</option>
+                {fazendas.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="min-w-0">
+            <FormLabel required>Data</FormLabel>
+            <FormDatePicker
+              value={dataCastracao}
+              onChange={handleDataChange}
+              max={todayISODate()}
+            />
           </div>
         </div>
 
@@ -330,12 +286,12 @@ export function ManejoTrocaLoteForm() {
             <AnimalAutocomplete
               selected={animalSel}
               onSelect={handleAnimalSelect}
-              animals={animais as AnimalTrocaLoteRow[]}
+              animals={machos}
               loading={Boolean(fazendaNum) && loadingAnimais}
               disabled={!fazendaNum}
               inputClassName={fieldCls}
               placeholder="Buscar por brinco, RFID ou nome…"
-              emptyMessage="Nenhum animal ativo nesta Fazenda."
+              emptyMessage="Nenhum macho ativo nesta Fazenda."
               hintMessage={
                 fazendaNum
                   ? "Clique para ver animais ou digite para filtrar."
@@ -359,32 +315,39 @@ export function ManejoTrocaLoteForm() {
               </div>
             </FieldBox>
           </div>
+        </div>
 
-          <div className="sm:col-span-2">
-            <FormLabel required>Lote de destino</FormLabel>
-            {lotesLoading ? (
-              <p className="text-[12px] text-gray-400 py-2">Carregando lotes...</p>
-            ) : fazendaNum && destinoOptions.length === 0 ? (
-              <p className="text-[12px] text-amber-700 py-2">
-                Nenhum lote de destino disponível nesta fazenda.
-              </p>
-            ) : (
-              <FormDownSelect
-                value={destinoSelectValue}
-                onChange={setLoteDestinoId}
-                placeholder={
-                  fazendaNum
-                    ? "Selecione o lote de destino"
-                    : "Selecione uma Fazenda primeiro"
-                }
-                disabled={destinoDisabled || destinoOptions.length === 0}
-                options={destinoOptions}
+        <div>
+          <FormLabel required>Método</FormLabel>
+          <FormDownSelect
+            value={metodo}
+            onChange={handleMetodoChange}
+            placeholder="Selecione o método"
+            options={metodoOptions}
+          />
+          {metodoOutro ? (
+            <div className="mt-3">
+              <FormLabel required>Descrição do método</FormLabel>
+              <FormInput
+                value={descricaoMetodo}
+                onChange={setDescricaoMetodo}
+                placeholder="Ex.: técnica utilizada"
+                variant="light"
               />
-            )}
-            {mesmoLote ? (
-              <p className="mt-1.5 text-[12px] text-amber-700">{MSG_TROCA_LOTE_MESMO_LOTE}</p>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <FormLabel>Observações</FormLabel>
+          <textarea
+            rows={3}
+            value={observacoes}
+            onChange={e => setObservacoes(e.target.value)}
+            className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+            placeholder="Opcional"
+            maxLength={2000}
+          />
         </div>
       </div>
       <BloqueioNegocioDialog
@@ -393,4 +356,8 @@ export function ManejoTrocaLoteForm() {
       />
     </AppLayout>
   );
+}
+
+function isMetodo(value: string): value is MetodoCastracao {
+  return METODOS_CASTRACAO.some(m => m.value === value);
 }

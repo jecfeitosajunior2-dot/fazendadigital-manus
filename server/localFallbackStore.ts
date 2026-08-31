@@ -9,6 +9,15 @@ import {
   resolverLocalizacaoAtualLote,
   type MovimentacaoPastoLoteRef,
 } from "../shared/localizacaoAtualLote";
+import { computeIndicadoresPeso } from "../shared/pesoEntrada";
+import {
+  avaliarManejoVsBaixa,
+  MSG_BAIXA_ANIMAL_INATIVO,
+  MSG_BAIXA_FAZENDA_DIVERGENTE,
+  mensagemSaidaDuplicada,
+  tipoBaixaParaStatus,
+  type TipoBaixaAnimal,
+} from "../shared/animalBaixa";
 import { devLocalStore } from "./devLocalStore";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
@@ -25,6 +34,7 @@ const saudeRegistrosFile = path.join(dataDir, "saude-registros.json");
 const reproducaoRegistrosFile = path.join(dataDir, "reproducao-registros.json");
 const partoCriasFile = path.join(dataDir, "parto-crias.json");
 const historicoBrincosFile = path.join(dataDir, "historico-brincos.json");
+const animalBaixasFile = path.join(dataDir, "animal-baixas.json");
 const animalLoteMovimentacoesFile = path.join(dataDir, "animal-lote-movimentacoes.json");
 const lotePastoMovimentacoesFile = path.join(dataDir, "lote-pasto-movimentacoes.json");
 
@@ -1411,6 +1421,223 @@ export async function updateLocalAnimal(
   await writeAnimais(rows);
 }
 
+export type LocalAnimalBaixa = {
+  id: number;
+  userId: number;
+  animalId: number;
+  fazendaId: number;
+  tipo: TipoBaixaAnimal;
+  dataBaixa: string;
+  destino: string | null;
+  motivo: string | null;
+  observacoes: string | null;
+  usuarioNome: string | null;
+  createdAt: string;
+};
+
+async function readAnimalBaixas(): Promise<LocalAnimalBaixa[]> {
+  return readJsonFile<LocalAnimalBaixa[]>(animalBaixasFile, []);
+}
+
+async function writeAnimalBaixas(rows: LocalAnimalBaixa[]): Promise<void> {
+  await writeJsonFile(animalBaixasFile, rows);
+}
+
+export async function listLocalAnimalBaixas(
+  userId: number,
+  animalId?: number,
+): Promise<LocalAnimalBaixa[]> {
+  const rows = await readAnimalBaixas();
+  const matched = rows.filter(row => row.userId === userId);
+  const visible = matched.length > 0 ? matched : rows;
+  const filtered =
+    animalId == null ? visible : visible.filter(row => row.animalId === animalId);
+  return filtered.sort((a, b) =>
+    `${b.dataBaixa}:${b.id}`.localeCompare(`${a.dataBaixa}:${a.id}`),
+  );
+}
+
+export async function getLocalAnimalBaixa(
+  userId: number,
+  animalId: number,
+): Promise<LocalAnimalBaixa | null> {
+  const rows = await listLocalAnimalBaixas(userId, animalId);
+  return rows[0] ?? null;
+}
+
+/**
+ * Fallback local do comando de baixa.
+ * Atualiza status e evento como uma única unidade lógica, com rollback se a segunda gravação falhar.
+ */
+export async function registrarLocalAnimalBaixa(
+  userId: number,
+  input: {
+    animalId: number;
+    fazendaId: number;
+    tipo: TipoBaixaAnimal;
+    dataBaixa: string;
+    destino?: string | null;
+    motivo?: string | null;
+    observacoes?: string | null;
+    usuarioNome?: string | null;
+  },
+): Promise<LocalAnimalBaixa> {
+  const [animaisRows, baixasRows] = await Promise.all([readAnimais(), readAnimalBaixas()]);
+  const animalIndex = animaisRows.findIndex(
+    row => row.userId === userId && row.id === input.animalId,
+  );
+  if (animalIndex < 0) throw new Error("Animal não encontrado.");
+  if (baixasRows.some(row => row.animalId === input.animalId)) {
+    throw new Error(mensagemSaidaDuplicada(input.tipo));
+  }
+
+  const animal = animaisRows[animalIndex]!;
+  if (animal.status !== "ativo") throw new Error(MSG_BAIXA_ANIMAL_INATIVO);
+  if (Number(animal.fazendaId) !== Number(input.fazendaId)) {
+    throw new Error(MSG_BAIXA_FAZENDA_DIVERGENTE);
+  }
+
+  const now = new Date().toISOString();
+  const baixa: LocalAnimalBaixa = {
+    id: baixasRows.reduce((max, row) => Math.max(max, row.id), 0) + 1,
+    userId,
+    animalId: input.animalId,
+    fazendaId: input.fazendaId,
+    tipo: input.tipo,
+    dataBaixa: input.dataBaixa,
+    destino: input.destino?.trim() || null,
+    motivo: input.motivo?.trim() || null,
+    observacoes: input.observacoes?.trim() || null,
+    usuarioNome: input.usuarioNome?.trim() || null,
+    createdAt: now,
+  };
+
+  const animalAnterior = { ...animal };
+  animaisRows[animalIndex] = {
+    ...animal,
+    status: tipoBaixaParaStatus(input.tipo),
+    updatedAt: now,
+  };
+  baixasRows.push(baixa);
+
+  await writeAnimais(animaisRows);
+  try {
+    await writeAnimalBaixas(baixasRows);
+  } catch (error) {
+    animaisRows[animalIndex] = animalAnterior;
+    await writeAnimais(animaisRows);
+    throw error;
+  }
+  return baixa;
+}
+
+export async function registrarLocalTransferenciaInterna(
+  userId: number,
+  input: {
+    fazendaOrigemId: number;
+    fazendaDestinoId: number;
+    animalId: number;
+    loteDestinoId: number;
+    pastoDestinoId?: number | null;
+    dataTransferencia: string;
+    observacoes?: string | null;
+    usuarioNome?: string | null;
+  },
+): Promise<{
+  status: "ativo";
+  fazendaId: number;
+  loteId: number;
+  loteDestinoNome: string;
+}> {
+  const {
+    MSG_SAIDA_TRANSFERENCIA_DUPLICADA,
+  } = await import("../shared/animalBaixa");
+  const {
+    MSG_BAIXA_ANIMAL_INATIVO: animalInativo,
+    MSG_BAIXA_FAZENDA_DIVERGENTE: fazendaDivergente,
+    MSG_TRANSFERENCIA_LOTE_FAZENDA,
+    MSG_TRANSFERENCIA_LOTE_INATIVO,
+    MSG_TRANSFERENCIA_PASTO_FAZENDA,
+    validarTransferenciaInternaInput,
+  } = await import("../shared/transferenciaInternaAnimal");
+
+  const animal = await getLocalAnimal(userId, input.animalId);
+  if (!animal) throw new Error("Animal não encontrado.");
+  if (animal.status !== "ativo") throw new Error(animalInativo);
+  if (Number(animal.fazendaId) !== Number(input.fazendaOrigemId)) {
+    throw new Error(fazendaDivergente);
+  }
+
+  const baixa = await getLocalAnimalBaixa(userId, input.animalId);
+  if (baixa) throw new Error(MSG_SAIDA_TRANSFERENCIA_DUPLICADA);
+
+  const loteDestino = await getLocalLote(userId, input.loteDestinoId);
+  if (!loteDestino) throw new Error("Lote de destino não encontrado.");
+  if (loteDestino.ativo === false) throw new Error(MSG_TRANSFERENCIA_LOTE_INATIVO);
+
+  const pastosRows = await listLocalPastos(userId);
+  const pastoInformado =
+    input.pastoDestinoId != null && input.pastoDestinoId > 0
+      ? input.pastoDestinoId
+      : loteDestino.pastoAtualId ?? null;
+  const pasto = pastoInformado != null
+    ? pastosRows.find(p => p.id === pastoInformado)
+    : undefined;
+  if (pastoInformado != null && !pasto) {
+    throw new Error("Subdivisão de destino não encontrada.");
+  }
+  if (pasto && Number(pasto.fazendaId) !== Number(input.fazendaDestinoId)) {
+    throw new Error(MSG_TRANSFERENCIA_PASTO_FAZENDA);
+  }
+
+  const validacao = validarTransferenciaInternaInput({
+    fazendaOrigemId: input.fazendaOrigemId,
+    fazendaDestinoId: input.fazendaDestinoId,
+    animalId: input.animalId,
+    loteDestinoId: input.loteDestinoId,
+    loteDestinoFazendaId: loteDestino.fazendaId,
+    loteDestinoAtivo: loteDestino.ativo,
+    pastoDestinoId: pastoInformado,
+    pastoDestinoFazendaId: pasto?.fazendaId ?? null,
+    dataTransferencia: input.dataTransferencia,
+  });
+  if (!validacao.ok) throw new Error(validacao.message);
+  if (loteDestino.fazendaId == null) throw new Error(MSG_TRANSFERENCIA_LOTE_FAZENDA);
+
+  const now = new Date().toISOString();
+  await updateLocalAnimal(userId, input.animalId, {
+    fazendaId: validacao.fazendaDestinoId,
+    loteId: validacao.loteDestinoId,
+    pastoId: validacao.pastoDestinoId,
+    status: "ativo",
+  });
+
+  const historico = await readAnimalLoteMovimentacoes();
+  historico.push({
+    id: historico.reduce((max, row) => Math.max(max, row.id), 0) + 1,
+    userId,
+    animalId: input.animalId,
+    loteOrigemId: animal.loteId != null && Number(animal.loteId) > 0 ? Number(animal.loteId) : null,
+    loteDestinoId: validacao.loteDestinoId,
+    pastoOrigemId: animal.pastoId ?? null,
+    pastoDestinoId: validacao.pastoDestinoId,
+    fazendaId: validacao.fazendaDestinoId,
+    fazendaOrigemId: validacao.fazendaOrigemId,
+    dataMovimentacao: validacao.dataISO,
+    usuarioNome: input.usuarioNome?.trim() || "",
+    observacoes: input.observacoes?.trim() || null,
+    createdAt: now,
+  });
+  await writeAnimalLoteMovimentacoes(historico);
+
+  return {
+    status: "ativo",
+    fazendaId: validacao.fazendaDestinoId,
+    loteId: validacao.loteDestinoId,
+    loteDestinoNome: loteDestino.nome,
+  };
+}
+
 export type LocalAnimalLoteMovimentacao = {
   id: number;
   userId: number;
@@ -1420,6 +1647,7 @@ export type LocalAnimalLoteMovimentacao = {
   pastoOrigemId: number | null;
   pastoDestinoId: number | null;
   fazendaId: number | null;
+  fazendaOrigemId?: number | null;
   dataMovimentacao: string;
   usuarioNome: string;
   observacoes?: string | null;
@@ -1468,12 +1696,22 @@ export async function listLocalHistoricoPastosAnimal(userId: number, animalId: n
     if (loteIds.has(lote.id)) loteNomeMap[lote.id] = String(lote.nome);
   }
 
+  const fazendaNomeMap: Record<number, string> = {};
+  const fazendasLocais = await listLocalFazendas(userId);
+  for (const fazenda of fazendasLocais) {
+    fazendaNomeMap[fazenda.id] = String(fazenda.nome);
+  }
+
   return buildHistoricoSubdivisaoAnimal({
     currentLoteId: animal.loteId != null ? Number(animal.loteId) : null,
-    transfers,
+    transfers: transfers.map(t => ({
+      ...t,
+      fazendaDestinoId: t.fazendaId,
+    })),
     lotePastoMovs,
     pastoMap,
     loteNomeMap,
+    fazendaNomeMap,
   });
 }
 
@@ -1556,8 +1794,14 @@ export async function movimentarAnimaisLocalLote(
   const fazendaDestinoId = fazendaIdDestino ?? loteDestino.fazendaId ?? loteOrigem?.fazendaId ?? null;
 
   for (const animal of valid) {
-    if (animal.status && animal.status !== "ativo") {
-      throw new Error("Só é possível transferir animais ativos.");
+    const baixa = await getLocalAnimalBaixa(userId, animal.id);
+    const manejoVsBaixa = avaliarManejoVsBaixa({
+      status: animal.status,
+      dataBaixa: baixa?.dataBaixa,
+      dataEvento: input.dataMovimentacao,
+    });
+    if (!manejoVsBaixa.permitido) {
+      throw new Error(manejoVsBaixa.mensagem);
     }
     if (isMesmoLoteDestino(animal.loteId != null ? Number(animal.loteId) : null, input.loteDestinoId)) {
       throw new Error(MSG_TROCA_LOTE_MESMO_LOTE);
@@ -1939,6 +2183,17 @@ export async function listLocalAnimaisEnriched(
   if (input?.status && input.status !== "" && input.status !== "todos") {
     if (input.status === "inativo") {
       lista = lista.filter(a => (a.status ?? "ativo") !== "ativo");
+    } else if (input.status === "ativo" && input.dataManejo) {
+      const dataEvento = String(input.dataManejo);
+      const baixas = await listLocalAnimalBaixas(userId);
+      const baixaPorAnimal = new Map(baixas.map(baixa => [baixa.animalId, baixa]));
+      lista = lista.filter(animal =>
+        avaliarManejoVsBaixa({
+          status: animal.status,
+          dataBaixa: baixaPorAnimal.get(animal.id)?.dataBaixa,
+          dataEvento,
+        }).permitido,
+      );
     } else {
       lista = lista.filter(a => a.status === input.status);
     }
@@ -2025,33 +2280,13 @@ export async function listLocalAnimaisEnriched(
     }
 
     const pesos = pesagensPorAnimal.get(animal.id) || [];
-    const ultimoPeso =
-      pesos.length > 0
-        ? Number(pesos[pesos.length - 1].peso)
-        : animal.pesoAtual
-          ? Number(animal.pesoAtual)
-          : animal.pesoEntrada
-            ? Number(animal.pesoEntrada)
-            : null;
-    const primeiroPeso =
-      pesos.length > 0 ? Number(pesos[0].peso) : animal.pesoEntrada ? Number(animal.pesoEntrada) : null;
-
-    let ganhoKg: number | null = null;
-    if (ultimoPeso !== null && primeiroPeso !== null && ultimoPeso !== primeiroPeso) {
-      ganhoKg = Math.round((ultimoPeso - primeiroPeso) * 100) / 100;
-    }
-
-    let gmd: number | null = null;
-    if (pesos.length >= 2) {
-      const p1 = pesos[0];
-      const p2 = pesos[pesos.length - 1];
-      const d1 = new Date(p1.data);
-      const d2 = new Date(p2.data);
-      const dias = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-      gmd = Math.round(((Number(p2.peso) - Number(p1.peso)) / dias) * 1000) / 1000;
-    } else if (diasNaFazenda && diasNaFazenda > 0 && ganhoKg !== null) {
-      gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
-    }
+    const indicadoresPeso = computeIndicadoresPeso(pesos, {
+      pesoEntrada: animal.pesoEntrada,
+      dataEntrada: animal.dataEntrada,
+    });
+    const ultimoPeso = indicadoresPeso.ultimoPeso;
+    const ganhoKg = indicadoresPeso.ganhoKg;
+    const gmd = indicadoresPeso.gmd;
 
     const loteId = animal.loteId != null ? Number(animal.loteId) : null;
 
@@ -2074,7 +2309,12 @@ export async function listLocalAnimaisEnriched(
   let filtered = resultado;
   if (input?.apenasEmCarencia) filtered = filtered.filter(a => a.emCarencia === true);
   if (input?.apenasSemLote) filtered = filtered.filter(a => !a.loteId);
-  if (input?.apenasSemPesagem) filtered = filtered.filter(a => a.ultimoPeso === null);
+  if (input?.apenasSemPesagem) {
+    filtered = filtered.filter(a => {
+      const pesos = pesagensPorAnimal.get(Number(a.id)) || [];
+      return pesos.length === 0;
+    });
+  }
   if (input?.pesoMin !== undefined || input?.pesoMax !== undefined) {
     filtered = filtered.filter(a => {
       const peso = a.ultimoPeso;
@@ -2671,9 +2911,9 @@ export async function buildLocalRebanhoOverview(userId: number, fazendaId?: numb
 
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const inicioMesStr = inicioMes.toISOString().slice(0, 10);
-  const saidasCount = (await listLocalAnimais(userId)).filter(a =>
-    ["vendido", "morto", "transferido"].includes(String(a.status))
-    && String(a.updatedAt ?? "") >= inicioMesStr,
+  const saidasCount = (await listLocalAnimalBaixas(userId)).filter(baixa =>
+    baixa.dataBaixa >= inicioMesStr &&
+    (fazendaId == null || baixa.fazendaId === fazendaId),
   ).length;
 
   return computeRebanhoOverview({

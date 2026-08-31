@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
-  users, animais, lotes, saudeRegistros, reproducaoRegistros,
+  users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
   compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
@@ -110,6 +110,16 @@ import {
   listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
 import { transferirAnimaisEntreLotesDb } from "./transferirAnimaisEntreLotes";
+import { registrarCastracao } from "./castracaoManejo";
+import { assertAlteracaoSexoAnimal } from "./assertAlteracaoSexoAnimal";
+import { registrarDesmama } from "./desmamaManejo";
+import {
+  assertManejoPermitidoNaData,
+  getBaixaAnimal,
+  registrarBaixaAnimal,
+} from "./animalBaixa";
+import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
+import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import {
   isDescricaoServicoValida,
@@ -211,6 +221,11 @@ import {
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
 import { normalizeRfidKey } from "../shared/rfidUnicidade";
 import { buildObservacoesHistoricoIdentificacao } from "../shared/historicoIdentificacao";
+import {
+  MSG_PESO_ENTRADA_INVALIDO,
+  computeIndicadoresPeso,
+  isPesoEntradaInformadoInvalido,
+} from "../shared/pesoEntrada";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -302,6 +317,8 @@ const animaisListInput = z.object({
   apenasEmCarencia: z.boolean().optional(),
   apenasSemLote: z.boolean().optional(),
   apenasSemPesagem: z.boolean().optional(),
+  /** Em manejos, inclui baixados apenas quando o evento é retroativo (data <= baixa). */
+  dataManejo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).optional();
 
 function buildAnimalInsertRow(userId: number, input: {
@@ -318,7 +335,7 @@ function buildAnimalInsertRow(userId: number, input: {
   pelagem?: string;
   marca?: string;
   dataDesmama?: string | null;
-  castrado?: boolean;
+  castrado?: boolean | null;
   dataEntrada?: string | null;
   pesoEntrada?: string;
   produtorOrigem?: string;
@@ -351,7 +368,7 @@ function buildAnimalInsertRow(userId: number, input: {
     pelagem: input.pelagem,
     marca: input.marca,
     dataDesmama: input.dataDesmama || undefined,
-    castrado: input.castrado,
+    castrado: input.castrado ?? null,
     dataEntrada: input.dataEntrada || undefined,
     pesoEntrada: input.pesoEntrada,
     produtorOrigem: input.produtorOrigem,
@@ -554,6 +571,20 @@ const animaisRouter = router({
           lotesRows.forEach(l => { loteNomeMap[l.id] = l.nome; });
         }
 
+        const fazendaIds = [
+          ...new Set(
+            transfers.flatMap(t => [t.fazendaOrigemId, t.fazendaId].filter((id): id is number => id != null)),
+          ),
+        ];
+        const fazendaNomeMap: Record<number, string> = {};
+        if (fazendaIds.length) {
+          const fazendasRows = await db
+            .select({ id: fazendas.id, nome: fazendas.nome })
+            .from(fazendas)
+            .where(inArray(fazendas.id, fazendaIds));
+          fazendasRows.forEach(f => { fazendaNomeMap[f.id] = f.nome; });
+        }
+
         return buildHistoricoSubdivisaoAnimal({
           currentLoteId: animal.loteId ?? null,
           transfers: transfers.map(t => ({
@@ -565,6 +596,8 @@ const animaisRouter = router({
             dataMovimentacao: t.dataMovimentacao,
             usuarioNome: t.usuarioNome,
             observacoes: t.observacoes,
+            fazendaOrigemId: t.fazendaOrigemId,
+            fazendaDestinoId: t.fazendaId,
           })),
           lotePastoMovs: lotePastoRows.map(r => ({
             id: r.id,
@@ -577,6 +610,7 @@ const animaisRouter = router({
           })),
           pastoMap,
           loteNomeMap,
+          fazendaNomeMap,
         });
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
@@ -604,6 +638,19 @@ const animaisRouter = router({
         if (input.status === 'inativo') {
           // Qualquer status diferente de ativo (vendido, morto, transferido).
           conditions.push(ne(animais.status, 'ativo'));
+        } else if (input.status === 'ativo' && input.dataManejo) {
+          conditions.push(
+            or(
+              eq(animais.status, 'ativo'),
+              sql`EXISTS (
+                SELECT 1
+                FROM ${animalBaixas}
+                WHERE ${animalBaixas.userId} = ${ctx.user.id}
+                  AND ${animalBaixas.animalId} = ${animais.id}
+                  AND ${animalBaixas.dataBaixa} >= ${input.dataManejo}
+              )`,
+            )!,
+          );
         } else {
           conditions.push(eq(animais.status, input.status as any));
         }
@@ -736,30 +783,13 @@ const animaisRouter = router({
 
         // Pesagens do animal (ordenadas por data asc)
         const pesos = pesagensPorAnimal.get(animal.id) || [];
-        // ultimoPeso: pesagens > pesoAtual > pesoEntrada (fallback em cascata)
-        const ultimoPeso = pesos.length > 0
-          ? Number(pesos[pesos.length - 1].peso)
-          : (animal.pesoAtual ? Number(animal.pesoAtual) : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null));
-        const primeiroPeso = pesos.length > 0 ? Number(pesos[0].peso) : (animal.pesoEntrada ? Number(animal.pesoEntrada) : null);
-
-        // Ganho total (kg)
-        let ganhoKg: number | null = null;
-        if (ultimoPeso !== null && primeiroPeso !== null && ultimoPeso !== primeiroPeso) {
-          ganhoKg = Math.round((ultimoPeso - primeiroPeso) * 100) / 100;
-        }
-
-        // GMD: ganho médio diário (kg/dia)
-        let gmd: number | null = null;
-        if (pesos.length >= 2) {
-          const p1 = pesos[0];
-          const p2 = pesos[pesos.length - 1];
-          const d1 = new Date(p1.data);
-          const d2 = new Date(p2.data);
-          const dias = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-          gmd = Math.round(((Number(p2.peso) - Number(p1.peso)) / dias) * 1000) / 1000;
-        } else if (diasNaFazenda && diasNaFazenda > 0 && ganhoKg !== null) {
-          gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
-        }
+        const indicadoresPeso = computeIndicadoresPeso(pesos, {
+          pesoEntrada: animal.pesoEntrada,
+          dataEntrada: animal.dataEntrada,
+        });
+        const ultimoPeso = indicadoresPeso.ultimoPeso;
+        const ganhoKg = indicadoresPeso.ganhoKg;
+        const gmd = indicadoresPeso.gmd;
 
         const pastoNome = animal.pastoId ? (pastoMapAnimais.get(animal.pastoId) ?? null) : null;
 
@@ -840,9 +870,10 @@ const animaisRouter = router({
           const diasNaFazenda = animal.createdAt
             ? Math.floor((Date.now() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24))
             : null;
+          const baixa = await getBaixaAnimal(ctx.user.id, animal.id);
           const genealogiaDisplay = await enrichAnimalGenealogiaDisplayDb(ctx.user.id, animal);
           const descendentes = await enrichAnimalDescendentesDb(ctx.user.id, animal.id);
-          return { ...animal, loteNome, diasNaFazenda, genealogiaDisplay, descendentes };
+          return { ...animal, loteNome, diasNaFazenda, baixa, genealogiaDisplay, descendentes };
         }
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
@@ -851,10 +882,49 @@ const animaisRouter = router({
       const animal = await getLocalAnimal(ctx.user.id, input.id);
       if (!animal) return null;
       const enriched = await enrichLocalAnimal(ctx.user.id, animal);
+      const baixa = await getBaixaAnimal(ctx.user.id, animal.id);
       const genealogiaDisplay = await enrichAnimalGenealogiaDisplayLocal(ctx.user.id, animal);
       const descendentes = await enrichAnimalDescendentesLocal(ctx.user.id, animal.id);
-      return { ...enriched, genealogiaDisplay, descendentes };
+      const typedEnriched = enriched as unknown as typeof animais.$inferSelect & {
+        loteNome: string | null;
+        diasNaFazenda: number | null;
+      };
+      return { ...typedEnriched, baixa, genealogiaDisplay, descendentes };
     }),
+
+  registrarBaixa: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number().int().positive(),
+      animalId: z.number().int().positive(),
+      dataBaixa: z.string().min(1).max(10),
+      tipo: z.enum(["venda", "morte", "transferencia"]),
+      destino: z.string().max(255).nullable().optional(),
+      motivo: z.string().max(255).nullable().optional(),
+      observacoes: z.string().max(2000).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) =>
+      registrarBaixaAnimal(ctx.user.id, {
+        ...input,
+        usuarioNome: ctx.user.name?.trim() || null,
+      }),
+    ),
+
+  transferirEntreFazendas: protectedProcedure
+    .input(z.object({
+      fazendaOrigemId: z.number().int().positive(),
+      fazendaDestinoId: z.number().int().positive(),
+      animalId: z.number().int().positive(),
+      loteDestinoId: z.number().int().positive(),
+      pastoDestinoId: z.number().int().positive().nullable().optional(),
+      dataTransferencia: z.string().min(1).max(10),
+      observacoes: z.string().max(2000).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) =>
+      registrarTransferenciaInternaAnimal(ctx.user.id, {
+        ...input,
+        usuarioNome: ctx.user.name?.trim() || null,
+      }),
+    ),
 
   /**
    * POC AT05 — busca animal por brinco eletrônico com igualdade exata (string).
@@ -977,7 +1047,7 @@ const animaisRouter = router({
       pelagem: z.string().optional(),
       marca: z.string().optional(),
       dataDesmama: z.string().nullable().optional(),
-      castrado: z.boolean().optional(),
+      castrado: z.boolean().nullable().optional(),
       // Entrada / aquisição
       dataEntrada: z.string().nullable().optional(),
       pesoEntrada: z.string().optional(),
@@ -999,6 +1069,9 @@ const animaisRouter = router({
       pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (isPesoEntradaInformadoInvalido(input.pesoEntrada)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_PESO_ENTRADA_INVALIDO });
+      }
       const row = buildAnimalInsertRow(ctx.user.id, input);
       try {
         await assertBrincoUnicoEntreAtivosDb(
@@ -1060,7 +1133,7 @@ const animaisRouter = router({
       pelagem: z.string().nullable().optional(),
       marca: z.string().nullable().optional(),
       dataDesmama: z.string().nullable().optional(),
-      castrado: z.boolean().optional(),
+      castrado: z.boolean().nullable().optional(),
       dataEntrada: z.string().nullable().optional(),
       pesoEntrada: z.string().nullable().optional(),
       produtorOrigem: z.string().nullable().optional(),
@@ -1079,9 +1152,13 @@ const animaisRouter = router({
       pastoId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (isPesoEntradaInformadoInvalido(input.pesoEntrada)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_PESO_ENTRADA_INVALIDO });
+      }
       const {
         id, dataNascimento, dataDesmama, dataEntrada, dataRnd,
         loteId, pastoId, pesoEntrada, pesoAtual,
+        status,
         brinco, brincoEletronico, nome, raca, categoria, observacoes,
         pelagem, marca, produtorOrigem, precoKg, frete,
         sisbov, rgn, rgd, pai, mae, maeId, paiId, fazendaId,
@@ -1143,6 +1220,8 @@ const animaisRouter = router({
             status: animais.status,
             fazendaId: animais.fazendaId,
             loteId: animais.loteId,
+            sexo: animais.sexo,
+            castrado: animais.castrado,
           })
           .from(animais)
           .where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)))
@@ -1150,12 +1229,24 @@ const animaisRouter = router({
         if (!current) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
         }
+        if (status !== undefined && status !== current.status) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_STATUS_ALTERACAO_DIRETA });
+        }
+
+        await assertAlteracaoSexoAnimal({
+          userId: ctx.user.id,
+          animalId: id,
+          sexoAtual: current.sexo,
+          novoSexo: input.sexo,
+          castradoAtual: current.castrado,
+          source: "db",
+        });
 
         const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
         const effectiveRfid =
           brincoEletronico !== undefined ? resolveStr(brincoEletronico) : current.brincoEletronico;
         const effectiveStatus = resolveEffectiveStatus(
-          (rest as { status?: string }).status,
+          current.status,
           current.status,
         );
         let effectiveFazendaId: number | undefined =
@@ -1196,13 +1287,24 @@ const animaisRouter = router({
           if (!current) {
             throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
           }
+          if (status !== undefined && status !== current.status) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: MSG_STATUS_ALTERACAO_DIRETA });
+          }
+          await assertAlteracaoSexoAnimal({
+            userId: ctx.user.id,
+            animalId: id,
+            sexoAtual: current.sexo,
+            novoSexo: input.sexo,
+            castradoAtual: current.castrado,
+            source: "local",
+          });
           const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
           const effectiveRfid =
             brincoEletronico !== undefined
               ? resolveStr(brincoEletronico)
               : current.brincoEletronico;
           const effectiveStatus = resolveEffectiveStatus(
-            (rest as { status?: string }).status,
+            current.status,
             current.status,
           );
           let effectiveFazendaId: number | undefined =
@@ -1328,7 +1430,7 @@ const animaisRouter = router({
         ? [`"${nomesLotes.join(',')}"`]
         : ['"(Nenhum lote cadastrado)"'];
 
-      // Dropdowns de validação — Fazenda, Sexo, Categoria, Raça, Castrado, Status, Rastreado, Lote, Subdivisão
+      // Dropdowns de validação — Fazenda, Sexo, Categoria, Raça, Castrado, Rastreado, Lote, Subdivisão
       const idxDe = (key: string) => COLUNAS_IMPORTACAO.findIndex(c => c.key === key) + 1;
       
       // Importar mapeamento Sexo → Categoria
@@ -1338,14 +1440,13 @@ const animaisRouter = router({
       const colSexoIdx = idxDe('sexo'); // ex: 4 → coluna D
       const colSexoLetra = String.fromCharCode(64 + colSexoIdx);
       
-      const dvConfig: { colIdx: number; formulae: string[] }[] = [
+      const colIdxCastrado = idxDe('castrado');
+      const dvConfig: { colIdx: number; formulae: string[]; error?: string }[] = [
         { colIdx: idxDe('fazendaNome'),         formulae: fazendasFormulae },
         { colIdx: idxDe('sexo'),                formulae: ['"Fêmea,Macho"'] },
         { colIdx: idxDe('categoria'),           formulae: [`OFFSET(_ListasAnimais!$D$1,MATCH($${colSexoLetra}{r},_ListasAnimais!$C:$C,0)-1,0,COUNTIF(_ListasAnimais!$C:$C,$${colSexoLetra}{r}),1)`] },
         { colIdx: idxDe('raca'),                formulae: ['"Nelore,Nelore Mocho,Angus,Senepol,Brahman,Girolando,Gir,Holandês,Mestiço,Outro"'] },
-        { colIdx: idxDe('castrado'),            formulae: ['"Sim,Não"'] },
         { colIdx: idxDe('rastreadoNascimento'), formulae: ['"Sim,Não"'] },
-        { colIdx: idxDe('status'),              formulae: ['"Ativo,Vendido,Morto,Transferido"'] },
         { colIdx: idxDe('lote'),                formulae: lotesFormulae },
         // Subdivisao: usa INDIRECT para filtrar por fazenda — o Named Range é montado abaixo
         // A fórmula é adicionada por linha separadamente após este bloco
@@ -1363,6 +1464,21 @@ const animaisRouter = router({
             showErrorMessage: true, errorTitle: 'Valor inválido', error: 'Selecione um valor da lista.',
           };
         });
+
+        if (colIdxCastrado > 0) {
+          const cellCastrado = ws.getRow(r).getCell(colIdxCastrado);
+          cellCastrado.dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [`IF($${colSexoLetra}${r}="Macho",Castrado_Macho,"")`],
+            showErrorMessage: true,
+            errorTitle: 'Castrado',
+            error: 'Castrado só se aplica a machos. Para fêmeas, deixe em branco.',
+            showInputMessage: true,
+            promptTitle: 'Castrado',
+            prompt: 'Preencha somente se o sexo for Macho.',
+          };
+        }
 
         // Dropdown de Subdivisão dinâmico por fazenda via INDIRECT
         if (colIdxSubdivisao > 0) {
@@ -1410,6 +1526,15 @@ const animaisRouter = router({
         });
       });
 
+      // Coluna E/F: Castrado só aparece para Macho (Fêmea fica em branco).
+      wsListasAnimais.getColumn(5).width = 12;
+      wsListasAnimais.getColumn(6).width = 12;
+      wsListasAnimais.getCell(1, 5).value = "Macho";
+      wsListasAnimais.getCell(2, 5).value = "Macho";
+      wsListasAnimais.getCell(1, 6).value = "Sim";
+      wsListasAnimais.getCell(2, 6).value = "Não";
+      wb.definedNames.add("_ListasAnimais!$F$1:$F$2", "Castrado_Macho");
+
       // ─── Named Ranges por fazenda para dropdown dinâmico de Subdivisão ─────────
       // Cada fazenda recebe uma coluna na aba oculta com seus pastos.
       // O Named Range é nomeado "Pasto_" + nome_da_fazenda (espaços → _)
@@ -1417,7 +1542,7 @@ const animaisRouter = router({
       const sanitizarNomeRange = (nome: string) =>
         'Pasto_' + nome.replace(/[^A-Za-z0-9À-ÿ]/g, '_');
 
-      let colPastosStart = 6; // Colunas E+ na aba _ListasAnimais (1=A, 2=B, 3=C, 4=D, 5=E, 6=F)
+      let colPastosStart = 8; // A=1 … D=categorias, E/F=castrado, G=espaço, H+=pastos
       pastosPorFazendaNome.forEach((nomesPastos, nomeFazenda) => {
         if (nomesPastos.length === 0) return;
         const colIdx = colPastosStart++;
@@ -1454,6 +1579,7 @@ const animaisRouter = router({
         MENSAGEM_DATA_REFERENCIA_DETALHE,
         possuiDataReferenciaImportacao,
         montarMensagemValidacaoImportacao,
+        resolverCastradoImportacao,
       } = await import('../shared/importacaoAnimais');
       const { CATEGORIAS_POR_SEXO, isCategoriaValidaParaSexo, todasAsCategorias } = await import('../shared/animal-types');
       const SEXOS_VALIDOS = ['macho', 'femea'];
@@ -1530,6 +1656,14 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'Sexo', mensagem: `Sexo inválido: "${sexoRaw}". Use: Fêmea ou Macho` });
         } else {
           linha.sexo = sexo; // normaliza para o banco
+        }
+
+        const castradoImport = resolverCastradoImportacao({
+          sexo,
+          castrado: linha.castrado,
+        });
+        if (!castradoImport.ok) {
+          errosLinha.push({ linha: numLinha, campo: 'Castrado', mensagem: castradoImport.message });
         }
 
         // Categoria obrigatória E compatível com Sexo
@@ -1665,7 +1799,7 @@ const animaisRouter = router({
       pastoNomeParaId: z.record(z.string(), z.number()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo, mensagemDataReferenciaLinha, possuiDataReferenciaImportacao } = await import('../shared/importacaoAnimais');
+      const { normalizarLinha, normalizarSexo, normalizarStatus, normalizarBooleano, isLinhaExemplo, mensagemDataReferenciaLinha, possuiDataReferenciaImportacao, resolverCastradoImportacao } = await import('../shared/importacaoAnimais');
       const importados: number[] = [];
       const rejeitados: { linha: number; mensagem: string }[] = [];
 
@@ -1737,8 +1871,17 @@ const animaisRouter = router({
             ? input.pastoNomeParaId[subdivisaoNomeLinha]
             : undefined;
 
-          // Converte castrado/rastreadoNascimento (aceita Sim/Não em PT-BR)
+          // Converte rastreadoNascimento (aceita Sim/Não em PT-BR).
+          // Castrado: só macho; fêmea nunca persiste este campo.
           const toBool = normalizarBooleano;
+          const castradoImport = resolverCastradoImportacao({
+            sexo,
+            castrado: linha.castrado,
+          });
+          if (!castradoImport.ok) {
+            rejeitados.push({ linha: i + 2, mensagem: castradoImport.message });
+            continue;
+          }
 
           const animalRow = {
             ...buildAnimalInsertRow(ctx.user.id, {
@@ -1757,7 +1900,7 @@ const animaisRouter = router({
               pelagem: (linha.pelagem || '').trim() || undefined,
               marca: (linha.marca || '').trim() || undefined,
               dataDesmama: parseData(linha.dataDesmama) ?? null,
-              castrado: toBool(linha.castrado),
+              castrado: castradoImport.castrado,
               dataEntrada: parseData(linha.dataEntrada) ?? null,
               pesoEntrada: (linha.pesoEntrada || '').trim() || undefined,
               produtorOrigem: (linha.produtorOrigem || '').trim() || undefined,
@@ -1814,6 +1957,18 @@ const animaisRouter = router({
         rejeitados: rejeitados.length,
         detalhesRejeitados: rejeitados,
       };
+    }),
+
+  registrarDesmama: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number().int().positive(),
+      animalId: z.number().int().positive(),
+      dataDesmama: z.string().min(1).max(10),
+      pesoKg: z.string().max(20).optional(),
+      observacoes: z.string().max(2000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return registrarDesmama(ctx.user.id, input);
     }),
 });
 
@@ -2643,6 +2798,14 @@ const lotesRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal válido para transferência." });
       }
 
+      for (const animal of toMove) {
+        await assertManejoPermitidoNaData(
+          ctx.user.id,
+          animal.id,
+          input.dataMovimentacao,
+        );
+      }
+
       const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
       const animalIds = toMove.map(a => a.id);
 
@@ -3318,6 +3481,7 @@ const saudeRouter = router({
 
       await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
       await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
+      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
 
       const tipo = input.tipo.trim();
       if (!tipo) {
@@ -3608,6 +3772,22 @@ const saudeRouter = router({
         return { success: true, localFallback: true };
       }
     }),
+
+  registrarCastracao: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number().int().positive(),
+      animalId: z.number().int().positive(),
+      dataCastracao: z.string().min(1).max(10),
+      metodo: z.enum(["cirurgica", "burdizzo", "elastrador", "outro"]),
+      descricaoMetodo: z.string().max(2000).optional(),
+      observacoes: z.string().max(2000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return registrarCastracao(ctx.user.id, {
+        ...input,
+        veterinario: ctx.user.name?.trim() || undefined,
+      });
+    }),
 });
 
 // ─── REPRODUCAO ROUTER ────────────────────────────────────────────────────────
@@ -3665,6 +3845,16 @@ const reproducaoRouter = router({
         });
       }
 
+      await assertManejoPermitidoNaData(ctx.user.id, animalId, input.dataCobertura);
+      if (input.machoId != null && input.machoId > 0 && input.machoId !== animalId) {
+        await assertManejoPermitidoNaData(ctx.user.id, input.machoId, input.dataCobertura);
+      }
+      for (const matrizId of input.coberturaMatrizIds ?? []) {
+        if (matrizId !== animalId && matrizId !== input.machoId) {
+          await assertManejoPermitidoNaData(ctx.user.id, matrizId, input.dataCobertura);
+        }
+      }
+
       const { animal: animalAlvo } = await validateReproducaoCreatePreconditions(
         ctx.user.id,
         {
@@ -3708,6 +3898,7 @@ const reproducaoRouter = router({
           fazendaId: fazendaCtx,
           machoId: input.machoId,
           tipo: input.tipo,
+          dataEvento: input.dataCobertura,
         });
       }
 
@@ -3729,6 +3920,7 @@ const reproducaoRouter = router({
           coberturaSelecaoModo: input.coberturaSelecaoModo,
           coberturaMatrizIds: input.coberturaMatrizIds,
           coberturaLoteId: input.coberturaLoteId,
+          dataEvento: input.dataCobertura,
         });
       }
 
@@ -6762,6 +6954,7 @@ const pesagensRouter = router({
           message: "A data da pesagem não pode ser futura.",
         });
       }
+      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
 
       try {
         const { data, ...rest } = input;
@@ -9593,6 +9786,7 @@ const manejoRouter = router({
       await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
       await assertLoteNaFazenda(ctx.user.id, input.fazendaId, input.loteId ?? null);
       const animal = await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
+      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
 
       const brincoAtual = (animal.brinco ?? "").trim() || null;
       const rfidAtual = (animal.brincoEletronico ?? "").trim() || null;

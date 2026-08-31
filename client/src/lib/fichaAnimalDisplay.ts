@@ -2,6 +2,7 @@ import { formatDateBR, parseLocalDate, toLocalDateISO } from "@/lib/date-utils";
 import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { EM_CARENCIA_SIM_BADGE_CLASS } from "@/lib/listaAnimaisTable";
 import { formatValorCelulaMoedaBrlExcel, formatMoedaBrlExcel, parseMoedaBr, parseValorDecimalBanco } from "@shared/parseMoedaBr";
+import { computeIndicadoresPeso, type OrigemUltimoPeso } from "@shared/pesoEntrada";
 
 export { EM_CARENCIA_SIM_BADGE_CLASS };
 
@@ -146,6 +147,7 @@ export type ResumoPesoAnimal = {
   ultimaPesagemData: string | Date | null;
   ganhoKg: number | null;
   gmd: number | null;
+  origemUltimoPeso: OrigemUltimoPeso | null;
 };
 
 /** Espelha a lógica de exibição da lista — apenas para apresentação na ficha. */
@@ -159,61 +161,16 @@ export function computeResumoPeso(
     createdAt?: string | Date | null;
   },
 ): ResumoPesoAnimal {
-  const asc = sortPesagensAsc(pesagens ?? []);
-  const desc = sortPesagensDesc(pesagens ?? []);
-
-  const ultimoPeso =
-    asc.length > 0
-      ? Number(asc[asc.length - 1].peso)
-      : animal.pesoAtual
-        ? Number(animal.pesoAtual)
-        : animal.pesoEntrada
-          ? Number(animal.pesoEntrada)
-          : null;
-
-  const primeiroPeso =
-    asc.length > 0 ? Number(asc[0].peso) : animal.pesoEntrada ? Number(animal.pesoEntrada) : null;
-
-  let ganhoKg: number | null = null;
-  if (ultimoPeso !== null && primeiroPeso !== null && ultimoPeso !== primeiroPeso) {
-    ganhoKg = Math.round((ultimoPeso - primeiroPeso) * 100) / 100;
-  }
-
-  const hoje = new Date();
-  let diasNaFazenda: number | null = null;
-  if (animal.dataNascimento) {
-    diasNaFazenda = Math.floor(
-      (hoje.getTime() - new Date(animal.dataNascimento).getTime()) / (1000 * 60 * 60 * 24),
-    );
-  } else if (animal.dataEntrada) {
-    diasNaFazenda = Math.floor(
-      (hoje.getTime() - new Date(animal.dataEntrada).getTime()) / (1000 * 60 * 60 * 24),
-    );
-  } else if (animal.createdAt) {
-    diasNaFazenda = Math.floor(
-      (hoje.getTime() - new Date(animal.createdAt).getTime()) / (1000 * 60 * 60 * 24),
-    );
-  }
-
-  let gmd: number | null = null;
-  if (asc.length >= 2) {
-    const p1 = asc[0];
-    const p2 = asc[asc.length - 1];
-    const d1 = parseLocalDate(p1.data);
-    const d2 = parseLocalDate(p2.data);
-    if (d1 && d2) {
-      const dias = Math.max(1, Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
-      gmd = Math.round(((Number(p2.peso) - Number(p1.peso)) / dias) * 1000) / 1000;
-    }
-  } else if (diasNaFazenda && diasNaFazenda > 0 && ganhoKg !== null) {
-    gmd = Math.round((ganhoKg / diasNaFazenda) * 1000) / 1000;
-  }
-
+  const indicadores = computeIndicadoresPeso(pesagens ?? [], {
+    pesoEntrada: animal.pesoEntrada,
+    dataEntrada: animal.dataEntrada,
+  });
   return {
-    pesoAtual: ultimoPeso !== null && !Number.isNaN(ultimoPeso) ? ultimoPeso : null,
-    ultimaPesagemData: desc[0]?.data ?? null,
-    ganhoKg,
-    gmd,
+    pesoAtual: indicadores.ultimoPeso,
+    ultimaPesagemData: indicadores.ultimaPesagemData,
+    ganhoKg: indicadores.ganhoKg,
+    gmd: indicadores.gmd,
+    origemUltimoPeso: indicadores.origemUltimoPeso,
   };
 }
 

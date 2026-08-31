@@ -17,6 +17,7 @@ import {
   MSG_TROCA_LOTE_MESMO_LOTE,
   MSG_TROCA_LOTE_SEM_ANIMAIS_ORIGEM,
 } from "../shared/transferirAnimaisEntreLotes";
+import { assertManejoPermitidoNaData } from "./animalBaixa";
 
 export type TransferirAnimaisEntreLotesInput = {
   animalIds: number[];
@@ -140,9 +141,7 @@ export async function transferirAnimaisEntreLotesDb(
   }
 
   for (const animal of selecionados) {
-    if (animal.status && animal.status !== "ativo") {
-      toTrpc("Só é possível transferir animais ativos.");
-    }
+    await assertManejoPermitidoNaData(userId, animal.id, input.dataMovimentacao);
     if (isMesmoLoteDestino(animal.loteId, input.loteDestinoId)) {
       toTrpc(MSG_TROCA_LOTE_MESMO_LOTE);
     }

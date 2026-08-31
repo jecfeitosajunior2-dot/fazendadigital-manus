@@ -24,4 +24,11 @@ describe("cálculo de pesagens consecutivas", () => {
     expect(calcularVariacaoPesagem(null, 300)).toBeNull();
     expect(calcularGmdEntrePesagens(null, 300, null, "2026-07-18")).toBeNull();
   });
+
+  it("primeira pesagem pode usar Peso na Entrada como base, sem inventar linha", () => {
+    expect(calcularVariacaoPesagem(280, 295)).toBe(15);
+    expect(calcularGmdEntrePesagens(280, 295, "2026-08-01", "2026-08-15")).toBe(
+      Math.round((15 / 14) * 1000) / 1000,
+    );
+  });
 });

@@ -25,7 +25,9 @@ export interface ColunaImportacao {
 }
 
 /**
- * Ordem e definição EXATAS conforme a planilha oficial — 27 colunas em português.
+ * Ordem e definição EXATAS conforme a planilha oficial — 26 colunas em português.
+ * Status não entra no modelo: todo animal importado nasce Ativo, salvo planilha
+ * antiga que ainda traga a coluna (lida só por compatibilidade).
  *
  * Campos obrigatórios: Fazenda, Brinco, Sexo, Categoria e ao menos uma entre
  * Data de Nascimento ou Data da Entrada (mesma regra do cadastro individual).
@@ -142,7 +144,7 @@ export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
   { key: 'subdivisao',           label: 'Subdivisão (Pasto)',         obrigatorio: false, largura: 20, descricao: 'Nome exato do pasto/subdivisão cadastrado na fazenda',                    exemplo: 'Pasto A' },
   { key: 'dataNascimento',       label: 'Data de Nascimento',         obrigatorio: false, largura: 18, descricao: 'Data de nascimento no formato DD/MM/AAAA',                               exemplo: '15/03/2022' },
   { key: 'dataDesmama',          label: 'Data de Desmama',            obrigatorio: false, largura: 16, descricao: 'Data de desmama no formato DD/MM/AAAA',                                  exemplo: '15/09/2022' },
-  { key: 'castrado',             label: 'Castrado',                   obrigatorio: false, largura: 12, descricao: 'Se o animal é castrado: Sim ou Não',                                     exemplo: 'Não' },
+  { key: 'castrado',             label: 'Castrado',                   obrigatorio: false, largura: 12, descricao: 'Somente para machos: Sim ou Não. Fêmeas devem deixar em branco.',       exemplo: '' },
   { key: 'dataEntrada',          label: 'Data da Entrada',            obrigatorio: false, largura: 16, descricao: 'Data de entrada na fazenda (DD/MM/AAAA)',                                exemplo: '10/01/2023' },
   { key: 'pesoEntrada',          label: 'Peso na Entrada (kg)',       obrigatorio: false, largura: 18, descricao: 'Peso do animal na entrada, em kg',                                       exemplo: '320' },
   { key: 'produtorOrigem',       label: 'Produtor de Origem',         obrigatorio: false, largura: 22, descricao: 'Nome do produtor/fazenda de origem',                                     exemplo: 'Fazenda São João' },
@@ -155,7 +157,6 @@ export const COLUNAS_IMPORTACAO: ColunaImportacao[] = [
   { key: 'rastreadoNascimento',  label: 'Rastreado no nascimento',    obrigatorio: false, largura: 22, descricao: 'Se foi rastreado ao nascer: Sim ou Não',                                 exemplo: 'Não' },
   { key: 'pai',                  label: 'Pai (Reprodutor)',           obrigatorio: false, largura: 18, descricao: 'Brinco/nome do pai (reprodutor)',                                        exemplo: '' },
   { key: 'mae',                  label: 'Mãe (Matriz)',               obrigatorio: false, largura: 18, descricao: 'Brinco/nome da mãe (matriz)',                                            exemplo: '' },
-  { key: 'status',               label: 'Status',                     obrigatorio: false, largura: 12, descricao: 'Status: Ativo, Vendido, Morto ou Transferido',                           exemplo: 'Ativo' },
   { key: 'observacoes',          label: 'Observações',                obrigatorio: false, largura: 30, descricao: 'Observações livres sobre o animal',                                      exemplo: 'Animal de boa conformação' },
 ];
 
@@ -219,6 +220,9 @@ export const CABECALHO_PARA_CHAVE: Record<string, string> = (() => {
     'paireprodutor': 'pai',
     'maematriz': 'mae',
     'datarnd': 'dataRnd',
+    // Planilhas antigas ainda podem trazer Status; o modelo novo não tem a coluna.
+    'status': 'status',
+    'situacao': 'status',
   };
   for (const [k, v] of Object.entries(aliases)) {
     map[normalizarCabecalho(k)] = v;
@@ -266,6 +270,29 @@ export function normalizarStatus(v: string): string {
 export function normalizarBooleano(v: string): boolean {
   const s = normalizarCabecalho(v);
   return ['sim', 's', 'yes', '1', 'true', 'verdadeiro'].includes(s);
+}
+
+export const MSG_CASTRADO_FEMEA_IMPORTACAO =
+  "Castrado não se aplica a fêmeas. Deixe a coluna em branco.";
+
+/**
+ * Castrado na importação: só macho persiste Sim/Não.
+ * Fêmea com Sim é erro; Fêmea em branco ou Não não grava castração.
+ */
+export function resolverCastradoImportacao(input: {
+  sexo?: string | null;
+  castrado?: string | null;
+}): { ok: true; castrado: boolean | null } | { ok: false; message: string } {
+  const sexo = normalizarSexo(String(input.sexo ?? ""));
+  const raw = String(input.castrado ?? "").trim();
+  if (sexo === "femea") {
+    if (raw && normalizarBooleano(raw)) {
+      return { ok: false, message: MSG_CASTRADO_FEMEA_IMPORTACAO };
+    }
+    return { ok: true, castrado: null };
+  }
+  if (!raw) return { ok: true, castrado: null };
+  return { ok: true, castrado: normalizarBooleano(raw) };
 }
 
 /**

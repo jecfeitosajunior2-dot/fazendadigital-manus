@@ -1,7 +1,7 @@
 import { router, protectedProcedure } from "../_core/trpc";
 import { db } from "../db";
 import {
-  animais, lotes, pastos, pesagens, saudeRegistros, estoque,
+  animais, animalBaixas, lotes, pastos, pesagens, saudeRegistros, estoque,
 } from "../../drizzle/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import z from "zod";
@@ -92,13 +92,16 @@ export const rebanhoOverviewRouter = router({
 
         const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         const inicioMesStr = inicioMes.toISOString().slice(0, 10);
+        const saidasConditions = [
+          eq(animalBaixas.userId, userId),
+          sql`${animalBaixas.dataBaixa} >= ${inicioMesStr}`,
+        ];
+        if (input?.fazendaId) {
+          saidasConditions.push(eq(animalBaixas.fazendaId, input.fazendaId));
+        }
         const saidas = await db.select({ count: sql<number>`count(*)` })
-          .from(animais)
-          .where(and(
-            eq(animais.userId, userId),
-            sql`status IN ('vendido','morto','transferido')`,
-            sql`updatedAt >= ${inicioMesStr}`,
-          ));
+          .from(animalBaixas)
+          .where(and(...saidasConditions));
         const saidasCount = Number(saidas[0]?.count ?? 0);
 
         return computeRebanhoOverview({

@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
 /**
- * Reproduz o input de lotes.create do routers.ts para validar que o payload
- * enviado pelo diálogo de criação rápida de lote (no formulário de animal)
- * é aceito corretamente: nome obrigatório, descrição opcional.
+ * Reproduz o input de lotes.create do routers.ts: nome obrigatório,
+ * descrição opcional, fazenda obrigatória. Cadastro oficial: Rebanho → Lotes.
  */
 const loteCreateInput = z.object({
   nome: z.string(),
@@ -14,16 +13,7 @@ const loteCreateInput = z.object({
   fazendaId: z.number({ required_error: "Selecione uma fazenda." }),
 });
 
-/**
- * Reproduz a lógica do handler handleLoteSelectChange: ao escolher a opção
- * sentinela "__new__", o formulário abre o diálogo em vez de setar o loteId.
- */
-function resolveLoteSelect(value: string): { openDialog: boolean; loteId: string | null } {
-  if (value === "__new__") return { openDialog: true, loteId: null };
-  return { openDialog: false, loteId: value };
-}
-
-describe("criação rápida de lote", () => {
+describe("lotes.create", () => {
   it("aceita payload com nome e fazenda", () => {
     const result = loteCreateInput.safeParse({ nome: "Lote Recria 2026", fazendaId: 1 });
     expect(result.success).toBe(true);
@@ -46,23 +36,5 @@ describe("criação rápida de lote", () => {
   it("rejeita payload sem fazenda", () => {
     const result = loteCreateInput.safeParse({ nome: "Lote Sem Fazenda" });
     expect(result.success).toBe(false);
-  });
-
-  it("abre o diálogo quando a opção '__new__' é selecionada", () => {
-    const r = resolveLoteSelect("__new__");
-    expect(r.openDialog).toBe(true);
-    expect(r.loteId).toBeNull();
-  });
-
-  it("seleciona o loteId quando uma opção normal é escolhida", () => {
-    const r = resolveLoteSelect("42");
-    expect(r.openDialog).toBe(false);
-    expect(r.loteId).toBe("42");
-  });
-
-  it("trata 'Sem lote' (valor vazio) como ausência de lote, sem abrir diálogo", () => {
-    const r = resolveLoteSelect("");
-    expect(r.openDialog).toBe(false);
-    expect(r.loteId).toBe("");
   });
 });

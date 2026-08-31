@@ -21,6 +21,8 @@ export type AnimalLoteMovInput = {
   observacoes?: string | null;
   loteOrigemNome?: string | null;
   loteDestinoNome?: string | null;
+  fazendaOrigemId?: number | null;
+  fazendaDestinoId?: number | null;
 };
 
 export type HistoricoSubdivisaoAnimalRow = {
@@ -40,6 +42,10 @@ export type HistoricoSubdivisaoAnimalRow = {
   loteOrigemId?: number | null;
   loteOrigemNome?: string | null;
   loteDestinoNome?: string | null;
+  fazendaOrigemId?: number | null;
+  fazendaDestinoId?: number | null;
+  fazendaOrigemNome?: string | null;
+  fazendaDestinoNome?: string | null;
 };
 
 type LotePeriod = {
@@ -111,8 +117,9 @@ export function buildHistoricoSubdivisaoAnimal(input: {
   lotePastoMovs: LotePastoMovInput[];
   pastoMap: Record<number, string>;
   loteNomeMap?: Record<number, string>;
+  fazendaNomeMap?: Record<number, string>;
 }): HistoricoSubdivisaoAnimalRow[] {
-  const { currentLoteId, transfers, lotePastoMovs, pastoMap, loteNomeMap = {} } = input;
+  const { currentLoteId, transfers, lotePastoMovs, pastoMap, loteNomeMap = {}, fazendaNomeMap = {} } = input;
   const periods = buildLotePeriodsForAnimal(currentLoteId, transfers);
   const relevantLoteIds = new Set(periods.map(p => p.loteId));
   const rows: HistoricoSubdivisaoAnimalRow[] = [];
@@ -167,6 +174,12 @@ export function buildHistoricoSubdivisaoAnimal(input: {
       loteOrigemId: transfer.loteOrigemId ?? null,
       loteOrigemNome,
       loteDestinoNome,
+      fazendaOrigemId: transfer.fazendaOrigemId ?? null,
+      fazendaDestinoId: transfer.fazendaDestinoId ?? null,
+      fazendaOrigemNome:
+        transfer.fazendaOrigemId != null ? fazendaNomeMap[transfer.fazendaOrigemId] ?? null : null,
+      fazendaDestinoNome:
+        transfer.fazendaDestinoId != null ? fazendaNomeMap[transfer.fazendaDestinoId] ?? null : null,
     });
   }
 

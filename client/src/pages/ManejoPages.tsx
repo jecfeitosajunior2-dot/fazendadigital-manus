@@ -21,6 +21,7 @@ import {
   MilkOff,
   Bluetooth,
   AlertCircle,
+  LogOut,
   Plus,
   Trash2,
   type LucideProps,
@@ -95,10 +96,13 @@ import {
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExternoField";
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
-import { FormDatePicker, FormInput, FormLabel } from "@/components/FormFields";
+import { FormDatePicker, FormDownSelect, FormInput, FormLabel } from "@/components/FormFields";
 import { formatCurrencyBrl } from "@/lib/utils";
 import { ManejoAnimalField } from "@/components/ManejoAnimalField";
 import { ManejoTrocaLoteForm } from "./ManejoTrocaLoteForm";
+import { ManejoCastracaoForm } from "./ManejoCastracaoForm";
+import { ManejoDesmamaForm } from "./ManejoDesmamaForm";
+import { ManejoBaixaAnimalForm } from "./ManejoBaixaAnimalForm";
 import {
   MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
   MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS,
@@ -111,6 +115,7 @@ import {
   isCategoriaValidaParaSexo,
   RACAS,
 } from "@shared/animal-types";
+import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
 
 const FD_PRIMARY = "#4ECDC4";
 const ICON_CLASS = "h-5 w-5 shrink-0";
@@ -158,6 +163,12 @@ export const TIPOS_MANEJO = [
     label: "Desmama",
     icon: MilkOff,
     descricao: "Separação de bezerros",
+  },
+  {
+    id: "baixa-animal",
+    label: "Movimentação do Animal",
+    icon: LogOut,
+    descricao: "Morte e transferência de animais.",
   },
 ] as const satisfies ReadonlyArray<{
   id: string;
@@ -497,159 +508,24 @@ export function ManejoFormPage() {
     return <ManejoTrocaLoteForm />;
   }
 
-  return (
-    <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {tipo.label}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px]"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            Salvar
-          </button>
-        </div>
-      </div>
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Data</label>
-            <input
-              type="date"
-              defaultValue={todayISODate()}
-              className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">Lote</label>
-            <select className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]">
-              <option>Selecione um lote</option>
-              <option>Lote Vacas</option>
-              <option>Lote Engorda</option>
-              <option>Lote Recria</option>
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-[11px] text-gray-600 font-medium mb-1">
-              Responsável
-            </label>
-            <input
-              type="text"
-              placeholder="Digite o nome"
-              className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]"
-            />
-          </div>
-        </div>
-        <div className="mt-4">
-          <label className="block text-[11px] text-gray-600 font-medium mb-1">Observações</label>
-          <textarea
-            rows={3}
-            className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
-            placeholder="Notas adicionais..."
-          />
-        </div>
-      </div>
-    </AppLayout>
-  );
+  if (tipo.id === "castracao") {
+    return <ManejoCastracaoForm />;
+  }
+
+  if (tipo.id === "desmama") {
+    return <ManejoDesmamaForm />;
+  }
+
+  if (tipo.id === "baixa-animal") {
+    return <ManejoBaixaAnimalForm />;
+  }
+
+  return null;
 }
 
 const fieldCls =
   "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
 const labelCls = "block text-[11px] text-gray-600 font-medium mb-1";
-
-/** Select customizado: mesma aparência dos campos nativos e lista sempre abaixo. */
-function FormDownSelect({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-  options,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  disabled?: boolean;
-  options: ReadonlyArray<{ value: string; label: string }>;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
-
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  const selected = options.find(o => o.value === value);
-
-  return (
-    <div className="relative w-full min-w-0 max-w-full" ref={rootRef}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(v => !v)}
-        className={`${fieldCls} flex items-center justify-between gap-2 text-left disabled:opacity-60 disabled:cursor-not-allowed`}
-      >
-        <span className={`truncate ${selected ? "text-gray-700" : "text-gray-400"}`}>
-          {selected?.label ?? placeholder}
-        </span>
-        <span className="material-icons text-[18px] text-gray-400 shrink-0" aria-hidden>
-          {open ? "expand_less" : "expand_more"}
-        </span>
-      </button>
-      {open && !disabled ? (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg"
-        >
-          {options.map(o => (
-            <li key={o.value} role="option" aria-selected={o.value === value}>
-              <button
-                type="button"
-                className={`w-full text-left px-3 py-2 text-[12px] hover:bg-[#4ECDC4]/[0.08] ${
-                  o.value === value ? "font-semibold text-gray-900" : "text-gray-700"
-                }`}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-              >
-                {o.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
 
 const MOTIVO_TROCA_VALUES = [
   "perda",
@@ -810,7 +686,7 @@ function ManejoPesagemForm() {
 
   const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
     trpc.animais.list.useQuery(
-      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { fazendaId: fazendaNum || undefined, status: "ativo", dataManejo: data },
       { enabled: Boolean(fazendaNum) },
     );
 
@@ -826,8 +702,10 @@ function ManejoPesagemForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível salvar a pesagem.";
-      if (msg.includes("não pode ser futura")) {
-        setBloqueioNegocioMsg(MSG_PESAGEM_DATA_FUTURA);
+      if (msg.includes("não pode ser futura") || isMensagemBloqueioBaixa(msg)) {
+        setBloqueioNegocioMsg(
+          isMensagemBloqueioBaixa(msg) ? msg : MSG_PESAGEM_DATA_FUTURA,
+        );
         return;
       }
       toast.error(msg);
@@ -1035,7 +913,6 @@ function ManejoPesagemForm() {
                 value={data}
                 onChange={setData}
                 max={todayISODate()}
-                required
               />
             </div>
           </div>
@@ -1166,7 +1043,7 @@ function ManejoSanitarioForm() {
 
   const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
     trpc.animais.list.useQuery(
-      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { fazendaId: fazendaNum || undefined, status: "ativo", dataManejo: data },
       { enabled: Boolean(fazendaNum) },
     );
 
@@ -1281,8 +1158,10 @@ function ManejoSanitarioForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível salvar o registro sanitário.";
-      if (msg.includes("não pode ser futura")) {
-        setBloqueioNegocioMsg(MSG_SANITARIO_DATA_FUTURA);
+      if (msg.includes("não pode ser futura") || isMensagemBloqueioBaixa(msg)) {
+        setBloqueioNegocioMsg(
+          isMensagemBloqueioBaixa(msg) ? msg : MSG_SANITARIO_DATA_FUTURA,
+        );
         return;
       }
       if (
@@ -1575,7 +1454,6 @@ function ManejoSanitarioForm() {
                 value={data}
                 onChange={setData}
                 max={todayISODate()}
-                required
               />
             </div>
           </div>
@@ -1960,7 +1838,7 @@ function ManejoReprodutivoForm() {
 
   const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
     trpc.animais.list.useQuery(
-      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { fazendaId: fazendaNum || undefined, status: "ativo", dataManejo: data },
       { enabled: Boolean(fazendaNum) },
     );
 
@@ -2069,7 +1947,7 @@ function ManejoReprodutivoForm() {
 
   const filterMachoReprodutor = useCallback(
     (a: AnimalBuscaRow) =>
-      filterMachosReprodutoresCandidatos([a], {
+      filterMachosReprodutoresCandidatos([{ ...a, status: "ativo" }], {
         fazendaId: fazendaNum,
         excludeAnimalId: animalId,
       }).length > 0,
@@ -2092,6 +1970,7 @@ function ManejoReprodutivoForm() {
     {
       fazendaId: fazendaNum || undefined,
       status: "ativo",
+      dataManejo: data,
       sexo: "femea",
       search: matrizBusca.trim() || undefined,
     },
@@ -2219,8 +2098,10 @@ function ManejoReprodutivoForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível salvar o registro reprodutivo.";
-      if (msg.includes("não pode ser futura")) {
-        setBloqueioNegocioMsg(MSG_REPRODUTIVO_DATA_FUTURA);
+      if (msg.includes("não pode ser futura") || isMensagemBloqueioBaixa(msg)) {
+        setBloqueioNegocioMsg(
+          isMensagemBloqueioBaixa(msg) ? msg : MSG_REPRODUTIVO_DATA_FUTURA,
+        );
         return;
       }
       if (msg.includes(MSG_REPRO_INELEGIVEL)) {
@@ -2252,8 +2133,10 @@ function ManejoReprodutivoForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível registrar o parto.";
-      if (msg.includes("não pode ser futura")) {
-        setBloqueioNegocioMsg(MSG_REPRODUTIVO_DATA_FUTURA);
+      if (msg.includes("não pode ser futura") || isMensagemBloqueioBaixa(msg)) {
+        setBloqueioNegocioMsg(
+          isMensagemBloqueioBaixa(msg) ? msg : MSG_REPRODUTIVO_DATA_FUTURA,
+        );
         return;
       }
       if (msg.includes(MSG_REPRO_INELEGIVEL)) {
@@ -2896,7 +2779,6 @@ function ManejoReprodutivoForm() {
                 value={data}
                 onChange={setData}
                 max={todayISODate()}
-                required
               />
             </div>
           </div>
@@ -3756,7 +3638,7 @@ function ManejoBrincoEletronicoForm() {
 
   const { data: animaisFazendaAtivos = [], isFetching: carregandoAnimaisFazenda } =
     trpc.animais.list.useQuery(
-      { fazendaId: fazendaNum || undefined, status: "ativo" },
+      { fazendaId: fazendaNum || undefined, status: "ativo", dataManejo: data },
       { enabled: Boolean(fazendaNum) },
     );
 
@@ -3767,7 +3649,7 @@ function ManejoBrincoEletronicoForm() {
     },
     onError: err => {
       const msg = err.message || "Não foi possível salvar.";
-      if (isBloqueioNegocioIdentificacao(msg)) {
+      if (isBloqueioNegocioIdentificacao(msg) || isMensagemBloqueioBaixa(msg)) {
         setBloqueioNegocioMsg(msg);
         return;
       }
@@ -4316,7 +4198,6 @@ function ManejoBrincoEletronicoForm() {
                 value={data}
                 onChange={setData}
                 max={todayISODate()}
-                required
               />
             </div>
           </div>
@@ -4612,7 +4493,6 @@ export function ManejoSessaoPage() {
   const { data: user } = trpc.auth.me.useQuery();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
-  const { data: animais = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery();
 
   const [fase, setFase] = useState<SessaoFase>("setup");
   const [sessaoId, setSessaoId] = useState<string | null>(null);
@@ -4627,6 +4507,10 @@ export function ManejoSessaoPage() {
   const [rascunhoResumo, setRascunhoResumo] = useState("");
   const [pendentesAnimal, setPendentesAnimal] = useState<ManejoSessaoItem[]>([]);
   const [historicoSessao, setHistoricoSessao] = useState<ManejoSessaoItem[]>([]);
+  const { data: animais = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery({
+    status: "ativo",
+    dataManejo: data,
+  });
 
   useEffect(() => {
     if (loadingFazendas || fazendaInitDone) return;
@@ -4672,7 +4556,6 @@ export function ManejoSessaoPage() {
   const animaisEscopo = useMemo(() => {
     const rows = animais as AnimalRow[];
     return rows.filter(a => {
-      if (a.status === "inativo") return false;
       if (fazendaNum && a.fazendaId != null && a.fazendaId !== fazendaNum) return false;
       if (loteId && a.loteId != null && String(a.loteId) !== loteId) return false;
       return true;

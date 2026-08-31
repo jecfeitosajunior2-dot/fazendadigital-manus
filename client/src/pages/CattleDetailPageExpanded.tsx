@@ -27,6 +27,15 @@ import {
   formatLinhaPastoHistoricoLote,
   montarTooltipTrocaLote,
 } from '@shared/transferirAnimaisEntreLotes';
+import {
+  celulasCastracaoNaTabelaSanitario,
+  estadoCastradoResumo,
+  formatDetalhesColunaSanitario,
+  isRegistroCastracao,
+  textoHistoricoOuTraco,
+} from '@shared/castracaoManejo';
+import { isRegistroDesmama, montarBlocoDesmamaFicha } from '@shared/desmamaManejo';
+import { resolveBaseEntradaParaPesagem } from '@shared/pesoEntrada';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   computeResumoPeso,
@@ -81,6 +90,12 @@ import {
   parseFichaAnimalTab,
   type FichaAnimalTab,
 } from '@/lib/fichaAnimalRoute';
+import {
+  formatarDataBaixa,
+  TIPO_BAIXA_LABEL,
+  type TipoBaixaAnimal,
+} from '@shared/animalBaixa';
+import { formatarCausaMorteExibicao } from '@shared/causaMorte';
 
 const FD_ACTION = '#4ECDC4';
 
@@ -103,6 +118,8 @@ type HistoricoSubdivisaoRow = {
   loteOrigemId?: number | null;
   loteOrigemNome?: string | null;
   loteDestinoNome?: string | null;
+  fazendaOrigemNome?: string | null;
+  fazendaDestinoNome?: string | null;
 };
 
 function historicoSubdivisaoTexto(value: string | null | undefined): string {
@@ -387,7 +404,9 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   // Filter reproduction records for this animal
   const animalRepro = reproducaoRegistros?.filter(
-    r => r.femeaId === animalId || r.machoId === animalId
+    r =>
+      (r.femeaId === animalId || r.machoId === animalId) &&
+      !isRegistroDesmama(r.tipo),
   ) || [];
 
   // ─── Add Pesagem Form ─────────────────────────────────────────────────────
@@ -464,7 +483,9 @@ export const CattleDetailPageExpanded: React.FC = () => {
   ).map(mapHistoricoBrincoToDisplay);
 
   const sortedSaude = saudeRegistros
-    ? [...saudeRegistros].sort((a, b) => {
+    ? [...saudeRegistros]
+        .filter(reg => !isRegistroDesmama(reg.tipo))
+        .sort((a, b) => {
         const tb = parseLocalDate(b.dataRegistro)?.getTime() ?? 0;
         const ta = parseLocalDate(a.dataRegistro)?.getTime() ?? 0;
         if (tb !== ta) return tb - ta;
@@ -472,7 +493,20 @@ export const CattleDetailPageExpanded: React.FC = () => {
       })
     : [];
 
-  const custoSanitarioResumo = computeCustoSanitarioResumo(sortedSaude);
+  const histCastracao = sortedSaude.filter(reg => isRegistroCastracao(reg.tipo));
+  const sortedSaudeClinico = sortedSaude.filter(reg => !isRegistroCastracao(reg.tipo));
+  const castradoResumo = estadoCastradoResumo({
+    sexo: (animal as { sexo?: string | null }).sexo,
+    castrado: (animal as { castrado?: boolean | number | null }).castrado,
+    temEventoCastracao: histCastracao.length > 0,
+  });
+  const dataDesmamaResumo = (animal as { dataDesmama?: string | Date | null }).dataDesmama;
+  const blocoDesmama = montarBlocoDesmamaFicha({
+    dataDesmama: dataDesmamaResumo,
+    pesagens: pesagens ?? [],
+  });
+
+  const custoSanitarioResumo = computeCustoSanitarioResumo(sortedSaudeClinico);
 
   const sortedAnimalRepro = [...animalRepro].sort((a, b) => {
     const tb = parseLocalDate(b.dataCobertura)?.getTime() ?? 0;
@@ -502,7 +536,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
       return { ativo: false, ate: null as string | null };
     }
     const fimMap = buildFimCarenciaPorAnimal(
-      sortedSaude.map(reg => ({
+      sortedSaudeClinico.map(reg => ({
         animalId: animalId,
         medicamento: reg.medicamento,
         dataRegistro: reg.dataRegistro,
@@ -564,6 +598,17 @@ export const CattleDetailPageExpanded: React.FC = () => {
     (animal as { diasNaFazenda?: number | null }).diasNaFazenda ??
     animalListRow?.diasNaFazenda ??
     null;
+  const baixa = (animal as {
+    baixa?: {
+      tipo: TipoBaixaAnimal;
+      dataBaixa: string | Date;
+      destino?: string | null;
+      motivo?: string | null;
+      observacoes?: string | null;
+    } | null;
+  }).baixa ?? null;
+  const causaMorteTexto =
+    baixa?.tipo === 'morte' ? formatarCausaMorteExibicao(baixa.motivo) : null;
 
   return (
     <AppLayout>
@@ -620,10 +665,38 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   </div>
                 </div>
 
+                {baixa ? (
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
+                      Saída do animal
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <ResumoField label="Tipo da baixa" value={TIPO_BAIXA_LABEL[baixa.tipo]} />
+                      <ResumoField label="Data da baixa" value={formatarDataBaixa(baixa.dataBaixa)} />
+                      {baixa.destino ? (
+                        <ResumoField
+                          label={baixa.tipo === 'venda' ? 'Comprador / Destino' : 'Destino externo'}
+                          value={baixa.destino}
+                        />
+                      ) : null}
+                      {causaMorteTexto ? (
+                        <ResumoField label="Causa" value={causaMorteTexto} />
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
                   <ResumoField label="Nº RFID" value={animal.brincoEletronico || '—'} mono />
                   <ResumoField label="Sexo" value={animal.sexo === 'macho' ? 'Macho' : 'Fêmea'} />
                   <ResumoField label="Categoria" value={animal.categoria || '—'} />
+                  {castradoResumo != null ? (
+                    <ResumoField label="Castrado" value={castradoResumo} />
+                  ) : null}
+                  <ResumoField
+                    label="Data de Desmama"
+                    value={dataDesmamaResumo ? formatDate(dataDesmamaResumo) : '—'}
+                  />
                   <ResumoField label="Idade" value={formatIdadeResumo(idadeMesesAnimal)} />
                   <ResumoField
                     label="Dias na Fazenda"
@@ -953,10 +1026,10 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   <p className="text-[13px] text-gray-600 leading-relaxed max-w-md mx-auto">
                     Nenhum registro sanitário para este animal.
                     <br />
-                    Novos registros são feitos em Manejo → Registros de Manejo → Sanitário.
+                    Novos registros são feitos em Manejo → Sanitário ou Manejo → Castração.
                   </p>
                 </div>
-              ) : sortedSaude.length > 0 ? (
+              ) : (
                 <>
                   <p className="mb-3 text-[11px] text-gray-500">
                     {sortedSaude.length} registro{sortedSaude.length !== 1 ? 's' : ''} sanitário{sortedSaude.length !== 1 ? 's' : ''}
@@ -982,7 +1055,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                             Tipo
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Produto / medicamento
+                            Detalhes
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                             Dose
@@ -1000,16 +1073,21 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       </thead>
                       <tbody>
                         {sortedSaude.map(reg => {
+                          const isCastracao = isRegistroCastracao(reg.tipo);
                           const tipoDisplay = formatTipoSanitarioTabelaDisplay(reg.tipo);
-                          const produtoOuDescricao =
-                            (reg.medicamento && String(reg.medicamento).trim()) ||
-                            (reg.descricao && String(reg.descricao).trim()) ||
-                            "";
-                          const via =
-                            "viaAplicacao" in reg && reg.viaAplicacao
-                              ? String(reg.viaAplicacao).trim()
+                          const castracaoCells = isCastracao
+                            ? celulasCastracaoNaTabelaSanitario(reg)
+                            : null;
+                          const detalhes = formatDetalhesColunaSanitario(reg);
+                          const viaTratamento =
+                            !isCastracao && "viaAplicacao" in reg && reg.viaAplicacao
+                              ? String(reg.viaAplicacao)
                               : "";
-                          const obs = reg.observacoes?.trim() || "";
+                          const dose = castracaoCells?.dose ?? textoHistoricoOuTraco(reg.dosagem);
+                          const via = castracaoCells?.via ?? textoHistoricoOuTraco(viaTratamento);
+                          const custo = castracaoCells?.custo ?? formatCustoRegistroDisplay(reg.custo);
+                          const obs =
+                            castracaoCells?.observacoes ?? textoHistoricoOuTraco(reg.observacoes);
                           return (
                             <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
                               <td className="text-gray-800 tabular-nums whitespace-nowrap">
@@ -1025,31 +1103,37 @@ export const CattleDetailPageExpanded: React.FC = () => {
                               </td>
                               <td className="max-w-0">
                                 <span
-                                  className="block truncate max-w-full text-gray-800 font-medium"
-                                  title={produtoOuDescricao || undefined}
+                                  className="block max-w-full text-gray-800 font-medium whitespace-pre-line text-left"
+                                  title={detalhes !== '—' ? detalhes.replace(/\n/g, ' · ') : undefined}
                                 >
-                                  {produtoOuDescricao || '—'}
+                                  {detalhes}
                                 </span>
                               </td>
                               <td className="text-gray-600 whitespace-nowrap tabular-nums">
-                                <span className="inline-block max-w-full truncate" title={reg.dosagem || undefined}>
-                                  {reg.dosagem || '—'}
+                                <span
+                                  className="inline-block max-w-full truncate"
+                                  title={dose !== '—' ? dose : undefined}
+                                >
+                                  {dose}
                                 </span>
                               </td>
                               <td className="text-gray-600">
-                                <span className="inline-block max-w-full truncate" title={via || undefined}>
-                                  {via || '—'}
+                                <span
+                                  className="inline-block max-w-full truncate"
+                                  title={via !== '—' ? via : undefined}
+                                >
+                                  {via}
                                 </span>
                               </td>
                               <td className="text-gray-800 tabular-nums whitespace-nowrap">
-                                {formatCustoRegistroDisplay(reg.custo)}
+                                {custo}
                               </td>
                               <td className="max-w-0 text-center align-middle">
                                 <div
                                   className="w-full text-center text-gray-600 break-words whitespace-normal leading-snug"
-                                  title={obs || undefined}
+                                  title={obs !== '—' ? obs : undefined}
                                 >
-                                  {obs || '—'}
+                                  {obs}
                                 </div>
                               </td>
                             </tr>
@@ -1058,16 +1142,18 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-3 flex flex-col items-end gap-0.5 text-right">
-                    <p className="text-[12px] text-gray-700">
-                      <span className="font-medium text-gray-600">Total em custos sanitários: </span>
-                      <span className="font-semibold tabular-nums text-gray-800">
-                        {custoSanitarioResumo.totalFormatado}
-                      </span>
-                    </p>
-                  </div>
+                  {sortedSaudeClinico.length > 0 ? (
+                    <div className="mt-3 flex flex-col items-end gap-0.5 text-right">
+                      <p className="text-[12px] text-gray-700">
+                        <span className="font-medium text-gray-600">Total em custos sanitários: </span>
+                        <span className="font-semibold tabular-nums text-gray-800">
+                          {custoSanitarioResumo.totalFormatado}
+                        </span>
+                      </p>
+                    </div>
+                  ) : null}
                 </>
-              ) : null}
+              )}
             </Card>
           </TabsContent>
 
@@ -1221,6 +1307,23 @@ export const CattleDetailPageExpanded: React.FC = () => {
           {/* ─── Pesagens Tab ──────────────────────────────────────────────── */}
           <TabsContent value="pesagens">
             <Card className="p-6">
+              {blocoDesmama ? (
+                <div className="mb-6 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                    Desmama
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <ResumoField label="Data" value={formatDate(blocoDesmama.dataISO)} />
+                    <ResumoField label="Peso à desmama" value={blocoDesmama.pesoFormatado} />
+                  </div>
+                  {blocoDesmama.observacoes ? (
+                    <div className="mt-3">
+                      <ResumoField label="Observações" value={blocoDesmama.observacoes} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-gray-800 flex items-center">
                   <Weight className="w-5 h-5 mr-2 text-blue-600" />
@@ -1343,14 +1446,33 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       <tbody>
                         {sortedPesagens.map((pesagem, idx) => {
                           const prev = sortedPesagens[idx + 1];
-                          const variation = prev
-                            ? calcularVariacaoPesagem(prev.peso, pesagem.peso)
+                          const ehPrimeiraPesagem = idx === sortedPesagens.length - 1;
+                          const cadastroAnimal = animal as {
+                            pesoEntrada?: string | null;
+                            dataEntrada?: string | Date | null;
+                          };
+                          const baseEntrada = ehPrimeiraPesagem
+                            ? resolveBaseEntradaParaPesagem(
+                                {
+                                  pesoEntrada: cadastroAnimal.pesoEntrada,
+                                  dataEntrada: cadastroAnimal.dataEntrada,
+                                },
+                                pesagem.data,
+                              )
                             : null;
-                          const gmdLinha = prev
+                          const pontoAnterior = prev
+                            ? { peso: prev.peso, data: prev.data }
+                            : baseEntrada
+                              ? { peso: baseEntrada.peso, data: baseEntrada.data }
+                              : null;
+                          const variation = pontoAnterior
+                            ? calcularVariacaoPesagem(pontoAnterior.peso, pesagem.peso)
+                            : null;
+                          const gmdLinha = pontoAnterior
                             ? calcularGmdEntrePesagens(
-                                prev.peso,
+                                pontoAnterior.peso,
                                 pesagem.peso,
-                                prev.data,
+                                pontoAnterior.data,
                                 pesagem.data,
                               )
                             : null;
@@ -1461,11 +1583,20 @@ export const CattleDetailPageExpanded: React.FC = () => {
                       pastoOrigemNome: m.pastoOrigemNome,
                       pastoDestinoNome: m.pastoDestinoNome,
                     });
+                    const fazendaLinha =
+                      m.fazendaOrigemNome &&
+                      m.fazendaDestinoNome &&
+                      m.fazendaOrigemNome !== m.fazendaDestinoNome
+                        ? `${m.fazendaOrigemNome} → ${m.fazendaDestinoNome}`
+                        : null;
                     return (
                       <div key={m.id} className="py-3">
                         <p className="text-[11px] text-gray-500 tabular-nums">
                           {m.dataEntrada ? formatDate(m.dataEntrada) : '—'}
                         </p>
+                        {fazendaLinha ? (
+                          <p className="mt-0.5 text-[12px] text-gray-600">{fazendaLinha}</p>
+                        ) : null}
                         <p className="mt-0.5 text-[13px] font-semibold text-gray-800">{loteLinha}</p>
                         {pastoLinha ? (
                           <p className="mt-0.5 text-[12px] text-gray-500">{pastoLinha}</p>

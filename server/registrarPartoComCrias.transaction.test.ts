@@ -10,6 +10,7 @@ import { animais, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/s
 const mockValidatePreconditions = vi.fn();
 const mockAssertBrincoDb = vi.fn();
 const mockAssertRfid = vi.fn();
+const mockAssertManejoPermitido = vi.fn();
 const mockUpdateLocalAnimal = vi.fn();
 const mockListLocalRepro = vi.fn();
 
@@ -34,6 +35,10 @@ let reproRegistrosFemea: Array<{
 
 vi.mock("./reproducaoCreateValidate", () => ({
   validateReproducaoCreatePreconditions: (...args: unknown[]) => mockValidatePreconditions(...args),
+}));
+
+vi.mock("./animalBaixa", () => ({
+  assertManejoPermitidoNaData: (...args: unknown[]) => mockAssertManejoPermitido(...args),
 }));
 
 vi.mock("./brincoAtivoValidation", () => ({

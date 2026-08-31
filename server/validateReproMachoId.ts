@@ -5,6 +5,7 @@ import {
   MSG_REPRO_INELEGIVEL,
 } from "../shared/reproElegibilidade";
 import { assertAnimalNaFazenda } from "./manejoContexto";
+import { assertManejoPermitidoNaData } from "./animalBaixa";
 
 export const MSG_REPRO_MACHO_ID_TIPO_INVALIDO =
   "Reprodutor estruturado só se aplica a Cobertura ou Inseminação.";
@@ -23,6 +24,7 @@ export async function validateReproMachoIdForFemeaEvent(
     fazendaId: number;
     machoId: number;
     tipo: string;
+    dataEvento?: string;
   },
 ): Promise<void> {
   const tipo = input.tipo.trim();
@@ -40,7 +42,9 @@ export async function validateReproMachoIdForFemeaEvent(
     throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_MACHO_NAO_E_MACHO });
   }
 
-  if (macho.status !== "ativo") {
+  if (input.dataEvento) {
+    await assertManejoPermitidoNaData(userId, input.machoId, input.dataEvento);
+  } else if (macho.status !== "ativo") {
     throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_MACHO_INATIVO });
   }
 

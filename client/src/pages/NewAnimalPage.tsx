@@ -13,9 +13,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import AppLayout from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
-import { trpc } from '@/lib/trpc';
-import { toast } from 'sonner';
-import { ArrowLeft, ArrowRight, Loader2, Plus, AlertCircle, Save, History, Tag, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +21,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { trpc } from '@/lib/trpc';
+import { toast } from 'sonner';
+import { ArrowLeft, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import {
   FD_PRIMARY,
   FormLabel,
@@ -34,7 +33,40 @@ import {
 } from '@/components/FormFields';
 import { cn } from '@/lib/utils';
 import { filtrarLotesPorFazenda } from '@/lib/loteFazendaFilter';
-import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
+import {
+  condicaoCastracaoAposTrocaSexo,
+  deveMostrarCondicaoCastracaoCadastro,
+  isRegistroCastracao,
+  isSexoMacho,
+  resolverCastradoCadastroInicial,
+  textoCastradoSomenteLeitura,
+  type CondicaoCastracaoCadastro,
+} from '@shared/castracaoManejo';
+import {
+  HINT_PESO_ENTRADA,
+  MSG_PESO_ENTRADA_INVALIDO,
+  isPesoEntradaFormValido,
+} from '@shared/pesoEntrada';
+import { deveExibirDataDesmamaNoFormularioAnimal } from '@shared/desmamaManejo';
+import {
+  categoriaAposTrocaSexoNoFormulario,
+  MSG_BLOQUEIO_SEXO_GENERICA,
+  MSG_CAMPOS_OBRIGATORIOS_DESTAQUE,
+  opcoesCategoriaComValorAtual,
+  toastErroSalvarEditarAnimal,
+} from '@shared/validarAlteracaoSexoAnimal';
+import { At05RfidReaderControl } from '@/components/At05RfidReaderControl';
+import { statusBadgeClass } from '@/lib/fichaAnimalDisplay';
+import { deveMostrarLeituraRfidCadastro } from '@/lib/rfidLeituraCadastro';
+import {
+  formatarDataBaixa,
+  isTipoBaixaAnimal,
+  STATUS_ANIMAL_LABEL,
+  TIPO_BAIXA_LABEL,
+  type StatusAnimal,
+  type TipoBaixaAnimal,
+} from '@shared/animalBaixa';
+import { formatarCausaMorteExibicao } from '@shared/causaMorte';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -58,7 +90,7 @@ type FormState = {
   marca: string;
   dataNascimento: string;
   dataDesmama: string;
-  castrado: boolean;
+  castracaoCondicao: CondicaoCastracaoCadastro;
   // Entrada / aquisição
   dataEntrada: string;
   pesoEntrada: string;
@@ -82,7 +114,7 @@ type FormState = {
 
 const INITIAL: FormState = {
   brinco: '', brincoEletronico: '', sexo: '', loteId: '', categoria: '',
-  raca: '', pelagem: '', marca: '', dataNascimento: '', dataDesmama: '', castrado: false,
+  raca: '', pelagem: '', marca: '', dataNascimento: '', dataDesmama: '', castracaoCondicao: 'nao_informado',
   dataEntrada: '', pesoEntrada: '', produtorOrigem: '', precoKg: '', frete: '',
   sisbov: '', dataRnd: '', rgn: '', rgd: '', rastreadoNascimento: false,
   pai: '', mae: '',
@@ -221,118 +253,6 @@ const ManejoCampoHint: React.FC<{ children: React.ReactNode }> = ({ children }) 
   <p className="mt-1 text-[11px] text-gray-500 leading-snug">{children}</p>
 );
 
-// ─── Constantes de motivo de troca de brinco ────────────────────────────────
-type MotivoTroca = 'perda' | 'danificado' | 'reidentificacao' | 'erro_cadastro' | 'outro';
-
-const MOTIVO_OPCOES: { value: MotivoTroca; label: string }[] = [
-  { value: 'perda', label: 'Perda do brinco' },
-  { value: 'danificado', label: 'Brinco danificado' },
-  { value: 'reidentificacao', label: 'Reidentificação' },
-  { value: 'erro_cadastro', label: 'Erro de cadastro' },
-  { value: 'outro', label: 'Outro' },
-];
-
-const MOTIVO_LABELS: Record<MotivoTroca, string> = Object.fromEntries(
-  MOTIVO_OPCOES.map(o => [o.value, o.label]),
-) as Record<MotivoTroca, string>;
-
-function formatHistoricoDataHora(reg: { dataAlteracao: string; createdAt?: Date | string | null }) {
-  if (reg.createdAt) {
-    const d = new Date(reg.createdAt);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-    }
-  }
-  if (!reg.dataAlteracao) return '—';
-  const [y, m, day] = reg.dataAlteracao.split('-');
-  if (y && m && day) return `${day}/${m}/${y}`;
-  return reg.dataAlteracao;
-}
-
-type HistoricoBrincoRegistro = {
-  id: number;
-  brincoAnterior: string | null;
-  brincoNovo: string;
-  motivo: MotivoTroca;
-  observacoes?: string | null;
-  dataAlteracao: string;
-  usuarioNome?: string | null;
-  createdAt?: Date | string | null;
-};
-
-function HistoricoMetaField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11px] font-medium text-gray-500">{label}:</dt>
-      <dd className="mt-0.5 text-[13px] text-gray-800 break-words">{value}</dd>
-    </div>
-  );
-}
-
-function HistoricoBrincoCard({ reg }: { reg: HistoricoBrincoRegistro }) {
-  return (
-    <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        {reg.brincoAnterior ? (
-          <>
-            <div className="inline-flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-gray-500">De:</span>
-              <span className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[13px] font-semibold text-gray-700">
-                {reg.brincoAnterior}
-              </span>
-            </div>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-300" aria-hidden />
-            <div className="inline-flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-gray-500">Para:</span>
-              <span className="rounded border border-[#4ECDC4]/40 bg-[#4ECDC4]/10 px-2 py-0.5 font-mono text-[13px] font-semibold text-[#2D5A5A]">
-                {reg.brincoNovo}
-              </span>
-            </div>
-          </>
-        ) : (
-          <div className="inline-flex items-center gap-1.5">
-            <span className="text-[11px] font-medium text-gray-500">Para:</span>
-            <span className="rounded border border-[#4ECDC4]/40 bg-[#4ECDC4]/10 px-2 py-0.5 font-mono text-[13px] font-semibold text-[#2D5A5A]">
-              {reg.brincoNovo}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <dl className="mt-3 space-y-2.5 border-t border-gray-100 pt-3">
-        <HistoricoMetaField label="Data" value={formatHistoricoDataHora(reg)} />
-        <HistoricoMetaField label="Motivo" value={MOTIVO_LABELS[reg.motivo] ?? reg.motivo} />
-        <HistoricoMetaField label="Registrado por" value={reg.usuarioNome?.trim() || '—'} />
-        {reg.observacoes?.trim() && (
-          <HistoricoMetaField label="Observação" value={reg.observacoes.trim()} />
-        )}
-      </dl>
-    </article>
-  );
-}
-
-function MotivoSelect({
-  value,
-  onChange,
-  className,
-}: {
-  value: MotivoTroca;
-  onChange: (v: MotivoTroca) => void;
-  className?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value as MotivoTroca)}
-      className={className}
-    >
-      {MOTIVO_OPCOES.map(op => (
-        <option key={op.value} value={op.value}>{op.label}</option>
-      ))}
-    </select>
-  );
-}
-
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 const AnimalFormPage: React.FC = () => {
@@ -348,41 +268,7 @@ const AnimalFormPage: React.FC = () => {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [populated, setPopulated] = useState(false); // evita sobrescrever após populate
-
-  // ── Histórico de Trocas de Brinco (consulta) ──
-  const [showHistoricoModal, setShowHistoricoModal] = useState(false);
-
-  // Intercepta troca de brinco ao salvar: armazena o payload pendente e abre modal de motivo
-  const [pendingSavePayload, setPendingSavePayload] = useState<null | { id: number; payload: Record<string, unknown>; brincoAnterior: string | null }>(null);
-  const [showConfirmarTrocaModal, setShowConfirmarTrocaModal] = useState(false);
-  const [motivoTroca, setMotivoTroca] = useState<MotivoTroca>('reidentificacao');
-  const [obsTroca, setObsTroca] = useState('');
-  const [obsTrocaError, setObsTrocaError] = useState('');
-
-  const podeConfirmarTrocaBrinco = motivoTroca !== 'outro' || obsTroca.trim().length > 0;
-
-  const cancelarTrocaBrinco = () => {
-    if (pendingSavePayload) {
-      set('brinco', pendingSavePayload.brincoAnterior ?? animal?.brinco ?? '');
-      setPendingSavePayload(null);
-    }
-    setShowConfirmarTrocaModal(false);
-    setMotivoTroca('reidentificacao');
-    setObsTroca('');
-    setObsTrocaError('');
-  };
-
-  const { data: historicoBrincos, refetch: refetchHistorico } = trpc.brincos.list.useQuery(
-    { animalId: animalId! },
-    { enabled: isEditMode && !!animalId }
-  );
-
-  const registrarBrincoMutation = trpc.brincos.registrar.useMutation({
-    onSuccess: () => {
-      refetchHistorico();
-    },
-    onError: (err) => toast.error(`Erro: ${err.message}`),
-  });
+  const [bloqueioSexoMsg, setBloqueioSexoMsg] = useState<string | null>(null);
 
   // ── Dados do animal (modo edição) ──
   const { data: animal, isLoading: loadingAnimal, error: animalError } =
@@ -390,6 +276,30 @@ const AnimalFormPage: React.FC = () => {
       { id: animalId! },
       { enabled: isEditMode }
     );
+
+  const { data: saudeRegistros } = trpc.saude.list.useQuery(
+    { animalId: animalId! },
+    { enabled: isEditMode && !!animalId },
+  );
+
+  const sexoExibicaoCastrado =
+    form.sexo === 'Macho'
+      ? 'macho'
+      : form.sexo === 'Fêmea'
+        ? 'femea'
+        : ((animal as { sexo?: string | null } | undefined)?.sexo ?? '');
+
+  const castradoSomenteLeitura = useMemo(() => {
+    const flag = (animal as { castrado?: boolean | number | null } | undefined)?.castrado ?? null;
+    const temEvento = (saudeRegistros ?? []).some(r => isRegistroCastracao(r.tipo));
+    return textoCastradoSomenteLeitura({
+      sexo: sexoExibicaoCastrado,
+      castrado: flag,
+      temEventoCastracao: temEvento,
+    });
+  }, [animal, sexoExibicaoCastrado, saudeRegistros]);
+
+  const mostrarCastradoEdicao = isEditMode && isSexoMacho(sexoExibicaoCastrado);
 
   const genealogiaExibicao = useMemo(() => {
     if (!isEditMode || !animal) {
@@ -456,7 +366,7 @@ const AnimalFormPage: React.FC = () => {
       marca: (animal as any).marca || '',
       dataNascimento: toDateStr(animal.dataNascimento),
       dataDesmama: toDateStr((animal as any).dataDesmama),
-      castrado: !!(animal as any).castrado,
+      castracaoCondicao: 'nao_informado',
       dataEntrada: toDateStr((animal as any).dataEntrada),
       pesoEntrada: (animal as any).pesoEntrada || '',
       produtorOrigem: (animal as any).produtorOrigem || '',
@@ -485,46 +395,9 @@ const AnimalFormPage: React.FC = () => {
     if (pid) setPastoId(String(pid));
   }, [animal, fazendas]);
 
-  // ── Criação rápida de lote ──
-  const [loteDialogOpen, setLoteDialogOpen] = useState(false);
-  const [novoLoteNome, setNovoLoteNome] = useState('');
-  const [novoLoteDescricao, setNovoLoteDescricao] = useState('');
-
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }));
-  };
-
-  const createLoteMutation = trpc.lotes.create.useMutation({
-    onError: (err) => toast.error(`Erro ao criar lote: ${err.message}`),
-  });
-
-  const handleLoteSelectChange = (v: string) => {
-    if (v === '__new__') { setLoteDialogOpen(true); return; }
-    set('loteId', v);
-  };
-
-  const handleCriarLote = () => {
-    const nome = novoLoteNome.trim();
-    if (!fazendaId) { toast.error('Selecione uma fazenda antes de criar o lote.'); return; }
-    if (!nome) { toast.error('Informe o nome do lote.'); return; }
-    createLoteMutation.mutate(
-      {
-        nome,
-        descricao: novoLoteDescricao.trim() || undefined,
-        fazendaId: fazendaId ? Number(fazendaId) : undefined,
-      },
-      {
-        onSuccess: async (res) => {
-          toast.success('Lote criado com sucesso!');
-          await utils.lotes.list.invalidate();
-          if (res?.id != null) set('loteId', String(res.id));
-          setNovoLoteNome('');
-          setNovoLoteDescricao('');
-          setLoteDialogOpen(false);
-        },
-      },
-    );
   };
 
   // ── Validação ──
@@ -552,6 +425,9 @@ const AnimalFormPage: React.FC = () => {
       e.dataNascimento = msg;
       e.dataEntrada = msg;
     }
+    if (!isPesoEntradaFormValido(form.pesoEntrada)) {
+      e.pesoEntrada = MSG_PESO_ENTRADA_INVALIDO;
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -576,8 +452,11 @@ const AnimalFormPage: React.FC = () => {
       pelagem: form.pelagem.trim() || undefined,
       marca: form.marca.trim() || undefined,
       dataNascimento: resolveData(form.dataNascimento),
-      dataDesmama: resolveData(form.dataDesmama),
-      castrado: form.castrado,
+      ...(isEditMode ? { dataDesmama: resolveData(form.dataDesmama) } : {}),
+      castrado: resolverCastradoCadastroInicial({
+        sexo: sexoMapped,
+        condicao: form.castracaoCondicao,
+      }),
       dataEntrada: resolveData(form.dataEntrada),
       pesoEntrada: form.pesoEntrada.trim() || undefined,
       produtorOrigem: form.produtorOrigem.trim() || undefined,
@@ -590,7 +469,6 @@ const AnimalFormPage: React.FC = () => {
       rastreadoNascimento: form.rastreadoNascimento,
       pai: form.pai.trim() || undefined,
       mae: form.mae.trim() || undefined,
-      status: form.status as 'ativo' | 'vendido' | 'morto' | 'transferido',
       observacoes: form.observacoes.trim() || undefined,
       fazendaId: fazendaId ? parseInt(fazendaId) : undefined,
       pastoId: pastoId ? parseInt(pastoId) : undefined,
@@ -603,49 +481,24 @@ const AnimalFormPage: React.FC = () => {
   });
 
   const updateMutation = trpc.animais.update.useMutation({
-    onError: (err) => toast.error(`Erro ao atualizar animal: ${err.message}`),
+    onError: (err) => {
+      const aviso = toastErroSalvarEditarAnimal({
+        temErroRequired: false,
+        mensagemBackend: err.message || MSG_BLOQUEIO_SEXO_GENERICA,
+      });
+      if (aviso.tipo === 'sexo') {
+        setBloqueioSexoMsg(aviso.mensagem);
+        return;
+      }
+      toast.error(aviso.mensagem);
+    },
   });
 
-  const confirmarTrocaBrinco = async () => {
-    if (!pendingSavePayload) return;
-    if (motivoTroca === 'outro' && !obsTroca.trim()) {
-      setObsTrocaError('Informe o motivo da troca nas observações.');
-      return;
-    }
-    setObsTrocaError('');
-    const { id, payload, brincoAnterior } = pendingSavePayload;
-    const brincoNovo = String((payload as { brinco?: string }).brinco ?? form.brinco);
-    const confirmadoEm = new Date();
-    try {
-      await updateMutation.mutateAsync({ id, ...(payload as Record<string, unknown>) });
-      await registrarBrincoMutation.mutateAsync({
-        animalId: id,
-        brincoAnterior,
-        brincoNovo,
-        motivo: motivoTroca,
-        observacoes: obsTroca.trim() || null,
-        dataAlteracao: confirmadoEm.toISOString().split('T')[0],
-      });
-      setPendingSavePayload(null);
-      setShowConfirmarTrocaModal(false);
-      setMotivoTroca('reidentificacao');
-      setObsTroca('');
-      toast.success('Animal atualizado e troca de brinco registrada!');
-      utils.animais.list.invalidate();
-      utils.animais.getById.invalidate({ id: animalId! });
-      await refetchHistorico();
-      setLocation('/rebanho/lista-animais');
-    } catch (err) {
-      toast.error(`Erro: ${err instanceof Error ? err.message : 'Falha ao salvar'}`);
-    }
-  };
-
-  const isSubmitting = createMutation.isPending || updateMutation.isPending
-    || registrarBrincoMutation.isPending;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   const handleSave = (novo = false) => {
     if (!validate()) {
-      toast.error('Preencha os campos obrigatórios em destaque.');
+      toast.error(MSG_CAMPOS_OBRIGATORIOS_DESTAQUE);
       return;
     }
     if (isEditMode) {
@@ -760,9 +613,25 @@ const AnimalFormPage: React.FC = () => {
   const pageTitle = isEditMode
     ? `Editar Animal — ${animal?.brinco || animal?.nome || `#${animalId}`}`
     : 'Cadastro de Animal';
-  const pageSubtitle = isEditMode
-    ? 'Atualize as informações do animal'
-    : 'Preencha os dados principais do animal. Informações avançadas podem ser completadas depois.';
+  const pageSubtitle = isEditMode ? 'Atualize as informações do animal' : null;
+  const statusAtual = (isEditMode ? form.status : 'ativo') as StatusAnimal;
+  const statusTexto = STATUS_ANIMAL_LABEL[statusAtual] ?? 'Ativo';
+  const baixaAnimal = isEditMode
+    ? (animal as {
+        baixa?: {
+          tipo?: string | null;
+          dataBaixa?: string | Date | null;
+          destino?: string | null;
+          motivo?: string | null;
+        } | null;
+      } | undefined)?.baixa ?? null
+    : null;
+  const tipoBaixa = baixaAnimal && isTipoBaixaAnimal(baixaAnimal.tipo) ? baixaAnimal.tipo : null;
+  const dataBaixaTexto = formatarDataBaixa(baixaAnimal?.dataBaixa);
+  const temDataBaixa = Boolean(baixaAnimal && dataBaixaTexto !== '—');
+  const destinoBaixa = baixaAnimal?.destino?.trim() || '';
+  const motivoBaixa =
+    tipoBaixa === 'morte' ? formatarCausaMorteExibicao(baixaAnimal?.motivo) ?? '' : '';
 
   return (
     <AppLayout>
@@ -779,7 +648,9 @@ const AnimalFormPage: React.FC = () => {
 
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
-          <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
+          {pageSubtitle ? (
+            <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
+          ) : null}
         </div>
 
         <form
@@ -816,32 +687,9 @@ const AnimalFormPage: React.FC = () => {
                     </select>
                   </FieldBox>
                   {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
-                  {isEditMode && (
-                    <ManejoCampoHint>
-                      Alterações de fazenda/lote são realizadas em Manejo → Troca de Lote.
-                    </ManejoCampoHint>
-                  )}
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <FormLabel required>Número do Brinco</FormLabel>
-                    {isEditMode && (
-                      <button
-                        type="button"
-                        onClick={() => setShowHistoricoModal(true)}
-                        title="Histórico de Trocas de Brinco"
-                        className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#4ECDC4] transition-colors px-2 py-0.5 rounded border border-gray-200 hover:border-[#4ECDC4] bg-white"
-                      >
-                        <History className="w-3 h-3" />
-                        Histórico
-                        {historicoBrincos && historicoBrincos.length > 0 && (
-                          <span className="ml-0.5 bg-[#4ECDC4] text-white text-[9px] rounded-full px-1.5 font-bold">
-                            {historicoBrincos.length}
-                          </span>
-                        )}
-                      </button>
-                    )}
-                  </div>
+                  <FormLabel required>Número do Brinco</FormLabel>
                   <FieldInput
                     value={form.brinco}
                     onChange={v => set('brinco', v)}
@@ -863,7 +711,18 @@ const AnimalFormPage: React.FC = () => {
                   <FormLabel required>Sexo</FormLabel>
                   <FieldSelect
                     value={form.sexo}
-                    onChange={v => { set('sexo', v); set('categoria', ''); }}
+                    onChange={v => {
+                      setForm(prev => ({
+                        ...prev,
+                        sexo: v,
+                        categoria: categoriaAposTrocaSexoNoFormulario({
+                          modo: isEditMode ? 'edit' : 'create',
+                          categoriaAtual: prev.categoria,
+                        }),
+                        castracaoCondicao: condicaoCastracaoAposTrocaSexo(),
+                      }));
+                      if (errors.sexo) setErrors(prev => ({ ...prev, sexo: '' }));
+                    }}
                     required
                     error={!!errors.sexo}
                   >
@@ -872,12 +731,19 @@ const AnimalFormPage: React.FC = () => {
                     <option value="Fêmea">Fêmea</option>
                   </FieldSelect>
                   {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
+                  {!isEditMode && deveMostrarCondicaoCastracaoCadastro(form.sexo) && (
+                    <Checkbox
+                      checked={form.castracaoCondicao === 'castrado'}
+                      onChange={v => set('castracaoCondicao', v ? 'castrado' : 'nao_informado')}
+                      label="Castrado"
+                    />
+                  )}
                 </div>
                 <div>
                   <FormLabel required>Categoria</FormLabel>
                   <FieldSelect value={form.categoria} onChange={v => set('categoria', v)} required error={!!errors.categoria}>
                     <option value="">Selecione</option>
-                    {(form.sexo ? getCategoriasPorSexo(form.sexo) : todasAsCategorias()).map(cat => (
+                    {opcoesCategoriaComValorAtual(form.sexo, form.categoria).map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </FieldSelect>
@@ -889,7 +755,7 @@ const AnimalFormPage: React.FC = () => {
                   <FormLabel>Lote</FormLabel>
                   <FieldSelect
                     value={form.loteId}
-                    onChange={handleLoteSelectChange}
+                    onChange={v => set('loteId', v)}
                     disabled={isEditMode}
                   >
                     <option value="">Sem lote</option>
@@ -897,11 +763,6 @@ const AnimalFormPage: React.FC = () => {
                       <option key={l.id} value={l.id}>{l.nome}</option>
                     ))}
                   </FieldSelect>
-                  {isEditMode && (
-                    <ManejoCampoHint>
-                      Alterações de lote são realizadas em Manejo → Troca de Lote.
-                    </ManejoCampoHint>
-                  )}
                 </div>
                 <div>
                   <FormLabel>Subdivisão</FormLabel>
@@ -923,13 +784,13 @@ const AnimalFormPage: React.FC = () => {
                       ))}
                     </select>
                   </FieldBox>
-                  {isEditMode && (
-                    <ManejoCampoHint>
-                      Alterações de subdivisão são realizadas em Manejo → Troca de Lote.
-                    </ManejoCampoHint>
-                  )}
                 </div>
               </div>
+              {isEditMode ? (
+                <ManejoCampoHint>
+                  Alterações de lote e subdivisão são realizadas em Manejo → Troca de Lote.
+                </ManejoCampoHint>
+              ) : null}
             </div>
           </SectionCard>
 
@@ -972,44 +833,34 @@ const AnimalFormPage: React.FC = () => {
                   <p className="mt-1 text-[11px] text-red-500">{errors.dataNascimento}</p>
                 )}
               </div>
-              <div>
-                <FormLabel>Data de Desmama</FormLabel>
-                {isEditMode ? (
-                  <>
-                    <FieldBox className="bg-gray-50">
-                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                        {form.dataDesmama
-                          ? form.dataDesmama.split('-').reverse().join('/')
-                          : '—'}
-                      </div>
-                    </FieldBox>
-                    <ManejoCampoHint>
-                      Desmama é registrada em Manejo → Desmama.
-                    </ManejoCampoHint>
-                  </>
-                ) : (
-                  <FormDatePicker
-                    value={form.dataDesmama}
-                    onChange={v => set('dataDesmama', v)}
-                    minHeight={42}
-                  />
-                )}
-              </div>
-              <div className="flex items-end">
+              {deveExibirDataDesmamaNoFormularioAnimal(isEditMode ? 'edit' : 'create') && (
                 <div>
-                  <Checkbox
-                    checked={form.castrado}
-                    onChange={v => set('castrado', v)}
-                    label="Castrado"
-                    disabled={isEditMode}
-                  />
-                  {isEditMode && (
-                    <ManejoCampoHint>
-                      Castração é registrada em Manejo → Castração.
-                    </ManejoCampoHint>
-                  )}
+                  <FormLabel>Data de Desmama</FormLabel>
+                  <FieldBox className="bg-gray-50">
+                    <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                      {form.dataDesmama
+                        ? form.dataDesmama.split('-').reverse().join('/')
+                        : '—'}
+                    </div>
+                  </FieldBox>
+                  <ManejoCampoHint>
+                    Desmama é registrada em Manejo → Desmama.
+                  </ManejoCampoHint>
                 </div>
-              </div>
+              )}
+              {mostrarCastradoEdicao && (
+                <div>
+                  <FormLabel>Castrado</FormLabel>
+                  <FieldBox className="bg-gray-50">
+                    <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                      {castradoSomenteLeitura ?? '—'}
+                    </div>
+                  </FieldBox>
+                  <ManejoCampoHint>
+                    Castração é registrada em Manejo → Castração.
+                  </ManejoCampoHint>
+                </div>
+              )}
             </div>
           </SectionCard>
 
@@ -1044,9 +895,14 @@ const AnimalFormPage: React.FC = () => {
                   onChange={v => set('pesoEntrada', v)}
                   placeholder="ex: 320"
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.1"
+                  error={!!errors.pesoEntrada}
                 />
+                <ManejoCampoHint>{HINT_PESO_ENTRADA}</ManejoCampoHint>
+                {errors.pesoEntrada && (
+                  <p className="mt-1 text-[11px] text-red-500">{errors.pesoEntrada}</p>
+                )}
               </div>
               <div>
                 <FormLabel>Produtor de Origem</FormLabel>
@@ -1059,10 +915,11 @@ const AnimalFormPage: React.FC = () => {
           <CollapsibleSectionCard
             title="Brinco Eletrônico / RFID — opcional"
             subtitle="Informe o código RFID ou transponder eletrônico, se houver."
+            defaultOpen={!isEditMode}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
               <div>
-                <FormLabel>Código do Brinco Eletrônico</FormLabel>
+                <FormLabel>{isEditMode ? 'Código do Brinco Eletrônico' : 'RFID eletrônico'}</FormLabel>
                 <FieldInput
                   value={form.brincoEletronico}
                   onChange={v => set('brincoEletronico', v)}
@@ -1074,9 +931,17 @@ const AnimalFormPage: React.FC = () => {
                     Alterações de RFID são realizadas em Manejo → Identificação.
                   </ManejoCampoHint>
                 ) : (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Número do transponder eletrônico (EID/RFID) ou código de rastreabilidade eletrônica.
-                  </p>
+                  <>
+                    <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+                      Informe o RFID manualmente ou utilize o bastão para leitura.
+                    </p>
+                    {deveMostrarLeituraRfidCadastro(isEditMode) ? (
+                      <At05RfidReaderControl
+                        currentValue={form.brincoEletronico}
+                        onRfidRead={rfid => set('brincoEletronico', rfid)}
+                      />
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -1178,20 +1043,67 @@ const AnimalFormPage: React.FC = () => {
             </div>
           </CollapsibleSectionCard>
 
-          {/* ── Status ── */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 px-4 py-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <h2 className="text-sm font-bold text-gray-800 shrink-0">Status do Animal</h2>
-              <div className="w-full sm:max-w-[200px]">
-                <FieldSelect value={form.status} onChange={v => set('status', v)}>
-                  <option value="ativo">Ativo</option>
-                  <option value="vendido">Vendido</option>
-                  <option value="morto">Morto</option>
-                  <option value="transferido">Transferido</option>
-                </FieldSelect>
+          {isEditMode ? (
+            <SectionCard title="Status" compact>
+              <div className={cn('grid gap-4', baixaAnimal && 'grid-cols-1 sm:grid-cols-2')}>
+                <div>
+                  <FormLabel>Status atual</FormLabel>
+                  <FieldBox className="bg-gray-50">
+                    <div className={cn(inputClass, 'min-h-[42px] flex items-center cursor-default')}>
+                      <span
+                        className={cn(
+                          'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
+                          statusBadgeClass(statusAtual),
+                        )}
+                      >
+                        {statusTexto}
+                      </span>
+                    </div>
+                  </FieldBox>
+                </div>
+                {tipoBaixa ? (
+                  <div>
+                    <FormLabel>Tipo da baixa</FormLabel>
+                    <FieldBox className="bg-gray-50">
+                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                        {TIPO_BAIXA_LABEL[tipoBaixa]}
+                      </div>
+                    </FieldBox>
+                  </div>
+                ) : null}
+                {temDataBaixa ? (
+                  <div>
+                    <FormLabel>Data da baixa</FormLabel>
+                    <FieldBox className="bg-gray-50">
+                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                        {dataBaixaTexto}
+                      </div>
+                    </FieldBox>
+                  </div>
+                ) : null}
+                {destinoBaixa && tipoBaixa !== 'morte' ? (
+                  <div>
+                    <FormLabel>{tipoBaixa === 'venda' ? 'Destino / Comprador' : 'Destino'}</FormLabel>
+                    <FieldBox className="bg-gray-50">
+                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                        {destinoBaixa}
+                      </div>
+                    </FieldBox>
+                  </div>
+                ) : null}
+                {motivoBaixa && tipoBaixa === 'morte' ? (
+                  <div>
+                    <FormLabel>Causa</FormLabel>
+                    <FieldBox className="bg-gray-50">
+                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
+                        {motivoBaixa}
+                      </div>
+                    </FieldBox>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          </div>
+            </SectionCard>
+          ) : null}
 
           {/* ── Observações Gerais ── */}
           <SectionCard title="Observações Gerais" compact>
@@ -1240,180 +1152,35 @@ const AnimalFormPage: React.FC = () => {
         </form>
       </div>
 
-      {/* ── Diálogo: criar novo lote ── */}
-      <Dialog open={loteDialogOpen} onOpenChange={setLoteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* Bloqueio histórico de Sexo — padrão centralizado aprovado nos Manejos. */}
+      <Dialog open={Boolean(bloqueioSexoMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
           <DialogHeader>
-            <DialogTitle>Criar novo lote</DialogTitle>
-            <DialogDescription>
-              O lote criado ficará disponível e será selecionado automaticamente.
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioSexoMsg}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <FormLabel required>Nome do lote</FormLabel>
-              <Input
-                value={novoLoteNome}
-                onChange={e => setNovoLoteNome(e.target.value)}
-                placeholder="ex: Lote Recria 2026"
-                autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCriarLote(); } }}
-              />
-            </div>
-            <div>
-              <FormLabel>Descrição (opcional)</FormLabel>
-              <Input
-                value={novoLoteDescricao}
-                onChange={e => setNovoLoteDescricao(e.target.value)}
-                placeholder="ex: Bezerros desmamados"
-              />
-            </div>
-          </div>
           <DialogFooter>
             <Button
-              type="button"
-              onClick={() => setLoteDialogOpen(false)}
-              className="bg-gray-400 hover:bg-gray-500 text-white"
-              disabled={createLoteMutation.isPending}
+              onClick={() => setBloqueioSexoMsg(null)}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
             >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleCriarLote}
-              className="text-white"
-              style={{ backgroundColor: '#4ECDC4' }}
-              disabled={createLoteMutation.isPending}
-            >
-              {createLoteMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Criar lote
+              Entendi
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── Modal: Histórico de Trocas de Brinco ─────────────────────────────────────────────────── */}
-      <Dialog open={showHistoricoModal} onOpenChange={setShowHistoricoModal}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="w-5 h-5 text-[#4ECDC4]" />
-              Histórico de Trocas de Brinco
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-2">
-            {!historicoBrincos || historicoBrincos.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <Tag className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                <p className="text-sm text-gray-600">
-                  Nenhuma troca de brinco registrada para este animal.
-                </p>
-                <p className="mt-2 text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-                  Quando o número do brinco for alterado na edição do animal, o histórico será registrado automaticamente.
-                </p>
-              </div>
-            ) : (
-              <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
-                {historicoBrincos.map((reg) => (
-                  <HistoricoBrincoCard
-                    key={reg.id}
-                    reg={reg as HistoricoBrincoRegistro}
-                  />
-                ))}
-              </div>
-            )}
-            <div className="mt-4 flex justify-end border-t pt-3">
-              <Button variant="outline" size="sm" onClick={() => setShowHistoricoModal(false)}>
-                Fechar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── Modal: Confirmar Troca de Brinco ao Salvar ───────────────────────────────────────────────────── */}
-      <Dialog
-        open={showConfirmarTrocaModal}
-        onOpenChange={open => {
-          if (!open) cancelarTrocaBrinco();
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Tag className="w-5 h-5 text-amber-500" />
-              Troca de Brinco Detectada
-            </DialogTitle>
-            <DialogDescription>
-              O número do brinco foi alterado. Informe o motivo para registrar no histórico.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 space-y-4">
-            {/* Visualização da troca */}
-            <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-              <span className="text-sm font-mono bg-red-100 text-red-700 px-2 py-1 rounded border border-red-200">
-                {pendingSavePayload?.brincoAnterior ?? '—'}
-              </span>
-              <span className="text-amber-500 font-bold">→</span>
-              <span className="text-sm font-mono bg-green-100 text-green-700 px-2 py-1 rounded border border-green-200">
-                {form.brinco.trim()}
-              </span>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Motivo da Troca *</label>
-              <MotivoSelect
-                value={motivoTroca}
-                onChange={motivo => {
-                  setMotivoTroca(motivo);
-                  if (motivo !== 'outro') setObsTrocaError('');
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Observações{motivoTroca === 'outro' ? ' *' : ' (opcional)'}
-              </label>
-              <textarea
-                value={obsTroca}
-                onChange={e => {
-                  setObsTroca(e.target.value);
-                  if (e.target.value.trim()) setObsTrocaError('');
-                }}
-                rows={2}
-                placeholder="Detalhe o motivo da troca..."
-                className={cn(
-                  'w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]',
-                  obsTrocaError ? 'border-red-400' : 'border-gray-300',
-                )}
-              />
-              {obsTrocaError && (
-                <p className="mt-1 text-[11px] text-red-500">{obsTrocaError}</p>
-              )}
-            </div>
-            <div className="flex gap-3 pt-2 border-t">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={cancelarTrocaBrinco}
-                disabled={isSubmitting}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="flex-1 text-white"
-                style={{ backgroundColor: '#4ECDC4' }}
-                disabled={isSubmitting || !podeConfirmarTrocaBrinco}
-                onClick={confirmarTrocaBrinco}
-              >
-                {isSubmitting ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Salvando...</>
-                ) : (
-                  <><Save className="w-4 h-4 mr-1" /> Salvar e Registrar Troca</>
-                )}
-              </Button>
-            </div>
-          </div>
         </DialogContent>
       </Dialog>
     </AppLayout>

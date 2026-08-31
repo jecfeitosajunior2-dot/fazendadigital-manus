@@ -62,7 +62,7 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
         disabled={disabled}
         inputClassName={fieldCls}
         placeholder="Buscar por brinco, RFID ou nome…"
-        emptyMessage="Nenhum animal ativo encontrado."
+        emptyMessage="Nenhum animal elegível encontrado."
         hintMessage={
           hintMessage ??
           (disabled

@@ -10,9 +10,11 @@ import {
 } from '../shared/brincoAtivo';
 import {
   MENSAGEM_DATA_REFERENCIA_DETALHE,
+  MSG_CASTRADO_FEMEA_IMPORTACAO,
   mensagemDataReferenciaLinha,
   possuiDataReferenciaImportacao,
   montarMensagemValidacaoImportacao,
+  resolverCastradoImportacao,
   resumoLinhasDataReferencia,
 } from '../shared/importacaoAnimais';
 
@@ -97,6 +99,14 @@ function validarLinhas(
       errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: 'Sexo é obrigatório' });
     } else if (!SEXOS_VALIDOS.includes(sexo)) {
       errosLinha.push({ linha: numLinha, campo: 'sexo', mensagem: `Sexo inválido: "${linha.sexo}"` });
+    }
+
+    const castradoImport = resolverCastradoImportacao({
+      sexo,
+      castrado: linha.castrado,
+    });
+    if (!castradoImport.ok) {
+      errosLinha.push({ linha: numLinha, campo: 'Castrado', mensagem: castradoImport.message });
     }
 
     // Status opcional mas deve ser válido
@@ -431,6 +441,22 @@ describe('Importação em Massa de Animais — Validação', () => {
     ]);
     expect(erros.some(e => e.campo === 'categoria')).toBe(true);
   });
+
+  it('rejeita fêmea marcada como Castrado = Sim', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-201', sexo: 'femea', castrado: 'Sim', ...COM_DATA_REF },
+    ]);
+    expect(validos).toHaveLength(0);
+    expect(erros.some(e => e.campo === 'Castrado' && e.mensagem === MSG_CASTRADO_FEMEA_IMPORTACAO)).toBe(true);
+  });
+
+  it('aceita fêmea com Castrado em branco', () => {
+    const { validos, erros } = validarLinhas([
+      { brinco: 'BR-202', sexo: 'femea', castrado: '', ...COM_DATA_REF },
+    ]);
+    expect(validos).toHaveLength(1);
+    expect(erros).toHaveLength(0);
+  });
 });
 
 // ─── Testes unitários do parseDateBR ─────────────────────────────────────────
@@ -481,6 +507,8 @@ import {
   normalizarCabecalho,
   COLUNAS_IMPORTACAO,
   isLinhaExemplo,
+  resolverCastradoImportacao,
+  MSG_CASTRADO_FEMEA_IMPORTACAO,
 } from '../shared/importacaoAnimais';
 
 describe('normalizarCabecalho — limpeza de rótulos', () => {
@@ -583,9 +611,42 @@ describe('normalizarSexo / normalizarStatus / normalizarBooleano', () => {
   });
 });
 
+describe('resolverCastradoImportacao', () => {
+  it('bloqueia fêmea com Sim e não persiste castração', () => {
+    expect(resolverCastradoImportacao({ sexo: 'femea', castrado: 'Sim' })).toEqual({
+      ok: false,
+      message: MSG_CASTRADO_FEMEA_IMPORTACAO,
+    });
+    expect(resolverCastradoImportacao({ sexo: 'Fêmea', castrado: '' })).toEqual({
+      ok: true,
+      castrado: null,
+    });
+    expect(resolverCastradoImportacao({ sexo: 'femea', castrado: 'Não' })).toEqual({
+      ok: true,
+      castrado: null,
+    });
+  });
+
+  it('persiste Sim/Não apenas para macho', () => {
+    expect(resolverCastradoImportacao({ sexo: 'macho', castrado: 'Sim' })).toEqual({
+      ok: true,
+      castrado: true,
+    });
+    expect(resolverCastradoImportacao({ sexo: 'Macho', castrado: 'Não' })).toEqual({
+      ok: true,
+      castrado: false,
+    });
+    expect(resolverCastradoImportacao({ sexo: 'macho', castrado: '' })).toEqual({
+      ok: true,
+      castrado: null,
+    });
+  });
+});
+
 describe('COLUNAS_IMPORTACAO — estrutura da planilha oficial', () => {
-  it('tem exatamente 27 colunas', () => {
-    expect(COLUNAS_IMPORTACAO).toHaveLength(27);
+  it('tem exatamente 26 colunas e não inclui Status', () => {
+    expect(COLUNAS_IMPORTACAO).toHaveLength(26);
+    expect(COLUNAS_IMPORTACAO.some(c => c.key === 'status')).toBe(false);
   });
   it('Fazenda, Brinco, Sexo e Categoria são os únicos obrigatórios', () => {
     const obrigatorios = COLUNAS_IMPORTACAO.filter(c => c.obrigatorio).map(c => c.key);

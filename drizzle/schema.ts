@@ -85,7 +85,8 @@ export const animais = mysqlTable("animais", {
   pelagem: varchar("pelagem", { length: 80 }),
   marca: varchar("marca", { length: 80 }),
   dataDesmama: date("dataDesmama", { mode: "string" }),
-  castrado: boolean("castrado").default(false),
+  /** true = castrado; false = não castrado (explícito); null = não informado. Sem default. */
+  castrado: boolean("castrado"),
   // Entrada / aquisição
   dataEntrada: date("dataEntrada", { mode: "string" }),
   pesoEntrada: decimal("pesoEntrada", { precision: 8, scale: 2 }),
@@ -111,6 +112,23 @@ export const animais = mysqlTable("animais", {
   fotoUrl: text("fotoUrl"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+// Evento operacional de saída definitiva do rebanho gerenciado.
+export const animalBaixas = mysqlTable("animal_baixas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  animalId: int("animalId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  tipo: mysqlEnum("tipo", ["venda", "morte", "transferencia"]).notNull(),
+  dataBaixa: date("dataBaixa", { mode: "string" }).notNull(),
+  /** Venda: comprador/destino. Transferência: destino externo. */
+  destino: varchar("destino", { length: 255 }),
+  /** Morte: causa estruturada (doenca, outro:texto, …) ou texto legado. */
+  motivo: varchar("motivo", { length: 255 }),
+  observacoes: text("observacoes"),
+  usuarioNome: varchar("usuarioNome", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow(),
 });
 
 // Pastos (subdivisões/piquetes por fazenda)
@@ -160,7 +178,10 @@ export const animalLoteMovimentacoes = mysqlTable("animal_lote_movimentacoes", {
   loteDestinoId: int("loteDestinoId").notNull(),
   pastoOrigemId: int("pastoOrigemId"),
   pastoDestinoId: int("pastoDestinoId"),
+  /** Fazenda de destino da movimentação. */
   fazendaId: int("fazendaId"),
+  /** Fazenda de origem — preenchida na transferência interna entre Fazendas. */
+  fazendaOrigemId: int("fazendaOrigemId"),
   dataMovimentacao: date("dataMovimentacao", { mode: "string" }).notNull(),
   usuarioNome: varchar("usuarioNome", { length: 200 }),
   observacoes: text("observacoes"),

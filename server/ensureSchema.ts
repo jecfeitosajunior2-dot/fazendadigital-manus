@@ -65,6 +65,7 @@ export async function ensureSchema() {
         \`pastoOrigemId\` int,
         \`pastoDestinoId\` int,
         \`fazendaId\` int,
+        \`fazendaOrigemId\` int,
         \`dataMovimentacao\` date NOT NULL,
         \`usuarioNome\` varchar(200),
         \`observacoes\` text,
@@ -78,6 +79,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "animal_lote_movimentacoes", "pastoOrigemId", "int");
       await ensureColumn(pool, "animal_lote_movimentacoes", "pastoDestinoId", "int");
       await ensureColumn(pool, "animal_lote_movimentacoes", "fazendaId", "int");
+      await ensureColumn(pool, "animal_lote_movimentacoes", "fazendaOrigemId", "int");
       await ensureColumn(pool, "animal_lote_movimentacoes", "observacoes", "text");
       const [origemCols] = await pool.query(
         "SHOW COLUMNS FROM `animal_lote_movimentacoes` LIKE 'loteOrigemId'",
@@ -373,6 +375,28 @@ export async function ensureSchema() {
         INDEX \`historico_brincos_animal_user_idx\` (\`animalId\`, \`userId\`)
       )
     `);
+
+    // Baixa operacional de animais (venda, morte ou transferência externa).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`animal_baixas\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`animalId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`tipo\` enum('venda','morte','transferencia') NOT NULL,
+        \`dataBaixa\` date NOT NULL,
+        \`destino\` varchar(255),
+        \`motivo\` varchar(255),
+        \`observacoes\` text,
+        \`usuarioNome\` varchar(200),
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`animal_baixas_animal_uq\` (\`animalId\`),
+        INDEX \`animal_baixas_user_data_idx\` (\`userId\`, \`dataBaixa\`),
+        INDEX \`animal_baixas_fazenda_data_idx\` (\`fazendaId\`, \`dataBaixa\`)
+      )
+    `);
+
     // ── Animais: novas colunas fazendaId e pastoId ──────────────────────────────────────
     const [animaisTable] = await pool.query(`SHOW TABLES LIKE 'animais'`);
     if ((animaisTable as unknown[]).length > 0) {

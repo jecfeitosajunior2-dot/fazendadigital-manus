@@ -257,6 +257,25 @@ describe("contrato de persistência append-only", () => {
   });
 });
 
+describe("consulta oficial na ficha (02 → 7845)", () => {
+  it("preserva alteração de brinco e motivo Brinco danificado", () => {
+    const display = mapHistoricoBrincoToDisplay({
+      id: 12,
+      animalId: 2,
+      brincoAnterior: "02",
+      brincoNovo: "7845",
+      motivo: "danificado",
+      observacoes: null,
+      dataAlteracao: "2026-07-04",
+    });
+    expect(display.motivoLabel).toBe("Brinco danificado");
+    expect(formatAlteracaoIdentificacao(display)).toBe("Brinco\n02 → 7845");
+    expect(getLinhasAlteracaoIdentificacao(display)).toEqual([
+      { label: "Brinco", de: "02", para: "7845" },
+    ]);
+  });
+});
+
 describe("legado só visual (observacoes nulas)", () => {
   it("infere Trocar brinco pelas colunas", () => {
     const display = mapHistoricoBrincoToDisplay({
