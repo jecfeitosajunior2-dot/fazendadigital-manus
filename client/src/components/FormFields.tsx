@@ -41,8 +41,8 @@ export function FieldBox({
   return (
     <div
       className={cn(
-        variant === "light" ? "bg-white" : "bg-[#EEEEEE]",
-        "border rounded-sm",
+        "border overflow-hidden",
+        variant === "light" ? "bg-white rounded-md" : "bg-[#EEEEEE] rounded-sm",
         invalid ? "border-red-500" : "border-gray-200",
         required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
         required && invalid && "border-l-[3px] border-l-red-500",
@@ -189,8 +189,8 @@ export function FormNativeSelect({
   );
 }
 
-const formDownSelectCls =
-  "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
+export const formControlFlatCls =
+  "box-border w-full text-[12px] leading-[16px] border border-gray-200 rounded px-3 text-gray-700 h-[34px] min-h-[34px]";
 
 /** Select customizado: mesma aparência dos campos nativos e lista sempre abaixo. */
 export function FormDownSelect({
@@ -199,12 +199,14 @@ export function FormDownSelect({
   placeholder,
   disabled,
   options,
+  required,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   disabled?: boolean;
   options: ReadonlyArray<{ value: string; label: string }>;
+  required?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -232,9 +234,13 @@ export function FormDownSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(v => !v)}
-        className={`${formDownSelectCls} flex items-center justify-between gap-2 text-left disabled:opacity-60 disabled:cursor-not-allowed`}
+        className={cn(
+          formControlFlatCls,
+          "flex items-center justify-between gap-2 text-left overflow-visible disabled:opacity-60 disabled:cursor-not-allowed",
+          required && "border-l-[3px] border-l-[#4ECDC4]",
+        )}
       >
-        <span className={`truncate ${selected ? "text-gray-700" : "text-gray-400"}`}>
+        <span className={`min-w-0 flex-1 truncate leading-[16px] ${selected ? "text-gray-700" : "text-gray-400"}`}>
           {selected?.label ?? placeholder}
         </span>
         <span className="material-icons text-[18px] text-gray-400 shrink-0" aria-hidden>
@@ -482,19 +488,24 @@ export function FormDatePicker({
   const displayValue = focused ? inputText : (value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : inputText);
 
   return (
-    <FieldBox required={required} variant="light" invalid={invalid}>
+    <div className="relative w-full min-w-0">
       <div
-        className="flex w-full items-center justify-start gap-2 pl-1.5 pr-2"
-        style={{ minHeight: minHeight }}
+        className={cn(
+          formControlFlatCls,
+          "relative flex items-center justify-start gap-2 overflow-hidden",
+          minHeight === 42 && "h-[42px] min-h-[42px]",
+          required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+          invalid && "border-red-500 border-l-[3px] border-l-red-500",
+        )}
       >
         <button
           type="button"
           tabIndex={-1}
           onClick={openPicker}
-          className="shrink-0 inline-flex items-center justify-center text-[#4ECDC4] hover:text-[#0F766E] transition-colors"
+          className="relative shrink-0 inline-flex h-4 w-4 items-center justify-center text-[#4ECDC4] hover:text-[#0F766E] transition-colors"
           aria-label="Abrir calendário"
         >
-          <Calendar className="w-4 h-4" strokeWidth={1.75} />
+          <Calendar className="w-3.5 h-3.5" strokeWidth={1.75} />
         </button>
         <input
           id={id}
@@ -507,24 +518,23 @@ export function FormDatePicker({
           placeholder={placeholder}
           aria-invalid={invalid || undefined}
           aria-describedby={ariaDescribedBy}
-          className="w-full min-w-0 flex-1 bg-transparent border-0 outline-none py-1.5 text-[12px] leading-none text-left text-gray-800 placeholder:text-gray-400"
-          style={{ textAlign: "left", paddingLeft: 0, marginLeft: 0 }}
-        />
-        <input
-          ref={dateRef}
-          type="date"
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden
-          value={value}
-          max={max}
-          onChange={e => {
-            onChange(e.target.value);
-            setFocused(false);
-          }}
+          className="w-full min-w-0 flex-1 bg-transparent border-0 outline-none p-0 text-[12px] leading-none text-left text-gray-800 placeholder:text-gray-400"
         />
       </div>
-    </FieldBox>
+      <input
+        ref={dateRef}
+        type="date"
+        tabIndex={-1}
+        aria-hidden
+        value={value}
+        max={max}
+        onChange={e => {
+          onChange(e.target.value);
+          setFocused(false);
+        }}
+        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+      />
+    </div>
   );
 }
 

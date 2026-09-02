@@ -3,6 +3,7 @@ import {
   MSG_RFID_BASTAO_INDISPONIVEL,
   decidirAplicacaoRfidLido,
   deveMostrarLeituraRfidCadastro,
+  textoStatusBastaoRfid,
   textoStatusLeitorRfid,
 } from "./rfidLeituraCadastro";
 
@@ -37,5 +38,11 @@ describe("leitura RFID no cadastro inicial", () => {
     expect(textoStatusLeitorRfid("disconnected")).toBe("Leitor desconectado");
     expect(textoStatusLeitorRfid("connected")).toBe("Leitor conectado");
     expect(textoStatusLeitorRfid("capturing")).toBe("Aguardando leitura...");
+  });
+
+  it("na Venda usa Bastão conectado/desconectado", () => {
+    expect(textoStatusBastaoRfid("connected")).toBe("Bastão conectado");
+    expect(textoStatusBastaoRfid("disconnected")).toBe("Bastão desconectado");
+    expect(textoStatusBastaoRfid("unsupported")).toBe(MSG_RFID_BASTAO_INDISPONIVEL);
   });
 });

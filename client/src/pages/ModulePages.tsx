@@ -31,6 +31,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { periodoMesAtual } from "@/lib/date-utils";
+import {
+  COMPRA_VENDA_COMPRADORES_PATH,
+  COMPRA_VENDA_VENDA_NOVA_PATH,
+  compraVendaVendaDetalhePath,
+} from "@/lib/compraVendaCompradores";
 import { useDeleteFazenda } from "@/hooks/useDeleteFazenda";
 import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
@@ -168,9 +173,11 @@ export function FarmsOverviewPage() {
         onClose={() => setDeleteBlocked(null)}
       />
       {/* Lista de fazendas — layout iRancho */}
-      <div className="bg-white rounded border border-gray-200 shadow-sm">
+      <div className="bg-white rounded-lg border border-gray-200">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Fazendas</h1>
+          <h1 className="text-[20px] font-semibold text-gray-900 shrink-0" style={{ fontFamily: "Fraunces, serif" }}>
+            Lista de Fazendas
+          </h1>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
@@ -1765,26 +1772,6 @@ export function NutritionTroughsPage() {
 // MÓDULO COMPRA E VENDA
 // ============================================================
 
-function PurchaseSaleTabs({ active }: { active: string }) {
-  const tabs = ["Borderô de Compra", "Entrada de Animais", "Vendas", "Relatório de Vendas"];
-  const paths = ["/compra-venda/compras", "/compra-venda/compras", "/compra-venda/vendas", "/compra-venda/vendas"];
-  return (
-    <div className="flex border-b border-gray-200 mb-4">
-      {tabs.map((tab, i) => (
-        <a
-          key={i}
-          href={paths[i]}
-          className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors ${
-            active === tab ? "border-[#4ECDC4] text-[#4ECDC4]" : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          {tab}
-        </a>
-      ))}
-    </div>
-  );
-}
-
 export function PurchasesPage() {
   const [, setLocation] = useLocation();
   const [showForm, setShowForm] = useState(false);
@@ -1839,7 +1826,7 @@ export function PurchasesPage() {
     <AppLayout>
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Novo Borderô de Compra</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Nova Compra</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>Data</Label><Input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
             <div>
@@ -1889,10 +1876,10 @@ export function PurchasesPage() {
         </DialogContent>
       </Dialog>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-[15px] font-medium text-gray-800">Borderô de Compra</h1>
+        <h1 className="text-[15px] font-medium text-gray-800">Compras</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <ListExportButtons
-            title="Borderô de Compra"
+            title="Compras"
             filename="compras"
             headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)"]}
             rows={(compras ?? []).map((c: any) => [
@@ -1903,20 +1890,19 @@ export function PurchasesPage() {
             ])}
             alignRightFrom={2}
           />
-          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Borderôs</button>
+          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Compras</button>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-            <span className="material-icons text-[14px]">add</span>Novo Borderô
+            <span className="material-icons text-[14px]">add</span>Nova Compra
           </button>
         </div>
       </div>
-      <PurchaseSaleTabs active="Borderô de Compra" />
       {isLoading ? (
         <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center"><p className="text-[12px] text-gray-400">Carregando...</p></div>
       ) : !compras?.length ? (
         <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
           <span className="material-icons text-4xl text-gray-200 mb-2 block">shopping_cart</span>
           <p className="text-[12px] text-gray-400">Sem Dados</p>
-          <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de compra</p>
+          <p className="text-[11px] text-gray-300 mt-1">Nenhuma compra registrada</p>
         </div>
       ) : (
         <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
@@ -1953,57 +1939,59 @@ export function PurchasesPage() {
 }
 
 export function SalesPage() {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ data: "", comprador: "", quantidade: "", valorTotal: "", observacoes: "" });
-  const { data: vendas, refetch, isLoading } = trpc.vendas.list.useQuery();
-  const createMutation = trpc.vendas.create.useMutation({
-    onSuccess: () => { toast.success("Venda registrada com sucesso!"); setShowForm(false); setForm({ data: "", comprador: "", quantidade: "", valorTotal: "", observacoes: "" }); refetch(); },
-    onError: (e) => toast.error(e.message),
+  const [, setLocation] = useLocation();
+  const [busca, setBusca] = useState("");
+  const { data: vendas, isLoading } = trpc.vendas.list.useQuery();
+  const filtradas = (vendas ?? []).filter(v => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return true;
+    return [v.comprador, v.fazendaNome, v.data].some(campo => String(campo ?? "").toLowerCase().includes(q));
   });
-  const deleteMutation = trpc.vendas.delete.useMutation({
-    onSuccess: () => { toast.success("Venda removida."); refetch(); },
-    onError: (e) => toast.error(e.message),
-  });
+
   return (
     <AppLayout>
-      <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Registrar Nova Venda</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Data</Label><Input type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
-            <div><Label>Comprador</Label><Input placeholder="Nome do comprador" value={form.comprador} onChange={e => setForm(f => ({ ...f, comprador: e.target.value }))} /></div>
-            <div><Label>Quantidade de Animais</Label><Input type="number" placeholder="0" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: e.target.value }))} /></div>
-            <div><Label>Valor Total (R$)</Label><Input type="number" placeholder="0.00" value={form.valorTotal} onChange={e => setForm(f => ({ ...f, valorTotal: e.target.value }))} /></div>
-            <div><Label>Observações</Label><Textarea placeholder="Observações..." value={form.observacoes} onChange={e => setForm(f => ({ ...f, observacoes: e.target.value }))} /></div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-              <Button onClick={() => createMutation.mutate({ data: form.data, comprador: form.comprador, quantidadeAnimais: parseInt(form.quantidade) || 0, valorTotal: form.valorTotal || "0", observacoes: form.observacoes })} disabled={createMutation.isPending || !form.comprador || !form.data}>Salvar</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-[15px] font-medium text-gray-800">Vendas</h1>
         <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setLocation(COMPRA_VENDA_VENDA_NOVA_PATH)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase"
+            style={{ backgroundColor: "#4ECDC4" }}
+          >
+            <span className="material-icons text-[14px]">add</span>Nova Venda
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocation(COMPRA_VENDA_COMPRADORES_PATH)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50"
+          >
+            Gerenciar Compradores
+          </button>
           <ListExportButtons
             title="Vendas"
             filename="vendas"
-            headers={["Data", "Comprador", "Quantidade", "Valor Total (R$)"]}
-            rows={(vendas ?? []).map((v: any) => [
+            headers={["Data", "Fazenda", "Comprador", "Animais", "Peso total (kg)", "Valor Total (R$)"]}
+            rows={filtradas.map(v => [
               v.data,
+              v.fazendaNome ?? "",
               v.comprador,
               v.quantidade,
-              Number(v.valorTotal).toFixed(2),
+              v.pesoTotal ?? "",
+              Number(v.valorTotalNumero).toFixed(2),
             ])}
-            alignRightFrom={2}
+            alignRightFrom={3}
           />
-          <button onClick={() => toast.info("Funcionalidade em desenvolvimento")} className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 text-[11px] text-gray-600 font-medium uppercase hover:bg-gray-50">Buscar Vendas</button>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded text-white text-[11px] font-medium uppercase" style={{ backgroundColor: "#4ECDC4" }}>
-            <span className="material-icons text-[14px]">add</span>Registrar Nova Venda
-          </button>
         </div>
       </div>
-      <PurchaseSaleTabs active="Vendas" />
+      {vendas && vendas.length > 0 ? (
+        <input
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          placeholder="Pesquisar por comprador, fazenda ou data"
+          className="mb-3 w-full max-w-sm text-[12px] border border-gray-200 rounded-md px-3 py-2"
+        />
+      ) : null}
       {isLoading ? (
         <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center"><p className="text-[12px] text-gray-400">Carregando...</p></div>
       ) : !vendas?.length ? (
@@ -2012,53 +2000,45 @@ export function SalesPage() {
           <p className="text-[12px] text-gray-400">Sem Dados</p>
           <p className="text-[11px] text-gray-300 mt-1">Nenhum registro de venda</p>
         </div>
-      ) : (
-        <>
-        {/* Cards mobile */}
-        <div className="lg:hidden space-y-2.5">
-          {vendas.map((v: any) => (
-            <div key={v.id} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-semibold text-gray-800 truncate">{v.comprador}</p>
-                  <p className="text-[12px] text-gray-400 mt-0.5">{v.data} · {v.quantidade} un.</p>
-                </div>
-                <button onClick={() => { if (confirm('Remover esta venda?')) deleteMutation.mutate({ id: v.id }); }} className="grid place-items-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition shrink-0" style={{ minWidth: 40, minHeight: 40 }} aria-label="Excluir"><span className="material-icons text-[20px]">delete</span></button>
-              </div>
-              <div className="mt-2 pt-2 border-t border-gray-100 text-[15px] font-bold text-green-600">R$ {Number(v.valorTotal).toFixed(2)}</div>
-            </div>
-          ))}
+      ) : !filtradas.length ? (
+        <div className="bg-white rounded shadow-sm border border-gray-100 p-8 text-center">
+          <p className="text-[12px] text-gray-400">Nenhuma venda encontrada para essa pesquisa.</p>
         </div>
-        {/* Tabela desktop */}
-        <div className="hidden lg:block bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
+      ) : (
+        <div className="bg-white rounded shadow-sm border border-gray-100 overflow-x-auto">
           <table className="w-full text-[11px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Data</th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Fazenda</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Comprador</th>
-                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Qtd</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Animais</th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso</th>
                 <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor Total</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-16">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {vendas.map((v: any) => (
-                <tr key={v.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+              {filtradas.map(v => (
+                <tr
+                  key={v.id}
+                  className="border-t border-gray-50 hover:bg-gray-50/50 cursor-pointer"
+                  onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
+                >
                   <td className="px-3 py-1.5 text-gray-700">{v.data}</td>
-                  <td className="px-3 py-1.5 text-gray-700 font-medium">{v.comprador}</td>
+                  <td className="px-3 py-1.5 text-gray-700">{v.fazendaNome || "—"}</td>
+                  <td className="px-3 py-1.5 text-gray-700 font-medium">{v.comprador || "—"}</td>
                   <td className="px-3 py-1.5 text-right text-gray-700">{v.quantidade}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-700">R$ {Number(v.valorTotal).toFixed(2)}</td>
-                  <td className="px-3 py-1.5 text-center">
-                    <button onClick={() => { if (confirm("Remover esta venda?")) deleteMutation.mutate({ id: v.id }); }} className="p-0.5 rounded hover:bg-red-50 text-red-400" title="Excluir">
-                      <span className="material-icons text-[14px]">delete</span>
-                    </button>
+                  <td className="px-3 py-1.5 text-right text-gray-700">
+                    {v.pesoTotal != null ? `${Number(v.pesoTotal).toLocaleString("pt-BR")} kg` : "—"}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">
+                    {Number(v.valorTotalNumero).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        </>
       )}
     </AppLayout>
   );
@@ -2606,7 +2586,9 @@ export function QuickAccessPage() {
   const [, setLocation] = useLocation();
   return (
     <AppLayout>
-      <h1 className="text-[15px] font-medium text-gray-800 mb-4">Acesso Rápido</h1>
+      <h1 className="text-[20px] font-semibold text-gray-900 mb-4" style={{ fontFamily: "Fraunces, serif" }}>
+        Acesso Rápido
+      </h1>
       <div className="grid grid-cols-2 gap-4">
         {[
           { label: "Cadastrar Fazenda", icon: "fd_farm_land", path: "/fazendas/cadastro" },
@@ -2620,7 +2602,7 @@ export function QuickAccessPage() {
             key={i}
             type="button"
             onClick={() => setLocation(item.path)}
-            className="flex items-center gap-3 p-4 bg-white rounded shadow-sm border border-gray-100 border-l-[4px] border-l-[#4ECDC4] hover:shadow-md hover:border-l-[#4ECDC4] transition-shadow text-left w-full"
+            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 border-l-[3px] border-l-[#4ECDC4] hover:bg-gray-50 transition-colors text-left w-full"
           >
             <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: "#ECFDF5" }}>
               <div className="text-[#4ECDC4]">

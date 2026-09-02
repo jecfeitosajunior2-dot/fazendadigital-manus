@@ -54,3 +54,24 @@ describe("rotas oficiais — manejo reprodutivo e estoque", () => {
     expect(childPaths("Reprodução")).toContain("/reproducao/semen-utilizado");
   });
 });
+
+describe("menu lateral — Compra e Venda", () => {
+  it("mantém apenas Visão Geral, Compras e Vendas", () => {
+    expect(childLabels("Compra e Venda")).toEqual(["Visão Geral", "Compras", "Vendas"]);
+    expect(childPaths("Compra e Venda")).toEqual([
+      "/compra-venda/visao-geral",
+      "/compra-venda/compras",
+      "/compra-venda/vendas",
+    ]);
+  });
+
+  it("não adiciona Compradores na sidebar nem em Cadastros", () => {
+    expect(childLabels("Compra e Venda")).not.toContain("Compradores");
+    expect(menuItems.map(i => i.label)).not.toContain("Cadastros");
+  });
+
+  it("não implementa Sessão no Curral nesta etapa", () => {
+    expect(childLabels("Compra e Venda")).not.toContain("Sessão no Curral");
+    expect(childPaths("Compra e Venda").join(" ")).not.toMatch(/curral|rfid|at05/i);
+  });
+});

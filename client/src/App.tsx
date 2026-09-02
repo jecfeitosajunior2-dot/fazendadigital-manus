@@ -22,6 +22,10 @@ import {
   SimulationsFeedlotPage,
   SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
+import VendasCompradoresPage from "./pages/VendasCompradoresPage";
+import CompraVendaVisaoGeralPage from "./pages/CompraVendaVisaoGeralPage";
+import NovaVendaPage from "./pages/NovaVendaPage";
+import VendaDetalhePage from "./pages/VendaDetalhePage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/EditAnimalPage";
 import { CattleDetailPageExpanded } from "./pages/CattleDetailPageExpanded";
@@ -159,8 +163,11 @@ function ProtectedRoutes() {
       <Route path="/nutricao/batidas" component={SuppliesManagementPage} />
 
       {/* Purchase and Sale */}
-      <Route path="/compra-venda/visao-geral" component={PurchasesPage} />
+      <Route path="/compra-venda/visao-geral" component={CompraVendaVisaoGeralPage} />
       <Route path="/compra-venda/compras" component={PurchasesPage} />
+      <Route path="/compra-venda/vendas/nova" component={NovaVendaPage} />
+      <Route path="/compra-venda/vendas/compradores" component={VendasCompradoresPage} />
+      <Route path="/compra-venda/vendas/:id" component={VendaDetalhePage} />
       <Route path="/compra-venda/vendas" component={SalesPage} />
 
       {/* Financial */}

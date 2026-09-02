@@ -206,4 +206,41 @@ describe("registrarBaixaAnimal — transação", () => {
       }),
     });
   });
+
+  it("grava Transferência externa com Status Transferido sem mudar Fazenda/Lote", async () => {
+    const ops: Op[] = [];
+    makeTransaction(
+      [
+        [{ id: 28, status: "ativo", fazendaId: 3 }],
+        [],
+      ],
+      ops,
+    );
+
+    const result = await registrarBaixaAnimal(1, {
+      animalId: 28,
+      fazendaId: 3,
+      tipo: "transferencia",
+      dataBaixa: "2026-08-31",
+      destino: "  Fazenda Santa Maria  ",
+    });
+
+    expect(result).toMatchObject({ success: true, status: "transferido" });
+    expect(ops).toEqual([
+      {
+        kind: "insert",
+        values: expect.objectContaining({
+          animalId: 28,
+          fazendaId: 3,
+          tipo: "transferencia",
+          dataBaixa: "2026-08-31",
+          destino: "Fazenda Santa Maria",
+          motivo: null,
+        }),
+      },
+      { kind: "update", values: { status: "transferido" } },
+    ]);
+    expect(ops[1]?.values).not.toHaveProperty("fazendaId");
+    expect(ops[1]?.values).not.toHaveProperty("loteId");
+  });
 });

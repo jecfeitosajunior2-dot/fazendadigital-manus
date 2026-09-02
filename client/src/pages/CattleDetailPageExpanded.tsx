@@ -65,6 +65,7 @@ import {
   sliceDescendentesPreview,
 } from '@/lib/fichaAnimalDescendentes';
 import { getFichaAnimalPath } from '@/lib/fichaAnimalRoute';
+import { compraVendaVendaDetalhePath } from '@/lib/compraVendaCompradores';
 import type { DescendenteRow } from '@shared/animalDescendentes';
 import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
@@ -358,6 +359,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
   const { data: animal, isLoading: loadingAnimal, error: animalError } = trpc.animais.getById.useQuery(
     { id: animalId! },
     { enabled: !!animalId }
+  );
+
+  const { data: vendaDoAnimal } = trpc.vendas.porAnimal.useQuery(
+    { animalId: animalId! },
+    { enabled: !!animalId && animal?.status === 'vendido' },
   );
 
   const { data: saudeRegistros, isLoading: loadingSaude } = trpc.saude.list.useQuery(
@@ -665,19 +671,51 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   </div>
                 </div>
 
-                {baixa ? (
+                {baixa || vendaDoAnimal ? (
                   <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
                     <p className="text-[9px] font-semibold uppercase tracking-wider text-amber-700 mb-2">
                       Saída do animal
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ResumoField label="Tipo da baixa" value={TIPO_BAIXA_LABEL[baixa.tipo]} />
-                      <ResumoField label="Data da baixa" value={formatarDataBaixa(baixa.dataBaixa)} />
-                      {baixa.destino ? (
+                      <ResumoField
+                        label="Tipo da baixa"
+                        value={
+                          baixa
+                            ? TIPO_BAIXA_LABEL[baixa.tipo]
+                            : 'Venda'
+                        }
+                      />
+                      <ResumoField
+                        label={baixa?.tipo === 'venda' || vendaDoAnimal ? 'Data da Venda' : 'Data da baixa'}
+                        value={formatarDataBaixa(vendaDoAnimal?.venda.data ?? baixa?.dataBaixa)}
+                      />
+                      {(vendaDoAnimal?.venda.comprador || baixa?.destino) ? (
                         <ResumoField
-                          label={baixa.tipo === 'venda' ? 'Comprador / Destino' : 'Destino externo'}
-                          value={baixa.destino}
+                          label={
+                            baixa?.tipo === 'venda' || vendaDoAnimal
+                              ? 'Comprador'
+                              : baixa?.tipo === 'transferencia'
+                                ? 'Destino'
+                                : 'Destino externo'
+                          }
+                          value={vendaDoAnimal?.venda.comprador || baixa?.destino || '—'}
                         />
+                      ) : null}
+                      {vendaDoAnimal?.venda.id ? (
+                        <div>
+                          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">
+                            Referência da Venda
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setLocation(compraVendaVendaDetalhePath(vendaDoAnimal.venda.id))}
+                            className="text-[13px] font-medium text-[#4ECDC4] hover:underline"
+                          >
+                            Venda #{vendaDoAnimal.venda.id}
+                          </button>
+                        </div>
+                      ) : baixa?.tipo === 'venda' && baixa.motivo ? (
+                        <ResumoField label="Referência da Venda" value={baixa.motivo} />
                       ) : null}
                       {causaMorteTexto ? (
                         <ResumoField label="Causa" value={causaMorteTexto} />

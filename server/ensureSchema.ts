@@ -536,6 +536,36 @@ export async function ensureSchema() {
         "decimal(10,2)",
       );
     }
+
+    const [vendasTable] = await pool.query(`SHOW TABLES LIKE 'vendas'`);
+    if ((vendasTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "vendas", "fazenda_id", "int");
+      await ensureColumn(pool, "vendas", "comprador_id", "int");
+      await ensureColumn(pool, "vendas", "forma_precificacao", "enum('kg','cabeca')");
+      await ensureColumn(pool, "vendas", "preco_padrao", "decimal(12,2)");
+      await ensureColumn(pool, "vendas", "peso_total", "decimal(10,2)");
+      await ensureColumn(pool, "vendas", "rendimento_carcaca", "decimal(5,2)");
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`venda_itens\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`venda_id\` int NOT NULL,
+        \`animal_id\` int NOT NULL,
+        \`brinco_snapshot\` varchar(50),
+        \`lote_nome_snapshot\` varchar(100),
+        \`peso_venda\` decimal(8,2),
+        \`forma_precificacao\` enum('kg','cabeca') NOT NULL,
+        \`preco_unitario\` decimal(12,2) NOT NULL,
+        \`valor_item\` decimal(12,2) NOT NULL,
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`venda_itens_venda_animal_uq\` (\`venda_id\`, \`animal_id\`),
+        INDEX \`venda_itens_venda_idx\` (\`venda_id\`),
+        INDEX \`venda_itens_animal_idx\` (\`animal_id\`)
+      )
+    `);
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

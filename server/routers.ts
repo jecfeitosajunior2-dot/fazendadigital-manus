@@ -7,7 +7,7 @@ import {
   users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
-  compras, vendas, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
+  compras, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like, ne } from "drizzle-orm";
@@ -119,6 +119,8 @@ import {
   registrarBaixaAnimal,
 } from "./animalBaixa";
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
+import { confirmarVendaComercial } from "./confirmarVenda";
+import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
 import {
@@ -800,6 +802,7 @@ const animaisRouter = router({
           idadeMeses,
           diasNaFazenda,
           ultimoPeso,
+          origemUltimoPeso: indicadoresPeso.origemUltimoPeso,
           ganhoKg,
           gmd,
           emCarencia: fimCarenciaPorAnimal.has(animal.id),
@@ -9140,9 +9143,144 @@ const comprasRouter = router({
 
 // ─── VENDAS ROUTER ───────────────────────────────────────────────────────────
 const vendasRouter = router({
-  list: protectedProcedure.query(({ ctx }) =>
-    db.select().from(vendas).where(eq(vendas.userId, ctx.user.id)).orderBy(desc(vendas.createdAt))
-  ),
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await db
+      .select()
+      .from(vendas)
+      .where(eq(vendas.userId, ctx.user.id))
+      .orderBy(desc(vendas.createdAt));
+    if (!rows.length) return [];
+
+    const ids = rows.map(v => v.id);
+    const itens = await db
+      .select()
+      .from(vendaItens)
+      .where(and(eq(vendaItens.userId, ctx.user.id), inArray(vendaItens.vendaId, ids)));
+    const itensPorVenda = new Map<number, typeof itens>();
+    for (const item of itens) {
+      const list = itensPorVenda.get(item.vendaId) ?? [];
+      list.push(item);
+      itensPorVenda.set(item.vendaId, list);
+    }
+
+    const fazendaIds = [...new Set(rows.map(v => v.fazendaId).filter((id): id is number => id != null))];
+    const fazendaNomeMap = new Map<number, string>();
+    if (fazendaIds.length) {
+      const fazendaRows = await db
+        .select({ id: fazendas.id, nome: fazendas.nome })
+        .from(fazendas)
+        .where(inArray(fazendas.id, fazendaIds));
+      fazendaRows.forEach(f => fazendaNomeMap.set(f.id, f.nome));
+    }
+
+    return rows.map(v => {
+      const daVenda = itensPorVenda.get(v.id) ?? [];
+      const temItens = daVenda.length > 0;
+      const totais = temItens
+        ? resumirItensVenda(
+            daVenda.map(i => ({
+              pesoVenda: i.pesoVenda != null ? Number(i.pesoVenda) : null,
+              valorItem: Number(i.valorItem) || 0,
+            })),
+            { rendimentoCarcaca: v.rendimentoCarcaca != null ? Number(v.rendimentoCarcaca) : null },
+          )
+        : null;
+      return {
+        ...v,
+        fazendaNome: v.fazendaId != null ? fazendaNomeMap.get(v.fazendaId) ?? null : null,
+        temItens,
+        quantidade: temItens ? totais!.quantidade : v.quantidadeAnimais ?? 0,
+        pesoTotal: temItens ? totais!.pesoTotal : null,
+        valorTotalNumero: temItens ? totais!.valorTotal : Number(v.valorTotal) || 0,
+      };
+    });
+  }),
+
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [venda] = await db
+        .select()
+        .from(vendas)
+        .where(and(eq(vendas.id, input.id), eq(vendas.userId, ctx.user.id)))
+        .limit(1);
+      if (!venda) throw new TRPCError({ code: "NOT_FOUND", message: "Venda não encontrada." });
+      const itens = await db
+        .select()
+        .from(vendaItens)
+        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.vendaId, venda.id)));
+      let fazendaNome: string | null = null;
+      if (venda.fazendaId != null) {
+        const [fazenda] = await db
+          .select({ nome: fazendas.nome })
+          .from(fazendas)
+          .where(eq(fazendas.id, venda.fazendaId))
+          .limit(1);
+        fazendaNome = fazenda?.nome ?? null;
+      }
+      const totais = itens.length
+        ? resumirItensVenda(
+            itens.map(i => ({
+              pesoVenda: i.pesoVenda != null ? Number(i.pesoVenda) : null,
+              valorItem: Number(i.valorItem) || 0,
+            })),
+            { rendimentoCarcaca: venda.rendimentoCarcaca != null ? Number(venda.rendimentoCarcaca) : null },
+          )
+        : {
+            quantidade: venda.quantidadeAnimais ?? 0,
+            pesoTotal: null as number | null,
+            valorTotal: Number(venda.valorTotal) || 0,
+            precoMedioKg: null as number | null,
+          };
+      return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0 };
+    }),
+
+  porAnimal: protectedProcedure
+    .input(z.object({ animalId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [item] = await db
+        .select()
+        .from(vendaItens)
+        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.animalId, input.animalId)))
+        .limit(1);
+      if (!item) return null;
+      const [venda] = await db
+        .select()
+        .from(vendas)
+        .where(and(eq(vendas.id, item.vendaId), eq(vendas.userId, ctx.user.id)))
+        .limit(1);
+      if (!venda) return null;
+      return { venda, item };
+    }),
+
+  confirmar: protectedProcedure
+    .input(
+      z.object({
+        fazendaId: z.number().int().positive(),
+        data: z.string(),
+        compradorId: z.number().int().positive(),
+        formaPrecificacao: z.enum(["kg", "cabeca"]),
+        precoPadrao: z.number().positive().nullable().optional(),
+        rendimentoCarcaca: z.number().positive().max(100).nullable().optional(),
+        observacoes: z.string().optional(),
+        itens: z
+          .array(
+            z.object({
+              animalId: z.number().int().positive(),
+              pesoVenda: z.number().positive().nullable().optional(),
+              precoUnitario: z.number().positive(),
+            }),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      confirmarVendaComercial(ctx.user.id, {
+        ...input,
+        usuarioNome: ctx.user.name,
+      }),
+    ),
+
   create: protectedProcedure
     .input(z.object({
       comprador: z.string().optional(),
@@ -9155,9 +9293,21 @@ const vendasRouter = router({
       await db.insert(vendas).values({ userId: ctx.user.id, ...input });
       return { success: true };
     }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const [item] = await db
+        .select({ id: vendaItens.id })
+        .from(vendaItens)
+        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.vendaId, input.id)))
+        .limit(1);
+      if (item) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Vendas com animais vinculados não podem ser excluídas nesta etapa.",
+        });
+      }
       await db.delete(vendas).where(and(eq(vendas.id, input.id), eq(vendas.userId, ctx.user.id)));
       return { success: true };
     }),
@@ -9645,8 +9795,7 @@ const pessoasRouter = router({
   create: protectedProcedure
     .input(pessoaFieldsSchema)
     .mutation(async ({ ctx, input }) => {
-      const documento = input.documento?.trim();
-      if (!documento) throw new Error("Informe o CPF/CNPJ.");
+      const documento = input.documento?.trim() || null;
 
       try {
         const result = await db.insert(pessoas).values({
@@ -9689,9 +9838,7 @@ const pessoasRouter = router({
         if (rest.tipo !== undefined) patch.tipo = rest.tipo;
         if (rest.funcao !== undefined) patch.funcao = rest.funcao?.trim() || null;
         if (rest.documento !== undefined) {
-          const documento = rest.documento.trim();
-          if (!documento) throw new Error("Informe o CPF/CNPJ.");
-          patch.documento = documento;
+          patch.documento = rest.documento.trim() || null;
         }
         if (rest.endereco !== undefined) patch.endereco = rest.endereco?.trim() || null;
         if (rest.telefone !== undefined) patch.telefone = rest.telefone?.trim() || null;

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOTAO_CONFIRMAR_TRANSFERENCIA,
   MSG_TRANSFERENCIA_DESTINO_OBRIGATORIA,
+  MSG_TRANSFERENCIA_LOTE_NOME,
   MSG_TRANSFERENCIA_LOTE_OBRIGATORIO,
   MSG_TRANSFERENCIA_MESMA_FAZENDA,
+  TITULO_CONFIRMAR_TRANSFERENCIA_INTERNA,
+  montarConfirmacaoTransferenciaInterna,
   validarTransferenciaInternaInput,
 } from "../shared/transferenciaInternaAnimal";
 
@@ -58,5 +62,41 @@ describe("Transferência interna entre Fazendas", () => {
     if (ok.ok) {
       expect(ok.fazendaDestinoId).not.toBe(ok.fazendaOrigemId);
     }
+  });
+
+  it("confirma Fazenda e Lote de destino com nomes amigáveis", () => {
+    expect(
+      montarConfirmacaoTransferenciaInterna({
+        identificacao: "10",
+        fazendaDestinoNome: "Fazenda B",
+        loteDestinoNome: "Vacas",
+      }),
+    ).toEqual({
+      ok: true,
+      title: TITULO_CONFIRMAR_TRANSFERENCIA_INTERNA,
+      confirmText: BOTAO_CONFIRMAR_TRANSFERENCIA,
+      texto:
+        "O animal 10 permanecerá Ativo e será transferido para Fazenda B, Lote Vacas.",
+    });
+
+    expect(
+      montarConfirmacaoTransferenciaInterna({
+        identificacao: "10",
+        fazendaDestinoNome: "Fazenda B",
+        loteDestinoNome: "Bezerros",
+      }),
+    ).toMatchObject({
+      ok: true,
+      texto:
+        "O animal 10 permanecerá Ativo e será transferido para Fazenda B, Lote Bezerros.",
+    });
+
+    expect(
+      montarConfirmacaoTransferenciaInterna({
+        identificacao: "10",
+        fazendaDestinoNome: "Fazenda B",
+        loteDestinoNome: "  ",
+      }),
+    ).toEqual({ ok: false, message: MSG_TRANSFERENCIA_LOTE_NOME });
   });
 });

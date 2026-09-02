@@ -51,3 +51,21 @@ export function textoStatusLeitorRfid(status: StatusLeitorRfidCadastro): string 
       return "Leitor desconectado";
   }
 }
+
+/** Textos simples da Venda — sem jargão de hardware. */
+export function textoStatusBastaoRfid(status: StatusLeitorRfidCadastro): string {
+  switch (status) {
+    case "unsupported":
+      return MSG_RFID_BASTAO_INDISPONIVEL;
+    case "connecting":
+      return "Conectando...";
+    case "capturing":
+      return "Aguardando leitura...";
+    case "connected":
+      return "Bastão conectado";
+    case "error":
+      return MSG_RFID_CONEXAO_FALHOU;
+    default:
+      return "Bastão desconectado";
+  }
+}

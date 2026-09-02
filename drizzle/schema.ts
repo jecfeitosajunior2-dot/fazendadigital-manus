@@ -1,4 +1,4 @@
-import { mysqlTable, int, varchar, text, decimal, date, timestamp, boolean, mysqlEnum } from "drizzle-orm/mysql-core";
+import { mysqlTable, int, varchar, text, decimal, date, timestamp, boolean, mysqlEnum, uniqueIndex, index } from "drizzle-orm/mysql-core";
 
 // Users table
 export const users = mysqlTable("users", {
@@ -540,7 +540,40 @@ export const vendas = mysqlTable("vendas", {
   observacoes: text("observacoes"),
   status: mysqlEnum("status", ["pendente", "concluido", "cancelado"]).default("pendente"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+  /** Novos: nullable para preservar vendas agregadas legadas. */
+  fazendaId: int("fazenda_id"),
+  compradorId: int("comprador_id"),
+  formaPrecificacao: mysqlEnum("forma_precificacao", ["kg", "cabeca"]),
+  precoPadrao: decimal("preco_padrao", { precision: 12, scale: 2 }),
+  pesoTotal: decimal("peso_total", { precision: 10, scale: 2 }),
+  rendimentoCarcaca: decimal("rendimento_carcaca", { precision: 5, scale: 2 }),
+}, table => ({
+  fazendaIdx: index("vendas_fazenda_idx").on(table.fazendaId),
+  compradorIdx: index("vendas_comprador_idx").on(table.compradorId),
+}));
+
+/** Um animal por linha. Snapshot comercial da operação. */
+export const vendaItens = mysqlTable(
+  "venda_itens",
+  {
+    id: int("id").primaryKey().autoincrement(),
+    userId: int("user_id").notNull(),
+    vendaId: int("venda_id").notNull(),
+    animalId: int("animal_id").notNull(),
+    brincoSnapshot: varchar("brinco_snapshot", { length: 50 }),
+    loteNomeSnapshot: varchar("lote_nome_snapshot", { length: 100 }),
+    pesoVenda: decimal("peso_venda", { precision: 8, scale: 2 }),
+    formaPrecificacao: mysqlEnum("forma_precificacao", ["kg", "cabeca"]).notNull(),
+    precoUnitario: decimal("preco_unitario", { precision: 12, scale: 2 }).notNull(),
+    valorItem: decimal("valor_item", { precision: 12, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  table => ({
+    vendaAnimalUq: uniqueIndex("venda_itens_venda_animal_uq").on(table.vendaId, table.animalId),
+    vendaIdx: index("venda_itens_venda_idx").on(table.vendaId),
+    animalIdx: index("venda_itens_animal_idx").on(table.animalId),
+  }),
+);
 
 /** Estoque de sêmen — partidas por reprodutor + lote. */
 export const semenPartidas = mysqlTable("semen_partidas", {

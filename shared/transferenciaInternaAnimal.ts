@@ -28,6 +28,34 @@ export const MSG_TRANSFERENCIA_GENERICO =
 export const MSG_TRANSFERENCIA_SUCESSO =
   "Transferência interna registrada. O animal permanece Ativo na Fazenda de destino.";
 
+export const TITULO_CONFIRMAR_TRANSFERENCIA_INTERNA = "Confirmar transferência interna";
+export const BOTAO_CONFIRMAR_TRANSFERENCIA = "Confirmar transferência";
+export const MSG_TRANSFERENCIA_LOTE_NOME =
+  "Não foi possível identificar o Lote de destino. Selecione o Lote novamente.";
+export const MSG_TRANSFERENCIA_DESTINO_NOME =
+  "Não foi possível identificar a Fazenda de destino. Selecione a Fazenda novamente.";
+
+export function montarConfirmacaoTransferenciaInterna(input: {
+  identificacao?: string | null;
+  fazendaDestinoNome?: string | null;
+  loteDestinoNome?: string | null;
+}):
+  | { ok: true; title: string; confirmText: string; texto: string }
+  | { ok: false; message: string } {
+  const identificacao = (input.identificacao ?? "").trim();
+  const fazenda = (input.fazendaDestinoNome ?? "").trim();
+  const lote = (input.loteDestinoNome ?? "").trim();
+  if (!identificacao) return { ok: false, message: "Selecione um animal válido." };
+  if (!fazenda) return { ok: false, message: MSG_TRANSFERENCIA_DESTINO_NOME };
+  if (!lote) return { ok: false, message: MSG_TRANSFERENCIA_LOTE_NOME };
+  return {
+    ok: true,
+    title: TITULO_CONFIRMAR_TRANSFERENCIA_INTERNA,
+    confirmText: BOTAO_CONFIRMAR_TRANSFERENCIA,
+    texto: `O animal ${identificacao} permanecerá Ativo e será transferido para ${fazenda}, Lote ${lote}.`,
+  };
+}
+
 export type ValidacaoTransferenciaInterna =
   | {
       ok: true;

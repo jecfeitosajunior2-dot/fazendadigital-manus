@@ -43,7 +43,7 @@ export const MSG_BAIXA_DATA_INVALIDA = "Data da baixa inválida.";
 export const MSG_BAIXA_DATA_FUTURA = "A data da baixa não pode ser futura.";
 export const MSG_BAIXA_TIPO_OBRIGATORIO = "Selecione o tipo de baixa.";
 export const MSG_TRANSFERENCIA_EXTERNA_DESTINO =
-  "Informe o destino da transferência externa.";
+  "Informe o destino da transferência.";
 export const MSG_VENDA_VIA_MANEJO_BLOQUEADA =
   "Venda deve ser registrada em Compra e Venda → Vendas.";
 export const MSG_BAIXA_GENERICO = "Não foi possível registrar a baixa do animal.";
@@ -115,6 +115,30 @@ export function formatarDataBaixa(value?: string | Date | null): string {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
+}
+
+export const TITULO_CONFIRMAR_TRANSFERENCIA_EXTERNA = "Confirmar transferência externa";
+export const BOTAO_CONFIRMAR_TRANSFERENCIA_EXTERNA = "Confirmar transferência";
+
+export function montarConfirmacaoTransferenciaExterna(input: {
+  identificacao?: string | null;
+  destino?: string | null;
+  dataISO?: string | null;
+}):
+  | { ok: true; title: string; confirmText: string; texto: string }
+  | { ok: false; message: string } {
+  const identificacao = (input.identificacao ?? "").trim();
+  const destino = (input.destino ?? "").trim();
+  const dataBr = formatarDataBaixa(input.dataISO);
+  if (!identificacao) return { ok: false, message: "Selecione um animal válido." };
+  if (!destino) return { ok: false, message: MSG_TRANSFERENCIA_EXTERNA_DESTINO };
+  if (dataBr === "—") return { ok: false, message: MSG_BAIXA_DATA_INVALIDA };
+  return {
+    ok: true,
+    title: TITULO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
+    confirmText: BOTAO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
+    texto: `O animal ${identificacao} será marcado como Transferido e enviado para ${destino} em ${dataBr}. Essa ação ficará registrada no histórico.`,
+  };
 }
 
 export type ValidacaoBaixaAnimal =

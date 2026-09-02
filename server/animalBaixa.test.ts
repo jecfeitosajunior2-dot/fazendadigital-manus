@@ -4,13 +4,16 @@ import {
   avaliarManejoVsBaixa,
   formatarDataBaixa,
   mensagemSaidaDuplicada,
+  BOTAO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
   MSG_BAIXA_DATA_FUTURA,
   MSG_BAIXA_DUPLICADA,
   MSG_MANEJO_BAIXA_LEGADA,
   MSG_SAIDA_VENDA_DUPLICADA,
   MSG_TRANSFERENCIA_EXTERNA_DESTINO,
   MSG_VENDA_VIA_MANEJO_BLOQUEADA,
+  montarConfirmacaoTransferenciaExterna,
   tipoBaixaParaStatus,
+  TITULO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
   validarBaixaAnimalInput,
 } from "../shared/animalBaixa";
 import { MSG_CAUSA_MORTE_OUTRO_OBRIGATORIA } from "../shared/causaMorte";
@@ -188,9 +191,85 @@ describe("Baixa do Animal", () => {
         hojeISO: "2026-08-20",
       }),
     ).toMatchObject({ ok: true, tipo: "transferencia" });
+
+    expect(
+      validarBaixaAnimalInput({
+        fazendaId: 1,
+        animalId: 2,
+        dataBaixa: "2026-08-20",
+        tipo: "transferencia",
+        destino: "     ",
+        hojeISO: "2026-08-20",
+      }),
+    ).toEqual({ ok: false, message: MSG_TRANSFERENCIA_EXTERNA_DESTINO });
+
+    expect(
+      validarBaixaAnimalInput({
+        fazendaId: 1,
+        animalId: 2,
+        dataBaixa: "2026-08-20",
+        tipo: "transferencia",
+        destino: "  Fazenda Santa Maria  ",
+        hojeISO: "2026-08-20",
+      }),
+    ).toMatchObject({ ok: true, tipo: "transferencia", status: "transferido" });
   });
 
   it("usa mensagem específica por tipo de saída duplicada", () => {
     expect(mensagemSaidaDuplicada("venda")).toBe(MSG_SAIDA_VENDA_DUPLICADA);
+    expect(mensagemSaidaDuplicada("transferencia")).toContain("não pode ser transferido");
+  });
+
+  it("monta o modal da Transferência externa com destino e data", () => {
+    expect(
+      montarConfirmacaoTransferenciaExterna({
+        identificacao: "28",
+        destino: "Fazenda Santa Maria",
+        dataISO: "2026-08-31",
+      }),
+    ).toEqual({
+      ok: true,
+      title: TITULO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
+      confirmText: BOTAO_CONFIRMAR_TRANSFERENCIA_EXTERNA,
+      texto:
+        "O animal 28 será marcado como Transferido e enviado para Fazenda Santa Maria em 31/08/2026. Essa ação ficará registrada no histórico.",
+    });
+
+    expect(
+      montarConfirmacaoTransferenciaExterna({
+        identificacao: "28",
+        destino: "   ",
+        dataISO: "2026-08-31",
+      }),
+    ).toEqual({ ok: false, message: MSG_TRANSFERENCIA_EXTERNA_DESTINO });
+
+    expect(
+      montarConfirmacaoTransferenciaExterna({
+        identificacao: "28",
+        destino: "  Fazenda Santa Maria  ",
+        dataISO: "2026-08-31",
+      }),
+    ).toMatchObject({
+      ok: true,
+      texto:
+        "O animal 28 será marcado como Transferido e enviado para Fazenda Santa Maria em 31/08/2026. Essa ação ficará registrada no histórico.",
+    });
+  });
+
+  it("bloqueia manejo posterior à Transferência externa e permite retroativo", () => {
+    expect(
+      animalElegivelParaManejoNaData({
+        status: "transferido",
+        dataBaixa: "2026-08-31",
+        dataEvento: "2026-08-30",
+      }),
+    ).toBe(true);
+    expect(
+      animalElegivelParaManejoNaData({
+        status: "transferido",
+        dataBaixa: "2026-08-31",
+        dataEvento: "2026-09-01",
+      }),
+    ).toBe(false);
   });
 });

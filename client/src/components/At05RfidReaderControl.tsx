@@ -7,25 +7,29 @@ import {
   MSG_RFID_CONEXAO_FALHOU,
   MSG_RFID_SUBSTITUIR,
   decidirAplicacaoRfidLido,
+  textoStatusBastaoRfid,
   textoStatusLeitorRfid,
   type StatusLeitorRfidCadastro,
 } from "@/lib/rfidLeituraCadastro";
 
 type At05RfidReaderControlProps = {
-  currentValue: string;
+  currentValue?: string;
   disabled?: boolean;
   onRfidRead: (rfid: string) => void;
+  /** cadastro: confirma substituição. identificar: só devolve o RFID lido. */
+  mode?: "cadastro" | "identificar";
 };
 
 /**
  * Leitura operacional de RFID via AT05.
- * Reutiliza useAt05Reader (mesmo parser/Web Serial do Manejo).
- * Não salva animal. Não assume animalId.
+ * Reutiliza useAt05Reader (mesmo parser/Web Serial).
+ * Não salva animal. Não conhece Venda/Fazenda.
  */
 export function At05RfidReaderControl({
-  currentValue,
+  currentValue = "",
   disabled,
   onRfidRead,
+  mode = "cadastro",
 }: At05RfidReaderControlProps) {
   const confirm = useConfirm();
   const [capturing, setCapturing] = useState(false);
@@ -42,6 +46,12 @@ export function At05RfidReaderControl({
 
       capturingRef.current = false;
       setCapturing(false);
+
+      if (mode === "identificar") {
+        onRfidRead(key);
+        setLastFilled(key);
+        return;
+      }
 
       const decisao = decidirAplicacaoRfidLido(currentValueRef.current, key);
       if (decisao === "manter") {
@@ -61,7 +71,7 @@ export function At05RfidReaderControl({
       onRfidRead(key);
       setLastFilled(key);
     },
-    [confirm, onRfidRead],
+    [confirm, mode, onRfidRead],
   );
 
   const {
@@ -83,6 +93,10 @@ export function At05RfidReaderControl({
             ? "error"
             : "disconnected";
 
+  const statusTexto = mode === "identificar"
+    ? textoStatusBastaoRfid(uiStatus)
+    : textoStatusLeitorRfid(uiStatus);
+
   const handleConectar = () => {
     if (disabled || !supported) return;
     void connect().catch(() => undefined);
@@ -98,13 +112,13 @@ export function At05RfidReaderControl({
   if (!supported) {
     return (
       <p className="mt-2 text-[11px] text-gray-500 leading-snug">
-        {textoStatusLeitorRfid("unsupported")}
+        {statusTexto}
       </p>
     );
   }
 
   return (
-    <div className="mt-3 space-y-2">
+    <div className="mt-2 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         {!sessionActive ? (
           <button
@@ -128,12 +142,12 @@ export function At05RfidReaderControl({
         </button>
       </div>
       <p className="text-[10px] text-gray-400 leading-snug" aria-live="polite">
-        {textoStatusLeitorRfid(uiStatus)}
+        {statusTexto}
       </p>
       {uiStatus === "error" ? (
         <p className="text-[10px] text-red-500 leading-snug">{MSG_RFID_CONEXAO_FALHOU}</p>
       ) : null}
-      {lastFilled ? (
+      {mode === "cadastro" && lastFilled ? (
         <p className="text-[10px] text-gray-400 leading-snug" aria-live="polite">
           RFID lido: {lastFilled}
         </p>

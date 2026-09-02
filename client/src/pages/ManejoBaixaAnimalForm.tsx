@@ -18,6 +18,7 @@ import {
   STATUS_ANIMAL_LABEL,
   TIPO_BAIXA_LABEL,
   TIPOS_MOVIMENTACAO_ANIMAL,
+  montarConfirmacaoTransferenciaExterna,
   validarBaixaAnimalInput,
   type TipoMovimentacaoAnimal,
 } from "@shared/animalBaixa";
@@ -34,6 +35,7 @@ import {
 import {
   MSG_TRANSFERENCIA_MESMA_FAZENDA,
   MSG_TRANSFERENCIA_SUCESSO,
+  montarConfirmacaoTransferenciaInterna,
   validarTransferenciaInternaInput,
 } from "@shared/transferenciaInternaAnimal";
 import { AlertCircle } from "lucide-react";
@@ -76,7 +78,6 @@ export function ManejoBaixaAnimalForm() {
   const [destino, setDestino] = useState("");
   const [causaCodigo, setCausaCodigo] = useState("");
   const [causaOutro, setCausaOutro] = useState("");
-  const [observacoes, setObservacoes] = useState("");
   const [fazendaDestinoId, setFazendaDestinoId] = useState("");
   const [loteDestinoId, setLoteDestinoId] = useState("");
   const [bloqueioMsg, setBloqueioMsg] = useState<string | null>(null);
@@ -220,11 +221,22 @@ export function ManejoBaixaAnimalForm() {
         setBloqueioMsg(validacaoInterna.message);
         return;
       }
-      const destNome = fazendas.find(f => f.id === validacaoInterna.fazendaDestinoId)?.nome ?? "destino";
+      const destNome =
+        fazendas.find(f => f.id === validacaoInterna.fazendaDestinoId)?.nome?.trim() ?? "";
+      const loteNome = loteDestino?.nome?.trim() ?? "";
+      const confirmacao = montarConfirmacaoTransferenciaInterna({
+        identificacao: animal.brinco || animal.nome || String(animal.id),
+        fazendaDestinoNome: destNome,
+        loteDestinoNome: loteNome,
+      });
+      if (!confirmacao.ok) {
+        setBloqueioMsg(confirmacao.message);
+        return;
+      }
       const confirmado = await confirm({
-        title: "Confirmar transferência interna",
-        description: `${animal.brinco || animal.nome || `Animal #${animal.id}`} permanecerá Ativo e passará para ${destNome}.`,
-        confirmText: "Confirmar transferência",
+        title: confirmacao.title,
+        description: confirmacao.texto,
+        confirmText: confirmacao.confirmText,
         cancelText: "Cancelar",
         variant: "warning",
       });
@@ -236,7 +248,6 @@ export function ManejoBaixaAnimalForm() {
         loteDestinoId: validacaoInterna.loteDestinoId,
         pastoDestinoId: validacaoInterna.pastoDestinoId,
         dataTransferencia: validacaoInterna.dataISO,
-        observacoes: observacoes.trim() || null,
       });
       return;
     }
@@ -268,9 +279,23 @@ export function ManejoBaixaAnimalForm() {
             motivo: motivoMorte,
           })
         : null;
+    const confirmacaoExterna =
+      validacaoSaida.tipo === "transferencia"
+        ? montarConfirmacaoTransferenciaExterna({
+            identificacao: animal.brinco || animal.nome || String(animal.id),
+            destino: destino.trim(),
+            dataISO: validacaoSaida.dataISO,
+          })
+        : null;
+    if (confirmacaoExterna && !confirmacaoExterna.ok) {
+      setBloqueioMsg(confirmacaoExterna.message);
+      return;
+    }
 
     const confirmado = await confirm({
-      title: confirmacaoMorte?.title ?? "Confirmar saída do animal",
+      title:
+        confirmacaoMorte?.title ??
+        (confirmacaoExterna?.ok ? confirmacaoExterna.title : "Confirmar saída do animal"),
       description: confirmacaoMorte ? (
         <div className="space-y-3">
           <p>{confirmacaoMorte.texto}</p>
@@ -281,10 +306,16 @@ export function ManejoBaixaAnimalForm() {
             </div>
           ) : null}
         </div>
-      ) : `${identificacao} será marcado como ${
-        STATUS_ANIMAL_LABEL[validacaoSaida.status]
-      } em ${dataEvento.split("-").reverse().join("/")}. Esta ação não possui reativação simples.`,
-      confirmText: confirmacaoMorte?.confirmText ?? "Confirmar saída",
+      ) : confirmacaoExterna?.ok ? (
+        confirmacaoExterna.texto
+      ) : (
+        `${identificacao} será marcado como ${
+          STATUS_ANIMAL_LABEL[validacaoSaida.status]
+        } em ${dataEvento.split("-").reverse().join("/")}. Esta ação não possui reativação simples.`
+      ),
+      confirmText:
+        confirmacaoMorte?.confirmText ??
+        (confirmacaoExterna?.ok ? confirmacaoExterna.confirmText : "Confirmar saída"),
       cancelText: "Cancelar",
       variant: "warning",
     });
@@ -297,7 +328,6 @@ export function ManejoBaixaAnimalForm() {
       tipo: validacaoSaida.tipo,
       destino: validacaoSaida.tipo === "transferencia" ? destino.trim() || null : null,
       motivo: validacaoSaida.tipo === "morte" ? motivoMorte : null,
-      observacoes: observacoes.trim() || null,
     });
   };
 
@@ -467,12 +497,6 @@ export function ManejoBaixaAnimalForm() {
             {tipoDestino === "interna" ? (
               <>
                 <div>
-                  <label className={labelCls}>Fazenda de origem</label>
-                  <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-                    {nomeFazenda || "—"}
-                  </div>
-                </div>
-                <div>
                   <label className={labelCls}>
                     Fazenda de destino<span className="text-red-500">*</span>
                   </label>
@@ -503,7 +527,7 @@ export function ManejoBaixaAnimalForm() {
                     disabled={!fazendaDestinoNum}
                   >
                     <option value="">
-                      {fazendaDestinoNum ? "Selecione o lote" : "Selecione a Fazenda de destino primeiro"}
+                      {fazendaDestinoNum ? "Selecione o Lote" : "Selecione a Fazenda de destino primeiro"}
                     </option>
                     {lotesDestino.map(l => (
                       <option key={l.id} value={l.id}>
@@ -571,18 +595,6 @@ export function ManejoBaixaAnimalForm() {
             ) : null}
           </div>
         ) : null}
-
-        <div>
-          <label className={labelCls}>Observações</label>
-          <textarea
-            value={observacoes}
-            onChange={e => setObservacoes(e.target.value)}
-            maxLength={2000}
-            rows={3}
-            className={`${fieldCls} resize-y`}
-            placeholder="Opcional"
-          />
-        </div>
       </div>
 
       <Dialog open={Boolean(bloqueioMsg)}>

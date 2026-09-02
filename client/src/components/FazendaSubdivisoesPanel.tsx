@@ -19,7 +19,7 @@ import {
 import { SelectItem } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { FormLabel, FormInput, FormSelect, FieldBox, inputClassCompact } from "@/components/FormFields";
+import { FormLabel, FormInput, FormSelect, FieldBox, inputClass } from "@/components/FormFields";
 import { ImportarCoordenadasModal } from "@/components/ImportarCoordenadasModal";
 import { FazendaSubdivisaoMapaModal } from "@/components/FazendaSubdivisaoMapaModal";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -362,7 +362,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
   if (!fazenda) {
     return (
-      <div className="mt-6 bg-white rounded border border-gray-200 p-8 text-center text-gray-400">
+      <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">
         <span className="material-icons text-4xl block mb-2 opacity-30">touch_app</span>
         <p className="text-[12px]">Selecione uma fazenda acima para visualizar suas subdivisões.</p>
       </div>
@@ -370,10 +370,12 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   }
 
   return (
-    <div className="mt-6 bg-white rounded border border-gray-200 shadow-sm">
-      {/* Cabeçalho — estilo iRancho */}
+    <div className="mt-6 bg-white rounded-xl border border-gray-200">
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[13px] font-semibold text-gray-800 min-w-0 flex-1">
+        <h2
+          className="text-[20px] font-semibold text-gray-900 min-w-0 flex-1"
+          style={{ fontFamily: "Fraunces, serif" }}
+        >
           Subdivisões Cadastradas da {fazenda.nome}
         </h2>
         <div className="flex flex-wrap items-center gap-2 shrink-0 ml-auto">
@@ -399,22 +401,21 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
       {/* Formulário inline — espelho iRancho */}
       {showForm && (
-        <div className="px-4 py-4 border-b border-gray-100 bg-gray-50/50 space-y-3">
-          <p className="text-[11px] font-semibold text-gray-800">
+        <div className="px-4 py-4 space-y-5">
+          <p className="text-[13px] font-semibold text-gray-800">
             {editId ? "Editar Subdivisão" : "Nova Subdivisão"}
           </p>
 
           {/* Identificação */}
-          <section className="rounded-lg border border-gray-200 bg-white p-3.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-3">
+          <section className="rounded-xl border border-gray-200 bg-white p-4">
+            <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
               Identificação
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
               <div className="scroll-mt-24">
-                <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Divisão</FormLabel>
-                <FormSelect
+                <FormLabel required>Tipo de Divisão</FormLabel>
+                <FormSelect variant="light"
                   id={fieldDomId("tipo")}
-                  compact
                   value={form.tipo}
                   onChange={handleTipoChange}
                   placeholder="Tipo"
@@ -423,16 +424,15 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   aria-describedby={errosObrigatorios.tipo ? "subdivisao-err-tipo" : undefined}
                 >
                   {TIPOS_DIVISAO.map(t => (
-                    <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
+                    <SelectItem key={t} value={t} className="text-[13px]">{t}</SelectItem>
                   ))}
                 </FormSelect>
                 <FieldErrorMsg id="subdivisao-err-tipo" message={errosObrigatorios.tipo} />
               </div>
               <div className="scroll-mt-24">
-                <FormLabel required className="text-[10px] font-medium text-gray-600 mb-1">Nome da Subdivisão</FormLabel>
-                <FormInput
+                <FormLabel required>Nome da Subdivisão</FormLabel>
+                <FormInput variant="light"
                   id={fieldDomId("nome")}
-                  compact
                   required
                   value={form.nome}
                   onChange={v => {
@@ -446,9 +446,8 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 <FieldErrorMsg id="subdivisao-err-nome" message={errosObrigatorios.nome} />
               </div>
               <div>
-                <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Sigla da Subdivisão</FormLabel>
-                <FormInput
-                  compact
+                <FormLabel>Sigla da Subdivisão</FormLabel>
+                <FormInput variant="light"
                   value={form.sigla}
                   onChange={v => setForm(f => ({ ...f, sigla: v }))}
                   placeholder="Ex. SSB"
@@ -457,22 +456,21 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
             </div>
           </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
             {/* Área e capacidade */}
-            <section className="rounded-lg border border-gray-200 bg-white p-3.5 h-full">
-              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-3">
-                Área e capacidade
+            <section className="rounded-xl border border-gray-200 bg-white p-4 h-full">
+              <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
+                Área e Capacidade
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 <div className="sm:col-span-2 lg:col-span-1 scroll-mt-24">
-                  <FormLabel required={areaObrigatoria} className="text-[10px] font-medium text-gray-600 mb-1">
+                  <FormLabel required={areaObrigatoria}>
                     Área
                   </FormLabel>
                   <div className="flex gap-1.5">
                     <div className="min-w-0 flex-1">
-                      <FormInput
+                      <FormInput variant="light"
                         id={fieldDomId("area")}
-                        compact
                         required={areaObrigatoria}
                         type="text"
                         inputMode="decimal"
@@ -486,14 +484,14 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                         aria-describedby={errosObrigatorios.area ? "subdivisao-err-area" : undefined}
                       />
                     </div>
-                    <FieldBox className="shrink-0 w-[62px]" invalid={!!errosObrigatorios.area}>
+                    <FieldBox variant="light" className="shrink-0 w-[62px]" invalid={!!errosObrigatorios.area}>
                       <select
                         value={form.areaUnidade}
                         onChange={e => {
                           setForm(f => ({ ...f, areaUnidade: e.target.value as AreaInputUnidade }));
                           limparErroCampo("area");
                         }}
-                        className={cn(inputClassCompact, "cursor-pointer pr-1")}
+                        className={cn(inputClass, "cursor-pointer pr-1")}
                         aria-label="Unidade da área"
                       >
                         <option value="ha">ha</option>
@@ -507,9 +505,8 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   )}
                 </div>
                 <div>
-                  <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Capacidade (UA)</FormLabel>
-                  <FormInput
-                    compact
+                  <FormLabel>Capacidade (UA)</FormLabel>
+                  <FormInput variant="light"
                     type="number"
                     value={form.capacidade}
                     onChange={v => setForm(f => ({ ...f, capacidade: v }))}
@@ -543,22 +540,21 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
             </section>
 
             {/* Pastagem e status */}
-            <section className="rounded-lg border border-gray-200 bg-white p-3.5 h-full">
-              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-3">
-                Pastagem e status
+            <section className="rounded-xl border border-gray-200 bg-white p-4 h-full">
+              <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
+                Pastagem e Status
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 <div>
-                  <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Tipo de Pastagem</FormLabel>
-                  <FormSelect
-                    compact
+                  <FormLabel>Tipo de Pastagem</FormLabel>
+                  <FormSelect variant="light"
                     value={form.tipoPastagem || "__none__"}
                     onChange={v => setForm(f => ({ ...f, tipoPastagem: v === "__none__" ? "" : v }))}
                     placeholder="Selecione o tipo de Pastagem"
                   >
-                    <SelectItem value="__none__" className="text-[11px] text-gray-400">Selecione o tipo de Pastagem</SelectItem>
+                    <SelectItem value="__none__" className="text-[13px] text-gray-400">Selecione o tipo de Pastagem</SelectItem>
                     {TIPOS_PASTAGEM.map(t => (
-                      <SelectItem key={t} value={t} className="text-[11px]">{t}</SelectItem>
+                      <SelectItem key={t} value={t} className="text-[13px]">{t}</SelectItem>
                     ))}
                   </FormSelect>
                   {!pastagemAplicavel(form.tipo) && (
@@ -566,15 +562,14 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   )}
                 </div>
                 <div>
-                  <FormLabel className="text-[10px] font-medium text-gray-600 mb-1">Status</FormLabel>
-                  <FormSelect
-                    compact
+                  <FormLabel>Status</FormLabel>
+                  <FormSelect variant="light"
                     value={form.status}
                     onChange={v => setForm(f => ({ ...f, status: v }))}
                     placeholder="Status"
                   >
                     {STATUS_OPERACIONAL.filter((item, index, arr) => arr.findIndex(i => i.label === item.label) === index).map(s => (
-                      <SelectItem key={s.value} value={s.value} className="text-[11px]">{s.label}</SelectItem>
+                      <SelectItem key={s.value} value={s.value} className="text-[13px]">{s.label}</SelectItem>
                     ))}
                   </FormSelect>
                 </div>
@@ -613,7 +608,6 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
         </div>
       )}
 
-      {/* Tabela de subdivisões — oculta enquanto o formulário está aberto */}
       {!showForm && (
       <TableHorizontalScroll
         footer={

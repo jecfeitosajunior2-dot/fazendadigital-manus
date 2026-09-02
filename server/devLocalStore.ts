@@ -1944,8 +1944,7 @@ export const devLocalStore = {
     return withStore(data => {
       const nome = input.nome.trim();
       if (!nome) throw new Error("Informe o nome.");
-      const documento = input.documento?.trim();
-      if (!documento) throw new Error("Informe o CPF/CNPJ.");
+      const documento = input.documento?.trim() || null;
       const id = data.nextPessoaId++;
       const row: DevPessoa = {
         id,
@@ -1982,9 +1981,7 @@ export const devLocalStore = {
       if (input.tipo !== undefined) row.tipo = input.tipo;
       if (input.funcao !== undefined) row.funcao = input.funcao?.trim() || null;
       if (input.documento !== undefined) {
-        const documento = input.documento?.trim();
-        if (!documento) throw new Error("Informe o CPF/CNPJ.");
-        row.documento = documento;
+        row.documento = input.documento?.trim() || null;
       }
       if (input.endereco !== undefined) row.endereco = input.endereco?.trim() || null;
       if (input.telefone !== undefined) row.telefone = input.telefone?.trim() || null;

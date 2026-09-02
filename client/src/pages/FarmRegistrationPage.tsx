@@ -307,10 +307,12 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-md border border-gray-100 bg-white p-4 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
+    <section className="rounded-xl border border-gray-200 bg-white p-4">
       <div className="mb-4">
-        <h2 className="text-[13px] font-semibold text-gray-800">{title}</h2>
-        {description && <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{description}</p>}
+        <h2 className="inline-flex items-center rounded-full bg-[#4ECDC4]/15 px-3 py-1 text-[12px] font-semibold text-gray-800">
+          {title}
+        </h2>
+        {description && <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">{description}</p>}
       </div>
       {children}
     </section>
@@ -716,35 +718,33 @@ export function FarmRegistrationPage() {
         <span className="text-[13px]">Voltar</span>
       </button>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="bg-white rounded-md shadow-sm border border-gray-100 p-5 sm:p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-800">
-              {isEdit ? "Editar Fazenda" : "Cadastrar Fazenda"}
-            </h1>
-            <div className="flex items-center gap-3 rounded-full border border-gray-200 bg-gray-50 px-3 py-2">
-              <div className="text-right leading-tight">
-                <div className="text-[11px] font-semibold text-gray-800">Cadastro Avançado</div>
-                <div className="text-[10px] text-gray-500">
-                  Dados complementares opcionais
-                </div>
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+            {isEdit ? "Editar Fazenda" : "Cadastrar Fazenda"}
+          </h1>
+          <div className="flex items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-2">
+            <div className="text-right leading-tight">
+              <div className="text-[11px] font-semibold text-gray-800">Cadastro Avançado</div>
+              <div className="text-[10px] text-gray-500">
+                Dados complementares opcionais
               </div>
-              <Switch
-                checked={cadastroAvancado}
-                onCheckedChange={setCadastroAvancado}
-                className="data-[state=checked]:bg-[#4ECDC4] data-[state=unchecked]:bg-gray-300"
-              />
             </div>
+            <Switch
+              checked={cadastroAvancado}
+              onCheckedChange={setCadastroAvancado}
+              className="data-[state=checked]:bg-[#4ECDC4] data-[state=unchecked]:bg-gray-300"
+            />
           </div>
+        </div>
 
-          <div className="space-y-5">
+        <div className="space-y-5">
             <FormSection
               title="Cadastro Simples"
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <div className="scroll-mt-24">
                   <FormLabel required>Nome da Fazenda</FormLabel>
-                  <FormInput
+                  <FormInput variant="light"
                     id={fieldDomId("nome")}
                     value={form.nome}
                     onChange={v => set("nome", v)}
@@ -757,18 +757,18 @@ export function FarmRegistrationPage() {
                 </div>
                 <div>
                   <FormLabel>Sigla da Fazenda</FormLabel>
-                  <FormInput value={form.sigla} onChange={v => set("sigla", v)} placeholder="Ex. FSM" />
+                  <FormInput variant="light" value={form.sigla} onChange={v => set("sigla", v)} placeholder="Ex. FSM" />
                 </div>
                 <div>
                   <FormLabel>Nome do Proprietário</FormLabel>
-                  <FormInput value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Opcional" />
+                  <FormInput variant="light" value={form.responsavel} onChange={v => set("responsavel", v)} placeholder="Opcional" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 items-start">
                 <div className="scroll-mt-24">
                   <FormLabel required>País</FormLabel>
-                  <FormNativeSelect
+                  <FormNativeSelect variant="light"
                     id={fieldDomId("pais")}
                     value={form.pais}
                     onChange={v => set("pais", v)}
@@ -782,7 +782,7 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Estado</FormLabel>
-                  <FormSelect
+                  <FormSelect variant="light"
                     id={fieldDomId("estado")}
                     value={form.estado}
                     onChange={setEstado}
@@ -802,7 +802,7 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Município</FormLabel>
-                  <FormSelect
+                  <FormSelect variant="light"
                     id={fieldDomId("cidade")}
                     value={form.cidade}
                     onChange={v => set("cidade", v)}
@@ -826,7 +826,7 @@ export function FarmRegistrationPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div className="scroll-mt-24">
                   <FormLabel required>Unidade de Medida da Área</FormLabel>
-                  <FormSelect
+                  <FormSelect variant="light"
                     id={fieldDomId("unidadeArea")}
                     value={form.unidadeArea}
                     onChange={v => set("unidadeArea", v)}
@@ -844,7 +844,7 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="scroll-mt-24">
                   <FormLabel required>Área Total da Fazenda</FormLabel>
-                  <FormInput
+                  <FormInput variant="light"
                     id={fieldDomId("area")}
                     value={form.area}
                     onChange={v => set("area", v)}
@@ -858,11 +858,11 @@ export function FarmRegistrationPage() {
                 </div>
                 <div>
                   <FormLabel>Área de Reserva</FormLabel>
-                  <FormInput value={form.areaReserva} onChange={v => set("areaReserva", v)} placeholder="0" type="number" />
+                  <FormInput variant="light" value={form.areaReserva} onChange={v => set("areaReserva", v)} placeholder="0" type="number" />
                 </div>
                 <div>
                   <FormLabel>Área Líquida da Fazenda</FormLabel>
-                  <FieldBox className="bg-gray-50">
+                  <FieldBox variant="light">
                     <input
                       type="number"
                       value={form.areaLiquida}
@@ -878,7 +878,7 @@ export function FarmRegistrationPage() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4 items-start">
                 <div className="lg:col-span-4 scroll-mt-24">
                   <FormLabel required>Atividade Principal da Fazenda</FormLabel>
-                  <FormNativeSelect
+                  <FormNativeSelect variant="light"
                     id={fieldDomId("atividadePrincipal")}
                     value={form.atividadePrincipal}
                     onChange={v => set("atividadePrincipal", v)}
@@ -897,13 +897,13 @@ export function FarmRegistrationPage() {
                 </div>
                 <div className="lg:col-span-8">
                   <FormLabel>Endereço da Fazenda</FormLabel>
-                  <FormInput value={form.endereco} onChange={v => set("endereco", v)} placeholder="Rodovia, km, referência..." />
+                  <FormInput variant="light" value={form.endereco} onChange={v => set("endereco", v)} placeholder="Rodovia, km, referência..." />
                 </div>
               </div>
 
               <div>
                 <FormLabel>Observação</FormLabel>
-                <FieldBox>
+                <FieldBox variant="light">
                   <textarea
                     value={form.observacoes}
                     onChange={e => set("observacoes", e.target.value)}
@@ -923,11 +923,11 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <FormLabel>Razão Social</FormLabel>
-                      <FormInput value={form.razaoSocial} onChange={v => set("razaoSocial", v)} placeholder="Nome empresarial, se houver" />
+                      <FormInput variant="light" value={form.razaoSocial} onChange={v => set("razaoSocial", v)} placeholder="Nome empresarial, se houver" />
                     </div>
                     <div>
                       <FormLabel>CPF/CNPJ</FormLabel>
-                      <FormInput
+                      <FormInput variant="light"
                         value={form.cpfCnpj}
                         onChange={v => set("cpfCnpj", formatCpfCnpj(v))}
                         placeholder={form.cpfCnpj.replace(/\D/g, "").length > 11 ? "00.000.000/0000-00" : "000.000.000-00"}
@@ -935,7 +935,7 @@ export function FarmRegistrationPage() {
                     </div>
                     <div>
                       <FormLabel>Inscrição Estadual</FormLabel>
-                      <FormInput value={form.inscricaoEstadual} onChange={v => set("inscricaoEstadual", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.inscricaoEstadual} onChange={v => set("inscricaoEstadual", v)} placeholder="Opcional" />
                     </div>
                   </div>
                 </FormSection>
@@ -946,19 +946,19 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div>
                       <FormLabel>Registro INCRA</FormLabel>
-                      <FormInput value={form.registroIncra} onChange={v => set("registroIncra", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.registroIncra} onChange={v => set("registroIncra", v)} placeholder="Opcional" />
                     </div>
                     <div>
                       <FormLabel>NIRF</FormLabel>
-                      <FormInput value={form.nirf} onChange={v => set("nirf", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.nirf} onChange={v => set("nirf", v)} placeholder="Opcional" />
                     </div>
                     <div>
                       <FormLabel>Número do CAR</FormLabel>
-                      <FormInput value={form.numeroCar} onChange={v => set("numeroCar", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.numeroCar} onChange={v => set("numeroCar", v)} placeholder="Opcional" />
                     </div>
                     <div className="lg:col-span-2">
                       <FormLabel>Matrícula do Imóvel</FormLabel>
-                      <FormInput
+                      <FormInput variant="light"
                         value={form.matriculasImovel[0] || ""}
                         onChange={v => {
                           setForm(f => ({ ...f, matriculasImovel: [v] }));
@@ -968,7 +968,7 @@ export function FarmRegistrationPage() {
                     </div>
                     <div>
                       <FormLabel>Tipo de Posse</FormLabel>
-                      <FormSelect value={form.tipoPosse} onChange={v => set("tipoPosse", v)} placeholder="Selecione" displayValue={form.tipoPosse}>
+                      <FormSelect variant="light" value={form.tipoPosse} onChange={v => set("tipoPosse", v)} placeholder="Selecione" displayValue={form.tipoPosse}>
                         <SelectItem value="Própria" className="text-[13px]">Própria</SelectItem>
                         <SelectItem value="Arrendada" className="text-[13px]">Arrendada</SelectItem>
                         <SelectItem value="Parceria" className="text-[13px]">Parceria</SelectItem>
@@ -983,12 +983,11 @@ export function FarmRegistrationPage() {
                 <FormSection
                   title="SISBOV"
                 >
-                  <div className="bg-[#EEEEEE] border border-gray-200 rounded-sm px-3 py-2.5">
-                    <RadioGroup
-                      value={form.possuiSisbov}
-                      onValueChange={v => set("possuiSisbov", v)}
-                      className="flex gap-6"
-                    >
+                  <RadioGroup
+                    value={form.possuiSisbov}
+                    onValueChange={v => set("possuiSisbov", v)}
+                    className="flex gap-6"
+                  >
                       <label className="flex items-center gap-2 text-[13px] text-gray-700 cursor-pointer">
                         <RadioGroupItem value="sim" className="border-gray-400 text-[#4ECDC4]" />
                         Sim
@@ -998,7 +997,6 @@ export function FarmRegistrationPage() {
                         Não
                       </label>
                     </RadioGroup>
-                  </div>
                 </FormSection>
 
                 <FormSection
@@ -1007,15 +1005,15 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <FormLabel>Latitude</FormLabel>
-                      <FormInput value={form.latitude} onChange={v => set("latitude", v)} placeholder="-16.6869" />
+                      <FormInput variant="light" value={form.latitude} onChange={v => set("latitude", v)} placeholder="-16.6869" />
                     </div>
                     <div>
                       <FormLabel>Longitude</FormLabel>
-                      <FormInput value={form.longitude} onChange={v => set("longitude", v)} placeholder="-49.2648" />
+                      <FormInput variant="light" value={form.longitude} onChange={v => set("longitude", v)} placeholder="-49.2648" />
                     </div>
                     <div>
                       <FormLabel>Distância da sede do município (Km)</FormLabel>
-                      <FormInput value={form.distanciaMunicipio} onChange={v => set("distanciaMunicipio", v)} placeholder="0" type="number" />
+                      <FormInput variant="light" value={form.distanciaMunicipio} onChange={v => set("distanciaMunicipio", v)} placeholder="0" type="number" />
                     </div>
                   </div>
                 </FormSection>
@@ -1024,7 +1022,7 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <FormLabel>Valor estimado do hectare</FormLabel>
-                      <FormInput
+                      <FormInput variant="light"
                         value={form.valorHectare}
                         onChange={v => set("valorHectare", formatCurrencyBrl(v))}
                         placeholder="R$ 0,00"
@@ -1037,7 +1035,7 @@ export function FarmRegistrationPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <FormLabel>Fonte de Energia</FormLabel>
-                      <FormSelect value={form.fonteEnergia} onChange={v => set("fonteEnergia", v)} placeholder="Selecione" displayValue={form.fonteEnergia}>
+                      <FormSelect variant="light" value={form.fonteEnergia} onChange={v => set("fonteEnergia", v)} placeholder="Selecione" displayValue={form.fonteEnergia}>
                         <SelectItem value="Rede elétrica" className="text-[13px]">Rede elétrica</SelectItem>
                         <SelectItem value="Solar" className="text-[13px]">Solar</SelectItem>
                         <SelectItem value="Gerador" className="text-[13px]">Gerador</SelectItem>
@@ -1047,7 +1045,7 @@ export function FarmRegistrationPage() {
                     </div>
                     <div>
                       <FormLabel>Fonte de Água</FormLabel>
-                      <FormSelect value={form.fonteAgua} onChange={v => set("fonteAgua", v)} placeholder="Selecione" displayValue={form.fonteAgua}>
+                      <FormSelect variant="light" value={form.fonteAgua} onChange={v => set("fonteAgua", v)} placeholder="Selecione" displayValue={form.fonteAgua}>
                         <SelectItem value="Poço" className="text-[13px]">Poço</SelectItem>
                         <SelectItem value="Rio" className="text-[13px]">Rio</SelectItem>
                         <SelectItem value="Represa" className="text-[13px]">Represa</SelectItem>
@@ -1059,15 +1057,15 @@ export function FarmRegistrationPage() {
                   </div>
                 </div>
 
-                <FormSection title="Responsável operacional">
+                <FormSection title="Responsável Operacional">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <FormLabel>Nome</FormLabel>
-                      <FormInput value={form.responsavelOperacionalNome} onChange={v => set("responsavelOperacionalNome", v)} placeholder="Opcional" />
+                      <FormInput variant="light" value={form.responsavelOperacionalNome} onChange={v => set("responsavelOperacionalNome", v)} placeholder="Opcional" />
                     </div>
                     <div>
                       <FormLabel>Telefone / WhatsApp</FormLabel>
-                      <FormInput
+                      <FormInput variant="light"
                         value={form.responsavelOperacionalTelefone}
                         onChange={v => set("responsavelOperacionalTelefone", formatPhoneBR(v))}
                         placeholder="(00) 00000-0000"
@@ -1076,7 +1074,7 @@ export function FarmRegistrationPage() {
                     </div>
                     <div>
                       <FormLabel>Função</FormLabel>
-                      <FormSelect
+                      <FormSelect variant="light"
                         value={form.responsavelOperacionalFuncaoSelect}
                         onChange={v => set("responsavelOperacionalFuncaoSelect", v)}
                         placeholder="Selecione a função"
@@ -1092,7 +1090,7 @@ export function FarmRegistrationPage() {
                     {form.responsavelOperacionalFuncaoSelect === "Outro" && (
                       <div className="sm:col-span-3">
                         <FormLabel>Especificar função</FormLabel>
-                        <FormInput
+                        <FormInput variant="light"
                           value={form.responsavelOperacionalFuncaoOutro}
                           onChange={v => set("responsavelOperacionalFuncaoOutro", v)}
                           placeholder="Descreva a função"
@@ -1105,8 +1103,7 @@ export function FarmRegistrationPage() {
             )}
           </div>
 
-          {/* Footer buttons */}
-          <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="pt-1 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="min-h-[18px]">
               {tentativaValidacao && (
                 <p className="text-[12px] text-red-600">
@@ -1132,7 +1129,6 @@ export function FarmRegistrationPage() {
               </button>
             </div>
           </div>
-        </div>
       </form>
     </AppLayout>
   );
