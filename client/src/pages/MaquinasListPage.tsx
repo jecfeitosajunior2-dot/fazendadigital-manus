@@ -717,8 +717,8 @@ export default function MaquinasListPage() {
         <div className="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Máquinas</h1>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
+          <button
+            type="button"
               onClick={irParaCadastro}
               aria-disabled={!fazendaSelecionada}
               title={
@@ -734,9 +734,9 @@ export default function MaquinasListPage() {
             >
               <span className="material-icons text-[18px]">add</span>
               Cadastrar Máquina
-            </button>
-            <button
-              type="button"
+          </button>
+          <button
+            type="button"
               disabled={!fazendaSelecionada}
               onClick={() => {
                 if (!fazendaSelecionada) return;
@@ -763,7 +763,7 @@ export default function MaquinasListPage() {
                 upload_file
               </span>
               Importar
-            </button>
+          </button>
             <ListExportButtons
               title="Máquinas"
               filename={exportFilenameBase}
@@ -871,7 +871,7 @@ export default function MaquinasListPage() {
             <div className="relative flex-1 min-w-[180px] basis-[240px] max-w-xl">
               <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">
                 search
-              </span>
+                </span>
               <input
                 value={search}
                 onChange={e => {
@@ -954,17 +954,17 @@ export default function MaquinasListPage() {
                       }}
                       itemLabel="máquinas"
                     />
-                  </div>
+        </div>
                 ) : null
               }
             >
               <table className="w-full min-w-0 table-fixed text-[12px] border-collapse">
-                <colgroup>
-                  {TABLE_COLUMNS.map(col => (
-                    <col key={col.key} style={{ width: col.width }} />
-                  ))}
-                  <col style={{ width: "72px" }} />
-                </colgroup>
+            <colgroup>
+              {TABLE_COLUMNS.map(col => (
+                <col key={col.key} style={{ width: col.width }} />
+              ))}
+              <col style={{ width: "72px" }} />
+            </colgroup>
                 <thead className="bg-gray-100 border-b border-gray-200">
                   <tr>
                     {TABLE_COLUMNS.map(col => {
@@ -979,8 +979,8 @@ export default function MaquinasListPage() {
                             : "descending"
                           : "none";
                       return (
-                        <th
-                          key={col.key}
+                  <th
+                    key={col.key}
                           aria-sort={ariaSort}
                           className={cn(
                             headPad,
@@ -1018,13 +1018,13 @@ export default function MaquinasListPage() {
                             </button>
                           ) : (
                             <span
-                              className={cn(
+                    className={cn(
                                 headerAlign === "right" && "block text-right",
                                 headerAlign === "center" && "block text-center",
-                              )}
-                            >
-                              {col.label}
-                            </span>
+                    )}
+                  >
+                      {col.label}
+                    </span>
                           )}
                         </th>
                       );
@@ -1036,27 +1036,27 @@ export default function MaquinasListPage() {
                       )}
                     >
                       Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading && (
-                    <tr>
+                  </th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr>
                       <td
                         colSpan={colCount}
                         className="px-4 py-10 text-center text-gray-400 align-middle"
                       >
-                        Carregando...
-                      </td>
-                    </tr>
-                  )}
+                    Carregando...
+                  </td>
+                </tr>
+              )}
                   {emptyFiltro && (
-                    <tr>
+                <tr>
                       <td colSpan={colCount} className="px-4 py-10 text-center align-middle">
                         <EmptyFiltro mensagem={emptyFiltroMensagem} />
-                      </td>
-                    </tr>
-                  )}
+                  </td>
+                </tr>
+              )}
                   {pageItems.map(m => {
                     const nome = nomeExibicaoMaquina(m);
                     const detalhe = detalheMaquina(m);
@@ -1102,8 +1102,8 @@ export default function MaquinasListPage() {
                                 {detalhe}
                               </p>
                             ) : null}
-                          </div>
-                        </td>
+                    </div>
+                  </td>
                         <td
                           className={cn(
                             cellPad,
@@ -1154,11 +1154,11 @@ export default function MaquinasListPage() {
                             }}
                           />
                         </td>
-                      </tr>
+                </tr>
                     );
                   })}
-                </tbody>
-              </table>
+            </tbody>
+          </table>
             </TableHorizontalScroll>
           </>
         )}

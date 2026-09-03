@@ -5,9 +5,10 @@
  * Rota: /rebanho/mapa-rebanho
  */
 import { useState, useMemo, useEffect } from "react";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { createPortal } from "react-dom";
-import AppLayout from "@/components/AppLayout";
+import { X } from "lucide-react";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { trpc } from "@/lib/trpc";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -18,8 +19,11 @@ import { calcDiasNoPastoISO, normalizarDataISO } from "@shared/entradaPastoDispl
 import { FormDatePicker, FormLabel, FormSelect, FD_PRIMARY } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
+const FILTER_SELECT_EMPTY = "__empty__";
+const FILTER_FIELD_WIDTH = "w-[220px]";
 
 type FiltersState = { fazendaId: string; pastoId: string; search: string };
 const INITIAL_FILTERS: FiltersState = { fazendaId: "", pastoId: "", search: "" };
@@ -105,77 +109,32 @@ function EntradaPastoLote({ dataEntradaPasto }: { dataEntradaPasto: string | nul
   );
 }
 
+const MAPA_ROW_BTN_SECONDARY =
+  "inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-medium leading-tight text-gray-600 border border-gray-200 rounded hover:bg-gray-50 transition bg-white whitespace-nowrap";
+const MAPA_ROW_BTN_PRIMARY =
+  "inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-semibold leading-tight text-white rounded hover:brightness-95 transition whitespace-nowrap";
+
+const MAPA_TH =
+  "sticky top-0 z-20 px-3 py-2 text-[11px] font-semibold text-gray-600 uppercase tracking-wide border-b border-gray-200 bg-gray-50";
+
 const MAPA_TABLE_HEADERS = (
   <>
-    <th
-      className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wide"
-      title="Subdivisão e lotes vinculados"
-    >
+    <th className={`${MAPA_TH} text-left px-4`} title="Subdivisão e lotes vinculados">
       Subdivisão e Lotes
     </th>
-    <th
-      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-24"
-      title="Total de animais"
-    >
+    <th className={`${MAPA_TH} text-center w-24`} title="Total de animais">
       Animais
     </th>
-    <th
-      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-24"
-      title="Área (ha)"
-    >
+    <th className={`${MAPA_TH} text-center w-24`} title="Área (ha)">
       Área
     </th>
-    <th
-      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28"
-      title="Taxa de lotação (UA/ha)"
-    >
+    <th className={`${MAPA_TH} text-center w-28`} title="Taxa de lotação (UA/ha)">
       Lotação
     </th>
-    <th
-      className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-28"
-      title="Entrada no pasto"
-    >
+    <th className={`${MAPA_TH} text-center w-28`} title="Entrada no pasto">
       Entrada
     </th>
-    <th className="px-3 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wide w-44">
-      Ações
-    </th>
-  </>
-);
-
-const MAPA_TABLE_HEADERS_LIGHT = (
-  <>
-    <th
-      className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
-      title="Subdivisão e lotes vinculados"
-    >
-      Subdivisão e Lotes
-    </th>
-    <th
-      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24"
-      title="Total de animais"
-    >
-      Animais
-    </th>
-    <th
-      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24"
-      title="Área (ha)"
-    >
-      Área
-    </th>
-    <th
-      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28"
-      title="Taxa de lotação (UA/ha)"
-    >
-      Lotação
-    </th>
-    <th
-      className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-28"
-      title="Entrada no pasto"
-    >
-      Entrada
-    </th>
-    <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-44">
+    <th className={`${MAPA_TH} text-center w-36 border-r-0`}>
       Ações
     </th>
   </>
@@ -303,16 +262,22 @@ function ModalMoverLote({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-md shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="px-6 pt-5 pb-3 border-b border-gray-100">
-          <h2 className="text-[14px] font-semibold text-gray-800">Mover Lote para Subdivisão</h2>
-          <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{lote.loteNome}</strong></p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden w-full max-w-md"
+        role="dialog"
+        aria-labelledby="mover-lote-title"
+      >
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 id="mover-lote-title" className="text-[13px] font-semibold text-[#4ECDC4]">
+            Mover Lote para Subdivisão
+          </h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+            Lote: <span className="font-semibold text-gray-700">{lote.loteNome}</span>
+          </p>
         </div>
-        {/* Body */}
-        <div className="px-6 py-4 space-y-3">
-          {/* Data da Movimentação */}
+
+        <div className="p-5 space-y-4">
           <div>
             <FormLabel required>Data de Movimentação</FormLabel>
             <FormDatePicker
@@ -333,7 +298,7 @@ function ModalMoverLote({
               </p>
             )}
           </div>
-          {/* Subdivisão Destino */}
+
           <div>
             <FormLabel required>Subdivisão Destino</FormLabel>
             <FormSelect
@@ -345,11 +310,13 @@ function ModalMoverLote({
               }}
               placeholder="Selecione a subdivisão"
               required
+              variant="light"
+              modal={false}
               invalid={!!erros.pastoDestino}
               aria-describedby={erros.pastoDestino ? "mover-lote-err-destino" : undefined}
             >
               {pastosDisponiveis.map(p => (
-                <SelectItem key={p.id} value={String(p.id)} className="text-[13px]">
+                <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
                   {p.nome}
                 </SelectItem>
               ))}
@@ -361,8 +328,8 @@ function ModalMoverLote({
             )}
           </div>
         </div>
-        {/* Footer */}
-        <div className="px-6 pb-5 flex justify-end gap-3">
+
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
@@ -401,64 +368,6 @@ function temOrigemRegistrada(row: HistoricoRow): boolean {
   return row.pastoOrigemId != null || !!row.pastoOrigemNome?.trim();
 }
 
-const CONFIRMACAO_EXCLUSAO_MOV_ENCERRADA = {
-  titulo: "Excluir movimentação",
-  mensagem:
-    "Tem certeza que deseja excluir esta movimentação encerrada? Essa ação pode afetar o histórico do Lote.",
-  confirmar: "Excluir movimentação",
-  confirmarPendente: "Excluindo...",
-  confirmarClass: "bg-red-600 hover:bg-red-700 text-white",
-};
-
-function ConfirmExclusaoMovimentacao({
-  onCancelar,
-  onExcluir,
-  isPending,
-}: {
-  onCancelar: () => void;
-  onExcluir: () => void;
-  isPending: boolean;
-}) {
-  const cfg = CONFIRMACAO_EXCLUSAO_MOV_ENCERRADA;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-      <div
-        className="bg-white rounded-md shadow-xl w-full max-w-md p-5"
-        role="alertdialog"
-        aria-labelledby="confirm-excluir-mov-title"
-        aria-describedby="confirm-excluir-mov-desc"
-      >
-        <h3 id="confirm-excluir-mov-title" className="text-[14px] font-semibold text-gray-800">
-          {cfg.titulo}
-        </h3>
-        <p id="confirm-excluir-mov-desc" className="text-[12px] text-gray-600 mt-2 leading-relaxed">
-          {cfg.mensagem}
-        </p>
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onCancelar}
-            disabled={isPending}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={onExcluir}
-            disabled={isPending}
-            className={`px-4 py-2 text-[12px] font-semibold rounded-sm transition disabled:opacity-50 ${cfg.confirmarClass}`}
-          >
-            {isPending ? cfg.confirmarPendente : cfg.confirmar}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 function TimelineCard({
   row, isFirst, onSolicitarExclusao,
 }: {
@@ -468,7 +377,7 @@ function TimelineCard({
 }) {
   const isAtual = !row.dataSaida;
   const dias = row.diasNoPasto;
-  const diasLabel = dias != null ? `${dias}d no pasto` : null;
+  const diasLabel = dias != null ? formatDiasNoPasto(dias) : null;
   const comOrigem = temOrigemRegistrada(row);
   const destinoNome = row.pastoDestinoNome?.trim() || "—";
   const podeExcluir = row.id > 0 && row.dataSaida != null;
@@ -633,7 +542,7 @@ function ModalHistorico({
   fazendaId: number; loteId?: number; pastoId?: number; loteNome?: string; onClose: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [excluirConfirmRow, setExcluirConfirmRow] = useState<HistoricoRow | null>(null);
+  const confirm = useConfirm();
 
   const { data: historico = [], isLoading } = trpc.lotes.mapaRebanhoHistorico.useQuery({
     fazendaId,
@@ -644,15 +553,23 @@ function ModalHistorico({
 
   const excluirMov = trpc.lotes.excluirMovimentacao.useMutation({
     onSuccess: () => {
-      setExcluirConfirmRow(null);
       utils.lotes.mapaRebanhoHistorico.invalidate();
       utils.lotes.mapaRebanhoV2.invalidate();
     },
-    onError: (err) => {
-      setExcluirConfirmRow(null);
-      toast.error(err.message);
-    },
   });
+
+  const solicitarExclusao = async (row: HistoricoRow) => {
+    await confirm({
+      title: "Excluir movimentação",
+      description:
+        "Tem certeza que deseja excluir esta movimentação encerrada? Essa ação pode afetar o histórico do Lote.",
+      confirmText: "Excluir movimentação",
+      cancelText: "Cancelar",
+      variant: "danger",
+      onConfirm: () => excluirMov.mutateAsync({ movimentacaoId: row.id }),
+      errorFallbackMessage: "Não foi possível excluir a movimentação.",
+    });
+  };
 
   // Mais recentes no topo: ordena por dataEntrada DESC, com movimentação atual (dataSaida null) sempre primeiro
   const rows = [...(historico as HistoricoRow[])].sort((a, b) => {
@@ -674,7 +591,7 @@ function ModalHistorico({
             <h2 className="text-[14px] font-semibold text-gray-800">Histórico de Movimentação</h2>
             {loteNome
               ? <p className="text-[12px] text-gray-500 mt-0.5">Lote: <strong>{loteNome}</strong></p>
-              : <p className="text-[12px] text-gray-500 mt-0.5">Todos os lotes da fazenda</p>}
+              : <p className="text-[12px] text-gray-500 mt-0.5">Todos os Lotes da fazenda</p>}
           </div>
           <button type="button" onClick={onClose}
             className="text-gray-400 hover:text-gray-600 text-[18px] leading-none font-light transition">✕</button>
@@ -717,28 +634,23 @@ function ModalHistorico({
                   key={r.id}
                   row={r}
                   isFirst={i === 0}
-                  onSolicitarExclusao={setExcluirConfirmRow}
+                  onSolicitarExclusao={row => void solicitarExclusao(row)}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {excluirConfirmRow && (
-          <ConfirmExclusaoMovimentacao
-            onCancelar={() => setExcluirConfirmRow(null)}
-            onExcluir={() => excluirMov.mutate({ movimentacaoId: excluirConfirmRow.id })}
-            isPending={excluirMov.isPending}
-          />
-        )}
-
         {/* Rodapé */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
           <p className="text-[11px] text-gray-400">
             Movimentação encerrada: use a lixeira para corrigir o histórico. Movimentação atual: use Mover Lote.
           </p>
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-[12px] font-medium text-gray-600 border border-gray-200 rounded-sm hover:bg-gray-50 transition">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+          >
             Fechar
           </button>
         </div>
@@ -766,7 +678,7 @@ function LoteRow({
 
   return (
     <>
-      <tr className="border-b border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
+      <tr className="border-t border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
         <td className="pl-12 pr-3 py-2">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[12px] text-[#4ECDC4]/80 shrink-0" aria-hidden>└</span>
@@ -794,17 +706,23 @@ function LoteRow({
         <td className="px-3 py-2 text-center">
           <EntradaPastoLote dataEntradaPasto={lote.dataEntradaPasto} />
         </td>
-        <td className="px-3 py-2">
-          <div className="flex items-center justify-center gap-1.5">
-            <button type="button" onClick={() => setModalHistorico(true)}
-              title="Histórico do lote"
-              className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium leading-none text-gray-500 border border-gray-200 rounded hover:bg-gray-100 transition bg-white">
+        <td className="px-2 py-1.5">
+          <div className="flex items-center justify-center gap-1">
+            <button
+              type="button"
+              onClick={() => setModalHistorico(true)}
+              title="Histórico do Lote"
+              className={MAPA_ROW_BTN_SECONDARY}
+            >
               Histórico
             </button>
-            <button type="button" onClick={() => setModalMoverLote(true)}
+            <button
+              type="button"
+              onClick={() => setModalMoverLote(true)}
               title="Mover lote para outra subdivisão"
-              className="px-2 py-1 text-[10px] font-semibold text-white rounded hover:brightness-95 transition"
-              style={{ backgroundColor: FD_PRIMARY }}>
+              className={MAPA_ROW_BTN_PRIMARY}
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
               Mover Lote
             </button>
           </div>
@@ -838,11 +756,11 @@ function SubdivisaoRow({
   return (
     <>
       <tr
-        className="border-b border-gray-200 cursor-pointer select-none hover:brightness-[0.99] transition-colors"
-        style={(() => {
-          const sup = sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade;
-          return { backgroundColor: sup ? "#fff5f5" : "#eef4f4" };
-        })()}
+        className={`border-t border-gray-100 cursor-pointer select-none transition-colors hover:bg-gray-50/50 ${
+          sub.capacidade != null && sub.capacidade > 0 && sub.totalAnimais > sub.capacidade
+            ? "bg-red-50/40"
+            : "bg-white"
+        }`}
         onClick={onToggle}
       >
         <td className="px-4 py-3">
@@ -923,12 +841,14 @@ function SubdivisaoRow({
         <td className="px-3 py-3 text-center">
           <EntradaPastoSubdivisao sub={sub} />
         </td>
-        <td className="px-3 py-3">
+        <td className="px-2 py-2">
           <div className="flex items-center justify-center">
-            <button type="button"
+            <button
+              type="button"
               title="Histórico da subdivisão"
               onClick={e => { e.stopPropagation(); setModalHistorico(true); }}
-              className="inline-flex items-center justify-center px-2 py-1 text-[10px] font-medium leading-none text-gray-600 border border-gray-200 rounded hover:bg-white transition bg-white/80">
+              className={MAPA_ROW_BTN_SECONDARY}
+            >
               Histórico
             </button>
           </div>
@@ -968,6 +888,7 @@ function isSubdivisaoSuperlotada(sub: SubdivisaoInfo): boolean {
 // ─── Página Principal ─────────────────────────────────────────────────────────
 export default function MapaRebanhoPage() {
   const searchString = useSearch();
+  const [, setLocation] = useLocation();
 
   const { urlFazendaId, urlSuperlotados } = useMemo(() => {
     const params = new URLSearchParams(searchString);
@@ -1240,28 +1161,39 @@ export default function MapaRebanhoPage() {
 
   const handleRefresh = () => { fazendaId ? refetchFazenda() : refetchGeral(); };
 
-  return (
-    <AppLayout>
-      <div className="px-6 py-5 max-w-[1200px] mx-auto">
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-[18px] font-bold text-gray-800">Mapa do Rebanho</h1>
+  const mapaRebanhoUrl = (opts?: { fazendaId?: string; superlotados?: boolean }) => {
+    const params = new URLSearchParams();
+    const fId = opts?.fazendaId ?? filters.fazendaId;
+    if (fId) params.set("fazendaId", fId);
+    if (opts?.superlotados ?? urlSuperlotados) params.set("superlotados", "true");
+    const qs = params.toString();
+    return `/rebanho/mapa-rebanho${qs ? `?${qs}` : ""}`;
+  };
 
-          </div>
-          <div className="flex items-center gap-2">
+  return (
+    <div className="min-w-0">
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Mapa do Rebanho
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
             {fazendaId && (
               <button
                 type="button"
                 onClick={() => setModalHistoricoGeral(true)}
-                title="Histórico de movimentação de todos os lotes da fazenda"
-                className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] rounded-lg text-[12px] font-semibold text-[#2D5A5A] border border-[#2D5A5A]/25 bg-white hover:bg-[#eef4f4] transition"
+                title="Histórico de movimentação de todos os Lotes da fazenda"
+                className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-[#2D5A5A] border border-gray-200 bg-white hover:bg-gray-50 transition shrink-0 min-h-[44px]"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Histórico Geral
+                <span className="hidden sm:inline">Histórico Geral</span>
+                <span className="sm:hidden">Histórico</span>
               </button>
             )}
             <ListExportButtons
@@ -1289,42 +1221,63 @@ export default function MapaRebanhoPage() {
           </div>
         </div>
 
-        {/* Filtros */}
-        <div className="flex flex-wrap gap-3 mb-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-gray-500">Fazenda</label>
-            <select
-              value={filters.fazendaId}
-              onChange={e => setFilters(f => ({ ...f, fazendaId: e.target.value, pastoId: "" }))}
-              className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[200px]">
-              <option value="">Todas as fazendas</option>
-              {fazendasList.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-gray-500">Subdivisão</label>
-            <select
-              value={filters.pastoId}
-              onChange={e => setFilters(f => ({ ...f, pastoId: e.target.value }))}
-              disabled={!fazendaId}
-              className="h-[36px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A] min-w-[180px] disabled:opacity-50 disabled:cursor-not-allowed">
-              <option value="">Todas as subdivisões</option>
-              {pastosList.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
-            </select>
-          </div>
-
-        </div>
-
         {urlSuperlotados && (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md">
-            <span className="material-icons text-[16px] text-red-600">warning</span>
-            <span className="text-[12px] font-medium text-red-700">
+          <div className="mx-5 mt-4 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
+            <span className="material-icons text-[16px] text-red-500">warning</span>
+            <span className="font-medium">
               Exibindo apenas pastos com lotação acima da capacidade
             </span>
+            <button
+              type="button"
+              onClick={() => setLocation(mapaRebanhoUrl({ superlotados: false }), { replace: true })}
+              className="ml-auto flex items-center gap-1 text-red-600 hover:text-red-800 transition-colors"
+              title="Remover filtro"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Remover filtro</span>
+            </button>
           </div>
         )}
 
-        {/* Conteúdo */}
+        <div className="px-5 py-4 border-b border-gray-100">
+          <div className="flex flex-wrap gap-4">
+            <div className={FILTER_FIELD_WIDTH}>
+              <FormLabel>Fazenda</FormLabel>
+              <FazendaOverviewSelect
+                value={filters.fazendaId}
+                onChange={v => {
+                  setFilters(f => ({ ...f, fazendaId: v, pastoId: "" }));
+                  setLocation(mapaRebanhoUrl({ fazendaId: v }), { replace: true });
+                }}
+                fazendas={fazendasList}
+                emptyLabel="Todas as fazendas"
+                className="w-full"
+              />
+            </div>
+            <div className={FILTER_FIELD_WIDTH}>
+              <FormLabel>Subdivisão</FormLabel>
+              <FormSelect
+                variant="light"
+                value={filters.pastoId.trim() ? filters.pastoId : FILTER_SELECT_EMPTY}
+                onChange={v => setFilters(f => ({ ...f, pastoId: v === FILTER_SELECT_EMPTY ? "" : v }))}
+                placeholder="Todas as subdivisões"
+                disabled={!fazendaId}
+                triggerClassName="w-full"
+              >
+                <SelectItem value={FILTER_SELECT_EMPTY} className="text-[12px] text-gray-400">
+                  Todas as subdivisões
+                </SelectItem>
+                {pastosList.map(p => (
+                  <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
+                    {p.nome}
+                  </SelectItem>
+                ))}
+              </FormSelect>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto overflow-x-auto max-h-[min(78vh,820px)]">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-[#2D5A5A] border-t-transparent rounded-full animate-spin" />
@@ -1373,22 +1326,16 @@ export default function MapaRebanhoPage() {
               </p>
             </div>
           ) : (
-            <>
-
-
-              {/* Tabela por fazenda */}
-              <div className="space-y-3">
+              <div className="divide-y divide-gray-100">
                 {fazendasGeralExibidas.map(fazenda => (
-                  <div key={fazenda.fazendaId} className="border border-gray-200 rounded-md overflow-hidden">
-                    {/* Cabeçalho da fazenda */}
+                  <div key={fazenda.fazendaId}>
                     <div
-                      className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
-                      style={{ backgroundColor: FD_PRIMARY }}
+                      className="flex items-center justify-between px-4 py-3 cursor-pointer select-none border-b border-gray-100 bg-gray-50 hover:bg-gray-100/70 transition-colors"
                       onClick={() => toggleFazenda(fazenda.fazendaId)}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span
-                          className="text-[11px] text-white/70 shrink-0 transition-transform"
+                          className="text-[11px] text-gray-400 shrink-0 transition-transform"
                           style={{
                             display: "inline-block",
                             transform: expandedFazendas.has(fazenda.fazendaId) ? "rotate(90deg)" : "rotate(0deg)",
@@ -1397,21 +1344,18 @@ export default function MapaRebanhoPage() {
                         >
                           ▶
                         </span>
-                        <span className="text-[14px] font-bold text-white truncate">
+                        <span className="text-[13px] font-semibold text-gray-800 truncate">
                           {fazenda.fazendaNome}
-                          <span className="font-semibold text-white/90"> — </span>
+                          <span className="font-normal text-gray-500"> — </span>
                           {fazenda.totalAnimais} animais
                         </span>
                       </div>
                     </div>
 
-                    {/* Tabela da fazenda (expandida) */}
                     {expandedFazendas.has(fazenda.fazendaId) && (
-                      <table className="w-full">
+                      <table className="w-full text-[12px]">
                         <thead>
-                          <tr className="border-b border-gray-200 bg-gray-50">
-                            {MAPA_TABLE_HEADERS_LIGHT}
-                          </tr>
+                          <tr>{MAPA_TABLE_HEADERS}</tr>
                         </thead>
                         <tbody>
                           {fazenda.subdivisoes.map(sub => (
@@ -1427,7 +1371,7 @@ export default function MapaRebanhoPage() {
                           {fazenda.semSubdivisao.length > 0 && (
                             <>
                               <tr
-                                className="border-b border-amber-100 cursor-default"
+                                className="border-t border-amber-100 cursor-default"
                                 style={{ backgroundColor: "#fffbeb" }}
                               >
                                 <td className="px-4 py-3 border-l-[3px] border-l-amber-300">
@@ -1456,16 +1400,15 @@ export default function MapaRebanhoPage() {
                   </div>
                 ))}
               </div>
-            </>
           )
         )}
+        </div>
       </div>
 
-      {/* Modal Histórico Geral */}
       {modalHistoricoGeral && fazendaId && (
         <ModalHistorico fazendaId={fazendaId} onClose={() => setModalHistoricoGeral(false)} />
       )}
-    </AppLayout>
+    </div>
   );
 }
 
@@ -1488,15 +1431,11 @@ function TabelaMapa({
   onRefresh: () => void;
 }) {
   return (
-    <>
-      <div className="border border-gray-200 rounded-md overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200" style={{ backgroundColor: FD_PRIMARY }}>
-              {MAPA_TABLE_HEADERS}
-            </tr>
-          </thead>
-          <tbody>
+    <table className="w-full text-[12px]">
+      <thead>
+        <tr>{MAPA_TABLE_HEADERS}</tr>
+      </thead>
+      <tbody>
             {subdivisoes.map(sub => (
               <SubdivisaoRow
                 key={sub.pastoId}
@@ -1537,9 +1476,7 @@ function TabelaMapa({
                 ))}
               </>
             )}
-          </tbody>
-        </table>
-      </div>
-    </>
+      </tbody>
+    </table>
   );
 }

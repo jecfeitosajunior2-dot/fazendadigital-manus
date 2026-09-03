@@ -12,8 +12,8 @@ import {
 import { useDebounce } from "@/hooks/useDebounce";
 import { getCategoriasPorSexo, todasAsCategorias } from "@shared/animal-types";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
-import { FD_PRIMARY } from "@/components/FormFields";
-import { formatPesoAtualDisplay } from "@/lib/fichaAnimalDisplay";
+import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG, FormInput, FormLabel, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -42,6 +42,10 @@ function displayBrinco(animal: { nome: string | null; brinco: string | null; id:
   return animal.brinco?.trim() || animal.nome?.trim() || String(animal.id);
 }
 
+function displaySexo(sexo: "macho" | "femea") {
+  return sexo === "macho" ? "Macho" : "Fêmea";
+}
+
 function isAnimalElegivel(
   animal: { status?: string | null; loteId?: number | null; fazendaId?: number | null },
   fazendaOk: boolean,
@@ -67,12 +71,7 @@ const CHECKBOX_CLASS = cn(
   "data-[state=checked]:bg-[var(--fd-checkbox)] data-[state=checked]:border-[var(--fd-checkbox)] data-[state=checked]:text-white",
 );
 
-const filterCardClass =
-  "flex flex-col justify-center gap-0.5 bg-white border border-gray-200 rounded px-2.5 py-2 min-h-[56px] min-w-0 h-full focus-within:border-[#4ECDC4] transition-colors";
-const filterLabelClass =
-  "text-[9px] font-semibold text-gray-500 uppercase tracking-wide leading-none";
-const filterControlClass =
-  "w-full h-[28px] px-1 text-[12px] border-0 bg-transparent text-gray-800 placeholder:text-gray-400 focus:outline-none";
+const FILTER_SELECT_EMPTY = "__empty__";
 
 export default function IncluirAnimaisLoteDialog({
   loteId,
@@ -252,7 +251,7 @@ export default function IncluirAnimaisLoteDialog({
   const clearFilters = () => setFilters(EMPTY_FILTERS);
 
   const thClass =
-    "px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap text-center border-r border-gray-200 last:border-r-0";
+    "px-3 py-2 text-[10px] font-semibold text-gray-600 uppercase tracking-wide text-center whitespace-nowrap border-r border-gray-200 last:border-r-0";
 
   const mensagemSemElegiveis =
     `Não há animais ativos e sem Lote disponíveis na ${nomeFazenda}.`;
@@ -281,20 +280,10 @@ export default function IncluirAnimaisLoteDialog({
         onOpenAutoFocus={e => e.preventDefault()}
         style={{ ["--fd-checkbox" as string]: FD_PRIMARY }}
       >
-        <DialogHeader className="shrink-0 px-6 py-4 pr-12 border-b border-gray-100 space-y-2 text-left">
+        <DialogHeader className="shrink-0 px-6 py-4 pr-12 border-b border-gray-100 text-left">
           <DialogTitle className="text-[15px] font-semibold text-gray-900 text-left">
             Incluir animais no Lote
           </DialogTitle>
-          <p className="text-[12px] text-gray-600 text-left">
-            <span className="text-gray-500">Fazenda:</span>{" "}
-            <span className="font-medium text-gray-800">{fazendaNome || "—"}</span>
-            <span className="text-gray-300 mx-2">·</span>
-            <span className="text-gray-500">Lote:</span>{" "}
-            <span className="font-medium text-gray-800">{loteNome || "—"}</span>
-          </p>
-          <p className="text-[11px] text-gray-500 text-left">
-            Somente animais ativos desta Fazenda e sem Lote.
-          </p>
         </DialogHeader>
 
         {!fazendaOk ? (
@@ -306,7 +295,27 @@ export default function IncluirAnimaisLoteDialog({
             Carregando...
           </div>
         ) : estadoSemElegiveis ? (
-          <div className="px-6 pt-3 pb-4">
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput
+                  variant="light"
+                  readOnly
+                  value={fazendaNome?.trim() || "—"}
+                  onChange={() => {}}
+                />
+              </div>
+              <div>
+                <FormLabel>Lote</FormLabel>
+                <FormInput
+                  variant="light"
+                  readOnly
+                  value={loteNome?.trim() || "—"}
+                  onChange={() => {}}
+                />
+              </div>
+            </div>
             <div className="min-h-[72px] px-4 py-5 flex items-center justify-center text-center text-[13px] text-gray-500 bg-white border border-gray-200 rounded w-full">
               {mensagemSemElegiveis}
             </div>
@@ -314,48 +323,92 @@ export default function IncluirAnimaisLoteDialog({
         ) : (
           <div
             className={cn(
-              "px-6 pt-3 pb-4 space-y-3",
+              "px-6 py-5 space-y-4",
               showTableScroll && "flex-1 min-h-0 flex flex-col overflow-hidden",
             )}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-[repeat(3,minmax(0,1fr))] gap-3 shrink-0">
-              <div className={filterCardClass}>
-                <span className={filterLabelClass}>Brinco</span>
-                <input
-                  type="text"
-                  value={filters.pesquisa}
-                  onChange={e => setFilters(f => ({ ...f, pesquisa: e.target.value }))}
-                  placeholder="Digite o nº do brinco"
-                  disabled={pending}
-                  className={filterControlClass}
+            <p className="text-[11px] text-gray-600 leading-relaxed shrink-0">
+              Somente animais ativos desta Fazenda e sem Lote.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 shrink-0">
+              <div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput
+                  variant="light"
+                  readOnly
+                  value={fazendaNome?.trim() || "—"}
+                  onChange={() => {}}
                 />
               </div>
-              <div className={filterCardClass}>
-                <span className={filterLabelClass}>Sexo</span>
-                <select
-                  value={filters.sexo}
-                  onChange={e => setFilters(f => ({ ...f, sexo: e.target.value, categoria: "" }))}
-                  disabled={pending}
-                  className={cn(filterControlClass, "cursor-pointer")}
-                >
-                  <option value="">Todos</option>
-                  <option value="macho">Macho</option>
-                  <option value="femea">Fêmea</option>
-                </select>
+              <div>
+                <FormLabel>Lote</FormLabel>
+                <FormInput
+                  variant="light"
+                  readOnly
+                  value={loteNome?.trim() || "—"}
+                  onChange={() => {}}
+                />
               </div>
-              <div className={filterCardClass}>
-                <span className={filterLabelClass}>Categoria</span>
-                <select
-                  value={filters.categoria}
-                  onChange={e => setFilters(f => ({ ...f, categoria: e.target.value }))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 shrink-0">
+              <div>
+                <FormLabel>Brinco</FormLabel>
+                <FormInput
+                  variant="light"
+                  value={filters.pesquisa}
+                  onChange={v => setFilters(f => ({ ...f, pesquisa: v }))}
+                  placeholder="Digite o nº do brinco"
                   disabled={pending}
-                  className={cn(filterControlClass, "cursor-pointer")}
+                  className="border-l-[3px] border-l-[#4ECDC4]"
+                />
+              </div>
+              <div>
+                <FormLabel>Sexo</FormLabel>
+                <FormSelect
+                  variant="light"
+                  value={filters.sexo || FILTER_SELECT_EMPTY}
+                  onChange={v => setFilters(f => ({
+                    ...f,
+                    sexo: v === FILTER_SELECT_EMPTY ? "" : v,
+                    categoria: "",
+                  }))}
+                  placeholder="Todos"
+                  disabled={pending}
+                  modal={false}
+                  triggerClassName="border-l-[3px] border-l-[#4ECDC4]"
                 >
-                  <option value="">Todas</option>
+                  <SelectItem value={FILTER_SELECT_EMPTY} className="text-[12px] text-gray-500">
+                    Todos
+                  </SelectItem>
+                  <SelectItem value="macho" className="text-[12px]">Macho</SelectItem>
+                  <SelectItem value="femea" className="text-[12px]">Fêmea</SelectItem>
+                </FormSelect>
+              </div>
+              <div>
+                <FormLabel>Categoria</FormLabel>
+                <FormSelect
+                  variant="light"
+                  value={filters.categoria || FILTER_SELECT_EMPTY}
+                  onChange={v => setFilters(f => ({
+                    ...f,
+                    categoria: v === FILTER_SELECT_EMPTY ? "" : v,
+                  }))}
+                  placeholder="Todas"
+                  disabled={pending}
+                  modal={false}
+                  triggerClassName="border-l-[3px] border-l-[#4ECDC4]"
+                >
+                  <SelectItem value={FILTER_SELECT_EMPTY} className="text-[12px] text-gray-500">
+                    Todas
+                  </SelectItem>
                   {categorias.map(c => (
-                    <option key={c} value={c}>{c}</option>
+                    <SelectItem key={c} value={c} className="text-[12px]">
+                      {c}
+                    </SelectItem>
                   ))}
-                </select>
+                </FormSelect>
               </div>
             </div>
 
@@ -379,7 +432,7 @@ export default function IncluirAnimaisLoteDialog({
               )}
             >
               <div className="flex-1 min-h-0 overflow-auto">
-                <table className="w-full text-[12px] min-w-[640px] border-collapse">
+                <table className="w-full text-[12px] min-w-[520px] border-collapse">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="w-10 px-2 py-2 border-r border-gray-200 align-middle">
@@ -393,9 +446,7 @@ export default function IncluirAnimaisLoteDialog({
                         </div>
                       </th>
                       <th className={thClass}>Brinco</th>
-                      <th className={thClass}>Nº RFID</th>
                       <th className={thClass}>Categoria</th>
-                      <th className={thClass}>Últ. peso</th>
                       <th className={thClass}>Sexo</th>
                       <th className={cn(thClass, "border-r-0")}>Raça</th>
                     </tr>
@@ -403,97 +454,56 @@ export default function IncluirAnimaisLoteDialog({
                   <tbody>
                     {isLoadingFiltrados ? (
                       <tr>
-                        <td colSpan={7} className="text-center py-8 text-gray-400">
+                        <td colSpan={5} className="text-center py-8 text-gray-400">
                           Carregando...
                         </td>
                       </tr>
                     ) : estadoFiltroSemResultado ? (
                       <tr>
-                        <td colSpan={7} className="text-center py-8 px-4 text-[13px] text-gray-500">
+                        <td colSpan={5} className="text-center py-8 px-4 text-[13px] text-gray-500">
                           Nenhum animal encontrado com os filtros aplicados.
                         </td>
                       </tr>
                     ) : (
-                          paginated.map(animal => {
-                            const pesoLabel = formatPesoAtualDisplay(
-                              animal.ultimoPeso as number | null | undefined,
-                            );
-                            const isSelected = selected.has(animal.id);
-                            return (
-                              <tr
-                                key={animal.id}
-                                aria-selected={isSelected ? "true" : "false"}
-                                className={cn(
-                                  "border-b border-gray-100 transition-colors cursor-pointer",
-                                  isSelected
-                                    ? "bg-[#4ECDC4]/[0.08] hover:bg-[#4ECDC4]/[0.13]"
-                                    : "bg-white hover:bg-gray-50",
-                                )}
-                                onClick={() => toggleSelect(animal.id)}
-                              >
-                                <td className="px-2 py-2 border-r border-gray-100 align-middle">
-                                  <div className="flex items-center justify-center">
-                                    <Checkbox
-                                      checked={isSelected}
-                                      onCheckedChange={() => toggleSelect(animal.id)}
-                                      onClick={e => e.stopPropagation()}
-                                      disabled={pending}
-                                      className={CHECKBOX_CLASS}
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-center border-r border-gray-100">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <span
-                                      className={cn(
-                                        "w-2 h-2 rounded-full flex-shrink-0",
-                                        animal.sexo === "macho" ? "bg-blue-400" : "bg-pink-400",
-                                      )}
-                                    />
-                                    <span className="font-semibold text-gray-800">
-                                      {displayBrinco(animal)}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-center text-gray-800 font-mono text-[11px] border-r border-gray-100">
-                                  {animal.brincoEletronico || (
-                                    <span className="text-gray-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2.5 text-center border-r border-gray-100">
-                                  {animal.categoria ? (
-                                    <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium text-[11px]">
-                                      {animal.categoria}
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-center border-r border-gray-100 text-gray-700">
-                                  {pesoLabel === "Sem pesagem" ? (
-                                    <span className="text-gray-400">Sem pesagem</span>
-                                  ) : (
-                                    pesoLabel
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-center border-r border-gray-100">
-                                  <span
-                                    className={cn(
-                                      "px-2 py-0.5 rounded text-[11px] font-medium",
-                                      animal.sexo === "macho"
-                                        ? "bg-blue-100 text-blue-700"
-                                        : "bg-pink-100 text-pink-700",
-                                    )}
-                                  >
-                                    {animal.sexo === "macho" ? "Macho" : "Fêmea"}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-center text-gray-700">
-                                  {animal.raca || <span className="text-gray-300">—</span>}
-                                </td>
-                              </tr>
-                            );
-                          })
+                      paginated.map(animal => {
+                        const isSelected = selected.has(animal.id);
+                        return (
+                          <tr
+                            key={animal.id}
+                            aria-selected={isSelected ? "true" : "false"}
+                            className={cn(
+                              "border-b border-gray-100 transition-colors cursor-pointer hover:bg-gray-50/80",
+                              !isSelected && "bg-white",
+                            )}
+                            style={isSelected ? { backgroundColor: FD_PRIMARY_SUBTLE_BG } : undefined}
+                            onClick={() => toggleSelect(animal.id)}
+                          >
+                            <td className="px-2 py-2 border-r border-gray-100 align-middle">
+                              <div className="flex items-center justify-center">
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelect(animal.id)}
+                                  onClick={e => e.stopPropagation()}
+                                  disabled={pending}
+                                  className={CHECKBOX_CLASS}
+                                />
+                              </div>
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-800 font-medium border-r border-gray-100 text-center">
+                              {displayBrinco(animal)}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">
+                              {animal.categoria || "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-600 border-r border-gray-100 text-center">
+                              {displaySexo(animal.sexo)}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-600 text-center">
+                              {animal.raca || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -517,12 +527,18 @@ export default function IncluirAnimaisLoteDialog({
           </div>
         )}
 
-        <DialogFooter className="shrink-0 px-6 py-4 border-t border-gray-100 flex flex-row justify-end gap-2">
+        <DialogFooter className="shrink-0 px-6 py-4 border-t border-gray-100 gap-2 sm:gap-2 flex flex-row flex-wrap items-center justify-end">
+          {selectedValidos.length > 0 ? (
+            <span className="text-[11px] text-gray-600 mr-auto">
+              {selectedValidos.length}{" "}
+              {selectedValidos.length === 1 ? "animal selecionado" : "animais selecionados"}
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancelar
           </button>
@@ -530,13 +546,8 @@ export default function IncluirAnimaisLoteDialog({
             type="button"
             onClick={handleConfirm}
             disabled={!canIncluir}
-            className={cn(
-              "px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide",
-              canIncluir
-                ? "text-gray-900 hover:opacity-90"
-                : "bg-[#F0F0F0] text-gray-500 cursor-not-allowed hover:bg-[#F0F0F0]",
-            )}
-            style={canIncluir ? { backgroundColor: FD_PRIMARY } : undefined}
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: FD_PRIMARY }}
           >
             {pending ? "Incluindo..." : "Incluir selecionados"}
           </button>

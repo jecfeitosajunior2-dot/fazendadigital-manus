@@ -229,6 +229,143 @@ export function chaveFluxoPeriodo(
   return mesChave(d);
 }
 
+function toIsoDateLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Data de hoje em ISO (AAAA-MM-DD), meia-noite local. */
+export function isoHoje(): string {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return toIsoDateLocal(hoje);
+}
+
+/** Período padrão: últimos 90 dias inclusive. */
+export function periodoPadrao90Dias(): { inicio: string; fim: string } {
+  const fim = new Date();
+  fim.setHours(0, 0, 0, 0);
+  const inicio = new Date(fim.getTime() - 90 * 86_400_000);
+  return { inicio: toIsoDateLocal(inicio), fim: toIsoDateLocal(fim) };
+}
+
+export function parseIsoDate(iso: string): Date | null {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  if (
+    d.getFullYear() !== Number(m[1])
+    || d.getMonth() !== Number(m[2]) - 1
+    || d.getDate() !== Number(m[3])
+  ) {
+    return null;
+  }
+  return d;
+}
+
+export function diasNoIntervalo(inicioIso: string, fimIso: string): number {
+  const inicio = parseIsoDate(inicioIso);
+  const fim = parseIsoDate(fimIso);
+  if (!inicio || !fim || fim < inicio) return 0;
+  return Math.floor((fim.getTime() - inicio.getTime()) / 86_400_000) + 1;
+}
+
+/** Movimentação dentro do intervalo fechado [início, fim]. */
+export function movimentoNoIntervalo(
+  data: string | Date | null | undefined,
+  inicioIso: string,
+  fimIso: string,
+): boolean {
+  const d = parseData(data);
+  const inicio = parseIsoDate(inicioIso);
+  const fim = parseIsoDate(fimIso);
+  if (!d || !inicio || !fim) return false;
+  const dia = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  dia.setHours(0, 0, 0, 0);
+  return dia >= inicio && dia <= fim;
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = (copy.getDay() + 6) % 7;
+  copy.setDate(copy.getDate() - day);
+  copy.setHours(12, 0, 0, 0);
+  return copy;
+}
+
+/**
+ * Buckets do gráfico Entradas × Saídas para intervalo livre.
+ * - ≤ 45 dias: semanal
+ * - > 45 dias: mensal (máx. 24 meses, ancorado no fim do intervalo)
+ */
+export function bucketsFluxoIntervalo(inicioIso: string, fimIso: string): BucketFluxo[] {
+  const inicio = parseIsoDate(inicioIso);
+  const fim = parseIsoDate(fimIso);
+  if (!inicio || !fim || fim < inicio) return [];
+
+  const dias = diasNoIntervalo(inicioIso, fimIso);
+
+  if (dias <= 45) {
+    const buckets: BucketFluxo[] = [];
+    const seen = new Set<string>();
+    let cursor = startOfWeekMonday(inicio);
+    const end = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate(), 12, 0, 0, 0);
+    while (cursor <= end) {
+      const k = semanaChave(cursor);
+      if (!seen.has(k)) {
+        seen.add(k);
+        buckets.push({ chave: k, label: semanaLabel(cursor), entrada: 0, saida: 0 });
+      }
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    if (buckets.length === 0) {
+      buckets.push({
+        chave: semanaChave(inicio),
+        label: semanaLabel(inicio),
+        entrada: 0,
+        saida: 0,
+      });
+    }
+    return buckets;
+  }
+
+  const endMonth = new Date(fim.getFullYear(), fim.getMonth(), 1);
+  let cursor = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
+  const mesesTotais =
+    (endMonth.getFullYear() - cursor.getFullYear()) * 12
+    + (endMonth.getMonth() - cursor.getMonth())
+    + 1;
+  if (mesesTotais > 24) {
+    cursor = new Date(endMonth.getFullYear(), endMonth.getMonth() - 23, 1);
+  }
+
+  const buckets: BucketFluxo[] = [];
+  while (cursor <= endMonth && buckets.length < 24) {
+    buckets.push({
+      chave: `${cursor.getFullYear()}-${cursor.getMonth()}`,
+      label: `${MESES_ABREV[cursor.getMonth()]}/${String(cursor.getFullYear()).slice(2)}`,
+      entrada: 0,
+      saida: 0,
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return buckets;
+}
+
+export function chaveFluxoIntervalo(
+  inicioIso: string,
+  fimIso: string,
+  value: string | Date | null | undefined,
+): string | null {
+  const d = parseData(value);
+  if (!d) return null;
+  if (diasNoIntervalo(inicioIso, fimIso) <= 45) return semanaChave(d);
+  return mesChave(d);
+}
+
 /** Idade em anos a partir da data de nascimento (null se inválida). */
 export function idadeAnos(dataNascimento: string | Date | null | undefined): number | null {
   const d = parseData(dataNascimento);

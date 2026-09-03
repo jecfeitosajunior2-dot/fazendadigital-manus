@@ -4,18 +4,17 @@
  */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
   FD_PRIMARY,
-  FieldBox,
-  FormLabel,
   FormDatePicker,
-  inputClass,
+  FormInput,
+  FormLabel,
+  FormNativeSelect,
 } from "@/components/FormFields";
-import { cn } from "@/lib/utils";
 
 /** Limites alinhados ao schema (drizzle/schema.ts — lotes.nome / lotes.sigla). */
 const NOME_MAX = 100;
@@ -86,6 +85,11 @@ export function NewLotePage() {
     [fazendas, fazendaId],
   );
 
+  const fazendaOptions = useMemo(
+    () => fazendas.map(f => ({ value: String(f.id), label: f.nome })),
+    [fazendas],
+  );
+
   const utils = trpc.useUtils();
   const createMutation = trpc.lotes.create.useMutation({
     onSuccess: () => {
@@ -154,124 +158,112 @@ export function NewLotePage() {
 
   return (
     <AppLayout>
-      <div className="max-w-lg mx-auto">
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden"
-        >
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-900">Novo Lote</h1>
-            <p className="text-[11px] text-gray-500 mt-1">
+      <button
+        type="button"
+        onClick={() => setLocation(lotesListUrl(fazendaId || undefined))}
+        className="mb-3 flex items-center gap-0.5 text-[11px] text-gray-500"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[14px]">arrow_back</span>
+        Voltar
+      </button>
+
+      <form onSubmit={handleSubmit} noValidate>
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h1
+              className="text-[20px] font-semibold text-gray-900"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              Novo Lote
+            </h1>
+            <p className="mt-1 text-[11px] text-gray-500">
               {fazendaLocked
                 ? "Informe os dados do novo Lote."
                 : "Selecione a fazenda e informe os dados do Lote."}
             </p>
           </div>
 
-          <div className="px-6 py-5 space-y-4">
-            <div>
-              <FormLabel required>Fazenda</FormLabel>
-              {fazendaLocked ? (
-                <FieldBox required className="bg-gray-50">
-                  <div
-                    className={cn(inputClass, "min-h-[42px] flex items-center text-gray-700")}
-                    aria-readonly="true"
-                  >
-                    {fazendaSelecionada?.nome
-                      ?? (fazendaId ? `Fazenda #${fazendaId}` : "—")}
-                  </div>
-                </FieldBox>
-              ) : (
-                <FieldBox required variant="light" invalid={!!erros.fazenda}>
-                  <div className="relative">
-                    <select
+          <div className="p-5 space-y-4">
+            <div className="flex flex-row items-end gap-4">
+              <div className="min-w-0 flex-1">
+                <FormLabel required>Fazenda</FormLabel>
+                {fazendaLocked ? (
+                  <FormInput
+                    id="novo-lote-field-fazenda"
+                    variant="light"
+                    required
+                    readOnly
+                    value={
+                      fazendaSelecionada?.nome
+                      ?? (fazendaId ? `Fazenda #${fazendaId}` : "")
+                    }
+                    onChange={() => {}}
+                  />
+                ) : (
+                  <>
+                    <FormNativeSelect
+                      variant="light"
                       id="novo-lote-field-fazenda"
                       value={fazendaId}
-                      onChange={e => {
-                        setFazendaId(e.target.value);
+                      onChange={v => {
+                        setFazendaId(v);
                         limparErro("fazenda");
                       }}
-                      aria-label="Fazenda"
-                      aria-invalid={!!erros.fazenda || undefined}
+                      placeholder="Selecione a Fazenda"
+                      options={fazendaOptions}
+                      required
+                      invalid={!!erros.fazenda}
                       aria-describedby={erros.fazenda ? "novo-lote-err-fazenda" : undefined}
-                      className={cn(
-                        inputClass,
-                        "appearance-none cursor-pointer w-full min-h-[42px] pr-10 bg-white",
-                      )}
-                    >
-                      <option value="">Selecione a fazenda</option>
-                      {fazendas.map(f => (
-                        <option key={f.id} value={String(f.id)}>
-                          {f.nome}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 opacity-70"
-                      aria-hidden
                     />
-                  </div>
-                </FieldBox>
-              )}
-              <FieldErrorMsg id="novo-lote-err-fazenda" message={erros.fazenda} />
+                    <FieldErrorMsg id="novo-lote-err-fazenda" message={erros.fazenda} />
+                  </>
+                )}
+              </div>
+              <div className="w-[11.5rem] shrink-0">
+                <FormLabel required>Data de Criação</FormLabel>
+                <FormDatePicker
+                  id="novo-lote-field-dataCriacao"
+                  value={form.dataCriacao}
+                  onChange={v => set("dataCriacao", v)}
+                  required
+                  invalid={!!erros.dataCriacao}
+                  minHeight={34}
+                  aria-describedby={erros.dataCriacao ? "novo-lote-err-dataCriacao" : undefined}
+                />
+                <FieldErrorMsg id="novo-lote-err-dataCriacao" message={erros.dataCriacao} />
+              </div>
             </div>
 
-            <div>
-              <FormLabel required>Nome do Lote</FormLabel>
-              <FieldBox required variant="light" invalid={!!erros.nome}>
-                <input
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FormLabel required>Nome do Lote</FormLabel>
+                <FormInput
                   id="novo-lote-field-nome"
-                  type="text"
+                  variant="light"
+                  required
                   value={form.nome}
-                  onChange={e => set("nome", e.target.value)}
+                  onChange={v => set("nome", v.slice(0, NOME_MAX))}
                   placeholder="Ex. Lote de prenhas"
-                  maxLength={NOME_MAX}
-                  aria-invalid={!!erros.nome || undefined}
+                  invalid={!!erros.nome}
                   aria-describedby={erros.nome ? "novo-lote-err-nome" : undefined}
-                  className={cn(inputClass, "bg-white min-h-[42px]")}
                 />
-              </FieldBox>
-              <FieldErrorMsg id="novo-lote-err-nome" message={erros.nome} />
-            </div>
-
-            <div>
-              <FormLabel>Sigla do Lote (opcional)</FormLabel>
-              <FieldBox variant="light">
-                <input
-                  type="text"
+                <FieldErrorMsg id="novo-lote-err-nome" message={erros.nome} />
+              </div>
+              <div>
+                <FormLabel>Sigla do Lote (opcional)</FormLabel>
+                <FormInput
+                  variant="light"
                   value={form.sigla}
-                  onChange={e => set("sigla", e.target.value.toUpperCase())}
-                  onBlur={e => set("sigla", e.target.value.trim().toUpperCase())}
+                  onChange={v => set("sigla", v.toUpperCase().slice(0, SIGLA_MAX))}
+                  onBlur={v => set("sigla", v.trim().toUpperCase().slice(0, SIGLA_MAX))}
                   placeholder="Ex. LdP1"
-                  maxLength={SIGLA_MAX}
-                  className={cn(inputClass, "bg-white min-h-[42px]")}
                 />
-              </FieldBox>
+              </div>
             </div>
-
-            <div>
-              <FormLabel required>Data de Criação</FormLabel>
-              <FormDatePicker
-                id="novo-lote-field-dataCriacao"
-                value={form.dataCriacao}
-                onChange={v => set("dataCriacao", v)}
-                required
-                invalid={!!erros.dataCriacao}
-                aria-describedby={erros.dataCriacao ? "novo-lote-err-dataCriacao" : undefined}
-              />
-              <FieldErrorMsg id="novo-lote-err-dataCriacao" message={erros.dataCriacao} />
-            </div>
-
-            {fazendaSelecionada && (
-              <p className="text-[11px] text-gray-500">
-                Vinculado a:{" "}
-                <span className="font-medium text-gray-700">{fazendaSelecionada.nome}</span>
-              </p>
-            )}
           </div>
 
-          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+          <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
             <button
               type="button"
               onClick={() => setLocation(lotesListUrl(fazendaId || undefined))}
@@ -296,8 +288,8 @@ export function NewLotePage() {
               )}
             </button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
     </AppLayout>
   );
 }

@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { FormLabel, FormDatePicker, FormNativeSelect } from "@/components/FormFields";
+import {
+  FD_PRIMARY,
+  FormDatePicker,
+  FormInput,
+  FormLabel,
+  FormNativeSelect,
+} from "@/components/FormFields";
+import { labelLoteDestinoComPasto } from "@shared/transferirAnimaisEntreLotes";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-const FD_PRIMARY = "#4ECDC4";
 
 function hojeISO() {
   const d = new Date();
@@ -70,7 +75,7 @@ export default function MovimentarAnimaisLoteDialog({
   const movimentarMutation = trpc.lotes.movimentarAnimais.useMutation({
     onSuccess: data => {
       toast.success(
-        `Transferência realizada com sucesso.\n${data.count} ${data.count === 1 ? "animal foi transferido" : "animais foram transferidos"} para o Lote ${data.loteDestinoNome}.`,
+        `Movimentação realizada com sucesso.\n${data.count} ${data.count === 1 ? "animal foi movido" : "animais foram movidos"} para o Lote ${data.loteDestinoNome}.`,
       );
       utils.animais.list.invalidate();
       utils.animais.getById.invalidate();
@@ -97,7 +102,14 @@ export default function MovimentarAnimaisLoteDialog({
   }, [lotes, loteOrigemId, fazendaId]);
 
   const destinoOptions = useMemo(
-    () => lotesDestino.map(l => ({ value: String(l.id), label: l.nome })),
+    () =>
+      lotesDestino.map(l => ({
+        value: String(l.id),
+        label: labelLoteDestinoComPasto(
+          l.nome,
+          (l as { pastoNome?: string | null }).pastoNome,
+        ),
+      })),
     [lotesDestino],
   );
 
@@ -110,8 +122,7 @@ export default function MovimentarAnimaisLoteDialog({
     ? ((loteDestino as { pastoNome?: string | null }).pastoNome?.trim() || "Sem subdivisão")
     : null;
 
-  const origemLinha = [
-    (fazendaNome ?? "").trim() || "Fazenda",
+  const origemResumo = [
     subdivisaoOrigemNome.trim() || "Sem subdivisão",
     `Lote ${loteOrigemNome.trim() || "—"}`,
   ].join(" · ");
@@ -180,31 +191,61 @@ export default function MovimentarAnimaisLoteDialog({
         if (!v && !movimentarMutation.isPending) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg p-0 gap-0" onOpenAutoFocus={e => e.preventDefault()}>
+      <DialogContent className="sm:max-w-md p-0 gap-0" onOpenAutoFocus={e => e.preventDefault()}>
         <DialogHeader className="px-6 py-4 border-b border-gray-100">
           <DialogTitle className="text-[15px] font-semibold text-gray-900">
-            Transferir animais para outro Lote
+            Mover animais para outro Lote
           </DialogTitle>
         </DialogHeader>
 
         <div className="px-6 py-5 space-y-4">
-          <p className="text-[12px] text-gray-600">{textoExplicativo}</p>
+          <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded px-2.5 py-2 leading-relaxed">
+            {textoExplicativo}
+          </p>
 
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500 mb-0.5">
-              Origem
-            </p>
-            <p className="text-[12px] text-gray-800">{origemLinha}</p>
+            <FormLabel>Fazenda</FormLabel>
+            <FormInput
+              variant="light"
+              readOnly
+              value={fazendaNome?.trim() || (fazendaId ? `Fazenda #${fazendaId}` : "—")}
+              onChange={() => {}}
+            />
           </div>
+
+          <div>
+            <FormLabel>Origem</FormLabel>
+            <FormInput
+              variant="light"
+              readOnly
+              value={origemResumo}
+              onChange={() => {}}
+            />
+          </div>
+
+          {qtdSelecionados > 0 && (
+            <div>
+              <FormLabel>Animais selecionados</FormLabel>
+              <div className="rounded border border-gray-200 bg-white px-3 py-2.5 text-[12px] leading-snug">
+                <p className="text-gray-800">
+                  <span className="font-semibold">{qtdSelecionados}</span>
+                  {qtdSelecionados === 1 ? " animal" : " animais"}
+                </p>
+                <p className="mt-0.5 text-gray-500">{brincosLabel}</p>
+              </div>
+            </div>
+          )}
 
           <div>
             <FormLabel required>Data da movimentação</FormLabel>
             <FormDatePicker
+              variant="light"
               value={dataMovimentacao}
               onChange={handleDataChange}
-              placeholder="DD/MM/AAAA"
+              placeholder="dd/mm/aaaa"
               required
               max={hojeISO()}
+              minHeight={34}
             />
           </div>
 
@@ -216,29 +257,22 @@ export default function MovimentarAnimaisLoteDialog({
               <p className="text-[12px] text-amber-700 py-2">Nenhum Lote de destino disponível.</p>
             ) : (
               <FormNativeSelect
+                variant="light"
                 value={loteDestinoId}
                 onChange={setLoteDestinoId}
                 placeholder="Selecione o Lote de destino"
                 required
                 options={destinoOptions}
+                modal={false}
               />
             )}
             {loteDestino && subdivisaoDestinoLabel && (
-              <p className="mt-1.5 text-[12px] text-gray-500">
-                Localização no destino: {subdivisaoDestinoLabel}
+              <p className="mt-1.5 text-[11px] text-gray-500">
+                Subdivisão no destino:{" "}
+                <span className="font-medium text-gray-700">{subdivisaoDestinoLabel}</span>
               </p>
             )}
           </div>
-
-          {qtdSelecionados > 0 && (
-            <div className="text-[12px] leading-snug">
-              <p className="text-gray-800">
-                <span className="font-semibold">{qtdSelecionados}</span>
-                {qtdSelecionados === 1 ? " animal selecionado" : " animais selecionados"}
-              </p>
-              <p className="text-gray-500">{brincosLabel}</p>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="px-6 py-4 border-t border-gray-100 gap-2 sm:gap-2">
@@ -246,7 +280,7 @@ export default function MovimentarAnimaisLoteDialog({
             type="button"
             onClick={onClose}
             disabled={movimentarMutation.isPending}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50"
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -254,10 +288,10 @@ export default function MovimentarAnimaisLoteDialog({
             type="button"
             onClick={handleConfirm}
             disabled={!podeConfirmar}
-            className="px-5 py-2 rounded text-[11px] font-semibold uppercase tracking-wide text-gray-900 hover:opacity-90 disabled:opacity-50"
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: FD_PRIMARY }}
           >
-            {movimentarMutation.isPending ? "Transferindo..." : "Realizar transferência"}
+            {movimentarMutation.isPending ? "Movendo..." : "Confirmar movimentação"}
           </button>
         </DialogFooter>
       </DialogContent>

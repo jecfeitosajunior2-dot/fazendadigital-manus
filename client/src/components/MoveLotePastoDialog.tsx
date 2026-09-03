@@ -1,22 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { FD_PRIMARY } from "@/components/FormFields";
+import {
+  FD_PRIMARY,
+  FormInput,
+  FormLabel,
+  FormNativeSelect,
+} from "@/components/FormFields";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 type Lote = {
   id: number;
@@ -58,18 +55,25 @@ export function MoveLotePastoDialog({
   onSuccess?: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [fazendaId, setFazendaId] = useState<string>("");
-  const [pastoId, setPastoId] = useState<string>("");
-  const pastoSelectRef = useRef<HTMLSelectElement>(null);
+  const [fazendaId, setFazendaId] = useState("");
+  const [pastoId, setPastoId] = useState("");
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: open });
-  const fazendaNum = fazendaId ? parseInt(fazendaId) : 0;
+  const fazendaNum = fazendaId ? parseInt(fazendaId, 10) : 0;
   const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
     { fazendaId: fazendaNum },
-    { enabled: open && fazendaNum > 0 }
+    { enabled: open && fazendaNum > 0 },
   );
 
-  // Quando os pastos carregam e já há fazenda selecionada, o painel de seleção fica sempre visível
+  const fazendaNome = useMemo(
+    () => fazendas.find(f => String(f.id) === fazendaId)?.nome ?? "",
+    [fazendas, fazendaId],
+  );
+
+  const fazendaOptions = useMemo(
+    () => fazendas.map(f => ({ value: String(f.id), label: f.nome })),
+    [fazendas],
+  );
 
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
     onSuccess: () => {
@@ -87,13 +91,15 @@ export function MoveLotePastoDialog({
   useEffect(() => {
     if (!open) return;
     setFazendaId(defaultFazendaId ? String(defaultFazendaId) : "");
-    // Sempre inicia sem seleção na lista — o usuário escolhe a subdivisão do lote.
     setPastoId("");
   }, [open, defaultFazendaId, defaultPastoId]);
 
   const handleMove = () => {
     if (!lote) return;
-    if (!pastoId) { toast.error("Selecione a subdivisão do Lote"); return; }
+    if (!pastoId) {
+      toast.error("Selecione a subdivisão do Lote");
+      return;
+    }
     const novoPastoId = parseInt(pastoId, 10);
     if (lote.pastoAtualId != null && novoPastoId === lote.pastoAtualId) {
       toast.error("Selecione uma subdivisão diferente da atual");
@@ -112,48 +118,73 @@ export function MoveLotePastoDialog({
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true, sensitivity: "base" }));
   }, [pastos, temSubdivisaoAtual, lote?.pastoAtualId]);
 
+  const pastoOptions = useMemo(
+    () =>
+      pastosDisponiveis.map(p => ({
+        value: String(p.id),
+        label: p.capacidade ? `${p.nome} (${p.capacidade} UA)` : p.nome,
+      })),
+    [pastosDisponiveis],
+  );
+
   const pastoSelecionadoNum = pastoId ? parseInt(pastoId, 10) : null;
   const mesmaSubdivisaoAtual =
-    temSubdivisaoAtual &&
-    pastoSelecionadoNum != null &&
-    pastoSelecionadoNum === lote?.pastoAtualId;
+    temSubdivisaoAtual
+    && pastoSelecionadoNum != null
+    && pastoSelecionadoNum === lote?.pastoAtualId;
   const podeConfirmar =
-    Boolean(pastoId) &&
-    pastosDisponiveis.some(p => p.id === pastoSelecionadoNum) &&
-    !mesmaSubdivisaoAtual &&
-    !moveMutation.isPending;
-  // Quando a fazenda já vem do lote, o campo é só leitura.
+    Boolean(pastoId)
+    && pastosDisponiveis.some(p => p.id === pastoSelecionadoNum)
+    && !mesmaSubdivisaoAtual
+    && !moveMutation.isPending;
   const fazendaSomenteLeitura = Boolean(defaultFazendaId);
 
+  const tituloBase = temSubdivisaoAtual ? "Alterar subdivisão do Lote" : "Definir subdivisão do Lote";
+  const confirmLabel = temSubdivisaoAtual ? "Alterar subdivisão" : "Definir subdivisão";
+
   return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="sm:max-w-md" onOpenAutoFocus={e => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle className="text-[14px]">
-            {temSubdivisaoAtual ? "Alterar subdivisão do Lote" : "Definir subdivisão do Lote"}
+    <Dialog
+      open={open}
+      onOpenChange={v => {
+        if (!v && !moveMutation.isPending) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-md p-0 gap-0" onOpenAutoFocus={e => e.preventDefault()}>
+        <DialogHeader className="px-6 py-4 border-b border-gray-100">
+          <DialogTitle className="text-[15px] font-semibold text-gray-900">
+            {tituloBase}
             {lote?.nome ? ` — ${lote.nome}` : ""}
           </DialogTitle>
         </DialogHeader>
-        <p className="text-[11px] text-amber-800/90 bg-amber-50 border border-amber-100 rounded px-2.5 py-2">
-          Define a localização operacional deste Lote. Os animais continuam no Lote; a subdivisão é do Lote, não de cada animal.
-        </p>
-        <div className="space-y-3">
+
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-[11px] text-amber-800/90 bg-amber-50 border border-amber-100 rounded px-2.5 py-2 leading-relaxed">
+            Define a localização operacional deste Lote. Os animais continuam no Lote; a subdivisão é do Lote, não de cada animal.
+          </p>
+
           <div>
-            <Label className="text-[10px]">Fazenda</Label>
-            <Select
-              value={fazendaId || undefined}
-              onValueChange={v => { setFazendaId(v); setPastoId(""); }}
-              disabled={fazendaSomenteLeitura}
-            >
-              <SelectTrigger className="h-8 text-[12px] w-full">
-                <SelectValue placeholder="Selecione uma fazenda" />
-              </SelectTrigger>
-              <SelectContent>
-                {fazendas.map(f => (
-                  <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">{f.nome}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <FormLabel>Fazenda</FormLabel>
+            {fazendaSomenteLeitura ? (
+              <FormInput
+                variant="light"
+                readOnly
+                value={fazendaNome || (fazendaId ? `Fazenda #${fazendaId}` : "—")}
+                onChange={() => {}}
+              />
+            ) : (
+              <FormNativeSelect
+                variant="light"
+                value={fazendaId}
+                onChange={v => {
+                  setFazendaId(v);
+                  setPastoId("");
+                }}
+                placeholder="Selecione a Fazenda"
+                options={fazendaOptions}
+                required
+                modal={false}
+              />
+            )}
           </div>
 
           {temSubdivisaoAtual && lote?.pastoNome ? (
@@ -164,25 +195,19 @@ export function MoveLotePastoDialog({
           ) : null}
 
           <div>
-            <Label className="text-[10px]">
+            <FormLabel required>
               {temSubdivisaoAtual ? "Nova subdivisão do Lote" : "Subdivisão do Lote"}
-            </Label>
-            <Select
-              value={pastoId || undefined}
-              onValueChange={setPastoId}
+            </FormLabel>
+            <FormNativeSelect
+              variant="light"
+              value={pastoId}
+              onChange={setPastoId}
+              placeholder="Selecione a subdivisão"
+              options={pastoOptions}
               disabled={!fazendaId || pastosDisponiveis.length === 0}
-            >
-              <SelectTrigger className="h-8 text-[12px] w-full">
-                <SelectValue placeholder="Selecione a subdivisão" />
-              </SelectTrigger>
-              <SelectContent>
-                {pastosDisponiveis.map(p => (
-                  <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
-                    {p.nome}{p.capacidade ? ` (${p.capacidade} UA)` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              required
+              modal={false}
+            />
             {fazendaId && pastos.length === 0 ? (
               <p className="mt-1 text-[11px] text-amber-700">
                 Nenhuma subdivisão cadastrada para esta fazenda.
@@ -194,32 +219,27 @@ export function MoveLotePastoDialog({
               </p>
             ) : null}
           </div>
-
-          <div className="flex gap-2 pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={moveMutation.isPending}
-              className="h-8 text-[11px] flex-1 bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleMove}
-              disabled={!podeConfirmar}
-              className="h-8 text-[11px] flex-1 font-semibold text-gray-900 hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY, opacity: podeConfirmar ? 1 : 0.5 }}
-            >
-              {moveMutation.isPending
-                ? "Salvando..."
-                : temSubdivisaoAtual
-                  ? "Alterar subdivisão"
-                  : "Definir subdivisão"}
-            </Button>
-          </div>
         </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-gray-100 gap-2 sm:gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={moveMutation.isPending}
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleMove}
+            disabled={!podeConfirmar}
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            {moveMutation.isPending ? "Salvando..." : confirmLabel}
+          </button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -245,7 +265,16 @@ export function AssignLotePastoDialog({
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true }, { enabled: open });
   const disponiveis = useMemo(
     () => lotes.filter(l => l.pastoAtualId !== pastoId),
-    [lotes, pastoId]
+    [lotes, pastoId],
+  );
+
+  const loteOptions = useMemo(
+    () =>
+      disponiveis.map(l => ({
+        value: String(l.id),
+        label: `${l.nome}${l.pastoNome ? ` (em ${l.pastoNome})` : ""} · ${l.qtdAnimais ?? 0} cab.`,
+      })),
+    [disponiveis],
   );
 
   const moveMutation = trpc.lotes.moveToPasto.useMutation({
@@ -262,37 +291,45 @@ export function AssignLotePastoDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-[14px]">Alocar Lote — {pastoNome}</DialogTitle>
+      <DialogContent className="sm:max-w-md p-0 gap-0">
+        <DialogHeader className="px-6 py-4 border-b border-gray-100">
+          <DialogTitle className="text-[15px] font-semibold text-gray-900">
+            Alocar Lote — {pastoNome}
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="px-6 py-5 space-y-4">
           <div>
-            <Label className="text-[10px]">Lote</Label>
-            <Select value={loteId} onValueChange={setLoteId}>
-              <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Selecione o Lote" /></SelectTrigger>
-              <SelectContent>
-                {disponiveis.map(l => (
-                  <SelectItem key={l.id} value={String(l.id)} className="text-[12px]">
-                    {l.nome}{l.pastoNome ? ` (em ${l.pastoNome})` : ""} · {l.qtdAnimais ?? 0} cab.
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose} className="h-8 text-[11px] flex-1">Cancelar</Button>
-            <Button
-              type="button"
-              onClick={() => loteId && moveMutation.mutate({ loteId: parseInt(loteId), pastoId })}
-              disabled={!loteId || moveMutation.isPending}
-              className="h-8 text-[11px] flex-1 text-gray-800"
-              style={{ backgroundColor: "#4ECDC4" }}
-            >
-              {moveMutation.isPending ? "Alocando..." : "Alocar"}
-            </Button>
+            <FormLabel required>Lote</FormLabel>
+            <FormNativeSelect
+              variant="light"
+              value={loteId}
+              onChange={setLoteId}
+              placeholder="Selecione o Lote"
+              options={loteOptions}
+              required
+              modal={false}
+            />
           </div>
         </div>
+        <DialogFooter className="px-6 py-4 border-t border-gray-100 gap-2 sm:gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={moveMutation.isPending}
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-[#F0F0F0] hover:bg-[#E8E8E8] disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => loteId && moveMutation.mutate({ loteId: parseInt(loteId, 10), pastoId })}
+            disabled={!loteId || moveMutation.isPending}
+            className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            {moveMutation.isPending ? "Alocando..." : "Alocar"}
+          </button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

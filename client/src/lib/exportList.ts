@@ -144,7 +144,7 @@ function pdfTableStartY(summaryLineCount = 0, titleOnly = false): number {
     return PDF_BAND_H + PDF_TITLE_OFFSET + PDF_TABLE_GAP + 2;
   }
   if (summaryLineCount <= 0) {
-    return PDF_BAND_H + PDF_SUBTITLE_OFFSET + PDF_TABLE_GAP + 3;
+  return PDF_BAND_H + PDF_SUBTITLE_OFFSET + PDF_TABLE_GAP + 3;
   }
   const lastLineY = PDF_BAND_H + PDF_SUBTITLE_OFFSET + (summaryLineCount - 1) * 3.5;
   return lastLineY + 5;
@@ -357,11 +357,11 @@ function drawPdfPageChrome(
         doc.text(line, marginX, PDF_BAND_H + PDF_SUBTITLE_OFFSET + i * 3.5);
       });
     } else {
-      doc.text(
-        `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
-        marginX,
-        PDF_BAND_H + PDF_SUBTITLE_OFFSET,
-      );
+  doc.text(
+    `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
+    marginX,
+    PDF_BAND_H + PDF_SUBTITLE_OFFSET,
+  );
     }
   }
 
@@ -737,7 +737,7 @@ function buildMapaRebanhoExcelRows(dados: MapaFazendaExport[]): {
         pushRow(
           [
             `LOTE ${lote.loteNome}`,
-            lote.totalAnimais,
+          lote.totalAnimais,
             "—",
             "—",
             formatMapaEntradaLoteExcel(lote),
@@ -939,24 +939,24 @@ export async function exportMapaRebanhoPdf(
   try {
     const dados = normalizeMapaFazendasExport(fazendas);
     const totalRegistros = countMapaRebanhoRegistros(dados);
-    if (totalRegistros === 0) {
-      toast.error("Nenhum dado para exportar");
-      return;
-    }
+  if (totalRegistros === 0) {
+    toast.error("Nenhum dado para exportar");
+    return;
+  }
 
-    const agora = new Date();
-    const dataFormatada = agora.toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-    const horaFormatada = agora.toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    const periodo =
-      options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
-    const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
+  const agora = new Date();
+  const dataFormatada = agora.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const horaFormatada = agora.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const periodo =
+    options?.periodo || `Gerado em ${dataFormatada} às ${horaFormatada}`;
+  const fazendaNome = options?.fazendaNome || "Todas as Fazendas";
     const title = "Mapa do Rebanho";
 
     const [{ jsPDF }, autoTableModule] = await Promise.all([

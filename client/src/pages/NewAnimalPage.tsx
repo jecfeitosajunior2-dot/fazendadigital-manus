@@ -23,13 +23,15 @@ import {
 } from '@/components/ui/dialog';
 import { trpc } from '@/lib/trpc';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import {
   FD_PRIMARY,
   FormLabel,
-  FieldBox,
+  FormInput,
+  FormNativeSelect,
+  FormTextarea,
   FormDatePicker,
-  inputClass,
+  formControlFlatCls,
 } from '@/components/FormFields';
 import { cn } from '@/lib/utils';
 import { filtrarLotesPorFazenda } from '@/lib/loteFazendaFilter';
@@ -128,15 +130,14 @@ const SectionCard: React.FC<{
   title: string;
   hint?: string;
   children: React.ReactNode;
-  compact?: boolean;
-}> = ({ title, hint, children, compact }) => (
-  <div className={cn('bg-white rounded-lg shadow-sm border border-gray-100', compact ? 'p-4' : 'p-5')}>
-    <div className={cn('flex items-center justify-between', compact ? 'mb-3' : 'mb-4')}>
-      <h2 className="text-sm font-bold text-gray-800">{title}</h2>
-      {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
+}> = ({ title, hint, children }) => (
+  <section className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+    <div className="px-5 py-4 border-b border-gray-100">
+      <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+      {hint ? <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{hint}</p> : null}
     </div>
-    {children}
-  </div>
+    <div className="p-5">{children}</div>
+  </section>
 );
 
 const CollapsibleSectionCard: React.FC<{
@@ -148,30 +149,28 @@ const CollapsibleSectionCard: React.FC<{
 }> = ({ title, subtitle, hint, defaultOpen = false, children }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+    <section className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-gray-50/80 transition-colors"
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left border-b border-gray-100"
         aria-expanded={open}
       >
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-gray-800">{title}</h2>
-          {!open && subtitle && (
-            <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{subtitle}</p>
-          )}
-          {open && hint && (
-            <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{hint}</p>
-          )}
+          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+          {!open && subtitle ? (
+            <p className="text-[11px] text-gray-500 mt-1 leading-snug">{subtitle}</p>
+          ) : null}
+          {open && hint ? (
+            <p className="text-[11px] text-gray-500 mt-1 leading-snug">{hint}</p>
+          ) : null}
         </div>
         <ChevronDown
-          className={cn('w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200', open && 'rotate-180')}
+          className={cn('w-4 h-4 text-gray-400 shrink-0 transition-transform duration-200', open && 'rotate-180')}
         />
       </button>
-      <div className={cn('px-5 pb-5 pt-1 border-t border-gray-50', !open && 'hidden')}>
-        {children}
-      </div>
-    </div>
+      <div className={cn('p-5', !open && 'hidden')}>{children}</div>
+    </section>
   );
 };
 
@@ -187,24 +186,18 @@ const FieldInput: React.FC<{
   readOnly?: boolean;
   disabled?: boolean;
 }> = ({ value, onChange, placeholder, type = 'text', required, error, min, step, readOnly, disabled }) => (
-  <FieldBox required={required} className={cn(error && 'border-l-red-500', (readOnly || disabled) && 'bg-gray-50')}>
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      min={min}
-      step={step}
-      readOnly={readOnly}
-      disabled={disabled}
-      className={cn(
-        inputClass,
-        'min-h-[42px]',
-        error && 'text-red-600',
-        (readOnly || disabled) && 'cursor-default text-gray-700 bg-transparent',
-      )}
-    />
-  </FieldBox>
+  <FormInput
+    variant="light"
+    value={value}
+    onChange={onChange}
+    placeholder={placeholder}
+    type={type}
+    required={required}
+    invalid={error}
+    min={min}
+    step={step}
+    readOnly={readOnly || disabled}
+  />
 );
 
 const FieldSelect: React.FC<{
@@ -213,22 +206,25 @@ const FieldSelect: React.FC<{
   required?: boolean;
   error?: boolean;
   disabled?: boolean;
-  children: React.ReactNode;
-}> = ({ value, onChange, required, error, disabled, children }) => (
-  <FieldBox required={required} className={cn(error && 'border-l-red-500', disabled && 'bg-gray-50')}>
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      disabled={disabled}
-      className={cn(
-        inputClass,
-        'appearance-none min-h-[42px]',
-        disabled ? 'cursor-default text-gray-700' : 'cursor-pointer',
-      )}
-    >
-      {children}
-    </select>
-  </FieldBox>
+  placeholder: string;
+  options: { value: string; label: string }[];
+}> = ({ value, onChange, required, error, disabled, placeholder, options }) => (
+  <FormNativeSelect
+    variant="light"
+    value={value}
+    onChange={onChange}
+    placeholder={placeholder}
+    required={required}
+    invalid={error}
+    disabled={disabled}
+    options={options}
+  />
+);
+
+const ReadOnlyField: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className={cn(formControlFlatCls, 'flex items-center bg-white text-gray-600')}>
+    {children}
+  </div>
 );
 
 const Checkbox: React.FC<{
@@ -237,7 +233,7 @@ const Checkbox: React.FC<{
   label: string;
   disabled?: boolean;
 }> = ({ checked, onChange, label, disabled }) => (
-  <label className={cn('flex items-center gap-2.5 select-none h-[42px]', disabled ? 'cursor-default opacity-80' : 'cursor-pointer')}>
+  <label className={cn('flex items-center gap-2.5 select-none h-[34px]', disabled ? 'cursor-default opacity-80' : 'cursor-pointer')}>
     <input
       type="checkbox"
       checked={checked}
@@ -640,22 +636,25 @@ const AnimalFormPage: React.FC = () => {
           type="button"
           onClick={() => setLocation('/rebanho/lista-animais')}
           disabled={isSubmitting}
-          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          className="mb-4 flex items-center gap-1.5 text-gray-500 disabled:opacity-50"
+          aria-label="Voltar"
         >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          <span className="material-icons text-[18px]">arrow_back</span>
           <span className="text-[13px]">Voltar</span>
         </button>
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">{pageTitle}</h1>
+        <div className="mb-5">
+          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: 'Fraunces, serif' }}>
+            {pageTitle}
+          </h1>
           {pageSubtitle ? (
-            <p className="text-sm text-gray-500 mt-1">{pageSubtitle}</p>
+            <p className="text-[13px] text-gray-500 mt-1">{pageSubtitle}</p>
           ) : null}
         </div>
 
         <form
           onSubmit={e => { e.preventDefault(); handleSave(false); }}
-          className="space-y-4"
+          className="space-y-5"
         >
           {/* ── Identificação Principal ── */}
           <SectionCard title="Identificação Principal" hint="Campos obrigatórios em destaque">
@@ -663,29 +662,20 @@ const AnimalFormPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Fazenda</FormLabel>
-                  <FieldBox required className={cn(errors.fazenda && 'border-l-red-500', isEditMode && 'bg-gray-50')}>
-                    <select
-                      value={fazendaId}
-                      onChange={e => {
-                        setFazendaId(e.target.value);
-                        set('loteId', '');
-                        setPastoId('');
-                        if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
-                      }}
-                      disabled={isEditMode}
-                      className={cn(
-                        inputClass,
-                        'appearance-none min-h-[42px]',
-                        isEditMode ? 'cursor-default text-gray-700' : 'cursor-pointer',
-                        errors.fazenda && 'text-red-600',
-                      )}
-                    >
-                      <option value="">Selecione uma Fazenda</option>
-                      {fazendas?.map(f => (
-                        <option key={f.id} value={String(f.id)}>{f.nome}</option>
-                      ))}
-                    </select>
-                  </FieldBox>
+                  <FieldSelect
+                    value={fazendaId}
+                    onChange={v => {
+                      setFazendaId(v);
+                      set('loteId', '');
+                      setPastoId('');
+                      if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
+                    }}
+                    placeholder="Selecione uma Fazenda"
+                    required
+                    error={!!errors.fazenda}
+                    disabled={isEditMode}
+                    options={(fazendas ?? []).map(f => ({ value: String(f.id), label: f.nome }))}
+                  />
                   {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
                 </div>
                 <div>
@@ -725,11 +715,12 @@ const AnimalFormPage: React.FC = () => {
                     }}
                     required
                     error={!!errors.sexo}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="Macho">Macho</option>
-                    <option value="Fêmea">Fêmea</option>
-                  </FieldSelect>
+                    placeholder="Selecione"
+                    options={[
+                      { value: 'Macho', label: 'Macho' },
+                      { value: 'Fêmea', label: 'Fêmea' },
+                    ]}
+                  />
                   {errors.sexo && <p className="text-xs text-red-600 mt-1">{errors.sexo}</p>}
                   {!isEditMode && deveMostrarCondicaoCastracaoCadastro(form.sexo) && (
                     <Checkbox
@@ -741,12 +732,17 @@ const AnimalFormPage: React.FC = () => {
                 </div>
                 <div>
                   <FormLabel required>Categoria</FormLabel>
-                  <FieldSelect value={form.categoria} onChange={v => set('categoria', v)} required error={!!errors.categoria}>
-                    <option value="">Selecione</option>
-                    {opcoesCategoriaComValorAtual(form.sexo, form.categoria).map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </FieldSelect>
+                  <FieldSelect
+                    value={form.categoria}
+                    onChange={v => set('categoria', v)}
+                    required
+                    error={!!errors.categoria}
+                    placeholder="Selecione"
+                    options={opcoesCategoriaComValorAtual(form.sexo, form.categoria).map(cat => ({
+                      value: cat,
+                      label: cat,
+                    }))}
+                  />
                   {errors.categoria && <p className="text-xs text-red-600 mt-1">{errors.categoria}</p>}
                 </div>
               </div>
@@ -757,52 +753,43 @@ const AnimalFormPage: React.FC = () => {
                     value={form.loteId}
                     onChange={v => set('loteId', v)}
                     disabled={isEditMode}
-                  >
-                    <option value="">Sem lote</option>
-                    {lotesFiltrados.map(l => (
-                      <option key={l.id} value={l.id}>{l.nome}</option>
-                    ))}
-                  </FieldSelect>
+                    placeholder="Sem lote"
+                    options={lotesFiltrados.map(l => ({ value: String(l.id), label: l.nome }))}
+                  />
                 </div>
                 <div>
                   <FormLabel>Subdivisão</FormLabel>
-                  <FieldBox className={cn(isEditMode && 'bg-gray-50')}>
-                    <select
-                      value={pastoId}
-                      onChange={e => setPastoId(e.target.value)}
-                      disabled={!fazendaId || isEditMode}
-                      className={cn(
-                        inputClass,
-                        'appearance-none min-h-[42px]',
-                        (!fazendaId || isEditMode) && 'opacity-50 cursor-not-allowed',
-                        !isEditMode && fazendaId && 'cursor-pointer',
-                      )}
-                    >
-                      <option value="">{fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}</option>
-                      {(pastos ?? []).slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' })).map(p => (
-                        <option key={p.id} value={String(p.id)}>{p.nome}</option>
-                      ))}
-                    </select>
-                  </FieldBox>
+                  <FieldSelect
+                    value={pastoId}
+                    onChange={setPastoId}
+                    disabled={!fazendaId || isEditMode}
+                    placeholder={fazendaId ? 'Selecione a subdivisão' : 'Selecione uma fazenda primeiro'}
+                    options={(pastos ?? [])
+                      .slice()
+                      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }))
+                      .map(p => ({ value: String(p.id), label: p.nome }))}
+                  />
                 </div>
               </div>
               {isEditMode ? (
                 <ManejoCampoHint>
-                  Alterações de lote e subdivisão são realizadas em Manejo → Troca de Lote.
+                  Alterações de Lote e subdivisão são realizadas em Manejo → Troca de Lote.
                 </ManejoCampoHint>
               ) : null}
             </div>
           </SectionCard>
 
           {/* ── Dados Zootécnicos Básicos ── */}
-          <SectionCard title="Dados Zootécnicos Básicos" compact>
+          <SectionCard title="Dados Zootécnicos Básicos">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <FormLabel>Raça</FormLabel>
-                <FieldSelect value={form.raca} onChange={v => set('raca', v)}>
-                  <option value="">Selecione</option>
-                  {RACAS.map(r => <option key={r} value={r}>{r}</option>)}
-                </FieldSelect>
+                <FieldSelect
+                  value={form.raca}
+                  onChange={v => set('raca', v)}
+                  placeholder="Selecione"
+                  options={RACAS.map(r => ({ value: r, label: r }))}
+                />
               </div>
               <div>
                 <FormLabel>Pelagem</FormLabel>
@@ -827,7 +814,6 @@ const AnimalFormPage: React.FC = () => {
                   }}
                   required={!form.dataEntrada}
                   invalid={!!errors.dataNascimento}
-                  minHeight={42}
                 />
                 {errors.dataNascimento && (
                   <p className="mt-1 text-[11px] text-red-500">{errors.dataNascimento}</p>
@@ -836,13 +822,11 @@ const AnimalFormPage: React.FC = () => {
               {deveExibirDataDesmamaNoFormularioAnimal(isEditMode ? 'edit' : 'create') && (
                 <div>
                   <FormLabel>Data de Desmama</FormLabel>
-                  <FieldBox className="bg-gray-50">
-                    <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                      {form.dataDesmama
-                        ? form.dataDesmama.split('-').reverse().join('/')
-                        : '—'}
-                    </div>
-                  </FieldBox>
+                  <ReadOnlyField>
+                    {form.dataDesmama
+                      ? form.dataDesmama.split('-').reverse().join('/')
+                      : '—'}
+                  </ReadOnlyField>
                   <ManejoCampoHint>
                     Desmama é registrada em Manejo → Desmama.
                   </ManejoCampoHint>
@@ -851,11 +835,9 @@ const AnimalFormPage: React.FC = () => {
               {mostrarCastradoEdicao && (
                 <div>
                   <FormLabel>Castrado</FormLabel>
-                  <FieldBox className="bg-gray-50">
-                    <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                      {castradoSomenteLeitura ?? '—'}
-                    </div>
-                  </FieldBox>
+                  <ReadOnlyField>
+                    {castradoSomenteLeitura ?? '—'}
+                  </ReadOnlyField>
                   <ManejoCampoHint>
                     Castração é registrada em Manejo → Castração.
                   </ManejoCampoHint>
@@ -865,7 +847,7 @@ const AnimalFormPage: React.FC = () => {
           </SectionCard>
 
           {/* ── Entrada do Animal ── */}
-          <SectionCard title="Entrada do Animal" compact>
+          <SectionCard title="Entrada do Animal">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <FormLabel required={!form.dataNascimento}>
@@ -882,7 +864,6 @@ const AnimalFormPage: React.FC = () => {
                   }}
                   required={!form.dataNascimento}
                   invalid={!!errors.dataEntrada}
-                  minHeight={42}
                 />
                 {errors.dataEntrada && (
                   <p className="mt-1 text-[11px] text-red-500">{errors.dataEntrada}</p>
@@ -917,7 +898,7 @@ const AnimalFormPage: React.FC = () => {
             subtitle="Informe o código RFID ou transponder eletrônico, se houver."
             defaultOpen={!isEditMode}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FormLabel>{isEditMode ? 'Código do Brinco Eletrônico' : 'RFID eletrônico'}</FormLabel>
                 <FieldInput
@@ -952,7 +933,7 @@ const AnimalFormPage: React.FC = () => {
             title="Dados comerciais da aquisição"
             subtitle="Informe preço e frete quando o animal tiver sido comprado."
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FormLabel>Preço (R$/kg)</FormLabel>
                 <FieldInput
@@ -983,7 +964,7 @@ const AnimalFormPage: React.FC = () => {
             title="Rastreabilidade e Registros Oficiais"
             subtitle="SISBOV, RGN, RGD e demais registros oficiais."
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <FormLabel>SISBOV</FormLabel>
                 <FieldInput value={form.sisbov} onChange={v => set('sisbov', v)} placeholder="ex: 076000000000001" />
@@ -993,7 +974,6 @@ const AnimalFormPage: React.FC = () => {
                 <FormDatePicker
                   value={form.dataRnd}
                   onChange={v => set('dataRnd', v)}
-                  minHeight={42}
                 />
               </div>
               <div>
@@ -1019,7 +999,7 @@ const AnimalFormPage: React.FC = () => {
             title="Genealogia"
             subtitle="Pai e mãe do animal, quando conhecidos."
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <FormLabel>Pai (Reprodutor)</FormLabel>
                 <FieldInput
@@ -1044,61 +1024,43 @@ const AnimalFormPage: React.FC = () => {
           </CollapsibleSectionCard>
 
           {isEditMode ? (
-            <SectionCard title="Status" compact>
+            <SectionCard title="Status">
               <div className={cn('grid gap-4', baixaAnimal && 'grid-cols-1 sm:grid-cols-2')}>
                 <div>
                   <FormLabel>Status atual</FormLabel>
-                  <FieldBox className="bg-gray-50">
-                    <div className={cn(inputClass, 'min-h-[42px] flex items-center cursor-default')}>
-                      <span
-                        className={cn(
-                          'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
-                          statusBadgeClass(statusAtual),
-                        )}
-                      >
-                        {statusTexto}
-                      </span>
-                    </div>
-                  </FieldBox>
+                  <ReadOnlyField>
+                    <span
+                      className={cn(
+                        'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold',
+                        statusBadgeClass(statusAtual),
+                      )}
+                    >
+                      {statusTexto}
+                    </span>
+                  </ReadOnlyField>
                 </div>
                 {tipoBaixa ? (
                   <div>
                     <FormLabel>Tipo da baixa</FormLabel>
-                    <FieldBox className="bg-gray-50">
-                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                        {TIPO_BAIXA_LABEL[tipoBaixa]}
-                      </div>
-                    </FieldBox>
+                    <ReadOnlyField>{TIPO_BAIXA_LABEL[tipoBaixa]}</ReadOnlyField>
                   </div>
                 ) : null}
                 {temDataBaixa ? (
                   <div>
                     <FormLabel>Data da baixa</FormLabel>
-                    <FieldBox className="bg-gray-50">
-                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                        {dataBaixaTexto}
-                      </div>
-                    </FieldBox>
+                    <ReadOnlyField>{dataBaixaTexto}</ReadOnlyField>
                   </div>
                 ) : null}
                 {destinoBaixa && tipoBaixa !== 'morte' ? (
                   <div>
                     <FormLabel>{tipoBaixa === 'venda' ? 'Destino / Comprador' : 'Destino'}</FormLabel>
-                    <FieldBox className="bg-gray-50">
-                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                        {destinoBaixa}
-                      </div>
-                    </FieldBox>
+                    <ReadOnlyField>{destinoBaixa}</ReadOnlyField>
                   </div>
                 ) : null}
                 {motivoBaixa && tipoBaixa === 'morte' ? (
                   <div>
                     <FormLabel>Causa</FormLabel>
-                    <FieldBox className="bg-gray-50">
-                      <div className={cn(inputClass, 'min-h-[42px] flex items-center text-gray-700 cursor-default')}>
-                        {motivoBaixa}
-                      </div>
-                    </FieldBox>
+                    <ReadOnlyField>{motivoBaixa}</ReadOnlyField>
                   </div>
                 ) : null}
               </div>
@@ -1106,16 +1068,14 @@ const AnimalFormPage: React.FC = () => {
           ) : null}
 
           {/* ── Observações Gerais ── */}
-          <SectionCard title="Observações Gerais" compact>
-            <FieldBox>
-              <textarea
-                value={form.observacoes}
-                onChange={e => set('observacoes', e.target.value)}
-                placeholder="Digite informações adicionais relevantes..."
-                rows={3}
-                className={cn(inputClass, 'resize-y min-h-[80px]')}
-              />
-            </FieldBox>
+          <SectionCard title="Observações Gerais">
+            <FormTextarea
+              variant="light"
+              value={form.observacoes}
+              onChange={v => set('observacoes', v)}
+              placeholder="Digite informações adicionais relevantes..."
+              rows={3}
+            />
           </SectionCard>
 
           {/* ── Ações ── */}
@@ -1124,7 +1084,7 @@ const AnimalFormPage: React.FC = () => {
               type="button"
               onClick={() => setLocation('/rebanho/lista-animais')}
               disabled={isSubmitting}
-              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>

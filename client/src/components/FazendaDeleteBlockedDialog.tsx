@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   type FazendaDeleteBlocker,
   fazendaDeleteBlockerHref,
+  formatFazendaDeleteBlockerCount,
 } from "@shared/fazendaDeleteBlockers";
 
 export type FazendaDeleteBlockedState = {
@@ -34,8 +35,28 @@ const BLOCKER_ACTION_LABELS: Record<FazendaDeleteBlocker["key"], string> = {
   estoque: "Ver estoque",
 };
 
+const SUBDIVISOES_ANCHOR = "fazenda-subdivisoes";
+
+function irParaBlocker(key: FazendaDeleteBlocker["key"], fazendaId: number, currentPath: string, setLocation: (to: string) => void) {
+  if (key === "subdivisoes") {
+    const naVisaoGeral = currentPath.startsWith("/fazendas/visao-geral");
+    const scroll = () => {
+      document.getElementById(SUBDIVISOES_ANCHOR)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    if (naVisaoGeral) {
+      scroll();
+      return;
+    }
+    setLocation(fazendaDeleteBlockerHref(key, fazendaId));
+    window.setTimeout(scroll, 350);
+    return;
+  }
+  setLocation(fazendaDeleteBlockerHref(key, fazendaId));
+}
+
 export default function FazendaDeleteBlockedDialog({ state, onClose }: Props) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const blockers = state?.blockers ?? [];
 
   return (
     <Dialog open={!!state} onOpenChange={open => !open && onClose()}>
@@ -54,34 +75,37 @@ export default function FazendaDeleteBlockedDialog({ state, onClose }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        {state && (
-          <ul className="space-y-2 my-1">
-            {state.blockers.map(blocker => (
+        {state && blockers.length > 0 ? (
+          <ul className="max-h-56 overflow-y-auto space-y-1.5 my-1">
+            {blockers.map(blocker => (
               <li
                 key={blocker.key}
-                className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2"
               >
-                <span className="text-[12px] text-gray-700">
-                  <span className="font-semibold tabular-nums text-amber-700">{blocker.qtd}</span>{" "}
-                  {blocker.label}
+                <span className="text-[13px] font-medium text-amber-700">
+                  {formatFazendaDeleteBlockerCount(blocker.key, blocker.qtd)}
                 </span>
                 <button
                   type="button"
                   onClick={() => {
                     onClose();
-                    setLocation(fazendaDeleteBlockerHref(blocker.key, state.fazendaId));
+                    irParaBlocker(blocker.key, state.fazendaId, location, setLocation);
                   }}
-                  className="text-[11px] font-medium text-[#2D5A5A] hover:underline shrink-0"
+                  className="text-[12px] font-medium text-[#2D5A5A] hover:text-[#4ECDC4] hover:underline shrink-0"
                 >
                   {BLOCKER_ACTION_LABELS[blocker.key]}
                 </button>
               </li>
             ))}
           </ul>
-        )}
+        ) : null}
 
         <DialogFooter>
-          <Button onClick={onClose} className="w-full">
+          <Button
+            onClick={onClose}
+            className="w-full text-white hover:opacity-95"
+            style={{ backgroundColor: "#4ECDC4" }}
+          >
             Entendi
           </Button>
         </DialogFooter>

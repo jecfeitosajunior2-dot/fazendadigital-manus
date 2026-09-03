@@ -37,7 +37,11 @@ export async function avaliarExclusaoLoteDb(
   const [countRow] = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(animais)
-    .where(and(eq(animais.loteId, loteId), eq(animais.userId, userId)));
+    .where(and(
+      eq(animais.loteId, loteId),
+      eq(animais.userId, userId),
+      eq(animais.status, "ativo"),
+    ));
 
   const qtdAnimais = Number(countRow?.count ?? 0);
 

@@ -36,6 +36,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import TableHorizontalScroll from "@/components/TableHorizontalScroll";
+import { FormLabel, FormDatePicker } from "@/components/FormFields";
 import {
   brl,
   brlCompact,
@@ -44,16 +47,23 @@ import {
   inicioPeriodo,
   parseData,
   dataBr,
-  bucketsFluxoPeriodo,
-  chaveFluxoPeriodo,
-  PERIODOS,
+  bucketsFluxoIntervalo,
+  chaveFluxoIntervalo,
+  movimentoNoIntervalo,
+  periodoPadrao90Dias,
+  isoHoje,
   CHART_COLORS,
-  type PeriodoChave,
 } from "@/lib/dashboard-utils";
 import { nomeUnidadeExibicao, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
 
 const COBERTURA_CRITICA_DIAS = 15;
 const PARADO_DIAS = 90;
+
+const OVERVIEW_MODAL_TH =
+  "px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap";
+const OVERVIEW_MODAL_TH_WRAP =
+  "px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide leading-snug whitespace-normal align-middle";
+const PARADOS_MODAL_TD = "px-3 py-2.5 align-middle whitespace-nowrap";
 
 const numVal = (v: unknown) => {
   const n = Number(v);
@@ -137,8 +147,8 @@ function OverviewKpiCard({
           : undefined
       }
       className={cn(
-        "bg-white rounded-lg border border-gray-100 shadow-sm p-3 min-h-[68px] flex items-center transition",
-        onClick && "cursor-pointer hover:shadow-md hover:border-gray-200 active:scale-[0.99]",
+        "bg-white rounded border border-gray-200 shadow-sm p-3 min-h-[80px] flex items-center transition",
+        onClick && "cursor-pointer hover:shadow-md hover:border-gray-300 active:scale-[0.99]",
       )}
     >
       <div className="flex items-center gap-2.5 w-full min-w-0">
@@ -154,9 +164,9 @@ function OverviewKpiCard({
           <div className="text-[17px] font-bold text-gray-800 leading-tight tabular-nums truncate">
             {value}
           </div>
-          <div className="text-[10px] text-gray-500 leading-tight truncate">{label}</div>
+          <div className="text-[10px] text-gray-500 leading-snug line-clamp-2">{label}</div>
           {sub ? (
-            <div className="text-[9px] text-gray-400 leading-tight mt-0.5 truncate">{sub}</div>
+            <div className="text-[9px] text-gray-400 leading-snug mt-0.5 line-clamp-2">{sub}</div>
           ) : null}
         </div>
         {onClick ? (
@@ -192,7 +202,9 @@ export default function InsumosVisaoGeralDashboard({
   fazendas,
 }: Props) {
   const [, setLocation] = useLocation();
-  const [periodo, setPeriodo] = useState<PeriodoChave>("90d");
+  const hojeIso = isoHoje();
+  const [periodoIni, setPeriodoIni] = useState(() => periodoPadrao90Dias().inicio);
+  const [periodoFim, setPeriodoFim] = useState(() => periodoPadrao90Dias().fim);
   const [modalParadosOpen, setModalParadosOpen] = useState(false);
   const [modalAbaixoOpen, setModalAbaixoOpen] = useState(false);
   const [highlightAlerta, setHighlightAlerta] = useState<string | null>(null);
@@ -203,6 +215,17 @@ export default function InsumosVisaoGeralDashboard({
     color: string;
     isOutras?: boolean;
   } | null>(null);
+
+  const mudarPeriodoIni = (value: string) => {
+    setPeriodoIni(value);
+    if (value && periodoFim && value > periodoFim) setPeriodoFim(value);
+  };
+
+  const mudarPeriodoFim = (value: string) => {
+    const capped = value && value > hojeIso ? hojeIso : value;
+    setPeriodoFim(capped);
+    if (capped && periodoIni && capped < periodoIni) setPeriodoIni(capped);
+  };
 
   const { data: produtosAll = [] } = trpc.estoque.list.useQuery();
   const { data: movsAll = [] } = trpc.estoque.listMovimentacoes.useQuery(undefined, {
@@ -337,21 +360,15 @@ export default function InsumosVisaoGeralDashboard({
 
   // ── Fluxo Entradas × Saídas (R$) conforme período ──────────────────────────
   const fluxo = useMemo(() => {
-    const inicio = inicioPeriodo(periodo);
     const movsPeriodo = movs.filter(mv => {
       if (!isMovAtiva(mv.status)) return false;
       if (isTransferencia(mv.tipo)) return false;
-      const d = parseData(mv.dataMovimentacao);
-      if (inicio && (!d || d < inicio)) return false;
-      return true;
+      return movimentoNoIntervalo(mv.dataMovimentacao, periodoIni, periodoFim);
     });
-    const buckets = bucketsFluxoPeriodo(
-      periodo,
-      movsPeriodo.map(m => m.dataMovimentacao),
-    );
+    const buckets = bucketsFluxoIntervalo(periodoIni, periodoFim);
     const idx = new Map(buckets.map((b, i) => [b.chave, i]));
     for (const mv of movsPeriodo) {
-      const k = chaveFluxoPeriodo(periodo, mv.dataMovimentacao);
+      const k = chaveFluxoIntervalo(periodoIni, periodoFim, mv.dataMovimentacao);
       if (k == null || !idx.has(k)) continue;
       const b = buckets[idx.get(k)!]!;
       const valorMov = valorMovimentacao(mv);
@@ -365,24 +382,22 @@ export default function InsumosVisaoGeralDashboard({
       entrada: Number.isFinite(b.entrada) ? b.entrada : 0,
       saida: Number.isFinite(b.saida) ? b.saida : 0,
     }));
-  }, [movs, valorUnitMap, precoMedioImplicit, periodo]);
+  }, [movs, valorUnitMap, precoMedioImplicit, periodoIni, periodoFim]);
 
   // ── Totais do período (fluxo) ──────────────────────────────────────────────
   const periodoTotais = useMemo(() => {
-    const inicio = inicioPeriodo(periodo);
     let comprado = 0;
     let consumido = 0;
     for (const mv of movs) {
       if (!isMovAtiva(mv.status)) continue;
       if (isTransferencia(mv.tipo)) continue;
-      const d = parseData(mv.dataMovimentacao);
-      if (inicio && (!d || d < inicio)) continue;
+      if (!movimentoNoIntervalo(mv.dataMovimentacao, periodoIni, periodoFim)) continue;
       const valorMov = valorMovimentacao(mv);
       if (isConsumo(mv.tipo)) consumido += valorMov;
       else if (isCompra(mv.tipo)) comprado += valorMov;
     }
     return { comprado, consumido };
-  }, [movs, valorUnitMap, precoMedioImplicit, periodo]);
+  }, [movs, valorUnitMap, precoMedioImplicit, periodoIni, periodoFim]);
 
   // ── Inteligência por produto ───────────────────────────────────────────────
   const porProduto = useMemo(() => {
@@ -648,13 +663,11 @@ export default function InsumosVisaoGeralDashboard({
 
   // ── Compras por fornecedor (compras ativas no período) ─────────────────────
   const fornecedores = useMemo(() => {
-    const inicio = inicioPeriodo(periodo);
     const map = new Map<string, number>();
     for (const mv of movs) {
       if (!isMovAtiva(mv.status)) continue;
       if (!isCompra(mv.tipo)) continue;
-      const d = parseData(mv.dataMovimentacao);
-      if (inicio && (!d || d < inicio)) continue;
+      if (!movimentoNoIntervalo(mv.dataMovimentacao, periodoIni, periodoFim)) continue;
       const nome = mv.fornecedor?.trim();
       if (!nome) continue;
       const frete = Math.max(0, numVal(mv.frete));
@@ -683,7 +696,7 @@ export default function InsumosVisaoGeralDashboard({
       ...f,
       pct: total > 0 ? (f.value / total) * 100 : 0,
     }));
-  }, [movs, valorUnitMap, precoMedioImplicit, periodo]);
+  }, [movs, valorUnitMap, precoMedioImplicit, periodoIni, periodoFim]);
 
   const listaPath = fazendaId
     ? `/insumos/lista-produtos?fazendaId=${encodeURIComponent(fazendaId)}`
@@ -698,13 +711,6 @@ export default function InsumosVisaoGeralDashboard({
     ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fazendaId)}`
     : "/insumos/movimentacao";
 
-  const toIsoDate = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-
   const abrirProdutoNaLista = (nome: string) => {
     const qs = new URLSearchParams();
     if (fazendaId) qs.set("fazendaId", fazendaId);
@@ -718,11 +724,8 @@ export default function InsumosVisaoGeralDashboard({
     if (fazendaId) qs.set("fazendaId", fazendaId);
     qs.set("tipo", "Compra");
     if (!isOutros) qs.set("fornecedor", nome);
-    const inicio = inicioPeriodo(periodo);
-    if (inicio) {
-      qs.set("periodoIni", toIsoDate(inicio));
-      qs.set("periodoFim", toIsoDate(new Date()));
-    }
+    if (periodoIni) qs.set("periodoIni", periodoIni);
+    if (periodoFim) qs.set("periodoFim", periodoFim);
     setLocation(`/insumos/movimentacao?${qs.toString()}`);
   };
 
@@ -882,45 +885,45 @@ export default function InsumosVisaoGeralDashboard({
 
   return (
     <div className="space-y-5 mb-5">
-      {/* ── Cabeçalho + fazenda + período ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-            {fazendaSelecionada && fazendaNome
-              ? `Visão Geral de Insumos — ${fazendaNome}`
-              : "Visão Geral de Insumos"}
-          </h1>
-          <div className="mt-3 max-w-xs">
-            <select
-              value={fazendaId}
-              onChange={e => onChangeFazenda(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px]"
-              aria-label="Fazenda"
-            >
-              <option value="">Selecione uma fazenda</option>
-              {fazendas.map(f => (
-                <option key={f.id} value={String(f.id)}>
-                  {f.nome}
-                </option>
-              ))}
-            </select>
-          </div>
+      {/* ── Cabeçalho ── */}
+      <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+        Visão Geral de Insumos
+      </h1>
+
+      {/* Fazenda e período — mesma largura das colunas dos KPIs abaixo */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div className="min-w-0">
+          <FormLabel>Fazenda</FormLabel>
+          <FazendaOverviewSelect
+            value={fazendaId}
+            onChange={onChangeFazenda}
+            fazendas={fazendas}
+            emptyLabel="Selecione uma fazenda"
+            showEmptyOption={fazendas.length > 1}
+            className="w-full min-w-0"
+          />
         </div>
         {fazendaSelecionada && (
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
-            {PERIODOS.map(p => (
-              <button
-                key={p.chave}
-                type="button"
-                onClick={() => setPeriodo(p.chave)}
-                className={`px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wide transition-colors ${
-                  periodo === p.chave ? "text-white" : "text-gray-500 hover:bg-gray-50"
-                }`}
-                style={periodo === p.chave ? { backgroundColor: TEAL } : undefined}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="min-w-0 sm:col-span-2">
+            <FormLabel>Período</FormLabel>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <FormDatePicker
+                value={periodoIni}
+                onChange={mudarPeriodoIni}
+                placeholder="dd/mm/aaaa"
+                variant="light"
+                max={periodoFim || hojeIso}
+                aria-label="Data inicial do período"
+              />
+              <FormDatePicker
+                value={periodoFim}
+                onChange={mudarPeriodoFim}
+                placeholder="dd/mm/aaaa"
+                variant="light"
+                max={hojeIso}
+                aria-label="Data final do período"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1008,7 +1011,7 @@ export default function InsumosVisaoGeralDashboard({
           {/* ── Valor por categoria + Fluxo ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <SectionCard title="Valor por Categoria" icon="donut_large">
-              <div className="p-4">
+              <div className="p-5">
                 {categoriaChart.length === 0 ? (
                   <EmptyState icon="inventory_2" text="Sem produtos com valor" />
                 ) : (
@@ -1151,7 +1154,7 @@ export default function InsumosVisaoGeralDashboard({
             </SectionCard>
 
             <SectionCard title="Valor de Entradas × Saídas" icon="bar_chart" className="lg:col-span-2">
-              <div className="p-4">
+              <div className="p-5">
                 {fluxo.every(b => b.entrada === 0 && b.saida === 0) ? (
                   <EmptyState icon="show_chart" text="Sem movimentações no período" />
                 ) : (
@@ -1236,7 +1239,7 @@ export default function InsumosVisaoGeralDashboard({
               {estoque.topProdutos.length === 0 ? (
                 <EmptyState icon="inventory_2" text="Sem produtos com valor" />
               ) : (
-                <div className="p-4 space-y-3">
+                <div className="p-5 space-y-3">
                   {estoque.topProdutos.map((p, i) => {
                     const max = estoque.topProdutos[0].valor || 1;
                     const barraPct = Math.round((p.valor / max) * 100);
@@ -1281,7 +1284,7 @@ export default function InsumosVisaoGeralDashboard({
               {fornecedores.length === 0 ? (
                 <EmptyState icon="local_shipping" text="Sem compras com fornecedor no período" />
               ) : (
-                <div className="p-4 space-y-3">
+                <div className="p-5 space-y-3">
                   {fornecedores.map(f => {
                     const max = fornecedores[0].value || 1;
                     const barraPct = Math.round((f.value / max) * 100);
@@ -1328,120 +1331,146 @@ export default function InsumosVisaoGeralDashboard({
 
       {/* Modal — Capital sem movimentação */}
       <Dialog open={modalParadosOpen} onOpenChange={setModalParadosOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Capital sem movimentação</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="sm:max-w-[min(60rem,calc(100vw-2rem))] p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0 px-5 py-4 border-b border-gray-100 space-y-1 text-left">
+            <DialogTitle className="text-[13px] font-semibold text-[#4ECDC4]">
+              Capital sem movimentação
+            </DialogTitle>
+            <DialogDescription className="text-[11px] text-gray-500 leading-relaxed">
               Produtos com saldo e sem movimentação há mais de 90 dias
               {fazendaNome ? ` — ${fazendaNome}` : ""}.
             </DialogDescription>
           </DialogHeader>
-          <div className="overflow-auto border border-gray-100 rounded-lg">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr className="border-b border-gray-200">
-                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Produto</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Saldo atual</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Unidade</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Custo médio</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-600">Valor imobilizado</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Última movimentação</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-600 whitespace-nowrap min-w-[11.5rem]">
-                    Dias sem movimentação
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {capitalParado.itens.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-10 text-center text-gray-400">
-                      Nenhum produto parado há mais de 90 dias
-                    </td>
-                  </tr>
-                ) : (
-                  capitalParado.itens.map(row => (
-                    <tr key={row.id} className="border-b border-gray-100">
-                      <td className="px-3 py-2.5 font-medium text-gray-800">{row.nome}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">
-                        {num(row.saldo, 2)}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600">{row.unidade}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">
-                        {brl(row.custoMedio)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-medium text-gray-800">
-                        {brl(row.valor)}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600">
-                        {row.ultimaMov ? dataBr(row.ultimaMov) : "Sem registro"}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">
-                        {row.ultimaMov
-                          ? row.diasSemMov
-                          : "90+"}
-                      </td>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
+            <div className="border border-gray-200 rounded overflow-hidden bg-white">
+              <TableHorizontalScroll>
+                <table className="w-max min-w-full text-[12px]">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="border-b border-gray-200">
+                      <th className={`${OVERVIEW_MODAL_TH} text-left min-w-[9rem]`}>Produto</th>
+                      <th className={`${OVERVIEW_MODAL_TH} text-center min-w-[6.5rem]`}>Saldo atual</th>
+                      <th className={`${OVERVIEW_MODAL_TH} text-center min-w-[4.5rem]`}>Unidade</th>
+                      <th className={`${OVERVIEW_MODAL_TH} text-center min-w-[6.5rem]`}>Custo médio</th>
+                      <th className={`${OVERVIEW_MODAL_TH_WRAP} text-center min-w-[6.5rem]`}>
+                        Valor
+                        <br />
+                        imobilizado
+                      </th>
+                      <th className={`${OVERVIEW_MODAL_TH_WRAP} text-center min-w-[6.5rem]`}>
+                        Última
+                        <br />
+                        movimentação
+                      </th>
+                      <th className={`${OVERVIEW_MODAL_TH_WRAP} text-center min-w-[6.5rem]`}>
+                        Dias sem
+                        <br />
+                        movimentação
+                      </th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {capitalParado.itens.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-10 text-center text-gray-400">
+                          Nenhum produto parado há mais de 90 dias
+                        </td>
+                      </tr>
+                    ) : (
+                      capitalParado.itens.map(row => (
+                        <tr key={row.id} className="border-b border-gray-100">
+                          <td className={`${PARADOS_MODAL_TD} text-left font-medium text-gray-800`}>
+                            {row.nome}
+                          </td>
+                          <td className={`${PARADOS_MODAL_TD} text-center tabular-nums text-gray-700`}>
+                            {num(row.saldo, 2)}
+                          </td>
+                          <td className={`${PARADOS_MODAL_TD} text-center text-gray-600`}>{row.unidade}</td>
+                          <td className={`${PARADOS_MODAL_TD} text-center tabular-nums text-gray-700`}>
+                            {brl(row.custoMedio)}
+                          </td>
+                          <td className={`${PARADOS_MODAL_TD} text-center tabular-nums font-medium text-gray-800`}>
+                            {brl(row.valor)}
+                          </td>
+                          <td className={`${PARADOS_MODAL_TD} text-center text-gray-600`}>
+                            {row.ultimaMov ? dataBr(row.ultimaMov) : "Sem registro"}
+                          </td>
+                          <td className={`${PARADOS_MODAL_TD} text-center tabular-nums text-gray-700`}>
+                            {row.ultimaMov ? row.diasSemMov : "90+"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </TableHorizontalScroll>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Modal — Abaixo do estoque mínimo */}
       <Dialog open={modalAbaixoOpen} onOpenChange={setModalAbaixoOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Abaixo do estoque mínimo</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0 px-5 py-4 border-b border-gray-100 space-y-1 text-left">
+            <DialogTitle className="text-[13px] font-semibold text-[#4ECDC4]">
+              Abaixo do estoque mínimo
+            </DialogTitle>
+            <DialogDescription className="text-[11px] text-gray-500 leading-relaxed">
               Produtos que requerem reposição
               {fazendaNome ? ` — ${fazendaNome}` : ""}.
             </DialogDescription>
           </DialogHeader>
-          <div className="overflow-auto border border-gray-100 rounded-lg">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr className="border-b border-gray-200">
-                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Produto</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Situação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {estoque.abaixoMin.length === 0 ? (
-                  <tr>
-                    <td colSpan={2} className="px-3 py-10 text-center text-gray-400">
-                      Nenhuma reposição pendente
-                    </td>
-                  </tr>
-                ) : (
-                  estoque.abaixoMin.map(p => (
-                    <tr key={p.id} className="border-b border-gray-100">
-                      <td className="px-3 py-2.5 font-medium text-gray-800">{p.nome}</td>
-                      <td className="px-3 py-2.5 text-gray-600">
-                        {formatSaldoMinimo(
-                          numVal(p.quantidade),
-                          numVal(p.quantidadeMinima),
-                          p.unidade,
-                        )}
-                      </td>
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
+            <div className="border border-gray-200 rounded overflow-hidden bg-white">
+              <TableHorizontalScroll
+                fitWidth
+                footer={
+                  <div className="px-5 py-4 flex justify-end border-t border-gray-100 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalAbaixoOpen(false);
+                        setLocation(listaAbaixoMinimoPath);
+                      }}
+                      className="text-[12px] font-semibold text-[#4ECDC4] hover:underline"
+                    >
+                      Ver produtos abaixo do mínimo
+                    </button>
+                  </div>
+                }
+              >
+                <table className="w-full text-[12px]">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="border-b border-gray-200">
+                      <th className={`${OVERVIEW_MODAL_TH} text-left`}>Produto</th>
+                      <th className={`${OVERVIEW_MODAL_TH} text-left`}>Situação</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setModalAbaixoOpen(false);
-                setLocation(listaAbaixoMinimoPath);
-              }}
-              className="text-[12px] font-semibold text-[#164E63] hover:underline"
-            >
-              Ver produtos abaixo do mínimo
-            </button>
+                  </thead>
+                  <tbody>
+                    {estoque.abaixoMin.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="px-3 py-10 text-center text-gray-400">
+                          Nenhuma reposição pendente
+                        </td>
+                      </tr>
+                    ) : (
+                      estoque.abaixoMin.map(p => (
+                        <tr key={p.id} className="border-b border-gray-100">
+                          <td className="px-3 py-2.5 font-medium text-gray-800">{p.nome}</td>
+                          <td className="px-3 py-2.5 text-gray-600">
+                            {formatSaldoMinimo(
+                              numVal(p.quantidade),
+                              numVal(p.quantidadeMinima),
+                              p.unidade,
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </TableHorizontalScroll>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

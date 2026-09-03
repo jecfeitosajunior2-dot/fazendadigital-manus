@@ -1,9 +1,12 @@
+import { FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-export const FAZENDA_OVERVIEW_SELECT_CLASS =
-  "text-[12px] border border-gray-200 rounded-md px-3 py-2 bg-white text-gray-700 min-w-[200px] transition-colors focus:outline-none focus:border-[#4ECDC4]";
+export const FAZENDA_OVERVIEW_SELECT_CLASS = "min-w-[200px]";
 
 export type FazendaOverviewOption = { id: number; nome: string };
+
+const EMPTY = "__empty__";
 
 type Props = {
   value: string;
@@ -25,18 +28,24 @@ export default function FazendaOverviewSelect({
   disabled,
 }: Props) {
   return (
-    <select
-      value={value}
+    <FormSelect
+      variant="light"
+      value={value.trim() ? value : EMPTY}
+      onChange={v => onChange(v === EMPTY ? "" : v)}
+      placeholder={emptyLabel}
       disabled={disabled}
-      onChange={e => onChange(e.target.value)}
-      className={cn(FAZENDA_OVERVIEW_SELECT_CLASS, className)}
+      triggerClassName={cn(FAZENDA_OVERVIEW_SELECT_CLASS, className)}
     >
-      {showEmptyOption && <option value="">{emptyLabel}</option>}
+      {showEmptyOption ? (
+        <SelectItem value={EMPTY} className="text-[12px] text-gray-400">
+          {emptyLabel}
+        </SelectItem>
+      ) : null}
       {fazendas.map(f => (
-        <option key={f.id} value={String(f.id)}>
+        <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
           {f.nome}
-        </option>
+        </SelectItem>
       ))}
-    </select>
+    </FormSelect>
   );
 }

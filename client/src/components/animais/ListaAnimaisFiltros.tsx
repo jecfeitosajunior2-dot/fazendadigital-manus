@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Switch } from '@/components/ui/switch';
-import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG, FormDatePicker } from '@/components/FormFields';
+import { SelectItem } from '@/components/ui/select';
+import { FD_PRIMARY, FD_PRIMARY_SUBTLE_BG, FormDatePicker, FormSelect } from '@/components/FormFields';
 import { RACAS } from '@shared/animal-types';
 import { getCategoriasPorSexo, todasAsCategorias } from '@shared/animal-types';
 import type { AnimaisListFiltersState } from '@shared/animal-filter-types';
@@ -37,8 +38,46 @@ function AdvancedFilterSwitch({
 }
 const inputClass =
   'w-full h-[28px] px-2 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#4ECDC4] transition-colors duration-150';
-const selectClass =
-  'w-full h-[28px] px-2 text-[12px] border-0 border-b-2 border-gray-200 bg-transparent text-gray-800 focus:outline-none focus:border-[#4ECDC4] appearance-none transition-colors duration-150 cursor-pointer';
+const filterSelectTriggerClass =
+  'w-full h-[28px] min-h-[28px] px-2 pr-1 text-[12px] leading-[16px] border-0 border-b-2 border-gray-200 rounded-none bg-transparent shadow-none text-gray-800 focus:border-[#4ECDC4] focus-visible:border-[#4ECDC4] focus-visible:ring-0';
+
+const FILTER_SELECT_EMPTY = '__empty__';
+
+function FilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  allowEmpty = true,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  allowEmpty?: boolean;
+}) {
+  const current = String(value ?? '').trim();
+  return (
+    <FormSelect
+      variant="light"
+      value={allowEmpty && !current ? FILTER_SELECT_EMPTY : current}
+      onChange={v => onChange(allowEmpty && v === FILTER_SELECT_EMPTY ? '' : v)}
+      placeholder={placeholder}
+      triggerClassName={filterSelectTriggerClass}
+    >
+      {allowEmpty ? (
+        <SelectItem value={FILTER_SELECT_EMPTY} className="text-[12px] text-gray-400">
+          {placeholder}
+        </SelectItem>
+      ) : null}
+      {options.map(o => (
+        <SelectItem key={o.value} value={o.value} className="text-[12px]">
+          {o.label}
+        </SelectItem>
+      ))}
+    </FormSelect>
+  );
+}
 
 /** Card de filtro principal com ícone e underline style */
 function PrimaryFilterCard({
@@ -160,19 +199,12 @@ export default function ListaAnimaisFiltros({
               iconOpticalScale={1.3}
               embedded={embedded}
             >
-              <div className="relative">
-                <select
-                  value={value.fazendaId}
-                  onChange={e => onChange(patch(value, { fazendaId: e.target.value, loteId: '', pastoId: '' }))}
-                  className={`${selectClass} pr-7`}
-                >
-                  <option value="">Selecione</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={String(f.id)}>{f.nome}</option>
-                  ))}
-                </select>
-                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
-              </div>
+              <FilterSelect
+                value={value.fazendaId}
+                onChange={v => onChange(patch(value, { fazendaId: v, loteId: '', pastoId: '' }))}
+                placeholder="Selecione"
+                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+              />
             </PrimaryFilterCard>
           </div>
 
@@ -217,56 +249,39 @@ export default function ListaAnimaisFiltros({
               iconOpticalScale={1.45}
               embedded={embedded}
             >
-              <div className="relative">
-                <select
-                  value={value.sexo}
-                  onChange={e => onChange(patch(value, { sexo: e.target.value, categoria: '' }))}
-                  className={`${selectClass} pr-7`}
-                >
-                  <option value="">Todos</option>
-                  <option value="macho">Macho</option>
-                  <option value="femea">Fêmea</option>
-                </select>
-                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
-              </div>
+              <FilterSelect
+                value={value.sexo}
+                onChange={v => onChange(patch(value, { sexo: v, categoria: '' }))}
+                placeholder="Todos"
+                options={[
+                  { value: 'macho', label: 'Macho' },
+                  { value: 'femea', label: 'Fêmea' },
+                ]}
+              />
             </PrimaryFilterCard>
           </div>
 
           {/* Categoria */}
           <div className="flex-1 min-w-[120px] max-w-[160px] sm:max-w-none">
             <PrimaryFilterCard label="Categoria" icon="category" active={!!value.categoria} iconOpticalScale={0.7} embedded={embedded}>
-              <div className="relative">
-                <select
-                  value={value.categoria}
-                  onChange={e => onChange(patch(value, { categoria: e.target.value }))}
-                  className={`${selectClass} pr-7`}
-                >
-                  <option value="">Todas</option>
-                  {categorias.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
-              </div>
+              <FilterSelect
+                value={value.categoria}
+                onChange={v => onChange(patch(value, { categoria: v }))}
+                placeholder="Todas"
+                options={categorias.map(c => ({ value: c, label: c }))}
+              />
             </PrimaryFilterCard>
           </div>
 
           {/* Lote */}
           <div className="flex-1 min-w-[120px] max-w-[160px] sm:max-w-none">
             <PrimaryFilterCard label="Lote" icon="inventory_2" active={!!value.loteId} iconOpticalScale={0.7} embedded={embedded}>
-              <div className="relative">
-                <select
-                  value={value.loteId}
-                  onChange={e => onChange(patch(value, { loteId: e.target.value }))}
-                  className={`${selectClass} pr-7`}
-                >
-                  <option value="">Todos</option>
-                  {lotesFiltrados.map(l => (
-                    <option key={l.id} value={String(l.id)}>{l.nome}</option>
-                  ))}
-                </select>
-                <span className="material-icons absolute right-1 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">expand_more</span>
-              </div>
+              <FilterSelect
+                value={value.loteId}
+                onChange={v => onChange(patch(value, { loteId: v }))}
+                placeholder="Todos"
+                options={lotesFiltrados.map(l => ({ value: String(l.id), label: l.nome }))}
+              />
             </PrimaryFilterCard>
           </div>
 
@@ -339,16 +354,12 @@ export default function ListaAnimaisFiltros({
           {/* Linha 2: Raça, Peso, Idade */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <FilterCard label="Raça">
-              <select
+              <FilterSelect
                 value={value.raca}
-                onChange={e => onChange(patch(value, { raca: e.target.value }))}
-                className={selectClass}
-              >
-                <option value="">Todas</option>
-                {RACAS.map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
+                onChange={v => onChange(patch(value, { raca: v }))}
+                placeholder="Todas"
+                options={RACAS.map(r => ({ value: r, label: r }))}
+              />
             </FilterCard>
 
             <FilterCard label="Peso (kg)">
@@ -411,18 +422,20 @@ export default function ListaAnimaisFiltros({
             </FilterCard>
 
             <FilterCard label="Status">
-              <select
-                value={value.statusFiltro || "ativo"}
-                onChange={e => onChange(patch(value, { statusFiltro: e.target.value }))}
-                className={selectClass}
-              >
-                <option value="ativo">Ativo</option>
-                <option value="inativo">Inativos (todos)</option>
-                <option value="morto">Morto</option>
-                <option value="vendido">Vendido</option>
-                <option value="transferido">Transferido</option>
-                <option value="todos">Todos</option>
-              </select>
+              <FilterSelect
+                value={value.statusFiltro || 'ativo'}
+                onChange={v => onChange(patch(value, { statusFiltro: v }))}
+                placeholder="Ativo"
+                allowEmpty={false}
+                options={[
+                  { value: 'ativo', label: 'Ativo' },
+                  { value: 'inativo', label: 'Inativos (todos)' },
+                  { value: 'morto', label: 'Morto' },
+                  { value: 'vendido', label: 'Vendido' },
+                  { value: 'transferido', label: 'Transferido' },
+                  { value: 'todos', label: 'Todos' },
+                ]}
+              />
             </FilterCard>
 
             <FilterCard label="Data de Entrada">
@@ -431,6 +444,8 @@ export default function ListaAnimaisFiltros({
                   <FormDatePicker
                     value={value.dataEntradaDe}
                     onChange={v => onChange(patch(value, { dataEntradaDe: v }))}
+                    placeholder="dd/mm/aaaa"
+                    aria-label="Data de entrada inicial"
                   />
                 </div>
                 <span className="text-gray-400 text-[10px] shrink-0">–</span>
@@ -438,6 +453,8 @@ export default function ListaAnimaisFiltros({
                   <FormDatePicker
                     value={value.dataEntradaAte}
                     onChange={v => onChange(patch(value, { dataEntradaAte: v }))}
+                    placeholder="dd/mm/aaaa"
+                    aria-label="Data de entrada final"
                   />
                 </div>
               </div>

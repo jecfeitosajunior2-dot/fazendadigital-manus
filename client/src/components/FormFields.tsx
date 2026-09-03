@@ -41,8 +41,8 @@ export function FieldBox({
   return (
     <div
       className={cn(
-        "border overflow-hidden",
-        variant === "light" ? "bg-white rounded-md" : "bg-[#EEEEEE] rounded-sm",
+        "border",
+        variant === "light" ? "bg-white rounded" : "bg-[#EEEEEE] rounded-sm overflow-hidden",
         invalid ? "border-red-500" : "border-gray-200",
         required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
         required && invalid && "border-l-[3px] border-l-red-500",
@@ -59,6 +59,9 @@ export const inputClass =
 
 export const inputClassCompact =
   "w-full bg-transparent px-2 py-1.5 text-[12px] text-gray-800 placeholder:text-gray-400 outline-none border-0 h-auto min-h-[34px]";
+
+export const formControlFlatCls =
+  "box-border w-full text-[12px] leading-[16px] border border-gray-200 rounded px-3 text-gray-700 h-[34px] min-h-[34px]";
 
 export function FormInput({
   value,
@@ -97,6 +100,37 @@ export function FormInput({
   readOnly?: boolean;
   "aria-describedby"?: string;
 }) {
+  if (variant === "light") {
+    return (
+      <input
+        id={id}
+        type={type}
+        inputMode={inputMode}
+        value={value}
+        readOnly={readOnly}
+        onChange={e => {
+          if (readOnly) return;
+          onChange(e.target.value);
+        }}
+        onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
+        placeholder={placeholder}
+        min={min}
+        step={step}
+        list={list}
+        aria-invalid={invalid || undefined}
+        aria-describedby={ariaDescribedBy}
+        className={cn(
+          formControlFlatCls,
+          "bg-white outline-none placeholder:text-gray-400",
+          required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+          invalid && "border-red-500 border-l-[3px] border-l-red-500",
+          readOnly && "text-gray-600",
+          className,
+        )}
+      />
+    );
+  }
+
   return (
     <FieldBox required={required} variant={variant} invalid={invalid}>
       <input
@@ -116,11 +150,7 @@ export function FormInput({
         list={list}
         aria-invalid={invalid || undefined}
         aria-describedby={ariaDescribedBy}
-        className={cn(
-          compact ? inputClassCompact : inputClass,
-          variant === "light" && "bg-white",
-          className,
-        )}
+        className={cn(compact ? inputClassCompact : inputClass, className)}
       />
     </FieldBox>
   );
@@ -189,9 +219,6 @@ export function FormNativeSelect({
   );
 }
 
-export const formControlFlatCls =
-  "box-border w-full text-[12px] leading-[16px] border border-gray-200 rounded px-3 text-gray-700 h-[34px] min-h-[34px]";
-
 /** Select customizado: mesma aparência dos campos nativos e lista sempre abaixo. */
 export function FormDownSelect({
   value,
@@ -200,6 +227,9 @@ export function FormDownSelect({
   disabled,
   options,
   required,
+  id,
+  invalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -207,6 +237,9 @@ export function FormDownSelect({
   disabled?: boolean;
   options: ReadonlyArray<{ value: string; label: string }>;
   required?: boolean;
+  id?: string;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -228,29 +261,37 @@ export function FormDownSelect({
 
   return (
     <div className="relative w-full min-w-0 max-w-full" ref={rootRef}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(v => !v)}
+      <div
         className={cn(
           formControlFlatCls,
-          "flex items-center justify-between gap-2 text-left overflow-visible disabled:opacity-60 disabled:cursor-not-allowed",
-          required && "border-l-[3px] border-l-[#4ECDC4]",
+          "flex items-center justify-between gap-2 bg-white",
+          required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+          invalid && "border-red-500 border-l-[3px] border-l-red-500",
         )}
       >
-        <span className={`min-w-0 flex-1 truncate leading-[16px] ${selected ? "text-gray-700" : "text-gray-400"}`}>
-          {selected?.label ?? placeholder}
-        </span>
-        <span className="material-icons text-[18px] text-gray-400 shrink-0" aria-hidden>
-          {open ? "expand_less" : "expand_more"}
-        </span>
-      </button>
+        <button
+          id={id}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-invalid={invalid || undefined}
+          aria-describedby={ariaDescribedBy}
+          onClick={() => setOpen(v => !v)}
+          className="flex min-w-0 flex-1 items-center justify-between gap-2 border-0 bg-transparent p-0 text-left outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className={`min-w-0 flex-1 truncate leading-[16px] ${selected ? "text-gray-700" : "text-gray-400"}`}>
+            {selected?.label ?? placeholder}
+          </span>
+          <span className="material-icons text-[18px] text-gray-400 shrink-0" aria-hidden>
+            {open ? "expand_less" : "expand_more"}
+          </span>
+        </button>
+      </div>
       {open && !disabled ? (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg"
+          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg fd-select-scroll"
         >
           {options.map(o => (
             <li key={o.value} role="option" aria-selected={o.value === value}>
@@ -288,6 +329,7 @@ export function FormSelect({
   id,
   invalid,
   modal = true,
+  side = "bottom",
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -305,47 +347,66 @@ export function FormSelect({
   invalid?: boolean;
   /** false evita conflito quando o select fica dentro de Popover/Dialog. */
   modal?: boolean;
+  /** Direção da lista. Use "top" quando o campo fica no rodapé do card. */
+  side?: "top" | "bottom";
   "aria-describedby"?: string;
 }) {
   // Radix não aceita value="". Vazio = sem value (placeholder).
   // `key` remonta o Select ao hidratar edição (evita trigger “preso” no placeholder).
   const trimmed = String(value ?? "").trim();
+  const isLight = variant === "light";
+
+  const select = (
+    <Select
+      key={trimmed ? `sel:${trimmed}` : "sel:empty"}
+      value={trimmed || undefined}
+      onValueChange={onChange}
+      disabled={disabled}
+      modal={modal}
+    >
+      <SelectTrigger
+        id={id}
+        aria-invalid={invalid || undefined}
+        aria-describedby={ariaDescribedBy}
+        className={cn(
+          isLight
+            ? cn(
+                formControlFlatCls,
+                "flex items-center justify-between gap-2 text-left bg-white shadow-none outline-none",
+                required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+                invalid && "border-red-500 border-l-[3px] border-l-red-500",
+              )
+            : cn(
+                compact ? inputClassCompact : inputClass,
+                "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0",
+              ),
+          "[&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
+          triggerClassName,
+        )}
+      >
+        {displayValue?.trim() ? (
+          <span className="flex-1 truncate text-left text-[13px] text-gray-800">{displayValue.trim()}</span>
+        ) : (
+          <SelectValue placeholder={placeholder} />
+        )}
+      </SelectTrigger>
+      <SelectContent
+        className="max-h-[min(15rem,var(--radix-select-content-available-height,15rem))] fd-select-scroll"
+        side={side}
+        sideOffset={4}
+        collisionPadding={8}
+        avoidCollisions={side === "top" ? false : modal === false}
+      >
+        {children}
+      </SelectContent>
+    </Select>
+  );
+
+  if (isLight) return <div className="w-full min-w-0">{select}</div>;
 
   return (
     <FieldBox required={required} variant={variant} invalid={invalid}>
-      <Select
-        key={trimmed ? `sel:${trimmed}` : "sel:empty"}
-        value={trimmed || undefined}
-        onValueChange={onChange}
-        disabled={disabled}
-        modal={modal}
-      >
-        <SelectTrigger
-          id={id}
-          aria-invalid={invalid || undefined}
-          aria-describedby={ariaDescribedBy}
-          className={cn(
-            compact ? inputClassCompact : inputClass,
-            "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
-            triggerClassName,
-          )}
-        >
-          {displayValue?.trim() ? (
-            <span className="flex-1 truncate text-left text-[13px] text-gray-800">{displayValue.trim()}</span>
-          ) : (
-            <SelectValue placeholder={placeholder} />
-          )}
-        </SelectTrigger>
-        <SelectContent
-          className="max-h-[min(15rem,var(--radix-select-content-available-height,15rem))]"
-          side="bottom"
-          sideOffset={4}
-          collisionPadding={8}
-          avoidCollisions={modal === false}
-        >
-          {children}
-        </SelectContent>
-      </Select>
+      {select}
     </FieldBox>
   );
 }
@@ -368,6 +429,8 @@ export function FormYearPicker({
   maxYear = new Date().getFullYear() + 1,
   id,
   invalid,
+  variant = "default",
+  side = "bottom",
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -378,6 +441,8 @@ export function FormYearPicker({
   maxYear?: number;
   id?: string;
   invalid?: boolean;
+  variant?: "default" | "light";
+  side?: "top" | "bottom";
   "aria-describedby"?: string;
 }) {
   const anos = React.useMemo(() => listarAnos(minYear, maxYear), [minYear, maxYear]);
@@ -395,7 +460,9 @@ export function FormYearPicker({
       placeholder={placeholder}
       required={required}
       displayValue={value}
-      triggerClassName="h-[42px] py-0"
+      variant={variant}
+      side={side}
+      triggerClassName={variant === "light" ? undefined : "h-[42px] py-0"}
       invalid={invalid}
       aria-describedby={ariaDescribedBy}
     >
@@ -412,12 +479,15 @@ export function FormYearPicker({
 export function FormDatePicker({
   value,
   onChange,
-  placeholder = "DD/MM/AAAA",
+  placeholder = "dd/mm/aaaa",
   required,
   max,
   id,
   invalid,
   minHeight = 34,
+  variant = "default",
+  className,
+  "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
@@ -430,6 +500,9 @@ export function FormDatePicker({
   invalid?: boolean;
   /** Altura mínima do campo — 42 em formulários de cadastro, 34 em filtros/manejos. */
   minHeight?: 34 | 42;
+  variant?: "default" | "light";
+  className?: string;
+  "aria-label"?: string;
   "aria-describedby"?: string;
 }) {
   const dateRef = useRef<HTMLInputElement>(null);
@@ -493,9 +566,11 @@ export function FormDatePicker({
         className={cn(
           formControlFlatCls,
           "relative flex items-center justify-start gap-2 overflow-hidden",
+          variant === "light" && "bg-white",
           minHeight === 42 && "h-[42px] min-h-[42px]",
           required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
           invalid && "border-red-500 border-l-[3px] border-l-red-500",
+          className,
         )}
       >
         <button
@@ -516,6 +591,7 @@ export function FormDatePicker({
           onFocus={() => { setFocused(true); setInputText(value ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR") : ""); }}
           onBlur={handleBlur}
           placeholder={placeholder}
+          aria-label={ariaLabel}
           aria-invalid={invalid || undefined}
           aria-describedby={ariaDescribedBy}
           className="w-full min-w-0 flex-1 bg-transparent border-0 outline-none p-0 text-[12px] leading-none text-left text-gray-800 placeholder:text-gray-400"
@@ -565,6 +641,27 @@ export function FormTextarea({
   "aria-describedby"?: string;
   "aria-invalid"?: boolean;
 }) {
+  if (variant === "light") {
+    return (
+      <textarea
+        id={id}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={onFocus}
+        placeholder={placeholder}
+        rows={rows}
+        aria-invalid={ariaInvalid ?? invalid}
+        aria-describedby={ariaDescribedBy}
+        className={cn(
+          "box-border w-full text-[12px] leading-[16px] border border-gray-200 rounded px-3 py-2 text-gray-700 bg-white outline-none placeholder:text-gray-400 resize-y min-h-[80px]",
+          required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+          invalid && "border-red-500 border-l-[3px] border-l-red-500",
+          className,
+        )}
+      />
+    );
+  }
+
   return (
     <FieldBox required={required} variant={variant} invalid={invalid}>
       <textarea

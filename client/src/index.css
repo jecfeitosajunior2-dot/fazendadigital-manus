@@ -324,6 +324,26 @@
   pointer-events: none;
 }
 
+/* Barra de rolagem das listas de select — mesma cor teal dos demais campos */
+.fd-select-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #4ECDC4 #f3f4f6;
+}
+.fd-select-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.fd-select-scroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 999px;
+}
+.fd-select-scroll::-webkit-scrollbar-thumb {
+  background: #4ECDC4;
+  border-radius: 999px;
+}
+.fd-select-scroll::-webkit-scrollbar-thumb:hover {
+  background: #3db8b0;
+}
+
 /* Smooth transitions for sidebar */
 .sidebar-transition {
   transition: transform 0.25s cubic-bezier(0.23, 1, 0.32, 1), width 0.2s ease-out;

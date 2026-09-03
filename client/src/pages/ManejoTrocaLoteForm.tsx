@@ -24,7 +24,7 @@ import {
 } from "@shared/transferirAnimaisEntreLotes";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -65,6 +65,16 @@ type AnimalTrocaLoteRow = {
 
 export function ManejoTrocaLoteForm() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const prefillParams = useMemo(() => {
+    const params = new URLSearchParams(search);
+    const fazendaRaw = params.get("fazendaId")?.trim() ?? "";
+    const animalRaw = params.get("animalId")?.trim() ?? "";
+    const fazendaId = /^\d+$/.test(fazendaRaw) && Number(fazendaRaw) > 0 ? fazendaRaw : null;
+    const animalId = /^\d+$/.test(animalRaw) && Number(animalRaw) > 0 ? Number(animalRaw) : null;
+    return { fazendaId, animalId };
+  }, [search]);
+
   const utils = trpc.useUtils();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: lotes = [], isLoading: lotesLoading } = trpc.lotes.list.useQuery({
@@ -77,6 +87,7 @@ export function ManejoTrocaLoteForm() {
   const [dataMovimentacao, setDataMovimentacao] = useState(todayISODate);
   const [loteDestinoId, setLoteDestinoId] = useState("");
   const [bloqueioMsg, setBloqueioMsg] = useState<string | null>(null);
+  const [animalPrefillDone, setAnimalPrefillDone] = useState(false);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
   const unicaFazenda = fazendas.length === 1;
@@ -97,13 +108,37 @@ export function ManejoTrocaLoteForm() {
       setFazendaInitDone(true);
       return;
     }
-    const resolved = fazendas.length === 1 ? String(fazendas[0]!.id) : "";
+    const fromUrl = prefillParams.fazendaId;
+    const urlOk = fromUrl != null && fazendas.some(f => String(f.id) === fromUrl);
+    const resolved = urlOk
+      ? fromUrl
+      : fazendas.length === 1
+        ? String(fazendas[0]!.id)
+        : "";
     if (resolved) {
       setFazendaId(resolved);
       persistRebanhoFazendaId(resolved);
     }
     setFazendaInitDone(true);
-  }, [fazendas, fazendaInitDone, loadingFazendas]);
+  }, [fazendas, fazendaInitDone, loadingFazendas, prefillParams.fazendaId]);
+
+  useEffect(() => {
+    if (animalPrefillDone || prefillParams.animalId == null || !fazendaNum) return;
+    if (loadingAnimais) return;
+    const found = (animais as AnimalTrocaLoteRow[]).find(a => a.id === prefillParams.animalId);
+    if (found) {
+      setAnimalSel(found);
+      setAnimalPrefillDone(true);
+      return;
+    }
+    setAnimalPrefillDone(true);
+  }, [
+    animalPrefillDone,
+    prefillParams.animalId,
+    fazendaNum,
+    loadingAnimais,
+    animais,
+  ]);
 
   const animalId = resolveAnimalIdFromSelecao(animalSel);
 

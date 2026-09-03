@@ -660,7 +660,7 @@ export default function MaquinaRegistrationPage() {
               <FormDatePicker
                 value={form.dataAquisicao}
                 onChange={v => set("dataAquisicao", v)}
-                placeholder="DD/MM/AAAA"
+                placeholder="dd/mm/aaaa"
                 max={hojeISO}
               />
             </div>

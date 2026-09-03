@@ -175,7 +175,7 @@ export function InsumosAlertasCentral({
           {emptyExtra}
         </div>
       ) : (
-        <div className="p-4 space-y-3">
+        <div className="p-5 space-y-3">
           {gruposComItens.map(g => (
             <GrupoAlerta key={g.id} grupo={g} highlight={highlightId === g.id} />
           ))}

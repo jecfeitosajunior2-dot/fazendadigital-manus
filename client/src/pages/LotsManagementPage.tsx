@@ -2,19 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import ListExportButtons from "@/components/ListExportButtons";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { AlertTriangle, AlertCircle, X } from "lucide-react";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { X } from "lucide-react";
 import { FarmRowActionButtons } from "@/components/icons/FarmActionIcons";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { FD_PRIMARY, FormLabel } from "@/components/FormFields";
 import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { toast } from "sonner";
 import {
@@ -35,16 +27,15 @@ import {
 } from "@shared/lote-faixas-idade";
 import {
   editarLoteAnimaisUrl,
+  descricaoConfirmacaoExclusaoLote,
   mensagemExclusaoLoteSucesso,
   parseExclusaoLoteBloqueada,
-  textoConfirmacaoExclusaoLote,
 } from "@shared/loteExclusaoBloqueada";
-import { LoteExclusaoBloqueadaMessage } from "@/components/lotes/LoteExclusaoBloqueadaMessage";
+import { LoteExclusaoBloqueadaDialog } from "@/components/lotes/LoteExclusaoBloqueadaDialog";
 import {
   avaliacaoParaDeleteBlocked,
   avaliacaoParaDeleteConfirm,
   type DeleteBlockedState,
-  type DeleteConfirmState,
 } from "@/lib/loteExclusaoFlow";
 
 interface LoteItem {
@@ -96,10 +87,10 @@ function ContagemCell({
   label: string;
 }) {
   if (value <= 0) {
-    return <span className="text-gray-300 tabular-nums">—</span>;
+    return <span className="text-gray-300 tabular-nums text-[12px]">—</span>;
   }
   if (!onClick) {
-    return <span className="font-semibold text-gray-800 tabular-nums">{value}</span>;
+    return <span className="font-semibold text-gray-800 tabular-nums text-[12px]">{value}</span>;
   }
   return (
     <button
@@ -107,7 +98,7 @@ function ContagemCell({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="font-semibold text-gray-800 tabular-nums cursor-pointer hover:text-[#2D5A5A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D5A5A]/30 rounded"
+      className="font-semibold text-gray-800 tabular-nums text-[12px] cursor-pointer hover:text-[#2D5A5A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D5A5A]/30 rounded"
     >
       {value}
     </button>
@@ -123,18 +114,14 @@ export default function LotsManagementPage() {
   const [fazendaFilter, setFazendaFilter] = useState(fazendaInicial);
   const [fazendaReady, setFazendaReady] = useState(Boolean(fazendaInicial));
   const [apenasSuperlotados, setApenasSuperlotados] = useState(apenasSuperlotadosInicial);
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(50);
-  const [sortAsc, setSortAsc] = useState(true);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState | null>(null);
   const [deleteBlocked, setDeleteBlocked] = useState<DeleteBlockedState | null>(null);
+  const confirm = useConfirm();
 
   const queryInput = useMemo(() => ({
     fazendaId: fazendaFilter ? Number(fazendaFilter) : undefined,
-    search: search.trim() || undefined,
-  }), [fazendaFilter, search]);
+  }), [fazendaFilter]);
 
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const fazendasList = fazendas as { id: number; nome: string }[];
@@ -170,12 +157,9 @@ export default function LotsManagementPage() {
     if (apenasSuperlotados) {
       lista = lista.filter(l => l.superlotado);
     }
-    lista.sort((a, b) => {
-      const cmp = a.nome.localeCompare(b.nome, "pt-BR");
-      return sortAsc ? cmp : -cmp;
-    });
+    lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     return lista;
-  }, [gerenciamento, sortAsc, apenasSuperlotados]);
+  }, [gerenciamento, apenasSuperlotados]);
 
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -209,21 +193,18 @@ export default function LotsManagementPage() {
   const excluirMutation = trpc.lotes.excluir.useMutation({
     onSuccess: (data) => {
       toast.success(mensagemExclusaoLoteSucesso(data.nomeLote));
-      setDeleteConfirm(null);
       refetch();
       utils.lotes.list.invalidate();
     },
-    onError: (err) => {
-      const loteAtual = deleteConfirm;
-      setDeleteConfirm(null);
+    onError: (err, variables) => {
       if (err.data?.code === "PRECONDITION_FAILED") {
         const parsed = parseExclusaoLoteBloqueada(err.message);
-        const fazendaId = loteAtual?.fazendaId ?? (fazendaFilter ? Number(fazendaFilter) : null);
+        const row = (gerenciamento as LoteGerenciamento[]).find(l => l.id === variables.id);
         setDeleteBlocked({
-          loteId: loteAtual?.loteId ?? 0,
-          nomeLote: parsed?.nomeLote ?? loteAtual?.nomeLote ?? "—",
+          loteId: variables.id,
+          nomeLote: parsed?.nomeLote ?? row?.nome ?? "—",
           qtdAnimais: parsed?.qtdAnimais ?? 1,
-          fazendaId,
+          fazendaId: row?.fazendaId ?? (fazendaFilter ? Number(fazendaFilter) : null),
         });
       } else {
         toast.error(err.message || "Erro ao excluir o Lote.");
@@ -238,26 +219,17 @@ export default function LotsManagementPage() {
         setDeleteBlocked(avaliacaoParaDeleteBlocked(avaliacao));
         return;
       }
-      setDeleteConfirm(avaliacaoParaDeleteConfirm(avaliacao));
+      const confirmState = avaliacaoParaDeleteConfirm(avaliacao);
+      const ok = await confirm({
+        title: "Excluir Lote",
+        description: descricaoConfirmacaoExclusaoLote(confirmState.nomeLote, confirmState.fazendaNome),
+        confirmText: "Excluir Lote",
+        cancelText: "Cancelar",
+        variant: "danger",
+      });
+      if (ok) excluirMutation.mutate({ id: confirmState.loteId });
     } catch {
       toast.error("Não foi possível verificar a situação do Lote.");
-    }
-  };
-
-  const toggleSelect = (id: number) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selected.size === paginated.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(paginated.map(l => l.id)));
     }
   };
 
@@ -276,7 +248,20 @@ export default function LotsManagementPage() {
 
   const qtdSuperlotados = (gerenciamento as LoteGerenciamento[]).filter(l => l.superlotado).length;
 
-  const COL_COUNT = 15; // checkbox + nome + 5M + 5F + total + ações
+  const COL_COUNT = 14; // nome + 5M + 5F + total + ações
+
+  const headerBorderR = "border-r border-gray-200";
+  const headerTopSpacerClass =
+    `sticky top-0 z-30 px-1.5 py-1 border-b ${headerBorderR} bg-gray-50`;
+  const groupThClass =
+    `sticky top-0 z-20 px-1.5 py-1 text-center text-[11px] font-semibold text-gray-600 uppercase tracking-wide border-b ${headerBorderR} bg-gray-50 leading-tight`;
+  const bandThClass =
+    `sticky top-[26px] z-20 px-1.5 py-1.5 text-center border-b ${headerBorderR} bg-gray-50 leading-tight whitespace-nowrap`;
+  const sideBandThClass =
+    `${bandThClass} z-30 text-[11px] font-semibold text-gray-600 uppercase tracking-wide`;
+  const faixaBandThClass =
+    `${bandThClass} px-1 text-[10px] font-medium text-gray-500`;
+  const faixaTdClass = `px-1 py-2 text-center ${headerBorderR}`;
 
   const faixaAriaLabel = (
     sexo: "macho" | "femea",
@@ -295,129 +280,64 @@ export default function LotsManagementPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6">
-      <Dialog open={!!deleteConfirm} onOpenChange={v => !v && setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-              </div>
-              <DialogTitle className="text-gray-900">Excluir Lote</DialogTitle>
-            </div>
-            <DialogDescription className="text-gray-600 leading-relaxed">
-              {deleteConfirm
-                ? textoConfirmacaoExclusaoLote(deleteConfirm.nomeLote, deleteConfirm.fazendaNome)
-                : null}
-              <br />
-              <span className="text-red-600 font-medium">Esta ação não poderá ser desfeita.</span>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)} disabled={excluirMutation.isPending}>
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteConfirm && excluirMutation.mutate({ id: deleteConfirm.loteId })}
-              disabled={excluirMutation.isPending}
-            >
-              {excluirMutation.isPending ? "Excluindo…" : "Excluir Lote"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <div className="min-w-0">
+      <LoteExclusaoBloqueadaDialog
+        state={deleteBlocked}
+        onClose={() => setDeleteBlocked(null)}
+        onGerenciarAnimais={blocked => {
+          setDeleteBlocked(null);
+          setLocation(editarLoteAnimaisUrl(blocked.loteId, blocked.fazendaId));
+        }}
+      />
 
-      <Dialog open={!!deleteBlocked} onOpenChange={v => !v && setDeleteBlocked(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
-                <AlertCircle className="w-5 h-5 text-amber-600" />
-              </div>
-              <DialogTitle className="text-gray-900 text-left">
-                Não é possível excluir o Lote
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-gray-600 leading-relaxed text-left">
-              {deleteBlocked ? (
-                <LoteExclusaoBloqueadaMessage
-                  nomeLote={deleteBlocked.nomeLote}
-                  qtdAnimais={deleteBlocked.qtdAnimais}
-                />
-              ) : null}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-2 sm:justify-end">
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Gerenciamento de Lotes
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setDeleteBlocked(null)}
-              className="px-4 py-2 rounded text-[11px] font-semibold uppercase bg-[#F0F0F0] text-gray-700 hover:bg-[#E8E8E8]"
-            >
-              Fechar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!deleteBlocked?.loteId) return;
-                const destino = editarLoteAnimaisUrl(
-                  deleteBlocked.loteId,
-                  deleteBlocked.fazendaId,
-                );
-                setDeleteBlocked(null);
-                setLocation(destino);
-              }}
-              className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900 hover:opacity-90"
+              onClick={() => setLocation(novoLoteUrl(fazendaFilter || undefined))}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              Gerenciar animais
+              <span className="material-icons text-[16px]">add</span>
+              <span className="hidden sm:inline">Novo Lote</span>
+              <span className="sm:hidden">Novo</span>
             </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Gerenciamento de Lotes</h1>
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={() => setLocation(novoLoteUrl(fazendaFilter || undefined))}
-            className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            <span className="material-icons text-[16px]">add</span>
-            <span className="hidden sm:inline">Novo Lote</span>
-            <span className="sm:hidden">Novo</span>
-          </button>
-          <ListExportButtons
-            title="Gerenciamento de Lotes"
-            filename="gerenciamento-lotes"
-            headers={exportHeaders}
-            rows={exportData}
-            alignRightFrom={1}
-            landscape
-            pdfLandscape
-            fazendaNome={exportFazendaNome}
-            variant="secondary"
-            spreadsheetSheetName="Gerenciamento de Lotes"
-            spreadsheetReportTitle={buildExportIdentityLine}
-            spreadsheetGroupedTableHeader={loteGerenciamentoGroupedTableHeader()}
-            spreadsheetAllowEmpty
-            spreadsheetBlankAfterMeta={false}
-            spreadsheetAutoFilter={false}
-            spreadsheetIntegerCols={LOTE_GERENCIAMENTO_INTEGER_COLS}
-            spreadsheetColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
-            spreadsheetPlainHeader
-            pdfIncludeSpreadsheetTitle={false}
-            pdfShowRegistrosSubtitle={false}
-            pdfHeadRows={loteGerenciamentoPdfHeadRows()}
-            pdfColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
-          />
+            <ListExportButtons
+              title="Gerenciamento de Lotes"
+              filename="gerenciamento-lotes"
+              headers={exportHeaders}
+              rows={exportData}
+              alignRightFrom={1}
+              landscape
+              pdfLandscape
+              fazendaNome={exportFazendaNome}
+              variant="secondary"
+              spreadsheetSheetName="Gerenciamento de Lotes"
+              spreadsheetReportTitle={buildExportIdentityLine}
+              spreadsheetGroupedTableHeader={loteGerenciamentoGroupedTableHeader()}
+              spreadsheetAllowEmpty
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetIntegerCols={LOTE_GERENCIAMENTO_INTEGER_COLS}
+              spreadsheetColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
+              spreadsheetPlainHeader
+              pdfIncludeSpreadsheetTitle={false}
+              pdfShowRegistrosSubtitle={false}
+              pdfHeadRows={loteGerenciamentoPdfHeadRows()}
+              pdfColumnAligns={LOTE_GERENCIAMENTO_COLUMN_ALIGNS}
+            />
+          </div>
         </div>
-      </div>
 
       {apenasSuperlotados && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
+        <div className="mx-5 mt-4 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
           <span className="material-icons text-[16px] text-red-500">warning</span>
           <span className="font-medium">
             Exibindo apenas Lotes superlotados
@@ -439,12 +359,13 @@ export default function LotsManagementPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="w-full sm:w-auto sm:min-w-[200px]">
-          <select
+      <div className="px-5 py-4 border-b border-gray-100">
+        <div className="min-w-0 max-w-[220px]">
+          <FormLabel>Fazenda</FormLabel>
+          <FazendaOverviewSelect
+            fazendas={fazendasList}
             value={fazendaFilter}
-            onChange={e => {
-              const v = e.target.value;
+            onChange={v => {
               setFazendaFilter(v);
               setPage(1);
               const url = new URLSearchParams();
@@ -452,92 +373,44 @@ export default function LotsManagementPage() {
               if (apenasSuperlotados) url.set("apenasSuperlotados", "true");
               setLocation(`/rebanho/lotes${url.toString() ? `?${url.toString()}` : ""}`, { replace: true });
             }}
-            className="w-full h-[40px] px-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] text-gray-800 focus:outline-none focus:border-[#2D5A5A]"
-            aria-label="Fazenda"
-          >
-            <option value="">Todas as fazendas</option>
-            {fazendasList.map(f => (
-              <option key={f.id} value={String(f.id)}>{f.nome}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex-1 min-w-[180px] sm:max-w-xs ml-auto">
-          <div className="relative">
-            <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400">search</span>
-            <input
-              type="text"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Buscar Lote"
-              aria-label="Buscar Lote"
-              className="w-full h-[40px] pl-9 pr-3 text-[12px] border border-gray-200 rounded-sm bg-[#EEEEEE] placeholder:text-gray-400 focus:outline-none focus:border-[#2D5A5A]"
-            />
-          </div>
+            emptyLabel="Todas as fazendas"
+            className="min-w-0"
+          />
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
-        <div className="overflow-auto max-h-[min(70vh,720px)]">
-          <table className="w-full text-[12px] min-w-[1100px] border-separate border-spacing-0">
+      <div className="overflow-y-auto overflow-x-hidden max-h-[min(78vh,820px)]">
+          <table className="w-full table-fixed text-[12px] border-separate border-spacing-0">
+            <colgroup>
+              <col style={{ width: "17%" }} />
+              {FAIXAS_IDADE_LOTE.map(f => (
+                <col key={`m-col-${f}`} />
+              ))}
+              {FAIXAS_IDADE_LOTE.map(f => (
+                <col key={`f-col-${f}`} />
+              ))}
+              <col style={{ width: "3.75rem" }} />
+              <col style={{ width: "5rem" }} />
+            </colgroup>
             <thead>
               <tr className="bg-gray-50">
-                <th
-                  rowSpan={2}
-                  className="sticky top-0 left-0 z-30 w-10 px-2 py-2 border-b border-r border-gray-200 bg-gray-50"
-                >
-                  <Checkbox
-                    checked={paginated.length > 0 && selected.size === paginated.length}
-                    onCheckedChange={toggleSelectAll}
-                    className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
-                  />
-                </th>
-                <th
-                  rowSpan={2}
-                  className="sticky top-0 left-10 z-30 px-3 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50 min-w-[180px]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSortAsc(v => !v)}
-                    className="inline-flex items-center gap-1 hover:text-gray-900 mx-auto"
-                  >
-                    Nome do Lote
-                    <span className="material-icons text-[14px] text-gray-400">
-                      {sortAsc ? "arrow_upward" : "arrow_downward"}
-                    </span>
-                  </button>
-                </th>
-                <th
-                  colSpan={5}
-                  className="sticky top-0 z-20 px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50"
-                >
+                <th className={headerTopSpacerClass} aria-hidden="true" />
+                <th colSpan={5} className={groupThClass} title="Machos">
                   Machos
                 </th>
-                <th
-                  colSpan={5}
-                  className="sticky top-0 z-20 px-2 py-1.5 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50"
-                >
+                <th colSpan={5} className={groupThClass} title="Fêmeas">
                   Fêmeas
                 </th>
-                <th
-                  rowSpan={2}
-                  className="sticky top-0 z-20 w-20 px-2 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50"
-                >
-                  Total
-                </th>
-                <th
-                  rowSpan={2}
-                  className="sticky top-0 z-20 w-24 px-2 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase border-b border-gray-200 bg-gray-50"
-                >
-                  Ações
-                </th>
+                <th className={`${headerTopSpacerClass} z-20`} aria-hidden="true" />
+                <th className={`${headerTopSpacerClass} z-20 border-r-0`} aria-hidden="true" />
               </tr>
               <tr className="bg-gray-50">
+                <th className={sideBandThClass}>Lote</th>
                 {FAIXAS_IDADE_LOTE.map(f => (
                   <th
                     key={`m-${f}`}
-                    className="sticky top-[29px] z-20 px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-b border-r border-gray-100 bg-gray-50 w-12"
-                    title={`${FAIXA_IDADE_LOTE_LABELS[f]} meses completos`}
+                    className={faixaBandThClass}
+                    title={`Machos — ${FAIXA_IDADE_LOTE_LABELS[f]} meses completos`}
                   >
                     {FAIXA_IDADE_LOTE_LABELS[f]}
                   </th>
@@ -545,12 +418,14 @@ export default function LotsManagementPage() {
                 {FAIXAS_IDADE_LOTE.map(f => (
                   <th
                     key={`f-${f}`}
-                    className="sticky top-[29px] z-20 px-2 py-1.5 text-center text-[10px] font-medium text-gray-500 border-b border-r border-gray-100 bg-gray-50 w-12"
-                    title={`${FAIXA_IDADE_LOTE_LABELS[f]} meses completos`}
+                    className={faixaBandThClass}
+                    title={`Fêmeas — ${FAIXA_IDADE_LOTE_LABELS[f]} meses completos`}
                   >
                     {FAIXA_IDADE_LOTE_LABELS[f]}
                   </th>
                 ))}
+                <th className={`${sideBandThClass} z-20`}>Total</th>
+                <th className={`${sideBandThClass} z-20 text-gray-500 border-r-0`}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -577,18 +452,12 @@ export default function LotsManagementPage() {
                     key={lote.id}
                     className="group border-t border-gray-100 hover:bg-gray-50/50"
                   >
-                    <td className="sticky left-0 z-10 px-2 py-2 text-center border-r border-gray-50 bg-white group-hover:bg-gray-50">
-                      <Checkbox
-                        checked={selected.has(lote.id)}
-                        onCheckedChange={() => toggleSelect(lote.id)}
-                        className="data-[state=checked]:bg-[#2D5A5A] data-[state=checked]:border-[#2D5A5A]"
-                      />
-                    </td>
-                    <td className="sticky left-10 z-10 px-3 py-2 text-center border-r border-gray-50 bg-white group-hover:bg-gray-50 min-w-[180px]">
+                    <td className={`px-1.5 py-2.5 text-center ${headerBorderR} bg-white group-hover:bg-gray-50 max-w-0`}>
                       <button
                         type="button"
                         onClick={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)}
-                        className="text-center font-medium text-gray-800 hover:underline"
+                        className="block w-full truncate text-center font-medium text-gray-800 hover:underline mx-auto"
+                        title={lote.nome}
                       >
                         {lote.nome}
                       </button>
@@ -600,23 +469,18 @@ export default function LotsManagementPage() {
                             fazendaId: lote.fazendaId,
                             semDataNascimento: true,
                           })}
-                          className="mt-0.5 block text-[10px] text-amber-700 hover:underline text-center"
-                          title="Ver animais sem data de nascimento neste Lote"
+                          className="mt-0.5 block w-full truncate text-[10px] text-amber-700 hover:underline text-center mx-auto"
+                          title={`${semNasc} sem data de nascimento (M: ${lote.machosSemIdade || 0} · F: ${lote.femeasSemIdade || 0})`}
                           aria-label={`Ver ${semNasc} animal${semNasc === 1 ? "" : "is"} sem data de nascimento do Lote ${lote.nome}`}
                         >
-                          Sem data nasc.: {semNasc}
-                          {(lote.machosSemIdade > 0 || lote.femeasSemIdade > 0) && (
-                            <span className="text-amber-600/80">
-                              {" "}(M: {lote.machosSemIdade || 0} · F: {lote.femeasSemIdade || 0})
-                            </span>
-                          )}
+                          Sem nasc.: {semNasc}
                         </button>
                       )}
                     </td>
                     {FAIXAS_IDADE_LOTE.map(f => {
                       const qtd = lote.machos[f] ?? 0;
                       return (
-                        <td key={`m-${lote.id}-${f}`} className="px-2 py-2 text-center border-r border-gray-50">
+                        <td key={`m-${lote.id}-${f}`} className={faixaTdClass}>
                           <ContagemCell
                             value={qtd}
                             label={faixaAriaLabel("macho", f, qtd, lote.nome)}
@@ -633,7 +497,7 @@ export default function LotsManagementPage() {
                     {FAIXAS_IDADE_LOTE.map(f => {
                       const qtd = lote.femeas[f] ?? 0;
                       return (
-                        <td key={`f-${lote.id}-${f}`} className="px-2 py-2 text-center border-r border-gray-50">
+                        <td key={`f-${lote.id}-${f}`} className={faixaTdClass}>
                           <ContagemCell
                             value={qtd}
                             label={faixaAriaLabel("femea", f, qtd, lote.nome)}
@@ -647,23 +511,23 @@ export default function LotsManagementPage() {
                         </td>
                       );
                     })}
-                    <td className="px-2 py-2 text-center border-l border-r border-gray-200 bg-gray-50/60">
+                    <td className={`px-1.5 py-2 text-center ${headerBorderR} bg-gray-50/60`}>
                       <ContagemCell
                         value={totalGeral}
-                        label={`Ver todos os ${totalGeral} animais do Lote ${lote.nome}`}
+                        label={
+                          totalGeral > 0
+                            ? `Ver ${totalGeral} animais do Lote ${lote.nome} (${totalMachos} ${totalMachos === 1 ? "macho" : "machos"} · ${totalFemeas} ${totalFemeas === 1 ? "fêmea" : "fêmeas"})`
+                            : `Nenhum animal no Lote ${lote.nome}`
+                        }
                         onClick={() => goAnimais({
                           loteId: lote.id,
                           fazendaId: lote.fazendaId,
                         })}
                       />
-                      {totalGeral > 0 && (
-                        <div className="text-[10px] text-gray-600 mt-0.5 tabular-nums leading-tight">
-                          M: {totalMachos} · F: {totalFemeas}
-                        </div>
-                      )}
                     </td>
-                    <td className="px-2 py-2 text-center">
+                    <td className="px-1 py-2 text-center">
                       <FarmRowActionButtons
+                        iconSize={17}
                         onEdit={() => setLocation(`/rebanho/editar-lote?id=${lote.id}`)}
                         onDelete={() => handleDeleteRequest(lote)}
                       />
@@ -675,7 +539,7 @@ export default function LotsManagementPage() {
           </table>
         </div>
 
-        <div className="px-4 py-2 border-t border-gray-100 text-[11px] text-gray-500">
+        <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-500">
           Faixas etárias em meses completos
         </div>
 

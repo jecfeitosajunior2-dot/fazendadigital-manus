@@ -9,7 +9,8 @@ import TablePaginationFooter from "@/components/TablePaginationFooter";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { FD_PRIMARY, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { FarmRowActionButtons } from "@/components/icons/FarmActionIcons";
 import FazendaLandIcon from "@/components/icons/FazendaLandIcon";
 import {
@@ -395,7 +396,9 @@ export default function BenfeitoriasListPage() {
     <AppLayout>
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Benfeitorias</h1>
+          <h1 className="text-[20px] font-semibold text-gray-900 shrink-0" style={{ fontFamily: "Fraunces, serif" }}>
+            Lista de Benfeitorias
+          </h1>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
@@ -472,42 +475,48 @@ export default function BenfeitoriasListPage() {
               />
             </div>
 
-            <select
-              value={estadoFilter}
-              onChange={e => {
-                setEstadoFilter(e.target.value);
-                setPage(1);
-              }}
-              disabled={!hasFazendaFilter}
-              className={listControlClass}
-              aria-label="Filtrar por estado de conservação"
-            >
-              <option value="">Todos os estados</option>
-              {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
-                <option key={estado} value={estado}>
-                  {estado}
-                </option>
-              ))}
-            </select>
+            <div className="w-[180px] shrink-0">
+              <FormSelect
+                variant="light"
+                value={estadoFilter || "__all__"}
+                onChange={v => {
+                  setEstadoFilter(v === "__all__" ? "" : v);
+                  setPage(1);
+                }}
+                placeholder="Todos os estados"
+                disabled={!hasFazendaFilter}
+                triggerClassName={listControlClass}
+              >
+                <SelectItem value="__all__" className="text-[12px]">Todos os estados</SelectItem>
+                {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
+                  <SelectItem key={estado} value={estado} className="text-[12px]">
+                    {estado}
+                  </SelectItem>
+                ))}
+              </FormSelect>
+            </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[11px] text-gray-500 whitespace-nowrap hidden sm:inline">Ordenar por:</span>
-              <select
-                value={sortBy}
-                onChange={e => {
-                  setSortBy(e.target.value as SortOption);
-                  setPage(1);
-                }}
-                disabled={!hasFazendaFilter}
-                className={listControlClass}
-                aria-label="Ordenar lista de benfeitorias"
-              >
-                {SORT_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <div className="w-[160px] shrink-0">
+                <FormSelect
+                  variant="light"
+                  value={sortBy}
+                  onChange={v => {
+                    setSortBy(v as SortOption);
+                    setPage(1);
+                  }}
+                  placeholder="Ordenar por"
+                  disabled={!hasFazendaFilter}
+                  triggerClassName={listControlClass}
+                >
+                  {SORT_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value} className="text-[12px]">
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+              </div>
             </div>
           </div>
         )}

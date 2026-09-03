@@ -21,18 +21,15 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <div className={`bg-white/95 rounded-2xl shadow-[0_12px_30px_rgba(15,23,42,0.06)] border border-slate-100 overflow-hidden ${className}`}>
-      <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-white to-slate-50/80 flex items-center justify-between gap-2">
-        <h2 className="text-[13px] font-semibold text-gray-800 flex items-center gap-2">
-          {icon && (
-            <span
-              className="material-icons text-[18px] rounded-lg p-1"
-              style={{ color: TEAL, backgroundColor: `${TEAL}12` }}
-            >
+    <div className={`bg-white border border-gray-200 rounded shadow-sm overflow-hidden ${className}`}>
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+        <h2 className="text-[13px] font-semibold text-[#4ECDC4] flex items-center gap-2 min-w-0">
+          {icon ? (
+            <span className="material-icons text-[18px] shrink-0" style={{ color: TEAL }}>
               {icon}
             </span>
-          )}
-          {title}
+          ) : null}
+          <span className="truncate">{title}</span>
         </h2>
         {action}
       </div>

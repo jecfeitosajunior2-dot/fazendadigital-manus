@@ -1490,7 +1490,7 @@ export default function InsumosNovaMovimentacaoPage() {
                       setDataMovimentacao(v);
                       limparErro("data");
                     }}
-                    placeholder="DD/MM/AAAA"
+                    placeholder="dd/mm/aaaa"
                     required
                     invalid={!!erros.data}
                     aria-describedby={erros.data ? "mov-err-data" : undefined}
@@ -1540,7 +1540,7 @@ export default function InsumosNovaMovimentacaoPage() {
                         setDataMovimentacao(v);
                         limparErro("data");
                       }}
-                      placeholder="DD/MM/AAAA"
+                      placeholder="dd/mm/aaaa"
                       required
                       invalid={!!erros.data}
                       aria-describedby={erros.data ? "mov-err-data" : undefined}
@@ -1720,7 +1720,7 @@ export default function InsumosNovaMovimentacaoPage() {
                     <FormDatePicker
                       value={prodDataValidade}
                       onChange={setProdDataValidade}
-                      placeholder="DD/MM/AAAA"
+                      placeholder="dd/mm/aaaa"
                     />
                   </div>
                 )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ import {
 import { SelectItem } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { FormLabel, FormInput, FormSelect, FieldBox, inputClass } from "@/components/FormFields";
+import { FormLabel, FormInput, FormSelect } from "@/components/FormFields";
 import { ImportarCoordenadasModal } from "@/components/ImportarCoordenadasModal";
 import { FazendaSubdivisaoMapaModal } from "@/components/FazendaSubdivisaoMapaModal";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -37,6 +37,25 @@ const CAMPOS_ORDEM: CampoObrigatorioSub[] = ["tipo", "nome", "area"];
 
 function fieldDomId(campo: CampoObrigatorioSub) {
   return `subdivisao-field-${campo}`;
+}
+
+function SubCard({
+  title,
+  className,
+  children,
+}: {
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cn("bg-white border border-gray-200 rounded shadow-sm overflow-hidden", className)}>
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h3 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h3>
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
 }
 
 function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
@@ -362,7 +381,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
   if (!fazenda) {
     return (
-      <div className="mt-6 bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">
+      <div className="mt-6 bg-white border border-gray-200 rounded shadow-sm p-8 text-center text-gray-400">
         <span className="material-icons text-4xl block mb-2 opacity-30">touch_app</span>
         <p className="text-[12px]">Selecione uma fazenda acima para visualizar suas subdivisões.</p>
       </div>
@@ -370,7 +389,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
   }
 
   return (
-    <div className="mt-6 bg-white rounded-xl border border-gray-200">
+    <div id="fazenda-subdivisoes" className="mt-6 bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
         <h2
           className="text-[20px] font-semibold text-gray-900 min-w-0 flex-1"
@@ -401,16 +420,12 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
       {/* Formulário inline — espelho iRancho */}
       {showForm && (
-        <div className="px-4 py-4 space-y-5">
-          <p className="text-[13px] font-semibold text-gray-800">
+        <div className="px-4 py-4 space-y-5 bg-gray-50/70">
+          <p className="text-[13px] font-semibold text-[#4ECDC4]">
             {editId ? "Editar Subdivisão" : "Nova Subdivisão"}
           </p>
 
-          {/* Identificação */}
-          <section className="rounded-xl border border-gray-200 bg-white p-4">
-            <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
-              Identificação
-            </h3>
+          <SubCard title="Identificação">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
               <div className="scroll-mt-24">
                 <FormLabel required>Tipo de Divisão</FormLabel>
@@ -454,14 +469,10 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 />
               </div>
             </div>
-          </section>
+          </SubCard>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            {/* Área e capacidade */}
-            <section className="rounded-xl border border-gray-200 bg-white p-4 h-full">
-              <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
-                Área e Capacidade
-              </h3>
+            <SubCard title="Área e Capacidade" className="h-full">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 <div className="sm:col-span-2 lg:col-span-1 scroll-mt-24">
                   <FormLabel required={areaObrigatoria}>
@@ -484,20 +495,23 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                         aria-describedby={errosObrigatorios.area ? "subdivisao-err-area" : undefined}
                       />
                     </div>
-                    <FieldBox variant="light" className="shrink-0 w-[62px]" invalid={!!errosObrigatorios.area}>
-                      <select
+                    <div className="w-[72px] shrink-0">
+                      <FormSelect
+                        variant="light"
                         value={form.areaUnidade}
-                        onChange={e => {
-                          setForm(f => ({ ...f, areaUnidade: e.target.value as AreaInputUnidade }));
+                        onChange={v => {
+                          setForm(f => ({ ...f, areaUnidade: v as AreaInputUnidade }));
                           limparErroCampo("area");
                         }}
-                        className={cn(inputClass, "cursor-pointer pr-1")}
-                        aria-label="Unidade da área"
+                        placeholder="ha"
+                        displayValue={form.areaUnidade === "m2" ? "m²" : "ha"}
+                        invalid={!!errosObrigatorios.area}
+                        triggerClassName="px-2"
                       >
-                        <option value="ha">ha</option>
-                        <option value="m2">m²</option>
-                      </select>
-                    </FieldBox>
+                        <SelectItem value="ha" className="text-[12px]">ha</SelectItem>
+                        <SelectItem value="m2" className="text-[12px]">m²</SelectItem>
+                      </FormSelect>
+                    </div>
                   </div>
                   <FieldErrorMsg id="subdivisao-err-area" message={errosObrigatorios.area} />
                   {areaDica && !errosObrigatorios.area && (
@@ -537,13 +551,9 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   <p className="mt-1.5 ml-6 text-[10px] leading-relaxed text-amber-700/90">{incluirAreaAviso}</p>
                 )}
               </div>
-            </section>
+            </SubCard>
 
-            {/* Pastagem e status */}
-            <section className="rounded-xl border border-gray-200 bg-white p-4 h-full">
-              <h3 className="inline-flex items-center rounded-full bg-[#E6FAF8] px-3 py-1 text-[12px] font-semibold text-[#0F3D44] mb-3">
-                Pastagem e Status
-              </h3>
+            <SubCard title="Pastagem e Status" className="h-full">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 <div>
                   <FormLabel>Tipo de Pastagem</FormLabel>
@@ -551,6 +561,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                     value={form.tipoPastagem || "__none__"}
                     onChange={v => setForm(f => ({ ...f, tipoPastagem: v === "__none__" ? "" : v }))}
                     placeholder="Selecione o tipo de Pastagem"
+                    side="top"
                   >
                     <SelectItem value="__none__" className="text-[13px] text-gray-400">Selecione o tipo de Pastagem</SelectItem>
                     {TIPOS_PASTAGEM.map(t => (
@@ -567,6 +578,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                     value={form.status}
                     onChange={v => setForm(f => ({ ...f, status: v }))}
                     placeholder="Status"
+                    side="top"
                   >
                     {STATUS_OPERACIONAL.filter((item, index, arr) => arr.findIndex(i => i.label === item.label) === index).map(s => (
                       <SelectItem key={s.value} value={s.value} className="text-[13px]">{s.label}</SelectItem>
@@ -574,7 +586,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                   </FormSelect>
                 </div>
               </div>
-            </section>
+            </SubCard>
           </div>
 
           <div className="pt-1 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -590,7 +602,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
                 type="button"
                 onClick={resetForm}
                 disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 transition-colors"
               >
                 Cancelar
               </button>

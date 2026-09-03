@@ -145,6 +145,15 @@ import {
   executarExclusaoLote,
   executarInativacaoLote,
 } from "./loteExclusaoCheck";
+import {
+  assertAnimalPodeExcluirDb,
+  assertAnimalPodeExcluirLocal,
+  collectAnimalIdsComHistoricoDb,
+} from "./animalExclusaoCheck";
+import {
+  animalStatusNaoAtivo,
+  isAnimalExclusaoBloqueada,
+} from "../shared/animalExclusao";
 import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
 import {
   assertCustoDoseInseminacaoCreate,
@@ -195,6 +204,7 @@ import {
   MSG_REPRO_MATRIZ_INELEGIVEL,
 } from "../shared/reproCoberturaAlvo";
 import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
+import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
 import { devLocalStore } from "./devLocalStore";
 import {
@@ -758,6 +768,7 @@ const animaisRouter = router({
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
       const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(saudeAll, medCarenciaMap, hoje);
+      const idsComHistorico = await collectAnimalIdsComHistoricoDb(ctx.user.id, animalIds);
 
       // Monta resultado enriquecido
       const resultado = lista.map(animal => {
@@ -809,6 +820,10 @@ const animaisRouter = router({
           fimCarenciaAte: fimCarenciaPorAnimal.has(animal.id)
             ? toDateOnlyISO(fimCarenciaPorAnimal.get(animal.id)!)
             : null,
+          exclusaoBloqueada: isAnimalExclusaoBloqueada({
+            statusNaoAtivo: animalStatusNaoAtivo(animal.status),
+            temHistoricoOperacional: idsComHistorico.has(animal.id),
+          }),
         };
       });
 
@@ -1347,10 +1362,13 @@ const animaisRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertAnimalPodeExcluirDb(ctx.user.id, input.id);
         await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
+          await assertAnimalPodeExcluirLocal(ctx.user.id, input.id);
           await deleteLocalAnimal(ctx.user.id, input.id);
           return { success: true, localFallback: true };
         }
@@ -9459,7 +9477,7 @@ const fazendasRouter = router({
         return await getFazendaDeleteCheck(ctx.user.id, input.id);
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
-          return getFazendaDeleteCheck(ctx.user.id, input.id, true);
+          return await getFazendaDeleteCheck(ctx.user.id, input.id, true);
         }
         throw error;
       }

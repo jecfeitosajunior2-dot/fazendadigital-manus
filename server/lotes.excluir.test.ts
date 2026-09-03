@@ -7,7 +7,7 @@ import { TRPCError } from "@trpc/server";
  *
  * Regras:
  *  - Lote não encontrado → lança NOT_FOUND
- *  - Lote com animais vinculados → lança PRECONDITION_FAILED com contagem
+ *  - Lote com animais ativos vinculados → lança PRECONDITION_FAILED com contagem
  *  - Lote sem animais → exclui e retorna { success: true, nomeLote }
  */
 
@@ -22,6 +22,7 @@ interface AnimalRow {
   id: number;
   loteId: number | null;
   userId: number;
+  status?: "ativo" | "vendido" | "morto" | "transferido";
 }
 
 // ─── Função que replica a lógica do procedure ─────────────────────────────────
@@ -37,9 +38,9 @@ async function excluirLote(
     throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
   }
 
-  // 2. Conta animais vinculados (independente de status)
+  // 2. Conta apenas animais ativos vinculados (mesma regra do gerenciamento)
   const qtdAnimais = animaisBanco.filter(
-    (a) => a.loteId === input.id && a.userId === userId,
+    (a) => a.loteId === input.id && a.userId === userId && (a.status ?? "ativo") === "ativo",
   ).length;
 
   if (qtdAnimais > 0) {
@@ -65,10 +66,10 @@ function criarFixtures() {
   ];
 
   const animais: AnimalRow[] = [
-    { id: 101, loteId: 1, userId: 10 }, // 1 animal no Lote Recria
-    { id: 102, loteId: 2, userId: 10 }, // 3 animais no Lote Engorda
-    { id: 103, loteId: 2, userId: 10 },
-    { id: 104, loteId: 2, userId: 10 },
+    { id: 101, loteId: 1, userId: 10, status: "ativo" }, // 1 animal ativo no Lote Recria
+    { id: 102, loteId: 2, userId: 10, status: "ativo" }, // 3 animais ativos no Lote Engorda
+    { id: 103, loteId: 2, userId: 10, status: "ativo" },
+    { id: 104, loteId: 2, userId: 10, status: "ativo" },
     // Lote Vazio (id=3) não tem animais
   ];
 
@@ -86,7 +87,15 @@ describe("lotes.excluir — validação de animais vinculados", () => {
     expect(lotes.find((l) => l.id === 3)).toBeUndefined();
   });
 
-  it("bloqueia exclusão de lote com 1 animal vinculado", async () => {
+  it("permite excluir lote quando só há animais inativos vinculados", async () => {
+    const { lotes, animais } = criarFixtures();
+    animais.push({ id: 105, loteId: 3, userId: 10, status: "vendido" });
+    const resultado = await excluirLote({ id: 3 }, 10, lotes, animais);
+    expect(resultado.success).toBe(true);
+    expect(resultado.nomeLote).toBe("Lote Vazio");
+  });
+
+  it("bloqueia exclusão de lote com 1 animal ativo vinculado", async () => {
     const { lotes, animais } = criarFixtures();
     await expect(excluirLote({ id: 1 }, 10, lotes, animais)).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",

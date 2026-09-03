@@ -9,6 +9,11 @@ import {
   resolverLocalizacaoAtualLote,
   type MovimentacaoPastoLoteRef,
 } from "../shared/localizacaoAtualLote";
+import {
+  animalStatusNaoAtivo,
+  collectBlockedAnimalIds,
+  isAnimalExclusaoBloqueada,
+} from "../shared/animalExclusao";
 import { computeIndicadoresPeso } from "../shared/pesoEntrada";
 import {
   avaliarManejoVsBaixa,
@@ -1138,7 +1143,9 @@ export async function avaliarExclusaoLocalLote(
   const animais = await readAnimais();
   const byUser = animais.filter(row => row.userId === userId);
   const searchPool = byUser.length > 0 ? byUser : animais;
-  const qtdAnimais = searchPool.filter(a => Number(a.loteId) === loteId).length;
+  const qtdAnimais = searchPool.filter(
+    a => Number(a.loteId) === loteId && a.status === "ativo",
+  ).length;
 
   let fazendaNome: string | null = null;
   if (lote.fazendaId) {
@@ -1952,6 +1959,52 @@ export async function deleteLocalAnimal(userId: number, id: number): Promise<voi
   await writeAnimais(remaining);
 }
 
+/** IDs locais com pesagem, saúde, baixa, reprodução, filho etc. — mesmo critério do MySQL. */
+export async function collectLocalAnimalIdsComHistorico(
+  userId: number,
+  animalIds: number[],
+): Promise<Set<number>> {
+  if (animalIds.length === 0) return new Set();
+
+  const [
+    pesagensRows,
+    saudeRows,
+    baixasRows,
+    reproRows,
+    criasRows,
+    historicoRows,
+    movRows,
+    animaisRows,
+  ] = await Promise.all([
+    listLocalPesagens(userId),
+    listLocalSaudeRegistros(userId),
+    listLocalAnimalBaixas(userId),
+    listLocalReproducaoRegistros(userId),
+    listLocalPartoCrias(userId),
+    readHistoricoBrincos(),
+    readAnimalLoteMovimentacoes(),
+    listLocalAnimais(userId),
+  ]);
+
+  const historicoVisivel = historicoRows.filter(row => row.userId === userId);
+  const historico = historicoVisivel.length > 0 ? historicoVisivel : historicoRows;
+  const movVisivel = movRows.filter(row => row.userId === userId);
+  const movs = movVisivel.length > 0 ? movVisivel : movRows;
+
+  return collectBlockedAnimalIds(animalIds, {
+    pesagemIds: pesagensRows.map(row => row.animalId),
+    saudeIds: saudeRows.map(row => row.animalId),
+    baixaIds: baixasRows.map(row => row.animalId),
+    reproducaoFemeaIds: reproRows.map(row => row.femeaId),
+    reproducaoMachoIds: reproRows.map(row => row.machoId),
+    partoCriaIds: criasRows.map(row => row.criaAnimalId),
+    historicoBrincoIds: historico.map(row => row.animalId),
+    movimentacaoLoteIds: movs.map(row => row.animalId),
+    maeDeIds: animaisRows.map(row => row.maeId),
+    paiDeIds: animaisRows.map(row => row.paiId),
+  });
+}
+
 export type LocalPesagem = {
   id: number;
   userId: number;
@@ -2252,6 +2305,10 @@ export async function listLocalAnimaisEnriched(
   const loteNomeMap = await buildLocalLoteNomeMap(userId);
   const pesagensPorAnimal = buildLocalPesagensPorAnimal(await listLocalPesagens(userId));
   const localSaude = await listLocalSaudeRegistros(userId);
+  const exclusaoBloqueadaIds = await collectLocalAnimalIdsComHistorico(
+    userId,
+    lista.map(a => a.id),
+  );
   const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(
     localSaude.map(s => ({
       animalId: s.animalId,
@@ -2303,6 +2360,10 @@ export async function listLocalAnimaisEnriched(
       fimCarenciaAte: fimCarenciaPorAnimal.has(animal.id)
         ? toDateOnlyISO(fimCarenciaPorAnimal.get(animal.id)!)
         : null,
+      exclusaoBloqueada: isAnimalExclusaoBloqueada({
+        statusNaoAtivo: animalStatusNaoAtivo(animal.status),
+        temHistoricoOperacional: exclusaoBloqueadaIds.has(animal.id),
+      }),
     };
   });
 

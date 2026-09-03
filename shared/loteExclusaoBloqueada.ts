@@ -71,3 +71,8 @@ export function textoConfirmacaoExclusaoLote(nomeLote: string, fazendaNome?: str
   }
   return `Tem certeza que deseja excluir o Lote "${nome}"?`;
 }
+
+/** Texto completo do diálogo de confirmação (useConfirm / AlertDialog). */
+export function descricaoConfirmacaoExclusaoLote(nomeLote: string, fazendaNome?: string | null): string {
+  return `${textoConfirmacaoExclusaoLote(nomeLote, fazendaNome)}\n\nEsta ação não poderá ser desfeita.`;
+}

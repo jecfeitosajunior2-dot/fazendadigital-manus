@@ -7,15 +7,14 @@ import { ESTADOS_BR, fetchCidadesPorEstado } from "@/lib/brazil-locations";
 import { SelectItem } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn, formatCpfCnpj, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import { formatCpfCnpj, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   FD_PRIMARY,
   FormLabel,
   FormInput,
   FormSelect,
   FormNativeSelect,
-  FieldBox,
-  inputClass,
+  FormTextarea,
 } from "@/components/FormFields";
 
 /** Ordem visual dos campos obrigatórios no cadastro simples. */
@@ -307,14 +306,12 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="mb-4">
-        <h2 className="inline-flex items-center rounded-full bg-[#4ECDC4]/15 px-3 py-1 text-[12px] font-semibold text-gray-800">
-          {title}
-        </h2>
-        {description && <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">{description}</p>}
+    <section className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+        {description && <p className="mt-1 text-[11px] leading-relaxed text-gray-500">{description}</p>}
       </div>
-      {children}
+      <div className="p-5">{children}</div>
     </section>
   );
 }
@@ -862,16 +859,8 @@ export function FarmRegistrationPage() {
                 </div>
                 <div>
                   <FormLabel>Área Líquida da Fazenda</FormLabel>
-                  <FieldBox variant="light">
-                    <input
-                      type="number"
-                      value={form.areaLiquida}
-                      readOnly
-                      placeholder="0"
-                      className={cn(inputClass, "text-gray-600")}
-                    />
-                  </FieldBox>
-                  <p className="mt-1 text-[10px] text-gray-400">Calculada automaticamente: área total menos área de reserva.</p>
+                  <FormInput variant="light" value={form.areaLiquida} readOnly placeholder="0" type="number" />
+                  <p className="mt-1 text-[10px] text-gray-400">Calculada automaticamente: Área Total - Área de Reserva</p>
                 </div>
               </div>
 
@@ -903,15 +892,13 @@ export function FarmRegistrationPage() {
 
               <div>
                 <FormLabel>Observação</FormLabel>
-                <FieldBox variant="light">
-                  <textarea
-                    value={form.observacoes}
-                    onChange={e => set("observacoes", e.target.value)}
-                    placeholder="Informações adicionais sobre a fazenda..."
-                    className={cn(inputClass, "resize-y min-h-[110px]")}
-                    rows={4}
-                  />
-                </FieldBox>
+                <FormTextarea
+                  variant="light"
+                  value={form.observacoes}
+                  onChange={v => set("observacoes", v)}
+                  placeholder="Informações adicionais sobre a fazenda..."
+                  rows={4}
+                />
               </div>
             </FormSection>
 
@@ -1115,7 +1102,7 @@ export function FarmRegistrationPage() {
               <button
                 type="button"
                 onClick={() => setLocation("/fazendas/visao-geral")}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
               >
                 Cancelar
               </button>

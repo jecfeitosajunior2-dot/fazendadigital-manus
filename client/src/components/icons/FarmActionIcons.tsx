@@ -240,6 +240,8 @@ type ViewEditDeleteRowActionButtonsProps = {
   viewLabel?: string;
   editLabel?: string;
   deleteLabel?: string;
+  /** Lixeira cinza — continua clicável para mostrar o aviso. */
+  deleteBlocked?: boolean;
 };
 
 /** Botões Visualizar + Editar + Excluir — padrão da Lista de Animais */
@@ -252,6 +254,7 @@ export function ViewEditDeleteRowActionButtons({
   viewLabel = "Visualizar",
   editLabel = "Editar",
   deleteLabel = "Excluir",
+  deleteBlocked = false,
 }: ViewEditDeleteRowActionButtonsProps) {
   return (
     <div className={cn("inline-flex items-center justify-center gap-1", className)}>
@@ -261,8 +264,16 @@ export function ViewEditDeleteRowActionButtons({
       <TableIconButton label={editLabel} onClick={onEdit} tone="neutral">
         <EditActionIcon size={iconSize} />
       </TableIconButton>
-      <TableIconButton label={deleteLabel} onClick={onDelete} tone="danger">
-        <DeleteActionIcon size={iconSize} />
+      <TableIconButton
+        label={deleteLabel}
+        onClick={onDelete}
+        tone={deleteBlocked ? "neutral" : "danger"}
+        blocked={deleteBlocked}
+      >
+        <DeleteActionIcon
+          size={iconSize}
+          style={deleteBlocked ? { color: "#9CA3AF" } : undefined}
+        />
       </TableIconButton>
     </div>
   );

@@ -40,6 +40,11 @@ import {
   EM_CARENCIA_SIM_BADGE_CLASS,
   formatUltimoPesoKg,
 } from "@/lib/listaAnimaisTable";
+import {
+  MSG_ANIMAL_EXCLUSAO_BLOQUEADA,
+  TOOLTIP_ANIMAL_EXCLUIR,
+  TOOLTIP_ANIMAL_EXCLUIR_BLOQUEADO,
+} from "@shared/animalExclusao";
 
 // Tipo das colunas ordenáveis
 type AnimaisSortKey = "brinco" | "rfid" | "categoria" | "lote" | "sexo" | "idade" | "diasFazenda" | "ultimoPeso" | "ganhoKg" | "gmd" | "emCarencia";
@@ -169,8 +174,18 @@ export function AnimaisPage() {
     }
   };
 
-  const handleDeleteAnimal = async (animal: { id: number; brinco?: string | null }) => {
-    const label = animal.brinco?.trim() || `#${animal.id}`;
+  const handleDeleteAnimal = async (animal: {
+    id?: unknown;
+    brinco?: unknown;
+    exclusaoBloqueada?: unknown;
+  }) => {
+    if (animal.exclusaoBloqueada) {
+      toast.error(MSG_ANIMAL_EXCLUSAO_BLOQUEADA);
+      return;
+    }
+    const id = Number(animal.id);
+    const brinco = typeof animal.brinco === "string" ? animal.brinco.trim() : "";
+    const label = brinco || `#${id}`;
     const ok = await confirm({
       title: "Excluir animal",
       description: `Tem certeza que deseja excluir o animal "${label}"? Esta ação não pode ser desfeita.`,
@@ -178,7 +193,7 @@ export function AnimaisPage() {
       cancelText: "Cancelar",
       variant: "danger",
     });
-    if (ok) deleteMutation.mutate({ id: animal.id });
+    if (ok) deleteMutation.mutate({ id });
   };
 
   const apiParams = useMemo(
@@ -584,7 +599,12 @@ export function AnimaisPage() {
                       <ViewEditDeleteRowActionButtons
                         viewLabel="Visualizar animal"
                         editLabel="Editar animal"
-                        deleteLabel="Excluir animal"
+                        deleteLabel={
+                          !!animal.exclusaoBloqueada
+                            ? TOOLTIP_ANIMAL_EXCLUIR_BLOQUEADO
+                            : TOOLTIP_ANIMAL_EXCLUIR
+                        }
+                        deleteBlocked={!!animal.exclusaoBloqueada}
                         onView={() => setLocation(`/rebanho/detalhes-animal?id=${animal.id}`)}
                         onEdit={() => setLocation(`/rebanho/editar-animal?id=${animal.id}`)}
                         onDelete={() => void handleDeleteAnimal(animal)}

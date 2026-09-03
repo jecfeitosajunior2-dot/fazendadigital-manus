@@ -166,6 +166,15 @@ export function FarmsOverviewPage() {
     }
   }, [fazendaList, selectedId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#fazenda-subdivisoes") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("fazenda-subdivisoes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [selectedFazenda]);
+
   return (
     <AppLayout>
       <FazendaDeleteBlockedDialog
@@ -276,7 +285,7 @@ export function FarmsOverviewPage() {
                       <div className="flex justify-center">
                         <FarmRowActionButtons
                           onEdit={() => setLocation(`/fazendas/cadastro?id=${f.id}`)}
-                          onDelete={() => handleDeleteFazenda(f)}
+                          onDelete={() => void handleDeleteFazenda(f)}
                         />
                       </div>
                     </td>
@@ -447,6 +456,38 @@ export function SubdivisionsPage() {
 
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
 
+function DistCard({
+  title,
+  icon,
+  titleColor = "#4ECDC4",
+  action,
+  className,
+  children,
+}: {
+  title: string;
+  icon?: string;
+  titleColor?: string;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn("bg-white border border-gray-200 rounded shadow-sm overflow-hidden", className)}>
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+        <h2
+          className="text-[13px] font-semibold flex items-center gap-1.5"
+          style={{ color: titleColor }}
+        >
+          {icon ? <span className="material-icons text-[14px]">{icon}</span> : null}
+          {title}
+        </h2>
+        {action}
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
 function BarChart({ items, color }: { items: { label: string; value: number; pct: number }[]; color: string }) {
   if (!items.length) return <p className="text-[11px] text-gray-400">Sem dados</p>;
   return (
@@ -486,7 +527,7 @@ function AlertCard({
 }) {
   const neutral = {
     color: "#6B7280",
-    card: "border-gray-100 hover:border-gray-200 hover:bg-gray-50/60",
+    card: "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60",
     iconBg: "#F3F4F6",
     valueClass: "text-gray-700",
   };
@@ -525,7 +566,7 @@ function AlertCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex flex-col gap-1.5 bg-white rounded-lg border p-3 text-left w-full min-h-[82px] transition-all",
+        "group flex flex-col gap-1.5 bg-white rounded border border-gray-200 shadow-sm p-3 text-left w-full min-h-[82px] transition-all",
         "cursor-pointer hover:shadow-sm active:scale-[0.99]",
         s.card,
       )}
@@ -565,8 +606,8 @@ function KpiCard({
     <div
       onClick={onClick}
       className={cn(
-        "bg-white rounded-lg border border-gray-100 shadow-sm p-3 min-h-[68px] flex items-center transition",
-        onClick && "cursor-pointer hover:shadow-sm hover:border-gray-200 active:scale-[0.99]",
+        "bg-white rounded border border-gray-200 shadow-sm p-3 min-h-[68px] flex items-center transition",
+        onClick && "cursor-pointer hover:shadow-sm hover:border-gray-300 active:scale-[0.99]",
       )}
     >
       <div className="flex items-center gap-2.5 w-full min-w-0">
@@ -614,7 +655,7 @@ function KpiCard({
 }
 
 function GmdRankBadge({ position }: { position: number }) {
-  const medals: Record<number, string> = { 1: "#2D5A5A", 2: "#64748B", 3: "#94A3B8" };
+  const medals: Record<number, string> = { 1: "#8B5CF6", 2: "#64748B", 3: "#94A3B8" };
   const bg = medals[position] ?? "#E2E8F0";
   const text = position <= 3 ? "text-white" : "text-gray-600";
   return (
@@ -695,38 +736,30 @@ export function HerdOverviewPage() {
     setLocation(`/rebanho/lista-animais?${qs.toString()}`);
   };
 
-  const fazendaNome = fazendaList?.find(f => f.id === fazendaId)?.nome;
-
-  // Cabeçalho no mesmo modelo da Visão Geral de Insumos
+  // Cabeçalho — título Fraunces fora do card; filtro Fazenda no padrão Mapa do Rebanho
   const headerBlock = (
     <div className="mb-5">
-      <div className="min-w-0 flex-1">
-        <h1
-          className="text-[20px] font-semibold text-gray-900"
-          style={{ fontFamily: "Fraunces, serif" }}
-        >
-          {fazendaId && fazendaNome
-            ? `Visão Geral do Rebanho — ${fazendaNome}`
-            : "Visão Geral do Rebanho"}
-        </h1>
-        {fazendaList && fazendaList.length > 0 && (
-          <div className="mt-3 max-w-xs">
-            <select
+      <h1
+        className="text-[20px] font-semibold text-gray-900"
+        style={{ fontFamily: "Fraunces, serif" }}
+      >
+        Visão Geral do Rebanho
+      </h1>
+      {fazendaList && fazendaList.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+          <div className="flex flex-col gap-1 min-w-0">
+            <label className="text-[11px] font-medium text-gray-500">Fazenda</label>
+            <FazendaOverviewSelect
               value={fazendaId != null ? String(fazendaId) : ""}
-              onChange={e => handleFazendaChange(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px]"
-              aria-label="Fazenda"
-            >
-              <option value="">Selecione uma fazenda</option>
-              {fazendaList.map(f => (
-                <option key={f.id} value={String(f.id)}>
-                  {f.nome}
-                </option>
-              ))}
-            </select>
+              onChange={handleFazendaChange}
+              fazendas={fazendaList}
+              emptyLabel="Selecione uma fazenda"
+              showEmptyOption={fazendaList.length > 1}
+              className="w-full min-w-0"
+            />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 
@@ -735,7 +768,7 @@ export function HerdOverviewPage() {
       <AppLayout>
         <div className="space-y-5 mb-5">
           {headerBlock}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-12 sm:py-14 text-center">
+          <div className="bg-white border border-gray-200 rounded shadow-sm px-6 py-12 sm:py-14 text-center">
             <RebanhoOverviewPlaceholderIcon />
             <h2 className="text-[16px] font-semibold text-gray-900">Nenhuma fazenda cadastrada</h2>
             <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
@@ -752,7 +785,7 @@ export function HerdOverviewPage() {
       <AppLayout>
         <div className="space-y-5 mb-5">
           {headerBlock}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-6 py-12 sm:py-14 text-center">
+          <div className="bg-white border border-gray-200 rounded shadow-sm px-6 py-12 sm:py-14 text-center">
             <RebanhoOverviewPlaceholderIcon />
             <h2 className="text-[16px] font-semibold text-gray-900">Selecione uma fazenda</h2>
             <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
@@ -770,7 +803,7 @@ export function HerdOverviewPage() {
         {headerBlock}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-lg border border-gray-100 p-3 h-[68px] animate-pulse" />
+            <div key={i} className="bg-white rounded border border-gray-200 shadow-sm p-3 h-[68px] animate-pulse" />
           ))}
         </div>
       </AppLayout>
@@ -783,7 +816,7 @@ export function HerdOverviewPage() {
         {headerBlock}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-lg border border-gray-100 p-3 h-[68px] animate-pulse" />
+            <div key={i} className="bg-white rounded border border-gray-200 shadow-sm p-3 h-[68px] animate-pulse" />
           ))}
         </div>
       </AppLayout>
@@ -854,10 +887,7 @@ export function HerdOverviewPage() {
 
       {/* ── Distribuições ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: BLUE }}>
-            <span className="material-icons text-[14px]">male</span> Machos
-          </h2>
+        <DistCard title="Machos" icon="male" titleColor={BLUE}>
           {data.porCategoriaMachos.length > 0
             ? (
               <BarChart
@@ -873,11 +903,8 @@ export function HerdOverviewPage() {
               />
             )
             : <p className="text-[11px] text-gray-400">Nenhum macho cadastrado</p>}
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold mb-3 flex items-center gap-1.5" style={{ color: PINK }}>
-            <span className="material-icons text-[14px]">female</span> Fêmeas
-          </h2>
+        </DistCard>
+        <DistCard title="Fêmeas" icon="female" titleColor={PINK}>
           {data.porCategoriaFemeas.length > 0
             ? (
               <BarChart
@@ -893,15 +920,13 @@ export function HerdOverviewPage() {
               />
             )
             : <p className="text-[11px] text-gray-400">Nenhuma fêmea cadastrada</p>}
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Raça</h2>
+        </DistCard>
+        <DistCard title="Por Raça" titleColor={ORANGE}>
           <BarChart items={data.porRaca} color={ORANGE} />
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-          <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Por Faixa de Peso</h2>
+        </DistCard>
+        <DistCard title="Por Faixa de Peso" titleColor={PURPLE}>
           <BarChart items={data.porFaixaPeso} color={PURPLE} />
-        </div>
+        </DistCard>
       </div>
 
       {/* ── Alertas ── */}
@@ -949,9 +974,9 @@ export function HerdOverviewPage() {
       </div>
 
       {/* ── Faixa etária ── */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-5 overflow-x-auto">
-        <h2 className="text-[12px] font-semibold text-gray-700 mb-3">Faixa Etária por Categoria</h2>
+      <DistCard title="Faixa Etária por Categoria" titleColor={TEAL} icon="timeline" className="mb-5">
         {data.porFaixaEtariaCategoria.some(r => Object.values(r.categorias).some(v => v > 0)) ? (
+          <div className="overflow-x-auto">
           <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="bg-gray-50">
@@ -989,19 +1014,18 @@ export function HerdOverviewPage() {
               })}
             </tbody>
           </table>
+          </div>
         ) : (
           <p className="text-[11px] text-gray-400">Sem data de nascimento cadastrada para exibir faixas etárias</p>
         )}
-      </div>
+      </DistCard>
 
       {/* ── Top 5 GMD ── */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <div>
-            <h2 className="text-[12px] font-semibold text-gray-800">Top 5 Animais por GMD (kg/dia)</h2>
-          </div>
-          <span className="material-icons text-[18px] text-gray-300">leaderboard</span>
-        </div>
+      <DistCard
+        title="Top 5 Animais por GMD (kg/dia)"
+        titleColor={PURPLE}
+        icon="leaderboard"
+      >
         {data.top5Gmd.length > 0 ? (
           <>
             <div
@@ -1037,7 +1061,7 @@ export function HerdOverviewPage() {
                     }}
                     className={cn(
                       "grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem_1rem] gap-x-2 sm:gap-x-3 items-center rounded-lg border px-3 py-2.5 w-full text-left transition",
-                      position === 1 ? "border-teal-100 bg-teal-50/40" : "border-gray-100 bg-gray-50/30",
+                      position === 1 ? "border-purple-100 bg-purple-50/40" : "border-gray-100 bg-gray-50/30",
                       canOpenAnimal && "cursor-pointer hover:shadow-sm hover:border-gray-200 active:scale-[0.99]",
                       !canOpenAnimal && "cursor-default",
                     )}
@@ -1047,7 +1071,7 @@ export function HerdOverviewPage() {
                     <p className="text-[12px] text-gray-700 truncate">{a.categoria || "—"}</p>
                     <p
                       className="text-[13px] font-bold tabular-nums text-right"
-                      style={{ color: hasGmd ? TEAL : "#9CA3AF" }}
+                      style={{ color: hasGmd ? PURPLE : "#9CA3AF" }}
                     >
                       {hasGmd ? `${a.gmd} kg/d` : "—"}
                     </p>
@@ -1069,7 +1093,7 @@ export function HerdOverviewPage() {
         ) : (
           <p className="text-[11px] text-gray-400 py-4 text-center">Sem dados de GMD suficientes para exibir o ranking</p>
         )}
-      </div>
+      </DistCard>
     </AppLayout>
   );
 }

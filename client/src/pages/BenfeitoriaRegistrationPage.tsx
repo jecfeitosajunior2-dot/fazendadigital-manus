@@ -420,184 +420,190 @@ export default function BenfeitoriaRegistrationPage() {
       <button
         type="button"
         onClick={() => setLocation(listUrl)}
-        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        className="mb-3 flex items-center gap-0.5 text-[11px] text-gray-500"
+        aria-label="Voltar"
       >
-        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
-          arrow_back
-        </span>
-        <span className="text-[13px]">Voltar</span>
+        <span className="material-icons text-[14px]">arrow_back</span>
+        Voltar
       </button>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
-          <h1
-            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {isEdit ? "Editar Benfeitoria" : "Cadastro de Benfeitoria"}
-          </h1>
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+              {isEdit ? "Editar Benfeitoria" : "Cadastro de Benfeitoria"}
+            </h1>
+          </div>
 
-          <div className="mb-6">
-            <p className="text-[11px] text-gray-600 mb-3">
-              Selecione até três fotos para sua Benfeitoria
-            </p>
-            <div className="flex gap-3">
-              {imageSlots.map((slot, i) => (
-                <ImageUploadSlot
-                  key={i}
-                  slot={slot}
-                  onSelect={file => setImageAt(i, file)}
-                  onRemove={() => removeImageAt(i)}
+          <div className="p-5 space-y-5">
+            <div>
+              <p className="text-[11px] text-gray-600 mb-3">
+                Selecione até três fotos para sua Benfeitoria
+              </p>
+              <div className="flex gap-3">
+                {imageSlots.map((slot, i) => (
+                  <ImageUploadSlot
+                    key={i}
+                    slot={slot}
+                    onSelect={file => setImageAt(i, file)}
+                    onRemove={() => removeImageAt(i)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="scroll-mt-24">
+                <FormLabel required>Nome</FormLabel>
+                <FormInput
+                  variant="light"
+                  id={fieldDomId("nome")}
+                  value={form.nome}
+                  onChange={v => set("nome", v)}
+                  placeholder="Digite um nome para a benfeitoria"
+                  required
+                  invalid={!!errosObrigatorios.nome}
+                  aria-describedby={errosObrigatorios.nome ? "benfeitoria-err-nome" : undefined}
                 />
-              ))}
+                <FieldErrorMsg id="benfeitoria-err-nome" message={errosObrigatorios.nome} />
+              </div>
+              <div className="scroll-mt-24">
+                <FormLabel required>Fazenda</FormLabel>
+                <FormNativeSelect
+                  variant="light"
+                  id={fieldDomId("fazendaId")}
+                  value={form.fazendaId}
+                  onChange={v => set("fazendaId", v)}
+                  placeholder="Selecione uma fazenda"
+                  required
+                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                  invalid={!!errosObrigatorios.fazendaId}
+                  aria-describedby={errosObrigatorios.fazendaId ? "benfeitoria-err-fazendaId" : undefined}
+                />
+                <FieldErrorMsg id="benfeitoria-err-fazendaId" message={errosObrigatorios.fazendaId} />
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div className="scroll-mt-24">
-              <FormLabel required>Nome</FormLabel>
-              <FormInput
-                id={fieldDomId("nome")}
-                value={form.nome}
-                onChange={v => set("nome", v)}
-                placeholder="Digite um nome para a benfeitoria"
-                required
-                invalid={!!errosObrigatorios.nome}
-                aria-describedby={errosObrigatorios.nome ? "benfeitoria-err-nome" : undefined}
-              />
-              <FieldErrorMsg id="benfeitoria-err-nome" message={errosObrigatorios.nome} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="scroll-mt-24">
+                <FormLabel required>Tipo de Benfeitoria</FormLabel>
+                <FormSelect
+                  variant="light"
+                  id={fieldDomId("tipo")}
+                  value={form.tipo}
+                  onChange={v => set("tipo", v)}
+                  placeholder="Selecione o tipo"
+                  required
+                  displayValue={form.tipo}
+                  invalid={!!errosObrigatorios.tipo}
+                  aria-describedby={errosObrigatorios.tipo ? "benfeitoria-err-tipo" : undefined}
+                >
+                  {TIPOS_BENFEITORIA.map(tipo => (
+                    <SelectItem key={tipo} value={tipo} className="text-[12px]">
+                      {tipo}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+                <FieldErrorMsg id="benfeitoria-err-tipo" message={errosObrigatorios.tipo} />
+              </div>
+              <div className="scroll-mt-24">
+                <FormLabel required>Estado de Conservação</FormLabel>
+                <FormSelect
+                  variant="light"
+                  id={fieldDomId("estado")}
+                  value={form.estado}
+                  onChange={v => set("estado", v)}
+                  placeholder="Selecione o estado"
+                  required
+                  displayValue={form.estado}
+                  invalid={!!errosObrigatorios.estado}
+                  aria-describedby={errosObrigatorios.estado ? "benfeitoria-err-estado" : undefined}
+                >
+                  {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
+                    <SelectItem key={estado} value={estado} className="text-[12px]">
+                      {estado}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+                <FieldErrorMsg id="benfeitoria-err-estado" message={errosObrigatorios.estado} />
+              </div>
             </div>
-            <div className="scroll-mt-24">
-              <FormLabel required>Fazenda</FormLabel>
-              <FormNativeSelect
-                id={fieldDomId("fazendaId")}
-                value={form.fazendaId}
-                onChange={v => set("fazendaId", v)}
-                placeholder="Selecione uma fazenda"
-                required
-                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-                invalid={!!errosObrigatorios.fazendaId}
-                aria-describedby={errosObrigatorios.fazendaId ? "benfeitoria-err-fazendaId" : undefined}
-              />
-              <FieldErrorMsg id="benfeitoria-err-fazendaId" message={errosObrigatorios.fazendaId} />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div className="scroll-mt-24">
-              <FormLabel required>Tipo de Benfeitoria</FormLabel>
-              <FormSelect
-                id={fieldDomId("tipo")}
-                value={form.tipo}
-                onChange={v => set("tipo", v)}
-                placeholder="Selecione o tipo"
-                required
-                displayValue={form.tipo}
-                triggerClassName="h-[42px] py-0"
-                invalid={!!errosObrigatorios.tipo}
-                aria-describedby={errosObrigatorios.tipo ? "benfeitoria-err-tipo" : undefined}
-              >
-                {TIPOS_BENFEITORIA.map(tipo => (
-                  <SelectItem key={tipo} value={tipo} className="text-[13px]">
-                    {tipo}
-                  </SelectItem>
-                ))}
-              </FormSelect>
-              <FieldErrorMsg id="benfeitoria-err-tipo" message={errosObrigatorios.tipo} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="scroll-mt-24">
+                <FormLabel required>Ano de Construção</FormLabel>
+                <FormYearPicker
+                  variant="light"
+                  id={fieldDomId("anoConstrucao")}
+                  value={form.anoConstrucao}
+                  onChange={v => set("anoConstrucao", v)}
+                  placeholder="Selecione o ano de construção"
+                  required
+                  invalid={!!errosObrigatorios.anoConstrucao}
+                  aria-describedby={
+                    errosObrigatorios.anoConstrucao ? "benfeitoria-err-anoConstrucao" : undefined
+                  }
+                />
+                <FieldErrorMsg
+                  id="benfeitoria-err-anoConstrucao"
+                  message={errosObrigatorios.anoConstrucao}
+                />
+              </div>
+              <div>
+                <FormLabel>Vida Útil</FormLabel>
+                <FormInput
+                  variant="light"
+                  value={form.vidaUtil}
+                  onChange={v => set("vidaUtil", v)}
+                  placeholder="Ex: 10 anos"
+                />
+              </div>
+              <div>
+                <FormLabel>Valor</FormLabel>
+                <FormInput
+                  variant="light"
+                  value={form.valor}
+                  onChange={v => set("valor", formatCurrencyBrl(v))}
+                  placeholder="R$ 0,00"
+                />
+              </div>
             </div>
-            <div className="scroll-mt-24">
-              <FormLabel required>Estado de Conservação</FormLabel>
-              <FormSelect
-                id={fieldDomId("estado")}
-                value={form.estado}
-                onChange={v => set("estado", v)}
-                placeholder="Selecione o estado"
-                required
-                displayValue={form.estado}
-                triggerClassName="h-[42px] py-0"
-                invalid={!!errosObrigatorios.estado}
-                aria-describedby={errosObrigatorios.estado ? "benfeitoria-err-estado" : undefined}
-              >
-                {ESTADOS_CONSERVACAO_BENFEITORIA.map(estado => (
-                  <SelectItem key={estado} value={estado} className="text-[13px]">
-                    {estado}
-                  </SelectItem>
-                ))}
-              </FormSelect>
-              <FieldErrorMsg id="benfeitoria-err-estado" message={errosObrigatorios.estado} />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div className="scroll-mt-24">
-              <FormLabel required>Ano de Construção</FormLabel>
-              <FormYearPicker
-                id={fieldDomId("anoConstrucao")}
-                value={form.anoConstrucao}
-                onChange={v => set("anoConstrucao", v)}
-                placeholder="Selecione o ano de construção"
-                required
-                invalid={!!errosObrigatorios.anoConstrucao}
-                aria-describedby={
-                  errosObrigatorios.anoConstrucao ? "benfeitoria-err-anoConstrucao" : undefined
-                }
-              />
-              <FieldErrorMsg
-                id="benfeitoria-err-anoConstrucao"
-                message={errosObrigatorios.anoConstrucao}
-              />
-            </div>
             <div>
-              <FormLabel>Vida Útil</FormLabel>
-              <FormInput
-                value={form.vidaUtil}
-                onChange={v => set("vidaUtil", v)}
-                placeholder="Ex: 10 anos"
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                variant="light"
+                value={form.observacoes}
+                onChange={v => set("observacoes", v)}
+                placeholder="Descreva sua benfeitoria"
+                rows={3}
               />
             </div>
-            <div>
-              <FormLabel>Valor</FormLabel>
-              <FormInput
-                value={form.valor}
-                onChange={v => set("valor", formatCurrencyBrl(v))}
-                placeholder="R$ 0,00"
-              />
-            </div>
-          </div>
 
-          <div className="mb-6">
-            <FormLabel>Observações</FormLabel>
-            <FormTextarea
-              value={form.observacoes}
-              onChange={v => set("observacoes", v)}
-              placeholder="Descreva sua benfeitoria"
-              rows={3}
-            />
-          </div>
-
-          <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="min-h-[18px]">
-              {tentativaValidacao && (
-                <p className="text-[12px] text-red-600">
-                  Preencha os campos obrigatórios destacados.
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setLocation(listUrl)}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
-              </button>
+            <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-h-[18px]">
+                {tentativaValidacao && (
+                  <p className="text-[12px] text-red-600">
+                    Preencha os campos obrigatórios destacados.
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLocation(listUrl)}
+                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBusy}
+                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  {isBusy ? "Salvando..." : isEdit ? "Salvar" : "Cadastrar"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
