@@ -17,6 +17,7 @@ import {
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { getFichaAnimalPath } from "@/lib/fichaAnimalRoute";
+import { produtoControlaSaldo } from "@/lib/produto-types";
 import {
   SectionCard,
   KpiCard,
@@ -133,11 +134,18 @@ export default function DashboardPage() {
   // ── Estoque ──────────────────────────────────────────────────────────────────
   const estoque = useMemo(() => {
     const valorTotal = produtos.reduce(
-      (s, p) => s + (Number(p.quantidade) || 0) * (Number(p.valorUnitario) || 0),
-      0
+      (s, p) =>
+        produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo)
+          ? s + (Number(p.quantidade) || 0) * (Number(p.valorUnitario) || 0)
+          : s,
+      0,
     );
     const baixo = produtos.filter(
-      p => p.monitorarEstoque && Number(p.quantidade) <= Number(p.quantidadeMinima)
+      p =>
+        produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo) &&
+        p.monitorarEstoque &&
+        Number(p.quantidadeMinima) > 0 &&
+        Number(p.quantidade) <= Number(p.quantidadeMinima),
     );
     return { valorTotal, baixo, totalProdutos: produtos.length };
   }, [produtos]);

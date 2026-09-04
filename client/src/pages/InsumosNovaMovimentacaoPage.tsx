@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -7,6 +7,7 @@ import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/
 import { FD_PRIMARY, FieldBox, FormDatePicker, FormInput, FormLabel, FormNativeSelect, FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   TIPOS_MOVIMENTACAO,
@@ -21,15 +22,57 @@ import {
   parseEmbalagens,
   extrairVolumeEmbalagem,
   type EmbalagemProduto,
+  produtoControlaSaldo,
 } from "@/lib/produto-types";
 import { isProdutoCombustivel } from "@/lib/combustivel-estoque";
 
-// ─── Estilos compartilhados ─────────────────────────────────────────────────
-const inputCls =
-  "w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white placeholder-gray-400 focus:outline-none focus:border-[#4ECDC4] focus:ring-1 focus:ring-[#4ECDC4]";
-const labelCls = "block text-[12px] font-medium text-gray-600 mb-1";
-const sectionTitleCls = "text-[12px] font-semibold text-gray-600 uppercase tracking-wide";
-const sectionCardCls = "border border-gray-200 rounded-lg p-4";
+// ─── Layout (padrão Cadastro de Produto / Movimentações) ────────────────────
+function FormCard({
+  title,
+  variant = "section",
+  description,
+  children,
+  footer,
+}: {
+  title: string;
+  variant?: "page" | "section";
+  description?: string;
+  children?: ReactNode;
+  footer?: ReactNode;
+}) {
+  const hasBody = Boolean(children) || Boolean(footer);
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className={cn("px-5 py-4", hasBody && "border-b border-gray-100")}>
+        {variant === "page" ? (
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {title}
+          </h1>
+        ) : (
+          <>
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+            {description ? (
+              <p className="mt-1 text-[12px] leading-relaxed text-gray-500">{description}</p>
+            ) : null}
+          </>
+        )}
+      </div>
+      {hasBody ? (
+        <div className="p-5 space-y-4">
+          {children}
+          {footer ? (
+            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+              {footer}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const EMB_PREFIX = "emb:";
 const FAZENDA_HELPER =
@@ -162,7 +205,7 @@ function FazendaReadonlyField({
   return (
     <div id={id} tabIndex={-1} className="outline-none">
       <FormLabel required>{label}</FormLabel>
-      <FieldBox variant="light" className="bg-gray-50" required invalid={invalid}>
+      <FieldBox variant="light" required invalid={invalid}>
         <div className="w-full min-h-[42px] px-3 py-2.5 text-[13px] text-gray-800">
           {nome || "—"}
         </div>
@@ -182,6 +225,49 @@ function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
     <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
       {message}
     </p>
+  );
+}
+
+/** Banner de aviso alinhado a Lotes / listagens (ícone + borda). */
+function FormAvisoBanner({
+  variant = "info",
+  children,
+  id,
+}: {
+  variant?: "info" | "warning" | "error";
+  children: ReactNode;
+  id?: string;
+}) {
+  const cfg = {
+    info: {
+      box: "border-[#4ECDC4]/40 bg-[#4ECDC4]/10 text-gray-700",
+      icon: "text-[#4ECDC4]",
+      iconName: "info",
+    },
+    warning: {
+      box: "border-amber-200 bg-amber-50 text-amber-900",
+      icon: "text-amber-600",
+      iconName: "warning",
+    },
+    error: {
+      box: "border-red-200 bg-red-50 text-red-800",
+      icon: "text-red-500",
+      iconName: "error",
+    },
+  }[variant];
+
+  return (
+    <div
+      id={id}
+      role="alert"
+      className={cn(
+        "flex items-start gap-2 px-3 py-2.5 rounded-md border text-[12px] leading-snug",
+        cfg.box,
+      )}
+    >
+      <span className={cn("material-icons text-[16px] shrink-0", cfg.icon)}>{cfg.iconName}</span>
+      <span>{children}</span>
+    </div>
   );
 }
 
@@ -401,16 +487,33 @@ function formatValorTotalLinha(p: ProdutoLinha): string {
   return formatCurrencyBrl(String(Math.round(total * 100)));
 }
 
-/** Mescla alterações pendentes do mini-formulário com a lista da nota. */
-function mesclarLinhasComPendente(produtos: ProdutoLinha[], pendente: ProdutoLinha | null): ProdutoLinha[] {
-  if (!pendente) return [...produtos];
-  const idx = produtos.findIndex(p => p.localId === pendente.localId);
-  if (idx >= 0) {
-    const linhas = [...produtos];
-    linhas[idx] = pendente;
-    return linhas;
-  }
-  return [...produtos, pendente];
+/** Indica se o mini-formulário de item tem algum dado preenchido. */
+function miniFormTemDados(fields: {
+  prodEstoqueId: string;
+  prodQuantidade: string;
+  prodUnidade: string;
+  prodDataValidade: string;
+  prodValorUnitario: string;
+}): boolean {
+  return !!(
+    fields.prodEstoqueId ||
+    fields.prodQuantidade.trim() ||
+    fields.prodUnidade ||
+    fields.prodDataValidade ||
+    fields.prodValorUnitario.trim()
+  );
+}
+
+const MSG_ITEM_NAO_ADICIONADO =
+  'Há um item preenchido que não foi adicionado. Clique em "Adicionar item" ou limpe os campos.';
+const MSG_SEM_ITENS = "Inclua pelo menos um item na movimentação.";
+const MSG_CONSUMO_DIRETO_BAIXA =
+  "Este produto é de uso imediato e não possui saldo controlado. Registre uma compra para lançar custo; saídas, transferências e ajustes de saída não se aplicam.";
+const MSG_PRODUTOS_DUPLICADOS = "Há produtos duplicados na nota.";
+
+/** Operações que aplicam quantidade negativa ao estoque (saída, transferência, ajuste de saída). */
+function movimentacaoBaixaSaldo(tipo: string | null | undefined): boolean {
+  return sinalDoTipo(tipo) === "saida";
 }
 
 const INSUMOS_MOV_DRAFT_KEY = "fd_insumos_mov_draft";
@@ -832,6 +935,7 @@ export default function InsumosNovaMovimentacaoPage() {
   // ── Ao mudar operação, reajustar motivo/tipo se necessário ────────────────
   const onOperacaoChange = (op: Operacao) => {
     setOperacao(op);
+    limparErro("itens");
     const tipos = tiposPorOperacao(op);
     if (!tipos.find(t => t.value === tipoMov)) {
       setTipoMov(tipos[0]?.value ?? "");
@@ -890,6 +994,25 @@ export default function InsumosNovaMovimentacaoPage() {
     return undefined;
   };
 
+  const definirErroItens = (msg: string) => {
+    setErros(prev => ({ ...prev, itens: msg }));
+    requestAnimationFrame(() => {
+      document.getElementById("mov-err-itens")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
+  const produtoEhConsumoDireto = (prod: { controlarSaldo?: boolean | null } | null | undefined) =>
+    prod != null && !produtoControlaSaldo(prod.controlarSaldo);
+
+  const avisoConsumoDiretoBaixa = useMemo(() => {
+    if (!movimentacaoBaixaSaldo(tipoMov)) return false;
+    if (produtoSelecionado && produtoEhConsumoDireto(produtoSelecionado)) return true;
+    return produtos.some(p => {
+      const prod = estoqueList.find(e => String(e.id) === p.estoqueId);
+      return produtoEhConsumoDireto(prod);
+    });
+  }, [tipoMov, produtoSelecionado, produtos, estoqueList]);
+
   // ── Validação de uma linha (mini-form ou da lista) ────────────────────────
   const validarLinha = (p: ProdutoLinha): string | null => {
     const prod = estoqueList.find(e => String(e.id) === p.estoqueId);
@@ -899,6 +1022,9 @@ export default function InsumosNovaMovimentacaoPage() {
     }
     if (prod.situacao === "inativo") {
       return `${prod.nome} está inativo nesta fazenda.`;
+    }
+    if (movimentacaoBaixaSaldo(tipoMov) && produtoEhConsumoDireto(prod)) {
+      return MSG_CONSUMO_DIRETO_BAIXA;
     }
     if (!p.unidadeMov) return `Selecione a unidade de movimentação de ${prod.nome}.`;
     const qtd = parseFloat(p.quantidade.replace(",", "."));
@@ -920,6 +1046,10 @@ export default function InsumosNovaMovimentacaoPage() {
     setProdValorUnitario("");
     setProdQuantidade("");
     setEditandoLinhaId(null);
+    limparErro("itens");
+    limparErro("produto");
+    limparErro("unidade");
+    limparErro("quantidade");
   };
 
   const carregarLinhaNoForm = (p: ProdutoLinha) => {
@@ -962,7 +1092,8 @@ export default function InsumosNovaMovimentacaoPage() {
     };
     const erro = validarLinha(linha);
     if (erro) {
-      toast.error(erro);
+      if (erro === MSG_CONSUMO_DIRETO_BAIXA) definirErroItens(erro);
+      else toast.error(erro);
       return;
     }
     setProdutos(prev =>
@@ -1017,10 +1148,10 @@ export default function InsumosNovaMovimentacaoPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMutation = trpc.estoque.createMovimentacao.useMutation({
-    onError: e => toast.error(e.message),
+    onError: e => definirErroItens(e.message),
   });
   const updateMutation = trpc.estoque.updateMovimentacao.useMutation({
-    onError: e => toast.error(e.message),
+    onError: e => definirErroItens(e.message),
   });
   const deleteMutation = trpc.estoque.deleteMovimentacao.useMutation({
     onError: e => toast.error(e.message),
@@ -1040,32 +1171,21 @@ export default function InsumosNovaMovimentacaoPage() {
     await utils.estoque.listMovimentacoes.refetch();
   };
 
-  /** Monta uma linha a partir do mini-formulário, se houver dados pendentes. */
-  const linhaPendente = (): ProdutoLinha | null => {
-    if (!prodEstoqueId || !prodQuantidade.trim()) return null;
-    const existente = editandoLinhaId ? produtos.find(p => p.localId === editandoLinhaId) : null;
-    return {
-      localId: editandoLinhaId ?? "pendente",
-      estoqueId: prodEstoqueId,
-      unidadeMov: prodUnidade,
-      dataValidade: prodDataValidade,
-      valorUnitario: prodValorUnitario,
-      quantidade: prodQuantidade,
-      movimentacaoId: existente?.movimentacaoId,
-    };
-  };
+  /** Apenas itens explicitamente adicionados à lista entram no salvamento. */
+  const coletarLinhasParaSalvar = (): ProdutoLinha[] => [...produtos];
 
-  const formPendenteIncompleto =
-    !!(prodEstoqueId || prodQuantidade.trim() || prodUnidade || prodDataValidade || prodValorUnitario.trim()) &&
-    !linhaPendente();
-
-  const coletarLinhasParaSalvar = (): ProdutoLinha[] =>
-    mesclarLinhasComPendente(produtos, linhaPendente());
+  const miniFormPreenchido = miniFormTemDados({
+    prodEstoqueId,
+    prodQuantidade,
+    prodUnidade,
+    prodDataValidade,
+    prodValorUnitario,
+  });
 
   const totalValorNota = useMemo(() => {
     let sum = 0;
     let temValor = false;
-    for (const p of mesclarLinhasComPendente(produtos, linhaPendente())) {
+    for (const p of produtos) {
       const total = valorTotalLinha(p);
       if (total != null) {
         sum += total;
@@ -1073,7 +1193,7 @@ export default function InsumosNovaMovimentacaoPage() {
       }
     }
     return temValor ? sum : null;
-  }, [produtos, prodEstoqueId, prodQuantidade, prodValorUnitario, prodUnidade, prodDataValidade, editandoLinhaId]);
+  }, [produtos]);
 
   const freteNumero = useMemo(() => {
     const parsed = parseCurrencyBrl(frete);
@@ -1088,7 +1208,7 @@ export default function InsumosNovaMovimentacaoPage() {
   }, [totalValorNota, freteNumero]);
 
   const produtosAlterados =
-    JSON.stringify(mesclarLinhasComPendente(produtos, linhaPendente())) !== initialProdutosRef.current ||
+    JSON.stringify(produtos) !== initialProdutosRef.current ||
     movimentacoesRemovidas.length > 0;
 
   /** Converte uma linha para o payload do servidor (quantidade na unidade base). */
@@ -1241,17 +1361,16 @@ export default function InsumosNovaMovimentacaoPage() {
     }
     if (!dataMovimentacao.trim()) next.data = "Informe a data da movimentação.";
 
-    if (formPendenteIncompleto) {
-      if (!prodEstoqueId) next.produto = "Selecione o produto.";
-      if (!prodUnidade) next.unidade = "Selecione a unidade de movimentação.";
-      if (!prodQuantidade.trim()) next.quantidade = "Informe a quantidade.";
+    if (miniFormPreenchido) {
+      next.itens = MSG_ITEM_NAO_ADICIONADO;
+    }
+
+    if (produtos.length === 0) {
+      if (!next.itens) next.itens = MSG_SEM_ITENS;
+      if (!miniFormPreenchido) next.produto = MSG_SEM_ITENS;
     }
 
     const linhas = coletarLinhasParaSalvar();
-    if (linhas.length === 0 && !formPendenteIncompleto) {
-      next.itens = "Inclua pelo menos um item na movimentação.";
-      next.produto = "Inclua pelo menos um item na movimentação.";
-    }
 
     if (Object.keys(next).length > 0) {
       setErros(next);
@@ -1276,13 +1395,17 @@ export default function InsumosNovaMovimentacaoPage() {
     const idsVistos = new Set<string>();
     for (const p of linhas) {
       if (idsVistos.has(p.estoqueId)) {
-        toast.error("Há produtos duplicados na nota.");
+        definirErroItens(MSG_PRODUTOS_DUPLICADOS);
         return;
       }
       idsVistos.add(p.estoqueId);
       const erro = validarLinha(p);
       if (erro) {
-        toast.error(erro);
+        if (erro === MSG_CONSUMO_DIRETO_BAIXA || erro === MSG_PRODUTOS_DUPLICADOS) {
+          definirErroItens(erro);
+        } else {
+          toast.error(erro);
+        }
         return;
       }
     }
@@ -1341,42 +1464,62 @@ export default function InsumosNovaMovimentacaoPage() {
     );
   }
 
+  const irParaListaMovimentacoes = () => {
+    const fid = fazendaId || fazendaIdQuery;
+    setLocation(
+      fid
+        ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
+        : "/insumos/movimentacao",
+    );
+  };
+
+  const botoesRodape = (
+    <>
+      <button
+        type="button"
+        onClick={irParaListaMovimentacoes}
+        disabled={isBusy}
+        className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        onClick={salvar}
+        disabled={isBusy || produtos.length === 0}
+        title={
+          produtos.length === 0
+            ? miniFormPreenchido
+              ? MSG_ITEM_NAO_ADICIONADO
+              : MSG_SEM_ITENS
+            : undefined
+        }
+        className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
+        style={{ backgroundColor: FD_PRIMARY }}
+      >
+        {isBusy ? "Salvando..." : "Salvar"}
+      </button>
+    </>
+  );
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      <div className="fixed inset-0 bg-black/40 z-[60]" />
+      <button
+        type="button"
+        onClick={irParaListaMovimentacoes}
+        disabled={isBusy}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group disabled:opacity-50"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
 
-      <div className="fixed inset-0 z-[70] overflow-y-auto flex items-start justify-center py-8 px-4">
-        <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl">
-          {/* ── Cabeçalho ── */}
-          <div className="px-6 py-4 border-b border-gray-200">
-            <button
-              type="button"
-              onClick={() => {
-                const fid = fazendaId || fazendaIdQuery;
-                setLocation(
-                  fid
-                    ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
-                    : "/insumos/movimentacao",
-                );
-              }}
-              className="mb-3 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
-            >
-              <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
-                arrow_back
-              </span>
-              <span className="text-[13px]">Voltar</span>
-            </button>
-            <h2 className="text-[18px] font-semibold text-gray-900">
-              {isEdit ? "Editar Movimentação" : "Nova Movimentação"}
-            </h2>
-          </div>
-
-          <div className="px-6 py-5 space-y-4">
-            {/* ── 1. Dados da movimentação ── */}
-            <div className={`${sectionCardCls} space-y-4`}>
-              <p className={sectionTitleCls + " mb-0"}>Dados da movimentação</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="space-y-5">
+        <FormCard variant="page" title={isEdit ? "Editar Movimentação" : "Nova Movimentação"}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Operação</FormLabel>
                   <FormNativeSelect
@@ -1396,6 +1539,7 @@ export default function InsumosNovaMovimentacaoPage() {
                     onChange={v => {
                       setTipoMov(v);
                       limparErro("tipoMov");
+                      limparErro("itens");
                     }}
                     placeholder="Selecione o motivo / tipo"
                     options={tipoMovOpcoes}
@@ -1429,12 +1573,12 @@ export default function InsumosNovaMovimentacaoPage() {
                     errorMessage={erros.fazenda}
                   />
                   <div>
-                    <label className={labelCls}>Destino / Uso</label>
-                    <input
+                    <FormLabel>Destino / Uso</FormLabel>
+                    <FormInput
+                      variant="light"
                       value={destinoUso}
-                      onChange={e => setDestinoUso(e.target.value)}
+                      onChange={setDestinoUso}
                       placeholder="Ex.: Manejo, trator, lote..."
-                      className={inputCls}
                     />
                   </div>
                 </div>
@@ -1498,13 +1642,11 @@ export default function InsumosNovaMovimentacaoPage() {
                   <FieldErrorMsg id="mov-err-data" message={erros.data} />
                 </div>
               )}
-            </div>
+        </FormCard>
 
-            {/* ── 2. Dados Nota Fiscal (entrada) ── */}
-            {exibirBlocoFiscal && (
-              <div className={`${sectionCardCls} space-y-3`}>
-                <p className={sectionTitleCls + " mb-0"}>Dados nota fiscal</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {exibirBlocoFiscal ? (
+          <FormCard title="Dados nota fiscal">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <FormLabel>Fornecedor</FormLabel>
                     <FormNativeSelect
@@ -1523,12 +1665,12 @@ export default function InsumosNovaMovimentacaoPage() {
                     </button>
                   </div>
                   <div>
-                    <label className={labelCls}>Número da NF</label>
-                    <input
+                    <FormLabel>Número da NF</FormLabel>
+                    <FormInput
+                      variant="light"
                       value={notaFiscal}
-                      onChange={e => setNotaFiscal(e.target.value)}
+                      onChange={setNotaFiscal}
                       placeholder="Ex. 323.567"
-                      className={inputCls}
                     />
                   </div>
                   <div>
@@ -1548,63 +1690,71 @@ export default function InsumosNovaMovimentacaoPage() {
                     <FieldErrorMsg id="mov-err-data" message={erros.data} />
                   </div>
                   <div>
-                    <label className={labelCls}>Frete</label>
-                    <input
+                    <FormLabel>Frete</FormLabel>
+                    <FormInput
+                      variant="light"
                       value={frete}
-                      onChange={e => setFrete(formatCurrencyBrl(e.target.value))}
+                      onChange={v => setFrete(formatCurrencyBrl(v))}
                       placeholder="R$ 0,00"
                       inputMode="decimal"
-                      className={inputCls}
                     />
                   </div>
                 </div>
-              </div>
-            )}
+          </FormCard>
+        ) : null}
 
-            {/* ── Dados fiscais legados (saída/ajuste/transferência com NF antiga) ── */}
-            {exibirFiscalSecundario && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setFiscalExpanded(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-left bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
-                  <span className={sectionTitleCls + " mb-0"}>Dados fiscais (registro anterior)</span>
-                  <span className="material-icons text-gray-400 text-[20px]">
-                    {fiscalExpanded ? "expand_less" : "expand_more"}
-                  </span>
-                </button>
-                {fiscalExpanded && (
-                  <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-gray-200">
-                    <div>
-                      <label className={labelCls}>Fornecedor</label>
-                      <p className="text-[13px] text-gray-800">{fornecedorLegado.trim() || "—"}</p>
-                    </div>
-                    <div>
-                      <label className={labelCls}>Número da NF</label>
-                      <p className="text-[13px] text-gray-800">{notaFiscal.trim() || "—"}</p>
-                    </div>
-                    <div>
-                      <label className={labelCls}>Frete</label>
-                      <p className="text-[13px] text-gray-800">{frete.trim() ? fmtMoeda(frete) : "—"}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── 3. Itens da movimentação (formulário) ── */}
-            <div
-              className={`${sectionCardCls} space-y-3 ${
-                erros.itens ? "ring-1 ring-red-500" : ""
-              }`}
+        {exibirFiscalSecundario ? (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setFiscalExpanded(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
             >
-              <p className={sectionTitleCls + " mb-0"}>Itens da movimentação</p>
-              {erros.itens && (
-                <p className="text-[11px] text-red-600" role="alert">{erros.itens}</p>
-              )}
+              <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Dados fiscais (registro anterior)</h2>
+              <span className="material-icons text-gray-400 text-[20px]">
+                {fiscalExpanded ? "expand_less" : "expand_more"}
+              </span>
+            </button>
+            {fiscalExpanded ? (
+              <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+                <div>
+                  <FormLabel>Fornecedor</FormLabel>
+                  <p className="text-[13px] text-gray-800">{fornecedorLegado.trim() || "—"}</p>
+                </div>
+                <div>
+                  <FormLabel>Número da NF</FormLabel>
+                  <p className="text-[13px] text-gray-800">{notaFiscal.trim() || "—"}</p>
+                </div>
+                <div>
+                  <FormLabel>Frete</FormLabel>
+                  <p className="text-[13px] text-gray-800">{frete.trim() ? fmtMoeda(frete) : "—"}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FormCard
+          title="Itens da movimentação"
+          footer={botoesRodape}
+        >
+          {erros.itens ? (
+            <FormAvisoBanner id="mov-err-itens" variant="error">
+              {erros.itens}
+            </FormAvisoBanner>
+          ) : avisoConsumoDiretoBaixa ? (
+            <FormAvisoBanner id="mov-aviso-consumo-direto" variant="warning">
+              {MSG_CONSUMO_DIRETO_BAIXA}
+            </FormAvisoBanner>
+          ) : miniFormPreenchido ? (
+            <FormAvisoBanner variant="warning">{MSG_ITEM_NAO_ADICIONADO}</FormAvisoBanner>
+          ) : produtos.length === 0 ? (
+            <FormAvisoBanner variant="info">
+              Use &quot;Adicionar item&quot; para incluir produtos na lista. Só os itens adicionados entram ao salvar.
+            </FormAvisoBanner>
+          ) : null}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Produto</FormLabel>
                   <FormNativeSelect
@@ -1704,13 +1854,13 @@ export default function InsumosNovaMovimentacaoPage() {
                 </div>
                 {isEntrada && (
                   <div>
-                    <label className={labelCls}>Valor Unitário</label>
-                    <input
+                    <FormLabel>Valor Unitário</FormLabel>
+                    <FormInput
+                      variant="light"
                       value={prodValorUnitario}
-                      onChange={e => setProdValorUnitario(formatCurrencyBrl(e.target.value))}
+                      onChange={v => setProdValorUnitario(formatCurrencyBrl(v))}
                       placeholder="R$ 0,00"
                       inputMode="decimal"
-                      className={inputCls}
                     />
                   </div>
                 )}
@@ -1726,24 +1876,17 @@ export default function InsumosNovaMovimentacaoPage() {
                 )}
               </div>
 
-              {previewConversao?.texto && (
-                <div
-                  className="px-3 py-2 rounded border text-[12px] text-gray-700"
-                  style={{ borderColor: "#4ECDC4", backgroundColor: "#4ECDC418" }}
-                >
-                  {previewConversao.texto}
-                </div>
-              )}
-              {previewConversao?.erro && (
-                <div className="px-3 py-2 rounded border border-red-200 bg-red-50 text-[12px] text-red-600">
-                  {previewConversao.erro}
-                </div>
-              )}
+              {previewConversao?.texto ? (
+                <FormAvisoBanner variant="info">{previewConversao.texto}</FormAvisoBanner>
+              ) : null}
+              {previewConversao?.erro ? (
+                <FormAvisoBanner variant="error">{previewConversao.erro}</FormAvisoBanner>
+              ) : null}
 
               <button
                 type="button"
                 onClick={incluirProduto}
-                className="w-full h-9 text-[11px] font-medium border border-gray-400 text-gray-700 rounded hover:bg-gray-50 transition-colors"
+                className="w-full px-4 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 {editandoLinhaId ? "Atualizar item" : "+ Adicionar item"}
               </button>
@@ -1755,16 +1898,10 @@ export default function InsumosNovaMovimentacaoPage() {
                   </button>
                   .
                 </p>
-              ) : (
-                <p className="text-[11px] text-gray-500">
-                  Inclua os itens da movimentação abaixo. Ao salvar, todos os itens serão registrados.
-                </p>
-              )}
-            </div>
+              ) : null}
 
-            {/* ── 4. Resumo dos itens ── */}
-            {produtos.length > 0 && (
-              <div className={`${sectionCardCls} !p-0 overflow-hidden`}>
+          {produtos.length > 0 ? (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full table-fixed text-[12px] border-collapse">
                   <colgroup>
                     <col className="w-[30%]" />
@@ -1913,38 +2050,9 @@ export default function InsumosNovaMovimentacaoPage() {
                     </tfoot>
                   )}
                 </table>
-              </div>
-            )}
-          </div>
-
-          {/* ── Rodapé ── */}
-          <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                const fid = fazendaId || fazendaIdQuery;
-                setLocation(
-                  fid
-                    ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
-                    : "/insumos/movimentacao",
-                );
-              }}
-              disabled={isBusy}
-              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={salvar}
-              disabled={isBusy}
-              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
-        </div>
+            </div>
+          ) : null}
+        </FormCard>
       </div>
     </AppLayout>
   );

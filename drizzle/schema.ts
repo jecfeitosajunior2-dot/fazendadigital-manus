@@ -416,6 +416,8 @@ export const produtosCatalogo = mysqlTable("produtos_catalogo", {
   fabricante: varchar("fabricante", { length: 100 }),
   identificadorUnico: varchar("identificador_unico", { length: 100 }),
   produzidoNaFazenda: boolean("produzido_na_fazenda").default(false),
+  /** Quando false, compras registram histórico/custo sem acumular saldo. */
+  controlarSaldo: boolean("controlar_saldo").default(true),
   monitorarEstoque: boolean("monitorar_estoque").default(false),
   situacao: varchar("situacao", { length: 20 }).default("ativo"),
   embalagens: text("embalagens"),
@@ -444,6 +446,8 @@ export const estoque = mysqlTable("estoque", {
   fabricante: varchar("fabricante", { length: 100 }),
   identificadorUnico: varchar("identificador_unico", { length: 100 }),
   produzidoNaFazenda: boolean("produzido_na_fazenda").default(false),
+  /** Quando false, compras registram histórico/custo sem acumular saldo. */
+  controlarSaldo: boolean("controlar_saldo").default(true),
   monitorarEstoque: boolean("monitorar_estoque").default(false),
   situacao: varchar("situacao", { length: 20 }).default("ativo"),
   embalagens: text("embalagens"),

@@ -10,6 +10,12 @@ export const CATEGORIAS_PRODUTO = [
   "Outros Insumos",
 ] as const;
 
+export {
+  CATEGORIAS_SALDO_OBRIGATORIO,
+  categoriaControlaSaldoPorPadrao,
+  produtoControlaSaldo,
+} from "@shared/estoqueControle";
+
 export const SUBCATEGORIAS: Record<string, string[]> = {
   Farmácia: [
     "Outros materiais cirúrgicos",

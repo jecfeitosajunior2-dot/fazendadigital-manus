@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { exportListPdf, exportListSpreadsheet } from "@/lib/exportList";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
-import { siglaUnidade, formatQuantidadeMov } from "@/lib/produto-types";
+import { produtoControlaSaldo, siglaUnidade, formatQuantidadeMov } from "@/lib/produto-types";
 
 type SortKey = "nome" | "unidade" | "qtdAtual" | "qtdMinima";
 
@@ -23,7 +23,7 @@ function MonitoradoPanel() {
   const [sortAsc, setSortAsc] = useState(true);
 
   const monitorados = useMemo(
-    () => produtos.filter(p => p.monitorarEstoque),
+    () => produtos.filter(p => produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo) && p.monitorarEstoque),
     [produtos]
   );
 
@@ -151,6 +151,7 @@ function AbaixoDoLimitePanel() {
 
   const abaixo = useMemo(
     () => produtos.filter(p => {
+      if (!produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo)) return false;
       if (!p.monitorarEstoque) return false;
       const q = Number(p.quantidade ?? 0);
       const min = Number(p.quantidadeMinima ?? 0);

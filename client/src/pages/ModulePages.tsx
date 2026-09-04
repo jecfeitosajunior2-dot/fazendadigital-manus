@@ -39,6 +39,7 @@ import {
 import { useDeleteFazenda } from "@/hooks/useDeleteFazenda";
 import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import { listaAnimaisComRetornoVisaoGeral, mapaRebanhoComRetornoVisaoGeral } from "@/lib/rebanhoRoutes";
 
 function areaUnitLabel(unidade?: string | null) {
   const value = String(unidade || "Hectare").toLowerCase();
@@ -642,13 +643,15 @@ function KpiCard({
             <span className="material-icons text-[19px]" style={{ color }}>{icon}</span>
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-[17px] font-bold text-gray-800 leading-tight tabular-nums">{value}</div>
-          <div className="text-[10px] text-gray-500 leading-tight flex items-center gap-1">
-            {label}
-            {onClick && <span className="material-icons text-[10px] text-gray-400">open_in_new</span>}
-          </div>
+          <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
         </div>
+        {onClick ? (
+          <span className="material-icons text-[18px] text-gray-300 shrink-0" aria-hidden>
+            chevron_right
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -733,7 +736,8 @@ export function HerdOverviewPage() {
   const navigateAnimais = (params: Record<string, string>) => {
     const qs = new URLSearchParams(params);
     if (fazendaId) qs.set("fazendaId", String(fazendaId));
-    setLocation(`/rebanho/lista-animais?${qs.toString()}`);
+    const path = `/rebanho/lista-animais?${qs.toString()}`;
+    setLocation(listaAnimaisComRetornoVisaoGeral(path, fazendaId ? String(fazendaId) : undefined));
   };
 
   // Cabeçalho — título Fraunces fora do card; filtro Fazenda no padrão Mapa do Rebanho
@@ -967,7 +971,8 @@ export function HerdOverviewPage() {
               const params = new URLSearchParams();
               params.set("fazendaId", String(fazendaId));
               params.set("superlotados", "true");
-              setLocation(`/rebanho/mapa-rebanho?${params.toString()}`);
+              const path = `/rebanho/mapa-rebanho?${params.toString()}`;
+              setLocation(mapaRebanhoComRetornoVisaoGeral(path, fazendaId ? String(fazendaId) : undefined));
             }}
           />
         </div>

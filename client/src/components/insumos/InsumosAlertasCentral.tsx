@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SectionCard, TEAL, RED, GOLD, GREEN, type Severidade } from "@/components/dashboard/DashboardUI";
 
 export type AlertaCentralItem = {
@@ -38,14 +38,23 @@ function seloPendencias(total: number): { text: string; color: string } {
 function GrupoAlerta({
   grupo,
   highlight,
+  defaultAberto = true,
+  forcarAberto = false,
 }: {
   grupo: AlertaCentralGrupo;
   highlight?: boolean;
+  defaultAberto?: boolean;
+  forcarAberto?: boolean;
 }) {
-  const [aberto, setAberto] = useState(true);
+  const [aberto, setAberto] = useState(defaultAberto || forcarAberto);
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const cfg = sevCfg[grupo.severidade];
   const qtd = grupo.itens.length;
+
+  useEffect(() => {
+    if (forcarAberto || highlight) setAberto(true);
+  }, [forcarAberto, highlight]);
+
   if (qtd === 0) return null;
 
   const precisaRecolher = qtd > PREVIEW;
@@ -142,14 +151,58 @@ export function InsumosAlertasCentral({
   grupos,
   highlightId,
   emptyExtra,
+  defaultGrupoAberto = true,
+  variant = "card",
+  grupoExpandidoId,
 }: {
   grupos: AlertaCentralGrupo[];
   highlightId?: string | null;
   emptyExtra?: ReactNode;
+  /** Grupos iniciam recolhidos quando false — útil na Visão Geral compacta. */
+  defaultGrupoAberto?: boolean;
+  /** `embedded` — lista dentro do bloco Estoque hoje, sem card externo. */
+  variant?: "card" | "embedded";
+  /** Abre o grupo ao clicar no KPI correspondente. */
+  grupoExpandidoId?: string | null;
 }) {
   const gruposComItens = grupos.filter(g => g.itens.length > 0);
   const total = gruposComItens.reduce((s, g) => s + g.itens.length, 0);
   const selo = seloPendencias(total);
+
+  const lista = (
+    <>
+      {total === 0 ? (
+        variant === "embedded" ? null : (
+          <div className="p-8 text-center">
+            <span className="material-icons text-3xl" style={{ color: GREEN }}>
+              check_circle
+            </span>
+            <p className="text-[13px] text-gray-600 mt-2 font-medium">
+              Nenhuma pendência de estoque no momento.
+            </p>
+            {emptyExtra}
+          </div>
+        )
+      ) : (
+        <div className={variant === "embedded" ? "space-y-2.5" : "p-5 space-y-3"}>
+          {gruposComItens.map(g => (
+            <GrupoAlerta
+              key={g.id}
+              grupo={g}
+              highlight={highlightId === g.id}
+              defaultAberto={defaultGrupoAberto}
+              forcarAberto={grupoExpandidoId === g.id}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  if (variant === "embedded") {
+    if (total === 0) return null;
+    return lista;
+  }
 
   return (
     <SectionCard
@@ -164,23 +217,7 @@ export function InsumosAlertasCentral({
         </span>
       }
     >
-      {total === 0 ? (
-        <div className="p-8 text-center">
-          <span className="material-icons text-3xl" style={{ color: GREEN }}>
-            check_circle
-          </span>
-          <p className="text-[13px] text-gray-600 mt-2 font-medium">
-            Nenhuma pendência de estoque no momento.
-          </p>
-          {emptyExtra}
-        </div>
-      ) : (
-        <div className="p-5 space-y-3">
-          {gruposComItens.map(g => (
-            <GrupoAlerta key={g.id} grupo={g} highlight={highlightId === g.id} />
-          ))}
-        </div>
-      )}
+      {lista}
     </SectionCard>
   );
 }

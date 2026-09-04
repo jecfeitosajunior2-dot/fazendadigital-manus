@@ -173,6 +173,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "identificador_unico", "varchar(100)");
       await ensureColumn(pool, "estoque", "produzido_na_fazenda", "boolean DEFAULT false");
       await ensureColumn(pool, "estoque", "monitorar_estoque", "boolean DEFAULT false");
+      await ensureColumn(pool, "estoque", "controlar_saldo", "boolean DEFAULT true");
       await ensureColumn(pool, "estoque", "situacao", "varchar(20) DEFAULT 'ativo'");
       await ensureColumn(pool, "estoque", "embalagens", "text");
       await ensureColumn(pool, "estoque", "possui_carencia", "boolean DEFAULT false");
@@ -198,6 +199,7 @@ export async function ensureSchema() {
         \`identificador_unico\` varchar(100),
         \`produzido_na_fazenda\` boolean DEFAULT false,
         \`monitorar_estoque\` boolean DEFAULT false,
+        \`controlar_saldo\` boolean DEFAULT true,
         \`situacao\` varchar(20) DEFAULT 'ativo',
         \`embalagens\` text,
         \`possui_carencia\` boolean DEFAULT false,
@@ -211,6 +213,11 @@ export async function ensureSchema() {
         PRIMARY KEY(\`id\`)
       )
     `);
+
+    const [catalogoTable] = await pool.query(`SHOW TABLES LIKE 'produtos_catalogo'`);
+    if ((catalogoTable as unknown[]).length > 0) {
+      await ensureColumn(pool, "produtos_catalogo", "controlar_saldo", "boolean DEFAULT true");
+    }
 
     // Backfill: estoque sem produto_id → cria/reusa catálogo
     try {

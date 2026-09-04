@@ -10,14 +10,16 @@ import {
   FormInput,
   FormNativeSelect,
   FormSelect,
-  FieldBox,
+  formControlFlatCls,
 } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import {
   CATEGORIAS_PRODUTO,
   SUBCATEGORIAS,
   UNIDADES_OPCOES,
   FABRICANTES,
+  categoriaControlaSaldoPorPadrao,
   normalizarUnidade,
   siglaUnidade,
   rotuloUnidade,
@@ -81,30 +83,56 @@ function chaveEmbalagem(e: EmbalagemProduto): string {
   return `${e.nome.trim().toLowerCase()}|${e.volume ?? ""}|${e.unidade ?? ""}`;
 }
 
-function FormSection({
+function FormCard({
   title,
+  variant = "section",
   description,
   children,
+  footer,
 }: {
   title: string;
+  variant?: "page" | "section";
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
+  const hasBody = Boolean(children) || Boolean(footer);
   return (
-    <section className="rounded-md border border-gray-200 mb-6">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-        <h2 className="text-[13px] font-semibold text-gray-800">{title}</h2>
-        {description && (
-          <p className="mt-1 text-[12px] leading-relaxed text-gray-500">{description}</p>
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className={cn("px-5 py-4", hasBody && "border-b border-gray-100")}>
+        {variant === "page" ? (
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {title}
+          </h1>
+        ) : (
+          <>
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+            {description ? (
+              <p className="mt-1 text-[12px] leading-relaxed text-gray-500">{description}</p>
+            ) : null}
+          </>
         )}
       </div>
-      <div className="px-4 py-4">{children}</div>
-    </section>
+      {hasBody ? (
+        <div className="p-5 space-y-4">
+          {children}
+          {footer ? (
+            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+              {footer}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 type FazendaConfigForm = {
   produzido: "sim" | "nao";
+  controlarSaldo: "sim" | "nao";
   monitorar: "sim" | "nao";
   quantidadeMinima: string;
   quantidadeMaxima: string;
@@ -122,8 +150,9 @@ type FormState = {
   carenciaAbate: string;
 };
 
-const emptyFazendaConfig = (): FazendaConfigForm => ({
+const emptyFazendaConfig = (categoria = ""): FazendaConfigForm => ({
   produzido: "nao",
+  controlarSaldo: categoriaControlaSaldoPorPadrao(categoria) ? "sim" : "nao",
   monitorar: "nao",
   quantidadeMinima: "",
   quantidadeMaxima: "",
@@ -192,11 +221,18 @@ function FormRadioGroup({
   "aria-describedby"?: string;
 }) {
   return (
-    <FieldBox required={required} variant="light" invalid={invalid}>
+    <div
+      className={cn(
+        formControlFlatCls,
+        "flex flex-wrap gap-4 items-center h-auto min-h-[34px] py-1.5 bg-white",
+        required && !invalid && "border-l-[3px] border-l-[#4ECDC4]",
+        invalid && "border-red-500 border-l-[3px] border-l-red-500",
+      )}
+    >
       <RadioGroup
         value={value}
         onValueChange={onChange}
-        className="flex flex-wrap gap-4 px-3 py-2.5 min-h-[42px] items-center"
+        className="flex flex-wrap gap-4 px-1 items-center"
         aria-invalid={invalid || undefined}
         aria-describedby={ariaDescribedBy}
       >
@@ -207,7 +243,7 @@ function FormRadioGroup({
           </label>
         ))}
       </RadioGroup>
-    </FieldBox>
+    </div>
   );
 }
 
@@ -276,7 +312,7 @@ export default function ProductRegistrationPage() {
         fazendaIds: [fazendaIdParam],
         configPorFazenda: {
           ...f.configPorFazenda,
-          [fazendaIdParam]: f.configPorFazenda[fazendaIdParam] ?? emptyFazendaConfig(),
+          [fazendaIdParam]: f.configPorFazenda[fazendaIdParam] ?? emptyFazendaConfig(f.categoria),
         },
       }));
     }
@@ -290,7 +326,7 @@ export default function ProductRegistrationPage() {
         fazendaIds: [id],
         configPorFazenda: {
           ...f.configPorFazenda,
-          [id]: f.configPorFazenda[id] ?? emptyFazendaConfig(),
+          [id]: f.configPorFazenda[id] ?? emptyFazendaConfig(f.categoria),
         },
       }));
     }
@@ -356,6 +392,7 @@ export default function ProductRegistrationPage() {
             estoquesVinculados?: {
               fazendaId: number;
               produzidoNaFazenda: boolean;
+              controlarSaldo: boolean;
               monitorarEstoque: boolean;
               quantidadeMinima: string | null;
               quantidadeMaxima: string | null;
@@ -367,6 +404,7 @@ export default function ProductRegistrationPage() {
                 String(v.fazendaId),
                 {
                   produzido: v.produzidoNaFazenda ? "sim" : "nao",
+                  controlarSaldo: v.controlarSaldo !== false ? "sim" : "nao",
                   monitorar: v.monitorarEstoque ? "sim" : "nao",
                   quantidadeMinima: fmtDecimalInput(v.quantidadeMinima),
                   quantidadeMaxima: fmtDecimalInput(v.quantidadeMaxima),
@@ -379,6 +417,8 @@ export default function ProductRegistrationPage() {
             (produto.fazendaId ? [produto.fazendaId] : []);
           const legado: FazendaConfigForm = {
             produzido: produto.produzidoNaFazenda ? "sim" : "nao",
+            controlarSaldo:
+              (produto as { controlarSaldo?: boolean }).controlarSaldo !== false ? "sim" : "nao",
             monitorar: produto.monitorarEstoque ? "sim" : "nao",
             quantidadeMinima: fmtDecimalInput(produto.quantidadeMinima),
             quantidadeMaxima: fmtDecimalInput(produto.quantidadeMaxima),
@@ -503,11 +543,13 @@ export default function ProductRegistrationPage() {
       .map(id => parseInt(id, 10))
       .filter(id => !Number.isNaN(id) && id > 0)
       .map(fazendaId => {
-        const cfg = form.configPorFazenda[String(fazendaId)] ?? emptyFazendaConfig();
-        const monitorar = cfg.monitorar === "sim";
+        const cfg = form.configPorFazenda[String(fazendaId)] ?? emptyFazendaConfig(form.categoria);
+        const controlar = cfg.controlarSaldo === "sim";
+        const monitorar = controlar && cfg.monitorar === "sim";
         return {
           fazendaId,
           produzidoNaFazenda: cfg.produzido === "sim",
+          controlarSaldo: controlar,
           monitorarEstoque: monitorar,
           quantidadeMinima: monitorar && cfg.quantidadeMinima ? cfg.quantidadeMinima : null,
           quantidadeMaxima: monitorar && cfg.quantidadeMaxima ? cfg.quantidadeMaxima : null,
@@ -569,8 +611,8 @@ export default function ProductRegistrationPage() {
     setErros({});
 
     for (const id of form.fazendaIds) {
-      const cfg = form.configPorFazenda[id] ?? emptyFazendaConfig();
-      if (cfg.monitorar !== "sim") continue;
+      const cfg = form.configPorFazenda[id] ?? emptyFazendaConfig(form.categoria);
+      if (cfg.controlarSaldo !== "sim" || cfg.monitorar !== "sim") continue;
       if (cfg.quantidadeMinima && cfg.quantidadeMaxima) {
         const min = parseFloat(cfg.quantidadeMinima.replace(",", "."));
         const max = parseFloat(cfg.quantidadeMaxima.replace(",", "."));
@@ -634,24 +676,15 @@ export default function ProductRegistrationPage() {
         <span className="text-[13px]">Voltar</span>
       </button>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
-          <h1
-            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {isEdit ? "Editar produto" : "Cadastro de Produto"}
-          </h1>
-          {/* 1. Dados universais do produto */}
-          <FormSection
-            title="Dados do produto"
-            description="Cadastro único no catálogo da conta. Estes dados valem para todas as fazendas vinculadas."
-          >
+        <div className="space-y-5">
+          <FormCard variant="page" title={isEdit ? "Editar produto" : "Cadastro de Produto"}>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <FormLabel required>Nome do Produto</FormLabel>
                   <FormInput
                     id="produto-field-nome"
+                    variant="light"
                     value={form.nome}
                     onChange={v => set("nome", v)}
                     placeholder="Ex: Sal Mineral Proteinado 30kg"
@@ -665,6 +698,7 @@ export default function ProductRegistrationPage() {
                   <FormLabel required>Categoria</FormLabel>
                   <FormNativeSelect
                     id="produto-field-categoria"
+                    variant="light"
                     value={form.categoria}
                     onChange={v => {
                       setForm(f => ({ ...f, categoria: v, subcategoria: "" }));
@@ -683,12 +717,12 @@ export default function ProductRegistrationPage() {
                 <div>
                   <FormLabel>Subcategoria</FormLabel>
                   <FormSelect
+                    variant="light"
                     value={form.subcategoria}
                     onChange={v => set("subcategoria", v)}
                     placeholder="Opcional"
                     disabled={!form.categoria}
                     displayValue={form.subcategoria || undefined}
-                    triggerClassName="h-[42px] py-0"
                   >
                     {subcategorias.map(s => (
                       <SelectItem key={s} value={s} className="text-[13px]">
@@ -701,6 +735,7 @@ export default function ProductRegistrationPage() {
                   <FormLabel required>Unidade Base</FormLabel>
                   <FormNativeSelect
                     id="produto-field-unidade"
+                    variant="light"
                     value={form.unidade}
                     onChange={v => set("unidade", v)}
                     placeholder="Selecione"
@@ -720,11 +755,11 @@ export default function ProductRegistrationPage() {
                 <div>
                   <FormLabel>Fabricante</FormLabel>
                   <FormSelect
+                    variant="light"
                     value={form.fabricante}
                     onChange={v => set("fabricante", v)}
                     placeholder="Selecione"
                     displayValue={form.fabricante || undefined}
-                    triggerClassName="h-[42px] py-0"
                   >
                     {fabricantesOpcoes.map(f => (
                       <SelectItem key={f.value} value={f.value} className="text-[13px]">
@@ -747,10 +782,9 @@ export default function ProductRegistrationPage() {
                 </div>
               </div>
             </div>
-          </FormSection>
+          </FormCard>
 
-          {/* 2. Fazendas vinculadas — config operacional por fazenda */}
-          <FormSection
+          <FormCard
             title="Fazendas vinculadas ao produto"
             description="Selecione em quais fazendas este produto será usado. Cada fazenda terá estoque e controle próprios."
           >
@@ -763,7 +797,7 @@ export default function ProductRegistrationPage() {
             >
               {fazendasOpcoes.map(f => {
                 const checked = form.fazendaIds.includes(f.value);
-                const cfg = form.configPorFazenda[f.value] ?? emptyFazendaConfig();
+                const cfg = form.configPorFazenda[f.value] ?? emptyFazendaConfig(form.categoria);
                 const bloqueada = fazendasBloqueadas.has(f.value);
                 const siglaUnidadeBase = form.unidade ? siglaUnidade(form.unidade) : "";
                 const unidadeEstoqueLabel = siglaUnidadeBase
@@ -779,9 +813,12 @@ export default function ProductRegistrationPage() {
                 return (
                   <div
                     key={f.value}
-                    className={`rounded-md border px-3 py-2.5 transition-colors ${
-                      checked ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50/40"
-                    }`}
+                    className={cn(
+                      "rounded-lg border px-3 py-2.5 transition-colors",
+                      checked
+                        ? "border-[#4ECDC4] bg-[#4ECDC4]/10"
+                        : "border-gray-200 bg-white hover:border-gray-300",
+                    )}
                   >
                     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
                       <label className="inline-flex items-center gap-2 text-[13px] font-medium text-gray-800 cursor-pointer shrink-0 min-w-[140px]">
@@ -809,7 +846,7 @@ export default function ProductRegistrationPage() {
                                 fazendaIds: [...prev.fazendaIds, f.value],
                                 configPorFazenda: {
                                   ...prev.configPorFazenda,
-                                  [f.value]: prev.configPorFazenda[f.value] ?? emptyFazendaConfig(),
+                                  [f.value]: prev.configPorFazenda[f.value] ?? emptyFazendaConfig(prev.categoria),
                                 },
                               };
                             });
@@ -837,6 +874,31 @@ export default function ProductRegistrationPage() {
                               }))
                             }
                           />
+                          <SimNaoRadios
+                            name={`controlar-saldo-${f.value}`}
+                            label="Controlar saldo:"
+                            value={cfg.controlarSaldo}
+                            onChange={v =>
+                              setForm(prev => ({
+                                ...prev,
+                                configPorFazenda: {
+                                  ...prev.configPorFazenda,
+                                  [f.value]: {
+                                    ...cfg,
+                                    controlarSaldo: v,
+                                    monitorar: v === "nao" ? "nao" : cfg.monitorar,
+                                    quantidadeMinima: v === "nao" ? "" : cfg.quantidadeMinima,
+                                    quantidadeMaxima: v === "nao" ? "" : cfg.quantidadeMaxima,
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                          <p className="text-[10px] text-gray-400 leading-relaxed max-w-md">
+                            Sim = estocável · Não = uso imediato (sem saldo em estoque)
+                          </p>
+                          {cfg.controlarSaldo === "sim" ? (
+                            <>
                           <SimNaoRadios
                             name={`monitorar-${f.value}`}
                             label="Monitorar estoque:"
@@ -875,7 +937,7 @@ export default function ProductRegistrationPage() {
                                     }))
                                   }
                                   placeholder="Ex: 10"
-                                  className="h-8 w-[88px] rounded border border-gray-300 bg-white px-2 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#4ECDC4]"
+                                  className={`${formControlFlatCls} w-[88px] bg-white outline-none focus:border-[#4ECDC4]`}
                                 />
                                 {unidadeAoLado}
                               </label>
@@ -898,11 +960,17 @@ export default function ProductRegistrationPage() {
                                     }))
                                   }
                                   placeholder="Opcional"
-                                  className="h-8 w-[88px] rounded border border-gray-300 bg-white px-2 text-[12px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#4ECDC4]"
+                                  className={`${formControlFlatCls} w-[88px] bg-white outline-none focus:border-[#4ECDC4]`}
                                 />
                                 {unidadeAoLado}
                               </label>
                             </div>
+                          )}
+                            </>
+                          ) : (
+                            <p className="text-[11px] text-gray-500 leading-relaxed max-w-md">
+                              Uso imediato: compras registram custo e histórico, sem acumular saldo. Não aparece em manejos sanitários.
+                            </p>
                           )}
                         </div>
                       )}
@@ -915,36 +983,55 @@ export default function ProductRegistrationPage() {
               )}
             </div>
             <FieldErrorMsg id="produto-err-fazendas" message={erros.fazendas} />
-          </FormSection>
+          </FormCard>
 
-          {/* 3. Informações sanitárias — só para produtos veterinários/sanitários */}
-          {mostrarInfoSanitaria && (
-            <FormSection
+          {mostrarInfoSanitaria ? (
+            <FormCard
               title="Informações sanitárias"
               description="Preencha quando o produto exigir carência para abate ou consumo. Vale para o produto inteiro."
             >
               <div className="max-w-xs">
                 <FormLabel>Carência de abate (dias)</FormLabel>
                 <FormInput
+                  variant="light"
                   type="number"
                   value={form.carenciaAbate}
                   onChange={v => set("carenciaAbate", v.replace(/\D/g, ""))}
                   placeholder="Ex: 30"
                 />
               </div>
-            </FormSection>
-          )}
+            </FormCard>
+          ) : null}
 
-          {/* 4. Tipos de embalagem */}
-          <FormSection
+          <FormCard
             title="Tipos de embalagem"
             description="Cadastre como o produto é comprado ou armazenado. Ex: saco de 30 kg, frasco de 500 ml. Vale para todas as fazendas."
+            footer={
+              <>
+                <button
+                  type="button"
+                  onClick={() => voltarParaOrigem()}
+                  disabled={isBusy}
+                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBusy}
+                  className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  {isBusy ? "Salvando..." : "Salvar"}
+                </button>
+              </>
+            }
           >
             <div className="flex flex-wrap items-center justify-end gap-3 mb-4">
               <button
                 type="button"
                 onClick={() => setShowNovaEmbalagem(v => !v)}
-                className="px-4 py-1.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
+                className="px-4 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Nova Embalagem
               </button>
@@ -954,6 +1041,7 @@ export default function ProductRegistrationPage() {
                 <div className="flex-1 min-w-[180px]">
                   <FormLabel>Nome da embalagem</FormLabel>
                   <FormInput
+                    variant="light"
                     value={novaEmbalagem}
                     onChange={v => setNovaEmbalagem(v)}
                     placeholder="Ex: Saco, Frasco, Caixa, Galão"
@@ -962,6 +1050,7 @@ export default function ProductRegistrationPage() {
                 <div className="w-28">
                   <FormLabel>Qtd. por embalagem</FormLabel>
                   <FormInput
+                    variant="light"
                     type="number"
                     value={novaEmbalagemVolume}
                     onChange={v => setNovaEmbalagemVolume(v)}
@@ -971,12 +1060,12 @@ export default function ProductRegistrationPage() {
                 <div className="w-36">
                   <FormLabel>Unidade</FormLabel>
                   <FormSelect
+                    variant="light"
                     key={embalagemUnidadeKey}
                     value={novaEmbalagemUnidade}
                     onChange={v => setNovaEmbalagemUnidade(v)}
                     placeholder="Selecione"
                     displayValue={novaEmbalagemUnidade ? rotuloUnidade(novaEmbalagemUnidade) : undefined}
-                    triggerClassName="h-[42px] py-0"
                   >
                     {unidadesOpcoes.map(o => (
                       <SelectItem key={o.value} value={o.value} className="text-[13px]">
@@ -989,7 +1078,7 @@ export default function ProductRegistrationPage() {
                   type="button"
                   onClick={handleAddEmbalagem}
                   disabled={!podeIncluirEmbalagem}
-                  className="px-4 py-2 rounded text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  className="px-4 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-90"
                   style={{ backgroundColor: FD_PRIMARY }}
                 >
                   Incluir
@@ -1006,7 +1095,7 @@ export default function ProductRegistrationPage() {
                       return (
                         <li
                           key={chave}
-                          className="flex items-center justify-between gap-3 px-3 py-2.5 rounded border border-gray-200 bg-gray-50/60 text-[13px] text-gray-800"
+                          className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-white text-[13px] text-gray-800"
                         >
                           <span>{formatRotuloEmbalagem(e)}</span>
                           <button
@@ -1032,27 +1121,7 @@ export default function ProductRegistrationPage() {
                 </div>
               )}
             </div>
-          </FormSection>
-
-          {/* Salvar */}
-          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={() => voltarParaOrigem()}
-              disabled={isBusy}
-              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
+          </FormCard>
         </div>
       </form>
     </AppLayout>

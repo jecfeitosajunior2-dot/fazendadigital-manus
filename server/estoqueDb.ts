@@ -1,4 +1,5 @@
 import type { estoque, produtosCatalogo } from "../drizzle/schema";
+import { categoriaControlaSaldoPorPadrao } from "../shared/estoqueControle";
 
 export type EstoqueEmbalagemInput = {
   nome: string;
@@ -10,6 +11,7 @@ export type EstoqueEmbalagemInput = {
 export type EstoqueFazendaConfig = {
   fazendaId: number;
   produzidoNaFazenda?: boolean;
+  controlarSaldo?: boolean;
   monitorarEstoque?: boolean;
   quantidadeMinima?: string | null;
   quantidadeMaxima?: string | null;
@@ -34,6 +36,8 @@ export type EstoqueMutationInput = {
   /** Legado: valor global. Preferir estoquesConfig. */
   produzidoNaFazenda?: boolean;
   /** Legado: valor global. Preferir estoquesConfig. */
+  controlarSaldo?: boolean;
+  /** Legado: valor global. Preferir estoquesConfig. */
   monitorarEstoque?: boolean;
   situacao?: "ativo" | "inativo";
   embalagens?: EstoqueEmbalagemInput[];
@@ -52,6 +56,7 @@ export type EstoqueVinculadoDTO = {
   fazendaId: number;
   estoqueId: number;
   produzidoNaFazenda: boolean;
+  controlarSaldo: boolean;
   monitorarEstoque: boolean;
   quantidadeMinima: string | null;
   quantidadeMaxima: string | null;
@@ -97,18 +102,25 @@ export function configParaFazenda(
 ): Required<
   Pick<
     EstoqueFazendaConfig,
-    "fazendaId" | "produzidoNaFazenda" | "monitorarEstoque"
+    "fazendaId" | "produzidoNaFazenda" | "controlarSaldo" | "monitorarEstoque"
   >
 > & {
   quantidadeMinima: string | null;
   quantidadeMaxima: string | null;
 } {
     const cfg = (input.estoquesConfig ?? []).find(c => Number(c.fazendaId) === fazendaId);
+  const controlarSaldo =
+    cfg?.controlarSaldo ??
+    fallback?.controlarSaldo ??
+    input.controlarSaldo ??
+    categoriaControlaSaldoPorPadrao(input.categoria);
   const monitorar =
-    cfg?.monitorarEstoque ??
-    fallback?.monitorarEstoque ??
-    input.monitorarEstoque ??
-    false;
+    controlarSaldo
+      ? (cfg?.monitorarEstoque ??
+        fallback?.monitorarEstoque ??
+        input.monitorarEstoque ??
+        false)
+      : false;
   const produzido =
     cfg?.produzidoNaFazenda ??
     fallback?.produzidoNaFazenda ??
@@ -135,6 +147,7 @@ export function configParaFazenda(
   return {
     fazendaId,
     produzidoNaFazenda: !!produzido,
+    controlarSaldo: !!controlarSaldo,
     monitorarEstoque: !!monitorar,
     quantidadeMinima,
     quantidadeMaxima,
@@ -157,6 +170,9 @@ export function toCatalogoInsertValues(
   // Campos operacionais no catálogo são legado; preferir config por fazenda no estoque.
   const monitorarAlguma =
     (input.estoquesConfig ?? []).some(c => c.monitorarEstoque) || !!input.monitorarEstoque;
+  const controlarAlguma =
+    (input.estoquesConfig ?? []).some(c => c.controlarSaldo !== false) ||
+    input.controlarSaldo !== false;
   return {
     nome: input.nome.trim(),
     categoria: input.categoria || null,
@@ -165,6 +181,7 @@ export function toCatalogoInsertValues(
     fabricante: input.fabricante || null,
     identificadorUnico: input.identificadorUnico?.trim() || null,
     produzidoNaFazenda: false,
+    controlarSaldo: controlarAlguma,
     monitorarEstoque: monitorarAlguma,
     situacao: input.situacao ?? "ativo",
     embalagens: input.embalagens?.length ? JSON.stringify(input.embalagens) : null,
@@ -188,6 +205,7 @@ export function toEstoqueInsertValues(
       ? configParaFazenda(input, input.fazendaId)
       : {
           produzidoNaFazenda: input.produzidoNaFazenda ?? false,
+          controlarSaldo: input.controlarSaldo ?? categoriaControlaSaldoPorPadrao(input.categoria),
           monitorarEstoque: input.monitorarEstoque ?? false,
           quantidadeMinima: input.quantidadeMinima ?? "0",
           quantidadeMaxima: input.quantidadeMaxima ?? null,
@@ -206,6 +224,7 @@ export function toEstoqueInsertValues(
     fabricante: catalogo.fabricante,
     identificadorUnico: catalogo.identificadorUnico,
     produzidoNaFazenda: farmCfg.produzidoNaFazenda,
+    controlarSaldo: farmCfg.controlarSaldo,
     monitorarEstoque: farmCfg.monitorarEstoque,
     situacao: catalogo.situacao,
     embalagens: catalogo.embalagens,

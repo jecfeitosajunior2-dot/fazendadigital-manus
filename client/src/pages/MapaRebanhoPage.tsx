@@ -20,6 +20,7 @@ import { FormDatePicker, FormLabel, FormSelect, FD_PRIMARY } from "@/components/
 import { SelectItem } from "@/components/ui/select";
 import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { parseRetornoRebanhoVisaoGeral } from "@/lib/rebanhoRoutes";
 
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
 const FILTER_SELECT_EMPTY = "__empty__";
@@ -890,14 +891,20 @@ export default function MapaRebanhoPage() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
 
-  const { urlFazendaId, urlSuperlotados } = useMemo(() => {
+  const { urlFazendaId, urlSuperlotados, urlRetorno } = useMemo(() => {
     const params = new URLSearchParams(searchString);
     const val = params.get("fazendaId");
     return {
       urlFazendaId: val === "0" ? "__clear__" : val || "",
       urlSuperlotados: params.get("superlotados") === "true",
+      urlRetorno: params.get("retorno"),
     };
   }, [searchString]);
+
+  const retornoVisaoGeral = useMemo(
+    () => parseRetornoRebanhoVisaoGeral(urlRetorno),
+    [urlRetorno],
+  );
 
   const initialFilters = useMemo(() => {
     if (urlFazendaId === '__clear__') return INITIAL_FILTERS;
@@ -1166,12 +1173,26 @@ export default function MapaRebanhoPage() {
     const fId = opts?.fazendaId ?? filters.fazendaId;
     if (fId) params.set("fazendaId", fId);
     if (opts?.superlotados ?? urlSuperlotados) params.set("superlotados", "true");
+    if (urlRetorno) params.set("retorno", urlRetorno);
     const qs = params.toString();
     return `/rebanho/mapa-rebanho${qs ? `?${qs}` : ""}`;
   };
 
   return (
     <div className="min-w-0">
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1

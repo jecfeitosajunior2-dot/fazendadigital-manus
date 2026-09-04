@@ -8,6 +8,7 @@ import {
   formatCustoMedio,
   parseCustoMedio,
 } from "./custoMedioEstoque";
+import { categoriaControlaSaldoPorPadrao, produtoControlaSaldo } from "../shared/estoqueControle";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -36,6 +37,7 @@ type DevEstoque = {
   fabricante: string | null;
   identificadorUnico: string | null;
   produzidoNaFazenda: boolean | null;
+  controlarSaldo: boolean | null;
   monitorarEstoque: boolean | null;
   situacao: string | null;
   embalagens: string | null;
@@ -60,6 +62,7 @@ type DevProdutoCatalogo = {
   fabricante: string | null;
   identificadorUnico: string | null;
   produzidoNaFazenda: boolean | null;
+  controlarSaldo: boolean | null;
   monitorarEstoque: boolean | null;
   situacao: string | null;
   embalagens: string | null;
@@ -519,7 +522,21 @@ function loadStore(): StoreData {
     return seed;
   }
   const data = reviveDates(JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as StoreData);
-  if (ensurePessoasSeed(data)) saveStore(data);
+  let migrated = false;
+  for (const item of data.estoque) {
+    if (item.controlarSaldo == null) {
+      item.controlarSaldo = true;
+      migrated = true;
+    }
+  }
+  for (const cat of data.produtosCatalogo ?? []) {
+    if (cat.controlarSaldo == null) {
+      cat.controlarSaldo = true;
+      migrated = true;
+    }
+  }
+  if (ensurePessoasSeed(data)) migrated = true;
+  if (migrated) saveStore(data);
   return data;
 }
 
@@ -555,6 +572,7 @@ function configLocalParaFazenda(
   fazendaId: number,
   fallback?: {
     produzidoNaFazenda?: boolean;
+    controlarSaldo?: boolean;
     monitorarEstoque?: boolean;
     quantidadeMinima?: string | null;
     quantidadeMaxima?: string | null;
@@ -564,16 +582,24 @@ function configLocalParaFazenda(
     | {
         fazendaId: number;
         produzidoNaFazenda?: boolean;
+        controlarSaldo?: boolean;
         monitorarEstoque?: boolean;
         quantidadeMinima?: string | null;
         quantidadeMaxima?: string | null;
       }[]
     | undefined;
   const cfg = (configs ?? []).find(c => Number(c.fazendaId) === fazendaId);
-  const monitorar =
-    cfg?.monitorarEstoque ??
-    fallback?.monitorarEstoque ??
-    (typeof input.monitorarEstoque === "boolean" ? input.monitorarEstoque : false);
+  const controlarSaldo =
+    cfg?.controlarSaldo ??
+    fallback?.controlarSaldo ??
+    (typeof input.controlarSaldo === "boolean"
+      ? input.controlarSaldo
+      : categoriaControlaSaldoPorPadrao(input.categoria as string | undefined));
+  const monitorar = controlarSaldo
+    ? (cfg?.monitorarEstoque ??
+      fallback?.monitorarEstoque ??
+      (typeof input.monitorarEstoque === "boolean" ? input.monitorarEstoque : false))
+    : false;
   const produzido =
     cfg?.produzidoNaFazenda ??
     fallback?.produzidoNaFazenda ??
@@ -596,10 +622,29 @@ function configLocalParaFazenda(
   }
   return {
     produzidoNaFazenda: !!produzido,
+    controlarSaldo: !!controlarSaldo,
     monitorarEstoque: !!monitorar,
     quantidadeMinima,
     quantidadeMaxima,
   };
+}
+
+function itemControlaSaldoLocal(item: DevEstoque): boolean {
+  return produtoControlaSaldo(item.controlarSaldo);
+}
+
+function aplicarDeltaSaldoMovimentacao(item: DevEstoque, qty: number, atual: number): number {
+  if (!itemControlaSaldoLocal(item)) {
+    if (qty < 0) {
+      throw new Error(
+        "Este produto é de uso imediato e não possui saldo controlado. Registre uma compra para lançar custo; saídas, transferências e ajustes de saída não se aplicam.",
+      );
+    }
+    return atual;
+  }
+  const novo = atual + qty;
+  if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+  return novo;
 }
 
 function joinMov(data: StoreData, mov: DevMovimentacao) {
@@ -672,6 +717,9 @@ export const devLocalStore = {
     return withStore(data => {
       const item = getItem(data, estoqueId);
       if (!item) return { ok: false as const, reason: "not_found" as const };
+      if (!itemControlaSaldoLocal(item)) {
+        return { ok: false as const, reason: "no_stock_control" as const };
+      }
       const atual = Number(item.quantidade ?? 0);
       const novo = atual + delta;
       if (!Number.isFinite(novo) || novo < -1e-9) {
@@ -700,6 +748,9 @@ export const devLocalStore = {
           fabricante: (input.fabricante as string | undefined) ?? null,
           identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
           produzidoNaFazenda: (input.produzidoNaFazenda as boolean | undefined) ?? false,
+          controlarSaldo:
+            (input.controlarSaldo as boolean | undefined) ??
+            categoriaControlaSaldoPorPadrao(input.categoria as string | undefined),
           monitorarEstoque: (input.monitorarEstoque as boolean | undefined) ?? false,
           situacao: (input.situacao as string | undefined) ?? "ativo",
           embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
@@ -727,6 +778,9 @@ export const devLocalStore = {
         fabricante: (input.fabricante as string | undefined) ?? null,
         identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
         produzidoNaFazenda: (input.produzidoNaFazenda as boolean | undefined) ?? false,
+        controlarSaldo:
+          (input.controlarSaldo as boolean | undefined) ??
+          categoriaControlaSaldoPorPadrao(input.categoria as string | undefined),
         monitorarEstoque: (input.monitorarEstoque as boolean | undefined) ?? false,
         situacao: (input.situacao as string | undefined) ?? "ativo",
         embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
@@ -754,6 +808,10 @@ export const devLocalStore = {
       const monitorarAlguma = (input.estoquesConfig as { monitorarEstoque?: boolean }[] | undefined)?.some(
         c => c.monitorarEstoque
       );
+      const controlarAlguma =
+        (input.estoquesConfig as { controlarSaldo?: boolean }[] | undefined)?.some(
+          c => c.controlarSaldo !== false,
+        ) ?? categoriaControlaSaldoPorPadrao(input.categoria as string | undefined);
       data.produtosCatalogo.push({
         id: produtoId,
         nome: String(input.nome),
@@ -763,6 +821,7 @@ export const devLocalStore = {
         fabricante: (input.fabricante as string | undefined) ?? null,
         identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
         produzidoNaFazenda: false,
+        controlarSaldo: controlarAlguma,
         monitorarEstoque: monitorarAlguma || !!(input.monitorarEstoque as boolean | undefined),
         situacao: (input.situacao as string | undefined) ?? "ativo",
         embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
@@ -797,6 +856,7 @@ export const devLocalStore = {
           fabricante: (input.fabricante as string | undefined) ?? null,
           identificadorUnico: (input.identificadorUnico as string | undefined) ?? null,
           produzidoNaFazenda: cfg.produzidoNaFazenda,
+          controlarSaldo: cfg.controlarSaldo,
           monitorarEstoque: cfg.monitorarEstoque,
           situacao: (input.situacao as string | undefined) ?? "ativo",
           embalagens: embalagens?.length ? JSON.stringify(embalagens) : null,
@@ -837,6 +897,7 @@ export const devLocalStore = {
       | "id"
       | "fazendaId"
       | "produzidoNaFazenda"
+      | "controlarSaldo"
       | "monitorarEstoque"
       | "quantidadeMinima"
       | "quantidadeMaxima"
@@ -848,6 +909,7 @@ export const devLocalStore = {
       fazendaId: e.fazendaId as number,
       estoqueId: e.id,
       produzidoNaFazenda: !!e.produzidoNaFazenda,
+      controlarSaldo: produtoControlaSaldo(e.controlarSaldo),
       monitorarEstoque: !!e.monitorarEstoque,
       quantidadeMinima: e.quantidadeMinima != null ? String(e.quantidadeMinima) : null,
       quantidadeMaxima: e.quantidadeMaxima != null ? String(e.quantidadeMaxima) : null,
@@ -860,6 +922,7 @@ export const devLocalStore = {
             fazendaId: fallback.fazendaId,
             estoqueId: fallback.id,
             produzidoNaFazenda: !!fallback.produzidoNaFazenda,
+            controlarSaldo: produtoControlaSaldo(fallback.controlarSaldo),
             monitorarEstoque: !!fallback.monitorarEstoque,
             quantidadeMinima:
               fallback.quantidadeMinima != null ? String(fallback.quantidadeMinima) : null,
@@ -886,6 +949,13 @@ export const devLocalStore = {
       const monitorarAlguma = (input.estoquesConfig as { monitorarEstoque?: boolean }[] | undefined)?.some(
         c => c.monitorarEstoque
       );
+      const controlarAlguma =
+        (input.estoquesConfig as { controlarSaldo?: boolean }[] | undefined)?.some(
+          c => c.controlarSaldo !== false,
+        ) ??
+        (input.controlarSaldo !== false
+          ? categoriaControlaSaldoPorPadrao((input.categoria as string) ?? row.categoria)
+          : false);
       if (!produtoId) {
         produtoId = data.nextProdutoCatalogoId++;
         row.produtoId = produtoId;
@@ -898,6 +968,7 @@ export const devLocalStore = {
           fabricante: (input.fabricante as string | undefined) ?? row.fabricante,
           identificadorUnico: (input.identificadorUnico as string | undefined) ?? row.identificadorUnico,
           produzidoNaFazenda: false,
+          controlarSaldo: controlarAlguma,
           monitorarEstoque:
             monitorarAlguma ??
             ((input.monitorarEstoque as boolean | undefined) ?? row.monitorarEstoque),
@@ -929,6 +1000,12 @@ export const devLocalStore = {
                 : input.monitorarEstoque !== undefined
                   ? input.monitorarEstoque
                   : catalogo.monitorarEstoque,
+            controlarSaldo:
+              controlarAlguma != null
+                ? controlarAlguma
+                : input.controlarSaldo !== undefined
+                  ? input.controlarSaldo
+                  : catalogo.controlarSaldo ?? true,
             situacao: input.situacao ?? catalogo.situacao,
             embalagens: embalagens ? embalagensStr : catalogo.embalagens,
             possuiCarencia: input.possuiCarencia !== undefined ? input.possuiCarencia : catalogo.possuiCarencia,
@@ -1002,11 +1079,13 @@ export const devLocalStore = {
         if (itemFarm != null && Number.isFinite(itemFarm)) {
           const cfg = configLocalParaFazenda(input, itemFarm, {
             produzidoNaFazenda: !!item.produzidoNaFazenda,
+            controlarSaldo: produtoControlaSaldo(item.controlarSaldo),
             monitorarEstoque: !!item.monitorarEstoque,
             quantidadeMinima: item.quantidadeMinima,
             quantidadeMaxima: item.quantidadeMaxima,
           });
           item.produzidoNaFazenda = cfg.produzidoNaFazenda;
+          item.controlarSaldo = cfg.controlarSaldo;
           item.monitorarEstoque = cfg.monitorarEstoque;
           item.quantidadeMinima = cfg.quantidadeMinima ?? "0";
           item.quantidadeMaxima = cfg.quantidadeMaxima;
@@ -1031,6 +1110,7 @@ export const devLocalStore = {
           fazendaId,
           ...syncFields,
           produzidoNaFazenda: cfg.produzidoNaFazenda,
+          controlarSaldo: cfg.controlarSaldo,
           monitorarEstoque: cfg.monitorarEstoque,
           quantidadeMinima: cfg.quantidadeMinima ?? "0",
           quantidadeMaxima: cfg.quantidadeMaxima,
@@ -1047,6 +1127,7 @@ export const devLocalStore = {
     produtoId: number;
     fazendaId: number;
     produzidoNaFazenda?: boolean;
+    controlarSaldo?: boolean;
     monitorarEstoque?: boolean;
     quantidadeMinima?: string;
     quantidadeMaxima?: string;
@@ -1059,6 +1140,7 @@ export const devLocalStore = {
       );
       if (existing) {
         if (input.produzidoNaFazenda != null) existing.produzidoNaFazenda = input.produzidoNaFazenda;
+        if (input.controlarSaldo != null) existing.controlarSaldo = input.controlarSaldo;
         if (input.monitorarEstoque != null) existing.monitorarEstoque = input.monitorarEstoque;
         if (input.quantidadeMinima !== undefined) existing.quantidadeMinima = input.quantidadeMinima;
         if (input.quantidadeMaxima !== undefined) existing.quantidadeMaxima = input.quantidadeMaxima ?? null;
@@ -1081,6 +1163,9 @@ export const devLocalStore = {
         fabricante: catalogo.fabricante,
         identificadorUnico: catalogo.identificadorUnico,
         produzidoNaFazenda: input.produzidoNaFazenda ?? false,
+        controlarSaldo:
+          input.controlarSaldo ??
+          categoriaControlaSaldoPorPadrao(catalogo.categoria ?? undefined),
         monitorarEstoque: input.monitorarEstoque ?? false,
         situacao: catalogo.situacao,
         embalagens: catalogo.embalagens,
@@ -1115,6 +1200,7 @@ export const devLocalStore = {
         fabricante: input.fabricante ?? row.fabricante,
         identificadorUnico: input.identificadorUnico ?? row.identificadorUnico,
         produzidoNaFazenda: input.produzidoNaFazenda ?? row.produzidoNaFazenda,
+        controlarSaldo: input.controlarSaldo ?? row.controlarSaldo,
         monitorarEstoque: input.monitorarEstoque ?? row.monitorarEstoque,
         situacao: input.situacao ?? row.situacao,
         embalagens: embalagens?.length ? JSON.stringify(embalagens) : row.embalagens,
@@ -1297,8 +1383,7 @@ export const devLocalStore = {
       if (Number.isNaN(qty) || qty === 0) throw new Error("Informe uma quantidade válida.");
 
       const atual = Number(item.quantidade ?? 0);
-      const novo = atual + qty;
-      if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+      const novo = aplicarDeltaSaldoMovimentacao(item, qty, atual);
 
       let observacoes = input.observacoes as string | undefined;
       if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
@@ -1341,7 +1426,7 @@ export const devLocalStore = {
         updatedByNome: null,
       });
       item.quantidade = String(novo);
-      // Entrada com valor → custo médio ponderado. Saída → só saldo.
+      // Entrada com valor → custo médio ponderado (mesmo em consumo direto, para histórico de preço).
       if (qty > 0) {
         const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
         if (Number.isFinite(valorTotalEntrada) && valorTotalEntrada > 0) {
@@ -1383,18 +1468,18 @@ export const devLocalStore = {
       if (oldEstoqueId === newEstoqueId) {
         const item = getItem(data, newEstoqueId);
         if (!item) throw new Error("Produto não encontrado");
-        const base = Number(item.quantidade ?? 0) - oldQty;
-        const novo = base + qty;
-        if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        const base = Number(item.quantidade ?? 0) - (itemControlaSaldoLocal(item) ? oldQty : 0);
+        const novo = aplicarDeltaSaldoMovimentacao(item, qty, base);
         item.quantidade = String(novo);
         item.updatedAt = now();
       } else {
         const oldItem = getItem(data, oldEstoqueId);
         const newItem = getItem(data, newEstoqueId);
         if (!oldItem || !newItem) throw new Error("Produto não encontrado");
-        const oldStock = Number(oldItem.quantidade ?? 0) - oldQty;
-        const newStock = Number(newItem.quantidade ?? 0) + qty;
-        if (newStock < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        const oldStock =
+          Number(oldItem.quantidade ?? 0) - (itemControlaSaldoLocal(oldItem) ? oldQty : 0);
+        const newBase = Number(newItem.quantidade ?? 0);
+        const newStock = aplicarDeltaSaldoMovimentacao(newItem, qty, newBase);
         oldItem.quantidade = String(oldStock);
         newItem.quantidade = String(newStock);
         oldItem.updatedAt = now();
@@ -1476,15 +1561,20 @@ export const devLocalStore = {
     }
 
     const insuficientes = avaliarEstornoEstoque(
-      originais.map(o => {
-        const item = getItem(data, o.estoqueId);
-        return {
-          estoqueId: o.estoqueId,
-          quantidade: o.quantidade,
-          nome: item?.nome,
-          unidade: item?.unidade,
-        };
-      }),
+      originais
+        .filter(o => {
+          const item = getItem(data, o.estoqueId);
+          return item && itemControlaSaldoLocal(item);
+        })
+        .map(o => {
+          const item = getItem(data, o.estoqueId);
+          return {
+            estoqueId: o.estoqueId,
+            quantidade: o.quantidade,
+            nome: item?.nome,
+            unidade: item?.unidade,
+          };
+        }),
       saldos,
     );
 
@@ -1547,15 +1637,20 @@ export const devLocalStore = {
         });
       }
       const insuficientes = avaliarEstornoEstoque(
-        originais.map(o => {
-          const item = getItem(data, o.estoqueId);
-          return {
-            estoqueId: o.estoqueId,
-            quantidade: o.quantidade,
-            nome: item?.nome,
-            unidade: item?.unidade,
-          };
-        }),
+        originais
+          .filter(o => {
+            const item = getItem(data, o.estoqueId);
+            return item && itemControlaSaldoLocal(item);
+          })
+          .map(o => {
+            const item = getItem(data, o.estoqueId);
+            return {
+              estoqueId: o.estoqueId,
+              quantidade: o.quantidade,
+              nome: item?.nome,
+              unidade: item?.unidade,
+            };
+          }),
         saldos,
       );
       if (insuficientes.length > 0) {
@@ -1581,15 +1676,17 @@ export const devLocalStore = {
         const qtyInversa = -qty;
         const item = getItem(data, mov.estoqueId);
         if (!item) throw new Error("Produto não encontrado.");
-        const atual = Number(item.quantidade ?? 0);
-        const novo = atual + qtyInversa;
-        if (novo < 0) {
-          throw new Error(
-            "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
-          );
+        if (itemControlaSaldoLocal(item)) {
+          const atual = Number(item.quantidade ?? 0);
+          const novo = atual + qtyInversa;
+          if (novo < 0) {
+            throw new Error(
+              "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
+            );
+          }
+          item.quantidade = String(novo);
+          item.updatedAt = now();
         }
-        item.quantidade = String(novo);
-        item.updatedAt = now();
 
         const id = data.nextMovId++;
         idsCriados.push(id);

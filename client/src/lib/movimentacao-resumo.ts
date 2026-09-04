@@ -1,4 +1,4 @@
-import { formatDataBr, formatQuantidadeMov, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
+import { formatDataBr, formatQuantidadeMov, produtoControlaSaldo, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
 import { formatCurrencyBrl } from "@/lib/utils";
 import {
   classificarMotivoEstornoAbastecimento,
@@ -343,6 +343,38 @@ export function textoResultadoEstornoNoEstoque(
     return `devolução de ${partes[0]} ao estoque da Fazenda.`;
   }
   return `devolução de ${partes.join(" + ")} ao estoque da Fazenda.`;
+}
+
+/** Texto do estorno quando a movimentação não altera saldo (consumo direto). */
+export function textoResultadoEstornoHistorico(
+  itensRevertidos: ItemEstornoRevertido[],
+): string {
+  if (!itensRevertidos.length) {
+    return "estorno registrado no histórico (sem alteração de saldo).";
+  }
+
+  const partes = itensRevertidos.map(it => {
+    const qtd = Number.isFinite(it.quantidade) ? Math.abs(it.quantidade) : 0;
+    const sigla = siglaUnidade(it.unidade) || "un";
+    return `${formatQuantidadeMov(qtd)} ${sigla}`;
+  });
+
+  if (partes.length === 1) {
+    return `estorno de ${partes[0]} no histórico de compras (sem alteração de saldo).`;
+  }
+  return `estorno de ${partes.join(" + ")} no histórico de compras (sem alteração de saldo).`;
+}
+
+/** Indica se algum item da movimentação altera saldo físico. */
+export function movimentacaoResumoAlteraSaldo(
+  resumo: Pick<MovimentacaoResumo, "itens">,
+  controlaSaldoPorId: ReadonlyMap<number, boolean>,
+): boolean {
+  return resumo.itens.some(it => {
+    const id = it.estoqueId;
+    if (id == null) return true;
+    return controlaSaldoPorId.get(id) ?? produtoControlaSaldo(undefined);
+  });
 }
 
 function numIdPersistido(raw: unknown): number | null {

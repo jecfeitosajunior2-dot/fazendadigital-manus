@@ -38,6 +38,7 @@ import { sortPesagensDesc } from "@/lib/fichaAnimalDisplay";
 import {
   calcularQuantidadeEstoquePorDose,
   calcularCustoReferenciaPorUnidadeDose,
+  produtoControlaSaldo,
   siglaUnidade,
 } from "@/lib/produto-types";
 import {
@@ -1058,6 +1059,9 @@ function ManejoSanitarioForm() {
     return (estoqueFarmácia as EstoqueSanitarioItem[]).filter(item => {
       const sit = String(item.situacao || "ativo").toLowerCase();
       if (sit === "inativo") return false;
+      if (!produtoControlaSaldo((item as { controlarSaldo?: boolean | null }).controlarSaldo)) {
+        return false;
+      }
       const fid = Number(item.fazendaId);
       return Number.isFinite(fid) && fid === fazendaNum;
     });

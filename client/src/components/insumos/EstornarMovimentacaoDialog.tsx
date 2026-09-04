@@ -27,6 +27,8 @@ const MOTIVOS_ESTORNO = [
 type Props = {
   open: boolean;
   resumo: MovimentacaoResumo | null;
+  /** Quando false, a movimentação é de consumo direto (só histórico/custo). */
+  alteraSaldo?: boolean;
   onClose: () => void;
   onConfirm: (payload: { motivo: string; observacao?: string }) => void | Promise<void>;
   submitting?: boolean;
@@ -38,6 +40,7 @@ type Props = {
 export default function EstornarMovimentacaoDialog({
   open,
   resumo,
+  alteraSaldo = true,
   onClose,
   onConfirm,
   submitting = false,
@@ -126,8 +129,9 @@ export default function EstornarMovimentacaoDialog({
         </DialogHeader>
 
         <p className="text-[13px] text-gray-600 leading-relaxed">
-          Esta ação desfaz a movimentação inteira: cria o lançamento inverso, corrige o estoque
-          e mantém a original no histórico como Estornada. Não é possível estornar só um produto.
+          {alteraSaldo
+            ? "Esta ação desfaz a movimentação inteira: cria o lançamento inverso, corrige o estoque e mantém a original no histórico como Estornada. Não é possível estornar só um produto."
+            : "Esta ação desfaz a movimentação inteira: cria o lançamento inverso no histórico de compras (sem alterar saldo) e mantém a original como Estornada. Não é possível estornar só um produto."}
         </p>
 
         {resumo && (
@@ -153,8 +157,8 @@ export default function EstornarMovimentacaoDialog({
         {estoqueBloqueado && (
           <div className="rounded-lg border border-red-100 bg-red-50/80 px-3 py-2.5 space-y-2">
             <p className="text-[12px] text-red-700 leading-snug">
-              Não é possível estornar esta movimentação porque o estoque atual de um ou mais
-              produtos é insuficiente para realizar a reversão.
+              Não é possível estornar esta movimentação porque o saldo atual de um ou mais
+              produtos estocáveis é insuficiente para realizar a reversão.
             </p>
             <div className="overflow-x-auto rounded border border-red-100 bg-white">
               <table className="w-full text-[11px] border-collapse">
@@ -189,7 +193,7 @@ export default function EstornarMovimentacaoDialog({
 
         {validacao.isError && (
           <p className="text-[12px] text-red-600">
-            Não foi possível validar o estoque. Tente fechar e abrir o estorno novamente.
+            Não foi possível validar{alteraSaldo ? " o estoque" : " o estorno"}. Tente fechar e abrir o estorno novamente.
           </p>
         )}
 

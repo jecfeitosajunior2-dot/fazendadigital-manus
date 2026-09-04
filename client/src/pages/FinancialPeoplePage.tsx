@@ -1,15 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { FD_PRIMARY, FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
-import { formatCpfCnpj, formatPhoneBR } from "@/lib/utils";
+import { cn, formatCpfCnpj, formatPhoneBR } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
 type PessoaTipo = "fornecedor" | "cliente" | "funcionario";
@@ -52,6 +50,46 @@ const emptyForm = (tipo: PessoaTipo = "fornecedor"): FormState => ({
   email: "",
   observacoes: "",
 });
+
+function FormCard({
+  title,
+  variant = "section",
+  children,
+  footer,
+}: {
+  title: string;
+  variant?: "page" | "section";
+  children?: ReactNode;
+  footer?: ReactNode;
+}) {
+  const hasBody = Boolean(children) || Boolean(footer);
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className={cn("px-5 py-4", hasBody && "border-b border-gray-100")}>
+        {variant === "page" ? (
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {title}
+          </h1>
+        ) : (
+          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+        )}
+      </div>
+      {hasBody ? (
+        <div className="p-5 space-y-4">
+          {children}
+          {footer ? (
+            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+              {footer}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function FinancialTabs({ active }: { active: string }) {
   const tabs = ["Contas", "Importar Extrato", "Movimentações", "Rateio de Custo", "Listagem Rateio", "Receita x Despesa"];
@@ -231,92 +269,133 @@ export default function FinancialPeoplePage() {
     else setShowForm(true);
   };
 
+  const botoesFormulario = (
+    <>
+      <button
+        type="button"
+        onClick={cancelar}
+        disabled={isBusy}
+        className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        onClick={salvar}
+        disabled={isBusy}
+        className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
+        style={{ backgroundColor: FD_PRIMARY }}
+      >
+        {isBusy ? "Salvando..." : "Salvar"}
+      </button>
+    </>
+  );
+
+  const camposFormulario = (
+    <>
+      <div>
+        <FormLabel required>{isFornecedorForm ? "Nome / Razão social" : "Nome"}</FormLabel>
+        <FormInput
+          required
+          variant="light"
+          value={form.nome}
+          onChange={v => setForm(f => ({ ...f, nome: v }))}
+          placeholder={isFornecedorForm ? "Nome ou razão social" : "Nome completo"}
+        />
+      </div>
+      <div>
+        <FormLabel required>CPF/CNPJ</FormLabel>
+        <FormInput
+          required
+          variant="light"
+          value={form.documento}
+          onChange={v => setForm(f => ({ ...f, documento: formatCpfCnpj(v) }))}
+          placeholder={
+            form.documento.replace(/\D/g, "").length > 11
+              ? "00.000.000/0000-00"
+              : "000.000.000-00"
+          }
+        />
+      </div>
+      <div>
+        <FormLabel>Endereço</FormLabel>
+        <FormInput
+          variant="light"
+          value={form.endereco}
+          onChange={v => setForm(f => ({ ...f, endereco: v }))}
+          placeholder="Opcional"
+        />
+      </div>
+      <div>
+        <FormLabel>Telefone</FormLabel>
+        <FormInput
+          variant="light"
+          value={form.telefone}
+          onChange={v => setForm(f => ({ ...f, telefone: formatPhoneBR(v) }))}
+          placeholder="(00) 00000-0000"
+          inputMode="tel"
+        />
+      </div>
+      <div>
+        <FormLabel>E-mail</FormLabel>
+        <FormInput
+          variant="light"
+          value={form.email}
+          onChange={v => setForm(f => ({ ...f, email: v }))}
+        />
+      </div>
+      <div>
+        <FormLabel>Observações</FormLabel>
+        <FormTextarea
+          variant="light"
+          value={form.observacoes}
+          onChange={v => setForm(f => ({ ...f, observacoes: v }))}
+          rows={2}
+          placeholder="Informações complementares"
+        />
+      </div>
+    </>
+  );
+
+  if (fornecedorContext && showForm) {
+    return (
+      <AppLayout>
+        <button
+          type="button"
+          onClick={cancelar}
+          disabled={isBusy}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group disabled:opacity-50"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+        <FormCard variant="page" title={modalTitulo} footer={botoesFormulario}>
+          {camposFormulario}
+        </FormCard>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <Dialog open={showForm} onOpenChange={handleDialogChange}>
-        <DialogContent className="max-w-md gap-5">
-          <DialogHeader className="pb-0">
-            <DialogTitle>{modalTitulo}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <FormLabel required>{isFornecedorForm ? "Nome / Razão social" : "Nome"}</FormLabel>
-              <FormInput
-                required
-                variant="light"
-                value={form.nome}
-                onChange={v => setForm(f => ({ ...f, nome: v }))}
-                placeholder={isFornecedorForm ? "Nome ou razão social" : "Nome completo"}
-              />
-            </div>
-            <div>
-              <FormLabel required>CPF/CNPJ</FormLabel>
-              <FormInput
-                required
-                variant="light"
-                value={form.documento}
-                onChange={v => setForm(f => ({ ...f, documento: formatCpfCnpj(v) }))}
-                placeholder={
-                  form.documento.replace(/\D/g, "").length > 11
-                    ? "00.000.000/0000-00"
-                    : "000.000.000-00"
-                }
-              />
-            </div>
-            <div>
-              <FormLabel>Endereço</FormLabel>
-              <FormInput
-                variant="light"
-                value={form.endereco}
-                onChange={v => setForm(f => ({ ...f, endereco: v }))}
-                placeholder="Opcional"
-              />
-            </div>
-            <div>
-              <FormLabel>Telefone</FormLabel>
-              <FormInput
-                variant="light"
-                value={form.telefone}
-                onChange={v => setForm(f => ({ ...f, telefone: formatPhoneBR(v) }))}
-                placeholder="(00) 00000-0000"
-                inputMode="tel"
-              />
-            </div>
-            <div>
-              <FormLabel>E-mail</FormLabel>
-              <FormInput
-                variant="light"
-                value={form.email}
-                onChange={v => setForm(f => ({ ...f, email: v }))}
-              />
-            </div>
-            <div>
-              <FormLabel>Observações</FormLabel>
-              <FormTextarea
-                variant="light"
-                value={form.observacoes}
-                onChange={v => setForm(f => ({ ...f, observacoes: v }))}
-                rows={2}
-                placeholder="Informações complementares"
-              />
-            </div>
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                type="button"
-                onClick={cancelar}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={salvar}
-                disabled={isBusy}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {isBusy ? "Salvando..." : "Salvar"}
-              </button>
+        <DialogContent
+          className="max-w-md gap-0 p-0 overflow-hidden border border-gray-200 shadow-none sm:max-w-md"
+        >
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h1
+              className="text-[20px] font-semibold text-gray-900 shrink-0 pr-8"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              {modalTitulo}
+            </h1>
+          </div>
+          <div className="p-5 space-y-4">
+            {camposFormulario}
+            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+              {botoesFormulario}
             </div>
           </div>
         </DialogContent>

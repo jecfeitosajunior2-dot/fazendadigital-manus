@@ -1,5 +1,6 @@
 // Componentes visuais compartilhados entre os dashboards (Painel de Controle e Insumos).
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 export const TEAL = "#1BC5BD";
 export const NAVY = "#164E63";
@@ -45,6 +46,10 @@ export function KpiCard({
   icon,
   color,
   onClick,
+  tooltip,
+  valueColor,
+  size = "default",
+  className,
 }: {
   label: string;
   value: string;
@@ -52,30 +57,85 @@ export function KpiCard({
   icon: string;
   color: string;
   onClick?: () => void;
+  /** Dica ao passar o mouse / foco. */
+  tooltip?: string;
+  /** Cor do número principal (ex.: vermelho em alerta). */
+  valueColor?: string;
+  size?: "default" | "compact";
+  className?: string;
 }) {
+  const compact = size === "compact";
+  const interactive = Boolean(onClick);
+  const Tag = interactive ? "button" : "div";
+
   return (
-    <button
-      type="button"
+    <Tag
+      type={interactive ? "button" : undefined}
       onClick={onClick}
-      className="group text-left bg-white rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.055)] border border-slate-100 overflow-hidden flex hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(15,23,42,0.10)] hover:border-slate-200 transition-all"
+      title={tooltip}
+      onKeyDown={
+        interactive
+          ? e => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        "group text-left bg-white overflow-hidden flex w-full min-w-0 border border-slate-100 transition-all",
+        compact ? "rounded-xl shadow-sm" : "rounded-2xl shadow-[0_10px_24px_rgba(15,23,42,0.055)]",
+        interactive &&
+          "cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(15,23,42,0.10)] hover:border-slate-200 active:scale-[0.995]",
+        className,
+      )}
     >
-      <div className="w-1 flex-shrink-0" style={{ backgroundColor: color }} />
-      <div className="p-4 flex-1 min-w-0">
+      <div className="w-1 flex-shrink-0" style={{ backgroundColor: color }} aria-hidden />
+      <div className={cn("flex-1 min-w-0", compact ? "p-3" : "p-4")}>
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] text-gray-500 uppercase tracking-wide truncate">{label}</p>
-            <p className="text-[22px] font-bold text-gray-800 leading-tight mt-1 truncate">{value}</p>
+          <div className="min-w-0 flex-1">
+            <p
+              className={cn(
+                "font-medium uppercase tracking-wide text-gray-500 truncate",
+                compact ? "text-[10px]" : "text-[11px]",
+              )}
+            >
+              {label}
+            </p>
+            <p
+              className={cn(
+                "font-bold leading-tight mt-1 tabular-nums truncate",
+                compact ? "text-[18px]" : "text-[22px]",
+              )}
+              style={{ color: valueColor ?? "#1F2937" }}
+            >
+              {value}
+            </p>
           </div>
           <span
-            className="material-icons text-[20px] flex-shrink-0 rounded-lg p-1.5"
+            className={cn(
+              "material-icons flex-shrink-0 rounded-lg",
+              compact ? "text-[18px] p-1" : "text-[20px] p-1.5",
+            )}
             style={{ color, backgroundColor: `${color}14` }}
+            aria-hidden
           >
             {icon}
           </span>
         </div>
-        {sub && <div className="text-[11px] text-gray-400 mt-2 leading-snug">{sub}</div>}
+        {sub ? (
+          <div
+            className={cn(
+              "text-gray-400 leading-snug line-clamp-2",
+              compact ? "text-[10px] mt-1.5" : "text-[11px] mt-2",
+            )}
+          >
+            {sub}
+          </div>
+        ) : null}
       </div>
-    </button>
+    </Tag>
   );
 }
 

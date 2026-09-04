@@ -715,22 +715,24 @@ export function FarmRegistrationPage() {
         <span className="text-[13px]">Voltar</span>
       </button>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="flex items-center justify-between mb-5">
-          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-            {isEdit ? "Editar Fazenda" : "Cadastrar Fazenda"}
-          </h1>
-          <div className="flex items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-2">
-            <div className="text-right leading-tight">
-              <div className="text-[11px] font-semibold text-gray-800">Cadastro Avançado</div>
-              <div className="text-[10px] text-gray-500">
-                Dados complementares opcionais
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden mb-5">
+          <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+              {isEdit ? "Editar Fazenda" : "Cadastrar Fazenda"}
+            </h1>
+            <div className="flex items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-2">
+              <div className="text-right leading-tight">
+                <div className="text-[11px] font-semibold text-gray-800">Cadastro Avançado</div>
+                <div className="text-[10px] text-gray-500">
+                  Dados complementares opcionais
+                </div>
               </div>
+              <Switch
+                checked={cadastroAvancado}
+                onCheckedChange={setCadastroAvancado}
+                className="data-[state=checked]:bg-[#4ECDC4] data-[state=unchecked]:bg-gray-300"
+              />
             </div>
-            <Switch
-              checked={cadastroAvancado}
-              onCheckedChange={setCadastroAvancado}
-              className="data-[state=checked]:bg-[#4ECDC4] data-[state=unchecked]:bg-gray-300"
-            />
           </div>
         </div>
 

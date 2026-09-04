@@ -1,7 +1,8 @@
 import { Fragment, useState, useMemo, useEffect } from 'react';
 import AppLayout from "@/components/AppLayout";
 import ListExportButtons from "@/components/ListExportButtons";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { FD_PRIMARY, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { ImportarAnimaisModal } from "@/components/ImportarAnimaisModal";
 import ListaAnimaisFiltros from "@/components/animais/ListaAnimaisFiltros";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -18,8 +19,10 @@ import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { useLocation, useSearch } from 'wouter';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
-import { normalizarUnidade, formatQtdComSigla, formatDataBr } from '@/lib/produto-types';
+import { normalizarUnidade, formatQtdComSigla, formatDataBr, produtoControlaSaldo } from '@/lib/produto-types';
 import { brl, diasAte } from '@/lib/dashboard-utils';
+import { parseRetornoVisaoGeral } from '@/lib/insumosRoutes';
+import { parseRetornoRebanhoVisaoGeral } from '@/lib/rebanhoRoutes';
 import { useDebounce } from '@/hooks/useDebounce';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -353,73 +356,95 @@ export function AnimaisPage() {
     setLocation("/rebanho/novo-animal");
   };
 
+  const retornoVisaoGeral = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoRebanhoVisaoGeral(params.get("retorno"));
+  }, [searchString]);
+
   return (
     <AppLayout>
-      {/* Cabeçalho — fora do quadro da lista */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Lista de Animais</h1>
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={goNovoAnimal}
-            disabled={!hasFazendaFilter}
-            title={!hasFazendaFilter ? semFazendaHint : undefined}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
-              hasFazendaFilter
-                ? "hover:brightness-95 active:scale-[0.97]"
-                : "opacity-50 cursor-not-allowed",
-            )}
-            style={{ backgroundColor: FD_PRIMARY }}
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
           >
-            <span className="material-icons text-[16px]">add</span>
-            <span className="hidden sm:inline">Novo Animal</span>
-            <span className="sm:hidden">Novo</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setImportarOpen(true)}
-            disabled={!hasFazendaFilter}
-            title={!hasFazendaFilter ? semFazendaHint : undefined}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold transition shrink-0 min-h-[44px]",
-              hasFazendaFilter
-                ? "hover:bg-gray-50 active:scale-[0.97]"
-                : "opacity-50 cursor-not-allowed",
-            )}
-          >
-            <span className="material-icons text-[16px] text-gray-500">upload_file</span>
-            Importar
-          </button>
-          <ListExportButtons
-            title="Lista de Animais"
-            filename="animais"
-            headers={exportHeaders}
-            rows={exportData}
-            alignRightFrom={6}
-            pdfColumnAligns={exportColumnAligns}
-            spreadsheetColumnAligns={exportColumnAligns}
-            fazendaNome={fazendaNomePdf}
-            landscape
-            pdfShowRegistrosSubtitle={false}
-            pdfIncludeSpreadsheetTitle={false}
-            spreadsheetSheetName="Lista de Animais"
-            spreadsheetReportTitle={buildAnimaisExportTitle}
-            spreadsheetAllowEmpty
-            spreadsheetBlankAfterMeta={false}
-            spreadsheetAutoFilter={false}
-            spreadsheetPlainHeader
-            variant="secondary"
-            spreadsheetIntegerCols={[6]}
-            spreadsheetTextCols={[0, 1]}
-            spreadsheetColumnNumFmts={{ 7: "0.0", 8: "0.00", 9: "0.000" }}
-            disabled={!hasFazendaFilter}
-            disabledTitle={semFazendaHint}
-          />
+            Lista de Animais
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={goNovoAnimal}
+              disabled={!hasFazendaFilter}
+              title={!hasFazendaFilter ? semFazendaHint : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+                hasFazendaFilter
+                  ? "hover:brightness-95 active:scale-[0.97]"
+                  : "opacity-50 cursor-not-allowed",
+              )}
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[16px]">add</span>
+              <span className="hidden sm:inline">Novo Animal</span>
+              <span className="sm:hidden">Novo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportarOpen(true)}
+              disabled={!hasFazendaFilter}
+              title={!hasFazendaFilter ? semFazendaHint : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-gray-700 text-[12px] font-semibold transition shrink-0 min-h-[44px]",
+                hasFazendaFilter
+                  ? "hover:bg-gray-50 active:scale-[0.97]"
+                  : "opacity-50 cursor-not-allowed",
+              )}
+            >
+              <span className="material-icons text-[16px] text-gray-500">upload_file</span>
+              Importar
+            </button>
+            <ListExportButtons
+              title="Lista de Animais"
+              filename="animais"
+              headers={exportHeaders}
+              rows={exportData}
+              alignRightFrom={6}
+              pdfColumnAligns={exportColumnAligns}
+              spreadsheetColumnAligns={exportColumnAligns}
+              fazendaNome={fazendaNomePdf}
+              landscape
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
+              spreadsheetSheetName="Lista de Animais"
+              spreadsheetReportTitle={buildAnimaisExportTitle}
+              spreadsheetAllowEmpty
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              variant="secondary"
+              spreadsheetIntegerCols={[6]}
+              spreadsheetTextCols={[0, 1]}
+              spreadsheetColumnNumFmts={{ 7: "0.0", 8: "0.00", 9: "0.000" }}
+              disabled={!hasFazendaFilter}
+              disabledTitle={semFazendaHint}
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <ListaAnimaisFiltros
           value={filters}
           onChange={handleFiltersChange}
@@ -646,6 +671,7 @@ type EstoqueItem = {
   quantidadeMinima?: string | number | null;
   quantidadeMaxima?: string | number | null;
   valorUnitario?: string | number | null;
+  controlarSaldo?: boolean | null;
   monitorarEstoque?: boolean | null;
   situacao?: string | null;
   fabricante?: string | null;
@@ -683,6 +709,7 @@ const isAbaixoEstoqueMinimo = (item: EstoqueItem): boolean => {
   if (item.alertaAbaixoAgregado) return true;
   return Boolean(
     item.monitorarEstoque &&
+      produtoControlaSaldo(item.controlarSaldo) &&
       numEstoque(item.quantidadeMinima) > 0 &&
       numEstoque(item.quantidade) <= numEstoque(item.quantidadeMinima),
   );
@@ -691,11 +718,66 @@ const isAbaixoEstoqueMinimo = (item: EstoqueItem): boolean => {
 const isAcimaEstoqueMaximo = (item: EstoqueItem): boolean =>
   Boolean(
     item.monitorarEstoque &&
+      produtoControlaSaldo(item.controlarSaldo) &&
       numEstoque(item.quantidadeMaxima) > 0 &&
       numEstoque(item.quantidade) > numEstoque(item.quantidadeMaxima),
   );
 
 type AlertaEstoqueFiltro = "todos" | "abaixo_minimo" | "acima_maximo";
+
+type ControleSaldoFiltro = "todos" | "estocavel" | "consumo_direto";
+
+const PRODUTO_FILTRO_SELECT_EMPTY = "__empty__";
+
+const produtoFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
+/** Mesmo visual dos `<select>` nativos — só troca o dropdown para destaque verde. */
+const produtoFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+
+function ProdutoListaFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  widthClass,
+  allowEmpty = true,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  widthClass: string;
+  allowEmpty?: boolean;
+}) {
+  const current = String(value ?? "").trim();
+  return (
+    <div className={cn("min-w-0", widthClass)}>
+      <FormSelect
+        variant="light"
+        disabled={disabled}
+        value={allowEmpty && !current ? PRODUTO_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(allowEmpty && v === PRODUTO_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={produtoFiltroTriggerCls}
+      >
+        {allowEmpty ? (
+          <SelectItem value={PRODUTO_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+            {placeholder}
+          </SelectItem>
+        ) : null}
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
+    </div>
+  );
+}
 
 const rotuloAlertaEstoque = (item: EstoqueItem): string => {
   if (isAbaixoEstoqueMinimo(item)) return "Abaixo do mínimo";
@@ -863,6 +945,7 @@ export function EstoquePage() {
   const [statusFiltro, setStatusFiltro] = useState<"ativo" | "inativo" | "todos">("ativo");
   /** Condição de estoque — dimensão separada do status operacional. */
   const [alertaFiltro, setAlertaFiltro] = useState<AlertaEstoqueFiltro>("todos");
+  const [controleFiltro, setControleFiltro] = useState<ControleSaldoFiltro>("todos");
   /** Filtro opcional por categoria (vindo da Visão Geral / URL). */
   const [categoriaFiltro, setCategoriaFiltro] = useState("");
   const [page, setPage] = useState(1);
@@ -870,6 +953,11 @@ export function EstoquePage() {
   const [sortKey, setSortKey] = useState<SortKeyEstoque>("nome");
   const [sortAsc, setSortAsc] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const retornoVisaoGeral = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoVisaoGeral(params.get("retorno"));
+  }, [searchString]);
 
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: items = [], isLoading, refetch } = trpc.estoque.list.useQuery();
@@ -907,6 +995,10 @@ export function EstoquePage() {
     if (buscaUrl) setSearch(buscaUrl);
     const categoriaUrl = params.get("categoria");
     if (categoriaUrl) setCategoriaFiltro(categoriaUrl);
+    const controleUrl = params.get("controle");
+    if (controleUrl === "estocavel" || controleUrl === "consumo_direto") {
+      setControleFiltro(controleUrl);
+    }
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone, loadingFazendas, searchString]);
 
@@ -1051,6 +1143,11 @@ export function EstoquePage() {
         return cat.toLowerCase() === alvo;
       });
     }
+    if (controleFiltro === "estocavel") {
+      list = list.filter(i => produtoControlaSaldo(i.controlarSaldo));
+    } else if (controleFiltro === "consumo_direto") {
+      list = list.filter(i => !produtoControlaSaldo(i.controlarSaldo));
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(i => {
@@ -1087,19 +1184,22 @@ export function EstoquePage() {
       return 0;
     });
     return list;
-  }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, alertaFiltro, categoriaFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
+  }, [items, search, estoqueFiltro, fazendaSelecionada, statusFiltro, alertaFiltro, controleFiltro, categoriaFiltro, sortKey, sortAsc, fornecedoresPorProduto, validadePorProduto, precoMedioImplicit]);
 
-  /** Soma do valor em estoque da lista filtrada (só produtos com valor > 0). */
+  /** Soma do valor em estoque da lista filtrada — só estocáveis com valor > 0 (igual Visão Geral). */
   const valorTotalLista = useMemo(() => {
     let soma = 0;
     let comValor = 0;
+    let estocaveis = 0;
     for (const item of filtered) {
+      if (!produtoControlaSaldo(item.controlarSaldo)) continue;
+      estocaveis += 1;
       const valor = valorEmEstoque(item);
       if (!(valor > 0)) continue;
       soma += valor;
       comValor += 1;
     }
-    return { soma, comValor };
+    return { soma, comValor, estocaveis };
   }, [filtered, precoMedioImplicit]);
 
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
@@ -1217,14 +1317,18 @@ export function EstoquePage() {
       const statusOp = statusOperacional(item);
       const valor = valorEmEstoque(item);
       const minimo =
-        item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
+        produtoControlaSaldo(item.controlarSaldo) &&
+        item.monitorarEstoque &&
+        numEstoque(item.quantidadeMinima) > 0
           ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
           : "—";
 
       return [
         item.nome,
         item.categoria?.trim() || "—",
-        formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade),
+        produtoControlaSaldo(item.controlarSaldo)
+          ? formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade)
+          : "Uso imediato",
         minimo,
         valor > 0 ? valor : "",
         validade ? formatDataBr(validade) : "—",
@@ -1238,7 +1342,7 @@ export function EstoquePage() {
     return [
       ...detailRows,
       [
-        "Valor total",
+        "Valor em estoque",
         "",
         "",
         "",
@@ -1303,7 +1407,9 @@ export function EstoquePage() {
     const statusOp = statusOperacional(item);
     const valor = valorEmEstoque(item);
     const minimo =
-      item.monitorarEstoque && numEstoque(item.quantidadeMinima) > 0
+      produtoControlaSaldo(item.controlarSaldo) &&
+      item.monitorarEstoque &&
+      numEstoque(item.quantidadeMinima) > 0
         ? formatEstoqueComUnidade(numEstoque(item.quantidadeMinima), item.unidade)
         : "—";
     const validadeDias = validade ? diasAte(validade) : null;
@@ -1329,7 +1435,11 @@ export function EstoquePage() {
         </td>
         <td className="px-3 py-2 text-gray-700 align-middle">{item.categoria?.trim() || "—"}</td>
         <td className="px-3 py-2 tabular-nums text-gray-900 align-middle whitespace-nowrap">
-          {formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade)}
+          {produtoControlaSaldo(item.controlarSaldo) ? (
+            formatEstoqueComUnidade(numEstoque(item.quantidade), item.unidade)
+          ) : (
+            <span className="text-gray-500 italic text-[12px]">Uso imediato</span>
+          )}
         </td>
         <td className="px-3 py-2 tabular-nums text-gray-700 align-middle whitespace-nowrap">{minimo}</td>
         <td className="px-3 py-2 tabular-nums text-gray-700 align-middle whitespace-nowrap">
@@ -1401,14 +1511,28 @@ export function EstoquePage() {
 
   return (
     <AppLayout>
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
         {/* Cabeçalho */}
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
-          <div>
-            <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-              Lista de Produtos
-            </h1>
-          </div>
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Lista de Produtos
+          </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1453,129 +1577,153 @@ export function EstoquePage() {
           </div>
         </div>
 
-        {/* Seleção em lote */}
+        {/* Filtros + busca */}
+        <div className="px-5 py-3 border-b border-gray-100">
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_minmax(0,1.1fr)] gap-2 items-center">
+            <div className="col-span-2 md:col-span-2 xl:col-span-1 min-w-0">
+              <ProdutoListaFilterSelect
+                value={estoqueFiltro}
+                onChange={value => {
+                  setEstoqueFiltro(value);
+                  persistRebanhoFazendaId(value);
+                  setCategoriaFiltro("");
+                  setPage(1);
+                  setSelectedIds(new Set());
+                }}
+                placeholder="Selecione uma fazenda"
+                widthClass="w-full"
+                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+              />
+            </div>
+            <div className="min-w-0">
+              <ProdutoListaFilterSelect
+                value={statusFiltro}
+                onChange={value => {
+                  setStatusFiltro(value as "ativo" | "inativo" | "todos");
+                  setPage(1);
+                  setSelectedIds(new Set());
+                }}
+                placeholder="Ativos"
+                allowEmpty={false}
+                disabled={!fazendaSelecionada}
+                widthClass="w-full"
+                options={[
+                  { value: "ativo", label: "Ativos" },
+                  { value: "inativo", label: "Inativos" },
+                  { value: "todos", label: "Todos" },
+                ]}
+              />
+            </div>
+            <div className="min-w-0">
+              <ProdutoListaFilterSelect
+                value={alertaFiltro}
+                onChange={value => {
+                  setAlertaFiltro(value as AlertaEstoqueFiltro);
+                  setPage(1);
+                  setSelectedIds(new Set());
+                }}
+                placeholder="Alerta: Todos"
+                allowEmpty={false}
+                disabled={!fazendaSelecionada}
+                widthClass="w-full"
+                options={[
+                  { value: "todos", label: "Alerta: Todos" },
+                  { value: "abaixo_minimo", label: "Abaixo do mínimo" },
+                  { value: "acima_maximo", label: "Acima do máximo" },
+                ]}
+              />
+            </div>
+            <div className="min-w-0">
+              <ProdutoListaFilterSelect
+                value={controleFiltro}
+                onChange={value => {
+                  setControleFiltro(value as ControleSaldoFiltro);
+                  setPage(1);
+                  setSelectedIds(new Set());
+                }}
+                placeholder="Controle: Todos"
+                allowEmpty={false}
+                disabled={!fazendaSelecionada}
+                widthClass="w-full"
+                options={[
+                  { value: "todos", label: "Controle: Todos" },
+                  { value: "estocavel", label: "Estocável" },
+                  { value: "consumo_direto", label: "Uso imediato" },
+                ]}
+              />
+            </div>
+            <div className="min-w-0">
+              <ProdutoListaFilterSelect
+                value={categoriaFiltro}
+                onChange={value => {
+                  setCategoriaFiltro(value);
+                  setPage(1);
+                  setSelectedIds(new Set());
+                }}
+                placeholder="Categoria: Todas"
+                disabled={!fazendaSelecionada}
+                widthClass="w-full"
+                options={categoriasDisponiveis.map(c => ({ value: c, label: c }))}
+              />
+            </div>
+            <div className="col-span-2 md:col-span-2 xl:col-span-1 min-w-0">
+              <div className="relative w-full">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">search</span>
+                <input
+                  type="text"
+                  placeholder="Buscar produto"
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  disabled={!fazendaSelecionada}
+                  title={!fazendaSelecionada ? "Selecione uma fazenda para buscar produtos" : undefined}
+                  className={`${produtoFiltroInputCls} pl-8 pr-3 w-full`}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {selectedIds.size > 0 && fazendaSelecionada && (
-          <div className="px-5 py-2.5 flex flex-wrap items-center gap-3 border-b border-gray-100 bg-gray-50/60">
-            <span className="text-[12px] text-gray-600">
-              {selectedIds.size}{" "}
-              {selectedIds.size === 1 ? "produto selecionado" : "produtos selecionados"}
-            </span>
-            {selectedIds.size >= 2 && acaoEmLote === "inativar" && (
+          <div className="border-b border-gray-100 bg-[#F8FAFA]">
+            <div className="px-5 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px]">
+              <span className="font-medium text-gray-700 shrink-0">
+                {selectedIds.size === 1
+                  ? "1 produto selecionado"
+                  : `${selectedIds.size} produtos selecionados`}
+              </span>
+              {acaoEmLote === "inativar" && (
+                <button
+                  type="button"
+                  onClick={() => void handleInativarLote()}
+                  disabled={inativarMutation.isPending}
+                  className="inline-flex items-center gap-1.5 px-4 h-8 min-h-8 rounded-full text-[11px] font-semibold uppercase tracking-wide text-white disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 hover:opacity-90 transition shrink-0"
+                  style={{ backgroundColor: "#D97706" }}
+                >
+                  Inativar nesta Fazenda
+                </button>
+              )}
+              {acaoEmLote === "ativar" && (
+                <button
+                  type="button"
+                  onClick={() => void handleAtivarLote()}
+                  disabled={ativarMutation.isPending}
+                  className="inline-flex items-center gap-1.5 px-4 h-8 min-h-8 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 hover:opacity-90 transition shrink-0"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  Ativar nesta Fazenda
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => void handleInativarLote()}
-                disabled={inativarMutation.isPending}
-                className="px-4 py-1.5 rounded text-[12px] font-semibold text-white bg-[#D97706] hover:bg-[#B45309] disabled:opacity-60 transition-colors"
+                onClick={limparSelecao}
+                aria-label="Limpar seleção de produtos"
+                className="inline-flex items-center min-h-8 px-2 rounded text-[11px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40 shrink-0"
               >
-                Inativar nesta Fazenda
+                Limpar seleção
               </button>
-            )}
-            {selectedIds.size >= 2 && acaoEmLote === "ativar" && (
-              <button
-                type="button"
-                onClick={() => void handleAtivarLote()}
-                disabled={ativarMutation.isPending}
-                className="px-4 py-1.5 rounded text-[11px] font-semibold uppercase tracking-wide text-white bg-[#4ECDC4] hover:brightness-95 disabled:opacity-60 transition-colors"
-              >
-                Ativar nesta Fazenda
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={limparSelecao}
-              className="text-[12px] text-gray-500 hover:text-gray-800 underline underline-offset-2 transition-colors"
-            >
-              Limpar seleção
-            </button>
+            </div>
           </div>
         )}
-
-        {/* Filtros + busca */}
-        <div className="px-5 py-3 flex flex-wrap items-center gap-2 border-b border-gray-100">
-          <select
-            value={estoqueFiltro}
-            onChange={e => {
-              const value = e.target.value;
-              setEstoqueFiltro(value);
-              persistRebanhoFazendaId(value);
-              setCategoriaFiltro("");
-              setPage(1);
-              setSelectedIds(new Set());
-            }}
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[180px]"
-          >
-            <option value="">Selecione uma fazenda</option>
-            {fazendas.map(f => (
-              <option key={f.id} value={String(f.id)}>{f.nome}</option>
-            ))}
-          </select>
-          <select
-            value={statusFiltro}
-            onChange={e => {
-              setStatusFiltro(e.target.value as "ativo" | "inativo" | "todos");
-              setPage(1);
-              setSelectedIds(new Set());
-            }}
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[110px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por status" : undefined}
-          >
-            <option value="ativo">Ativos</option>
-            <option value="inativo">Inativos</option>
-            <option value="todos">Todos</option>
-          </select>
-          <select
-            value={alertaFiltro}
-            onChange={e => {
-              setAlertaFiltro(e.target.value as AlertaEstoqueFiltro);
-              setPage(1);
-              setSelectedIds(new Set());
-            }}
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[150px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar alertas" : undefined}
-            aria-label="Alerta de estoque"
-          >
-            <option value="todos">Alerta: Todos</option>
-            <option value="abaixo_minimo">Abaixo do mínimo</option>
-            <option value="acima_maximo">Acima do máximo</option>
-          </select>
-          <select
-            value={categoriaFiltro}
-            onChange={e => {
-              setCategoriaFiltro(e.target.value);
-              setPage(1);
-              setSelectedIds(new Set());
-            }}
-            className="border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white min-w-[150px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por categoria" : undefined}
-            aria-label="Categoria"
-          >
-            <option value="">Categoria: Todas</option>
-            {categoriasDisponiveis.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <div className="relative">
-            <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400">search</span>
-            <input
-              type="text"
-              placeholder="Buscar produto"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? "Selecione uma fazenda para buscar produtos" : undefined}
-              className="border border-gray-300 rounded pl-8 pr-3 py-1.5 text-[12px] w-52 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
-            />
-          </div>
-          {fazendaSelecionada && fazendaSelecionadaNome ? (
-            <span className="text-[12px] text-gray-600 ml-auto sm:ml-1">
-              Fazenda selecionada:{" "}
-              <span className="font-medium text-gray-800">{fazendaSelecionadaNome}</span>
-            </span>
-          ) : null}
-        </div>
 
         {isEmptySemFazenda ? (
           <div className="px-5 py-16 text-center">
@@ -1608,19 +1756,23 @@ export function EstoquePage() {
                 {!isLoading && filtered.length > 0 ? (
                   <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
                     <span>
-                      Valor total:{" "}
+                      Valor em estoque:{" "}
                       <span className="font-semibold text-gray-800 tabular-nums">
                         {brl(valorTotalLista.soma)}
                       </span>
                     </span>
-                    {valorTotalLista.comValor < filtered.length && (
-                      <span className="text-[10px] text-gray-500">
-                        {filtered.length - valorTotalLista.comValor}{" "}
-                        {filtered.length - valorTotalLista.comValor === 1
-                          ? "produto sem valor"
-                          : "produtos sem valor"}
+                    {controleFiltro === "consumo_direto" ? (
+                      <span className="text-[10px] text-gray-500 italic">
+                        Produtos de uso imediato não entram no valor em estoque.
                       </span>
-                    )}
+                    ) : valorTotalLista.estocaveis > valorTotalLista.comValor ? (
+                      <span className="text-[10px] text-gray-500">
+                        {valorTotalLista.estocaveis - valorTotalLista.comValor}{" "}
+                        {valorTotalLista.estocaveis - valorTotalLista.comValor === 1
+                          ? "produto estocável sem valor em estoque"
+                          : "produtos estocáveis sem valor em estoque"}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
                 <TablePaginationFooter

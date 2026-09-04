@@ -32,6 +32,7 @@ describe("toEstoqueInsertValues", () => {
     expect(row.carenciaAbateDias).toBeNull();
     expect(row.carenciaAbateUnidade).toBeNull();
     expect(row.monitorarEstoque).toBe(true);
+    expect(row.controlarSaldo).toBe(true);
   });
 
   it("inclui carência apenas quando possuiCarencia", () => {
@@ -80,6 +81,27 @@ describe("toEstoqueInsertValues", () => {
     expect(j.produzidoNaFazenda).toBe(false);
     expect(j.monitorarEstoque).toBe(false);
     expect(j.quantidadeMinima).toBeNull();
+
+    const peca = configParaFazenda(
+      {
+        nome: "Óleo 2T",
+        categoria: "Lubrificantes",
+        subcategoria: "",
+        unidade: "L",
+        estoquesConfig: [
+          {
+            fazendaId: 3,
+            controlarSaldo: false,
+            monitorarEstoque: true,
+            quantidadeMinima: "5",
+          },
+        ],
+      },
+      3,
+    );
+    expect(peca.controlarSaldo).toBe(false);
+    expect(peca.monitorarEstoque).toBe(false);
+    expect(peca.quantidadeMinima).toBeNull();
 
     const sync = toEstoqueSyncFromCatalogo({
       nome: "Latego de Cia",

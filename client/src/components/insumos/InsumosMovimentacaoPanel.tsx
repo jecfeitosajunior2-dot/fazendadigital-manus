@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import ListExportButtons from "@/components/ListExportButtons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
@@ -11,9 +11,9 @@ import {
   TableIconButton,
 } from "@/components/icons/FarmActionIcons";
 import EstornarMovimentacaoDialog from "@/components/insumos/EstornarMovimentacaoDialog";
-import { FormDatePicker, FormLabel } from "@/components/FormFields";
+import { FormDatePicker, FormLabel, FormNativeSelect } from "@/components/FormFields";
 import { trpc } from "@/lib/trpc";
-import { formatDataBr, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
+import { formatDataBr, produtoControlaSaldo, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
 import {
   agruparMovimentacoes,
   classificarMotivoEstornoAbastecimento,
@@ -23,11 +23,13 @@ import {
   formatUnidadeItem,
   formatValorResumo,
   isMovimentacaoDeAbastecimento,
+  movimentacaoResumoAlteraSaldo,
   MOTIVO_ESTORNO_ABASTECIMENTO,
   MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
   rotuloStatusMov,
   sinalResumoMovimentacao,
   statusBadgeClassMov,
+  textoResultadoEstornoHistorico,
   textoMotivoEstornoAbastecimentoDetalhe,
   tipoBadgeClassMov,
   tipoExibicaoMov,
@@ -36,7 +38,14 @@ import {
   type MovimentacaoItemRaw,
   type MovimentacaoResumo,
 } from "@/lib/movimentacao-resumo";
+import {
+  buildPrecoMedioImplicit,
+  buildValorUnitMap,
+  valorItemMovimentacaoEfetivo,
+  valorTotalResumoEfetivo,
+} from "@/lib/movimentacao-valor";
 import { exportListSpreadsheet } from "@/lib/exportList";
+import { parseRetornoVisaoGeral } from "@/lib/insumosRoutes";
 import { buildExportSpreadsheetWorkbook } from "@shared/buildExportSpreadsheet";
 import { cn, formatCurrencyBrl } from "@/lib/utils";
 import {
@@ -45,6 +54,36 @@ import {
 } from "@shared/animal-filter-types";
 
 const FD_PRIMARY = "#4ECDC4";
+
+function MovimentacaoFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  title,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <div title={title}>
+      <FormNativeSelect
+        variant="light"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        disabled={disabled}
+        options={options}
+        itemClassName="text-[12px]"
+      />
+    </div>
+  );
+}
 
 type SortKey =
   | "data"
@@ -136,6 +175,7 @@ function formatMoedaOuTraco(valor: number | null): string {
 
 export default function InsumosMovimentacaoPanel() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const utils = trpc.useUtils();
 
   const { data: movimentacoes = [], isLoading } = trpc.estoque.listMovimentacoes.useQuery(undefined, {
@@ -143,6 +183,13 @@ export default function InsumosMovimentacaoPanel() {
   });
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
+  const controlaSaldoPorId = useMemo(() => {
+    const m = new Map<number, boolean>();
+    for (const p of produtos) {
+      m.set(p.id, produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo));
+    }
+    return m;
+  }, [produtos]);
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
   const { data: abastecimentos = [] } = trpc.abastecimentos.list.useQuery();
 
@@ -323,6 +370,16 @@ export default function InsumosMovimentacaoPanel() {
     );
   }, [movimentacoes, fFazenda]);
 
+  const valorUnitMap = useMemo(() => buildValorUnitMap(produtosDaFazenda), [produtosDaFazenda]);
+
+  const precoMedioImplicit = useMemo(
+    () => buildPrecoMedioImplicit(movimentacoesDaFazenda),
+    [movimentacoesDaFazenda],
+  );
+
+  const valorResumoEfetivo = (resumo: MovimentacaoResumo) =>
+    valorTotalResumoEfetivo(resumo, valorUnitMap, precoMedioImplicit);
+
   const resumosDaFazenda = useMemo(
     () => agruparMovimentacoes(movimentacoesDaFazenda),
     [movimentacoesDaFazenda],
@@ -455,8 +512,8 @@ export default function InsumosMovimentacaoPanel() {
           vb = b.qtdItens;
           break;
         case "valor":
-          va = a.valorTotal ?? -1;
-          vb = b.valorTotal ?? -1;
+          va = valorResumoEfetivo(a) ?? -1;
+          vb = valorResumoEfetivo(b) ?? -1;
           break;
       }
       if (va < vb) return sortAsc ? -1 : 1;
@@ -464,7 +521,7 @@ export default function InsumosMovimentacaoPanel() {
       return b.editId - a.editId;
     });
     return rows;
-  }, [filtradas, sortKey, sortAsc]);
+  }, [filtradas, sortKey, sortAsc, valorUnitMap, precoMedioImplicit]);
 
   /** Totais da lista filtrada: entradas e saídas separadas, sem estornadas. */
   const totaisLista = useMemo(() => {
@@ -476,14 +533,15 @@ export default function InsumosMovimentacaoPanel() {
         qtdEstornadas += 1;
         continue;
       }
-      if (m.valorTotal == null) continue;
-      const valor = Math.abs(m.valorTotal);
+      const valorEfetivo = valorResumoEfetivo(m);
+      if (valorEfetivo == null) continue;
+      const valor = Math.abs(valorEfetivo);
       if (!(valor > 0)) continue;
       if (sinalResumoMovimentacao(m.tipo) === "saida") saidas += valor;
       else entradas += valor;
     }
     return { entradas, saidas, qtdEstornadas };
-  }, [ordenadas]);
+  }, [ordenadas, valorUnitMap, precoMedioImplicit]);
 
   const totalPages = Math.max(1, Math.ceil(ordenadas.length / perPage));
   const paginaAtual = Math.min(page, totalPages);
@@ -592,8 +650,11 @@ export default function InsumosMovimentacaoPanel() {
         motivo: payload.motivo,
         observacao: payload.observacao,
       });
+      const alteraSaldo = movimentacaoResumoAlteraSaldo(estornoAlvo, controlaSaldoPorId);
       toast.success(
-        "Movimentação estornada com sucesso. O estoque foi corrigido e o registro original foi preservado.",
+        alteraSaldo
+          ? "Movimentação estornada com sucesso. O estoque foi corrigido e o registro original foi preservado."
+          : "Movimentação estornada com sucesso. O lançamento foi revertido no histórico (sem alteração de saldo).",
       );
       setEstornoAlvo(null);
       setEstornoSubmitError(null);
@@ -646,9 +707,10 @@ export default function InsumosMovimentacaoPanel() {
   const exportDetailRows = useMemo(
     () =>
       ordenadas.map(m => {
+        const valorEfetivo = valorResumoEfetivo(m);
         const valor =
-          m.valorTotal != null && Number.isFinite(m.valorTotal)
-            ? formatValorResumo(Math.abs(m.valorTotal))
+          valorEfetivo != null && Number.isFinite(valorEfetivo)
+            ? formatValorResumo(Math.abs(valorEfetivo))
             : "";
         return [
           m.dataMovimentacao || "",
@@ -659,7 +721,7 @@ export default function InsumosMovimentacaoPanel() {
           valor,
         ];
       }),
-    [ordenadas],
+    [ordenadas, valorUnitMap, precoMedioImplicit],
   );
 
   const exportRows = useMemo(() => {
@@ -695,7 +757,7 @@ export default function InsumosMovimentacaoPanel() {
       ordenadas.flatMap(resumo =>
         resumo.itens.map(item => {
           const qtd = Math.abs(Number(item.quantidade ?? 0));
-          const vt = valorProdutoLinha(item, { freteLegado: resumo.freteLegado });
+          const vt = valorItemMovimentacaoEfetivo(item, valorUnitMap, precoMedioImplicit);
           return [
             `Nº ${resumo.editId}`,
             resumo.dataMovimentacao || "",
@@ -703,11 +765,11 @@ export default function InsumosMovimentacaoPanel() {
             textoOuTraco(item.nome),
             Number.isFinite(qtd) ? qtd : "",
             formatUnidadeItem(item.unidade),
-            vt != null && Number.isFinite(vt) ? formatValorResumo(Math.abs(vt)) : "",
+            vt > 0 ? formatValorResumo(Math.abs(vt)) : "",
           ];
         }),
       ),
-    [ordenadas],
+    [ordenadas, valorUnitMap, precoMedioImplicit],
   );
 
   /** Título do relatório Excel/PDF. */
@@ -859,10 +921,8 @@ export default function InsumosMovimentacaoPanel() {
 
   const thClass =
     "px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap cursor-pointer select-none text-center hover:bg-gray-100 transition-colors group/th";
-  const selectClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
   const inputClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
   const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
   const disabledHint = "Selecione uma fazenda para usar este filtro";
 
@@ -883,11 +943,32 @@ export default function InsumosMovimentacaoPanel() {
     setLocation(`/insumos/nova-movimentacao?fazendaId=${encodeURIComponent(fFazenda)}`);
   };
 
+  const retornoVisaoGeral = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoVisaoGeral(params.get("retorno"));
+  }, [searchString]);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <EstornarMovimentacaoDialog
         open={Boolean(estornoAlvo)}
         resumo={estornoAlvo}
+        alteraSaldo={
+          estornoAlvo ? movimentacaoResumoAlteraSaldo(estornoAlvo, controlaSaldoPorId) : true
+        }
         onClose={() => {
           if (!estornando) {
             setEstornoAlvo(null);
@@ -900,39 +981,36 @@ export default function InsumosMovimentacaoPanel() {
         onClearSubmitError={() => setEstornoSubmitError(null)}
       />
 
-      {/* Filtros — área acima do quadro */}
-      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden px-4 py-3">
+      {/* Filtros */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Filtros</h2>
+        </div>
+        <div className="p-5">
         {/* Linha 1 — Fazenda | Produto */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelClass}>Fazenda</label>
-            <select
+            <MovimentacaoFilterSelect
               value={fFazenda}
-              onChange={e => onChangeFazenda(e.target.value)}
-              className={selectClass}
-            >
-              <option value="">Selecione uma fazenda</option>
-              {fazendas.map(f => (
-                <option key={f.id} value={String(f.id)}>{f.nome}</option>
-              ))}
-            </select>
+              onChange={onChangeFazenda}
+              placeholder="Selecione uma fazenda"
+              options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+            />
           </div>
           <div>
             <label className={labelClass}>Produto</label>
-            <select
+            <MovimentacaoFilterSelect
               value={fProduto}
-              onChange={e => setFProduto(e.target.value)}
-              className={selectClass}
+              onChange={setFProduto}
+              placeholder="Todos"
               disabled={!fazendaSelecionada}
               title={!fazendaSelecionada ? disabledHint : undefined}
-            >
-              <option value="">Todos</option>
-              {produtosDaFazenda.map(p => (
-                <option key={p.id} value={String(p.id)}>
-                  {p.nome}{p.situacao === "inativo" ? " (Inativo)" : ""}
-                </option>
-              ))}
-            </select>
+              options={produtosDaFazenda.map(p => ({
+                value: String(p.id),
+                label: `${p.nome}${p.situacao === "inativo" ? " (Inativo)" : ""}`,
+              }))}
+            />
           </div>
         </div>
 
@@ -940,18 +1018,14 @@ export default function InsumosMovimentacaoPanel() {
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className={labelClass}>Tipo de movimentação</label>
-            <select
+            <MovimentacaoFilterSelect
               value={fTipo}
-              onChange={e => setFTipo(e.target.value)}
-              className={selectClass}
+              onChange={setFTipo}
+              placeholder="Todos"
               disabled={!fazendaSelecionada}
               title={!fazendaSelecionada ? disabledHint : undefined}
-            >
-              <option value="">Todos</option>
-              {TIPOS_MOVIMENTACAO.map(t => (
-                <option key={t.value} value={t.value}>{t.value}</option>
-              ))}
-            </select>
+              options={TIPOS_MOVIMENTACAO.map(t => ({ value: t.value, label: t.value }))}
+            />
           </div>
           <div
             className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
@@ -1029,47 +1103,53 @@ export default function InsumosMovimentacaoPanel() {
           <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className={labelClass}>Categoria</label>
-              <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={selectClass}>
-                <option value="">Todas</option>
-                {categoriasDisponiveis.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+              <MovimentacaoFilterSelect
+                value={fCategoria}
+                onChange={setFCategoria}
+                placeholder="Todas"
+                options={categoriasDisponiveis.map(c => ({ value: c, label: c }))}
+              />
             </div>
             <div>
               <label className={labelClass}>Subcategoria</label>
-              <select value={fSubcategoria} onChange={e => setFSubcategoria(e.target.value)} className={selectClass}>
-                <option value="">Todas</option>
-                {subcategoriasDisponiveis.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <MovimentacaoFilterSelect
+                value={fSubcategoria}
+                onChange={setFSubcategoria}
+                placeholder="Todas"
+                options={subcategoriasDisponiveis.map(s => ({ value: s, label: s }))}
+              />
             </div>
             <div>
               <label className={labelClass}>Referência</label>
-              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Ex.: fornecedor, máquina…" className={inputClass} />
+              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Fornecedor, destino, máquina…" className={inputClass} />
             </div>
-            <div>
-              <label className={labelClass}>Destino</label>
-              <select value={fDestino} onChange={e => setFDestino(e.target.value)} className={selectClass}>
-                <option value="">Todos</option>
-                {destinosDisponiveis.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
+            {destinosDisponiveis.length > 0 ? (
+              <div>
+                <label className={labelClass}>Destino / Uso</label>
+                <MovimentacaoFilterSelect
+                  value={fDestino}
+                  onChange={setFDestino}
+                  placeholder="Todos"
+                  options={destinosDisponiveis.map(d => ({ value: d, label: d }))}
+                />
+              </div>
+            ) : null}
             <div>
               <label className={labelClass}>Nota fiscal</label>
               <input value={fNotaFiscal} onChange={e => setFNotaFiscal(e.target.value)} placeholder="Nº nota fiscal" className={inputClass} />
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Tabela */}
-      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
             {tituloQuadro}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -1141,7 +1221,7 @@ export default function InsumosMovimentacaoPanel() {
             />
             <h2 className="text-[16px] font-semibold text-gray-900">Selecione uma fazenda</h2>
             <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
-              Escolha uma fazenda para visualizar e registrar as movimentações de estoque.
+              Escolha uma fazenda para visualizar e registrar movimentações de insumos (estoque e compras de uso imediato).
             </p>
           </div>
         ) : isEmptyMovimentacoes ? (
@@ -1162,7 +1242,7 @@ export default function InsumosMovimentacaoPanel() {
               Nenhuma movimentação registrada nesta fazenda.
             </h2>
             <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
-              Registre entradas, saídas, compras, consumo ou ajustes para acompanhar o estoque dos insumos.
+              Registre compras, entradas, saídas e consumo. Produtos de uso imediato registram custo sem alterar saldo.
             </p>
           </div>
         ) : isEmptyFiltro ? (
@@ -1384,7 +1464,7 @@ export default function InsumosMovimentacaoPanel() {
                             {formatItensLabel(resumo.qtdItens)}
                           </td>
                           <td className="px-3 py-2.5 tabular-nums text-gray-900 whitespace-nowrap align-middle text-center">
-                            {formatValorResumo(resumo.valorTotal)}
+                            {formatValorResumo(valorResumoEfetivo(resumo))}
                           </td>
                           <td className="px-2 py-2.5 align-middle text-center" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-0.5">
@@ -1554,7 +1634,14 @@ export default function InsumosMovimentacaoPanel() {
                                       const inativo = item.situacao === "inativo";
                                       const opts = { freteLegado: Boolean(resumo.freteLegado) };
                                       const vu = valorUnitarioProdutoLinha(item, opts);
-                                      const vtProduto = valorProdutoLinha(item, opts);
+                                      const vtGravado = valorProdutoLinha(item, opts);
+                                      const vtEstimado = valorItemMovimentacaoEfetivo(
+                                        item,
+                                        valorUnitMap,
+                                        precoMedioImplicit,
+                                      );
+                                      const vtProduto =
+                                        vtGravado ?? (vtEstimado > 0 ? vtEstimado : null);
                                       return (
                                         <tr key={item.id} className="border-b border-gray-50 last:border-0">
                                           <td className="px-3 py-2 align-middle text-center">
@@ -1588,7 +1675,9 @@ export default function InsumosMovimentacaoPanel() {
                                   </tbody>
                                 </table>
                               </div>
-                              {(resumo.subtotalItens != null || resumo.freteTotal > 0 || resumo.valorTotal != null) && (
+                              {(resumo.subtotalItens != null ||
+                                resumo.freteTotal > 0 ||
+                                valorResumoEfetivo(resumo) != null) && (
                                 <div className="mt-3 flex justify-end">
                                   <div className="text-right text-[12px] space-y-1 min-w-[220px]">
                                     {resumo.freteTotal > 0 ? (
@@ -1608,22 +1697,24 @@ export default function InsumosMovimentacaoPanel() {
                                         <div className="text-gray-800 pt-1 border-t border-gray-200">
                                           Total da movimentação:{" "}
                                           <span className="font-semibold tabular-nums">
-                                            {formatValorResumo(resumo.valorTotal)}
+                                            {formatValorResumo(valorResumoEfetivo(resumo))}
                                           </span>
                                         </div>
                                       </>
-                                    ) : resumo.valorTotal != null ? (
+                                    ) : valorResumoEfetivo(resumo) != null ? (
                                       <>
                                         <div className="text-gray-600">
                                           Total dos itens:{" "}
                                           <span className="font-semibold text-gray-900 tabular-nums">
-                                            {formatValorResumo(resumo.subtotalItens ?? resumo.valorTotal)}
+                                            {formatValorResumo(
+                                              resumo.subtotalItens ?? valorResumoEfetivo(resumo),
+                                            )}
                                           </span>
                                         </div>
                                         <div className="text-gray-800 pt-1 border-t border-gray-200">
                                           Total da movimentação:{" "}
                                           <span className="font-semibold tabular-nums">
-                                            {formatValorResumo(resumo.valorTotal)}
+                                            {formatValorResumo(valorResumoEfetivo(resumo))}
                                           </span>
                                         </div>
                                       </>
@@ -1664,9 +1755,15 @@ export default function InsumosMovimentacaoPanel() {
                                       </div>
                                     )}
                                     <div className="text-gray-600 sm:col-span-2">
-                                      Resultado no estoque:{" "}
+                                      {movimentacaoResumoAlteraSaldo(resumo, controlaSaldoPorId)
+                                        ? "Resultado no estoque:"
+                                        : "Resultado no histórico:"}{" "}
                                       <span className="font-medium text-gray-800">
-                                        {resumo.infoEstorno.resultado}
+                                        {movimentacaoResumoAlteraSaldo(resumo, controlaSaldoPorId)
+                                          ? resumo.infoEstorno.resultado
+                                          : textoResultadoEstornoHistorico(
+                                              resumo.infoEstorno.itensRevertidos,
+                                            )}
                                       </span>
                                     </div>
                                     <div className="text-gray-600 sm:col-span-2">

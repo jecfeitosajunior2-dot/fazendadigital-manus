@@ -38,6 +38,7 @@ import {
   parseCustoMedio,
 } from "./custoMedioEstoque";
 import { calcularQuantidadeEstoquePorDose } from "../client/src/lib/produto-types";
+import { produtoControlaSaldo } from "../shared/estoqueControle";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
@@ -7608,6 +7609,7 @@ const estoqueInputFields = {
       z.object({
         fazendaId: z.number(),
         produzidoNaFazenda: z.boolean().optional(),
+        controlarSaldo: z.boolean().optional(),
         monitorarEstoque: z.boolean().optional(),
         quantidadeMinima: z.string().nullish(),
         quantidadeMaxima: z.string().nullish(),
@@ -7624,6 +7626,7 @@ const estoqueInputFields = {
   fabricante: z.string().optional(),
   identificadorUnico: z.string().optional(),
   produzidoNaFazenda: z.boolean().optional(),
+  controlarSaldo: z.boolean().optional(),
   monitorarEstoque: z.boolean().optional(),
   situacao: z.enum(["ativo", "inativo"]).optional(),
   embalagens: z.array(z.object({
@@ -7683,6 +7686,7 @@ const estoqueRouter = router({
           fazendaId: number;
           estoqueId: number;
           produzidoNaFazenda: boolean;
+          controlarSaldo: boolean;
           monitorarEstoque: boolean;
           quantidadeMinima: string | null;
           quantidadeMaxima: string | null;
@@ -7710,6 +7714,7 @@ const estoqueRouter = router({
             fazendaId: number;
             estoqueId: number;
             produzidoNaFazenda: boolean;
+            controlarSaldo: boolean;
             monitorarEstoque: boolean;
             quantidadeMinima: string | null;
             quantidadeMaxima: string | null;
@@ -7721,6 +7726,7 @@ const estoqueRouter = router({
                 id: estoque.id,
                 fazendaId: estoque.fazendaId,
                 produzidoNaFazenda: estoque.produzidoNaFazenda,
+                controlarSaldo: estoque.controlarSaldo,
                 monitorarEstoque: estoque.monitorarEstoque,
                 quantidadeMinima: estoque.quantidadeMinima,
                 quantidadeMaxima: estoque.quantidadeMaxima,
@@ -7734,6 +7740,7 @@ const estoqueRouter = router({
                 fazendaId: l.fazendaId,
                 estoqueId: l.id,
                 produzidoNaFazenda: !!l.produzidoNaFazenda,
+                controlarSaldo: produtoControlaSaldo(l.controlarSaldo),
                 monitorarEstoque: !!l.monitorarEstoque,
                 quantidadeMinima: l.quantidadeMinima != null ? String(l.quantidadeMinima) : null,
                 quantidadeMaxima: l.quantidadeMaxima != null ? String(l.quantidadeMaxima) : null,
@@ -7745,6 +7752,7 @@ const estoqueRouter = router({
                 fazendaId: row.fazendaId,
                 estoqueId: row.id,
                 produzidoNaFazenda: !!row.produzidoNaFazenda,
+                controlarSaldo: produtoControlaSaldo(row.controlarSaldo),
                 monitorarEstoque: !!row.monitorarEstoque,
                 quantidadeMinima: row.quantidadeMinima != null ? String(row.quantidadeMinima) : null,
                 quantidadeMaxima: row.quantidadeMaxima != null ? String(row.quantidadeMaxima) : null,
@@ -8009,6 +8017,7 @@ const estoqueRouter = router({
       produtoId: z.number(),
       fazendaId: z.number(),
       produzidoNaFazenda: z.boolean().optional(),
+      controlarSaldo: z.boolean().optional(),
       monitorarEstoque: z.boolean().optional(),
       quantidadeMinima: z.string().optional(),
       quantidadeMaxima: z.string().optional(),
@@ -8032,6 +8041,7 @@ const estoqueRouter = router({
         if (existing) {
           const patch: Record<string, unknown> = {};
           if (input.produzidoNaFazenda != null) patch.produzidoNaFazenda = input.produzidoNaFazenda;
+          if (input.controlarSaldo != null) patch.controlarSaldo = input.controlarSaldo;
           if (input.monitorarEstoque != null) patch.monitorarEstoque = input.monitorarEstoque;
           if (input.quantidadeMinima !== undefined) patch.quantidadeMinima = input.quantidadeMinima;
           if (input.quantidadeMaxima !== undefined) patch.quantidadeMaxima = input.quantidadeMaxima;
@@ -8460,8 +8470,16 @@ const estoqueRouter = router({
         }
 
         const atual = Number(item.quantidade ?? 0);
-        const novo = atual + qty;
-        if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        const controlaSaldo = produtoControlaSaldo(item.controlarSaldo);
+        if (!controlaSaldo && qty < 0) {
+          throw new Error(
+            "Este produto é de uso imediato e não possui saldo controlado. Registre uma compra para lançar custo; saídas, transferências e ajustes de saída não se aplicam.",
+          );
+        }
+        const novo = controlaSaldo ? atual + qty : atual;
+        if (controlaSaldo && novo < 0) {
+          throw new Error("Quantidade em estoque insuficiente para esta saída.");
+        }
 
         let observacoes = input.observacoes;
         if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
@@ -8495,7 +8513,7 @@ const estoqueRouter = router({
           status: "ativa",
         });
 
-        // Entrada com valor → custo médio ponderado. Saída → só saldo.
+        // Entrada com valor → custo médio ponderado (mesmo em consumo direto, para histórico de preço).
         const patch: { quantidade: string; valorUnitario?: string } = { quantidade: String(novo) };
         if (qty > 0) {
           const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
