@@ -99,9 +99,9 @@ describe("toEstoqueInsertValues", () => {
       },
       3,
     );
-    expect(peca.controlarSaldo).toBe(false);
-    expect(peca.monitorarEstoque).toBe(false);
-    expect(peca.quantidadeMinima).toBeNull();
+    expect(peca.controlarSaldo).toBe(true);
+    expect(peca.monitorarEstoque).toBe(true);
+    expect(peca.quantidadeMinima).toBe("5");
 
     const sync = toEstoqueSyncFromCatalogo({
       nome: "Latego de Cia",

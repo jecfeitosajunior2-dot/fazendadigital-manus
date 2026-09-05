@@ -12,11 +12,8 @@ import {
   FormNativeSelect,
   FormTextarea,
   FormDatePicker,
-  FieldBox,
+  formControlFlatCls,
 } from "@/components/FormFields";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import {
@@ -24,6 +21,10 @@ import {
   MSG_DESCRICAO_SERVICO_OBRIGATORIA,
   normalizeDescricaoServico,
 } from "@shared/manutencaoDescricao";
+import {
+  CATEGORIAS_MANUTENCAO_ESTOQUE,
+  produtoControlaSaldo,
+} from "@shared/estoqueControle";
 
 const TIPOS_MANUTENCAO = [
   { value: "Preventiva", label: "Preventiva" },
@@ -66,19 +67,10 @@ const emptyForm = (): FormState => ({
 });
 
 /**
- * Categorias existentes no cadastro e compatíveis com manutenção.
- * Exclui Farmácia, Nutricionais, Combustíveis (Abastecimentos) e Agrícolas.
- * Não cria categorias novas — usa apenas as do módulo de Insumos.
+ * Categorias consumidas na manutenção de máquinas (Peças e Lubrificantes).
+ * Exclui Farmácia, Nutricionais, Combustíveis (Abastecimentos), Agrícolas e demais insumos.
  */
-const CATEGORIAS_MANUTENCAO_PERMITIDAS = [
-  "Peças",
-  "Lubrificantes",
-  "Ferramentas",
-  "Epis",
-  "Outros Insumos",
-] as const;
-
-const CATEGORIAS_TODAS = [...CATEGORIAS_MANUTENCAO_PERMITIDAS];
+const CATEGORIAS_TODAS = [...CATEGORIAS_MANUTENCAO_ESTOQUE];
 
 function toDateInput(value: unknown): string {
   if (!value) return "";
@@ -107,6 +99,70 @@ function parseCustoMedioClient(raw: unknown): number | null {
 
 const MSG_SEM_CUSTO_MEDIO =
   "Este produto não possui custo médio registrado. Registre uma entrada de estoque antes de utilizá-lo na manutenção.";
+
+const MANUTENCAO_DRAFT_KEY = "fd:manutencao-form-draft";
+
+type PecaEscolhidaState = {
+  id: number;
+  nome: string;
+  categoria?: string | null;
+  valorUnitario?: string | number | null;
+  quantidadeDisponivel?: number;
+  unidade?: string | null;
+  doEstoque: boolean;
+};
+
+type ManutencaoDraft = {
+  form: FormState;
+  pecas: PecaItem[];
+  tipoExecucao: TipoExecucao;
+  initializedForId: number | null;
+  pecaEscolhida: PecaEscolhidaState | null;
+  pecaNome: string;
+  pecaQtd: string;
+  pecaValor: string;
+  pecaSearch: string;
+};
+
+const btnAcaoBaseCls =
+  "inline-flex items-center justify-center h-[30px] px-3 rounded text-[11px] font-semibold transition shrink-0";
+
+const btnAcaoPrimariaCls = cn(btnAcaoBaseCls, "text-white hover:brightness-95 active:scale-[0.97]");
+
+const btnAcaoSecundariaCls = cn(
+  btnAcaoBaseCls,
+  "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400",
+);
+
+function AcoesEstoqueVazioManutencao({
+  onCadastrar,
+  onEntrada,
+}: {
+  onCadastrar: () => void;
+  onEntrada: () => void;
+}) {
+  return (
+    <>
+      <p className="text-[11px] text-gray-700 leading-relaxed">
+        Nenhuma peça ou lubrificante nesta fazenda. Cadastre o produto ou registre uma entrada no
+        estoque.
+      </p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onCadastrar}
+          className={btnAcaoPrimariaCls}
+          style={{ backgroundColor: FD_PRIMARY }}
+        >
+          Cadastrar produto
+        </button>
+        <button type="button" onClick={onEntrada} className={btnAcaoSecundariaCls}>
+          Registrar entrada
+        </button>
+      </div>
+    </>
+  );
+}
 
 
 function inferMedidorPorTipo(tipo: string | null | undefined): MedidorTipo | null {
@@ -157,6 +213,9 @@ export default function ManutencaoFormPage() {
   const isEdit = editId > 0;
   const fazendaIdParam = getSearchParam("fazendaId");
   const initializedForId = useRef<number | null>(null);
+  const pecaPickerRef = useRef<HTMLDivElement>(null);
+  const draftRestoredRef = useRef(false);
+  const produtoRetornoIdRef = useRef<number | null>(null);
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pecas, setPecas] = useState<PecaItem[]>([]);
@@ -166,57 +225,11 @@ export default function ManutencaoFormPage() {
   const [pecaNome, setPecaNome] = useState("");
   const [pecaQtd, setPecaQtd] = useState("1");
   const [pecaValor, setPecaValor] = useState("");
-  const [pecaOpen, setPecaOpen] = useState(false);
+  const [listaPecaAberta, setListaPecaAberta] = useState(false);
   const [pecaSearch, setPecaSearch] = useState("");
   const pecaSearchDebounced = useDebounce(pecaSearch, 250);
-  /** "" = Todas as categorias */
-  const [categoriaFiltro, setCategoriaFiltro] = useState("");
-  const [pecaEscolhida, setPecaEscolhida] = useState<{
-    id: number;
-    nome: string;
-    valorUnitario?: string | number | null;
-    quantidadeDisponivel?: number;
-    unidade?: string | null;
-    doEstoque: boolean;
-  } | null>(null);
+  const [pecaEscolhida, setPecaEscolhida] = useState<PecaEscolhidaState | null>(null);
   const confirm = useConfirm();
-  const footerRef = useRef<HTMLDivElement>(null);
-  const [footerPad, setFooterPad] = useState(120);
-
-  useEffect(() => {
-    const el = footerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const update = () => {
-      const h = Math.ceil(el.getBoundingClientRect().height);
-      // altura real do rodapé + margem de segurança (desktop/mobile)
-      setFooterPad(Math.max(h + 28, 112));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    window.addEventListener("resize", update);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", update);
-    };
-  }, []);
-
-  const scrollAboveFooter = (node: HTMLElement | null) => {
-    if (!node) return;
-    node.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-    requestAnimationFrame(() => {
-      const footer = footerRef.current;
-      if (!footer) return;
-      const fr = footer.getBoundingClientRect();
-      const nr = node.getBoundingClientRect();
-      const overlap = nr.bottom - (fr.top - 12);
-      if (overlap > 0) {
-        const main = node.closest("main");
-        if (main) main.scrollBy({ top: overlap, behavior: "smooth" });
-        else window.scrollBy({ top: overlap, behavior: "smooth" });
-      }
-    });
-  };
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -276,6 +289,7 @@ export default function ManutencaoFormPage() {
 
   const createMutation = trpc.manutencoes.create.useMutation({
     onSuccess: () => {
+      sessionStorage.removeItem(MANUTENCAO_DRAFT_KEY);
       utils.manutencoes.list.invalidate();
       utils.estoque.listByCategories.invalidate();
       utils.estoque.list.invalidate();
@@ -287,6 +301,7 @@ export default function ManutencaoFormPage() {
 
   const updateMutation = trpc.manutencoes.update.useMutation({
     onSuccess: () => {
+      sessionStorage.removeItem(MANUTENCAO_DRAFT_KEY);
       utils.manutencoes.list.invalidate();
       if (editId != null) utils.manutencoes.get.invalidate({ id: editId });
       utils.estoque.listByCategories.invalidate();
@@ -298,6 +313,40 @@ export default function ManutencaoFormPage() {
   });
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const novoProdutoId = params.get("produtoId");
+    const raw = sessionStorage.getItem(MANUTENCAO_DRAFT_KEY);
+
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw) as ManutencaoDraft;
+        setForm(draft.form);
+        setPecas(draft.pecas);
+        setTipoExecucao(draft.tipoExecucao);
+        setPecaEscolhida(draft.pecaEscolhida ?? null);
+        setPecaNome(draft.pecaNome ?? "");
+        setPecaQtd(draft.pecaQtd ?? "1");
+        setPecaValor(draft.pecaValor ?? "");
+        setPecaSearch(draft.pecaSearch ?? "");
+        initializedForId.current = draft.initializedForId;
+        draftRestoredRef.current = true;
+      } catch {
+        /* rascunho inválido */
+      }
+      sessionStorage.removeItem(MANUTENCAO_DRAFT_KEY);
+    }
+
+    if (novoProdutoId) {
+      const id = parseInt(novoProdutoId, 10);
+      if (!Number.isNaN(id) && id > 0) produtoRetornoIdRef.current = id;
+      params.delete("produtoId");
+      const qs = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
     if (!isEdit || !registro) return;
     if (initializedForId.current === registro.id) return;
     setForm({
@@ -354,14 +403,104 @@ export default function ManutencaoFormPage() {
     setPecaEscolhida({
       id: item.id,
       nome: item.nome,
+      categoria: item.categoria ?? null,
       valorUnitario: custo,
       quantidadeDisponivel: item.quantidade != null ? parseFloat(String(item.quantidade)) : undefined,
       unidade: item.unidade ?? undefined,
       doEstoque: true,
     });
-    setPecaOpen(false);
+    setListaPecaAberta(false);
     setPecaSearch("");
   };
+
+  useEffect(() => {
+    if (!listaPecaAberta) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!pecaPickerRef.current?.contains(e.target as Node)) {
+        setListaPecaAberta(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [listaPecaAberta]);
+
+  const retornoAtual = () => window.location.pathname + window.location.search;
+
+  const persistirRascunho = () => {
+    const draft: ManutencaoDraft = {
+      form,
+      pecas,
+      tipoExecucao,
+      initializedForId: initializedForId.current,
+      pecaEscolhida,
+      pecaNome,
+      pecaQtd,
+      pecaValor,
+      pecaSearch,
+    };
+    sessionStorage.setItem(MANUTENCAO_DRAFT_KEY, JSON.stringify(draft));
+  };
+
+  const irCadastrarProduto = (nomeSugerido?: string) => {
+    persistirRascunho();
+    const qs = new URLSearchParams();
+    const fazendaId = maquinaSelecionada?.fazendaId;
+    if (fazendaId != null) qs.set("fazendaId", String(fazendaId));
+    const nome = (nomeSugerido ?? pecaSearch).trim();
+    if (nome) qs.set("nome", nome);
+    qs.set("retorno", retornoAtual());
+    setLocation(`/insumos/cadastro?${qs.toString()}`);
+  };
+
+  const irRegistrarEntrada = (estoqueId?: number) => {
+    persistirRascunho();
+    const qs = new URLSearchParams();
+    const fazendaId = maquinaSelecionada?.fazendaId;
+    if (fazendaId != null) qs.set("fazendaId", String(fazendaId));
+    qs.set("retorno", retornoAtual());
+    if (estoqueId != null && estoqueId > 0) qs.set("produtoId", String(estoqueId));
+    setLocation(`/insumos/nova-movimentacao?${qs.toString()}`);
+  };
+
+  useEffect(() => {
+    if (!pecaEscolhida?.id || loadingEstoque) return;
+    const item = estoqueItems.find(i => i.id === pecaEscolhida.id);
+    if (!item) return;
+    const custo = parseCustoMedioClient(item.valorUnitario);
+    const qtd = item.quantidade != null ? parseFloat(String(item.quantidade)) : undefined;
+    const qtdOk = qtd != null && Number.isFinite(qtd) ? qtd : undefined;
+    setPecaEscolhida(prev => {
+      if (!prev || prev.id !== item.id) return prev;
+      if (
+        prev.quantidadeDisponivel === qtdOk &&
+        prev.valorUnitario === custo &&
+        prev.nome === item.nome
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        nome: item.nome,
+        categoria: item.categoria ?? null,
+        quantidadeDisponivel: qtdOk,
+        valorUnitario: custo,
+        unidade: item.unidade ?? undefined,
+      };
+    });
+    if (custo != null) {
+      setPecaValor(formatCurrencyBrl(String(Math.round(custo * 100))));
+    }
+  }, [estoqueItems, loadingEstoque, pecaEscolhida?.id]);
+
+  useEffect(() => {
+    const id = produtoRetornoIdRef.current;
+    if (id == null || loadingEstoque) return;
+    const item = estoqueItems.find(i => i.id === id);
+    if (!item) return;
+    handleSelectEstoque(item);
+    produtoRetornoIdRef.current = null;
+    toast.success("Produto selecionado. Confira a quantidade e adicione à manutenção.");
+  }, [estoqueItems, loadingEstoque]);
 
   const estoqueAtivos = useMemo(() => {
     const fazendaMaquina =
@@ -374,6 +513,9 @@ export default function ManutencaoFormPage() {
         const cat = String(item.categoria || "").trim();
         if (!cat) return false;
         if (!CATEGORIAS_TODAS.some(c => c.toLowerCase() === cat.toLowerCase())) return false;
+        if (!produtoControlaSaldo((item as { controlarSaldo?: boolean | null }).controlarSaldo)) {
+          return false;
+        }
         const fid = Number((item as { fazendaId?: number | null }).fazendaId);
         if (!Number.isFinite(fid) || fid !== fazendaMaquina) return false;
         return true;
@@ -382,59 +524,52 @@ export default function ManutencaoFormPage() {
       .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   }, [estoqueItems, maquinaSelecionada?.fazendaId]);
 
-  const categoriasComItens = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of estoqueAtivos) {
-      const cat = String(item.categoria || "").trim();
-      const allowed = CATEGORIAS_TODAS.find(c => c.toLowerCase() === cat.toLowerCase());
-      if (!allowed) continue;
-      counts.set(allowed, (counts.get(allowed) ?? 0) + 1);
-    }
-    return CATEGORIAS_TODAS.filter(c => (counts.get(c) ?? 0) > 0);
-  }, [estoqueAtivos]);
-
-  const filteredEstoque = useMemo(() => {
-    let list = estoqueAtivos;
-    if (categoriaFiltro) {
-      list = list.filter(
-        item => String(item.categoria || "").toLowerCase() === categoriaFiltro.toLowerCase(),
-      );
-    }
+  const produtosParaLista = useMemo(() => {
     const search = pecaSearchDebounced.trim().toLowerCase();
-    if (!search) return list;
-    return list.filter(item => {
-      const nome = item.nome?.toLowerCase() ?? "";
-      const cat = item.categoria?.toLowerCase() ?? "";
-      const sub = item.subcategoria?.toLowerCase() ?? "";
-      const fab = item.fabricante?.toLowerCase() ?? "";
-      const codigo = String(
-        (item as { identificadorUnico?: string | null }).identificadorUnico || "",
-      ).toLowerCase();
-      const obs = String((item as { observacoes?: string | null }).observacoes || "").toLowerCase();
-      return (
-        nome.includes(search) ||
-        cat.includes(search) ||
-        sub.includes(search) ||
-        fab.includes(search) ||
-        codigo.includes(search) ||
-        obs.includes(search)
-      );
-    });
-  }, [estoqueAtivos, categoriaFiltro, pecaSearchDebounced]);
+    let list = estoqueAtivos;
+    if (search) {
+      list = estoqueAtivos.filter(item => {
+        const nome = item.nome?.toLowerCase() ?? "";
+        const cat = item.categoria?.toLowerCase() ?? "";
+        const sub = item.subcategoria?.toLowerCase() ?? "";
+        const fab = item.fabricante?.toLowerCase() ?? "";
+        const codigo = String(
+          (item as { identificadorUnico?: string | null }).identificadorUnico || "",
+        ).toLowerCase();
+        const obs = String((item as { observacoes?: string | null }).observacoes || "").toLowerCase();
+        return (
+          nome.includes(search) ||
+          cat.includes(search) ||
+          sub.includes(search) ||
+          fab.includes(search) ||
+          codigo.includes(search) ||
+          obs.includes(search)
+        );
+      });
+    } else {
+      list = estoqueAtivos.slice(0, 40);
+    }
+    return list;
+  }, [estoqueAtivos, pecaSearchDebounced]);
 
-  const temFiltroAtivo = !!pecaSearch.trim() || !!categoriaFiltro;
-  const semCadastroDisponivel = !loadingEstoque && !temFiltroAtivo && estoqueAtivos.length === 0;
-  const semResultadoFiltro = !loadingEstoque && temFiltroAtivo && filteredEstoque.length === 0;
+  const temBuscaPeca = !!pecaSearch.trim();
+  const maquinaSelecionadaOk = !!form.maquinaId;
+  const semEstoqueNaFazenda =
+    maquinaSelecionadaOk && !loadingEstoque && !temBuscaPeca && estoqueAtivos.length === 0;
+  const semResultadoBusca =
+    maquinaSelecionadaOk && !loadingEstoque && temBuscaPeca && produtosParaLista.length === 0;
 
-  const limparFiltrosPeca = () => {
+  const limparBuscaPeca = () => {
     setPecaSearch("");
-    setCategoriaFiltro("");
   };
 
   const qtdNum = parseFloat(pecaQtd.replace(",", "."));
   const custoSelecionado = parseCustoMedioClient(pecaEscolhida?.valorUnitario ?? pecaValor);
   const semCustoMedio =
     !!pecaEscolhida?.doEstoque && pecaEscolhida.id != null && custoSelecionado == null;
+  const pecaSemSaldo =
+    pecaEscolhida?.quantidadeDisponivel != null && pecaEscolhida.quantidadeDisponivel <= 0;
+  const pecaPrecisaEntrada = !!pecaEscolhida && (semCustoMedio || pecaSemSaldo);
   const podeAdicionarPeca =
     !!pecaNome.trim() &&
     !!pecaEscolhida?.id &&
@@ -500,8 +635,16 @@ export default function ManutencaoFormPage() {
     setPecaValor("");
     setPecaEscolhida(null);
     setPecaSearch("");
-    setCategoriaFiltro("");
-    setPecaOpen(false);
+    setListaPecaAberta(false);
+  };
+
+  const alterarSelecaoPeca = () => {
+    setPecaNome("");
+    setPecaQtd("1");
+    setPecaValor("");
+    setPecaEscolhida(null);
+    setPecaSearch("");
+    setListaPecaAberta(true);
   };
 
   const removerPeca = async (index: number) => {
@@ -520,8 +663,7 @@ export default function ManutencaoFormPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const scrollToId = (id: string) => {
-      const el = document.getElementById(id);
-      if (el) scrollAboveFooter(el);
+      document.getElementById(id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
     if (!form.maquinaId) {
       scrollToId("manut-field-maquina");
@@ -626,23 +768,24 @@ export default function ManutencaoFormPage() {
           if (tag === "TEXTAREA") e.stopPropagation();
         }}
       >
-        <div className="space-y-5" style={{ paddingBottom: footerPad }}>
+        <div className="space-y-5">
         {/* ── 1. Dados da manutenção ───────────────────────────────────── */}
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
-          <h1
-            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100 flex items-center gap-2"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            <span className="material-icons text-[20px]" style={{ color: FD_PRIMARY }}>
-              build
-            </span>
-            {isEdit ? "Editar manutenção" : "Registro de Manutenção"}
-          </h1>
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h1
+              className="text-[20px] font-semibold text-gray-900"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              {isEdit ? "Editar manutenção" : "Registro de Manutenção"}
+            </h1>
+          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div id="manut-field-maquina">
               <FormLabel required>Máquina</FormLabel>
               <FormNativeSelect
+                variant="light"
                 value={form.maquinaId}
                 onChange={v => {
                   const anterior = maquinas.find(m => String(m.id) === form.maquinaId);
@@ -665,6 +808,7 @@ export default function ManutencaoFormPage() {
             <div id="manut-field-tipo">
               <FormLabel required>Tipo de manutenção</FormLabel>
               <FormNativeSelect
+                variant="light"
                 value={form.tipo}
                 onChange={v => set("tipo", v)}
                 placeholder="Selecione o tipo"
@@ -674,10 +818,12 @@ export default function ManutencaoFormPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div id="manut-field-data">
               <FormLabel required>Data da manutenção</FormLabel>
               <FormDatePicker
+                variant="light"
+                minHeight={34}
                 value={form.data}
                 onChange={v => set("data", v)}
                 placeholder="Selecione a data"
@@ -687,6 +833,8 @@ export default function ManutencaoFormPage() {
             <div>
               <FormLabel>Próxima manutenção</FormLabel>
               <FormDatePicker
+                variant="light"
+                minHeight={34}
                 value={form.proximaManutencao}
                 onChange={v => set("proximaManutencao", v)}
                 placeholder="Selecione a data prevista"
@@ -695,11 +843,12 @@ export default function ManutencaoFormPage() {
           </div>
 
           {medidorTipo ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div id="manut-field-horimetro">
                 <FormLabel>{medidorLabel}</FormLabel>
                 <div className="relative">
                   <FormInput
+                    variant="light"
                     value={form.horimetro}
                     onChange={v => set("horimetro", v.replace(/[^\d.,]/g, ""))}
                     placeholder={medidorTipo === "quilometragem" ? "Ex. 21000" : "Ex. 1250"}
@@ -724,9 +873,10 @@ export default function ManutencaoFormPage() {
             </div>
           ) : null}
 
-          <div id="manut-field-descricao" style={{ scrollMarginBottom: footerPad }}>
+          <div id="manut-field-descricao">
             <FormLabel required>Descrição do serviço</FormLabel>
             <FormTextarea
+              variant="light"
               value={form.descricao}
               onChange={v => {
                 set("descricao", v);
@@ -737,7 +887,6 @@ export default function ManutencaoFormPage() {
               required
               invalid={!!erroDescricao}
               aria-describedby={erroDescricao ? "manut-erro-descricao" : undefined}
-              onFocus={e => scrollAboveFooter(e.currentTarget)}
             />
             {erroDescricao ? (
               <p id="manut-erro-descricao" className="mt-1 text-[11px] text-red-600" role="alert">
@@ -745,257 +894,273 @@ export default function ManutencaoFormPage() {
               </p>
             ) : null}
           </div>
+          </div>
         </div>
 
         {/* ── 2. Custos da manutenção ──────────────────────────────────── */}
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
-          <h2 className="text-[14px] font-semibold text-gray-800 mb-5 pb-3 border-b border-gray-100">
-            Custos da manutenção
-          </h2>
+        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Custos da manutenção</h2>
+          </div>
 
+          <div className="p-5 space-y-5">
           {/* Produtos e peças utilizados */}
-          <div id="manut-section-pecas" className="pb-5" style={{ scrollMarginBottom: footerPad }}>
+          <div id="manut-section-pecas">
             <h3 className="text-[12px] font-semibold text-gray-700 mb-3">
               Produtos e peças utilizados
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start mb-4">
-              <div className="sm:col-span-5">
+            <div className="grid grid-cols-12 gap-3 items-start mb-4">
+              <div className="col-span-12 sm:col-span-5">
                 <FormLabel>Produto ou peça</FormLabel>
-                <div className="relative">
-                  <Popover open={pecaOpen} onOpenChange={setPecaOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal h-[42px] min-h-[42px] rounded-sm border-gray-200 bg-white shadow-none hover:bg-white",
-                          pecaNome ? "pr-9" : undefined,
-                        )}
-                        aria-label="Selecionar produto ou peça"
-                      >
-                        <span className="truncate text-[13px] text-gray-800">
-                          {pecaNome || "Selecione um produto ou peça..."}
-                        </span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[var(--radix-popover-trigger-width)] min-w-[280px] max-w-[min(100vw-2rem,440px)] p-0 z-50"
-                      align="start"
-                      onOpenAutoFocus={e => e.preventDefault()}
-                      onInteractOutside={e => {
-                        const t = e.target as HTMLElement | null;
-                        if (t?.closest?.("[data-radix-select-content]")) {
-                          e.preventDefault();
-                        }
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === "Escape") setPecaOpen(false);
-                      }}
+                {pecaEscolhida ? (
+                  <div
+                    className={cn(
+                      formControlFlatCls,
+                      "bg-gray-50 px-3 flex items-center gap-2 min-h-[34px] h-[34px]",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1 truncate text-[13px] text-gray-800">
+                      <span className="font-semibold text-gray-900">{pecaEscolhida.nome}</span>
+                      <span className="text-gray-500 font-normal">
+                        {" · "}
+                        {pecaEscolhida.categoria || "Peças"}
+                        {pecaEscolhida.unidade ? ` · ${pecaEscolhida.unidade}` : ""}
+                        {pecaEscolhida.quantidadeDisponivel != null
+                          ? ` · saldo ${pecaEscolhida.quantidadeDisponivel.toLocaleString("pt-BR")}`
+                          : ""}
+                        {custoSelecionado != null ? ` · ${brl(custoSelecionado)}` : ""}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-[11px] font-semibold text-gray-600 underline shrink-0"
+                      onClick={alterarSelecaoPeca}
                     >
-                    <Command
-                      shouldFilter={false}
-                      className="flex flex-col max-h-[min(380px,70vh)] sm:max-h-[min(400px,70vh)] max-sm:max-h-[min(320px,65vh)]"
-                    >
-                      <div className="shrink-0 border-b border-gray-100 p-2 flex flex-col gap-2">
-                        <CommandInput
-                          placeholder="Buscar produto ou peça por nome, código ou categoria"
-                          value={pecaSearch}
-                          onValueChange={setPecaSearch}
-                          aria-label="Buscar produto ou peça"
-                        />
-                        <div
-                          onPointerDown={e => e.stopPropagation()}
-                          onKeyDown={e => e.stopPropagation()}
-                        >
-                          <FormNativeSelect
-                            value={categoriaFiltro || "__todas__"}
-                            onChange={v => setCategoriaFiltro(v === "__todas__" ? "" : v)}
-                            placeholder="Todas as categorias"
-                            options={[
-                              { value: "__todas__", label: "Todas as categorias" },
-                              ...categoriasComItens.map(cat => ({ value: cat, label: cat })),
-                            ]}
-                            compact
-                            modal={false}
-                          />
+                      Alterar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative" ref={pecaPickerRef}>
+                    <input
+                      type="search"
+                      value={pecaSearch}
+                      disabled={!maquinaSelecionadaOk}
+                      onChange={e => {
+                        setPecaSearch(e.target.value);
+                        setListaPecaAberta(true);
+                      }}
+                      onFocus={() => {
+                        if (maquinaSelecionadaOk) setListaPecaAberta(true);
+                      }}
+                      placeholder={
+                        maquinaSelecionadaOk
+                          ? "Buscar peça ou lubrificante…"
+                          : "Selecione a máquina primeiro"
+                      }
+                      autoComplete="off"
+                      aria-label="Buscar peça ou lubrificante"
+                      className={cn(
+                        formControlFlatCls,
+                        "bg-white outline-none placeholder:text-gray-400 w-full",
+                        !maquinaSelecionadaOk && "cursor-not-allowed opacity-60",
+                      )}
+                    />
+                    {!maquinaSelecionadaOk ? (
+                      <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+                        Selecione a máquina para listar peças e lubrificantes do estoque.
+                      </p>
+                    ) : null}
+                    {maquinaSelecionadaOk &&
+                    pecaSearch.trim() &&
+                    !pecaEscolhida &&
+                    !semResultadoBusca &&
+                    produtosParaLista.length > 0 ? (
+                      <p className="mt-1 text-[11px] text-amber-700 leading-snug">
+                        Selecione o item na lista para vincular ao estoque e calcular o custo.
+                      </p>
+                    ) : null}
+                    {semResultadoBusca && !pecaEscolhida ? (
+                      <div className="mt-2 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
+                        <p className="text-[11px] text-gray-700 leading-relaxed">
+                          Nenhum item encontrado para &ldquo;{pecaSearch.trim()}&rdquo;. Cadastre o
+                          produto como peça ou lubrificante estocável.
+                        </p>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => irCadastrarProduto(pecaSearch.trim())}
+                            className={btnAcaoPrimariaCls}
+                            style={{ backgroundColor: FD_PRIMARY }}
+                          >
+                            Cadastrar produto
+                          </button>
+                          <button type="button" onClick={limparBuscaPeca} className={btnAcaoSecundariaCls}>
+                            Limpar busca
+                          </button>
                         </div>
                       </div>
-                      <CommandList className="flex-1 max-h-[min(280px,50vh)] max-sm:max-h-[200px] overflow-y-auto">
-                        <CommandGroup>
-                          {loadingEstoque ? (
-                            <div className="px-3 py-8 text-center text-[12px] text-gray-400">
-                              Carregando...
-                            </div>
-                          ) : semCadastroDisponivel ? (
-                            <div className="px-3 py-8 text-center">
-                              <p className="text-[13px] font-medium text-gray-700">
-                                Nenhum produto ou peça disponível.
-                              </p>
-                              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                                Cadastre ou vincule produtos ao estoque da Fazenda antes de registrar
-                                o consumo na manutenção.
-                              </p>
-                            </div>
-                          ) : semResultadoFiltro ? (
-                            <div className="px-3 py-8 text-center">
-                              <p className="text-[13px] font-medium text-gray-700">
-                                Nenhum produto ou peça encontrado.
-                              </p>
-                              <p className="text-[11px] text-gray-500 mt-1">
-                                Revise a busca ou selecione outra categoria.
-                              </p>
-                              <button
-                                type="button"
-                                onClick={limparFiltrosPeca}
-                                className="mt-3 text-[11px] font-semibold text-[#2D5A5A] hover:underline"
-                              >
-                                Limpar filtros
-                              </button>
-                            </div>
-                          ) : (
-                            filteredEstoque.map(item => {
-                              const qtd =
-                                item.quantidade != null
-                                  ? parseFloat(String(item.quantidade))
-                                  : null;
-                              const semEstoque = qtd != null && Number.isFinite(qtd) && qtd <= 0;
-                              const custo =
-                                item.valorUnitario != null
-                                  ? parseFloat(String(item.valorUnitario))
-                                  : null;
-                              return (
-                                <CommandItem
-                                  key={item.id}
-                                  value={`${item.id}-${item.nome}`}
+                    ) : null}
+                    {semEstoqueNaFazenda && !pecaEscolhida ? (
+                      <div className="mt-2 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
+                        <AcoesEstoqueVazioManutencao
+                          onCadastrar={() => irCadastrarProduto()}
+                          onEntrada={() => irRegistrarEntrada()}
+                        />
+                      </div>
+                    ) : null}
+                    {listaPecaAberta && maquinaSelecionadaOk && !semEstoqueNaFazenda ? (
+                      <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg">
+                        {loadingEstoque ? (
+                          <li className="px-3 py-2.5 text-[11px] text-gray-400">Carregando…</li>
+                        ) : semResultadoBusca ? (
+                          <li className="px-3 py-2.5 text-[11px] text-gray-400 text-center">
+                            Veja as opções abaixo do campo de busca.
+                          </li>
+                        ) : (
+                          produtosParaLista.map(item => {
+                            const qtd =
+                              item.quantidade != null
+                                ? parseFloat(String(item.quantidade))
+                                : null;
+                            const semEstoque = qtd != null && Number.isFinite(qtd) && qtd <= 0;
+                            const custo =
+                              item.valorUnitario != null
+                                ? parseFloat(String(item.valorUnitario))
+                                : null;
+                            return (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
                                   disabled={semEstoque}
-                                  onSelect={() => {
+                                  onClick={() => {
                                     if (semEstoque) return;
                                     handleSelectEstoque(item);
                                   }}
                                   className={cn(
-                                    "aria-selected:bg-gray-100",
-                                    semEstoque && "opacity-50 cursor-not-allowed",
+                                    "w-full text-left px-3 py-2.5 transition",
+                                    semEstoque
+                                      ? "opacity-50 cursor-not-allowed"
+                                      : "hover:bg-[#4ECDC4]/[0.08]",
                                   )}
                                 >
-                                  <div className="flex-1 min-w-0 py-0.5">
-                                    <div className="font-medium text-[13px] text-gray-800 truncate">
-                                      {item.nome}
-                                    </div>
-                                    <div className="text-[11px] text-gray-500 truncate mt-0.5">
-                                      {item.categoria || "Sem categoria"}
-                                      {semEstoque
-                                        ? " · Sem estoque"
-                                        : qtd != null
-                                          ? ` · Estoque: ${qtd.toLocaleString("pt-BR")}${item.unidade ? ` ${item.unidade}` : ""}`
-                                          : " · sem controle"}
-                                      {custo != null && Number.isFinite(custo)
-                                        ? ` · Custo médio: ${brl(custo)}`
-                                        : ""}
-                                    </div>
+                                  <div className="text-[13px] font-semibold text-gray-900 truncate">
+                                    {item.nome}
                                   </div>
-                                </CommandItem>
-                              );
-                            })
-                          )}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                  {!!pecaNome && (
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        limparSelecaoPeca();
-                      }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
-                      style={{ width: 28, height: 28 }}
-                      aria-label="Limpar produto ou peça selecionado"
-                      title="Limpar seleção"
-                    >
-                      <span className="material-icons text-[18px] leading-none">close</span>
-                    </button>
-                  )}
-                </div>
+                                  <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                                    {item.categoria || "Sem categoria"}
+                                    {semEstoque
+                                      ? " · Sem estoque"
+                                      : qtd != null
+                                        ? ` · Estoque: ${qtd.toLocaleString("pt-BR")}${item.unidade ? ` ${item.unidade}` : ""}`
+                                        : ""}
+                                    {custo != null && Number.isFinite(custo)
+                                      ? ` · Custo médio: ${brl(custo)}`
+                                      : ""}
+                                  </div>
+                                </button>
+                              </li>
+                            );
+                          })
+                        )}
+                      </ul>
+                    ) : null}
+                  </div>
+                )}
               </div>
-              <div className="sm:col-span-2">
+              <div className="col-span-4 sm:col-span-2">
                 <FormLabel>
                   Qtd
                   {pecaEscolhida?.unidade ? ` (${pecaEscolhida.unidade})` : ""}
                 </FormLabel>
-                <FieldBox className="h-[42px] min-h-[42px]">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={pecaQtd}
-                    onChange={e => setPecaQtd(e.target.value.replace(/[^\d.,]/g, ""))}
-                    placeholder="1"
-                    aria-label="Quantidade"
-                    className="w-full h-full bg-transparent px-3 text-[13px] text-gray-800 placeholder:text-gray-400 outline-none border-0"
-                  />
-                </FieldBox>
-                {pecaEscolhida?.quantidadeDisponivel != null && (
-                  <p
-                    className={cn(
-                      "mt-1 text-[10px] font-medium",
-                      pecaEscolhida.quantidadeDisponivel > 0 ? "text-gray-500" : "text-red-500",
-                    )}
-                  >
-                    Disp.: {pecaEscolhida.quantidadeDisponivel.toLocaleString("pt-BR")}
-                    {pecaEscolhida.unidade ? ` ${pecaEscolhida.unidade}` : ""}
-                  </p>
-                )}
+                <FormInput
+                  variant="light"
+                  value={pecaQtd}
+                  onChange={v => setPecaQtd(v.replace(/[^\d.,]/g, ""))}
+                  placeholder="1"
+                  inputMode="decimal"
+                />
               </div>
-              <div className="sm:col-span-3">
+              <div className="col-span-5 sm:col-span-3">
                 <FormLabel>Valor Unit.</FormLabel>
-                <FieldBox className="h-[42px] min-h-[42px]">
-                  <input
-                    type="text"
-                    value={pecaValor}
-                    readOnly
-                    tabIndex={-1}
-                    placeholder="R$ 0,00"
-                    aria-label="Valor unitário"
-                    aria-readonly="true"
-                    className="w-full h-full bg-transparent px-3 text-[13px] text-gray-700 placeholder:text-gray-400 outline-none border-0 cursor-default"
-                  />
-                </FieldBox>
-                {pecaEscolhida?.doEstoque && !semCustoMedio && (
-                  <p className="mt-1 text-[10px] text-gray-500">Custo médio atual do estoque</p>
-                )}
-                {semCustoMedio && (
-                  <p className="mt-1 text-[10px] text-red-600 leading-snug">{MSG_SEM_CUSTO_MEDIO}</p>
-                )}
+                <FormInput
+                  variant="light"
+                  value={pecaValor}
+                  readOnly
+                  placeholder="R$ 0,00"
+                />
               </div>
-              <div className="sm:col-span-2">
-                <FormLabel className="invisible select-none" aria-hidden>
-                  Adicionar
-                </FormLabel>
+              <div className="col-span-3 sm:col-span-2">
+                <FormLabel className="sr-only">Adicionar</FormLabel>
                 <button
                   type="button"
                   onClick={adicionarPeca}
                   disabled={!podeAdicionarPeca}
                   className={cn(
-                    "w-full h-[42px] min-h-[42px] rounded-sm text-[12px] font-semibold uppercase tracking-wide text-white transition flex items-center justify-center gap-1.5 shrink-0",
+                    "w-full h-[34px] px-2 sm:px-3 rounded text-[11px] font-semibold text-white transition flex items-center justify-center shrink-0",
                     podeAdicionarPeca
                       ? "hover:brightness-95 active:scale-[0.97]"
                       : "opacity-50 cursor-not-allowed",
                   )}
                   style={{ backgroundColor: FD_PRIMARY }}
                 >
-                  <span className="material-icons text-[16px]">add</span>
                   Adicionar
                 </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto border border-gray-100 rounded-md" style={{ scrollMarginBottom: footerPad }}>
+            {pecaEscolhida &&
+            (pecaEscolhida.quantidadeDisponivel != null ||
+              (pecaEscolhida.doEstoque && !semCustoMedio)) ? (
+              <div className="grid grid-cols-12 gap-x-3 gap-y-1 -mt-2 mb-4">
+                <div className="hidden sm:block sm:col-span-5" aria-hidden />
+                {pecaEscolhida.quantidadeDisponivel != null ? (
+                  <div className="col-span-4 sm:col-span-2">
+                    <p
+                      className={cn(
+                        "text-[10px] font-medium",
+                        pecaEscolhida.quantidadeDisponivel > 0 ? "text-gray-500" : "text-red-500",
+                      )}
+                    >
+                      Disp.: {pecaEscolhida.quantidadeDisponivel.toLocaleString("pt-BR")}
+                      {pecaEscolhida.unidade ? ` ${pecaEscolhida.unidade}` : ""}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="hidden sm:block sm:col-span-2" aria-hidden />
+                )}
+                {pecaEscolhida.doEstoque && !semCustoMedio ? (
+                  <div className="col-span-5 sm:col-span-3">
+                    <p className="text-[10px] text-gray-500">Custo médio atual do estoque</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {pecaPrecisaEntrada ? (
+              <div className="mb-4 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
+                <p className="text-[11px] text-gray-700 leading-relaxed">
+                  {semCustoMedio && pecaSemSaldo
+                    ? "Este produto está sem saldo e sem custo médio. Registre uma entrada no estoque antes de usá-lo na manutenção."
+                    : semCustoMedio
+                      ? "Este produto ainda não possui custo médio. Registre uma entrada com valor antes de usá-lo na manutenção."
+                      : "Saldo zerado. Registre uma entrada no estoque antes de consumir na manutenção."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => irRegistrarEntrada(pecaEscolhida!.id)}
+                  className={cn("mt-2.5", btnAcaoPrimariaCls)}
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  Registrar entrada
+                </button>
+              </div>
+            ) : null}
+
+            <div className="overflow-x-auto border border-gray-100 rounded overflow-hidden">
               <table className="w-full text-[12px] border-collapse">
                 <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-200">
+                  <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       Produto ou peça
                     </th>
@@ -1005,7 +1170,7 @@ export default function ManutencaoFormPage() {
                     <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[130px]">
                       Valor Unit.
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[130px]">
+                    <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[130px]">
                       Total
                     </th>
                     <th className="px-2 py-2.5 w-[48px]" />
@@ -1029,7 +1194,7 @@ export default function ManutencaoFormPage() {
                       <td className="px-3 py-2.5 align-middle text-right text-gray-600 tabular-nums">
                         {brl(p.valorUnitario)}
                       </td>
-                      <td className="px-3 py-2.5 align-middle text-right font-semibold text-gray-800 tabular-nums">
+                      <td className="px-3 py-2.5 align-middle text-center font-semibold text-gray-800 tabular-nums">
                         {brl(p.quantidade * p.valorUnitario)}
                       </td>
                       <td className="px-2 py-2.5 align-middle text-center">
@@ -1050,12 +1215,13 @@ export default function ManutencaoFormPage() {
           </div>
 
           {/* Execução do serviço */}
-          <div className="border-t border-gray-100 pt-5 pb-5">
+          <div className="border-t border-gray-100 pt-5">
             <h3 className="text-[12px] font-semibold text-gray-700 mb-3">Execução do serviço</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <FormLabel>Tipo de execução</FormLabel>
                 <FormNativeSelect
+                  variant="light"
                   value={tipoExecucao}
                   onChange={v => {
                     const next = v as TipoExecucao;
@@ -1075,6 +1241,7 @@ export default function ManutencaoFormPage() {
                   <div className="sm:col-span-1 lg:col-span-2">
                     <FormLabel>Responsável interno</FormLabel>
                     <FormInput
+                      variant="light"
                       value={form.prestadorNome}
                       onChange={v => set("prestadorNome", v)}
                       placeholder="Ex. Equipe da fazenda"
@@ -1083,6 +1250,7 @@ export default function ManutencaoFormPage() {
                   <div>
                     <FormLabel>Custo da mão de obra (opcional)</FormLabel>
                     <FormInput
+                      variant="light"
                       value={form.valorMaoObra}
                       onChange={v => set("valorMaoObra", formatCurrencyBrl(v))}
                       placeholder="R$ 0,00"
@@ -1094,6 +1262,7 @@ export default function ManutencaoFormPage() {
                   <div>
                     <FormLabel>Prestador ou oficina</FormLabel>
                     <FormInput
+                      variant="light"
                       value={form.prestadorNome}
                       onChange={v => set("prestadorNome", v)}
                       placeholder="Ex. Oficina do João"
@@ -1102,6 +1271,7 @@ export default function ManutencaoFormPage() {
                   <div>
                     <FormLabel>Contato</FormLabel>
                     <FormInput
+                      variant="light"
                       value={form.prestadorContato}
                       onChange={v => set("prestadorContato", v)}
                       placeholder="Telefone ou e-mail"
@@ -1110,6 +1280,7 @@ export default function ManutencaoFormPage() {
                   <div>
                     <FormLabel>Valor da mão de obra</FormLabel>
                     <FormInput
+                      variant="light"
                       value={form.valorMaoObra}
                       onChange={v => set("valorMaoObra", formatCurrencyBrl(v))}
                       placeholder="R$ 0,00"
@@ -1120,57 +1291,48 @@ export default function ManutencaoFormPage() {
             </div>
           </div>
 
-          {/* Resumo de custos */}
-          <div className="border-t border-gray-100 pt-5">
-            <h3 className="text-[12px] font-semibold text-gray-700 mb-3">Resumo de custos</h3>
-            <div className="w-full sm:ml-auto sm:w-[min(100%,380px)] sm:max-w-[40%] space-y-2 text-[12px]">
-              <div className="flex items-center justify-between gap-6 min-h-[22px] text-gray-600">
-                <span>Peças</span>
-                <span className="tabular-nums text-right">{brl(totalPecas)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-6 min-h-[22px] text-gray-600">
-                <span>Mão de obra</span>
-                <span className="tabular-nums text-right">{brl(valorMaoObraNum)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-6 min-h-[28px] text-[13px] font-semibold text-gray-900 pt-2 mt-1 border-t border-gray-200">
-                <span>Total da manutenção</span>
-                <span className="tabular-nums text-right font-bold">{brl(totalGeral)}</span>
-              </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+              <p className="text-[10px] uppercase text-gray-500">Peças</p>
+              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(totalPecas)}</p>
             </div>
+            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+              <p className="text-[10px] uppercase text-gray-500">Mão de obra</p>
+              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(valorMaoObraNum)}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3 col-span-2 sm:col-span-1">
+              <p className="text-[10px] uppercase text-gray-500">Total da manutenção</p>
+              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(totalGeral)}</p>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setLocation(
+                  fazendaIdParam
+                    ? `/maquinas/manutencao?fazendaId=${encodeURIComponent(fazendaIdParam)}`
+                    : "/maquinas/manutencao",
+                )
+              }
+              disabled={pending}
+              className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!podeSalvar}
+              className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              {pending ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
           </div>
         </div>
 
-        </div>
-
-        {/* ── Rodapé sticky (único) ────────────────────────────────────── */}
-        <div
-          ref={footerRef}
-          className="sticky bottom-0 z-30 shrink-0 bg-white border border-gray-200 rounded-md shadow-[0_-2px_8px_rgba(0,0,0,0.06)]"
-        >
-          <div className="px-4 sm:px-5 py-3 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="text-[13px] text-gray-700">
-              <span className="text-gray-500">Total:</span>{" "}
-              <span className="font-semibold tabular-nums text-gray-900">{brl(totalGeral)}</span>
-            </div>
-            <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setLocation("/maquinas/manutencao")}
-                disabled={pending}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={!podeSalvar}
-                className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {pending ? "Salvando..." : "Salvar"}
-              </button>
-            </div>
-          </div>
         </div>
       </form>
     </AppLayout>

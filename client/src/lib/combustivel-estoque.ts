@@ -1,5 +1,6 @@
 type EstoqueItem = {
   id?: number | null;
+  produtoId?: number | null;
   fazendaId?: number | null;
   nome?: string | null;
   categoria?: string | null;
@@ -7,6 +8,17 @@ type EstoqueItem = {
   valorUnitario?: string | number | null;
   situacao?: string | null;
 };
+
+export const COMBUSTIVEL_LABELS: Record<string, string> = {
+  diesel: "Diesel",
+  gasolina: "Gasolina",
+  etanol: "Etanol",
+  arla: "Arla",
+};
+
+export function getCombustivelLabel(combustivel: string): string {
+  return COMBUSTIVEL_LABELS[combustivel] ?? combustivel;
+}
 
 /** Movimentação de estoque (compra/saída). O preço de compra fica em `valor` (total). */
 export type MovimentacaoItem = {
@@ -63,6 +75,38 @@ export function temCombustivelCadastrado(
   combustivel: string
 ): boolean {
   return getCombustivelItens(estoque, fazendaId, combustivel).length > 0;
+}
+
+/** Primeiro item de estoque ativo do tipo, em qualquer fazenda (referência de catálogo). */
+export function findCombustivelReferenciaCatalogo(
+  estoque: EstoqueItem[],
+  combustivel: string
+): EstoqueItem | null {
+  for (const item of estoque) {
+    if (String(item.situacao ?? "ativo").toLowerCase() === "inativo") continue;
+    if (matchesCombustivel(item, combustivel)) return item;
+  }
+  return null;
+}
+
+/** ID do produto no catálogo (produtoId), se existir em alguma fazenda. */
+export function getProdutoIdCombustivelCatalogo(
+  estoque: EstoqueItem[],
+  combustivel: string
+): number | undefined {
+  const ref = findCombustivelReferenciaCatalogo(estoque, combustivel);
+  const pid = ref?.produtoId;
+  return pid != null && pid > 0 ? pid : undefined;
+}
+
+/** ID da linha de estoque em qualquer fazenda — usado para abrir o cadastro em modo edição. */
+export function getEstoqueIdReferenciaCombustivel(
+  estoque: EstoqueItem[],
+  combustivel: string
+): number | undefined {
+  const ref = findCombustivelReferenciaCatalogo(estoque, combustivel);
+  const id = ref?.id;
+  return id != null && id > 0 ? id : undefined;
 }
 
 /** Saldo total em litros do combustível na fazenda. */

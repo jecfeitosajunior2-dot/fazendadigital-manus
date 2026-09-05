@@ -11,7 +11,8 @@ import {
   TableIconButton,
 } from "@/components/icons/FarmActionIcons";
 import EstornarMovimentacaoDialog from "@/components/insumos/EstornarMovimentacaoDialog";
-import { FormDatePicker, FormLabel, FormNativeSelect } from "@/components/FormFields";
+import { FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { formatDataBr, produtoControlaSaldo, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
 import {
@@ -55,6 +56,12 @@ import {
 
 const FD_PRIMARY = "#4ECDC4";
 
+const MOV_FILTRO_SELECT_EMPTY = "__empty__";
+const movFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+const movFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
 function MovimentacaoFilterSelect({
   value,
   onChange,
@@ -62,6 +69,7 @@ function MovimentacaoFilterSelect({
   options,
   disabled,
   title,
+  allowEmpty = true,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -69,18 +77,30 @@ function MovimentacaoFilterSelect({
   options: { value: string; label: string }[];
   disabled?: boolean;
   title?: string;
+  allowEmpty?: boolean;
 }) {
+  const current = String(value ?? "").trim();
   return (
-    <div title={title}>
-      <FormNativeSelect
+    <div className="min-w-0" title={title}>
+      <FormSelect
         variant="light"
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
         disabled={disabled}
-        options={options}
-        itemClassName="text-[12px]"
-      />
+        value={allowEmpty && !current ? MOV_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(allowEmpty && v === MOV_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={movFiltroTriggerCls}
+      >
+        {allowEmpty ? (
+          <SelectItem value={MOV_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+            {placeholder}
+          </SelectItem>
+        ) : null}
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
     </div>
   );
 }
@@ -921,8 +941,7 @@ export default function InsumosMovimentacaoPanel() {
 
   const thClass =
     "px-3 py-2.5 text-[11px] font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap cursor-pointer select-none text-center hover:bg-gray-100 transition-colors group/th";
-  const inputClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+  const inputClass = movFiltroInputCls;
   const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
   const disabledHint = "Selecione uma fazenda para usar este filtro";
 
@@ -981,171 +1000,9 @@ export default function InsumosMovimentacaoPanel() {
         onClearSubmitError={() => setEstornoSubmitError(null)}
       />
 
-      {/* Filtros */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Filtros</h2>
-        </div>
-        <div className="p-5">
-        {/* Linha 1 — Fazenda | Produto */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Fazenda</label>
-            <MovimentacaoFilterSelect
-              value={fFazenda}
-              onChange={onChangeFazenda}
-              placeholder="Selecione uma fazenda"
-              options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Produto</label>
-            <MovimentacaoFilterSelect
-              value={fProduto}
-              onChange={setFProduto}
-              placeholder="Todos"
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? disabledHint : undefined}
-              options={produtosDaFazenda.map(p => ({
-                value: String(p.id),
-                label: `${p.nome}${p.situacao === "inativo" ? " (Inativo)" : ""}`,
-              }))}
-            />
-          </div>
-        </div>
-
-        {/* Linha 2 — Tipo | Data inicial | Data final */}
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label className={labelClass}>Tipo de movimentação</label>
-            <MovimentacaoFilterSelect
-              value={fTipo}
-              onChange={setFTipo}
-              placeholder="Todos"
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? disabledHint : undefined}
-              options={TIPOS_MOVIMENTACAO.map(t => ({ value: t.value, label: t.value }))}
-            />
-          </div>
-          <div
-            className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
-            title={!fazendaSelecionada ? disabledHint : undefined}
-          >
-            <FormLabel>Data inicial</FormLabel>
-            <FormDatePicker
-              value={fPeriodoIni}
-              onChange={setFPeriodoIni}
-            />
-          </div>
-          <div
-            className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
-            title={!fazendaSelecionada ? disabledHint : undefined}
-          >
-            <FormLabel>Data final</FormLabel>
-            <FormDatePicker
-              value={fPeriodoFim}
-              onChange={setFPeriodoFim}
-            />
-          </div>
-        </div>
-
-        {/* Linha 3 — Busca em largura total */}
-        <div className="mt-3">
-          <label className={labelClass}>Buscar movimentação</label>
-          <div className="relative">
-            <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[15px] text-gray-400">search</span>
-            <input
-              type="text"
-              placeholder="Buscar movimentação"
-              value={busca}
-              onChange={e => { setBusca(e.target.value); setPage(1); }}
-              className={`${inputClass} pl-8`}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? disabledHint : undefined}
-            />
-          </div>
-        </div>
-
-        {/* Linha 4 — Ações alinhadas à esquerda */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMaisFiltrosAbertos(o => !o)}
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? disabledHint : undefined}
-            className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-600 min-h-[34px] px-2"
-          >
-            <span className="material-icons text-[16px]">{maisFiltrosAbertos ? "expand_less" : "expand_more"}</span>
-            Mais filtros
-          </button>
-          <button
-            type="button"
-            onClick={limparFiltros}
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? disabledHint : undefined}
-            className="px-4 py-1.5 rounded text-[12px] font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white min-h-[34px]"
-          >
-            Limpar
-          </button>
-          <button
-            type="button"
-            onClick={aplicarFiltros}
-            disabled={!fazendaSelecionada}
-            title={!fazendaSelecionada ? disabledHint : undefined}
-            className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[34px]"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            Filtrar
-          </button>
-        </div>
-
-        {maisFiltrosAbertos && fazendaSelecionada && (
-          <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div>
-              <label className={labelClass}>Categoria</label>
-              <MovimentacaoFilterSelect
-                value={fCategoria}
-                onChange={setFCategoria}
-                placeholder="Todas"
-                options={categoriasDisponiveis.map(c => ({ value: c, label: c }))}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Subcategoria</label>
-              <MovimentacaoFilterSelect
-                value={fSubcategoria}
-                onChange={setFSubcategoria}
-                placeholder="Todas"
-                options={subcategoriasDisponiveis.map(s => ({ value: s, label: s }))}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Referência</label>
-              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Fornecedor, destino, máquina…" className={inputClass} />
-            </div>
-            {destinosDisponiveis.length > 0 ? (
-              <div>
-                <label className={labelClass}>Destino / Uso</label>
-                <MovimentacaoFilterSelect
-                  value={fDestino}
-                  onChange={setFDestino}
-                  placeholder="Todos"
-                  options={destinosDisponiveis.map(d => ({ value: d, label: d }))}
-                />
-              </div>
-            ) : null}
-            <div>
-              <label className={labelClass}>Nota fiscal</label>
-              <input value={fNotaFiscal} onChange={e => setFNotaFiscal(e.target.value)} placeholder="Nº nota fiscal" className={inputClass} />
-            </div>
-          </div>
-        )}
-        </div>
-      </div>
-
-      {/* Tabela */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        {/* Cabeçalho */}
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1
             className="text-[20px] font-semibold text-gray-900 shrink-0"
             style={{ fontFamily: "Fraunces, serif" }}
@@ -1202,6 +1059,163 @@ export default function InsumosMovimentacaoPanel() {
               }}
             />
           </div>
+        </div>
+
+        {/* Filtros */}
+        <div className="px-5 py-3 border-b border-gray-100 space-y-3">
+        {/* Linha 1 — Fazenda | Produto */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <label className={labelClass}>Fazenda</label>
+            <MovimentacaoFilterSelect
+              value={fFazenda}
+              onChange={onChangeFazenda}
+              placeholder="Selecione uma fazenda"
+              options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+            />
+          </div>
+          <div className="min-w-0">
+            <label className={labelClass}>Produto</label>
+            <MovimentacaoFilterSelect
+              value={fProduto}
+              onChange={setFProduto}
+              placeholder="Todos"
+              disabled={!fazendaSelecionada}
+              title={!fazendaSelecionada ? disabledHint : undefined}
+              options={produtosDaFazenda.map(p => ({
+                value: String(p.id),
+                label: `${p.nome}${p.situacao === "inativo" ? " (Inativo)" : ""}`,
+              }))}
+            />
+          </div>
+        </div>
+
+        {/* Linha 2 — Tipo | Data inicial | Data final */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="min-w-0">
+            <label className={labelClass}>Tipo de movimentação</label>
+            <MovimentacaoFilterSelect
+              value={fTipo}
+              onChange={setFTipo}
+              placeholder="Todos"
+              disabled={!fazendaSelecionada}
+              title={!fazendaSelecionada ? disabledHint : undefined}
+              options={TIPOS_MOVIMENTACAO.map(t => ({ value: t.value, label: t.value }))}
+            />
+          </div>
+          <div
+            className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+          >
+            <FormLabel>Data inicial</FormLabel>
+            <FormDatePicker
+              value={fPeriodoIni}
+              onChange={setFPeriodoIni}
+            />
+          </div>
+          <div
+            className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+          >
+            <FormLabel>Data final</FormLabel>
+            <FormDatePicker
+              value={fPeriodoFim}
+              onChange={setFPeriodoFim}
+            />
+          </div>
+        </div>
+
+        {/* Linha 3 — Busca em largura total */}
+        <div>
+          <label className={labelClass}>Buscar</label>
+          <div className="relative">
+            <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">search</span>
+            <input
+              type="text"
+              placeholder="Buscar produto, referência ou documento"
+              value={busca}
+              onChange={e => { setBusca(e.target.value); setPage(1); }}
+              className={`${inputClass} pl-8 pr-3`}
+              disabled={!fazendaSelecionada}
+              title={!fazendaSelecionada ? disabledHint : undefined}
+            />
+          </div>
+        </div>
+
+        {/* Linha 4 — Ações alinhadas à esquerda */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMaisFiltrosAbertos(o => !o)}
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+            className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-600 min-h-[34px] px-2"
+          >
+            <span className="material-icons text-[16px]">{maisFiltrosAbertos ? "expand_less" : "expand_more"}</span>
+            Mais filtros
+          </button>
+          <button
+            type="button"
+            onClick={limparFiltros}
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+            className="px-4 py-1.5 rounded text-[12px] font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white min-h-[34px]"
+          >
+            Limpar
+          </button>
+          <button
+            type="button"
+            onClick={aplicarFiltros}
+            disabled={!fazendaSelecionada}
+            title={!fazendaSelecionada ? disabledHint : undefined}
+            className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[34px]"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            Filtrar
+          </button>
+        </div>
+
+        {maisFiltrosAbertos && fazendaSelecionada && (
+          <div className="pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="min-w-0">
+              <label className={labelClass}>Categoria</label>
+              <MovimentacaoFilterSelect
+                value={fCategoria}
+                onChange={setFCategoria}
+                placeholder="Todas"
+                options={categoriasDisponiveis.map(c => ({ value: c, label: c }))}
+              />
+            </div>
+            <div className="min-w-0">
+              <label className={labelClass}>Subcategoria</label>
+              <MovimentacaoFilterSelect
+                value={fSubcategoria}
+                onChange={setFSubcategoria}
+                placeholder="Todas"
+                options={subcategoriasDisponiveis.map(s => ({ value: s, label: s }))}
+              />
+            </div>
+            <div className="min-w-0">
+              <label className={labelClass}>Referência</label>
+              <input value={fOrigem} onChange={e => setFOrigem(e.target.value)} placeholder="Fornecedor, destino, máquina…" className={inputClass} />
+            </div>
+            {destinosDisponiveis.length > 0 ? (
+              <div className="min-w-0">
+                <label className={labelClass}>Destino / Uso</label>
+                <MovimentacaoFilterSelect
+                  value={fDestino}
+                  onChange={setFDestino}
+                  placeholder="Todos"
+                  options={destinosDisponiveis.map(d => ({ value: d, label: d }))}
+                />
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <label className={labelClass}>Nota fiscal</label>
+              <input value={fNotaFiscal} onChange={e => setFNotaFiscal(e.target.value)} placeholder="Nº nota fiscal" className={inputClass} />
+            </div>
+          </div>
+        )}
         </div>
 
         {isEmptySemFazenda ? (

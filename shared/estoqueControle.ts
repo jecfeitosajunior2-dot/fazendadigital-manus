@@ -3,10 +3,32 @@ export const CATEGORIAS_SALDO_OBRIGATORIO = ["Farmácia", "Nutricionais"] as con
 
 export type CategoriaSaldoObrigatorio = (typeof CATEGORIAS_SALDO_OBRIGATORIO)[number];
 
+/** Categorias de insumo consumidas na manutenção de máquinas — exigem estoque estocável. */
+export const CATEGORIAS_MANUTENCAO_ESTOQUE = ["Peças", "Lubrificantes"] as const;
+
+export type CategoriaManutencaoEstoque = (typeof CATEGORIAS_MANUTENCAO_ESTOQUE)[number];
+
+function categoriaNormalizada(categoria: string | null | undefined): string {
+  return String(categoria ?? "").trim();
+}
+
+function categoriaNaLista(categoria: string, lista: readonly string[]): boolean {
+  const c = categoria.toLowerCase();
+  return lista.some(item => item.toLowerCase() === c);
+}
+
+/** Produtos destas categorias não podem ser cadastrados como uso imediato. */
+export function categoriaExigeEstocavelManutencao(categoria: string | null | undefined): boolean {
+  return categoriaNaLista(categoriaNormalizada(categoria), CATEGORIAS_MANUTENCAO_ESTOQUE);
+}
+
 /** Sugere controle de saldo ao cadastrar produto conforme a categoria. */
 export function categoriaControlaSaldoPorPadrao(categoria: string | null | undefined): boolean {
-  if (!categoria?.trim()) return true;
-  return (CATEGORIAS_SALDO_OBRIGATORIO as readonly string[]).includes(categoria.trim());
+  const c = categoriaNormalizada(categoria);
+  if (!c) return true;
+  if (categoriaNaLista(c, CATEGORIAS_SALDO_OBRIGATORIO)) return true;
+  if (categoriaExigeEstocavelManutencao(c)) return true;
+  return false;
 }
 
 /**

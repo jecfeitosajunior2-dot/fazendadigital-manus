@@ -20,6 +20,7 @@ import {
   UNIDADES_OPCOES,
   FABRICANTES,
   categoriaControlaSaldoPorPadrao,
+  categoriaExigeEstocavelManutencao,
   normalizarUnidade,
   siglaUnidade,
   rotuloUnidade,
@@ -158,6 +159,14 @@ const emptyFazendaConfig = (categoria = ""): FazendaConfigForm => ({
   quantidadeMaxima: "",
 });
 
+function controlarSaldoFormFromDb(
+  categoria: string,
+  controlarSaldoDb: boolean | null | undefined,
+): "sim" | "nao" {
+  if (categoriaExigeEstocavelManutencao(categoria)) return "sim";
+  return controlarSaldoDb !== false ? "sim" : "nao";
+}
+
 const emptyForm = (): FormState => ({
   fazendaIds: [],
   configPorFazenda: {},
@@ -175,23 +184,36 @@ function SimNaoRadios({
   value,
   onChange,
   label,
+  desabilitarNao,
 }: {
   name: string;
   value: "sim" | "nao";
   onChange: (v: "sim" | "nao") => void;
   label?: string;
+  /** Impede escolher "Não" (uso imediato). */
+  desabilitarNao?: boolean;
 }) {
   return (
     <div className="inline-flex items-center gap-2 flex-wrap">
       {label ? <span className="text-[11px] text-gray-500 whitespace-nowrap">{label}</span> : null}
       <div className="inline-flex items-center gap-2.5">
         {(["sim", "nao"] as const).map(opt => (
-          <label key={opt} className="flex items-center gap-1 text-[12px] text-gray-700 cursor-pointer">
+          <label
+            key={opt}
+            className={cn(
+              "flex items-center gap-1 text-[12px] text-gray-700",
+              opt === "nao" && desabilitarNao ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+            )}
+          >
             <input
               type="radio"
               name={name}
               checked={value === opt}
-              onChange={() => onChange(opt)}
+              disabled={opt === "nao" && desabilitarNao}
+              onChange={() => {
+                if (opt === "nao" && desabilitarNao) return;
+                onChange(opt);
+              }}
               className="accent-[#4ECDC4] border-gray-400 focus:ring-[#4ECDC4]"
               style={{ accentColor: FD_PRIMARY }}
             />
@@ -267,7 +289,8 @@ export default function ProductRegistrationPage() {
   const produtoId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
   const fazendaIdParam = searchParams.get("fazendaId") ?? "";
   const retornoUrl = searchParams.get("retorno") ? decodeURIComponent(searchParams.get("retorno")!) : null;
-  const isEdit = produtoId != null && !isNaN(produtoId);
+  const nomeParam = searchParams.get("nome")?.trim() ?? "";
+  const isEdit = produtoId != null && !isNaN(produtoId) && produtoId > 0;
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: produto, isLoading: loadingProduto } = trpc.estoque.get.useQuery(
@@ -332,6 +355,11 @@ export default function ProductRegistrationPage() {
     }
   }, [isEdit, fazendaIdParam, fazendas, form.fazendaIds.length]);
 
+  useEffect(() => {
+    if (isEdit || !nomeParam) return;
+    setForm(f => (f.nome.trim() ? f : { ...f, nome: nomeParam }));
+  }, [isEdit, nomeParam]);
+
   const fazendasOpcoes = useMemo(() => {
     const opts = fazendas.map(f => ({ value: String(f.id), label: f.nome }));
     for (const id of form.fazendaIds) {
@@ -388,6 +416,7 @@ export default function ProductRegistrationPage() {
           (produto as { fazendaIds?: number[] }).fazendaIds?.map(String) ??
           (produto.fazendaId ? [String(produto.fazendaId)] : []),
         configPorFazenda: (() => {
+          const categoriaProduto = produto.categoria || "";
           const vinculados = (produto as {
             estoquesVinculados?: {
               fazendaId: number;
@@ -404,7 +433,7 @@ export default function ProductRegistrationPage() {
                 String(v.fazendaId),
                 {
                   produzido: v.produzidoNaFazenda ? "sim" : "nao",
-                  controlarSaldo: v.controlarSaldo !== false ? "sim" : "nao",
+                  controlarSaldo: controlarSaldoFormFromDb(categoriaProduto, v.controlarSaldo),
                   monitorar: v.monitorarEstoque ? "sim" : "nao",
                   quantidadeMinima: fmtDecimalInput(v.quantidadeMinima),
                   quantidadeMaxima: fmtDecimalInput(v.quantidadeMaxima),
@@ -417,8 +446,10 @@ export default function ProductRegistrationPage() {
             (produto.fazendaId ? [produto.fazendaId] : []);
           const legado: FazendaConfigForm = {
             produzido: produto.produzidoNaFazenda ? "sim" : "nao",
-            controlarSaldo:
-              (produto as { controlarSaldo?: boolean }).controlarSaldo !== false ? "sim" : "nao",
+            controlarSaldo: controlarSaldoFormFromDb(
+              categoriaProduto,
+              (produto as { controlarSaldo?: boolean }).controlarSaldo,
+            ),
             monitorar: produto.monitorarEstoque ? "sim" : "nao",
             quantidadeMinima: fmtDecimalInput(produto.quantidadeMinima),
             quantidadeMaxima: fmtDecimalInput(produto.quantidadeMaxima),
@@ -440,6 +471,23 @@ export default function ProductRegistrationPage() {
       setInitialized(true);
     }
   }, [isEdit, produto, initialized]);
+
+  /** Ao editar vindo do abastecimento, pré-seleciona a fazenda para vincular no produto. */
+  useEffect(() => {
+    if (!isEdit || !fazendaIdParam || !initialized) return;
+    setForm(f => {
+      if (f.fazendaIds.includes(fazendaIdParam)) return f;
+      return {
+        ...f,
+        fazendaIds: [...f.fazendaIds, fazendaIdParam],
+        configPorFazenda: {
+          ...f.configPorFazenda,
+          [fazendaIdParam]:
+            f.configPorFazenda[fazendaIdParam] ?? emptyFazendaConfig(f.categoria),
+        },
+      };
+    });
+  }, [isEdit, fazendaIdParam, initialized]);
 
   const voltarParaOrigem = (novoProdutoId?: number) => {
     if (retornoUrl) {
@@ -536,6 +584,8 @@ export default function ProductRegistrationPage() {
   const mostrarInfoSanitaria =
     isProdutoSanitario(form.categoria, form.subcategoria) || !!form.carenciaAbate.trim();
 
+  const exigeEstocavelManutencao = categoriaExigeEstocavelManutencao(form.categoria);
+
   const buildPayload = () => ({
     fazendaIds: form.fazendaIds.map(id => parseInt(id, 10)).filter(id => !Number.isNaN(id) && id > 0),
     fazendaId: form.fazendaIds[0] ? parseInt(form.fazendaIds[0], 10) : undefined,
@@ -544,7 +594,7 @@ export default function ProductRegistrationPage() {
       .filter(id => !Number.isNaN(id) && id > 0)
       .map(fazendaId => {
         const cfg = form.configPorFazenda[String(fazendaId)] ?? emptyFazendaConfig(form.categoria);
-        const controlar = cfg.controlarSaldo === "sim";
+        const controlar = exigeEstocavelManutencao || cfg.controlarSaldo === "sim";
         const monitorar = controlar && cfg.monitorar === "sim";
         return {
           fazendaId,
@@ -701,7 +751,20 @@ export default function ProductRegistrationPage() {
                     variant="light"
                     value={form.categoria}
                     onChange={v => {
-                      setForm(f => ({ ...f, categoria: v, subcategoria: "" }));
+                      setForm(f => {
+                        const next: FormState = { ...f, categoria: v, subcategoria: "" };
+                        if (categoriaExigeEstocavelManutencao(v)) {
+                          next.configPorFazenda = Object.fromEntries(
+                            Object.entries(f.configPorFazenda).map(([id, cfg]) => [
+                              id,
+                              cfg.controlarSaldo === "sim"
+                                ? cfg
+                                : { ...cfg, controlarSaldo: "sim" as const },
+                            ]),
+                          );
+                        }
+                        return next;
+                      });
                       limparErro("categoria");
                     }}
                     placeholder="Selecione"
@@ -795,6 +858,12 @@ export default function ProductRegistrationPage() {
               aria-invalid={!!erros.fazendas || undefined}
               aria-describedby={erros.fazendas ? "produto-err-fazendas" : undefined}
             >
+              {exigeEstocavelManutencao ? (
+                <p className="text-[12px] text-teal-800 bg-teal-50 border border-teal-100 rounded px-3 py-2 mb-3 leading-relaxed">
+                  Peças e lubrificantes precisam ser <strong>estocáveis</strong> para poder ser usados na
+                  manutenção de máquinas.
+                </p>
+              ) : null}
               {fazendasOpcoes.map(f => {
                 const checked = form.fazendaIds.includes(f.value);
                 const cfg = form.configPorFazenda[f.value] ?? emptyFazendaConfig(form.categoria);
@@ -878,6 +947,7 @@ export default function ProductRegistrationPage() {
                             name={`controlar-saldo-${f.value}`}
                             label="Controlar saldo:"
                             value={cfg.controlarSaldo}
+                            desabilitarNao={exigeEstocavelManutencao}
                             onChange={v =>
                               setForm(prev => ({
                                 ...prev,
@@ -885,17 +955,22 @@ export default function ProductRegistrationPage() {
                                   ...prev.configPorFazenda,
                                   [f.value]: {
                                     ...cfg,
-                                    controlarSaldo: v,
-                                    monitorar: v === "nao" ? "nao" : cfg.monitorar,
-                                    quantidadeMinima: v === "nao" ? "" : cfg.quantidadeMinima,
-                                    quantidadeMaxima: v === "nao" ? "" : cfg.quantidadeMaxima,
+                                    controlarSaldo: exigeEstocavelManutencao ? "sim" : v,
+                                    monitorar:
+                                      exigeEstocavelManutencao || v === "sim" ? cfg.monitorar : "nao",
+                                    quantidadeMinima:
+                                      exigeEstocavelManutencao || v === "sim" ? cfg.quantidadeMinima : "",
+                                    quantidadeMaxima:
+                                      exigeEstocavelManutencao || v === "sim" ? cfg.quantidadeMaxima : "",
                                   },
                                 },
                               }))
                             }
                           />
                           <p className="text-[10px] text-gray-400 leading-relaxed max-w-md">
-                            Sim = estocável · Não = uso imediato (sem saldo em estoque)
+                            {exigeEstocavelManutencao
+                              ? "Estocável obrigatório para uso na manutenção de máquinas."
+                              : "Sim = estocável · Não = uso imediato (sem saldo em estoque)"}
                           </p>
                           {cfg.controlarSaldo === "sim" ? (
                             <>

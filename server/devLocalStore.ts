@@ -706,7 +706,11 @@ export const devLocalStore = {
   },
 
   getEstoque(id: number) {
-    return getItem(loadStore(), id) ?? null;
+    const data = loadStore();
+    const direct = getItem(data, id);
+    if (direct) return direct;
+    // Compat.: URL de edição pode vir com produtoId do catálogo em vez do id da linha de estoque
+    return data.estoque.find(e => e.produtoId === id) ?? null;
   },
 
   /**
@@ -1806,6 +1810,7 @@ export const devLocalStore = {
         embalagens: e.embalagens ?? null,
         fabricante: e.fabricante,
         situacao: e.situacao ?? "ativo",
+        controlarSaldo: e.controlarSaldo ?? true,
         identificadorUnico: e.identificadorUnico ?? null,
         observacoes: e.observacoes ?? null,
         createdAt: e.createdAt ?? null,

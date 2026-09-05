@@ -12,7 +12,9 @@ export const CATEGORIAS_PRODUTO = [
 
 export {
   CATEGORIAS_SALDO_OBRIGATORIO,
+  CATEGORIAS_MANUTENCAO_ESTOQUE,
   categoriaControlaSaldoPorPadrao,
+  categoriaExigeEstocavelManutencao,
   produtoControlaSaldo,
 } from "@shared/estoqueControle";
 

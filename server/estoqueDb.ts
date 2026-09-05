@@ -1,5 +1,5 @@
 import type { estoque, produtosCatalogo } from "../drizzle/schema";
-import { categoriaControlaSaldoPorPadrao } from "../shared/estoqueControle";
+import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelManutencao } from "../shared/estoqueControle";
 
 export type EstoqueEmbalagemInput = {
   nome: string;
@@ -109,11 +109,14 @@ export function configParaFazenda(
   quantidadeMaxima: string | null;
 } {
     const cfg = (input.estoquesConfig ?? []).find(c => Number(c.fazendaId) === fazendaId);
-  const controlarSaldo =
+  let controlarSaldo =
     cfg?.controlarSaldo ??
     fallback?.controlarSaldo ??
     input.controlarSaldo ??
     categoriaControlaSaldoPorPadrao(input.categoria);
+  if (categoriaExigeEstocavelManutencao(input.categoria)) {
+    controlarSaldo = true;
+  }
   const monitorar =
     controlarSaldo
       ? (cfg?.monitorarEstoque ??

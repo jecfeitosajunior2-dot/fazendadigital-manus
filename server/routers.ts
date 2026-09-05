@@ -6285,6 +6285,9 @@ export function calcularTotaisManutencao(
 export const MSG_MANUT_SEM_CUSTO_MEDIO =
   "Este produto não possui custo médio registrado. Registre uma entrada de estoque antes de utilizá-lo na manutenção.";
 
+export const MSG_MANUT_USO_IMEDIATO =
+  "Este produto é de uso imediato e não pode ser consumido na manutenção. Cadastre-o como estocável em Insumos.";
+
 export const MSG_MANUT_SALDO_ALTERADO =
   "O saldo deste produto foi alterado por outra operação. Revise a quantidade e tente novamente.";
 
@@ -6360,6 +6363,7 @@ export async function resolverPecasComCustoMedioEstoque(
     quantidade: string | number | null;
     unidade: string | null;
     valorUnitario: string | number | null;
+    controlarSaldo: boolean | null;
   };
   const mapEstoque = new Map<number, ItemEstoque>();
 
@@ -6371,6 +6375,7 @@ export async function resolverPecasComCustoMedioEstoque(
         quantidade: estoque.quantidade,
         unidade: estoque.unidade,
         valorUnitario: estoque.valorUnitario,
+        controlarSaldo: estoque.controlarSaldo,
       })
       .from(estoque)
       .where(inArray(estoque.id, ids));
@@ -6389,6 +6394,7 @@ export async function resolverPecasComCustoMedioEstoque(
       quantidade: local.quantidade,
       unidade: local.unidade,
       valorUnitario: local.valorUnitario,
+      controlarSaldo: local.controlarSaldo,
     });
   }
 
@@ -6404,6 +6410,12 @@ export async function resolverPecasComCustoMedioEstoque(
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
+      });
+    }
+    if (!produtoControlaSaldo(item.controlarSaldo)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: MSG_MANUT_USO_IMEDIATO,
       });
     }
     const custoCongelado = custoCongeladoPorEstoque?.get(estoqueId);
@@ -9044,6 +9056,7 @@ const estoqueRouter = router({
             embalagens: estoque.embalagens,
             fabricante: estoque.fabricante,
             situacao: estoque.situacao,
+            controlarSaldo: estoque.controlarSaldo,
             identificadorUnico: estoque.identificadorUnico,
             observacoes: estoque.observacoes,
             createdAt: estoque.createdAt,

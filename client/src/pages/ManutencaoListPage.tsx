@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
-import { FormDatePicker, FormLabel } from "@/components/FormFields";
+import { FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import ListExportButtons from "@/components/ListExportButtons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter, {
@@ -31,6 +32,57 @@ import {
 } from "@shared/manutencaoDescricao";
 
 const FD_PRIMARY = "#4ECDC4";
+
+const MANUT_FILTRO_SELECT_EMPTY = "__empty__";
+
+const manutFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+
+const manutFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
+function ManutencaoFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  widthClass = "w-full",
+  allowEmpty = true,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  widthClass?: string;
+  allowEmpty?: boolean;
+}) {
+  const current = String(value ?? "").trim();
+  return (
+    <div className={cn("min-w-0", widthClass)}>
+      <FormSelect
+        variant="light"
+        disabled={disabled}
+        value={allowEmpty && !current ? MANUT_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(allowEmpty && v === MANUT_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={manutFiltroTriggerCls}
+      >
+        {allowEmpty ? (
+          <SelectItem value={MANUT_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+            {placeholder}
+          </SelectItem>
+        ) : null}
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
+    </div>
+  );
+}
 
 const TIPOS_CADASTRO = ["Preventiva", "Corretiva"] as const;
 
@@ -526,11 +578,7 @@ export default function ManutencaoListPage() {
     return `manutencoes-${nome}`;
   }, [fazendaSelecionadaNome]);
 
-  const selectClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
-  const inputClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
-  const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
+  const manutFiltroLabelCls = "block text-[11px] font-medium text-gray-600 mb-1";
   const disabledHint = "Selecione uma fazenda para usar este filtro";
 
   return (
@@ -539,53 +587,113 @@ export default function ManutencaoListPage() {
         pullDistance={state.pullDistance}
         isRefreshing={state.isRefreshing}
       />
-      <div ref={containerRef} className="space-y-3">
+      <div
+        ref={containerRef}
+        className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden"
+      >
+        {/* Cabeçalho */}
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {tituloQuadro}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={irParaCadastro}
+              disabled={!fazendaSelecionada}
+              title={
+                fazendaSelecionada
+                  ? "Nova Manutenção"
+                  : "Selecione uma fazenda para registrar manutenções."
+              }
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[16px]">add</span>
+              Nova Manutenção
+            </button>
+            <ListExportButtons
+              title={tituloQuadro}
+              filename={exportFilenameBase}
+              headers={exportHeaders}
+              rows={fazendaSelecionada ? exportData : []}
+              fazendaNome={fazendaSelecionadaNome}
+              variant="secondary"
+              disabled={exportDisabled}
+              disabledTitle={
+                !fazendaSelecionada
+                  ? "Selecione uma fazenda para exportar."
+                  : "Nenhuma manutenção disponível para exportação."
+              }
+              spreadsheetSheetName="Manutenções"
+              spreadsheetReportTitle={() => exportTitleLine}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0, 1, 2, 3, 4, 5]}
+              spreadsheetColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfHeaders={exportHeaders}
+              pdfRows={fazendaSelecionada ? exportData : []}
+              pdfColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
+              pdfLandscape
+            />
+          </div>
+        </div>
+
+        {/* Filtros */}
         {fazendaInitDone && (
-          <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden px-4 py-3">
+          <div className="px-5 py-3 border-b border-gray-100 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Fazenda</label>
-                <select
+              <div className="min-w-0">
+                <label className={manutFiltroLabelCls}>Fazenda</label>
+                <ManutencaoFilterSelect
                   value={filtroFazenda}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={selectClass}
-                  aria-label="Filtrar por fazenda"
-                >
-                  <option value="">Selecione uma fazenda</option>
-                  {fazendasAtivas.map(f => (
-                    <option key={f.id} value={String(f.id)}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  onChange={onChangeFazenda}
+                  placeholder="Selecione uma fazenda"
+                  options={fazendasAtivas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
               </div>
-              <div>
-                <label className={labelClass}>Máquina</label>
-                <select
+              <div className="min-w-0">
+                <label className={manutFiltroLabelCls}>Máquina</label>
+                <ManutencaoFilterSelect
                   value={filtros.maquinaId}
-                  onChange={e => setFiltros(f => ({ ...f, maquinaId: e.target.value }))}
-                  className={selectClass}
+                  onChange={v => setFiltros(f => ({ ...f, maquinaId: v }))}
+                  placeholder={
+                    fazendaSelecionada ? "Todas as máquinas" : "Selecione primeiro uma Fazenda"
+                  }
                   disabled={!fazendaSelecionada}
-                  title={!fazendaSelecionada ? disabledHint : undefined}
-                >
-                  <option value="">
-                    {fazendaSelecionada
-                      ? "Todas as máquinas"
-                      : "Selecione primeiro uma Fazenda"}
-                  </option>
-                  {maquinasOpcoesFiltro.map(m => (
-                    <option key={m.id} value={String(m.id)}>
-                      {m.nome}
-                      {!maquinaAtiva(m) ? " (Inativa)" : ""}
-                    </option>
-                  ))}
-                </select>
+                  options={maquinasOpcoesFiltro.map(m => ({
+                    value: String(m.id),
+                    label: `${m.nome}${!maquinaAtiva(m) ? " (Inativa)" : ""}`,
+                  }))}
+                />
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div
-                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
                 title={!fazendaSelecionada ? disabledHint : undefined}
               >
                 <FormLabel>Data inicial</FormLabel>
@@ -595,7 +703,7 @@ export default function ManutencaoListPage() {
                 />
               </div>
               <div
-                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
                 title={!fazendaSelecionada ? disabledHint : undefined}
               >
                 <FormLabel>Data final</FormLabel>
@@ -606,10 +714,10 @@ export default function ManutencaoListPage() {
               </div>
             </div>
 
-            <div className="mt-3">
-              <label className={labelClass}>Buscar</label>
+            <div>
+              <label className={manutFiltroLabelCls}>Buscar</label>
               <div className="relative">
-                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[15px] text-gray-400">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
                   search
                 </span>
                 <input
@@ -619,15 +727,15 @@ export default function ManutencaoListPage() {
                     setSearch(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Buscar máquina, serviço, responsável ou documento"
-                  className={`${inputClass} pl-8`}
+                  placeholder="Buscar máquina, serviço ou responsável"
+                  className={`${manutFiltroInputCls} pl-8 pr-3`}
                   disabled={!fazendaSelecionada}
                   title={!fazendaSelecionada ? disabledHint : undefined}
                 />
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setMaisFiltros(o => !o)}
@@ -662,130 +770,45 @@ export default function ManutencaoListPage() {
             </div>
 
             {maisFiltros && fazendaSelecionada && (
-              <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div>
-                  <label className={labelClass}>Tipo</label>
-                  <select
+              <div className="pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="min-w-0">
+                  <label className={manutFiltroLabelCls}>Tipo</label>
+                  <ManutencaoFilterSelect
                     value={filtros.tipo}
-                    onChange={e => setFiltros(f => ({ ...f, tipo: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    {tiposOpcoes.map(t => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, tipo: v }))}
+                    placeholder="Todos"
+                    options={tiposOpcoes.map(t => ({ value: t, label: t }))}
+                  />
                 </div>
-                <div>
-                  <label className={labelClass}>Responsável</label>
-                  <select
+                <div className="min-w-0">
+                  <label className={manutFiltroLabelCls}>Responsável</label>
+                  <ManutencaoFilterSelect
                     value={filtros.prestador}
-                    onChange={e => setFiltros(f => ({ ...f, prestador: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    {prestadoresOpcoes.map(nome => (
-                      <option key={nome} value={nome}>
-                        {nome}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, prestador: v }))}
+                    placeholder="Todos"
+                    options={prestadoresOpcoes.map(nome => ({ value: nome, label: nome }))}
+                  />
                 </div>
-                <div>
-                  <label className={labelClass}>Custo</label>
-                  <select
+                <div className="min-w-0">
+                  <label className={manutFiltroLabelCls}>Custo</label>
+                  <ManutencaoFilterSelect
                     value={filtros.comCusto}
-                    onChange={e =>
-                      setFiltros(f => ({
-                        ...f,
-                        comCusto: e.target.value as Filtros["comCusto"],
-                      }))
+                    onChange={v =>
+                      setFiltros(f => ({ ...f, comCusto: v as Filtros["comCusto"] }))
                     }
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    <option value="com">Com custo</option>
-                    <option value="sem">Sem custo</option>
-                  </select>
+                    placeholder="Todos"
+                    options={[
+                      { value: "com", label: "Com custo" },
+                      { value: "sem", label: "Sem custo" },
+                    ]}
+                  />
                 </div>
               </div>
             )}
           </div>
         )}
 
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-            <h1
-              className="text-[20px] font-semibold text-gray-900"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              {tituloQuadro}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={irParaCadastro}
-                disabled={!fazendaSelecionada}
-                title={
-                  fazendaSelecionada
-                    ? "Nova Manutenção"
-                    : "Selecione uma fazenda para registrar manutenções."
-                }
-                className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                <span className="material-icons text-[16px]">add</span>
-                Nova Manutenção
-              </button>
-              <ListExportButtons
-                title={tituloQuadro}
-                filename={exportFilenameBase}
-                headers={exportHeaders}
-                rows={fazendaSelecionada ? exportData : []}
-                fazendaNome={fazendaSelecionadaNome}
-                variant="secondary"
-                disabled={exportDisabled}
-                disabledTitle={
-                  !fazendaSelecionada
-                    ? "Selecione uma fazenda para exportar."
-                    : "Nenhuma manutenção disponível para exportação."
-                }
-                spreadsheetSheetName="Manutenções"
-                spreadsheetReportTitle={() => exportTitleLine}
-                spreadsheetBlankAfterMeta={false}
-                spreadsheetAutoFilter={false}
-                spreadsheetPlainHeader
-                spreadsheetTextCols={[0, 1, 2, 3, 4, 5]}
-                spreadsheetColumnAligns={[
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                ]}
-                pdfHeaders={exportHeaders}
-                pdfRows={fazendaSelecionada ? exportData : []}
-                pdfColumnAligns={[
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                ]}
-                pdfShowRegistrosSubtitle={false}
-                pdfIncludeSpreadsheetTitle={false}
-                pdfLandscape
-              />
-            </div>
-          </div>
-
-          {emptySemFazenda ? (
+        {emptySemFazenda ? (
             <div className="py-14 px-6 text-center">
               <img
                 src="/assets/icon-maquina-trator-green.png"
@@ -1036,7 +1059,6 @@ export default function ManutencaoListPage() {
               </table>
             </TableHorizontalScroll>
           )}
-        </div>
       </div>
     </AppLayout>
   );

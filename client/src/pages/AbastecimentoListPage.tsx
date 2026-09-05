@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
-import { FormDatePicker, FormLabel } from "@/components/FormFields";
+import { FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import ListExportButtons from "@/components/ListExportButtons";
 import { PullToRefreshIndicator } from "@/components/PullToRefreshIndicator";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
@@ -31,6 +32,57 @@ import {
 } from "@shared/animal-filter-types";
 
 const FD_PRIMARY = "#4ECDC4";
+
+const ABAST_FILTRO_SELECT_EMPTY = "__empty__";
+
+const abastFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+
+const abastFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
+function AbastecimentoFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  title,
+  allowEmpty = true,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  title?: string;
+  allowEmpty?: boolean;
+}) {
+  const current = String(value ?? "").trim();
+  return (
+    <div className="min-w-0" title={title}>
+      <FormSelect
+        variant="light"
+        disabled={disabled}
+        value={allowEmpty && !current ? ABAST_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(allowEmpty && v === ABAST_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={abastFiltroTriggerCls}
+      >
+        {allowEmpty ? (
+          <SelectItem value={ABAST_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+            {placeholder}
+          </SelectItem>
+        ) : null}
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
+    </div>
+  );
+}
 
 const COMBUSTIVEL_LABEL: Record<string, string> = {
   diesel: "Diesel",
@@ -718,10 +770,7 @@ export default function AbastecimentoListPage() {
     ? `Abastecimentos — ${fazendaSelecionadaNome}`
     : "Abastecimentos";
 
-  const selectClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
-  const inputClass =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+  const inputClass = abastFiltroInputCls;
   const labelClass = "block text-[11px] font-medium text-gray-600 mb-1";
   const disabledHint = "Selecione uma fazenda para usar este filtro";
   const headPad = "px-3 py-2.5 whitespace-nowrap";
@@ -733,49 +782,118 @@ export default function AbastecimentoListPage() {
         pullDistance={state.pullDistance}
         isRefreshing={state.isRefreshing}
       />
-      <div ref={containerRef} className="space-y-3">
+      <div
+        ref={containerRef}
+        className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden"
+      >
+        {/* Cabeçalho */}
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            {tituloQuadro}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={irParaCadastro}
+              disabled={!fazendaSelecionada}
+              title={
+                fazendaSelecionada
+                  ? "Novo Abastecimento"
+                  : "Selecione uma fazenda para registrar abastecimentos."
+              }
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[16px]">add</span>
+              Novo Abastecimento
+            </button>
+            <ListExportButtons
+              title={tituloQuadro}
+              filename={exportFilenameBase}
+              headers={exportHeaders}
+              rows={fazendaSelecionada ? exportData : []}
+              fazendaNome={fazendaSelecionadaNome}
+              variant="secondary"
+              disabled={exportDisabled}
+              disabledTitle={
+                !fazendaSelecionada
+                  ? "Selecione uma fazenda para exportar."
+                  : "Nenhum abastecimento disponível para exportação."
+              }
+              spreadsheetSheetName="Abastecimentos"
+              spreadsheetReportTitle={() => exportTitleLine}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0, 1, 2, 3, 4, 5, 8]}
+              spreadsheetColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfHeaders={exportHeaders}
+              pdfRows={fazendaSelecionada ? exportData : []}
+              pdfColumnAligns={[
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+                "center",
+              ]}
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
+              pdfLandscape
+            />
+          </div>
+        </div>
+
+        {/* Filtros */}
         {fazendaInitDone && (
-          <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden px-4 py-3">
+          <div className="px-5 py-3 border-b border-gray-100 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
+              <div className="min-w-0">
                 <label className={labelClass}>Fazenda</label>
-                <select
+                <AbastecimentoFilterSelect
                   value={filtroFazenda}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={selectClass}
-                  aria-label="Filtrar por fazenda"
-                >
-                  <option value="">Selecione uma fazenda</option>
-                  {fazendasAtivas.map(f => (
-                    <option key={f.id} value={String(f.id)}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  onChange={onChangeFazenda}
+                  placeholder="Selecione uma fazenda"
+                  options={fazendasAtivas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className={labelClass}>Máquina</label>
-                <select
+                <AbastecimentoFilterSelect
                   value={filtros.maquinaId}
-                  onChange={e => setFiltros(f => ({ ...f, maquinaId: e.target.value }))}
-                  className={selectClass}
+                  onChange={v => setFiltros(f => ({ ...f, maquinaId: v }))}
+                  placeholder={
+                    fazendaSelecionada ? "Todas as máquinas" : "Selecione primeiro uma Fazenda"
+                  }
                   disabled={!fazendaSelecionada}
                   title={!fazendaSelecionada ? disabledHint : undefined}
-                >
-                  <option value="">Todas as máquinas</option>
-                  {maquinasOpcoes.map(m => (
-                    <option key={m.id} value={String(m.id)}>
-                      {m.nome}
-                      {m.status === "inativo" ? " (Inativa)" : ""}
-                    </option>
-                  ))}
-                </select>
+                  options={maquinasOpcoes.map(m => ({
+                    value: String(m.id),
+                    label: `${m.nome}${m.status === "inativo" ? " (Inativa)" : ""}`,
+                  }))}
+                />
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div
-                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
                 title={!fazendaSelecionada ? disabledHint : undefined}
               >
                 <FormLabel>Data inicial</FormLabel>
@@ -785,7 +903,7 @@ export default function AbastecimentoListPage() {
                 />
               </div>
               <div
-                className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
                 title={!fazendaSelecionada ? disabledHint : undefined}
               >
                 <FormLabel>Data final</FormLabel>
@@ -796,10 +914,10 @@ export default function AbastecimentoListPage() {
               </div>
             </div>
 
-            <div className="mt-3">
+            <div>
               <label className={labelClass}>Buscar</label>
               <div className="relative">
-                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[15px] text-gray-400">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
                   search
                 </span>
                 <input
@@ -810,14 +928,14 @@ export default function AbastecimentoListPage() {
                     setPage(1);
                   }}
                   placeholder="Buscar máquina, combustível, responsável ou identificação"
-                  className={`${inputClass} pl-8`}
+                  className={`${inputClass} pl-8 pr-3`}
                   disabled={!fazendaSelecionada}
                   title={!fazendaSelecionada ? disabledHint : undefined}
                 />
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setMaisFiltros(o => !o)}
@@ -852,13 +970,12 @@ export default function AbastecimentoListPage() {
             </div>
 
             {maisFiltros && fazendaSelecionada && (
-              <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div>
+              <div className="pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="min-w-0">
                   <label className={labelClass}>Tipo de maquinário</label>
-                  <select
+                  <AbastecimentoFilterSelect
                     value={filtros.tipoMaquina}
-                    onChange={e => {
-                      const tipo = e.target.value;
+                    onChange={tipo => {
                       setFiltros(f => {
                         const next = { ...f, tipoMaquina: tipo };
                         if (f.maquinaId) {
@@ -868,149 +985,63 @@ export default function AbastecimentoListPage() {
                         return next;
                       });
                     }}
-                    className={selectClass}
-                  >
-                    <option value="">Todos os tipos</option>
-                    {tiposMaquina.map(t => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Todos os tipos"
+                    options={tiposMaquina.map(t => ({ value: t, label: t }))}
+                  />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={labelClass}>Combustível</label>
-                  <select
+                  <AbastecimentoFilterSelect
                     value={filtros.combustivel}
-                    onChange={e => setFiltros(f => ({ ...f, combustivel: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    <option value="diesel">Diesel</option>
-                    <option value="gasolina">Gasolina</option>
-                    <option value="etanol">Etanol</option>
-                    <option value="arla">Arla</option>
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, combustivel: v }))}
+                    placeholder="Todos"
+                    options={[
+                      { value: "diesel", label: "Diesel" },
+                      { value: "gasolina", label: "Gasolina" },
+                      { value: "etanol", label: "Etanol" },
+                      { value: "arla", label: "Arla" },
+                    ]}
+                  />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={labelClass}>Origem</label>
-                  <select
+                  <AbastecimentoFilterSelect
                     value={filtros.origem}
-                    onChange={e => setFiltros(f => ({ ...f, origem: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todas</option>
-                    <option value="estoque">{ORIGEM_ESTOQUE}</option>
-                    <option value="externa">{ORIGEM_EXTERNA}</option>
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, origem: v }))}
+                    placeholder="Todas"
+                    options={[
+                      { value: "estoque", label: ORIGEM_ESTOQUE },
+                      { value: "externa", label: ORIGEM_EXTERNA },
+                    ]}
+                  />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={labelClass}>Responsável</label>
-                  <select
+                  <AbastecimentoFilterSelect
                     value={filtros.responsavel}
-                    onChange={e => setFiltros(f => ({ ...f, responsavel: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    {responsaveisOpcoes.map(nome => (
-                      <option key={nome} value={nome}>
-                        {nome}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, responsavel: v }))}
+                    placeholder="Todos"
+                    options={responsaveisOpcoes.map(nome => ({ value: nome, label: nome }))}
+                  />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={labelClass}>Status</label>
-                  <select
+                  <AbastecimentoFilterSelect
                     value={filtros.status}
-                    onChange={e => setFiltros(f => ({ ...f, status: e.target.value }))}
-                    className={selectClass}
-                  >
-                    <option value="">Todos</option>
-                    <option value="registrado">Registrado</option>
-                    <option value="estornado">Estornado</option>
-                  </select>
+                    onChange={v => setFiltros(f => ({ ...f, status: v }))}
+                    placeholder="Todos"
+                    options={[
+                      { value: "registrado", label: "Registrado" },
+                      { value: "estornado", label: "Estornado" },
+                    ]}
+                  />
                 </div>
               </div>
             )}
           </div>
         )}
 
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-            <h1
-              className="text-[20px] font-semibold text-gray-900"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              {tituloQuadro}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={irParaCadastro}
-                disabled={!fazendaSelecionada}
-                title={
-                  fazendaSelecionada
-                    ? "Novo Abastecimento"
-                    : "Selecione uma fazenda para registrar abastecimentos."
-                }
-                className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                <span className="material-icons text-[16px]">add</span>
-                Novo Abastecimento
-              </button>
-              <ListExportButtons
-                title={tituloQuadro}
-                filename={exportFilenameBase}
-                headers={exportHeaders}
-                rows={fazendaSelecionada ? exportData : []}
-                fazendaNome={fazendaSelecionadaNome}
-                variant="secondary"
-                disabled={exportDisabled}
-                disabledTitle={
-                  !fazendaSelecionada
-                    ? "Selecione uma fazenda para exportar."
-                    : "Nenhum abastecimento disponível para exportação."
-                }
-                spreadsheetSheetName="Abastecimentos"
-                spreadsheetReportTitle={() => exportTitleLine}
-                spreadsheetBlankAfterMeta={false}
-                spreadsheetAutoFilter={false}
-                spreadsheetPlainHeader
-                spreadsheetTextCols={[0, 1, 2, 3, 4, 5, 8]}
-                spreadsheetColumnAligns={[
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                ]}
-                pdfHeaders={exportHeaders}
-                pdfRows={fazendaSelecionada ? exportData : []}
-                pdfColumnAligns={[
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                  "center",
-                ]}
-                pdfShowRegistrosSubtitle={false}
-                pdfIncludeSpreadsheetTitle={false}
-                pdfLandscape
-              />
-            </div>
-          </div>
-
-          {emptySemFazenda ? (
+        {emptySemFazenda ? (
             <div className="py-14 px-6 text-center">
               <img
                 src="/assets/icon-maquina-trator-green.png"
@@ -1043,6 +1074,9 @@ export default function AbastecimentoListPage() {
               <h2 className="text-[16px] font-semibold text-gray-900">
                 Nenhum abastecimento encontrado com os filtros aplicados.
               </h2>
+              <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+                Revise os filtros ou limpe a busca para visualizar outros registros.
+              </p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 <button
                   type="button"
@@ -1304,7 +1338,6 @@ export default function AbastecimentoListPage() {
             </table>
           </TableHorizontalScroll>
           )}
-        </div>
       </div>
     </AppLayout>
   );

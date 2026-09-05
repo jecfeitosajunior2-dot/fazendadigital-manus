@@ -24,7 +24,18 @@ import {
   type EmbalagemProduto,
   produtoControlaSaldo,
 } from "@/lib/produto-types";
-import { isProdutoCombustivel } from "@/lib/combustivel-estoque";
+import {
+  findCombustivelReferenciaCatalogo,
+  getCombustivelItens,
+  getCombustivelLabel,
+  isProdutoCombustivel,
+} from "@/lib/combustivel-estoque";
+
+function buildRetornoUrl(retorno: string, produtoId?: number) {
+  const url = new URL(retorno, window.location.origin);
+  if (produtoId != null && produtoId > 0) url.searchParams.set("produtoId", String(produtoId));
+  return url.pathname + url.search;
+}
 
 // ─── Layout (padrão Cadastro de Produto / Movimentações) ────────────────────
 function FormCard({
@@ -487,7 +498,7 @@ function formatValorTotalLinha(p: ProdutoLinha): string {
   return formatCurrencyBrl(String(Math.round(total * 100)));
 }
 
-/** Indica se o mini-formulário de item tem algum dado preenchido. */
+/** Indica se o mini-formulário tem dados digitados pelo usuário (não só pré-seleção). */
 function miniFormTemDados(fields: {
   prodEstoqueId: string;
   prodQuantidade: string;
@@ -496,9 +507,7 @@ function miniFormTemDados(fields: {
   prodValorUnitario: string;
 }): boolean {
   return !!(
-    fields.prodEstoqueId ||
     fields.prodQuantidade.trim() ||
-    fields.prodUnidade ||
     fields.prodDataValidade ||
     fields.prodValorUnitario.trim()
   );
@@ -548,11 +557,16 @@ export default function InsumosNovaMovimentacaoPage() {
   const movId = searchParams.get("id") ? parseInt(searchParams.get("id")!, 10) : null;
   const isEdit = movId != null && !isNaN(movId);
   const fazendaIdQuery = searchParams.get("fazendaId")?.trim() || "";
+  const combustivelQuery = searchParams.get("combustivel")?.trim() || "";
+  const retornoUrl = searchParams.get("retorno") ? decodeURIComponent(searchParams.get("retorno")!) : null;
+  const retornoEhManutencao = retornoUrl?.includes("/maquinas/manutencao/cadastro") ?? false;
+  const retornoEhAbastecimento = retornoUrl?.includes("/maquinas/abastecimento/cadastro") ?? false;
 
   // Campos globais da movimentação
   const [operacao, setOperacao] = useState<Operacao>("Entrada");
   const [tipoMov, setTipoMov] = useState("Compra");
   const [fazendaId, setFazendaId] = useState(fazendaIdQuery);
+  const [combustivelAbastecimento, setCombustivelAbastecimento] = useState(combustivelQuery);
   const [fazendaDestinoId, setFazendaDestinoId] = useState("");
   const [destinoUso, setDestinoUso] = useState("");
   const [fornecedorId, setFornecedorId] = useState("");
@@ -587,7 +601,12 @@ export default function InsumosNovaMovimentacaoPage() {
     const params = new URLSearchParams(window.location.search);
     const novoFornecedorId = params.get("fornecedorId");
     const novoProdutoId = params.get("produtoId");
+    const combustivelParam = params.get("combustivel")?.trim() || "";
     const raw = sessionStorage.getItem(INSUMOS_MOV_DRAFT_KEY);
+
+    if (combustivelParam) {
+      setCombustivelAbastecimento(combustivelParam);
+    }
 
     if (raw) {
       try {
@@ -629,7 +648,11 @@ export default function InsumosNovaMovimentacaoPage() {
       params.delete("produtoId");
     }
 
-    if (novoFornecedorId || novoProdutoId) {
+    if (combustivelParam) {
+      params.delete("combustivel");
+    }
+
+    if (novoFornecedorId || novoProdutoId || combustivelParam) {
       const qs = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
     }
@@ -685,6 +708,65 @@ export default function InsumosNovaMovimentacaoPage() {
       })
       .map(p => ({ value: String(p.id), label: p.nome }));
   }, [estoqueList, fazendaId]);
+
+  const combustivelAbastecimentoCtx = useMemo(() => {
+    if (!combustivelAbastecimento || !fazendaId) return null;
+    const fid = Number(fazendaId);
+    if (!Number.isFinite(fid) || fid <= 0) return null;
+
+    const label = getCombustivelLabel(combustivelAbastecimento);
+    const naFazenda = getCombustivelItens(estoqueList, fid, combustivelAbastecimento)[0];
+    if (naFazenda?.id) {
+      return {
+        status: "vinculado" as const,
+        label: naFazenda.nome ?? label,
+        estoqueId: naFazenda.id,
+      };
+    }
+
+    const ref = findCombustivelReferenciaCatalogo(estoqueList, combustivelAbastecimento);
+    if (ref?.id) {
+      return {
+        status: "precisa_vincular" as const,
+        label: ref.nome ?? label,
+        estoqueReferenciaId: ref.id,
+      };
+    }
+
+    return { status: "nao_cadastrado" as const, label };
+  }, [combustivelAbastecimento, fazendaId, estoqueList]);
+
+  const fazendaDestinoNome = useMemo(() => {
+    return fazendas.find(f => String(f.id) === fazendaId)?.nome?.trim() || "esta fazenda";
+  }, [fazendas, fazendaId]);
+
+  // Pré-seleciona o combustível vinculado à fazenda (ex.: retorno do abastecimento)
+  useEffect(() => {
+    if (combustivelAbastecimentoCtx?.status !== "vinculado") return;
+    if (!estoqueList.length) return;
+    const idStr = String(combustivelAbastecimentoCtx.estoqueId);
+    // Já incluído na nota — não reabrir o mini-form após "Adicionar item"
+    if (produtos.some(p => p.estoqueId === idStr)) {
+      if (prodEstoqueId === idStr && !prodQuantidade.trim() && !prodValorUnitario.trim()) {
+        setProdEstoqueId("");
+        setProdUnidade("");
+      }
+      return;
+    }
+    if (prodEstoqueId === idStr) return;
+    const selecaoAtualValida =
+      prodEstoqueId && produtoOpcoes.some(o => o.value === prodEstoqueId);
+    if (selecaoAtualValida) return;
+    setProdEstoqueId(idStr);
+  }, [
+    combustivelAbastecimentoCtx,
+    estoqueList,
+    prodEstoqueId,
+    prodQuantidade,
+    prodValorUnitario,
+    produtoOpcoes,
+    produtos,
+  ]);
 
   // Se a fazenda mudar e o produto selecionado não pertencer a ela, limpa o formulário de item
   useEffect(() => {
@@ -976,12 +1058,37 @@ export default function InsumosNovaMovimentacaoPage() {
     setLocation(`/financeiro/pessoas?novo=fornecedor&retorno=${encodeURIComponent(retorno)}`);
   };
 
-  const irCadastrarProduto = () => {
-    persistirRascunho();
-    const retorno = window.location.pathname + window.location.search;
+  const retornoMovimentacaoAtual = () => {
     const qs = new URLSearchParams();
     if (fazendaId) qs.set("fazendaId", fazendaId);
-    qs.set("retorno", retorno);
+    if (combustivelAbastecimento) qs.set("combustivel", combustivelAbastecimento);
+    if (retornoUrl) qs.set("retorno", retornoUrl);
+    const q = qs.toString();
+    return `/insumos/nova-movimentacao${q ? `?${q}` : ""}`;
+  };
+
+  const irCadastrarProduto = () => {
+    persistirRascunho();
+    const qs = new URLSearchParams();
+    if (fazendaId) qs.set("fazendaId", fazendaId);
+    if (combustivelAbastecimento) {
+      qs.set("nome", getCombustivelLabel(combustivelAbastecimento));
+    }
+    qs.set("retorno", retornoMovimentacaoAtual());
+    setLocation(`/insumos/cadastro?${qs.toString()}`);
+  };
+
+  const irVincularCombustivel = () => {
+    const estoqueReferenciaId =
+      combustivelAbastecimentoCtx?.status === "precisa_vincular"
+        ? combustivelAbastecimentoCtx.estoqueReferenciaId
+        : undefined;
+    if (!estoqueReferenciaId || estoqueReferenciaId <= 0) return;
+    persistirRascunho();
+    const qs = new URLSearchParams();
+    qs.set("id", String(estoqueReferenciaId));
+    if (fazendaId) qs.set("fazendaId", fazendaId);
+    qs.set("retorno", retornoMovimentacaoAtual());
     setLocation(`/insumos/cadastro?${qs.toString()}`);
   };
 
@@ -1159,7 +1266,7 @@ export default function InsumosNovaMovimentacaoPage() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
-  /** Garante que o resumo de movimentações reflita edições antes de sair da tela. */
+  /** Garante que estoque e movimentações reflitam edições antes de sair da tela. */
   const sincronizarResumoMovimentacoes = async (idsAfetados: number[] = []) => {
     const ids = [...new Set(idsAfetados)];
     await Promise.all([
@@ -1168,7 +1275,10 @@ export default function InsumosNovaMovimentacaoPage() {
       utils.estoque.resumo.invalidate(),
       ...ids.map(id => utils.estoque.getMovimentacao.invalidate({ id })),
     ]);
-    await utils.estoque.listMovimentacoes.refetch();
+    await Promise.all([
+      utils.estoque.list.refetch(),
+      utils.estoque.listMovimentacoes.refetch(),
+    ]);
   };
 
   /** Apenas itens explicitamente adicionados à lista entram no salvamento. */
@@ -1259,6 +1369,30 @@ export default function InsumosNovaMovimentacaoPage() {
     };
   };
 
+  const irParaListaMovimentacoes = () => {
+    const fid = fazendaId || fazendaIdQuery;
+    setLocation(
+      fid
+        ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
+        : "/insumos/movimentacao",
+    );
+  };
+
+  const produtoIdParaRetorno = (linhas: ProdutoLinha[]) => {
+    const id = linhas[0]?.estoqueId;
+    if (!id) return undefined;
+    const n = Number(id);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+
+  const voltarParaOrigem = (produtoId?: number) => {
+    if (retornoUrl) {
+      setLocation(buildRetornoUrl(retornoUrl, produtoId));
+      return;
+    }
+    irParaListaMovimentacoes();
+  };
+
   const executarSalvar = async () => {
     const sinal = sinalDoTipo(tipoMov);
     const linhas = coletarLinhasParaSalvar();
@@ -1308,7 +1442,7 @@ export default function InsumosNovaMovimentacaoPage() {
           ...linhas.map(p => p.movimentacaoId).filter((id): id is number => id != null),
         ];
         await sincronizarResumoMovimentacoes(idsAfetados);
-        setLocation("/insumos/movimentacao");
+        voltarParaOrigem(produtoIdParaRetorno(linhas));
       } catch {
         /* erros tratados em onError */
       }
@@ -1320,10 +1454,16 @@ export default function InsumosNovaMovimentacaoPage() {
         await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
       }
       toast.success(
-        linhas.length > 1 ? `${linhas.length} movimentações registradas!` : "Movimentação registrada!"
+        retornoEhManutencao
+          ? "Entrada registrada. Continue a manutenção."
+          : retornoEhAbastecimento
+            ? "Entrada registrada. Continue o abastecimento."
+            : linhas.length > 1
+              ? `${linhas.length} movimentações registradas!`
+              : "Movimentação registrada!"
       );
       await sincronizarResumoMovimentacoes();
-      setLocation("/insumos/movimentacao");
+      voltarParaOrigem(produtoIdParaRetorno(linhas));
     } catch {
       /* erros tratados em onError */
     }
@@ -1464,20 +1604,11 @@ export default function InsumosNovaMovimentacaoPage() {
     );
   }
 
-  const irParaListaMovimentacoes = () => {
-    const fid = fazendaId || fazendaIdQuery;
-    setLocation(
-      fid
-        ? `/insumos/movimentacao?fazendaId=${encodeURIComponent(fid)}`
-        : "/insumos/movimentacao",
-    );
-  };
-
   const botoesRodape = (
     <>
       <button
         type="button"
-        onClick={irParaListaMovimentacoes}
+        onClick={() => voltarParaOrigem()}
         disabled={isBusy}
         className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
       >
@@ -1507,7 +1638,7 @@ export default function InsumosNovaMovimentacaoPage() {
     <AppLayout>
       <button
         type="button"
-        onClick={irParaListaMovimentacoes}
+        onClick={() => voltarParaOrigem()}
         disabled={isBusy}
         className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group disabled:opacity-50"
       >
@@ -1738,6 +1869,42 @@ export default function InsumosNovaMovimentacaoPage() {
           title="Itens da movimentação"
           footer={botoesRodape}
         >
+          {combustivelAbastecimentoCtx?.status === "precisa_vincular" && isEntrada ? (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-[13px] font-medium text-amber-900 leading-relaxed">
+                O produto <span className="font-semibold">{combustivelAbastecimentoCtx.label}</span> já
+                existe no cadastro, mas não está vinculado ao estoque de{" "}
+                <span className="font-semibold">{fazendaDestinoNome}</span>. Vincule a fazenda para
+                registrar a entrada e continuar o abastecimento.
+              </p>
+              <button
+                type="button"
+                onClick={irVincularCombustivel}
+                className="mt-2.5 inline-flex items-center justify-center h-[30px] px-3 rounded text-[11px] font-semibold text-white hover:brightness-95"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                Vincular à fazenda
+              </button>
+            </div>
+          ) : null}
+
+          {combustivelAbastecimentoCtx?.status === "nao_cadastrado" && retornoEhAbastecimento && isEntrada ? (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-[13px] font-medium text-amber-900 leading-relaxed">
+                O combustível <span className="font-semibold">{combustivelAbastecimentoCtx.label}</span>{" "}
+                ainda não está cadastrado no sistema. Cadastre o produto antes de registrar a entrada.
+              </p>
+              <button
+                type="button"
+                onClick={irCadastrarProduto}
+                className="mt-2.5 inline-flex items-center justify-center h-[30px] px-3 rounded text-[11px] font-semibold text-white hover:brightness-95"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                Cadastrar {combustivelAbastecimentoCtx.label}
+              </button>
+            </div>
+          ) : null}
+
           {erros.itens ? (
             <FormAvisoBanner id="mov-err-itens" variant="error">
               {erros.itens}

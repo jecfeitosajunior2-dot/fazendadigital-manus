@@ -3,6 +3,10 @@ import {
   getValorLitroEstoque,
   resolveValoresAbastecimento,
   getSaldoLitros,
+  findCombustivelReferenciaCatalogo,
+  getProdutoIdCombustivelCatalogo,
+  getEstoqueIdReferenciaCombustivel,
+  temCombustivelCadastrado,
 } from "./combustivel-estoque";
 
 const fazendaId = 90001;
@@ -100,5 +104,18 @@ describe("resolveValoresAbastecimento", () => {
 describe("getSaldoLitros", () => {
   it("soma quantidade dos produtos de combustível da fazenda", () => {
     expect(getSaldoLitros(estoqueComPreco, fazendaId, "diesel")).toBe(1000);
+  });
+});
+
+describe("findCombustivelReferenciaCatalogo", () => {
+  it("encontra diesel em outra fazenda", () => {
+    const estoque = [
+      { id: 21, produtoId: 9, fazendaId: 2, nome: "Diesel", categoria: "Combustíveis", situacao: "ativo" },
+      { id: 2, produtoId: 3, fazendaId: 1, nome: "Óleo 15W40", categoria: "Lubrificantes", situacao: "ativo" },
+    ];
+    expect(findCombustivelReferenciaCatalogo(estoque, "diesel")?.nome).toBe("Diesel");
+    expect(temCombustivelCadastrado(estoque, 1, "diesel")).toBe(false);
+    expect(getProdutoIdCombustivelCatalogo(estoque, "diesel")).toBe(9);
+    expect(getEstoqueIdReferenciaCombustivel(estoque, "diesel")).toBe(21);
   });
 });
