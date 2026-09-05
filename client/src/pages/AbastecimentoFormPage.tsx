@@ -506,8 +506,8 @@ export default function AbastecimentoFormPage() {
 
   const estoqueAtualLitros = useMemo(() => {
     if (!origemEstoque || !fazendaEstoqueId || !form.combustivel) return null;
-    return getSaldoLitros(estoque, Number(fazendaEstoqueId), form.combustivel);
-  }, [estoque, origemEstoque, fazendaEstoqueId, form.combustivel]);
+    return getSaldoLitros(estoque, Number(fazendaEstoqueId), form.combustivel, movimentacoes);
+  }, [estoque, movimentacoes, origemEstoque, fazendaEstoqueId, form.combustivel]);
 
   const valorLitroEstoque = useMemo(() => {
     if (!origemEstoque || !fazendaEstoqueId || !form.combustivel) return null;
@@ -679,7 +679,7 @@ export default function AbastecimentoFormPage() {
     if (origemEstoque) {
       const saldo =
         fazendaEstoqueId && form.combustivel
-          ? getSaldoLitros(estoque, Number(fazendaEstoqueId), form.combustivel)
+          ? getSaldoLitros(estoque, Number(fazendaEstoqueId), form.combustivel, movimentacoes)
           : 0;
       if (saldo <= 0) {
         return toast.error("Não há estoque disponível deste combustível na Fazenda selecionada.");

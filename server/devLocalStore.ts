@@ -8,7 +8,11 @@ import {
   formatCustoMedio,
   parseCustoMedio,
 } from "./custoMedioEstoque";
-import { categoriaControlaSaldoPorPadrao, produtoControlaSaldo } from "../shared/estoqueControle";
+import {
+  categoriaControlaSaldoPorPadrao,
+  categoriaExigeEstocavelCombustivel,
+  produtoControlaSaldo,
+} from "../shared/estoqueControle";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -589,12 +593,14 @@ function configLocalParaFazenda(
       }[]
     | undefined;
   const cfg = (configs ?? []).find(c => Number(c.fazendaId) === fazendaId);
-  const controlarSaldo =
+  const controlarSaldoRaw =
     cfg?.controlarSaldo ??
     fallback?.controlarSaldo ??
     (typeof input.controlarSaldo === "boolean"
       ? input.controlarSaldo
       : categoriaControlaSaldoPorPadrao(input.categoria as string | undefined));
+  const controlarSaldo =
+    categoriaExigeEstocavelCombustivel(input.categoria as string | undefined) || controlarSaldoRaw;
   const monitorar = controlarSaldo
     ? (cfg?.monitorarEstoque ??
       fallback?.monitorarEstoque ??
@@ -630,7 +636,37 @@ function configLocalParaFazenda(
 }
 
 function itemControlaSaldoLocal(item: DevEstoque): boolean {
+  if (categoriaExigeEstocavelCombustivel(item.categoria)) return true;
   return produtoControlaSaldo(item.controlarSaldo);
+}
+
+function calcularSaldoMovimentacoesAtivas(data: StoreData, estoqueId: number): number {
+  let net = 0;
+  for (const mov of data.movimentacoes) {
+    if (mov.estoqueId !== estoqueId) continue;
+    const status = String(mov.status ?? "ativa").toLowerCase();
+    if (status === "estornada" || status === "estorno") continue;
+    const q = parseFloat(String(mov.quantidade ?? 0));
+    if (!Number.isFinite(q)) continue;
+    net += q;
+  }
+  return Math.max(0, net);
+}
+
+/** Corrige diesel/combustível vinculado como uso imediato (saldo zerado apesar das compras). */
+function reconciliarEstoqueCombustivel(data: StoreData): void {
+  for (const item of data.estoque) {
+    if (!categoriaExigeEstocavelCombustivel(item.categoria)) continue;
+    if (!produtoControlaSaldo(item.controlarSaldo)) {
+      item.controlarSaldo = true;
+      item.monitorarEstoque = true;
+    }
+    const saldoMovs = calcularSaldoMovimentacoesAtivas(data, item.id);
+    const saldoAtual = parseFloat(String(item.quantidade ?? 0));
+    if (saldoMovs > 0 && Math.abs(saldoAtual - saldoMovs) > 0.001) {
+      item.quantidade = String(saldoMovs);
+    }
+  }
 }
 
 function aplicarDeltaSaldoMovimentacao(item: DevEstoque, qty: number, atual: number): number {
@@ -700,9 +736,12 @@ export const devLocalStore = {
   },
 
   listEstoque() {
-    return loadStore().estoque.sort(
-      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
-    );
+    return withStore(data => {
+      reconciliarEstoqueCombustivel(data);
+      return [...data.estoque].sort(
+        (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0),
+      );
+    });
   },
 
   getEstoque(id: number) {

@@ -105,6 +105,24 @@ describe("getSaldoLitros", () => {
   it("soma quantidade dos produtos de combustível da fazenda", () => {
     expect(getSaldoLitros(estoqueComPreco, fazendaId, "diesel")).toBe(1000);
   });
+
+  it("usa movimentações quando o cadastro está zerado (uso imediato legado)", () => {
+    const estoqueZerado = [
+      {
+        id: 34,
+        fazendaId,
+        nome: "Diesel",
+        categoria: "Combustíveis",
+        quantidade: 0,
+        valorUnitario: 8,
+      },
+    ];
+    const movs = [
+      { estoqueId: 34, fazendaId, tipo: "Compra", quantidade: 120, valor: 840, status: "ativa" },
+      { estoqueId: 34, fazendaId, tipo: "Compra", quantidade: 200, valor: 1000, status: "ativa" },
+    ];
+    expect(getSaldoLitros(estoqueZerado, fazendaId, "diesel", movs)).toBe(320);
+  });
 });
 
 describe("findCombustivelReferenciaCatalogo", () => {

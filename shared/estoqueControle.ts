@@ -8,6 +8,11 @@ export const CATEGORIAS_MANUTENCAO_ESTOQUE = ["Peças", "Lubrificantes"] as cons
 
 export type CategoriaManutencaoEstoque = (typeof CATEGORIAS_MANUTENCAO_ESTOQUE)[number];
 
+/** Combustíveis sempre controlam saldo (abastecimento interno da fazenda). */
+export const CATEGORIAS_COMBUSTIVEL = ["Combustíveis"] as const;
+
+export type CategoriaCombustivel = (typeof CATEGORIAS_COMBUSTIVEL)[number];
+
 function categoriaNormalizada(categoria: string | null | undefined): string {
   return String(categoria ?? "").trim();
 }
@@ -22,12 +27,18 @@ export function categoriaExigeEstocavelManutencao(categoria: string | null | und
   return categoriaNaLista(categoriaNormalizada(categoria), CATEGORIAS_MANUTENCAO_ESTOQUE);
 }
 
+/** Combustíveis devem sempre controlar saldo para abastecimento interno. */
+export function categoriaExigeEstocavelCombustivel(categoria: string | null | undefined): boolean {
+  return categoriaNaLista(categoriaNormalizada(categoria), CATEGORIAS_COMBUSTIVEL);
+}
+
 /** Sugere controle de saldo ao cadastrar produto conforme a categoria. */
 export function categoriaControlaSaldoPorPadrao(categoria: string | null | undefined): boolean {
   const c = categoriaNormalizada(categoria);
   if (!c) return true;
   if (categoriaNaLista(c, CATEGORIAS_SALDO_OBRIGATORIO)) return true;
   if (categoriaExigeEstocavelManutencao(c)) return true;
+  if (categoriaExigeEstocavelCombustivel(c)) return true;
   return false;
 }
 

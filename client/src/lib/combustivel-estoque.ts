@@ -23,9 +23,11 @@ export function getCombustivelLabel(combustivel: string): string {
 /** Movimentação de estoque (compra/saída). O preço de compra fica em `valor` (total). */
 export type MovimentacaoItem = {
   estoqueId?: number | null;
+  fazendaId?: number | null;
   tipo?: string | null;
   quantidade?: string | number | null;
   valor?: string | number | null;
+  status?: string | null;
 };
 
 const COMBUSTIVEL_KEYWORDS: Record<string, string[]> = {
@@ -60,8 +62,9 @@ export function getCombustivelItens(
   fazendaId: number,
   combustivel: string
 ): EstoqueItem[] {
+  const fid = Number(fazendaId);
   return estoque.filter(item => {
-    if (item.fazendaId !== fazendaId) return false;
+    if (Number(item.fazendaId) !== fid) return false;
     const situacao = String(item.situacao ?? "ativo").toLowerCase();
     if (situacao === "inativo") return false;
     return matchesCombustivel(item, combustivel);
@@ -109,14 +112,48 @@ export function getEstoqueIdReferenciaCombustivel(
   return id != null && id > 0 ? id : undefined;
 }
 
+/** Saldo líquido em litros a partir das movimentações ativas dos produtos. */
+export function getSaldoLitrosDeMovimentacoes(
+  movimentacoes: MovimentacaoItem[],
+  estoqueIds: Set<number>,
+  fazendaId?: number
+): number {
+  let net = 0;
+  for (const mov of movimentacoes) {
+    const estId = mov.estoqueId != null ? Number(mov.estoqueId) : null;
+    if (estId == null || !estoqueIds.has(estId)) continue;
+    if (fazendaId != null && mov.fazendaId != null && Number(mov.fazendaId) !== Number(fazendaId)) {
+      continue;
+    }
+    const status = String(mov.status ?? "ativa").toLowerCase();
+    if (status === "estornada" || status === "estorno") continue;
+    const q = parseFloat(String(mov.quantidade ?? 0));
+    if (!Number.isFinite(q)) continue;
+    net += q;
+  }
+  return Math.max(0, net);
+}
+
 /** Saldo total em litros do combustível na fazenda. */
 export function getSaldoLitros(
   estoque: EstoqueItem[],
   fazendaId: number,
-  combustivel: string
+  combustivel: string,
+  movimentacoes: MovimentacaoItem[] = []
 ): number {
-  return getCombustivelItens(estoque, fazendaId, combustivel)
-    .reduce((sum, item) => sum + parseFloat(String(item.quantidade ?? 0)), 0);
+  const itens = getCombustivelItens(estoque, fazendaId, combustivel);
+  const saldoCadastro = itens.reduce(
+    (sum, item) => sum + parseFloat(String(item.quantidade ?? 0)),
+    0,
+  );
+  if (saldoCadastro > 0 || !movimentacoes.length || !itens.length) {
+    return saldoCadastro;
+  }
+  const ids = new Set<number>();
+  for (const item of itens) {
+    if (item.id != null && item.id > 0) ids.add(Number(item.id));
+  }
+  return getSaldoLitrosDeMovimentacoes(movimentacoes, ids, fazendaId);
 }
 
 /**

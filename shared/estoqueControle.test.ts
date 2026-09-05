@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   categoriaControlaSaldoPorPadrao,
+  categoriaExigeEstocavelCombustivel,
   categoriaExigeEstocavelManutencao,
   produtoControlaSaldo,
 } from "./estoqueControle";
@@ -26,6 +27,11 @@ describe("estoqueControle", () => {
     expect(categoriaControlaSaldoPorPadrao("Ferramentas")).toBe(false);
     expect(categoriaControlaSaldoPorPadrao("Epis")).toBe(false);
     expect(categoriaControlaSaldoPorPadrao("Outros Insumos")).toBe(false);
+  });
+
+  it("Combustíveis sempre controlam saldo", () => {
+    expect(categoriaControlaSaldoPorPadrao("Combustíveis")).toBe(true);
+    expect(categoriaExigeEstocavelCombustivel("Combustíveis")).toBe(true);
   });
 
   it("legado sem flag continua controlando saldo", () => {
