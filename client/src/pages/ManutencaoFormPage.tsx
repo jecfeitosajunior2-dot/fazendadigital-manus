@@ -116,6 +116,7 @@ type ManutencaoDraft = {
   form: FormState;
   pecas: PecaItem[];
   tipoExecucao: TipoExecucao;
+  fornecedorId: string;
   initializedForId: number | null;
   pecaEscolhida: PecaEscolhidaState | null;
   pecaNome: string;
@@ -220,6 +221,7 @@ export default function ManutencaoFormPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pecas, setPecas] = useState<PecaItem[]>([]);
   const [tipoExecucao, setTipoExecucao] = useState<TipoExecucao>("interna");
+  const [fornecedorId, setFornecedorId] = useState("");
   const [erroDescricao, setErroDescricao] = useState<string | null>(null);
 
   const [pecaNome, setPecaNome] = useState("");
@@ -285,6 +287,7 @@ export default function ManutencaoFormPage() {
   const { data: estoqueItems = [], isLoading: loadingEstoque } = trpc.estoque.listByCategories.useQuery({
     categorias: [...CATEGORIAS_TODAS],
   });
+  const { data: fornecedores = [] } = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
   const utils = trpc.useUtils();
 
   const createMutation = trpc.manutencoes.create.useMutation({
@@ -315,6 +318,7 @@ export default function ManutencaoFormPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const novoProdutoId = params.get("produtoId");
+    const novoFornecedorId = params.get("fornecedorId");
     const raw = sessionStorage.getItem(MANUTENCAO_DRAFT_KEY);
 
     if (raw) {
@@ -323,6 +327,7 @@ export default function ManutencaoFormPage() {
         setForm(draft.form);
         setPecas(draft.pecas);
         setTipoExecucao(draft.tipoExecucao);
+        setFornecedorId(draft.fornecedorId ?? "");
         setPecaEscolhida(draft.pecaEscolhida ?? null);
         setPecaNome(draft.pecaNome ?? "");
         setPecaQtd(draft.pecaQtd ?? "1");
@@ -336,14 +341,32 @@ export default function ManutencaoFormPage() {
       sessionStorage.removeItem(MANUTENCAO_DRAFT_KEY);
     }
 
+    if (novoFornecedorId) {
+      setFornecedorId(novoFornecedorId);
+      params.delete("fornecedorId");
+    }
+
+    let urlLimpa = Boolean(novoFornecedorId);
     if (novoProdutoId) {
       const id = parseInt(novoProdutoId, 10);
       if (!Number.isNaN(id) && id > 0) produtoRetornoIdRef.current = id;
       params.delete("produtoId");
+      urlLimpa = true;
+    }
+
+    if (urlLimpa) {
       const qs = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
     }
   }, []);
+
+  useEffect(() => {
+    if (!isEdit || !registro) return;
+    if (String(registro.status ?? "").toLowerCase() === "estornado") {
+      toast.error("Manutenção estornada não pode ser editada.");
+      setLocation("/maquinas/manutencao");
+    }
+  }, [isEdit, registro, setLocation]);
 
   useEffect(() => {
     if (draftRestoredRef.current) return;
@@ -379,6 +402,48 @@ export default function ManutencaoFormPage() {
     );
     initializedForId.current = registro.id;
   }, [isEdit, registro]);
+
+  useEffect(() => {
+    if (!isEdit || !registro || fornecedorId || tipoExecucao !== "externa") return;
+    if (!registro.prestadorNome?.trim() || !fornecedores.length) return;
+    const nome = registro.prestadorNome.trim().toLowerCase();
+    const match = fornecedores.find(f => f.nome.trim().toLowerCase() === nome);
+    if (match) setFornecedorId(String(match.id));
+  }, [isEdit, registro, fornecedores, fornecedorId, tipoExecucao]);
+
+  const fornecedorOpcoes = useMemo(
+    () => fornecedores.map(f => ({ value: String(f.id), label: f.nome })),
+    [fornecedores],
+  );
+
+  const aplicarFornecedorSelecionado = (id: string) => {
+    setFornecedorId(id);
+    const p = fornecedores.find(f => String(f.id) === id);
+    if (!p) {
+      setForm(f => ({ ...f, prestadorNome: "" }));
+      return;
+    }
+    const contatoCadastro = p.telefone?.trim() || p.email?.trim() || "";
+    setForm(f => ({
+      ...f,
+      prestadorNome: p.nome,
+      prestadorContato: f.prestadorContato.trim() || contatoCadastro,
+    }));
+  };
+
+  useEffect(() => {
+    if (!fornecedorId || !fornecedores.length || tipoExecucao !== "externa") return;
+    const p = fornecedores.find(f => String(f.id) === fornecedorId);
+    if (!p) return;
+    setForm(f => {
+      if (f.prestadorNome.trim() === p.nome.trim()) return f;
+      return {
+        ...f,
+        prestadorNome: p.nome,
+        prestadorContato: f.prestadorContato.trim() || p.telefone?.trim() || p.email?.trim() || "",
+      };
+    });
+  }, [fornecedorId, fornecedores, tipoExecucao]);
 
   const totalPecas = useMemo(
     () => pecas.reduce((s, p) => s + p.quantidade * p.valorUnitario, 0),
@@ -431,6 +496,7 @@ export default function ManutencaoFormPage() {
       form,
       pecas,
       tipoExecucao,
+      fornecedorId,
       initializedForId: initializedForId.current,
       pecaEscolhida,
       pecaNome,
@@ -439,6 +505,12 @@ export default function ManutencaoFormPage() {
       pecaSearch,
     };
     sessionStorage.setItem(MANUTENCAO_DRAFT_KEY, JSON.stringify(draft));
+  };
+
+  const irCadastrarFornecedor = () => {
+    persistirRascunho();
+    const retorno = window.location.pathname + window.location.search;
+    setLocation(`/financeiro/pessoas?novo=fornecedor&retorno=${encodeURIComponent(retorno)}`);
   };
 
   const irCadastrarProduto = (nomeSugerido?: string) => {
@@ -696,7 +768,11 @@ export default function ManutencaoFormPage() {
       }
     }
 
-    const prestadorNome = form.prestadorNome.trim() || undefined;
+    const fornecedorSel = fornecedores.find(f => String(f.id) === fornecedorId);
+    const prestadorNome =
+      tipoExecucao === "externa"
+        ? fornecedorSel?.nome?.trim() || form.prestadorNome.trim() || undefined
+        : form.prestadorNome.trim() || undefined;
     const prestadorContato =
       tipoExecucao === "externa" ? form.prestadorContato.trim() || undefined : undefined;
 
@@ -897,10 +973,10 @@ export default function ManutencaoFormPage() {
           </div>
         </div>
 
-        {/* ── 2. Custos da manutenção ──────────────────────────────────── */}
+        {/* ── 2. Custos da Manutenção ──────────────────────────────────── */}
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Custos da manutenção</h2>
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Custos da Manutenção</h2>
           </div>
 
           <div className="p-5 space-y-5">
@@ -1227,6 +1303,7 @@ export default function ManutencaoFormPage() {
                     const next = v as TipoExecucao;
                     setTipoExecucao(next);
                     if (next === "interna") {
+                      setFornecedorId("");
                       set("prestadorContato", "");
                     }
                   }}
@@ -1259,14 +1336,22 @@ export default function ManutencaoFormPage() {
                 </>
               ) : (
                 <>
-                  <div>
+                  <div className="sm:col-span-1 lg:col-span-2">
                     <FormLabel>Prestador ou oficina</FormLabel>
-                    <FormInput
+                    <FormNativeSelect
                       variant="light"
-                      value={form.prestadorNome}
-                      onChange={v => set("prestadorNome", v)}
-                      placeholder="Ex. Oficina do João"
+                      value={fornecedorId}
+                      onChange={aplicarFornecedorSelecionado}
+                      placeholder="Selecione o prestador"
+                      options={fornecedorOpcoes}
                     />
+                    <button
+                      type="button"
+                      onClick={irCadastrarFornecedor}
+                      className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
+                    >
+                      Cadastrar novo fornecedor
+                    </button>
                   </div>
                   <div>
                     <FormLabel>Contato</FormLabel>

@@ -848,7 +848,7 @@ export default function ProductRegistrationPage() {
           </FormCard>
 
           <FormCard
-            title="Fazendas vinculadas ao produto"
+            title="Fazendas Vinculadas ao Produto"
             description="Selecione em quais fazendas este produto será usado. Cada fazenda terá estoque e controle próprios."
           >
             <div
@@ -1079,7 +1079,7 @@ export default function ProductRegistrationPage() {
           ) : null}
 
           <FormCard
-            title="Tipos de embalagem"
+            title="Tipos de Embalagem"
             description="Cadastre como o produto é comprado ou armazenado. Ex: saco de 30 kg, frasco de 500 ml. Vale para todas as fazendas."
             footer={
               <>

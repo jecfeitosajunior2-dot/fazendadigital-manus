@@ -7,6 +7,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   fazendaControlaEstoqueCombustivel,
+  findCombustivelReferenciaCatalogo,
+  getCombustivelLabel,
   getCombustivelItens,
   getSaldoLitros,
   getValorLitroEstoque,
@@ -94,6 +96,8 @@ type FormState = {
    */
   fazendaId: string;
   valorLitro: string;
+  /** ID em Financeiro → Pessoas (compra externa / posto). */
+  fornecedorId: string;
   responsavel: string;
   observacoes: string;
 };
@@ -108,6 +112,7 @@ const emptyForm = (): FormState => ({
   origem: "estoque",
   fazendaId: "",
   valorLitro: "",
+  fornecedorId: "",
   responsavel: "",
   observacoes: "",
 });
@@ -164,9 +169,10 @@ function formatLeitura(valor: number, medidor: MedidorTipo | null): string {
 }
 
 function formatLitros(valor: number): string {
+  const inteiro = Math.abs(valor - Math.round(valor)) < 1e-9;
   return `${valor.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: inteiro ? 0 : 2,
   })} L`;
 }
 
@@ -292,6 +298,7 @@ export default function AbastecimentoFormPage() {
   const semFazendaContexto = !isEdit && !fazendaContextoId;
   const { data: estoque = [] } = trpc.estoque.list.useQuery();
   const { data: movimentacoes = [] } = trpc.estoque.listMovimentacoes.useQuery();
+  const { data: fornecedores = [] } = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
   const { data: user } = trpc.auth.me.useQuery();
   const { data: historicoMaquina = [] } = trpc.abastecimentos.list.useQuery(
     { maquinaId: maquinaIdNum },
@@ -325,6 +332,7 @@ export default function AbastecimentoFormPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const novoFornecedorId = params.get("fornecedorId");
     const raw = sessionStorage.getItem(ABASTECIMENTO_DRAFT_KEY);
 
     if (raw) {
@@ -339,8 +347,18 @@ export default function AbastecimentoFormPage() {
       sessionStorage.removeItem(ABASTECIMENTO_DRAFT_KEY);
     }
 
+    if (novoFornecedorId) {
+      setForm(f => ({ ...f, fornecedorId: novoFornecedorId }));
+      params.delete("fornecedorId");
+    }
+
+    let urlLimpa = Boolean(novoFornecedorId);
     if (params.has("produtoId")) {
       params.delete("produtoId");
+      urlLimpa = true;
+    }
+
+    if (urlLimpa) {
       const qs = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
     }
@@ -382,11 +400,19 @@ export default function AbastecimentoFormPage() {
       valorLitro: registro.valorLitro
         ? formatCurrencyBrl(String(Math.round(parseFloat(String(registro.valorLitro)) * 100)))
         : "",
+      fornecedorId: "",
       responsavel: registro.responsavel ?? "",
       observacoes: registro.observacoes ?? "",
     });
     initializedForId.current = registro.id;
   }, [isEdit, registro, maquinas]);
+
+  useEffect(() => {
+    if (!isEdit || !registro?.fornecedor?.trim() || form.fornecedorId || !fornecedores.length) return;
+    const nome = registro.fornecedor.trim().toLowerCase();
+    const match = fornecedores.find(f => f.nome.trim().toLowerCase() === nome);
+    if (match) setForm(f => ({ ...f, fornecedorId: String(match.id) }));
+  }, [isEdit, registro, fornecedores, form.fornecedorId]);
 
   /** Novo abastecimento: fazenda vem da lista (URL ou persistida). */
   useEffect(() => {
@@ -420,6 +446,16 @@ export default function AbastecimentoFormPage() {
 
   const medidorTipo = getMedidorTipo(maquinaSelecionada);
   const origemEstoque = form.origem === "estoque";
+
+  const fornecedorOpcoes = useMemo(
+    () => fornecedores.map(f => ({ value: String(f.id), label: f.nome })),
+    [fornecedores],
+  );
+
+  const nomeFornecedorSelecionado = useMemo(() => {
+    const p = fornecedores.find(f => String(f.id) === form.fornecedorId);
+    return p?.nome?.trim() ?? "";
+  }, [fornecedores, form.fornecedorId]);
 
   const statsHistorico = useMemo(() => {
     const registros = historicoMaquina
@@ -499,6 +535,21 @@ export default function AbastecimentoFormPage() {
 
   const fazendaIdNum = fazendaContextoId ? Number(fazendaContextoId) : null;
 
+  const combustivelInsumosCtx = useMemo(() => {
+    if (!form.combustivel || !fazendaIdNum) return null;
+    const naFazenda = getCombustivelItens(estoque, fazendaIdNum, form.combustivel)[0];
+    if (naFazenda?.id) {
+      return produtoControlaSaldo(naFazenda.controlarSaldo)
+        ? { status: "estocavel" as const }
+        : { status: "uso_imediato" as const, estoqueId: naFazenda.id };
+    }
+    const ref = findCombustivelReferenciaCatalogo(estoque, form.combustivel);
+    if (ref?.id) {
+      return { status: "precisa_vincular" as const, estoqueReferenciaId: ref.id };
+    }
+    return { status: "nao_cadastrado" as const };
+  }, [estoque, fazendaIdNum, form.combustivel]);
+
   const permiteAbastecimentoEstoque = useMemo(() => {
     if (!fazendaIdNum || !form.combustivel) return false;
     return fazendaControlaEstoqueCombustivel(
@@ -576,6 +627,12 @@ export default function AbastecimentoFormPage() {
     sessionStorage.setItem(ABASTECIMENTO_DRAFT_KEY, JSON.stringify(draft));
   };
 
+  const irCadastrarFornecedor = () => {
+    persistirRascunho();
+    const retorno = window.location.pathname + window.location.search;
+    setLocation(`/financeiro/pessoas?novo=fornecedor&retorno=${encodeURIComponent(retorno)}`);
+  };
+
   const irRegistrarEntrada = (estoqueId?: number) => {
     persistirRascunho();
     const qs = new URLSearchParams();
@@ -584,6 +641,19 @@ export default function AbastecimentoFormPage() {
     if (form.combustivel) qs.set("combustivel", form.combustivel);
     if (estoqueId != null && estoqueId > 0) qs.set("produtoId", String(estoqueId));
     setLocation(`/insumos/nova-movimentacao?${qs.toString()}`);
+  };
+
+  const irInsumosCadastro = (estoqueReferenciaId?: number) => {
+    persistirRascunho();
+    const qs = new URLSearchParams();
+    if (fazendaContextoId) qs.set("fazendaId", fazendaContextoId);
+    if (estoqueReferenciaId != null && estoqueReferenciaId > 0) {
+      qs.set("id", String(estoqueReferenciaId));
+    } else if (form.combustivel) {
+      qs.set("nome", getCombustivelLabel(form.combustivel));
+    }
+    qs.set("retorno", retornoAtual());
+    setLocation(`/insumos/cadastro?${qs.toString()}`);
   };
 
   const custoMedioIndisponivel =
@@ -620,20 +690,28 @@ export default function AbastecimentoFormPage() {
     litrosValidos &&
     litrosNumForm > estoqueAtualLitros;
 
+  const avisoOrigemEstoqueIndisponivel = () => {
+    toast.error(
+      combustivelUsoImediatoNaFazenda
+        ? "Nesta fazenda o combustível é de uso imediato. Selecione Compra externa / Posto."
+        : `Cadastre ${form.combustivel ? getCombustivelLabel(form.combustivel) : "o combustível"} em Insumos com Controlar saldo: Sim para usar o estoque da fazenda.`,
+    );
+  };
+
   const handleOrigemChange = (v: OrigemCombustivel) => {
     if (v === "estoque" && !permiteAbastecimentoEstoque) {
-      toast.error(
-        combustivelUsoImediatoNaFazenda
-          ? "Esta fazenda usa combustível em modo uso imediato. Selecione Compra externa / Posto."
-          : "Cadastre o combustível com controle de saldo nesta fazenda antes de usar o estoque.",
-      );
+      avisoOrigemEstoqueIndisponivel();
       return;
     }
     setForm(f => ({
       ...f,
       origem: v,
       ...(v === "estoque"
-        ? { valorLitro: "", fazendaId: f.fazendaMaquinaId || fazendaIdParam || "" }
+        ? {
+            valorLitro: "",
+            fazendaId: f.fazendaMaquinaId || fazendaIdParam || "",
+            fornecedorId: "",
+          }
         : { fazendaId: "" }),
     }));
     limparErro("fazendaId");
@@ -734,10 +812,7 @@ export default function AbastecimentoFormPage() {
       }
       if (litrosNum > saldo) {
         return toast.error(
-          `O estoque disponível é de ${saldo.toLocaleString("pt-BR", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })} L. Informe uma quantidade igual ou inferior ao saldo.`,
+          `O estoque disponível é de ${formatLitros(saldo)}. Informe uma quantidade igual ou inferior ao saldo.`,
         );
       }
       if (valorLitroEstoque == null || valorLitroEstoque <= 0) {
@@ -778,6 +853,8 @@ export default function AbastecimentoFormPage() {
       valorTotal: valorTotalFinal,
       responsavel: form.responsavel.trim() || undefined,
       observacoes: form.observacoes.trim() || undefined,
+      fornecedor:
+        !origemEstoque && nomeFornecedorSelecionado ? nomeFornecedorSelecionado : null,
     };
 
     if (isEdit) updateMutation.mutate({ id: editId, ...payload });
@@ -802,7 +879,7 @@ export default function AbastecimentoFormPage() {
     );
   }
 
-  const tituloForm = isEdit ? "Editar abastecimento" : "Novo abastecimento";
+  const tituloForm = isEdit ? "Editar Abastecimento" : "Novo Abastecimento";
 
   if (semFazendaContexto) {
     return (
@@ -925,11 +1002,7 @@ export default function AbastecimentoFormPage() {
                   estoqueAtualLitros != null && (
                     <p id="abast-err-litros" className="text-red-500 text-[12px] mt-1" role="alert">
                       O estoque disponível é de{" "}
-                      {estoqueAtualLitros.toLocaleString("pt-BR", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      L. Informe uma quantidade igual ou inferior ao saldo.
+                      {formatLitros(estoqueAtualLitros)}. Informe uma quantidade igual ou inferior ao saldo.
                     </p>
                   )
                 )}
@@ -947,11 +1020,19 @@ export default function AbastecimentoFormPage() {
                 >
                   <label
                     className={cn(
-                      "flex items-center gap-2 text-[13px] text-gray-700 whitespace-nowrap",
-                      permiteAbastecimentoEstoque ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+                      "flex items-center gap-2 text-[13px] text-gray-700 whitespace-nowrap cursor-pointer",
+                      !permiteAbastecimentoEstoque && "opacity-60",
                     )}
+                    onClick={e => {
+                      if (permiteAbastecimentoEstoque) return;
+                      e.preventDefault();
+                      avisoOrigemEstoqueIndisponivel();
+                    }}
                   >
-                    <RadioGroupItem value="estoque" disabled={!permiteAbastecimentoEstoque} />
+                    <RadioGroupItem
+                      value="estoque"
+                      className={!permiteAbastecimentoEstoque ? "pointer-events-none" : undefined}
+                    />
                     Estoque da Fazenda
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700 whitespace-nowrap">
@@ -961,16 +1042,51 @@ export default function AbastecimentoFormPage() {
                 </RadioGroup>
               </div>
               {combustivelUsoImediatoNaFazenda ? (
-                <p className="mt-2 text-[12px] text-gray-500 leading-relaxed">
-                  Esta fazenda não controla estoque de combustível (uso imediato). Use{" "}
-                  <span className="font-medium">Compra externa / Posto</span> e informe o valor por
-                  litro.
-                </p>
+                <div className="mt-2 space-y-2">
+                  <p className="text-[12px] text-gray-500 leading-relaxed">
+                    Nesta fazenda o combustível é de{" "}
+                    <span className="font-medium">uso imediato</span> (sem estoque). Use{" "}
+                    <span className="font-medium">Compra externa / Posto</span> e informe o valor por
+                    litro.
+                  </p>
+                  {combustivelInsumosCtx?.status === "uso_imediato" ? (
+                    <button
+                      type="button"
+                      onClick={() => irInsumosCadastro(combustivelInsumosCtx.estoqueId)}
+                      className={cn(btnAcaoPrimariaCls, "text-[12px] px-3 py-1.5")}
+                      style={{ backgroundColor: FD_PRIMARY }}
+                    >
+                      Ajustar cadastro em Insumos
+                    </button>
+                  ) : null}
+                </div>
               ) : !permiteAbastecimentoEstoque && form.combustivel && fazendaContextoId ? (
-                <p className="mt-2 text-[12px] text-gray-500 leading-relaxed">
-                  Para abastecer do estoque interno, vincule o combustível à fazenda com{" "}
-                  <span className="font-medium">Controlar saldo = Sim</span> no cadastro de insumos.
-                </p>
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-[13px] font-medium text-amber-900 leading-relaxed">
+                    Para abastecer do estoque desta fazenda, cadastre{" "}
+                    <span className="font-semibold">
+                      {getCombustivelLabel(form.combustivel)}
+                    </span>{" "}
+                    em Insumos e marque <span className="font-semibold">Controlar saldo: Sim</span>{" "}
+                    na fazenda.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      irInsumosCadastro(
+                        combustivelInsumosCtx?.status === "precisa_vincular"
+                          ? combustivelInsumosCtx.estoqueReferenciaId
+                          : undefined,
+                      )
+                    }
+                    className={cn("mt-2.5", btnAcaoPrimariaCls)}
+                    style={{ backgroundColor: FD_PRIMARY }}
+                  >
+                    {combustivelInsumosCtx?.status === "precisa_vincular"
+                      ? "Vincular à fazenda"
+                      : "Cadastrar em Insumos"}
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -1042,7 +1158,7 @@ export default function AbastecimentoFormPage() {
         </FormCard>
 
         <FormCard
-          title="Valores e estoque"
+          title="Valores e Estoque"
           footer={
             <>
               <button
@@ -1065,6 +1181,26 @@ export default function AbastecimentoFormPage() {
           }
         >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {!origemEstoque ? (
+                <div className="min-w-0 sm:col-span-2">
+                  <FormLabel>Fornecedor / Posto</FormLabel>
+                  <FormNativeSelect
+                    variant="light"
+                    value={form.fornecedorId}
+                    onChange={v => set("fornecedorId", v)}
+                    placeholder="Selecione o fornecedor ou posto"
+                    options={fornecedorOpcoes}
+                  />
+                  <button
+                    type="button"
+                    onClick={irCadastrarFornecedor}
+                    className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
+                  >
+                    Cadastrar novo fornecedor
+                  </button>
+                </div>
+              ) : null}
+
               {origemEstoque ? (
                 <div className="min-w-0">
                   <FormLabel>Estoque atual</FormLabel>
@@ -1075,7 +1211,7 @@ export default function AbastecimentoFormPage() {
                       estoqueAtualLitros != null
                         ? formatLitros(estoqueAtualLitros)
                         : fazendaEstoqueId && form.combustivel
-                          ? "0,00 L"
+                          ? "0 L"
                           : ""
                     }
                     onChange={() => {}}
@@ -1084,7 +1220,7 @@ export default function AbastecimentoFormPage() {
                         ? "Selecione a Fazenda"
                         : !form.combustivel
                           ? "Selecione o combustível"
-                          : "0,00 L"
+                          : "0 L"
                     }
                     className="cursor-default bg-gray-50 text-gray-800"
                   />
@@ -1183,7 +1319,11 @@ export default function AbastecimentoFormPage() {
                 <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
                   <p className="text-[10px] uppercase text-gray-500">Litros abastecidos</p>
                   <p className="text-[18px] font-bold text-gray-800">
-                    {form.litros.trim() ? `${form.litros.replace(".", ",")} L` : "—"}
+                    {(() => {
+                      if (!form.litros.trim()) return "—";
+                      const n = parseFloat(form.litros.replace(",", "."));
+                      return Number.isFinite(n) && n > 0 ? formatLitros(n) : `${form.litros.replace(".", ",")} L`;
+                    })()}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">

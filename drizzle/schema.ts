@@ -304,6 +304,8 @@ export const abastecimentos = mysqlTable("abastecimentos", {
   movimentacaoEstoqueId: int("movimentacaoEstoqueId"),
   /** registrado | estornado — estorno preserva o histórico e recompoe o estoque. */
   status: varchar("status", { length: 20 }).default("registrado"),
+  /** Posto/distribuidora — compra externa (nome do cadastro em Pessoas). */
+  fornecedor: varchar("fornecedor", { length: 200 }),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });

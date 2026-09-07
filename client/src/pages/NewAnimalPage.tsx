@@ -260,6 +260,10 @@ const AnimalFormPage: React.FC = () => {
   const animalIdParam = searchParams.get('id');
   const animalId = animalIdParam ? parseInt(animalIdParam) : null;
   const isEditMode = !!animalId;
+  const fazendaIdFromUrl = searchParams.get('fazendaId') || '';
+  const fazendaLocked = !isEditMode && Boolean(fazendaIdFromUrl);
+  const fazendaReadonly = isEditMode;
+  const showFazendaSelect = !isEditMode && !fazendaIdFromUrl;
 
   const [form, setForm] = useState<FormState>(INITIAL);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -334,6 +338,16 @@ const AnimalFormPage: React.FC = () => {
   const lotesFiltrados = filtrarLotesPorFazenda(todosLotes ?? [], fazendaId || null)
     .slice()
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+
+  const fazendaSelecionada = useMemo(
+    () => (fazendas ?? []).find(f => String(f.id) === fazendaId),
+    [fazendas, fazendaId],
+  );
+
+  useEffect(() => {
+    if (isEditMode || !fazendaIdFromUrl) return;
+    setFazendaId(prev => prev || fazendaIdFromUrl);
+  }, [isEditMode, fazendaIdFromUrl]);
 
   // ── Preenche formulário com dados do animal ao carregar (modo edição) ──
   useEffect(() => {
@@ -660,25 +674,40 @@ const AnimalFormPage: React.FC = () => {
           <SectionCard title="Identificação Principal" hint="Campos obrigatórios em destaque">
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <FormLabel required>Fazenda</FormLabel>
-                  <FieldSelect
-                    value={fazendaId}
-                    onChange={v => {
-                      setFazendaId(v);
-                      set('loteId', '');
-                      setPastoId('');
-                      if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
-                    }}
-                    placeholder="Selecione uma Fazenda"
-                    required
-                    error={!!errors.fazenda}
-                    disabled={isEditMode}
-                    options={(fazendas ?? []).map(f => ({ value: String(f.id), label: f.nome }))}
-                  />
-                  {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
-                </div>
-                <div>
+                {showFazendaSelect && (
+                  <div>
+                    <FormLabel required>Fazenda</FormLabel>
+                    <FieldSelect
+                      value={fazendaId}
+                      onChange={v => {
+                        setFazendaId(v);
+                        set('loteId', '');
+                        setPastoId('');
+                        if (errors.fazenda) setErrors(prev => ({ ...prev, fazenda: '' }));
+                      }}
+                      placeholder="Selecione uma Fazenda"
+                      required
+                      error={!!errors.fazenda}
+                      options={(fazendas ?? []).map(f => ({ value: String(f.id), label: f.nome }))}
+                    />
+                    {errors.fazenda && <p className="text-xs text-red-600 mt-1">{errors.fazenda}</p>}
+                  </div>
+                )}
+                {fazendaReadonly && (
+                  <div>
+                    <FormLabel required>Fazenda</FormLabel>
+                    <FieldInput
+                      value={
+                        fazendaSelecionada?.nome
+                        ?? (fazendaId ? `Fazenda #${fazendaId}` : '')
+                      }
+                      onChange={() => {}}
+                      required
+                      readOnly
+                    />
+                  </div>
+                )}
+                <div className={cn(fazendaLocked && 'sm:col-span-2')}>
                   <FormLabel required>Número do Brinco</FormLabel>
                   <FieldInput
                     value={form.brinco}

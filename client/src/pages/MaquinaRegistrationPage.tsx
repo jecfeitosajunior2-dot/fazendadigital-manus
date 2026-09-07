@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -26,6 +26,64 @@ import {
   normalizarTipoMaquina,
   type TipoMedidor,
 } from "@/lib/maquina-types";
+
+/** Card de formulário — padrão Nova Venda / Novo Lote */
+function FormCard({
+  title,
+  variant = "section",
+  children,
+  footer,
+  subtitle,
+}: {
+  title: string;
+  variant?: "page" | "section";
+  children?: ReactNode;
+  footer?: ReactNode;
+  subtitle?: ReactNode;
+}) {
+  const hasBody = Boolean(children) || Boolean(footer);
+  return (
+    <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+      <div className={cn("px-5 py-4", hasBody && "border-b border-gray-100")}>
+        {variant === "page" ? (
+          <>
+            <h1
+              className="text-[20px] font-semibold text-gray-900"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              {title}
+            </h1>
+            {subtitle ? <p className="mt-1 text-[11px] text-gray-500">{subtitle}</p> : null}
+          </>
+        ) : (
+          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+        )}
+      </div>
+      {hasBody ? (
+        <div className="p-5 space-y-4">
+          {children}
+          {footer ? (
+            <div className="pt-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row justify-end gap-3">
+              {footer}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function maquinasListUrl(fazendaId?: string) {
+  return fazendaId
+    ? `/maquinas/visao-geral?fazendaId=${encodeURIComponent(fazendaId)}`
+    : "/maquinas/visao-geral";
+}
+
+function parseFazendaIdParam(raw: string | null | undefined): string {
+  const value = String(raw ?? "").trim();
+  if (!/^\d+$/.test(value)) return "";
+  return Number(value) > 0 ? value : "";
+}
 
 type ImageSlot =
   | { kind: "empty" }
@@ -199,7 +257,9 @@ export default function MaquinaRegistrationPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const maquinaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
   const isEdit = maquinaId != null && !isNaN(maquinaId);
-  const fazendaIdFromUrl = searchParams.get("fazendaId")?.trim() || "";
+  const fazendaIdFromUrl = parseFazendaIdParam(searchParams.get("fazendaId"));
+  const fazendaLocked = !isEdit && Boolean(fazendaIdFromUrl);
+  const fazendaReadonly = isEdit || fazendaLocked;
 
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: maquina, isLoading: loadingMaquina } = trpc.maquinas.get.useQuery(
@@ -294,7 +354,7 @@ export default function MaquinaRegistrationPage() {
     onSuccess: () => {
       utils.maquinas.list.invalidate();
       toast.success("Máquina cadastrada com sucesso.");
-      setLocation("/maquinas/visao-geral");
+      setLocation(maquinasListUrl(form.fazendaId || fazendaIdFromUrl || undefined));
     },
     onError: e => toast.error(e.message),
   });
@@ -307,7 +367,7 @@ export default function MaquinaRegistrationPage() {
       await utils.maquinas.get.invalidate({ id: variables.id });
       await utils.maquinas.list.invalidate();
       toast.success("Máquina atualizada com sucesso.");
-      setLocation("/maquinas/visao-geral");
+      setLocation(maquinasListUrl(form.fazendaId || undefined));
     },
     onError: e => toast.error(e.message),
   });
@@ -540,32 +600,54 @@ export default function MaquinaRegistrationPage() {
     );
   }
 
+  const pageTitle = isEdit ? "Editar Máquina" : "Cadastrar Máquina";
+  const pageSubtitle = fazendaReadonly
+    ? undefined
+    : "Selecione a fazenda e informe os dados da máquina.";
+  const voltarUrl = maquinasListUrl(form.fazendaId || fazendaIdFromUrl || undefined);
+
+  const botoesFormulario = (
+    <>
+      <button
+        type="button"
+        onClick={() => setLocation(voltarUrl)}
+        disabled={isBusy}
+        className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+      >
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        disabled={isBusy}
+        className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
+        style={{ backgroundColor: FD_PRIMARY }}
+      >
+        {isBusy ? "Salvando..." : "Salvar"}
+      </button>
+    </>
+  );
+
   return (
     <AppLayout>
       <button
         type="button"
-        onClick={() => setLocation("/maquinas/visao-geral")}
+        onClick={() => setLocation(voltarUrl)}
         className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
       >
         <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
           arrow_back
         </span>
         <span className="text-[13px]">Voltar</span>
       </button>
-      <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-md shadow-sm border border-gray-200 p-5 sm:p-6">
-          <h1
-            className="text-[16px] font-semibold text-gray-800 mb-5 pb-4 border-b border-gray-100"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            {isEdit ? "Editar máquina" : "Cadastrar máquina"}
-          </h1>
 
-          <div className="mb-6">
-            <p className="text-[11px] text-gray-600 mb-3">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <FormCard variant="page" title={pageTitle} subtitle={pageSubtitle}>
+          <div>
+            <p className="text-[11px] font-medium text-gray-600 mb-3">
               Selecione até três fotos para sua máquina
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               {imageSlots.map((slot, i) => (
                 <ImageUploadSlot
                   key={i}
@@ -577,10 +659,11 @@ export default function MaquinaRegistrationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel required>Nome de identificação</FormLabel>
               <FormInput
+                variant="light"
                 value={form.nome}
                 onChange={v => set("nome", v)}
                 placeholder="Ex.: Trator 01, S10 Fazenda, Gerador Galpão"
@@ -591,6 +674,7 @@ export default function MaquinaRegistrationPage() {
             <div>
               <FormLabel required>Tipo</FormLabel>
               <FormNativeSelect
+                variant="light"
                 value={form.tipo}
                 onChange={handleTipoChange}
                 placeholder="Selecione um tipo de máquina"
@@ -601,21 +685,25 @@ export default function MaquinaRegistrationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <FormLabel required>Fazenda</FormLabel>
-              <FormNativeSelect
-                value={form.fazendaId}
-                onChange={v => set("fazendaId", v)}
-                placeholder="Selecione uma fazenda"
-                required
-                invalid={camposVazios.includes("Fazenda")}
-                options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-              />
-            </div>
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {!fazendaReadonly ? (
+              <div>
+                <FormLabel required>Fazenda</FormLabel>
+                <FormNativeSelect
+                  variant="light"
+                  value={form.fazendaId}
+                  onChange={v => set("fazendaId", v)}
+                  placeholder="Selecione uma fazenda"
+                  required
+                  invalid={camposVazios.includes("Fazenda")}
+                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
+              </div>
+            ) : null}
+            <div className={cn(!fazendaReadonly ? "" : "sm:col-span-2")}>
               <FormLabel required>Marca</FormLabel>
               <FormNativeSelect
+                variant="light"
                 value={form.marca}
                 onChange={v => set("marca", v)}
                 placeholder={form.tipo ? "Selecione a marca" : "Selecione primeiro o tipo"}
@@ -627,10 +715,11 @@ export default function MaquinaRegistrationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel>Modelo</FormLabel>
               <FormInput
+                variant="light"
                 value={form.modelo}
                 onChange={v => set("modelo", v)}
                 placeholder="Digite o modelo da máquina"
@@ -639,17 +728,21 @@ export default function MaquinaRegistrationPage() {
             <div>
               <FormLabel>{labelIdent}</FormLabel>
               <FormInput
+                variant="light"
                 value={form.placa}
                 onChange={v => set("placa", v)}
                 placeholder={labelIdent}
               />
             </div>
           </div>
+        </FormCard>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <FormCard title="Aquisição e Patrimônio">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel>Ano de fabricação</FormLabel>
               <FormYearPicker
+                variant="light"
                 value={form.anoFabricacao}
                 onChange={v => set("anoFabricacao", v)}
                 placeholder="Selecione o ano de fabricação"
@@ -658,15 +751,17 @@ export default function MaquinaRegistrationPage() {
             <div>
               <FormLabel>Data de aquisição</FormLabel>
               <FormDatePicker
+                variant="light"
                 value={form.dataAquisicao}
                 onChange={v => set("dataAquisicao", v)}
                 placeholder="dd/mm/aaaa"
                 max={hojeISO}
+                minHeight={34}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel>Condição de aquisição</FormLabel>
               <FormRadioGroup
@@ -681,6 +776,7 @@ export default function MaquinaRegistrationPage() {
             <div>
               <FormLabel>Valor de aquisição (R$)</FormLabel>
               <FormInput
+                variant="light"
                 value={form.valor}
                 onChange={v => set("valor", formatCurrencyBrl(v))}
                 placeholder="R$ 150.000,00"
@@ -688,19 +784,36 @@ export default function MaquinaRegistrationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel>Vida útil estimada (anos)</FormLabel>
               <FormInput
+                variant="light"
                 value={form.vidaUtil}
                 onChange={v => set("vidaUtil", v.replace(/[^\d]/g, "").slice(0, 3))}
                 placeholder="Ex.: 10"
                 inputMode="numeric"
               />
             </div>
+            {!isEdit ? (
+              <div className="flex items-end pb-1">
+                <div>
+                  <span className="block text-[11px] font-semibold text-gray-700 mb-1.5">Status</span>
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                    Ativa
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </FormCard>
+
+        <FormCard title="Medidor e Operação" footer={botoesFormulario}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <FormLabel required>Tipo de medidor</FormLabel>
               <FormNativeSelect
+                variant="light"
                 value={form.tipoMedidor}
                 onChange={handleMedidorChange}
                 placeholder="Selecione o tipo de medidor"
@@ -712,10 +825,7 @@ export default function MaquinaRegistrationPage() {
                 }))}
               />
             </div>
-          </div>
-
-          {medidorComLeitura && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            {medidorComLeitura ? (
               <div>
                 <FormLabel required>
                   {form.tipoMedidor === "quilometragem"
@@ -724,6 +834,7 @@ export default function MaquinaRegistrationPage() {
                 </FormLabel>
                 <div className="relative">
                   <FormInput
+                    variant="light"
                     value={form.leituraInicial}
                     onChange={v => set("leituraInicial", v.replace(/[^\d.,]/g, ""))}
                     placeholder={
@@ -737,47 +848,20 @@ export default function MaquinaRegistrationPage() {
                   </span>
                 </div>
               </div>
-            </div>
-          )}
+            ) : null}
+          </div>
 
-          {!isEdit && (
-            <div className="mb-4 flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-gray-700">Status</span>
-              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
-                Ativa
-              </span>
-            </div>
-          )}
-
-          <div className="mb-6">
+          <div>
             <FormLabel>Observações</FormLabel>
             <FormTextarea
+              variant="light"
               value={form.observacoes}
               onChange={v => set("observacoes", v)}
               placeholder="Informações adicionais sobre esta máquina"
               rows={3}
             />
           </div>
-
-          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={() => setLocation("/maquinas/visao-geral")}
-              disabled={isBusy}
-              className="w-full sm:w-auto px-6 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="w-full sm:w-auto px-8 py-2.5 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-900 disabled:opacity-50 transition-opacity hover:opacity-90"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              {isBusy ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
-        </div>
+        </FormCard>
       </form>
     </AppLayout>
   );

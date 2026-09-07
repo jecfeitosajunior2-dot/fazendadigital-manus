@@ -252,6 +252,18 @@ function labelOrigem(r: { abastecidoNaFazenda?: boolean | null }): string | null
   return null;
 }
 
+function sublinhaOrigem(r: {
+  abastecidoNaFazenda?: boolean | null;
+  fornecedor?: string | null;
+}): string | null {
+  const base = labelOrigem(r);
+  if (!base) return null;
+  if (r.abastecidoNaFazenda === false && r.fornecedor?.trim()) {
+    return `${base} · ${r.fornecedor.trim()}`;
+  }
+  return base;
+}
+
 /** Sublinha da máquina: marca / modelo / identificação — padrão Manutenções. */
 function sublinhaMaquinaListagem(maquina?: {
   marca?: string | null;
@@ -565,6 +577,7 @@ export default function AbastecimentoListPage() {
           (maquina as { numeroSerie?: string | null })?.numeroSerie ?? "",
           combustivelLbl,
           origemLbl,
+          r.fornecedor ?? "",
           r.responsavel ?? "",
         ]
           .join(" ")
@@ -689,7 +702,7 @@ export default function AbastecimentoListPage() {
         r.combustivel
           ? COMBUSTIVEL_LABEL[r.combustivel] ?? r.combustivel
           : "Combustível não informado",
-        labelOrigem(r) ?? "",
+        sublinhaOrigem(r) ?? "",
         formatNum(r.litros) !== "—" ? `${formatNum(r.litros)} L` : "",
         valorLitro != null ? formatMoney(valorLitro) : "",
         valorTotal != null ? formatMoney(valorTotal) : "",
@@ -1222,7 +1235,7 @@ export default function AbastecimentoListPage() {
                       movimentacoes,
                     );
                     const combustivelTxt = labelCombustivel(r.combustivel);
-                    const origemTxt = labelOrigem(r);
+                    const origemTxt = sublinhaOrigem(r);
                     const subMaquina = sublinhaMaquinaListagem(
                       maquina as {
                         marca?: string | null;

@@ -30,10 +30,12 @@ export default function VendaDetalhePage() {
       <button
         type="button"
         onClick={() => setLocation(COMPRA_VENDA_VENDAS_PATH)}
-        className="mb-3 flex items-center gap-0.5 text-[11px] text-gray-500 hover:text-[#4ECDC4]"
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
       >
-        <span className="material-icons text-[14px]">arrow_back</span>
-        Voltar para Vendas
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar para Vendas</span>
       </button>
 
       {isLoading || !data ? (

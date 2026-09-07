@@ -440,6 +440,7 @@ export type LocalAbastecimento = Record<string, any> & {
   movimentacaoEstoqueId?: number | null;
   /** registrado | estornado */
   status?: string | null;
+  fornecedor?: string | null;
   observacoes?: string | null;
   createdAt: string;
   updatedAt: string;

@@ -1531,7 +1531,7 @@ export default function InsumosVisaoGeralDashboard({
             <TabsContent value="analise" className="space-y-4 mt-0">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 <SectionCard
-                  title="Valor em estoque por categoria"
+                  title="Valor em Estoque por Categoria"
                   icon="donut_large"
                 >
                   <div className="p-4">
@@ -1650,7 +1650,7 @@ export default function InsumosVisaoGeralDashboard({
                                   </span>
                                 </span>
                                 <span className="font-semibold text-gray-800 tabular-nums whitespace-nowrap shrink-0 text-[10px]">
-                                  {brlCompact(c.value)}
+                                  {brl(c.value)}
                                 </span>
                               </button>
                             );
@@ -1662,7 +1662,7 @@ export default function InsumosVisaoGeralDashboard({
                 </SectionCard>
 
                 <SectionCard
-                  title="Fluxo no período"
+                  title="Fluxo no Período"
                   icon="bar_chart"
                   className="lg:col-span-2"
                   action={
@@ -1786,7 +1786,7 @@ export default function InsumosVisaoGeralDashboard({
 
             <TabsContent value="rankings" className="space-y-4 mt-0">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                <SectionCard title="Top 5 Produtos com valor em estoque" icon="leaderboard">
+                <SectionCard title="Top 5 Produtos com Valor em Estoque" icon="leaderboard">
                   {estoque.topProdutos.length === 0 ? (
                     <EmptyState icon="inventory_2" text="Sem produtos com valor" />
                   ) : (
@@ -1880,7 +1880,7 @@ export default function InsumosVisaoGeralDashboard({
                 </div>
 
                 <SectionCard
-                  title="Top 5 Uso imediato"
+                  title="Top 5 Uso Imediato"
                   icon="receipt_long"
                   action={
                     <span className="text-[9px] font-medium uppercase tracking-wide text-gray-400 shrink-0 tabular-nums">

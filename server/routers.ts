@@ -5763,6 +5763,7 @@ const abastecimentosBaseFields = {
   responsavel: z.string().optional(),
   abastecidoNaFazenda: z.boolean().optional(),
   fazendaId: z.number().int().positive().optional().nullable(),
+  fornecedor: z.string().max(200).optional().nullable(),
   observacoes: z.string().optional(),
 };
 
@@ -5806,6 +5807,7 @@ const abastecimentosRouter = router({
       responsavel: z.string().optional(),
       abastecidoNaFazenda: z.boolean().optional(),
       fazendaId: z.number().int().positive().optional().nullable(),
+      fornecedor: z.string().max(200).optional().nullable(),
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -5836,6 +5838,8 @@ const abastecimentosRouter = router({
         responsavel: input.responsavel,
         abastecidoNaFazenda: Boolean(input.abastecidoNaFazenda),
         fazendaId: input.fazendaId ?? null,
+        fornecedor:
+          !interno && input.fornecedor?.trim() ? input.fornecedor.trim() : null,
         status: "registrado" as const,
         observacoes: input.observacoes,
       };
@@ -6559,6 +6563,76 @@ function manutencaoUpdatedAtMs(row: { updatedAt?: unknown; createdAt?: unknown }
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function manutencaoEstornada(status: string | null | undefined): boolean {
+  return String(status ?? "").toLowerCase() === "estornado";
+}
+
+function manutencaoTemConsumoEstoque(
+  pecas: { estoqueId?: number | null; quantidade?: string | number | null }[],
+): boolean {
+  return pecas.some(p => {
+    if (p.estoqueId == null || Number(p.estoqueId) <= 0) return false;
+    const q = parseFloat(String(p.quantidade ?? 0));
+    return Number.isFinite(q) && q > 0;
+  });
+}
+
+async function mapConsumiuEstoquePorManutencao(
+  userId: number,
+  rows: { id: number; pecas?: { estoqueId?: number | null; quantidade?: string | number | null }[] }[],
+): Promise<Map<number, boolean>> {
+  const result = new Map<number, boolean>();
+  if (!rows.length) return result;
+
+  const pecasMap = new Map<
+    number,
+    { estoqueId?: number | null; quantidade?: string | number | null }[]
+  >();
+  for (const row of rows) {
+    if (Array.isArray(row.pecas) && row.pecas.length > 0) {
+      pecasMap.set(row.id, row.pecas);
+    }
+  }
+
+  const missing = rows.map(r => r.id).filter(id => !pecasMap.has(id));
+  if (missing.length > 0) {
+    try {
+      const dbPecas = await db
+        .select({
+          manutencaoId: manutencaoPecas.manutencaoId,
+          estoqueId: manutencaoPecas.estoqueId,
+          quantidade: manutencaoPecas.quantidade,
+        })
+        .from(manutencaoPecas)
+        .where(inArray(manutencaoPecas.manutencaoId, missing));
+      for (const p of dbPecas) {
+        const arr = pecasMap.get(p.manutencaoId) ?? [];
+        arr.push({ estoqueId: p.estoqueId, quantidade: p.quantidade });
+        pecasMap.set(p.manutencaoId, arr);
+      }
+    } catch (error) {
+      if (!isDatabaseUnavailable(error)) throw error;
+      for (const id of missing) {
+        const local = await getLocalManutencao(userId, id);
+        if (local?.pecas?.length) pecasMap.set(id, local.pecas);
+      }
+    }
+  }
+
+  for (const row of rows) {
+    result.set(row.id, manutencaoTemConsumoEstoque(pecasMap.get(row.id) ?? []));
+  }
+  return result;
+}
+
+async function enriquecerManutencoesListagem<T extends { id: number; pecas?: unknown[] }>(
+  userId: number,
+  rows: T[],
+): Promise<(T & { consumiuEstoque: boolean })[]> {
+  const flags = await mapConsumiuEstoquePorManutencao(userId, rows);
+  return rows.map(r => ({ ...r, consumiuEstoque: flags.get(r.id) ?? false }));
+}
+
 function mergeManutencoesDbLocal<T extends { id: number; updatedAt?: unknown; createdAt?: unknown }>(
   dbRows: T[],
   localRows: T[],
@@ -6597,8 +6671,14 @@ const manutencoesRouter = router({
         if (!isDatabaseUnavailable(error)) throw error;
       }
       const localRows = await listLocalManutencoes(ctx.user.id, { maquinaId: input?.maquinaId });
-      if (!dbOk) return localRows;
-      return mergeManutencoesDbLocal(dbRows, localRows);
+      if (!dbOk) {
+        return localRows.map(r => ({
+          ...r,
+          consumiuEstoque: manutencaoTemConsumoEstoque(r.pecas ?? []),
+        }));
+      }
+      const merged = mergeManutencoesDbLocal(dbRows, localRows);
+      return enriquecerManutencoesListagem(ctx.user.id, merged);
     }),
 
   get: protectedProcedure
@@ -6718,7 +6798,7 @@ const manutencoesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
 
-      let anterior: { maquinaId: number } | null = null;
+      let anterior: { maquinaId: number; status?: string | null } | null = null;
       let pecasAntigas: {
         estoqueId: number | null;
         quantidade: string | number;
@@ -6728,7 +6808,7 @@ const manutencoesRouter = router({
 
       try {
         const [row] = await db
-          .select({ maquinaId: manutencoes.maquinaId })
+          .select({ maquinaId: manutencoes.maquinaId, status: manutencoes.status })
           .from(manutencoes)
           .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
           .limit(1);
@@ -6748,7 +6828,7 @@ const manutencoesRouter = router({
         fromLocal = true;
         const local = await getLocalManutencao(ctx.user.id, id);
         if (local) {
-          anterior = { maquinaId: Number(local.maquinaId) };
+          anterior = { maquinaId: Number(local.maquinaId), status: local.status ?? null };
           pecasAntigas = (local.pecas ?? []).map(p => ({
             estoqueId: p.estoqueId ?? null,
             quantidade: p.quantidade,
@@ -6763,12 +6843,19 @@ const manutencoesRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
         }
         fromLocal = true;
-        anterior = { maquinaId: Number(local.maquinaId) };
+        anterior = { maquinaId: Number(local.maquinaId), status: local.status ?? null };
         pecasAntigas = (local.pecas ?? []).map(p => ({
           estoqueId: p.estoqueId ?? null,
           quantidade: p.quantidade,
           valorUnitario: p.valorUnitario,
         }));
+      }
+
+      if (manutencaoEstornada(anterior.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Manutenção estornada não pode ser editada.",
+        });
       }
 
       await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
@@ -6879,15 +6966,17 @@ const manutencoesRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       let pecasAntigas: { estoqueId: number | null; quantidade: string | number }[] = [];
+      let status: string | null = null;
       let fromLocal = false;
 
       try {
         const [row] = await db
-          .select({ id: manutencoes.id })
+          .select({ id: manutencoes.id, status: manutencoes.status })
           .from(manutencoes)
           .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
           .limit(1);
         if (row) {
+          status = row.status ?? null;
           pecasAntigas = await db
             .select({
               estoqueId: manutencaoPecas.estoqueId,
@@ -6908,40 +6997,141 @@ const manutencoesRouter = router({
         if (!local) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
         }
+        status = local.status ?? null;
         pecasAntigas = (local.pecas ?? []).map(p => ({
           estoqueId: p.estoqueId ?? null,
           quantidade: p.quantidade,
         }));
-        // Devolve peças ao estoque (delta negativo = estorno da baixa).
-        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
+      }
+
+      if (manutencaoEstornada(status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Manutenção estornada não pode ser excluída. O histórico é preservado.",
+        });
+      }
+
+      if (manutencaoTemConsumoEstoque(pecasAntigas)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Esta manutenção consumiu peças do estoque. Use Estornar manutenção para devolver as peças e preservar o histórico.",
+        });
+      }
+
+      if (fromLocal) {
         await deleteLocalManutencao(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
+
+      try {
+        await db.transaction(async tx => {
+          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
+          await tx
+            .delete(manutencoes)
+            .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
+        });
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        await deleteLocalManutencao(ctx.user.id, input.id);
+        return { success: true, localFallback: true };
+      }
+    }),
+
+  estornar: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        motivo: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      let pecasAntigas: { estoqueId: number | null; quantidade: string | number }[] = [];
+      let status: string | null = null;
+      let fromLocal = false;
+
+      try {
+        const [row] = await db
+          .select({ id: manutencoes.id, status: manutencoes.status })
+          .from(manutencoes)
+          .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
+          .limit(1);
+        if (row) {
+          status = row.status ?? null;
+          pecasAntigas = await db
+            .select({
+              estoqueId: manutencaoPecas.estoqueId,
+              quantidade: manutencaoPecas.quantidade,
+            })
+            .from(manutencaoPecas)
+            .where(eq(manutencaoPecas.manutencaoId, input.id));
+        } else {
+          fromLocal = true;
+        }
+      } catch (error) {
+        if (!isDatabaseUnavailable(error)) throw error;
+        fromLocal = true;
+      }
+
+      if (fromLocal || !status) {
+        const local = await getLocalManutencao(ctx.user.id, input.id);
+        if (!local) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
+        }
+        status = local.status ?? null;
+        pecasAntigas = (local.pecas ?? []).map(p => ({
+          estoqueId: p.estoqueId ?? null,
+          quantidade: p.quantidade,
+        }));
+        fromLocal = true;
+      }
+
+      if (manutencaoEstornada(status)) {
+        return { success: true, alreadyEstornado: true };
+      }
+
+      if (!manutencaoTemConsumoEstoque(pecasAntigas)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Estorno aplica-se apenas a manutenções que consumiram peças do estoque. Para serviços sem peças, use Excluir.",
+        });
+      }
+
+      if (fromLocal) {
+        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
+        await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
         return { success: true, localFallback: true };
       }
 
       try {
         let pendenteLocal = new Map<number, number>();
         await db.transaction(async tx => {
-          // Devolve saldo antes de apagar o registro.
           pendenteLocal = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
-          await tx.delete(manutencaoPecas).where(eq(manutencaoPecas.manutencaoId, input.id));
           await tx
-            .delete(manutencoes)
+            .update(manutencoes)
+            .set({ status: "estornado" })
             .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
         });
         aplicarBaixaEstoqueLocalPendente(pendenteLocal);
+        const localExistente = await getLocalManutencao(ctx.user.id, input.id);
+        if (localExistente) {
+          await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        const local = await getLocalManutencao(ctx.user.id, input.id);
-        if (local) {
-          pecasAntigas = (local.pecas ?? []).map(p => ({
-            estoqueId: p.estoqueId ?? null,
-            quantidade: p.quantidade,
-          }));
+        if (!isDatabaseUnavailable(error)) {
+          console.error("[manutencoes.estornar]", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível estornar a manutenção. Tente novamente.",
+          });
         }
         aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
-        await deleteLocalManutencao(ctx.user.id, input.id);
+        await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
         return { success: true, localFallback: true };
       }
     }),

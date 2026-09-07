@@ -192,6 +192,9 @@ export default function BenfeitoriaRegistrationPage() {
   const benfeitoriaId = searchParams.get("id") ? parseInt(searchParams.get("id")!) : null;
   const fazendaIdFromUrl = searchParams.get("fazendaId") || "";
   const isEdit = benfeitoriaId != null && !isNaN(benfeitoriaId);
+  const fazendaLocked = !isEdit && Boolean(fazendaIdFromUrl);
+  const fazendaReadonly = isEdit;
+  const showFazendaSelect = !isEdit && !fazendaIdFromUrl;
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: benfeitoria, isLoading: loadingBenfeitoria, isFetching: fetchingBenfeitoria } = trpc.benfeitorias.get.useQuery(
@@ -294,6 +297,11 @@ export default function BenfeitoriaRegistrationPage() {
   });
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
+
+  const fazendaSelecionada = useMemo(
+    () => fazendas.find(f => String(f.id) === form.fazendaId),
+    [fazendas, form.fazendaId],
+  );
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(f => ({ ...f, [key]: value }));
@@ -420,11 +428,13 @@ export default function BenfeitoriaRegistrationPage() {
       <button
         type="button"
         onClick={() => setLocation(listUrl)}
-        className="mb-3 flex items-center gap-0.5 text-[11px] text-gray-500"
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
         aria-label="Voltar"
       >
-        <span className="material-icons text-[14px]">arrow_back</span>
-        Voltar
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
       </button>
       <form onSubmit={handleSubmit} noValidate>
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
@@ -452,7 +462,12 @@ export default function BenfeitoriaRegistrationPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="scroll-mt-24">
+              <div
+                className={cn(
+                  "scroll-mt-24",
+                  fazendaLocked && "sm:col-span-2",
+                )}
+              >
                 <FormLabel required>Nome</FormLabel>
                 <FormInput
                   variant="light"
@@ -466,21 +481,39 @@ export default function BenfeitoriaRegistrationPage() {
                 />
                 <FieldErrorMsg id="benfeitoria-err-nome" message={errosObrigatorios.nome} />
               </div>
-              <div className="scroll-mt-24">
-                <FormLabel required>Fazenda</FormLabel>
-                <FormNativeSelect
-                  variant="light"
-                  id={fieldDomId("fazendaId")}
-                  value={form.fazendaId}
-                  onChange={v => set("fazendaId", v)}
-                  placeholder="Selecione uma fazenda"
-                  required
-                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-                  invalid={!!errosObrigatorios.fazendaId}
-                  aria-describedby={errosObrigatorios.fazendaId ? "benfeitoria-err-fazendaId" : undefined}
-                />
-                <FieldErrorMsg id="benfeitoria-err-fazendaId" message={errosObrigatorios.fazendaId} />
-              </div>
+              {showFazendaSelect && (
+                <div className="scroll-mt-24">
+                  <FormLabel required>Fazenda</FormLabel>
+                  <FormNativeSelect
+                    variant="light"
+                    id={fieldDomId("fazendaId")}
+                    value={form.fazendaId}
+                    onChange={v => set("fazendaId", v)}
+                    placeholder="Selecione uma fazenda"
+                    required
+                    options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                    invalid={!!errosObrigatorios.fazendaId}
+                    aria-describedby={errosObrigatorios.fazendaId ? "benfeitoria-err-fazendaId" : undefined}
+                  />
+                  <FieldErrorMsg id="benfeitoria-err-fazendaId" message={errosObrigatorios.fazendaId} />
+                </div>
+              )}
+              {fazendaReadonly && (
+                <div className="scroll-mt-24">
+                  <FormLabel required>Fazenda</FormLabel>
+                  <FormInput
+                    variant="light"
+                    id={fieldDomId("fazendaId")}
+                    required
+                    readOnly
+                    value={
+                      fazendaSelecionada?.nome
+                      ?? (form.fazendaId ? `Fazenda #${form.fazendaId}` : "")
+                    }
+                    onChange={() => {}}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

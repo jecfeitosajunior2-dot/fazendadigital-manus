@@ -15,11 +15,12 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { cn, formatCurrencyBrl } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { DeleteActionIcon, EditActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
+import { DeleteActionIcon, EditActionIcon, EstornoActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -132,6 +133,76 @@ function responsavelManutencaoListagem(
   return nome || ofc || "Responsável não informado";
 }
 
+function manutencaoEstornada(status: string | null | undefined): boolean {
+  return String(status ?? "").toLowerCase() === "estornado";
+}
+
+function ManutencaoRowActions({
+  podeEditar,
+  podeExcluir,
+  podeEstornar,
+  onEdit,
+  onExcluir,
+  onEstornar,
+}: {
+  podeEditar: boolean;
+  podeExcluir: boolean;
+  podeEstornar: boolean;
+  onEdit: () => void;
+  onExcluir: () => void;
+  onEstornar: () => void;
+}) {
+  const temMenu = podeExcluir || podeEstornar;
+  return (
+    <div className="inline-flex items-center justify-center gap-0.5">
+      {podeEditar && (
+        <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
+          <EditActionIcon size={16} />
+        </TableIconButton>
+      )}
+      {temMenu && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="grid place-items-center h-7 w-6 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+              aria-label="Mais ações"
+              title="Mais ações"
+            >
+              <span className="material-icons text-[16px]" aria-hidden>
+                more_vert
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[180px] z-[100]">
+            {podeEstornar && (
+              <DropdownMenuItem
+                className="text-[12px] cursor-pointer gap-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300"
+                onSelect={onEstornar}
+              >
+                <EstornoActionIcon size={16} />
+                Estornar manutenção
+              </DropdownMenuItem>
+            )}
+            {podeExcluir && (
+              <>
+                {podeEstornar && <DropdownMenuSeparator />}
+                <DropdownMenuItem
+                  className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
+                  onSelect={onExcluir}
+                >
+                  <DeleteActionIcon size={16} />
+                  Excluir
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+}
+
 /** Sublinha da máquina: marca / modelo / identificação — sem categoria genérica. */
 function sublinhaMaquinaListagem(maquina?: {
   marca?: string | null;
@@ -239,29 +310,31 @@ export default function ManutencaoListPage() {
       utils.estoque.listByCategories.invalidate();
       utils.estoque.list.invalidate();
     },
+    onError: e => toast.error(e.message),
+  });
+
+  const estornarMutation = trpc.manutencoes.estornar.useMutation({
+    onSuccess: () => {
+      toast.success("Manutenção estornada.");
+      utils.manutencoes.list.invalidate();
+      utils.estoque.listByCategories.invalidate();
+      utils.estoque.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
   });
 
   const handleDelete = async (id: number) => {
-    if (deleteMutation.isPending) return;
-
-    let temConsumoEstoque = false;
-    try {
-      const pecas = await utils.manutencoes.listPecas.fetch({ manutencaoId: id });
-      temConsumoEstoque = pecas.some(
-        p => p.estoqueId != null && Number(p.quantidade) > 0,
-      );
-    } catch {
-      temConsumoEstoque = false;
-    }
-
-    const description = temConsumoEstoque
-      ? "Tem certeza de que deseja excluir esta manutenção? Os produtos e peças vinculados serão devolvidos ao estoque conforme a regra atual. Esta ação não poderá ser desfeita."
-      : "Tem certeza de que deseja excluir esta manutenção? Esta ação não poderá ser desfeita.";
+    if (deleteMutation.isPending || estornarMutation.isPending) return;
 
     await confirm({
       title: "Excluir manutenção",
-      description,
-      confirmText: "Excluir",
+      description: (
+        <>
+          <p>Tem certeza de que deseja excluir esta manutenção?</p>
+          <p className="mt-3">Esta ação não poderá ser desfeita.</p>
+        </>
+      ),
+      confirmText: "Excluir manutenção",
       cancelText: "Cancelar",
       variant: "danger",
       errorFallbackMessage:
@@ -272,6 +345,34 @@ export default function ManutencaoListPage() {
         } catch {
           throw new Error(
             "Não foi possível excluir a manutenção. Nenhuma alteração foi realizada.",
+          );
+        }
+      },
+    });
+  };
+
+  const handleEstornar = async (id: number) => {
+    if (deleteMutation.isPending || estornarMutation.isPending) return;
+
+    await confirm({
+      title: "Estornar manutenção",
+      description: (
+        <p>
+          A manutenção será cancelada e as peças consumidas do estoque serão devolvidas. O histórico
+          será preservado.
+        </p>
+      ),
+      confirmText: "Estornar manutenção",
+      cancelText: "Cancelar",
+      variant: "warning",
+      errorFallbackMessage:
+        "Não foi possível estornar a manutenção. Nenhuma alteração foi realizada.",
+      onConfirm: async () => {
+        try {
+          await estornarMutation.mutateAsync({ id });
+        } catch {
+          throw new Error(
+            "Não foi possível estornar a manutenção. Nenhuma alteração foi realizada.",
           );
         }
       },
@@ -481,6 +582,7 @@ export default function ManutencaoListPage() {
   const totalCusto = useMemo(
     () =>
       sorted.reduce((acc, r) => {
+        if (manutencaoEstornada(r.status)) return acc;
         const v = parseFloat(String(r.valorTotal ?? 0));
         return acc + (Number.isFinite(v) ? v : 0);
       }, 0),
@@ -553,6 +655,7 @@ export default function ManutencaoListPage() {
     if (detailRows.length === 0) return detailRows;
 
     const valorTotal = sorted.reduce((acc, r) => {
+      if (manutencaoEstornada(r.status)) return acc;
       const v = parseFloat(String(r.valorTotal ?? 0));
       return acc + (Number.isFinite(v) ? v : 0);
     }, 0);
@@ -968,10 +1071,20 @@ export default function ManutencaoListPage() {
                         r.prestadorNome,
                         r.oficina,
                       );
+                      const isEstornado = manutencaoEstornada(r.status);
+                      const consumiuEstoque = Boolean(
+                        (r as { consumiuEstoque?: boolean }).consumiuEstoque,
+                      );
+                      const podeEditar = !isEstornado;
+                      const podeEstornar = consumiuEstoque && !isEstornado;
+                      const podeExcluir = !consumiuEstoque && !isEstornado;
                       return (
                         <tr
                           key={r.id}
-                          className="border-b border-gray-100 hover:bg-[#4ECDC414] transition-colors group"
+                          className={cn(
+                            "border-b border-gray-100 hover:bg-[#4ECDC414] transition-colors group",
+                            isEstornado && "opacity-80",
+                          )}
                         >
                           <td className="px-4 py-3 text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
                             {formatDateBR(r.data)}
@@ -987,6 +1100,11 @@ export default function ManutencaoListPage() {
                               >
                                 {subMaquina}
                               </div>
+                            ) : null}
+                            {isEstornado ? (
+                              <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                Estornado
+                              </span>
                             ) : null}
                           </td>
                           <td className="px-4 py-3 text-center align-middle">
@@ -1015,41 +1133,16 @@ export default function ManutencaoListPage() {
                             {formatMoney(r.valorTotal)}
                           </td>
                           <td className="px-3 py-3 align-middle text-center" onClick={e => e.stopPropagation()}>
-                            <div className="inline-flex items-center justify-center gap-0.5">
-                              <TableIconButton
-                                label="Editar"
-                                onClick={() =>
-                                  setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)
-                                }
-                                tone="neutral"
-                                compact
-                              >
-                                <EditActionIcon size={16} />
-                              </TableIconButton>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="grid place-items-center h-7 w-6 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
-                                    aria-label="Mais ações"
-                                    title="Mais ações"
-                                  >
-                                    <span className="material-icons text-[16px]" aria-hidden>
-                                      more_vert
-                                    </span>
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="min-w-[160px] z-[100]">
-                                  <DropdownMenuItem
-                                    className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
-                                    onSelect={() => handleDelete(r.id)}
-                                  >
-                                    <DeleteActionIcon size={16} />
-                                    Excluir
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
+                            <ManutencaoRowActions
+                              podeEditar={podeEditar}
+                              podeExcluir={podeExcluir}
+                              podeEstornar={podeEstornar}
+                              onEdit={() =>
+                                setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)
+                              }
+                              onExcluir={() => void handleDelete(r.id)}
+                              onEstornar={() => void handleEstornar(r.id)}
+                            />
                           </td>
                         </tr>
                       );

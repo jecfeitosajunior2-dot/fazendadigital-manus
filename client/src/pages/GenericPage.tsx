@@ -353,7 +353,7 @@ export function AnimaisPage() {
       toast.error("Selecione uma fazenda antes de cadastrar um animal.");
       return;
     }
-    setLocation("/rebanho/novo-animal");
+    setLocation(`/rebanho/novo-animal?fazendaId=${encodeURIComponent(filters.fazendaId)}`);
   };
 
   const retornoVisaoGeral = useMemo(() => {

@@ -30,8 +30,59 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 
 const FD_PRIMARY = "#4ECDC4";
+
+const MAQUINA_FILTRO_SELECT_EMPTY = "__empty__";
+
+const maquinaFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+
+const maquinaFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
+function MaquinaFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+  allowEmpty = true,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  allowEmpty?: boolean;
+}) {
+  const current = String(value ?? "").trim();
+  return (
+    <div className="min-w-0">
+      <FormSelect
+        variant="light"
+        disabled={disabled}
+        value={allowEmpty && !current ? MAQUINA_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(allowEmpty && v === MAQUINA_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={maquinaFiltroTriggerCls}
+      >
+        {allowEmpty ? (
+          <SelectItem value={MAQUINA_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+            {placeholder}
+          </SelectItem>
+        ) : null}
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
+    </div>
+  );
+}
 
 const MAQUINAS_LIST_UI_KEY = "fd-maquinas-list-ui";
 
@@ -119,14 +170,8 @@ const alignClass: Record<ColAlign, string> = {
   center: "text-center",
 };
 
-const filterSelectClass =
-  "w-full sm:w-[200px] text-[13px] border border-gray-200 rounded-md bg-white px-3 text-gray-700 shrink-0 h-10";
-
 const secondaryBtnClass =
-  "inline-flex items-center gap-1.5 px-3.5 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[40px]";
-
-const primaryBtnClass =
-  "inline-flex items-center gap-1.5 px-3.5 rounded-lg text-[12px] font-semibold text-white shadow-sm hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[40px]";
+  "inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]";
 
 const cellPad = "px-3 py-2.5";
 const headPad = "px-3 py-2.5";
@@ -683,9 +728,10 @@ export default function MaquinasListPage() {
   const emptyFiltro =
     fazendaSelecionada && !isLoading && maquinasDaFazenda.length > 0 && filtered.length === 0;
   const isEmptySemFazenda = !fazendaSelecionada && fazendaInitDone;
-  const mostrarFiltros = isLoading || list.length > 0 || isEmptySemFazenda || !fazendaInitDone;
   const exportDisabled = !fazendaSelecionada || (!isLoading && filtered.length === 0);
   const colCount = TABLE_COLUMNS.length + 1;
+  const filtroLabelCls = "block text-[11px] font-medium text-gray-600 mb-1";
+  const disabledHint = "Selecione uma fazenda para usar este filtro";
   const emptyFiltroMensagem =
     filtroStatus === "ativas"
       ? "Nenhuma máquina Ativa encontrada."
@@ -711,32 +757,33 @@ export default function MaquinasListPage() {
       />
       <div
         ref={containerRef}
-        className="bg-white rounded border border-gray-200 shadow-sm overflow-y-auto"
-        style={{ maxHeight: "calc(100vh - 200px)" }}
+        className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden"
       >
-        <div className="px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-[15px] font-semibold text-gray-800 shrink-0">Máquinas</h1>
+        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+          <h1
+            className="text-[20px] font-semibold text-gray-900 shrink-0"
+            style={{ fontFamily: "Fraunces, serif" }}
+          >
+            Máquinas
+          </h1>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
+            <button
+              type="button"
               onClick={irParaCadastro}
-              aria-disabled={!fazendaSelecionada}
+              disabled={!fazendaSelecionada}
               title={
                 fazendaSelecionada
                   ? "Cadastrar Máquina"
                   : "Selecione uma fazenda antes de cadastrar uma máquina"
               }
-              className={cn(
-                primaryBtnClass,
-                !fazendaSelecionada && "opacity-50 cursor-not-allowed hover:brightness-100 active:scale-100",
-              )}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              <span className="material-icons text-[18px]">add</span>
+              <span className="material-icons text-[16px]">add</span>
               Cadastrar Máquina
-          </button>
-          <button
-            type="button"
+            </button>
+            <button
+              type="button"
               disabled={!fazendaSelecionada}
               onClick={() => {
                 if (!fazendaSelecionada) return;
@@ -747,7 +794,6 @@ export default function MaquinasListPage() {
                   ? "Importar"
                   : "Selecione uma fazenda antes de importar máquinas."
               }
-              aria-disabled={!fazendaSelecionada}
               className={cn(
                 secondaryBtnClass,
                 !fazendaSelecionada &&
@@ -756,14 +802,14 @@ export default function MaquinasListPage() {
             >
               <span
                 className={cn(
-                  "material-icons text-[18px]",
+                  "material-icons text-[16px]",
                   fazendaSelecionada ? "text-gray-500" : "text-gray-400",
                 )}
               >
                 upload_file
               </span>
               Importar
-          </button>
+            </button>
             <ListExportButtons
               title="Máquinas"
               filename={exportFilenameBase}
@@ -813,82 +859,83 @@ export default function MaquinasListPage() {
           </div>
         </div>
 
-        {mostrarFiltros && (
-          <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 border-b border-gray-100">
-            <select
-              value={filtroFazenda}
-              onChange={e => onChangeFazenda(e.target.value)}
-              className={filterSelectClass}
-              aria-label="Filtrar por fazenda"
+        {fazendaInitDone && (
+          <div className="px-5 py-3 border-b border-gray-100 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="min-w-0">
+                <label className={filtroLabelCls}>Fazenda</label>
+                <MaquinaFilterSelect
+                  value={filtroFazenda}
+                  onChange={onChangeFazenda}
+                  placeholder="Selecione uma fazenda"
+                  options={fazendasAtivas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
+              </div>
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <label className={filtroLabelCls}>Tipo</label>
+                <MaquinaFilterSelect
+                  value={filtroTipo}
+                  onChange={v => {
+                    setFiltroTipo(v);
+                    setPage(1);
+                  }}
+                  placeholder="Todos os tipos"
+                  disabled={!fazendaSelecionada}
+                  options={TIPOS_MAQUINA.map(t => ({ value: t, label: t }))}
+                />
+              </div>
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <label className={filtroLabelCls}>Status</label>
+                <MaquinaFilterSelect
+                  value={filtroStatus}
+                  onChange={v => {
+                    setFiltroStatus(v as FiltroStatus);
+                    setPage(1);
+                  }}
+                  placeholder="Ativas"
+                  allowEmpty={false}
+                  disabled={!fazendaSelecionada}
+                  options={[
+                    { value: "ativas", label: "Ativas" },
+                    { value: "inativas", label: "Inativas" },
+                    { value: "todas", label: "Todas" },
+                  ]}
+                />
+              </div>
+            </div>
+            <div
+              className={cn(!fazendaSelecionada && "opacity-60 pointer-events-none")}
+              title={!fazendaSelecionada ? disabledHint : undefined}
             >
-              <option value="">Selecione uma fazenda</option>
-              {fazendasAtivas.map(f => (
-                <option key={f.id} value={String(f.id)}>
-                  {f.nome}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filtroTipo}
-              onChange={e => {
-                setFiltroTipo(e.target.value);
-                setPage(1);
-              }}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por tipo" : undefined}
-              className={cn(
-                filterSelectClass,
-                "disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed",
-              )}
-              aria-label="Filtrar por tipo"
-            >
-              <option value="">Todos os tipos</option>
-              {TIPOS_MAQUINA.map(t => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filtroStatus}
-              onChange={e => {
-                setFiltroStatus(e.target.value as FiltroStatus);
-                setPage(1);
-              }}
-              disabled={!fazendaSelecionada}
-              title={!fazendaSelecionada ? "Selecione uma fazenda para filtrar por status" : undefined}
-              className={cn(
-                filterSelectClass,
-                "sm:w-[140px]",
-                "disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed",
-              )}
-              aria-label="Filtrar por status"
-            >
-              <option value="ativas">Ativas</option>
-              <option value="inativas">Inativas</option>
-              <option value="todas">Todas</option>
-            </select>
-            <div className="relative flex-1 min-w-[180px] basis-[240px] max-w-xl">
-              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 pointer-events-none">
-                search
+              <label className={filtroLabelCls}>Buscar</label>
+              <div className="relative">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
+                  search
                 </span>
-              <input
-                value={search}
-                onChange={e => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                disabled={!fazendaSelecionada}
-                title={!fazendaSelecionada ? "Selecione uma fazenda para buscar máquinas" : undefined}
-                placeholder="Buscar máquina, marca, modelo ou identificação"
-                className="w-full h-10 pl-10 pr-3 text-[13px] border border-gray-200 rounded-md bg-white disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
-              />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  disabled={!fazendaSelecionada}
+                  placeholder="Buscar máquina, marca, modelo ou identificação"
+                  className={cn(maquinaFiltroInputCls, "pl-9")}
+                />
+              </div>
             </div>
           </div>
         )}
 
         {isEmptySemFazenda ? (
-          <div className="px-4 py-16 text-center">
+          <div className="px-5 py-16 text-center">
             <img
               src="/assets/icon-maquina-trator-green.png"
               alt=""
@@ -911,13 +958,13 @@ export default function MaquinasListPage() {
             </p>
           </div>
         ) : emptyTotal ? (
-          <div className="px-4 py-10">
+          <div className="px-5 py-10">
             <EmptyTotal />
           </div>
         ) : (
           <>
             {incompletasNaLista.length > 0 && (
-              <div className="mx-4 mt-3 mb-1 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
+              <div className="mx-5 mt-4 mb-1 flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-red-800 text-[12px]">
                 <span className="material-icons text-[16px] text-red-500 shrink-0">warning</span>
                 <span className="font-medium">{alertaIncompletas}</span>
               </div>

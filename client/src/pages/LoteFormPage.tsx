@@ -161,11 +161,13 @@ export function NewLotePage() {
       <button
         type="button"
         onClick={() => setLocation(lotesListUrl(fazendaId || undefined))}
-        className="mb-3 flex items-center gap-0.5 text-[11px] text-gray-500"
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
         aria-label="Voltar"
       >
-        <span className="material-icons text-[14px]">arrow_back</span>
-        Voltar
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
       </button>
 
       <form onSubmit={handleSubmit} noValidate>
@@ -177,11 +179,6 @@ export function NewLotePage() {
             >
               Novo Lote
             </h1>
-            <p className="mt-1 text-[11px] text-gray-500">
-              {fazendaLocked
-                ? "Informe os dados do novo Lote."
-                : "Selecione a fazenda e informe os dados do Lote."}
-            </p>
           </div>
 
           <div className="p-5 space-y-4">

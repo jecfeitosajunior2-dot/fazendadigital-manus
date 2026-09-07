@@ -1776,7 +1776,7 @@ export default function InsumosNovaMovimentacaoPage() {
         </FormCard>
 
         {exibirBlocoFiscal ? (
-          <FormCard title="Dados nota fiscal">
+          <FormCard title="Dados da Nota Fiscal">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <FormLabel>Fornecedor</FormLabel>
@@ -1866,7 +1866,7 @@ export default function InsumosNovaMovimentacaoPage() {
         ) : null}
 
         <FormCard
-          title="Itens da movimentação"
+          title="Itens da Movimentação"
           footer={botoesRodape}
         >
           {combustivelAbastecimentoCtx?.status === "precisa_vincular" && isEntrada ? (

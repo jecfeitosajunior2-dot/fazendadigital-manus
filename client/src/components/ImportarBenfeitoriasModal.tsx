@@ -18,7 +18,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import {
   Download,
   Upload,
@@ -32,6 +31,18 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const FD_PRIMARY = '#4ECDC4';
+
+const btnPrimary =
+  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
+
+const btnSecondary =
+  'inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold border border-gray-200 bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition min-h-[40px]';
+
+const stepCard = 'border border-gray-200 rounded shadow-sm bg-white p-4';
+
+const metricCard = 'border border-gray-200 rounded shadow-sm bg-white p-3 text-center';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -208,66 +219,83 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
   // ─── Renderização por etapa ────────────────────────────────────────────────
 
   const renderUpload = () => (
-    <div className="space-y-6">
-      {/* Passo 1: Baixar modelo */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+    <div className="space-y-4">
+      <div className={stepCard}>
         <div className="flex items-start gap-3">
-          <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">1</div>
-          <div className="flex-1">
-            <p className="font-semibold text-blue-900 text-sm mb-1">Baixe o modelo de planilha</p>
-            <p className="text-xs text-blue-700 mb-3">
-              Planilha profissional com as colunas do cadastro de benfeitorias,
-              lista suspensa de fazendas e campos obrigatórios marcados com <strong>*</strong>.
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            1
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Baixe o modelo de planilha</p>
+            <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+              Modelo com colunas do cadastro, lista suspensa de fazendas e campos obrigatórios marcados com{' '}
+              <strong>*</strong>.
             </p>
-            <Button
+            <button
               type="button"
               onClick={handleDownloadModelo}
               disabled={gerarModeloMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm h-9"
+              className={btnPrimary}
+              style={{ backgroundColor: FD_PRIMARY }}
             >
-              {gerarModeloMutation.isPending
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <Download className="w-4 h-4 mr-2" />}
+              {gerarModeloMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
               Baixar Modelo da Planilha
-            </Button>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Passo 2: Upload */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <div className={stepCard}>
         <div className="flex items-start gap-3">
-          <div className="w-7 h-7 rounded-full bg-gray-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">2</div>
-          <div className="flex-1">
-            <p className="font-semibold text-gray-800 text-sm mb-1">Preencha e envie a planilha</p>
-            <p className="text-xs text-gray-500 mb-3">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0 text-white"
+            style={{ backgroundColor: FD_PRIMARY }}
+          >
+            2
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-[#4ECDC4] mb-1">Preencha e envie a planilha</p>
+            <p className="text-[11px] text-gray-500 mb-3">
               Formatos aceitos: <strong>XLSX</strong>, <strong>XLS</strong>, <strong>CSV</strong>
             </p>
 
-            {/* Área de drag & drop */}
             <div
               className={cn(
                 'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
                 isDragging
                   ? 'border-[#4ECDC4] bg-[#4ECDC4]/5'
                   : arquivo
-                    ? 'border-green-400 bg-green-50'
-                    : 'border-gray-300 hover:border-[#4ECDC4] hover:bg-[#4ECDC4]/5'
+                    ? 'border-emerald-300 bg-emerald-50/50'
+                    : 'border-gray-300 hover:border-[#4ECDC4] hover:bg-[#4ECDC4]/5',
               )}
               onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragOver={e => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
             >
               {arquivo ? (
                 <div className="flex flex-col items-center gap-2">
-                  <FileSpreadsheet className="w-10 h-10 text-green-500" />
-                  <p className="font-semibold text-green-700 text-sm">{arquivo.name}</p>
-                  <p className="text-xs text-green-600">{linhas.length} linha(s) detectada(s)</p>
+                  <FileSpreadsheet className="w-10 h-10 text-emerald-600" />
+                  <p className="font-semibold text-gray-800 text-[13px]">{arquivo.name}</p>
+                  <p className="text-[11px] text-gray-500">{linhas.length} linha(s) detectada(s)</p>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); setArquivo(null); setLinhas([]); }}
-                    className="text-xs text-gray-500 hover:text-red-500 underline mt-1"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setArquivo(null);
+                      setLinhas([]);
+                    }}
+                    className="text-[11px] text-gray-500 hover:text-red-500 underline mt-1"
                   >
                     Remover arquivo
                   </button>
@@ -275,10 +303,11 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-10 h-10 text-gray-400" />
-                  <p className="text-sm text-gray-600">
-                    <span className="font-semibold text-[#4ECDC4]">Clique para selecionar</span> ou arraste o arquivo aqui
+                  <p className="text-[13px] text-gray-600">
+                    <span className="font-semibold text-[#4ECDC4]">Clique para selecionar</span> ou arraste o
+                    arquivo aqui
                   </p>
-                  <p className="text-xs text-gray-400">XLSX, XLS ou CSV</p>
+                  <p className="text-[11px] text-gray-400">XLSX, XLS ou CSV</p>
                 </div>
               )}
             </div>
@@ -293,23 +322,24 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
         </div>
       </div>
 
-      {/* Ações */}
-      <div className="flex justify-end gap-3">
-        <Button type="button" onClick={handleClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800">
+      <div className="flex flex-wrap justify-end gap-3 pt-1 border-t border-gray-100">
+        <button type="button" onClick={handleClose} className={btnSecondary}>
           Cancelar
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
           onClick={handleValidar}
           disabled={linhas.length === 0 || validarMutation.isPending}
-          className="text-white"
-          style={{ backgroundColor: '#4ECDC4' }}
+          className={btnPrimary}
+          style={{ backgroundColor: FD_PRIMARY }}
         >
-          {validarMutation.isPending
-            ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            : <ArrowRight className="w-4 h-4 mr-2" />}
+          {validarMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ArrowRight className="w-4 h-4" />
+          )}
           Validar Planilha
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -326,59 +356,51 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
     const linhasComErro = Object.keys(errosPorLinha).map(Number).sort((a, b) => a - b);
 
     return (
-      <div className="space-y-5">
-        {/* Resumo */}
+      <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-gray-800">{validacao.total}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Total de registros</p>
+          <div className={metricCard}>
+            <p className="text-2xl font-bold text-gray-800 tabular-nums">{validacao.total}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Total de registros</p>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-green-700">{validacao.validos}</p>
-            <p className="text-xs text-green-600 mt-0.5">Válidos</p>
+          <div className={metricCard}>
+            <p className="text-2xl font-bold text-emerald-700 tabular-nums">{validacao.validos}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Válidos</p>
           </div>
-          <div className={cn(
-            'border rounded-lg p-3 text-center',
-            temErros ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
-          )}>
-            <p className={cn('text-2xl font-bold', temErros ? 'text-red-700' : 'text-green-700')}>
+          <div className={metricCard}>
+            <p className={cn('text-2xl font-bold tabular-nums', temErros ? 'text-red-700' : 'text-emerald-700')}>
               {validacao.invalidos}
             </p>
-            <p className={cn('text-xs mt-0.5', temErros ? 'text-red-600' : 'text-green-600')}>
-              Com erro
-            </p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Com erro</p>
           </div>
         </div>
 
-        {/* Mensagem de status */}
         {!temErros ? (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
-            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-            <p className="text-sm text-green-800 font-medium">
+          <div className="flex items-center gap-2 border border-emerald-200 bg-emerald-50/60 rounded-lg p-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <p className="text-[13px] text-emerald-900 font-medium">
               Todos os {validacao.total} registros estão válidos e prontos para importação!
             </p>
           </div>
         ) : (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50/60 rounded-lg p-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm text-amber-800 font-medium">
+              <p className="text-[13px] text-amber-900 font-medium">
                 {validacao.invalidos} registro(s) com erro serão ignorados.
               </p>
-              <p className="text-xs text-amber-700 mt-0.5">
+              <p className="text-[11px] text-amber-800 mt-0.5">
                 Apenas os {validacao.validos} registros válidos serão importados.
               </p>
             </div>
           </div>
         )}
 
-        {/* Erros detalhados */}
         {temErros && (
           <div>
             <button
               type="button"
               onClick={() => setMostrarErros(v => !v)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-red-700 hover:text-red-900 transition-colors"
+              className="flex items-center gap-1.5 text-[13px] font-semibold text-red-700 hover:text-red-900 transition-colors"
             >
               <XCircle className="w-4 h-4" />
               {mostrarErros ? 'Ocultar erros' : `Ver ${validacao.erros.length} erro(s) encontrado(s)`}
@@ -387,10 +409,10 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
             {mostrarErros && (
               <div className="mt-3 max-h-52 overflow-y-auto border border-red-200 rounded-lg divide-y divide-red-100">
                 {linhasComErro.map(numLinha => (
-                  <div key={numLinha} className="p-3 bg-red-50">
-                    <p className="text-xs font-bold text-red-800 mb-1">Linha {numLinha}</p>
+                  <div key={numLinha} className="p-3 bg-red-50/80">
+                    <p className="text-[11px] font-bold text-red-800 mb-1">Linha {numLinha}</p>
                     {errosPorLinha[numLinha].map((e, idx) => (
-                      <p key={idx} className="text-xs text-red-700">
+                      <p key={idx} className="text-[11px] text-red-700">
                         • <span className="font-semibold">{e.campo}:</span> {e.mensagem}
                       </p>
                     ))}
@@ -401,33 +423,38 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           </div>
         )}
 
-        {/* Ações */}
-        <div className="flex justify-between gap-3 pt-1">
-          <Button
+        <div className="flex flex-wrap justify-between gap-3 pt-1 border-t border-gray-100">
+          <button
             type="button"
-            onClick={() => { setEtapa('upload'); setValidacao(null); setMostrarErros(false); }}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+            onClick={() => {
+              setEtapa('upload');
+              setValidacao(null);
+              setMostrarErros(false);
+            }}
+            className={btnSecondary}
           >
-            <RotateCcw className="w-4 h-4 mr-2" />
+            <RotateCcw className="w-4 h-4" />
             Voltar
-          </Button>
-          <div className="flex gap-3">
-            <Button type="button" onClick={handleClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800">
+          </button>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={handleClose} className={btnSecondary}>
               Cancelar
-            </Button>
+            </button>
             {validacao.validos > 0 && (
-              <Button
+              <button
                 type="button"
                 onClick={handleImportar}
                 disabled={importarMutation.isPending}
-                className="text-white"
-                style={{ backgroundColor: '#4ECDC4' }}
+                className={btnPrimary}
+                style={{ backgroundColor: FD_PRIMARY }}
               >
-                {importarMutation.isPending
-                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  : <Upload className="w-4 h-4 mr-2" />}
+                {importarMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
                 Importar {validacao.validos} benfeitoria(s)
-              </Button>
+              </button>
             )}
           </div>
         </div>
@@ -440,50 +467,50 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
     const sucesso = resultado.rejeitados === 0;
 
     return (
-      <div className="space-y-5">
-        {/* Ícone de status */}
-        <div className="flex flex-col items-center py-4">
+      <div className="space-y-4">
+        <div className="flex flex-col items-center py-3">
           {sucesso ? (
-            <CheckCircle2 className="w-16 h-16 text-green-500 mb-3" />
+            <CheckCircle2 className="w-14 h-14 text-emerald-500 mb-2" />
           ) : (
-            <AlertTriangle className="w-16 h-16 text-amber-500 mb-3" />
+            <AlertTriangle className="w-14 h-14 text-amber-500 mb-2" />
           )}
-          <h3 className="text-xl font-bold text-gray-800">
-            {sucesso ? 'Importação Concluída!' : 'Importação Concluída com Avisos'}
+          <h3
+            className="text-[18px] font-semibold text-gray-900"
+            style={{ fontFamily: 'Fraunces, serif' }}
+          >
+            {sucesso ? 'Importação concluída!' : 'Importação concluída com avisos'}
           </h3>
         </div>
 
-        {/* Resumo */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-gray-800">{resultado.total}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Processados</p>
+          <div className={metricCard}>
+            <p className="text-2xl font-bold text-gray-800 tabular-nums">{resultado.total}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Processados</p>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-            <p className="text-2xl font-bold text-green-700">{resultado.importados}</p>
-            <p className="text-xs text-green-600 mt-0.5">Importados</p>
+          <div className={metricCard}>
+            <p className="text-2xl font-bold text-emerald-700 tabular-nums">{resultado.importados}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Importados</p>
           </div>
-          <div className={cn(
-            'border rounded-lg p-3 text-center',
-            resultado.rejeitados > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'
-          )}>
-            <p className={cn('text-2xl font-bold', resultado.rejeitados > 0 ? 'text-red-700' : 'text-green-700')}>
+          <div className={metricCard}>
+            <p
+              className={cn(
+                'text-2xl font-bold tabular-nums',
+                resultado.rejeitados > 0 ? 'text-red-700' : 'text-emerald-700',
+              )}
+            >
               {resultado.rejeitados}
             </p>
-            <p className={cn('text-xs mt-0.5', resultado.rejeitados > 0 ? 'text-red-600' : 'text-green-600')}>
-              Rejeitados
-            </p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Rejeitados</p>
           </div>
         </div>
 
-        {/* Erros de importação */}
         {resultado.detalhesRejeitados.length > 0 && (
           <div>
-            <p className="text-sm font-semibold text-red-700 mb-2">Registros rejeitados:</p>
+            <p className="text-[13px] font-semibold text-red-700 mb-2">Registros rejeitados:</p>
             <div className="max-h-40 overflow-y-auto border border-red-200 rounded-lg divide-y divide-red-100">
               {resultado.detalhesRejeitados.map((r, i) => (
-                <div key={i} className="p-2.5 bg-red-50">
-                  <p className="text-xs text-red-700">
+                <div key={i} className="p-2.5 bg-red-50/80">
+                  <p className="text-[11px] text-red-700">
                     <span className="font-bold">Linha {r.linha}:</span> {r.mensagem}
                   </p>
                 </div>
@@ -492,25 +519,31 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
           </div>
         )}
 
-        {/* Ações */}
-        <div className="flex flex-col sm:flex-row gap-3 pt-1">
-          <Button
+        <div className="flex flex-col sm:flex-row gap-3 pt-1 border-t border-gray-100">
+          <button
             type="button"
-            onClick={() => { setEtapa('upload'); setArquivo(null); setLinhas([]); setValidacao(null); setResultado(null); setMostrarErros(false); }}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800 flex-1"
+            onClick={() => {
+              setEtapa('upload');
+              setArquivo(null);
+              setLinhas([]);
+              setValidacao(null);
+              setResultado(null);
+              setMostrarErros(false);
+            }}
+            className={cn(btnSecondary, 'flex-1')}
           >
-            <RotateCcw className="w-4 h-4 mr-2" />
+            <RotateCcw className="w-4 h-4" />
             Nova Importação
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
             onClick={handleClose}
-            className="text-white flex-1"
-            style={{ backgroundColor: '#4ECDC4' }}
+            className={cn(btnPrimary, 'flex-1')}
+            style={{ backgroundColor: FD_PRIMARY }}
           >
-            <ListChecks className="w-4 h-4 mr-2" />
+            <ListChecks className="w-4 h-4" />
             Ir para Lista de Benfeitorias
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -521,7 +554,7 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
   const titulos: Record<Etapa, { title: string; desc: string }> = {
     upload: {
       title: 'Importar Benfeitorias em Massa',
-      desc: 'Baixe o modelo, preencha os dados e envie a planilha.',
+      desc: 'Baixe o modelo com coluna Fazenda, preencha os dados e envie a planilha.',
     },
     validacao: {
       title: 'Pré-validação da Planilha',
@@ -544,54 +577,66 @@ export const ImportarBenfeitoriasModal: React.FC<Props> = ({ open, onClose, onIm
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-bold text-gray-800">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
+        <DialogHeader className="px-5 py-4 border-b border-gray-100 shrink-0 text-left space-y-1">
+          <DialogTitle
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: 'Fraunces, serif' }}
+          >
             {titulos[etapa].title}
           </DialogTitle>
-          <DialogDescription className="text-sm text-gray-500">
+          <DialogDescription className="text-[11px] text-gray-500">
             {titulos[etapa].desc}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Indicador de progresso */}
-        <div className="flex items-center gap-0 mb-2">
-          {etapas.map((e, idx) => (
-            <React.Fragment key={e.id}>
-              <div className="flex flex-col items-center">
-                <div className={cn(
-                  'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
-                  idx < etapaIdx
-                    ? 'bg-green-500 text-white'
-                    : idx === etapaIdx
-                      ? 'text-white'
-                      : 'bg-gray-200 text-gray-500'
-                )}
-                  style={idx === etapaIdx ? { backgroundColor: '#4ECDC4' } : undefined}
-                >
-                  {idx < etapaIdx ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
+        <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
+          <div className="flex items-center gap-0 mb-4">
+            {etapas.map((e, idx) => (
+              <React.Fragment key={e.id}>
+                <div className="flex flex-col items-center">
+                  <div
+                    className={cn(
+                      'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
+                      idx < etapaIdx
+                        ? 'bg-emerald-500 text-white'
+                        : idx === etapaIdx
+                          ? 'text-white'
+                          : 'bg-gray-200 text-gray-500',
+                    )}
+                    style={idx === etapaIdx ? { backgroundColor: FD_PRIMARY } : undefined}
+                  >
+                    {idx < etapaIdx ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
+                  </div>
+                  <span
+                    className={cn(
+                      'text-[10px] mt-1 font-medium',
+                      idx === etapaIdx
+                        ? 'text-[#4ECDC4]'
+                        : idx < etapaIdx
+                          ? 'text-emerald-600'
+                          : 'text-gray-400',
+                    )}
+                  >
+                    {e.label}
+                  </span>
                 </div>
-                <span className={cn(
-                  'text-[10px] mt-1 font-medium',
-                  idx === etapaIdx ? 'text-[#4ECDC4]' : idx < etapaIdx ? 'text-green-600' : 'text-gray-400'
-                )}>
-                  {e.label}
-                </span>
-              </div>
-              {idx < etapas.length - 1 && (
-                <div className={cn(
-                  'flex-1 h-0.5 mx-2 mb-4 transition-colors',
-                  idx < etapaIdx ? 'bg-green-400' : 'bg-gray-200'
-                )} />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
+                {idx < etapas.length - 1 && (
+                  <div
+                    className={cn(
+                      'flex-1 h-0.5 mx-2 mb-4 transition-colors',
+                      idx < etapaIdx ? 'bg-emerald-400' : 'bg-gray-200',
+                    )}
+                  />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
 
-        {/* Conteúdo da etapa */}
-        {etapa === 'upload' && renderUpload()}
-        {etapa === 'validacao' && renderValidacao()}
-        {etapa === 'resultado' && renderResultado()}
+          {etapa === 'upload' && renderUpload()}
+          {etapa === 'validacao' && renderValidacao()}
+          {etapa === 'resultado' && renderResultado()}
+        </div>
       </DialogContent>
     </Dialog>
   );
