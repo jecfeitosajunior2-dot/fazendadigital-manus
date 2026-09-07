@@ -29,8 +29,8 @@ describe("estoqueControle", () => {
     expect(categoriaControlaSaldoPorPadrao("Outros Insumos")).toBe(false);
   });
 
-  it("Combustíveis sempre controlam saldo", () => {
-    expect(categoriaControlaSaldoPorPadrao("Combustíveis")).toBe(true);
+  it("Combustíveis não controlam saldo por padrão (configurável por fazenda)", () => {
+    expect(categoriaControlaSaldoPorPadrao("Combustíveis")).toBe(false);
     expect(categoriaExigeEstocavelCombustivel("Combustíveis")).toBe(true);
   });
 

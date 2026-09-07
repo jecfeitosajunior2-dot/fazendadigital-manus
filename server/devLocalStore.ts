@@ -8,11 +8,7 @@ import {
   formatCustoMedio,
   parseCustoMedio,
 } from "./custoMedioEstoque";
-import {
-  categoriaControlaSaldoPorPadrao,
-  categoriaExigeEstocavelCombustivel,
-  produtoControlaSaldo,
-} from "../shared/estoqueControle";
+import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelCombustivel, produtoControlaSaldo } from "../shared/estoqueControle";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -593,14 +589,12 @@ function configLocalParaFazenda(
       }[]
     | undefined;
   const cfg = (configs ?? []).find(c => Number(c.fazendaId) === fazendaId);
-  const controlarSaldoRaw =
+  const controlarSaldo =
     cfg?.controlarSaldo ??
     fallback?.controlarSaldo ??
     (typeof input.controlarSaldo === "boolean"
       ? input.controlarSaldo
       : categoriaControlaSaldoPorPadrao(input.categoria as string | undefined));
-  const controlarSaldo =
-    categoriaExigeEstocavelCombustivel(input.categoria as string | undefined) || controlarSaldoRaw;
   const monitorar = controlarSaldo
     ? (cfg?.monitorarEstoque ??
       fallback?.monitorarEstoque ??
@@ -636,7 +630,6 @@ function configLocalParaFazenda(
 }
 
 function itemControlaSaldoLocal(item: DevEstoque): boolean {
-  if (categoriaExigeEstocavelCombustivel(item.categoria)) return true;
   return produtoControlaSaldo(item.controlarSaldo);
 }
 
@@ -653,14 +646,11 @@ function calcularSaldoMovimentacoesAtivas(data: StoreData, estoqueId: number): n
   return Math.max(0, net);
 }
 
-/** Corrige diesel/combustível vinculado como uso imediato (saldo zerado apesar das compras). */
+/** Corrige saldo de combustível estocável dessincronizado das movimentações. */
 function reconciliarEstoqueCombustivel(data: StoreData): void {
   for (const item of data.estoque) {
     if (!categoriaExigeEstocavelCombustivel(item.categoria)) continue;
-    if (!produtoControlaSaldo(item.controlarSaldo)) {
-      item.controlarSaldo = true;
-      item.monitorarEstoque = true;
-    }
+    if (!produtoControlaSaldo(item.controlarSaldo)) continue;
     const saldoMovs = calcularSaldoMovimentacoesAtivas(data, item.id);
     const saldoAtual = parseFloat(String(item.quantidade ?? 0));
     if (saldoMovs > 0 && Math.abs(saldoAtual - saldoMovs) > 0.001) {
@@ -2162,6 +2152,11 @@ export const devLocalStore = {
 
       const item = getItem(data, input.estoqueId);
       if (!item) throw new Error("Não há estoque disponível deste combustível na Fazenda selecionada.");
+      if (!itemControlaSaldoLocal(item)) {
+        throw new Error(
+          "Esta fazenda não controla estoque de combustível. Use compra externa/posto.",
+        );
+      }
 
       const existente = data.movimentacoes.find(
         m =>

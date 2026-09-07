@@ -1,9 +1,5 @@
 import type { estoque, produtosCatalogo } from "../drizzle/schema";
-import {
-  categoriaControlaSaldoPorPadrao,
-  categoriaExigeEstocavelCombustivel,
-  categoriaExigeEstocavelManutencao,
-} from "../shared/estoqueControle";
+import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelManutencao } from "../shared/estoqueControle";
 
 export type EstoqueEmbalagemInput = {
   nome: string;
@@ -118,7 +114,7 @@ export function configParaFazenda(
     fallback?.controlarSaldo ??
     input.controlarSaldo ??
     categoriaControlaSaldoPorPadrao(input.categoria);
-  if (categoriaExigeEstocavelManutencao(input.categoria) || categoriaExigeEstocavelCombustivel(input.categoria)) {
+  if (categoriaExigeEstocavelManutencao(input.categoria)) {
     controlarSaldo = true;
   }
   const monitorar =

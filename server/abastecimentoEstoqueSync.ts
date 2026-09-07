@@ -8,6 +8,7 @@ import {
   MOTIVO_ESTORNO_ABASTECIMENTO,
   MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
 } from "../shared/estoqueEstornoMotivos";
+import { produtoControlaSaldo } from "../shared/estoqueControle";
 import { db, abastecimentos, estoque, estoqueMovimentacoes, maquinas } from "./db";
 import { devLocalStore } from "./devLocalStore";
 import { getLocalMaquina, updateLocalAbastecimento } from "./localFallbackStore";
@@ -54,18 +55,25 @@ async function findEstoqueCombustivel(
   executor: Executor,
   fazendaId: number,
   combustivel: string,
-): Promise<{ id: number; quantidade: string | null; nome: string | null } | null> {
+): Promise<{ id: number; quantidade: string | null; nome: string | null; controlarSaldo: boolean | null } | null> {
   const itens = await executor
     .select({
       id: estoque.id,
       nome: estoque.nome,
       categoria: estoque.categoria,
       quantidade: estoque.quantidade,
+      controlarSaldo: estoque.controlarSaldo,
     })
     .from(estoque)
     .where(eq(estoque.fazendaId, fazendaId));
   const match = itens.find(i => matchCombustivel(i, combustivel));
   return match ?? null;
+}
+
+function assertCombustivelEstocavelNaFazenda(item: { controlarSaldo: boolean | null }): void {
+  if (!produtoControlaSaldo(item.controlarSaldo)) {
+    friendlyStockError(MSG_ABAST_FAZENDA_USO_IMEDIATO);
+  }
 }
 
 function grupoIdAbastecimento(abastecimentoId: number): string {
@@ -132,6 +140,7 @@ export async function syncSaidaAbastecimento(
   if (!item) {
     friendlyStockError("Não há estoque disponível deste combustível na Fazenda selecionada.");
   }
+  assertCombustivelEstocavelNaFazenda(item);
 
   const maquinaNome = await nomeMaquina(executor, input.maquinaId);
   const descricao = `Abastecimento da máquina ${maquinaNome}`;
@@ -349,19 +358,27 @@ export const MSG_ORIENTACAO_COMBUSTIVEL_MANUAL =
 export const MSG_ABAST_ORIGEM_NAO_ENCONTRADO =
   "Abastecimento de origem não encontrado. Verifique a integridade do vínculo.";
 
+export const MSG_ABAST_FAZENDA_USO_IMEDIATO =
+  "Esta fazenda não controla estoque de combustível. Use compra externa/posto.";
+
 // ─── Fallback local (dev sem MySQL) ───────────────────────────────────────────
 
 function findEstoqueCombustivelLocal(
   fazendaId: number,
   combustivel: string,
-): { id: number; quantidade: string | null; nome: string | null } | null {
+): { id: number; quantidade: string | null; nome: string | null; controlarSaldo: boolean | null } | null {
   const itens = devLocalStore
     .listEstoque()
     .filter(i => Number(i.fazendaId) === fazendaId)
     .filter(i => String(i.situacao ?? "ativo").toLowerCase() !== "inativo");
   const match = itens.find(i => matchCombustivel(i, combustivel));
   return match
-    ? { id: match.id, quantidade: match.quantidade, nome: match.nome }
+    ? {
+        id: match.id,
+        quantidade: match.quantidade,
+        nome: match.nome,
+        controlarSaldo: match.controlarSaldo ?? null,
+      }
     : null;
 }
 
@@ -386,6 +403,7 @@ export async function syncSaidaAbastecimentoLocal(input: SyncAbastecimentoInput)
   if (!item) {
     friendlyStockError("Não há estoque disponível deste combustível na Fazenda selecionada.");
   }
+  assertCombustivelEstocavelNaFazenda(item);
 
   const maquinaNome = await nomeMaquinaLocal(input.userId, input.maquinaId);
   const descricao = `Abastecimento da máquina ${maquinaNome}`;

@@ -7,6 +7,7 @@ type EstoqueItem = {
   quantidade?: string | number | null;
   valorUnitario?: string | number | null;
   situacao?: string | null;
+  controlarSaldo?: boolean | null;
 };
 
 export const COMBUSTIVEL_LABELS: Record<string, string> = {
@@ -80,6 +81,27 @@ export function temCombustivelCadastrado(
   return getCombustivelItens(estoque, fazendaId, combustivel).length > 0;
 }
 
+/** Primeiro item de combustível da fazenda (se existir). */
+export function getItemCombustivelFazenda(
+  estoque: EstoqueItem[],
+  fazendaId: number,
+  combustivel: string
+): EstoqueItem | null {
+  return getCombustivelItens(estoque, fazendaId, combustivel)[0] ?? null;
+}
+
+/** Abastecimento interno exige produto estocável (controlarSaldo) na fazenda. */
+export function fazendaControlaEstoqueCombustivel(
+  estoque: EstoqueItem[],
+  fazendaId: number,
+  combustivel: string,
+  controlaSaldo: (flag: boolean | null | undefined) => boolean = flag => flag !== false
+): boolean {
+  const item = getItemCombustivelFazenda(estoque, fazendaId, combustivel);
+  if (!item) return false;
+  return controlaSaldo(item.controlarSaldo);
+}
+
 /** Primeiro item de estoque ativo do tipo, em qualquer fazenda (referência de catálogo). */
 export function findCombustivelReferenciaCatalogo(
   estoque: EstoqueItem[],
@@ -134,14 +156,17 @@ export function getSaldoLitrosDeMovimentacoes(
   return Math.max(0, net);
 }
 
-/** Saldo total em litros do combustível na fazenda. */
+/** Saldo total em litros do combustível na fazenda (apenas itens estocáveis). */
 export function getSaldoLitros(
   estoque: EstoqueItem[],
   fazendaId: number,
   combustivel: string,
-  movimentacoes: MovimentacaoItem[] = []
+  movimentacoes: MovimentacaoItem[] = [],
+  controlaSaldo: (flag: boolean | null | undefined) => boolean = flag => flag !== false
 ): number {
-  const itens = getCombustivelItens(estoque, fazendaId, combustivel);
+  const itens = getCombustivelItens(estoque, fazendaId, combustivel).filter(item =>
+    controlaSaldo(item.controlarSaldo)
+  );
   const saldoCadastro = itens.reduce(
     (sum, item) => sum + parseFloat(String(item.quantidade ?? 0)),
     0,

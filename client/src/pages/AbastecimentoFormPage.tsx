@@ -6,10 +6,13 @@ import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
+  fazendaControlaEstoqueCombustivel,
   getCombustivelItens,
   getSaldoLitros,
   getValorLitroEstoque,
+  temCombustivelCadastrado,
 } from "@/lib/combustivel-estoque";
+import { produtoControlaSaldo } from "@shared/estoqueControle";
 import { formatDateBR, parseLocalDate } from "@/lib/date-utils";
 import {
   FD_PRIMARY,
@@ -494,6 +497,37 @@ export default function AbastecimentoFormPage() {
   /** Com origem estoque, a Fazenda do combustível é a mesma da lista (contexto). */
   const fazendaEstoqueId = origemEstoque ? fazendaContextoId : "";
 
+  const fazendaIdNum = fazendaContextoId ? Number(fazendaContextoId) : null;
+
+  const permiteAbastecimentoEstoque = useMemo(() => {
+    if (!fazendaIdNum || !form.combustivel) return false;
+    return fazendaControlaEstoqueCombustivel(
+      estoque,
+      fazendaIdNum,
+      form.combustivel,
+      produtoControlaSaldo,
+    );
+  }, [estoque, fazendaIdNum, form.combustivel]);
+
+  const combustivelUsoImediatoNaFazenda = useMemo(() => {
+    if (!fazendaIdNum || !form.combustivel) return false;
+    return (
+      temCombustivelCadastrado(estoque, fazendaIdNum, form.combustivel) &&
+      !permiteAbastecimentoEstoque
+    );
+  }, [estoque, fazendaIdNum, form.combustivel, permiteAbastecimentoEstoque]);
+
+  useEffect(() => {
+    if (permiteAbastecimentoEstoque || !combustivelUsoImediatoNaFazenda) return;
+    if (form.origem !== "estoque") return;
+    setForm(f => ({
+      ...f,
+      origem: "externo",
+      valorLitro: f.valorLitro || "",
+      fazendaId: "",
+    }));
+  }, [permiteAbastecimentoEstoque, combustivelUsoImediatoNaFazenda, form.origem]);
+
   useEffect(() => {
     if (!origemEstoque) {
       if (form.fazendaId) setForm(f => ({ ...f, fazendaId: "" }));
@@ -521,6 +555,7 @@ export default function AbastecimentoFormPage() {
 
   const semEstoqueNaFazenda =
     origemEstoque &&
+    permiteAbastecimentoEstoque &&
     !!fazendaEstoqueId &&
     !!form.combustivel &&
     (estoqueAtualLitros == null || estoqueAtualLitros <= 0);
@@ -586,6 +621,14 @@ export default function AbastecimentoFormPage() {
     litrosNumForm > estoqueAtualLitros;
 
   const handleOrigemChange = (v: OrigemCombustivel) => {
+    if (v === "estoque" && !permiteAbastecimentoEstoque) {
+      toast.error(
+        combustivelUsoImediatoNaFazenda
+          ? "Esta fazenda usa combustível em modo uso imediato. Selecione Compra externa / Posto."
+          : "Cadastre o combustível com controle de saldo nesta fazenda antes de usar o estoque.",
+      );
+      return;
+    }
     setForm(f => ({
       ...f,
       origem: v,
@@ -660,6 +703,11 @@ export default function AbastecimentoFormPage() {
     setErros({});
 
     if (form.data > hojeISO) return toast.error("A data do abastecimento não pode ser futura.");
+    if (origemEstoque && !permiteAbastecimentoEstoque) {
+      return toast.error(
+        "Esta fazenda não controla estoque de combustível. Use Compra externa / Posto.",
+      );
+    }
     if (origemEstoque && semEstoqueNaFazenda) {
       return toast.error("Não há estoque disponível deste combustível na Fazenda selecionada.");
     }
@@ -897,8 +945,13 @@ export default function AbastecimentoFormPage() {
                   onValueChange={v => handleOrigemChange(v as OrigemCombustivel)}
                   className="!flex flex-row flex-wrap items-center gap-x-5 gap-y-2 sm:flex-nowrap"
                 >
-                  <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700 whitespace-nowrap">
-                    <RadioGroupItem value="estoque" />
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 text-[13px] text-gray-700 whitespace-nowrap",
+                      permiteAbastecimentoEstoque ? "cursor-pointer" : "cursor-not-allowed opacity-50",
+                    )}
+                  >
+                    <RadioGroupItem value="estoque" disabled={!permiteAbastecimentoEstoque} />
                     Estoque da Fazenda
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer text-[13px] text-gray-700 whitespace-nowrap">
@@ -907,6 +960,18 @@ export default function AbastecimentoFormPage() {
                   </label>
                 </RadioGroup>
               </div>
+              {combustivelUsoImediatoNaFazenda ? (
+                <p className="mt-2 text-[12px] text-gray-500 leading-relaxed">
+                  Esta fazenda não controla estoque de combustível (uso imediato). Use{" "}
+                  <span className="font-medium">Compra externa / Posto</span> e informe o valor por
+                  litro.
+                </p>
+              ) : !permiteAbastecimentoEstoque && form.combustivel && fazendaContextoId ? (
+                <p className="mt-2 text-[12px] text-gray-500 leading-relaxed">
+                  Para abastecer do estoque interno, vincule o combustível à fazenda com{" "}
+                  <span className="font-medium">Controlar saldo = Sim</span> no cadastro de insumos.
+                </p>
+              ) : null}
             </div>
 
             {semEstoqueNaFazenda ? (

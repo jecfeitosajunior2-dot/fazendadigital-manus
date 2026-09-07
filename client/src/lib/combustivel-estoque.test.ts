@@ -3,6 +3,7 @@ import {
   getValorLitroEstoque,
   resolveValoresAbastecimento,
   getSaldoLitros,
+  fazendaControlaEstoqueCombustivel,
   findCombustivelReferenciaCatalogo,
   getProdutoIdCombustivelCatalogo,
   getEstoqueIdReferenciaCombustivel,
@@ -106,7 +107,7 @@ describe("getSaldoLitros", () => {
     expect(getSaldoLitros(estoqueComPreco, fazendaId, "diesel")).toBe(1000);
   });
 
-  it("usa movimentações quando o cadastro está zerado (uso imediato legado)", () => {
+  it("usa movimentações quando o cadastro estocável está zerado", () => {
     const estoqueZerado = [
       {
         id: 34,
@@ -115,6 +116,7 @@ describe("getSaldoLitros", () => {
         categoria: "Combustíveis",
         quantidade: 0,
         valorUnitario: 8,
+        controlarSaldo: true,
       },
     ];
     const movs = [
@@ -122,6 +124,25 @@ describe("getSaldoLitros", () => {
       { estoqueId: 34, fazendaId, tipo: "Compra", quantidade: 200, valor: 1000, status: "ativa" },
     ];
     expect(getSaldoLitros(estoqueZerado, fazendaId, "diesel", movs)).toBe(320);
+  });
+
+  it("ignora saldo de produto em uso imediato", () => {
+    const estoqueUsoImediato = [
+      {
+        id: 34,
+        fazendaId,
+        nome: "Diesel",
+        categoria: "Combustíveis",
+        quantidade: 500,
+        controlarSaldo: false,
+      },
+    ];
+    const movs = [
+      { estoqueId: 34, fazendaId, tipo: "Compra", quantidade: 120, valor: 840, status: "ativa" },
+    ];
+    expect(getSaldoLitros(estoqueUsoImediato, fazendaId, "diesel", movs)).toBe(0);
+    expect(fazendaControlaEstoqueCombustivel(estoqueUsoImediato, fazendaId, "diesel")).toBe(false);
+    expect(temCombustivelCadastrado(estoqueUsoImediato, fazendaId, "diesel")).toBe(true);
   });
 });
 
