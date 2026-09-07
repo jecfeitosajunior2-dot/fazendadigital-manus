@@ -10,7 +10,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FormDatePicker, FormDownSelect, FormLabel } from "@/components/FormFields";
+import {
+  FieldBox,
+  FormDatePicker,
+  FormInput,
+  FormLabel,
+  FormSelect,
+} from "@/components/FormFields";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import {
+  FAZENDA_SELECT_PLACEHOLDER,
+  ManejoPontualFormShell,
+  ManejoSectionCard,
+} from "@/components/ManejoPontualFormLayout";
+import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import {
   MSG_BAIXA_GENERICO,
@@ -38,15 +51,13 @@ import {
   montarConfirmacaoTransferenciaInterna,
   validarTransferenciaInternaInput,
 } from "@shared/transferenciaInternaAnimal";
+import { formatLoteAtualDisplay } from "@shared/transferirAnimaisEntreLotes";
 import { AlertCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 const FD_PRIMARY = "#4ECDC4";
-const fieldCls =
-  "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[40px] bg-white";
-const labelCls = "block text-[11px] text-gray-600 font-medium mb-1";
 
 function todayISODate() {
   const d = new Date();
@@ -331,6 +342,23 @@ export function ManejoBaixaAnimalForm() {
     });
   };
 
+  const loteAtualDoAnimal = useMemo(() => {
+    if (!animal?.loteId) return null;
+    return lotes.find(l => l.id === animal.loteId) ?? null;
+  }, [animal?.loteId, lotes]);
+
+  const loteAtualId =
+    animal?.loteId != null && animal.loteId > 0 ? animal.loteId : null;
+
+  const loteAtualDisplay = useMemo(() => {
+    if (!animal) return { titulo: "—" };
+    return formatLoteAtualDisplay({
+      temLote: loteAtualId != null,
+      loteNome: loteAtualDoAnimal?.nome ?? animal.loteNome,
+      pastoNome: loteAtualDoAnimal?.pastoNome ?? animal.pastoNome,
+    });
+  }, [animal, loteAtualDoAnimal, loteAtualId]);
+
   const statusAtual =
     animal?.status && animal.status in STATUS_ANIMAL_LABEL
       ? STATUS_ANIMAL_LABEL[animal.status]
@@ -338,88 +366,50 @@ export function ManejoBaixaAnimalForm() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Movimentação do Animal
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            disabled={isPending}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px] disabled:opacity-60"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSalvar()}
-            disabled={isPending}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
-          {unicaFazenda && fazendaId && nomeFazenda ? (
-            <div className="min-w-0">
-              <label className={labelCls}>Fazenda</label>
-              <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-                {nomeFazenda}
+      <ManejoPontualFormShell
+        title="Movimentação do Animal"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={() => void handleSalvar()}
+        savePending={isPending}
+      >
+        <ManejoSectionCard title="Contexto">
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+            {unicaFazenda && fazendaId && nomeFazenda ? (
+              <div className="min-w-0">
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
-            </div>
-          ) : (
+            ) : (
+              <div className="min-w-0">
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
+                  value={fazendaId}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
+                  disabled={loadingFazendas || !fazendaInitDone}
+                  required
+                />
+              </div>
+            )}
+
             <div className="min-w-0">
-              <label className={labelCls}>
-                Fazenda<span className="text-red-500">*</span>
-              </label>
-              <select
-                value={fazendaId}
-                onChange={e => onChangeFazenda(e.target.value)}
-                className={fieldCls}
-                disabled={loadingFazendas || !fazendaInitDone}
-              >
-                <option value="">Selecione uma Fazenda</option>
-                {fazendas.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome}
-                  </option>
-                ))}
-              </select>
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
+                value={dataEvento}
+                onChange={setDataEvento}
+                max={todayISODate()}
+                minHeight={34}
+              />
             </div>
-          )}
-
-          <div className="min-w-0">
-            <FormLabel required>Data</FormLabel>
-            <FormDatePicker
-              value={dataEvento}
-              onChange={setDataEvento}
-              max={todayISODate()}
-              minHeight={42}
-            />
           </div>
-        </div>
 
-        <div>
-          <label className={labelCls}>
-            Tipo de movimentação<span className="text-red-500">*</span>
-          </label>
-          <select
+          <FormLabel required>Tipo de movimentação</FormLabel>
+          <FormSelect
+            variant="light"
             value={tipo}
-            onChange={e => {
-              setTipo(e.target.value as TipoMovimentacaoAnimal | "");
+            onChange={v => {
+              setTipo(v as TipoMovimentacaoAnimal | "");
               setTipoDestino("");
               setDestino("");
               setCausaCodigo("");
@@ -427,175 +417,174 @@ export function ManejoBaixaAnimalForm() {
               setFazendaDestinoId("");
               setLoteDestinoId("");
             }}
-            className={fieldCls}
+            placeholder="Selecione o tipo"
+            required
           >
-            <option value="">Selecione o tipo</option>
             {TIPOS_MOVIMENTACAO_ANIMAL.map(value => (
-              <option key={value} value={value}>
+              <SelectItem key={value} value={value} className="text-[12px]">
                 {TIPO_BAIXA_LABEL[value]}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-        </div>
+          </FormSelect>
+        </ManejoSectionCard>
 
-        <ManejoAnimalField
-          selected={animal}
-          onSelect={handleAnimalSelect}
-          animals={animais as AnimalSaidaRow[]}
-          loading={loadingAnimais}
-          disabled={!fazendaNum}
-          hintMessage={
-            fazendaNum
-              ? "Somente animais ativos desta Fazenda estão disponíveis."
-              : "Selecione uma Fazenda primeiro."
-          }
-        />
+        <ManejoSectionCard title="Animal">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ManejoAnimalField
+              embedded
+              selected={animal}
+              onSelect={handleAnimalSelect}
+              animals={animais as AnimalSaidaRow[]}
+              loading={loadingAnimais}
+              disabled={!fazendaNum}
+              hintMessage={
+                fazendaNum
+                  ? "Somente animais ativos desta Fazenda estão disponíveis."
+                  : "Selecione uma Fazenda primeiro."
+              }
+            />
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-gray-100 pt-5">
-          <div>
-            <label className={labelCls}>Status atual</label>
-            <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-              {statusAtual}
+            <div className="space-y-3">
+              <div>
+                <FormLabel>Lote atual</FormLabel>
+                <FieldBox variant="light">
+                  <div className="px-3 py-2 min-h-[34px]">
+                    <p className="text-[12px] font-medium text-gray-800">
+                      {loteAtualDisplay.titulo || "—"}
+                    </p>
+                    {loteAtualDisplay.subtitulo ? (
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {loteAtualDisplay.subtitulo}
+                      </p>
+                    ) : null}
+                  </div>
+                </FieldBox>
+              </div>
+
+              <div>
+                <FormLabel>Status atual</FormLabel>
+                <FormInput variant="light" value={statusAtual} onChange={() => {}} readOnly />
+              </div>
             </div>
           </div>
-          <div>
-            <label className={labelCls}>Lote atual</label>
-            <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-              {animal?.loteNome || (animal ? "Sem lote" : "—")}
-            </div>
-          </div>
-          <div>
-            <label className={labelCls}>Subdivisão / Pasto</label>
-            <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-              {animal?.pastoNome || (animal ? "—" : "—")}
-            </div>
-          </div>
-        </div>
+        </ManejoSectionCard>
 
         {tipo === "transferencia" ? (
-          <div className="space-y-4 border-t border-gray-100 pt-5">
-            <div>
-              <label className={labelCls}>
-                Tipo de destino<span className="text-red-500">*</span>
-              </label>
-              <select
-                value={tipoDestino}
-                onChange={e => {
-                  setTipoDestino(e.target.value as TipoDestino);
-                  setDestino("");
-                  setFazendaDestinoId("");
-                  setLoteDestinoId("");
-                }}
-                className={fieldCls}
-              >
-                <option value="">Selecione o destino</option>
-                <option value="interna">Fazenda cadastrada</option>
-                <option value="externa">Destino externo</option>
-              </select>
-            </div>
+          <ManejoSectionCard title="Transferência">
+            <FormLabel required>Tipo de destino</FormLabel>
+            <FormSelect
+              variant="light"
+              value={tipoDestino}
+              onChange={v => {
+                setTipoDestino(v as TipoDestino);
+                setDestino("");
+                setFazendaDestinoId("");
+                setLoteDestinoId("");
+              }}
+              placeholder="Selecione o destino"
+              required
+            >
+              <SelectItem value="interna" className="text-[12px]">
+                Fazenda cadastrada
+              </SelectItem>
+              <SelectItem value="externa" className="text-[12px]">
+                Destino externo
+              </SelectItem>
+            </FormSelect>
 
             {tipoDestino === "interna" ? (
               <>
-                <div>
-                  <label className={labelCls}>
-                    Fazenda de destino<span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={fazendaDestinoId}
-                    onChange={e => {
-                      setFazendaDestinoId(e.target.value);
-                      setLoteDestinoId("");
-                    }}
-                    className={fieldCls}
-                  >
-                    <option value="">Selecione a Fazenda de destino</option>
-                    {fazendasDestino.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>
-                    Lote de destino<span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={loteDestinoId}
-                    onChange={e => setLoteDestinoId(e.target.value)}
-                    className={fieldCls}
-                    disabled={!fazendaDestinoNum}
-                  >
-                    <option value="">
-                      {fazendaDestinoNum ? "Selecione o Lote" : "Selecione a Fazenda de destino primeiro"}
-                    </option>
-                    {lotesDestino.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>Subdivisão / Pasto de destino</label>
-                  <div className={`${fieldCls} bg-gray-50 font-medium flex items-center`}>
-                    {pastoDestinoNome}
-                  </div>
-                </div>
+                <FormLabel required>Fazenda de destino</FormLabel>
+                <FormSelect
+                  variant="light"
+                  value={fazendaDestinoId}
+                  onChange={v => {
+                    setFazendaDestinoId(v);
+                    setLoteDestinoId("");
+                  }}
+                  placeholder="Selecione a Fazenda de destino"
+                  required
+                >
+                  {fazendasDestino.map(f => (
+                    <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
+                      {f.nome}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+
+                <FormLabel required>Lote de destino</FormLabel>
+                <FormSelect
+                  variant="light"
+                  side="top"
+                  value={loteDestinoId}
+                  onChange={setLoteDestinoId}
+                  placeholder={
+                    fazendaDestinoNum
+                      ? "Selecione o Lote"
+                      : "Selecione a Fazenda de destino primeiro"
+                  }
+                  disabled={!fazendaDestinoNum}
+                  required
+                >
+                  {lotesDestino.map(l => (
+                    <SelectItem key={l.id} value={String(l.id)} className="text-[12px]">
+                      {l.nome}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
+
+                <FormLabel>Subdivisão / Pasto de destino</FormLabel>
+                <FormInput variant="light" value={pastoDestinoNome} onChange={() => {}} readOnly />
               </>
             ) : null}
 
             {tipoDestino === "externa" ? (
               <div>
-                <label className={labelCls}>
-                  Destino<span className="text-red-500">*</span>
-                </label>
-                <input
+                <FormLabel required>Destino</FormLabel>
+                <FormInput
+                  variant="light"
                   value={destino}
-                  onChange={e => setDestino(e.target.value)}
-                  maxLength={255}
-                  className={fieldCls}
+                  onChange={setDestino}
                   placeholder="Informe o destino"
                 />
               </div>
             ) : null}
-          </div>
+          </ManejoSectionCard>
         ) : null}
 
         {tipo === "morte" ? (
-          <div className="space-y-3">
-            <div>
-              <label className={labelCls}>Motivo / Causa</label>
-              <FormDownSelect
-                value={causaCodigo}
-                placeholder="Selecione a causa"
-                options={CAUSAS_MORTE.map(value => ({
-                  value,
-                  label: CAUSA_MORTE_LABEL[value],
-                }))}
-                onChange={next => {
-                  setCausaCodigo(next);
-                  if (next !== "outro") setCausaOutro("");
-                }}
-              />
-            </div>
+          <ManejoSectionCard title="Morte">
+            <FormLabel>Motivo / Causa</FormLabel>
+            <FormSelect
+              variant="light"
+              side="top"
+              value={causaCodigo}
+              placeholder="Selecione a causa"
+              onChange={next => {
+                setCausaCodigo(next);
+                if (next !== "outro") setCausaOutro("");
+              }}
+            >
+              {CAUSAS_MORTE.map(value => (
+                <SelectItem key={value} value={value} className="text-[12px]">
+                  {CAUSA_MORTE_LABEL[value]}
+                </SelectItem>
+              ))}
+            </FormSelect>
             {causaCodigo === "outro" ? (
               <div>
-                <label className={labelCls}>
-                  Descrição da causa<span className="text-red-500">*</span>
-                </label>
-                <input
+                <FormLabel required>Descrição da causa</FormLabel>
+                <FormInput
+                  variant="light"
                   value={causaOutro}
-                  onChange={e => setCausaOutro(e.target.value)}
-                  maxLength={249}
-                  className={fieldCls}
+                  onChange={setCausaOutro}
                   placeholder="Digite a causa..."
                 />
               </div>
             ) : null}
-          </div>
+          </ManejoSectionCard>
         ) : null}
-      </div>
+      </ManejoPontualFormShell>
 
       <Dialog open={Boolean(bloqueioMsg)}>
         <DialogContent

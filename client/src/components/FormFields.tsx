@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Calendar } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ export function FormInput({
   value,
   onChange,
   onBlur,
+  onFocus,
   placeholder,
   type = "text",
   inputMode,
@@ -85,6 +87,7 @@ export function FormInput({
   value: string;
   onChange: (v: string) => void;
   onBlur?: (v: string) => void;
+  onFocus?: React.FocusEventHandler<HTMLInputElement>;
   placeholder?: string;
   type?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
@@ -113,6 +116,7 @@ export function FormInput({
           onChange(e.target.value);
         }}
         onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
+        onFocus={onFocus}
         placeholder={placeholder}
         min={min}
         step={step}
@@ -144,6 +148,7 @@ export function FormInput({
           onChange(e.target.value);
         }}
         onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
+        onFocus={onFocus}
         placeholder={placeholder}
         min={min}
         step={step}
@@ -242,12 +247,41 @@ export function FormDownSelect({
   "aria-describedby"?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(
+    null,
+  );
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLUListElement | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setMenuStyle({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updateMenuPosition();
+    const onReposition = () => updateMenuPosition();
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [open, updateMenuPosition]);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
@@ -258,6 +292,45 @@ export function FormDownSelect({
   }, [disabled]);
 
   const selected = options.find(o => o.value === value);
+
+  const menu =
+    open && !disabled && menuStyle
+      ? createPortal(
+          <ul
+            ref={menuRef}
+            role="listbox"
+            style={{
+              position: "fixed",
+              top: menuStyle.top,
+              left: menuStyle.left,
+              width: menuStyle.width,
+              zIndex: 120,
+            }}
+            className="max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg fd-select-scroll"
+          >
+            {options.map(o => (
+              <li key={o.value} role="option" aria-selected={o.value === value}>
+                <button
+                  type="button"
+                  className={cn(
+                    "w-full text-left px-3 py-2 text-[12px] transition-colors",
+                    o.value === value
+                      ? "bg-[#4ECDC4] text-gray-900 font-semibold"
+                      : "text-gray-700 hover:bg-[#4ECDC4] hover:text-gray-900",
+                  )}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                >
+                  {o.label}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="relative w-full min-w-0 max-w-full" ref={rootRef}>
@@ -277,7 +350,13 @@ export function FormDownSelect({
           aria-expanded={open}
           aria-invalid={invalid || undefined}
           aria-describedby={ariaDescribedBy}
-          onClick={() => setOpen(v => !v)}
+          onClick={() => {
+            setOpen(v => {
+              const next = !v;
+              if (next) updateMenuPosition();
+              return next;
+            });
+          }}
           className="flex min-w-0 flex-1 items-center justify-between gap-2 border-0 bg-transparent p-0 text-left outline-none disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className={`min-w-0 flex-1 truncate leading-[16px] ${selected ? "text-gray-700" : "text-gray-400"}`}>
@@ -288,29 +367,7 @@ export function FormDownSelect({
           </span>
         </button>
       </div>
-      {open && !disabled ? (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-56 overflow-y-auto overflow-x-hidden rounded border border-gray-200 bg-white shadow-lg fd-select-scroll"
-        >
-          {options.map(o => (
-            <li key={o.value} role="option" aria-selected={o.value === value}>
-              <button
-                type="button"
-                className={`w-full text-left px-3 py-2 text-[12px] hover:bg-[#4ECDC4]/[0.08] ${
-                  o.value === value ? "font-semibold text-gray-900" : "text-gray-700"
-                }`}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                }}
-              >
-                {o.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {menu}
     </div>
   );
 }

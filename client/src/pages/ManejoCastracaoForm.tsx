@@ -1,13 +1,21 @@
 import AppLayout from "@/components/AppLayout";
 import { BloqueioNegocioDialog } from "@/components/BloqueioNegocioDialog";
-import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import { ManejoAnimalField } from "@/components/ManejoAnimalField";
+import {
+  FAZENDA_SELECT_PLACEHOLDER,
+  ManejoPontualFormShell,
+  ManejoSectionCard,
+} from "@/components/ManejoPontualFormLayout";
 import {
   FieldBox,
   FormDatePicker,
-  FormDownSelect,
   FormInput,
   FormLabel,
+  FormSelect,
+  FormTextarea,
 } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
@@ -25,11 +33,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
-const FD_PRIMARY = "#4ECDC4";
-
-const fieldCls =
-  "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
-const labelCls = "block text-[11px] text-gray-600 font-medium mb-1";
 
 function todayISODate() {
   const d = new Date();
@@ -205,126 +208,95 @@ export function ManejoCastracaoForm() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Castração
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            disabled={mutation.isPending}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px] disabled:opacity-60"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={salvarDisabled}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {mutation.isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
-          {unicaFazenda && fazendaId && nomeFazenda ? (
-            <div className="min-w-0">
-              <label className={labelCls}>Fazenda</label>
-              <div
-                className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-              >
-                {nomeFazenda}
+      <ManejoPontualFormShell
+        title="Castração"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={handleSalvar}
+        saveDisabled={salvarDisabled}
+        savePending={mutation.isPending}
+      >
+        <ManejoSectionCard title="Contexto">
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+            {unicaFazenda && fazendaId && nomeFazenda ? (
+              <div className="min-w-0">
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
-            </div>
-          ) : (
+            ) : (
+              <div className="min-w-0">
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
+                  value={fazendaId}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
+                  disabled={loadingFazendas || !fazendaInitDone}
+                  required
+                />
+              </div>
+            )}
+
             <div className="min-w-0">
-              <label className={labelCls}>
-                Fazenda<span className="text-red-500">*</span>
-              </label>
-              <select
-                value={fazendaId}
-                onChange={e => onChangeFazenda(e.target.value)}
-                className={fieldCls}
-                disabled={loadingFazendas || !fazendaInitDone}
-              >
-                <option value="">Selecione uma Fazenda</option>
-                {fazendas.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome}
-                  </option>
-                ))}
-              </select>
+              <FormLabel required>Data</FormLabel>
+              <FormDatePicker
+                value={dataCastracao}
+                onChange={handleDataChange}
+                max={todayISODate()}
+              />
             </div>
-          )}
-
-          <div className="min-w-0">
-            <FormLabel required>Data</FormLabel>
-            <FormDatePicker
-              value={dataCastracao}
-              onChange={handleDataChange}
-              max={todayISODate()}
-            />
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <FormLabel required>Animal</FormLabel>
-            <AnimalAutocomplete
+        <ManejoSectionCard title="Animal">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ManejoAnimalField
+              embedded
               selected={animalSel}
               onSelect={handleAnimalSelect}
               animals={machos}
               loading={Boolean(fazendaNum) && loadingAnimais}
               disabled={!fazendaNum}
-              inputClassName={fieldCls}
-              placeholder="Buscar por brinco, RFID ou nome…"
-              emptyMessage="Nenhum macho ativo nesta Fazenda."
               hintMessage={
                 fazendaNum
                   ? "Clique para ver animais ou digite para filtrar."
                   : "Selecione uma Fazenda primeiro."
               }
             />
-          </div>
 
-          <div>
-            <FormLabel>Lote atual</FormLabel>
-            <FieldBox variant="light">
-              <div className="px-3 py-2 min-h-[34px]">
-                <p className="text-[12px] font-medium text-gray-800">
-                  {loteAtualDisplay.titulo || "—"}
-                </p>
-                {loteAtualDisplay.subtitulo ? (
-                  <p className="text-[11px] text-gray-500 mt-0.5">
-                    {loteAtualDisplay.subtitulo}
+            <div>
+              <FormLabel>Lote atual</FormLabel>
+              <FieldBox variant="light">
+                <div className="px-3 py-2 min-h-[34px]">
+                  <p className="text-[12px] font-medium text-gray-800">
+                    {loteAtualDisplay.titulo || "—"}
                   </p>
-                ) : null}
-              </div>
-            </FieldBox>
+                  {loteAtualDisplay.subtitulo ? (
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {loteAtualDisplay.subtitulo}
+                    </p>
+                  ) : null}
+                </div>
+              </FieldBox>
+            </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <div>
+        <ManejoSectionCard title="Castração">
           <FormLabel required>Método</FormLabel>
-          <FormDownSelect
+          <FormSelect
+            variant="light"
+            side="top"
             value={metodo}
             onChange={handleMetodoChange}
             placeholder="Selecione o método"
-            options={metodoOptions}
-          />
+            required
+          >
+            {metodoOptions.map(o => (
+              <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                {o.label}
+              </SelectItem>
+            ))}
+          </FormSelect>
           {metodoOutro ? (
             <div className="mt-3">
               <FormLabel required>Descrição do método</FormLabel>
@@ -333,23 +305,23 @@ export function ManejoCastracaoForm() {
                 onChange={setDescricaoMetodo}
                 placeholder="Ex.: técnica utilizada"
                 variant="light"
+                required
               />
             </div>
           ) : null}
-        </div>
 
-        <div>
-          <FormLabel>Observações</FormLabel>
-          <textarea
-            rows={3}
-            value={observacoes}
-            onChange={e => setObservacoes(e.target.value)}
-            className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
-            placeholder="Opcional"
-            maxLength={2000}
-          />
-        </div>
-      </div>
+          <div>
+            <FormLabel>Observações</FormLabel>
+            <FormTextarea
+              variant="light"
+              rows={3}
+              value={observacoes}
+              onChange={setObservacoes}
+              placeholder="Opcional"
+            />
+          </div>
+        </ManejoSectionCard>
+      </ManejoPontualFormShell>
       <BloqueioNegocioDialog
         message={bloqueioMsg}
         onClose={() => setBloqueioMsg(null)}

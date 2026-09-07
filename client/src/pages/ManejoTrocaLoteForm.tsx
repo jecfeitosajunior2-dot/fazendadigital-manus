@@ -1,12 +1,20 @@
 import AppLayout from "@/components/AppLayout";
-import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { BloqueioNegocioDialog } from "@/components/BloqueioNegocioDialog";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import { ManejoAnimalField } from "@/components/ManejoAnimalField";
+import {
+  FAZENDA_SELECT_PLACEHOLDER,
+  ManejoPontualFormShell,
+  ManejoSectionCard,
+} from "@/components/ManejoPontualFormLayout";
 import {
   FieldBox,
   FormDatePicker,
-  FormDownSelect,
+  FormInput,
   FormLabel,
+  FormSelect,
 } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
@@ -26,13 +34,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation, useSearch } from "wouter";
 
-const FD_PRIMARY = "#4ECDC4";
-
-const fieldCls =
-  "w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 min-h-[34px]";
-const labelCls = "block text-[11px] text-gray-600 font-medium mb-1";
-const sectionTitleCls =
-  "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
 
 function todayISODate() {
   const d = new Date();
@@ -281,70 +282,31 @@ export function ManejoTrocaLoteForm() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Troca de Lote
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            disabled={mutation.isPending}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px] disabled:opacity-60"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={salvarDisabled}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {mutation.isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
+      <ManejoPontualFormShell
+        title="Troca de Lote"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={handleSalvar}
+        saveDisabled={salvarDisabled}
+        savePending={mutation.isPending}
+      >
+        <ManejoSectionCard title="Contexto">
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
             {unicaFazenda && fazendaId && nomeFazenda ? (
               <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
             ) : (
               <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
                   value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
                   disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
               </div>
             )}
 
@@ -357,71 +319,76 @@ export function ManejoTrocaLoteForm() {
               />
             </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <FormLabel required>Animal</FormLabel>
-            <AnimalAutocomplete
+        <ManejoSectionCard title="Animal">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ManejoAnimalField
+              embedded
               selected={animalSel}
               onSelect={handleAnimalSelect}
               animals={animais as AnimalTrocaLoteRow[]}
               loading={Boolean(fazendaNum) && loadingAnimais}
               disabled={!fazendaNum}
-              inputClassName={fieldCls}
-              placeholder="Buscar por brinco, RFID ou nome…"
-              emptyMessage="Nenhum animal ativo nesta Fazenda."
               hintMessage={
                 fazendaNum
                   ? "Clique para ver animais ou digite para filtrar."
                   : "Selecione uma Fazenda primeiro."
               }
             />
-          </div>
 
-          <div>
-            <FormLabel>Lote atual</FormLabel>
-            <FieldBox variant="light">
-              <div className="px-3 py-2 min-h-[34px]">
-                <p className="text-[12px] font-medium text-gray-800">
-                  {loteAtualDisplay.titulo || "—"}
-                </p>
-                {loteAtualDisplay.subtitulo ? (
-                  <p className="text-[11px] text-gray-500 mt-0.5">
-                    {loteAtualDisplay.subtitulo}
+            <div>
+              <FormLabel>Lote atual</FormLabel>
+              <FieldBox variant="light">
+                <div className="px-3 py-2 min-h-[34px]">
+                  <p className="text-[12px] font-medium text-gray-800">
+                    {loteAtualDisplay.titulo || "—"}
                   </p>
-                ) : null}
-              </div>
-            </FieldBox>
+                  {loteAtualDisplay.subtitulo ? (
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {loteAtualDisplay.subtitulo}
+                    </p>
+                  ) : null}
+                </div>
+              </FieldBox>
+            </div>
           </div>
+        </ManejoSectionCard>
 
-          <div className="sm:col-span-2">
-            <FormLabel required>Lote de destino</FormLabel>
-            {lotesLoading ? (
-              <p className="text-[12px] text-gray-400 py-2">Carregando lotes...</p>
-            ) : fazendaNum && destinoOptions.length === 0 ? (
-              <p className="text-[12px] text-amber-700 py-2">
-                Nenhum lote de destino disponível nesta fazenda.
-              </p>
-            ) : (
-              <FormDownSelect
-                value={destinoSelectValue}
-                onChange={setLoteDestinoId}
-                placeholder={
-                  fazendaNum
-                    ? "Selecione o lote de destino"
-                    : "Selecione uma Fazenda primeiro"
-                }
-                disabled={destinoDisabled || destinoOptions.length === 0}
-                options={destinoOptions}
-              />
-            )}
-            {mesmoLote ? (
-              <p className="mt-1.5 text-[12px] text-amber-700">{MSG_TROCA_LOTE_MESMO_LOTE}</p>
-            ) : null}
-          </div>
-        </div>
-      </div>
+        <ManejoSectionCard title="Troca de Lote">
+          <FormLabel required>Lote de destino</FormLabel>
+          {lotesLoading ? (
+            <p className="text-[12px] text-gray-400 py-2">Carregando lotes...</p>
+          ) : fazendaNum && destinoOptions.length === 0 ? (
+            <p className="text-[12px] text-amber-700 py-2">
+              Nenhum lote de destino disponível nesta fazenda.
+            </p>
+          ) : (
+            <FormSelect
+              variant="light"
+              side="top"
+              value={destinoSelectValue}
+              onChange={setLoteDestinoId}
+              placeholder={
+                fazendaNum
+                  ? "Selecione o lote de destino"
+                  : "Selecione uma Fazenda primeiro"
+              }
+              disabled={destinoDisabled || destinoOptions.length === 0}
+              required
+            >
+              {destinoOptions.map(o => (
+                <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                  {o.label}
+                </SelectItem>
+              ))}
+            </FormSelect>
+          )}
+          {mesmoLote ? (
+            <p className="mt-1.5 text-[12px] text-amber-700">{MSG_TROCA_LOTE_MESMO_LOTE}</p>
+          ) : null}
+        </ManejoSectionCard>
+      </ManejoPontualFormShell>
       <BloqueioNegocioDialog
         message={bloqueioMsg}
         onClose={() => setBloqueioMsg(null)}

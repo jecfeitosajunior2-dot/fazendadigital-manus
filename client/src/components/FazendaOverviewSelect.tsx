@@ -16,6 +16,7 @@ type Props = {
   showEmptyOption?: boolean;
   className?: string;
   disabled?: boolean;
+  required?: boolean;
 };
 
 export default function FazendaOverviewSelect({
@@ -26,6 +27,7 @@ export default function FazendaOverviewSelect({
   showEmptyOption = true,
   className,
   disabled,
+  required,
 }: Props) {
   return (
     <FormSelect
@@ -34,6 +36,7 @@ export default function FazendaOverviewSelect({
       onChange={v => onChange(v === EMPTY ? "" : v)}
       placeholder={emptyLabel}
       disabled={disabled}
+      required={required}
       triggerClassName={cn(FAZENDA_OVERVIEW_SELECT_CLASS, className)}
     >
       {showEmptyOption ? (

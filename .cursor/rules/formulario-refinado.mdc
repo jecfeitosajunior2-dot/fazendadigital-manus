@@ -1,0 +1,37 @@
+---
+description: Padrão visual refinado de cards e campos (Nova Venda / Cadastrar Fazenda)
+globs: client/src/**/*.tsx
+alwaysApply: false
+---
+
+# Formulário refinado
+
+Referência: `NovaVendaPage.tsx` e `FarmRegistrationPage.tsx`.
+Componentes: `formControlFlatCls`, `FormDownSelect`, `FormInput`/`FormSelect`/`FormTextarea` com `variant="light"`.
+
+## Card
+
+```
+bg-white border border-gray-200 rounded shadow-sm overflow-hidden
+```
+
+- Título **dentro** do card: `px-5 py-4 border-b border-gray-100`, cor `#4ECDC4` (mesma da aba dos obrigatórios)
+- Corpo: `p-5`
+- Várias seções = vários cards nesse formato (não voltar para pílula nem `rounded-xl`)
+
+## Campos
+
+- Altura **34px**, fundo branco, `rounded` (não `rounded-md`)
+- Obrigatório: `border-l-[3px] border-l-[#4ECDC4]` no próprio controle, sem `overflow-hidden` (corta o canto)
+- Inválido: faixa esquerda vermelha
+- Não usar fundo cinza `#EEEEEE` nesses formulários
+
+```tsx
+// ✅
+<FormInput variant="light" required value={nome} onChange={setNome} />
+<FormDownSelect required value={id} onChange={setId} placeholder="Selecione" options={opcoes} />
+
+// ❌ FieldBox cinza, pílula no título, faixa teal com overflow-hidden
+```
+
+Telas antigas só mudam quando o usuário pedir para alinhar a este recorte.

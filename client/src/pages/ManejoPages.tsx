@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useLocation, useSearch } from "wouter";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
   Tag,
   Weight,
@@ -97,8 +97,15 @@ import {
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExternoField";
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
-import { FormDatePicker, FormDownSelect, FormInput, FormLabel } from "@/components/FormFields";
-import { formatCurrencyBrl } from "@/lib/utils";
+import { FormDatePicker, FormDownSelect, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import {
+  FAZENDA_SELECT_PLACEHOLDER,
+  ManejoPontualFormShell,
+  ManejoSectionCard,
+} from "@/components/ManejoPontualFormLayout";
+import { SelectItem } from "@/components/ui/select";
+import { formatCurrencyBrl, cn } from "@/lib/utils";
 import { ManejoAnimalField } from "@/components/ManejoAnimalField";
 import { ManejoTrocaLoteForm } from "./ManejoTrocaLoteForm";
 import { ManejoCastracaoForm } from "./ManejoCastracaoForm";
@@ -121,6 +128,11 @@ import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
 const FD_PRIMARY = "#4ECDC4";
 const ICON_CLASS = "h-5 w-5 shrink-0";
 const ICON_STROKE = 2;
+
+const stepCard = "border border-gray-200 rounded shadow-sm bg-white p-4";
+
+const btnRegistrar =
+  "inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 transition min-h-[40px] shrink-0";
 
 export const TIPOS_MANEJO = [
   {
@@ -322,7 +334,7 @@ export function ManejoRegistrosPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
             <h1
@@ -331,17 +343,16 @@ export function ManejoRegistrosPage() {
             >
               Registros de Manejo
             </h1>
-            <p className="text-[12px] text-gray-500 mt-1">
-              Escolha como deseja registrar o manejo.
-            </p>
           </div>
 
-          <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
-            {/* Sessão — destaque operacional de campo */}
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
             <button
               type="button"
               onClick={() => setLocation("/manejo/registros/sessao")}
-              className="h-full text-left rounded-xl border-2 border-[#4ECDC4] bg-[#4ECDC4]/[0.07] p-4 hover:bg-[#4ECDC4]/[0.12] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/50"
+              className={cn(
+                stepCard,
+                "h-full text-left border-[#4ECDC4] bg-[#4ECDC4]/[0.06] hover:bg-[#4ECDC4]/[0.1] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4ECDC4]/40",
+              )}
             >
               <div className="flex items-start gap-3 h-full">
                 <span
@@ -352,8 +363,8 @@ export function ManejoRegistrosPage() {
                   <CorralGateIcon size={28} />
                 </span>
                 <div className="min-w-0 flex flex-col flex-1">
-                  <div className="text-[13px] font-semibold text-gray-900">Sessão no curral</div>
-                  <p className="text-[11px] text-gray-600 mt-1 leading-relaxed flex-1">
+                  <div className="text-[13px] font-semibold text-[#4ECDC4]">Sessão no curral</div>
+                  <p className="text-[11px] text-gray-500 mt-1 leading-relaxed flex-1">
                     Realize vários manejos no mesmo animal durante o trabalho de campo.
                   </p>
                   <span
@@ -367,17 +378,17 @@ export function ManejoRegistrosPage() {
               </div>
             </button>
 
-            <div className="h-full rounded-xl border border-gray-200 bg-white p-4">
+            <div className={cn(stepCard, "h-full")}>
               <div className="flex items-start gap-3 h-full">
                 <span
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-50 border border-gray-200 text-gray-700 shrink-0"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-50 border border-gray-200 text-gray-600 shrink-0"
                   aria-hidden
                 >
                   <span className="material-icons text-[22px]">edit_note</span>
                 </span>
                 <div className="min-w-0 flex flex-col flex-1">
-                  <div className="text-[13px] font-semibold text-gray-900">Manejo pontual</div>
-                  <p className="text-[11px] text-gray-600 mt-1 leading-relaxed flex-1">
+                  <div className="text-[13px] font-semibold text-[#4ECDC4]">Manejo pontual</div>
+                  <p className="text-[11px] text-gray-500 mt-1 leading-relaxed flex-1">
                     Registre um manejo específico de forma rápida e individual.
                   </p>
                   <button
@@ -397,75 +408,51 @@ export function ManejoRegistrosPage() {
           id="manejo-pontual-secao"
           className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden scroll-mt-20"
         >
-          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
-            <h2 className="text-[13px] font-semibold text-gray-800">Manejo pontual</h2>
-            <p className="text-[11px] text-gray-500 mt-0.5">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Manejo pontual</h2>
+            <p className="mt-1 text-[11px] text-gray-500">
               Selecione o manejo que deseja registrar.
             </p>
           </div>
 
-          <div className="overflow-hidden">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Tipo
-                  </th>
-                  <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">
-                    Descrição
-                  </th>
-                  <th className="px-5 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[120px]">
-                    Ação
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {TIPOS_MANEJO.map(tipo => {
-                  const Icon = tipo.icon;
-                  return (
-                    <tr
-                      key={tipo.id}
-                      className="border-b border-gray-100 hover:bg-[#4ECDC4]/[0.05] transition-colors"
+          <div className="divide-y divide-gray-100">
+            {TIPOS_MANEJO.map(tipo => {
+              const Icon = tipo.icon;
+              return (
+                <div
+                  key={tipo.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-[#4ECDC4]/[0.04] transition-colors"
+                >
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <span
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-gray-50 border border-gray-200 text-[#4ECDC4] shrink-0"
+                      aria-hidden="true"
                     >
-                      <td className="px-5 py-3 align-middle">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span
-                            className="inline-flex h-[22px] w-[22px] items-center justify-center shrink-0 text-[#4ECDC4]"
-                            aria-hidden="true"
-                          >
-                            <Icon className={ICON_CLASS} strokeWidth={ICON_STROKE} />
-                          </span>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-gray-900">{tipo.label}</div>
-                            <div className="text-[11px] text-gray-500 mt-0.5 sm:hidden">
-                              {tipo.descricao}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 align-middle text-gray-500 hidden sm:table-cell">
+                      <Icon className={ICON_CLASS} strokeWidth={ICON_STROKE} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold text-gray-900">{tipo.label}</div>
+                      <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
                         {tipo.descricao}
-                      </td>
-                      <td className="px-5 py-3 align-middle text-center">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setLocation(
-                              `/manejo/registros/cadastro?tipo=${encodeURIComponent(tipo.id)}`,
-                            )
-                          }
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white hover:brightness-95 transition min-h-[36px]"
-                          style={{ backgroundColor: FD_PRIMARY }}
-                        >
-                          <span className="material-icons text-[14px]">add</span>
-                          Registrar
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLocation(
+                        `/manejo/registros/cadastro?tipo=${encodeURIComponent(tipo.id)}`,
+                      )
+                    }
+                    className={btnRegistrar}
+                    style={{ backgroundColor: FD_PRIMARY }}
+                  >
+                    <span className="material-icons text-[16px]">add</span>
+                    Registrar
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -834,74 +821,33 @@ function ManejoPesagemForm() {
     });
   };
 
-  const sectionTitleCls =
-    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
-
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Pesagem
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={saveMutation.isPending || !animalId || !animalSel}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {saveMutation.isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
+      <ManejoPontualFormShell
+        title="Pesagem"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={handleSalvar}
+        saveDisabled={!animalId || !animalSel}
+        savePending={saveMutation.isPending}
+      >
+        <ManejoSectionCard title="Contexto">
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
             {unicaFazenda && fazendaId && nomeFazenda ? (
               <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
             ) : (
               <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
                   value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
                   disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
                 {erroFazenda ? (
                   <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
                 ) : null}
@@ -917,64 +863,63 @@ function ManejoPesagemForm() {
               />
             </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <ManejoAnimalField
-          selected={animalSel}
-          onSelect={handleAnimalSelect}
-          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
-          loading={carregandoAnimaisFazenda}
-          disabled={!fazendaNum}
-          selectedExtra={
-            <>
-              <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
-                |
-              </span>
-              <span className="shrink-0">
-                Último peso{" "}
-                <span className="font-medium text-gray-800">
-                  {ultimoPesoFmt
-                    ? `${ultimoPesoFmt} kg${ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}`
-                    : "—"}
+        <ManejoSectionCard title="Animal">
+          <ManejoAnimalField
+            embedded
+            selected={animalSel}
+            onSelect={handleAnimalSelect}
+            animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+            loading={carregandoAnimaisFazenda}
+            disabled={!fazendaNum}
+            selectedExtra={
+              <>
+                <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                  |
                 </span>
-              </span>
-            </>
-          }
-        />
+                <span className="shrink-0">
+                  Último peso{" "}
+                  <span className="font-medium text-gray-800">
+                    {ultimoPesoFmt
+                      ? `${ultimoPesoFmt} kg${ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}`
+                      : "—"}
+                  </span>
+                </span>
+              </>
+            }
+          />
+        </ManejoSectionCard>
 
         {animalSel ? (
-          <div className="border-t border-gray-100 pt-5 space-y-4">
-            <p className={sectionTitleCls}>Pesagem</p>
+          <ManejoSectionCard title="Pesagem">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>
-                  Novo peso (kg)<span className="text-red-500">*</span>
-                </label>
-                <input
+                <FormLabel required>Novo peso (kg)</FormLabel>
+                <FormInput
+                  variant="light"
                   type="text"
                   inputMode="decimal"
                   value={novoPeso}
-                  onChange={e => setNovoPeso(e.target.value)}
+                  onChange={setNovoPeso}
                   placeholder="Ex.: 320 ou 320,5"
-                  className={fieldCls}
-                  autoComplete="off"
+                  required
                 />
               </div>
             </div>
             <div>
-              <label className={labelCls}>Observações</label>
-              <textarea
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                variant="light"
                 rows={3}
                 value={observacoes}
-                onChange={e => setObservacoes(e.target.value)}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                onChange={setObservacoes}
                 placeholder="Opcional"
-                maxLength={2000}
               />
             </div>
-          </div>
+          </ManejoSectionCard>
         ) : null}
-      </div>
+      </ManejoPontualFormShell>
 
       {/* Bloqueio de regra de negócio — mesmo padrão visual da Identificação */}
       <Dialog open={Boolean(bloqueioNegocioMsg)}>
@@ -1378,74 +1323,33 @@ function ManejoSanitarioForm() {
     });
   };
 
-  const sectionTitleCls =
-    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
-
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Sanitário
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={saveMutation.isPending || !animalId || !animalSel}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {saveMutation.isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
+      <ManejoPontualFormShell
+        title="Sanitário"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={handleSalvar}
+        saveDisabled={!animalId || !animalSel}
+        savePending={saveMutation.isPending}
+      >
+        <ManejoSectionCard title="Contexto">
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
             {unicaFazenda && fazendaId && nomeFazenda ? (
               <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
             ) : (
               <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
                   value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
                   disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
                 {erroFazenda ? (
                   <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
                 ) : null}
@@ -1461,44 +1365,50 @@ function ManejoSanitarioForm() {
               />
             </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <ManejoAnimalField
-          selected={animalSel}
-          onSelect={handleAnimalSelect}
-          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
-          loading={carregandoAnimaisFazenda}
-          disabled={!fazendaNum}
-          onAfterClear={limparSanitarioDependentes}
-        />
+        <ManejoSectionCard title="Animal">
+          <ManejoAnimalField
+            embedded
+            selected={animalSel}
+            onSelect={handleAnimalSelect}
+            animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+            loading={carregandoAnimaisFazenda}
+            disabled={!fazendaNum}
+            onAfterClear={limparSanitarioDependentes}
+          />
+        </ManejoSectionCard>
 
         {animalSel ? (
-          <div className="border-t border-gray-100 pt-5 space-y-4">
-            <p className={sectionTitleCls}>Manejo sanitário</p>
+          <ManejoSectionCard title="Manejo Sanitário">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>
-                  Tipo de manejo sanitário<span className="text-red-500">*</span>
-                </label>
-                <FormDownSelect
+                <FormLabel required>Tipo de manejo sanitário</FormLabel>
+                <FormSelect
+                  variant="light"
                   value={tipoSanitario}
                   onChange={v => {
                     setTipoSanitario(v as TipoSanitarioManejo | "");
                     if (v !== "Outro") setDescricaoOutro("");
                   }}
                   placeholder="Selecione o tipo"
-                  options={TIPOS_SANITARIO_MANEJO}
-                />
+                  required
+                >
+                  {TIPOS_SANITARIO_MANEJO.map(o => (
+                    <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
               </div>
               {(exigeProduto || tipoSanitario === "Outro") ? (
                 <div className={exigeProduto ? "" : "sm:col-span-2"}>
-                  <label className={labelCls}>
+                  <FormLabel required={exigeProduto}>
                     Produto / medicamento
-                    {exigeProduto ? <span className="text-red-500">*</span> : null}
                     {!exigeProduto ? (
                       <span className="text-gray-400 font-normal"> (opcional)</span>
                     ) : null}
-                  </label>
+                  </FormLabel>
                   {produtoSel ? (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                       <div className="flex items-start justify-between gap-2">
@@ -1527,12 +1437,11 @@ function ManejoSanitarioForm() {
                     </div>
                   ) : (
                     <div className="relative" ref={produtoRef}>
-                      <input
+                      <FormInput
+                        variant="light"
                         type="search"
                         value={buscaProduto}
-                        onChange={e => {
-                          const next = e.target.value;
-                          // Digitar não mantém seleção: exige clique na lista (estoqueId).
+                        onChange={next => {
                           if (estoqueId != null || produtoSel) {
                             setEstoqueId(null);
                             setProdutoSel(null);
@@ -1543,8 +1452,8 @@ function ManejoSanitarioForm() {
                         }}
                         onFocus={() => setListaProdutoAberta(true)}
                         placeholder="Buscar e selecionar insumo da Farmácia…"
-                        className={fieldCls}
-                        autoComplete="off"
+                        required={exigeProduto}
+                        invalid={Boolean(erroProduto)}
                       />
                       {listaProdutoAberta ? (
                         <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
@@ -1594,48 +1503,49 @@ function ManejoSanitarioForm() {
               ) : null}
               {exigeDescricaoOutro ? (
                 <div className="sm:col-span-2">
-                  <label className={labelCls}>
-                    Descreva o manejo<span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
+                  <FormLabel required>Descreva o manejo</FormLabel>
+                  <FormInput
+                    variant="light"
                     value={descricaoOutro}
-                    onChange={e => setDescricaoOutro(e.target.value)}
+                    onChange={setDescricaoOutro}
                     placeholder="Descreva o manejo sanitário realizado"
-                    className={fieldCls}
-                    maxLength={2000}
-                    autoComplete="off"
                   />
                 </div>
               ) : null}
               <div>
-                <label className={labelCls}>
-                  Dose
-                  {estoqueId ? <span className="text-red-500">*</span> : null}
-                </label>
+                <FormLabel required={Boolean(estoqueId)}>Dose</FormLabel>
                 <div className="flex gap-2 items-start min-w-0">
-                  <input
+                  <FormInput
+                    variant="light"
                     type="text"
                     inputMode="decimal"
                     value={doseValor}
-                    onChange={e => {
-                      setDoseValor(e.target.value);
+                    onChange={next => {
+                      setDoseValor(next);
                       if (erroDose) setErroDose("");
                     }}
                     placeholder="Ex.: 5"
-                    className={`${fieldCls} min-w-0 flex-1`}
-                    autoComplete="off"
+                    className="min-w-0 flex-1"
+                    required={Boolean(estoqueId)}
+                    invalid={Boolean(erroDose)}
                   />
                   <div className="w-[7.25rem] shrink-0">
-                    <FormDownSelect
+                    <FormSelect
+                      variant="light"
                       value={doseUnidade}
                       onChange={v => {
                         setDoseUnidade(v);
                         if (erroDose) setErroDose("");
                       }}
                       placeholder="Unidade"
-                      options={UNIDADES_DOSE_SANITARIO}
-                    />
+                      required={Boolean(estoqueId)}
+                    >
+                      {UNIDADES_DOSE_SANITARIO.map(o => (
+                        <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </FormSelect>
                   </div>
                 </div>
                 {erroDose ? (
@@ -1646,13 +1556,20 @@ function ManejoSanitarioForm() {
                 ) : null}
               </div>
               <div>
-                <label className={labelCls}>Via de aplicação</label>
-                <FormDownSelect
+                <FormLabel>Via de aplicação</FormLabel>
+                <FormSelect
+                  variant="light"
+                  side="top"
                   value={viaAplicacao}
                   onChange={setViaAplicacao}
                   placeholder="Selecione a via (opcional)"
-                  options={VIAS_APLICACAO_SANITARIO}
-                />
+                >
+                  {VIAS_APLICACAO_SANITARIO.map(o => (
+                    <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
               </div>
             </div>
             {produtoSel ? (
@@ -1713,19 +1630,18 @@ function ManejoSanitarioForm() {
               </div>
             ) : null}
             <div>
-              <label className={labelCls}>Observações</label>
-              <textarea
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                variant="light"
                 rows={3}
                 value={observacoes}
-                onChange={e => setObservacoes(e.target.value)}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                onChange={setObservacoes}
                 placeholder="Opcional — reação, reforço previsto, condição observada…"
-                maxLength={2000}
               />
             </div>
-          </div>
+          </ManejoSectionCard>
         ) : null}
-      </div>
+      </ManejoPontualFormShell>
 
       <Dialog open={Boolean(bloqueioNegocioMsg)}>
         <DialogContent
@@ -2708,69 +2624,31 @@ function ManejoReprodutivoForm() {
 
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Reprodutivo
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={isSaving || !podeSalvar}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {isSaving ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
+      <ManejoPontualFormShell
+        title="Reprodutivo"
+        onCancel={() => setLocation("/manejo/registros")}
+        onSave={handleSalvar}
+        saveDisabled={!podeSalvar}
+        savePending={isSaving}
+      >
+        <ManejoSectionCard title="Contexto">
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
             {unicaFazenda && fazendaId && nomeFazenda ? (
               <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
             ) : (
               <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
                   value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
                   disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
                 {erroFazenda ? (
                   <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
                 ) : null}
@@ -2786,30 +2664,38 @@ function ManejoReprodutivoForm() {
               />
             </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <ManejoAnimalField
-          selected={animalSel}
-          onSelect={handleAnimalSelect}
-          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
-          loading={carregandoAnimaisFazenda}
-          disabled={!fazendaNum}
-        />
+        <ManejoSectionCard title="Animal">
+          <ManejoAnimalField
+            embedded
+            selected={animalSel}
+            onSelect={handleAnimalSelect}
+            animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+            loading={carregandoAnimaisFazenda}
+            disabled={!fazendaNum}
+          />
+        </ManejoSectionCard>
 
         {animalSel ? (
-          <div className="border-t border-gray-100 pt-5 space-y-4">
-            <p className={sectionTitleCls}>Manejo reprodutivo</p>
+          <ManejoSectionCard title="Manejo Reprodutivo">
+            <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className={labelCls}>
-                  Tipo de manejo reprodutivo<span className="text-red-500">*</span>
-                </label>
-                <FormDownSelect
+                <FormLabel required>Tipo de manejo reprodutivo</FormLabel>
+                <FormSelect
+                  variant="light"
                   value={tipoReprodutivo}
                   onChange={onChangeTipo}
                   placeholder="Selecione o tipo"
-                  options={reproTipoOptions.map(t => ({ value: t, label: t }))}
-                />
+                  required
+                >
+                  {reproTipoOptions.map(t => (
+                    <SelectItem key={t} value={t} className="text-[12px]">
+                      {t}
+                    </SelectItem>
+                  ))}
+                </FormSelect>
                 {reproTipoOptions.length === 0 ? (
                   <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
                     Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
@@ -2832,18 +2718,22 @@ function ManejoReprodutivoForm() {
                     <div className="space-y-4">
                       {isDadosInseminacao ? (
                         <div>
-                          <label className={labelCls}>Origem do reprodutor</label>
-                          <FormDownSelect
+                          <FormLabel>Origem do reprodutor</FormLabel>
+                          <FormSelect
+                            variant="light"
                             value={reprodutorOrigem}
                             onChange={v =>
                               onChangeReprodutorOrigem(v as "" | "interno" | "externo")
                             }
                             placeholder="Selecione a origem"
-                            options={[
-                              { value: "interno", label: "Animal do rebanho" },
-                              { value: "externo", label: "Sêmen / reprodutor externo" },
-                            ]}
-                          />
+                          >
+                            <SelectItem value="interno" className="text-[12px]">
+                              Animal do rebanho
+                            </SelectItem>
+                            <SelectItem value="externo" className="text-[12px]">
+                              Sêmen / reprodutor externo
+                            </SelectItem>
+                          </FormSelect>
                         </div>
                       ) : null}
 
@@ -2896,16 +2786,17 @@ function ManejoReprodutivoForm() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {partidasSemenQueryEnabled && partidasSemenDisponiveis.length > 0 ? (
                             <div className="sm:col-span-2">
-                              <label className={labelCls}>
+                              <FormLabel>
                                 Partida cadastrada
                                 <span className="text-gray-400 font-normal"> (opcional)</span>
-                              </label>
+                              </FormLabel>
                               {carregandoPartidasSemen ? (
                                 <p className="text-[11px] text-gray-500 mt-1">
                                   Consultando cadastros conhecidos…
                                 </p>
                               ) : (
-                                <FormDownSelect
+                                <FormSelect
+                                  variant="light"
                                   value={semenPartidaId != null ? String(semenPartidaId) : ""}
                                   onChange={v => {
                                     const id = v ? Number(v) : null;
@@ -2920,13 +2811,13 @@ function ManejoReprodutivoForm() {
                                     );
                                   }}
                                   placeholder="Informar sêmen manualmente"
-                                  options={partidasSemenDisponiveis.map(p => ({
-                                    value: String(p.id),
-                                    label: `${p.partida}${
-                                      p.centralOrigem ? ` · ${p.centralOrigem}` : ""
-                                    }`,
-                                  }))}
-                                />
+                                >
+                                  {partidasSemenDisponiveis.map(p => (
+                                    <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
+                                      {`${p.partida}${p.centralOrigem ? ` · ${p.centralOrigem}` : ""}`}
+                                    </SelectItem>
+                                  ))}
+                                </FormSelect>
                               )}
                             </div>
                           ) : null}
@@ -3030,27 +2921,34 @@ function ManejoReprodutivoForm() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {showResultado ? (
-                      <div>
-                        <label className={labelCls}>
-                          Resultado
-                          {exigeResultado ? <span className="text-red-500">*</span> : null}
-                          {!exigeResultado ? (
-                            <span className="text-gray-400 font-normal"> (opcional)</span>
-                          ) : null}
-                        </label>
-                        <FormDownSelect
-                          value={resultado}
-                          onChange={v => {
-                            setResultado(v);
-                            if (v !== "Outro") setDescricaoResultadoOutro("");
-                            if (erroResultado) setErroResultado("");
-                            if (erroDescricaoResultadoOutro) setErroDescricaoResultadoOutro("");
-                          }}
-                          placeholder={
-                            exigeResultado ? "Selecione o resultado" : "Selecione (opcional)"
-                          }
-                          options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
-                        />
+                          <div>
+                            <FormLabel required={exigeResultado}>
+                              Resultado
+                              {!exigeResultado ? (
+                                <span className="text-gray-400 font-normal"> (opcional)</span>
+                              ) : null}
+                            </FormLabel>
+                            <FormSelect
+                              variant="light"
+                              side="top"
+                              value={resultado}
+                              onChange={v => {
+                                setResultado(v);
+                                if (v !== "Outro") setDescricaoResultadoOutro("");
+                                if (erroResultado) setErroResultado("");
+                                if (erroDescricaoResultadoOutro) setErroDescricaoResultadoOutro("");
+                              }}
+                              placeholder={
+                                exigeResultado ? "Selecione o resultado" : "Selecione (opcional)"
+                              }
+                              required={exigeResultado}
+                            >
+                              {reproResultadoOptions.map(r => (
+                                <SelectItem key={r} value={r} className="text-[12px]">
+                                  {r}
+                                </SelectItem>
+                              ))}
+                            </FormSelect>
                         {erroResultado ? (
                           <p className="text-[11px] text-red-600 mt-1">{erroResultado}</p>
                         ) : null}
@@ -3077,20 +2975,23 @@ function ManejoReprodutivoForm() {
                     <div className="sm:col-span-2 space-y-4 border-t border-gray-100 pt-4">
                       <p className={sectionTitleCls}>Matrizes atendidas</p>
                       <div>
-                        <label className={labelCls}>
-                          Forma de seleção<span className="text-red-500">*</span>
-                        </label>
-                        <FormDownSelect
+                        <FormLabel required>Forma de seleção</FormLabel>
+                        <FormSelect
+                          variant="light"
                           value={coberturaSelecaoModo}
                           onChange={v =>
                             onChangeCoberturaSelecaoModo(v as "" | "individual" | "lote")
                           }
                           placeholder="Selecione a forma de seleção"
-                          options={[
-                            { value: "individual", label: "Matriz individual" },
-                            { value: "lote", label: "Por lote" },
-                          ]}
-                        />
+                          required
+                        >
+                          <SelectItem value="individual" className="text-[12px]">
+                            Matriz individual
+                          </SelectItem>
+                          <SelectItem value="lote" className="text-[12px]">
+                            Por lote
+                          </SelectItem>
+                        </FormSelect>
                       </div>
 
                       {coberturaSelecaoModo === "individual" ? (
@@ -3167,18 +3068,20 @@ function ManejoReprodutivoForm() {
                       {coberturaSelecaoModo === "lote" ? (
                         <div className="space-y-4">
                           <div>
-                            <label className={labelCls}>
-                              Lote<span className="text-red-500">*</span>
-                            </label>
-                            <FormDownSelect
+                            <FormLabel required>Lote</FormLabel>
+                            <FormSelect
+                              variant="light"
                               value={loteCoberturaId}
                               onChange={onChangeLoteCobertura}
                               placeholder="Selecione um lote"
-                              options={lotesCoberturaElegiveis.map(l => ({
-                                value: String(l.id),
-                                label: `${l.nome} · ${matrizesElegiveisPorLote.get(l.id) ?? 0} matriz(es) elegível(eis)`,
-                              }))}
-                            />
+                              required
+                            >
+                              {lotesCoberturaElegiveis.map(l => (
+                                <SelectItem key={l.id} value={String(l.id)} className="text-[12px]">
+                                  {`${l.nome} · ${matrizesElegiveisPorLote.get(l.id) ?? 0} matriz(es) elegível(eis)`}
+                                </SelectItem>
+                              ))}
+                            </FormSelect>
                             {lotesCoberturaElegiveis.length === 0 ? (
                               <p className="text-[11px] text-amber-600 mt-1">
                                 Nenhum lote com matrizes elegíveis nesta fazenda.
@@ -3273,21 +3176,28 @@ function ManejoReprodutivoForm() {
 
                   {showResultado ? (
                     <div>
-                      <label className={labelCls}>
+                      <FormLabel required={exigeResultado}>
                         Resultado
-                        {exigeResultado ? <span className="text-red-500">*</span> : null}
                         {!exigeResultado ? (
                           <span className="text-gray-400 font-normal"> (opcional)</span>
                         ) : null}
-                      </label>
-                      <FormDownSelect
+                      </FormLabel>
+                      <FormSelect
+                        variant="light"
+                        side="top"
                         value={resultado}
                         onChange={onChangeResultado}
                         placeholder={
                           exigeResultado ? "Selecione o resultado" : "Selecione (opcional)"
                         }
-                        options={reproResultadoOptions.map(r => ({ value: r, label: r }))}
-                      />
+                        required={exigeResultado}
+                      >
+                        {reproResultadoOptions.map(r => (
+                          <SelectItem key={r} value={r} className="text-[12px]">
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </FormSelect>
                       {erroResultado ? (
                         <p className="text-[11px] text-red-600 mt-1">{erroResultado}</p>
                       ) : null}
@@ -3546,19 +3456,19 @@ function ManejoReprodutivoForm() {
             ) : null}
 
             <div>
-              <label className={labelCls}>Observações</label>
-              <textarea
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                variant="light"
                 rows={3}
                 value={observacoes}
-                onChange={e => setObservacoes(e.target.value)}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2 text-gray-700 resize-none"
+                onChange={setObservacoes}
                 placeholder="Opcional — contexto adicional que não cabe nos campos estruturados…"
-                maxLength={2000}
               />
             </div>
-          </div>
+            </div>
+          </ManejoSectionCard>
         ) : null}
-      </div>
+      </ManejoPontualFormShell>
 
       <CadastrarSemenExternoDialog
         open={cadastrarSemenAberto}
@@ -4118,78 +4028,35 @@ function ManejoBrincoEletronicoForm() {
     });
   };
 
-  const sectionTitleCls =
-    "text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2";
-
   return (
     <AppLayout>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">
-            Manejo pontual
-          </p>
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Identificação
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleCancelar()}
-            disabled={cancelandoAt05}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px] disabled:opacity-60"
-          >
-            {cancelandoAt05 ? "Desconectando AT05…" : "Cancelar"}
-          </button>
-          <button
-            type="button"
-            onClick={handleSalvar}
-            disabled={
-              saveMutation.isPending || !animalId || !animalSel || Boolean(novoRfidError)
-            }
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold min-h-[40px] disabled:opacity-60"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            {saveMutation.isPending ? "Salvando…" : "Salvar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded shadow-sm border border-gray-100 p-6 space-y-6">
-        {/* Contexto */}
-        <div>
-          <p className={sectionTitleCls}>Contexto</p>
+      <ManejoPontualFormShell
+        title="Identificação"
+        onCancel={() => void handleCancelar()}
+        cancelDisabled={cancelandoAt05}
+        cancelLabel={cancelandoAt05 ? "Desconectando AT05…" : "Cancelar"}
+        onSave={handleSalvar}
+        saveDisabled={!animalId || !animalSel || Boolean(novoRfidError)}
+        savePending={saveMutation.isPending}
+      >
+        <ManejoSectionCard title="Contexto">
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
             {unicaFazenda && fazendaId && nomeFazenda ? (
               <div className="min-w-0">
-                <label className={labelCls}>Fazenda</label>
-                <div
-                  className={`${fieldCls} bg-gray-50 text-gray-800 font-medium flex items-center`}
-                >
-                  {nomeFazenda}
-                </div>
+                <FormLabel>Fazenda</FormLabel>
+                <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
               </div>
             ) : (
               <div className="min-w-0">
-                <label className={labelCls}>
-                  Fazenda<span className="text-red-500">*</span>
-                </label>
-                <select
+                <FormLabel required>Fazenda</FormLabel>
+                <FazendaOverviewSelect
                   value={fazendaId}
-                  onChange={e => onChangeFazenda(e.target.value)}
-                  className={fieldCls}
+                  onChange={onChangeFazenda}
+                  fazendas={fazendas}
+                  emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
                   disabled={loadingFazendas || !fazendaInitDone}
-                >
-                  <option value="">Selecione uma Fazenda</option>
-                  {fazendas.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
+                  required
+                />
                 {erroFazenda ? (
                   <p className="text-[11px] text-red-600 mt-1">{erroFazenda}</p>
                 ) : null}
@@ -4205,19 +4072,20 @@ function ManejoBrincoEletronicoForm() {
               />
             </div>
           </div>
-        </div>
+        </ManejoSectionCard>
 
-        <ManejoAnimalField
-          selected={animalSel}
-          onSelect={handleAnimalSelect}
-          animals={animaisFazendaAtivos as AnimalBuscaRow[]}
-          loading={carregandoAnimaisFazenda}
-          disabled={!fazendaNum}
-          onAfterClear={limparOperacao}
-        />
+        <ManejoSectionCard title="Animal">
+          <ManejoAnimalField
+            embedded
+            selected={animalSel}
+            onSelect={handleAnimalSelect}
+            animals={animaisFazendaAtivos as AnimalBuscaRow[]}
+            loading={carregandoAnimaisFazenda}
+            disabled={!fazendaNum}
+            onAfterClear={limparOperacao}
+          />
 
-        {/* Leitura RFID via bastão — implementação atual: AT05 (não salva manejo) */}
-        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
+          <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
             <p className="text-[12px] font-semibold text-gray-800">Leitura RFID / Bastão</p>
             <p className="text-[12px] text-gray-600" aria-live="polite">
               Dispositivo: AT05
@@ -4266,13 +4134,10 @@ function ManejoBrincoEletronicoForm() {
               )}
             </div>
           </div>
+        </ManejoSectionCard>
 
-        {/* Operação */}
-        <div className="border-t border-gray-100 pt-5">
-          <p className={sectionTitleCls}>Operação</p>
-          <label className={labelCls}>
-            Operação<span className="text-red-500">*</span>
-          </label>
+        <ManejoSectionCard title="Operação">
+          <FormLabel required>Operação</FormLabel>
           <FormDownSelect
             value={operacao}
             placeholder="Selecione a operação"
@@ -4302,7 +4167,7 @@ function ManejoBrincoEletronicoForm() {
           />
 
           {mostraNovoRfid || mostraNovoBrinco || exigeMotivo ? (
-            <div className="mt-4 space-y-4">
+            <div className="space-y-4">
               {mostraNovoRfid || mostraNovoBrinco ? (
                 <div
                   className={
@@ -4394,22 +4259,25 @@ function ManejoBrincoEletronicoForm() {
               {exigeMotivo ? (
                 <div className="space-y-3">
                   <div>
-                    <label className={labelCls}>
-                      Motivo<span className="text-red-500">*</span>
-                    </label>
-                    <FormDownSelect
+                    <FormLabel required>Motivo</FormLabel>
+                    <FormSelect
+                      variant="light"
+                      side="top"
                       value={motivo}
-                      placeholder="Selecione o motivo"
-                      options={(operacao ? motivosPorOperacao(operacao) : []).map(o => ({
-                        value: o.value,
-                        label: o.label,
-                      }))}
                       onChange={next => {
                         const value = next as MotivoTrocaBrinco;
                         setMotivo(value);
                         if (value !== "outro") setMotivoOutro("");
                       }}
-                    />
+                      placeholder="Selecione o motivo"
+                      required
+                    >
+                      {(operacao ? motivosPorOperacao(operacao) : []).map(o => (
+                        <SelectItem key={o.value} value={o.value} className="text-[12px]">
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </FormSelect>
                   </div>
                   {motivo === "outro" ? (
                     <div>
@@ -4431,8 +4299,8 @@ function ManejoBrincoEletronicoForm() {
               ) : null}
             </div>
           ) : null}
-        </div>
-      </div>
+        </ManejoSectionCard>
+      </ManejoPontualFormShell>
 
       {/* Bloqueio de regra de negócio — mesmo padrão visual de FazendaDeleteBlockedDialog */}
       <Dialog open={Boolean(bloqueioNegocioMsg)}>

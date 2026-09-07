@@ -39,6 +39,8 @@ type ManejoAnimalFieldProps<T extends ManejoAnimalRow> = {
   selectedExtra?: React.ReactNode;
   /** Chamado ao limpar seleção (Alterar animal). */
   onAfterClear?: () => void;
+  /** Sem título/divisor — use quando o card pai já tem cabeçalho de seção. */
+  embedded?: boolean;
 };
 
 export function ManejoAnimalField<T extends ManejoAnimalRow>({
@@ -50,10 +52,9 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
   hintMessage,
   selectedExtra,
   onAfterClear,
+  embedded = false,
 }: ManejoAnimalFieldProps<T>) {
-  return (
-    <div className="border-t border-gray-100 pt-5">
-      <p className={sectionTitleCls}>Animal</p>
+  const content = (
       <AnimalAutocomplete
         selected={selected}
         onSelect={onSelect}
@@ -135,6 +136,14 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
           );
         }}
       />
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div className="border-t border-gray-100 pt-5">
+      <p className={sectionTitleCls}>Animal</p>
+      {content}
     </div>
   );
 }
