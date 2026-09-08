@@ -145,6 +145,13 @@ export function labelStatusCurralManejo(status: CurralManejoStatus): string {
   }
 }
 
+/** Manejos que não entram no hub da sessão de curral (permanecem só no pontual). */
+export const CURRAL_HUB_MANEJOS_EXCLUIDOS: readonly CurralManejoId[] = ["baixa-animal"];
+
+export function isManejoExibidoNoHubCurral(id: string): boolean {
+  return !CURRAL_HUB_MANEJOS_EXCLUIDOS.includes(id as CurralManejoId);
+}
+
 /** Ordem de exibição no hub — mesma sequência de TIPOS_MANEJO (manejos pontuais). */
 export function curralManejoIdsOrdenados(): CurralManejoId[] {
   return [
@@ -155,7 +162,6 @@ export function curralManejoIdsOrdenados(): CurralManejoId[] {
     "troca-lote",
     "castracao",
     "desmama",
-    "baixa-animal",
   ];
 }
 

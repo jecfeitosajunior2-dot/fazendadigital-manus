@@ -5,6 +5,7 @@ import {
   getCurralManejoJetBovEntry,
   isCurralManejoDisponivel,
   labelStatusCurralManejo,
+  isManejoExibidoNoHubCurral,
   podeSelecionarManejoNoHub,
   primeiroManejoDisponivelNaOrdem,
 } from "./curralManejoJetBovMap";
@@ -21,6 +22,12 @@ describe("curralManejoJetBovMap", () => {
     expect(curralManejoIdsOrdenados()[0]).toBe("brinco-eletronico");
     expect(curralManejoIdsOrdenados()[1]).toBe("pesagem");
     expect(curralManejoIdsOrdenados()[2]).toBe("sanitario");
+    expect(curralManejoIdsOrdenados()).not.toContain("baixa-animal");
+  });
+
+  it("movimentação do animal não aparece no hub do curral", () => {
+    expect(isManejoExibidoNoHubCurral("baixa-animal")).toBe(false);
+    expect(isManejoExibidoNoHubCurral("pesagem")).toBe(true);
   });
 
   it("primeiroManejoDisponivelNaOrdem respeita ordem de seleção", () => {

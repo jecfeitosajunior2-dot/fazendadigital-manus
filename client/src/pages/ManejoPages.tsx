@@ -4489,7 +4489,10 @@ export function ManejoSessaoPage() {
     });
   }, []);
 
-  const tiposHubOrdenados = useMemo(() => [...TIPOS_MANEJO], []);
+  const tiposHubOrdenados = useMemo(
+    () => TIPOS_MANEJO.filter(t => t.id !== "baixa-animal"),
+    [],
+  );
 
   const animaisEscopo = useMemo(() => {
     const rows = animais as AnimalRow[];
