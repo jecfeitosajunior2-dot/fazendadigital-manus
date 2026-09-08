@@ -111,9 +111,9 @@ function FinancialTabs({ active }: { active: string }) {
   );
 }
 
-function buildRetornoUrl(retorno: string, fornecedorId?: number) {
+function buildRetornoUrl(retorno: string, pessoaId?: number, idParam = "fornecedorId") {
   const url = new URL(retorno, window.location.origin);
-  if (fornecedorId) url.searchParams.set("fornecedorId", String(fornecedorId));
+  if (pessoaId) url.searchParams.set(idParam, String(pessoaId));
   return url.pathname + url.search;
 }
 
@@ -135,8 +135,12 @@ export default function FinancialPeoplePage() {
   const novoTipo = (params.get("novo") as PessoaTipo | null) ?? null;
   const retornoUrl = params.get("retorno") ? decodeURIComponent(params.get("retorno")!) : null;
   const fornecedorContext = novoTipo === "fornecedor";
+  const clienteContext = novoTipo === "cliente";
+  const cadastroContext = fornecedorContext || clienteContext;
 
-  const [filtro, setFiltro] = useState<"todos" | PessoaTipo>(novoTipo === "fornecedor" ? "fornecedor" : "todos");
+  const [filtro, setFiltro] = useState<"todos" | PessoaTipo>(
+    novoTipo === "fornecedor" ? "fornecedor" : novoTipo === "cliente" ? "cliente" : "todos",
+  );
   const [showForm, setShowForm] = useState(!!novoTipo);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm(novoTipo ?? "fornecedor"));
@@ -154,9 +158,10 @@ export default function FinancialPeoplePage() {
     setForm(emptyForm(filtro === "todos" ? "fornecedor" : filtro));
   };
 
-  const voltarParaOrigem = (fornecedorId?: number) => {
+  const voltarParaOrigem = (pessoaId?: number) => {
     if (retornoUrl) {
-      setLocation(buildRetornoUrl(retornoUrl, fornecedorId));
+      const idParam = fornecedorContext ? "fornecedorId" : clienteContext ? "compradorId" : "pessoaId";
+      setLocation(buildRetornoUrl(retornoUrl, pessoaId, idParam));
       return;
     }
     limparQueryModal();
@@ -166,7 +171,13 @@ export default function FinancialPeoplePage() {
 
   const createMutation = trpc.pessoas.create.useMutation({
     onSuccess: async data => {
-      toast.success(fornecedorContext ? "Fornecedor cadastrado!" : "Cadastro salvo!");
+      toast.success(
+        fornecedorContext
+          ? "Fornecedor cadastrado!"
+          : clienteContext
+            ? "Comprador cadastrado!"
+            : "Cadastro salvo!",
+      );
       await utils.pessoas.list.invalidate();
       if (retornoUrl && data.id) {
         voltarParaOrigem(data.id);
@@ -238,7 +249,12 @@ export default function FinancialPeoplePage() {
     }
     const payload = {
       nome: form.nome.trim(),
-      tipo: fornecedorContext && !editId ? "fornecedor" : form.tipo,
+      tipo:
+        fornecedorContext && !editId
+          ? "fornecedor"
+          : clienteContext && !editId
+            ? "cliente"
+            : form.tipo,
       documento,
       endereco: form.endereco.trim() || undefined,
       telefone: form.telefone.trim() || undefined,
@@ -256,11 +272,15 @@ export default function FinancialPeoplePage() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
   const isFornecedorForm = form.tipo === "fornecedor" || fornecedorContext;
+  const isCompradorForm = form.tipo === "cliente" || clienteContext;
+  const isCadastroComercial = isFornecedorForm || isCompradorForm;
 
   const modalTitulo = (() => {
     if (editId && isFornecedorForm) return "Editar Fornecedor";
+    if (editId && isCompradorForm) return "Editar Comprador";
     if (editId) return "Editar cadastro";
     if (fornecedorContext) return "Novo Fornecedor";
+    if (clienteContext) return "Novo Comprador";
     return "Novo cadastro";
   })();
 
@@ -294,13 +314,13 @@ export default function FinancialPeoplePage() {
   const camposFormulario = (
     <>
       <div>
-        <FormLabel required>{isFornecedorForm ? "Nome / Razão social" : "Nome"}</FormLabel>
+        <FormLabel required>{isCadastroComercial ? "Nome / Razão social" : "Nome"}</FormLabel>
         <FormInput
           required
           variant="light"
           value={form.nome}
           onChange={v => setForm(f => ({ ...f, nome: v }))}
-          placeholder={isFornecedorForm ? "Nome ou razão social" : "Nome completo"}
+          placeholder={isCadastroComercial ? "Nome ou razão social" : "Nome completo"}
         />
       </div>
       <div>
@@ -357,7 +377,7 @@ export default function FinancialPeoplePage() {
     </>
   );
 
-  if (fornecedorContext && showForm) {
+  if (cadastroContext && showForm) {
     return (
       <AppLayout>
         <button

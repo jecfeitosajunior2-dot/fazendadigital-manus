@@ -12,6 +12,7 @@ import {
 import { useLocation, useSearch } from "wouter";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
+  Check,
   Tag,
   Weight,
   Syringe,
@@ -97,8 +98,20 @@ import {
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExternoField";
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
-import { FormDatePicker, FormDownSelect, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
+import { FormDatePicker, FormDownSelect, FormInput, FormLabel, FormNativeSelect, FormSelect, FormTextarea } from "@/components/FormFields";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
+import { At05RfidReaderControl } from "@/components/At05RfidReaderControl";
+import { BrincoNumpadField } from "@/components/curral/BrincoNumpadField";
+import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
+import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
+import {
+  getCurralManejoJetBovEntry,
+  isCurralManejoDisponivel,
+  labelStatusCurralManejo,
+  podeSelecionarManejoNoHub,
+  primeiroManejoDisponivelNaOrdem,
+} from "@shared/curralManejoJetBovMap";
+import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import {
   FAZENDA_SELECT_PLACEHOLDER,
   ManejoPontualFormShell,
@@ -4337,7 +4350,9 @@ function ManejoBrincoEletronicoForm() {
   );
 }
 
-type SessaoFase = "setup" | "ativa" | "encerrada";
+type SessaoFase = "hub" | "ativa" | "encerrada";
+
+type ModoIdentificacaoCurral = "brinco" | "rfid" | "busca";
 
 type ManejoSessaoItem = {
   id: string;
@@ -4357,32 +4372,55 @@ type AnimalRow = {
   status?: string | null;
   fazendaId?: number | null;
   loteId?: number | null;
+  ultimoPeso?: number | null;
 };
 
-/** Sessão no curral: setup → operação → resumo. Esqueleto para validação. */
+/** Sessão no curral: hub (ícones) → operação em loop → resumo. */
 export function ManejoSessaoPage() {
   const [, setLocation] = useLocation();
+  const trpcUtils = trpc.useUtils();
   const { data: user } = trpc.auth.me.useQuery();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
 
-  const [fase, setFase] = useState<SessaoFase>("setup");
+  const [fase, setFase] = useState<SessaoFase>("hub");
   const [sessaoId, setSessaoId] = useState<string | null>(null);
+  const [manejosSessaoOrdem, setManejosSessaoOrdem] = useState<TipoManejoId[]>(["pesagem"]);
   const [fazendaId, setFazendaId] = useState("");
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
   const [loteId, setLoteId] = useState("");
   const [responsavel, setResponsavel] = useState("");
-  const [buscaAnimal, setBuscaAnimal] = useState("");
+  const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [animalId, setAnimalId] = useState<number | null>(null);
-  const [tipoEmFoco, setTipoEmFoco] = useState<TipoManejoId | null>(null);
-  const [rascunhoResumo, setRascunhoResumo] = useState("");
   const [pendentesAnimal, setPendentesAnimal] = useState<ManejoSessaoItem[]>([]);
   const [historicoSessao, setHistoricoSessao] = useState<ManejoSessaoItem[]>([]);
+  const [novoPeso, setNovoPeso] = useState("");
+  const [observacoesPesagem, setObservacoesPesagem] = useState("");
+  const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
+  const [modoIdentificacao, setModoIdentificacao] = useState<ModoIdentificacaoCurral>("brinco");
+  const [brincoDigitado, setBrincoDigitado] = useState("");
+  const [identFeedback, setIdentFeedback] = useState<{ kind: "ok" | "erro"; text: string } | null>(
+    null,
+  );
+  const [rfidLookupBusy, setRfidLookupBusy] = useState(false);
+  const pesoInputRef = useRef<HTMLInputElement>(null);
+  const aplicarPesoBalanca = useCallback((kg: number) => {
+    setNovoPeso(formatPesoKgParaCampo(kg));
+    window.setTimeout(() => {
+      pesoInputRef.current?.focus();
+      pesoInputRef.current?.select();
+    }, 30);
+  }, []);
   const { data: animais = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery({
     status: "ativo",
     dataManejo: data,
   });
+
+  const { data: pesagensAnimal = [] } = trpc.pesagens.list.useQuery(
+    { animalId: animalId! },
+    { enabled: Boolean(animalId) },
+  );
 
   useEffect(() => {
     if (loadingFazendas || fazendaInitDone) return;
@@ -4415,6 +4453,13 @@ export function ManejoSessaoPage() {
     [lotes, fazendaNum],
   );
 
+  const opcoesLoteSessao = useMemo(
+    () => lotesDaFazenda.map(l => ({ value: String(l.id), label: l.nome })),
+    [lotesDaFazenda],
+  );
+
+  const unicaFazenda = fazendas.length === 1;
+
   const nomeFazenda = useMemo(
     () => fazendas.find(f => String(f.id) === fazendaId)?.nome ?? "—",
     [fazendas, fazendaId],
@@ -4425,6 +4470,27 @@ export function ManejoSessaoPage() {
     return lotes.find(l => String(l.id) === loteId)?.nome ?? null;
   }, [lotes, loteId]);
 
+  const manejoOperacaoId = useMemo(
+    () => primeiroManejoDisponivelNaOrdem(manejosSessaoOrdem),
+    [manejosSessaoOrdem],
+  );
+
+  const manejoSessaoMeta = useMemo(
+    () => (manejoOperacaoId ? TIPOS_MANEJO.find(t => t.id === manejoOperacaoId) ?? null : null),
+    [manejoOperacaoId],
+  );
+
+  const toggleManejoHub = useCallback((id: TipoManejoId) => {
+    if (!podeSelecionarManejoNoHub(id)) return;
+    setManejosSessaoOrdem(prev => {
+      const idx = prev.indexOf(id);
+      if (idx >= 0) return prev.filter(x => x !== id);
+      return [...prev, id];
+    });
+  }, []);
+
+  const tiposHubOrdenados = useMemo(() => [...TIPOS_MANEJO], []);
+
   const animaisEscopo = useMemo(() => {
     const rows = animais as AnimalRow[];
     return rows.filter(a => {
@@ -4434,40 +4500,212 @@ export function ManejoSessaoPage() {
     });
   }, [animais, fazendaNum, loteId]);
 
-  const filtrados = useMemo(() => {
-    const q = buscaAnimal.trim().toLowerCase();
-    if (!q) return animaisEscopo.slice(0, 15);
-    return animaisEscopo
-      .filter(a => {
-        const brinco = (a.brinco || "").toLowerCase();
-        const nome = (a.nome || "").toLowerCase();
-        const rfid = (a.brincoEletronico || "").toLowerCase();
-        return (
-          brinco.includes(q) ||
-          nome.includes(q) ||
-          rfid.includes(q) ||
-          String(a.id).includes(q)
-        );
-      })
-      .slice(0, 25);
-  }, [animaisEscopo, buscaAnimal]);
-
-  const animalAtual = useMemo(
-    () => (animalId == null ? null : animaisEscopo.find(a => a.id === animalId) ?? null),
-    [animaisEscopo, animalId],
+  const animaisEscopoBusca = useMemo(
+    () =>
+      animaisEscopo.map(a => ({
+        ...a,
+        loteNome: a.loteId ? lotes.find(l => l.id === a.loteId)?.nome ?? null : null,
+      })) as AnimalBuscaRow[],
+    [animaisEscopo, lotes],
   );
 
-  const loteAnimalNome = useMemo(() => {
-    if (!animalAtual?.loteId) return "—";
-    return lotes.find(l => l.id === animalAtual.loteId)?.nome ?? `Lote #${animalAtual.loteId}`;
-  }, [animalAtual, lotes]);
+  const toAnimalBuscaRow = useCallback(
+    (a: AnimalRow): AnimalBuscaRow => ({
+      ...a,
+      loteNome: a.loteId ? lotes.find(l => l.id === a.loteId)?.nome ?? null : null,
+    }),
+    [lotes],
+  );
+
+  const animalAtual = animalSel;
 
   const limparContextoAnimal = () => {
+    setAnimalSel(null);
     setAnimalId(null);
-    setBuscaAnimal("");
-    setTipoEmFoco(null);
-    setRascunhoResumo("");
     setPendentesAnimal([]);
+    setNovoPeso("");
+    setObservacoesPesagem("");
+    setBrincoDigitado("");
+    setIdentFeedback(null);
+  };
+
+  const handleAnimalSelect = useCallback(
+    (a: AnimalBuscaRow | null) => {
+      if (!a) {
+        limparContextoAnimal();
+        return;
+      }
+      setAnimalSel(a);
+      setAnimalId(a.id);
+      setPendentesAnimal([]);
+      setNovoPeso("");
+      setObservacoesPesagem("");
+      setIdentFeedback(null);
+    },
+    [],
+  );
+
+  const selecionarAnimal = useCallback(
+    (a: AnimalRow) => {
+      handleAnimalSelect(toAnimalBuscaRow(a));
+    },
+    [handleAnimalSelect, toAnimalBuscaRow],
+  );
+
+  const identificarPorBrinco = useCallback(() => {
+    const brinco = brincoDigitado.trim();
+    if (!brinco) {
+      setIdentFeedback({ kind: "erro", text: "Digite o brinco visual." });
+      return;
+    }
+    if (!fazendaNum) {
+      setIdentFeedback({ kind: "erro", text: "Aguardando contexto da sessão." });
+      return;
+    }
+    const brincoNorm = brinco.toLowerCase();
+    const matches = animaisEscopoBusca.filter(
+      a => (a.brinco || "").trim().toLowerCase() === brincoNorm,
+    );
+    if (matches.length === 0) {
+      setIdentFeedback({
+        kind: "erro",
+        text: `Nenhum animal com brinco ${brinco} neste escopo.`,
+      });
+      return;
+    }
+    if (matches.length > 1) {
+      setIdentFeedback({
+        kind: "erro",
+        text: "Mais de um animal com este brinco. Use a busca avançada.",
+      });
+      return;
+    }
+    const row = matches[0]!;
+    selecionarAnimal(row);
+    setBrincoDigitado("");
+    setIdentFeedback({ kind: "ok", text: `${labelAnimal(row)} identificado.` });
+  }, [animaisEscopoBusca, brincoDigitado, fazendaNum, selecionarAnimal]);
+
+  const identificarPorRfid = useCallback(
+    async (rfidBruto: string) => {
+      const rfid = normalizeRfidKey(rfidBruto);
+      if (!rfid) return;
+      if (!fazendaNum) {
+        setIdentFeedback({ kind: "erro", text: "Selecione a fazenda da sessão." });
+        return;
+      }
+      setRfidLookupBusy(true);
+      try {
+        const animal = await trpcUtils.animais.getByBrincoEletronicoExact.fetch({
+          brincoEletronico: rfid,
+        });
+        if (!animal) {
+          setIdentFeedback({ kind: "erro", text: "Animal não encontrado com este RFID." });
+          return;
+        }
+        const row = animaisEscopo.find(a => a.id === animal.id);
+        if (!row) {
+          setIdentFeedback({
+            kind: "erro",
+            text: "Animal fora do escopo da sessão (fazenda ou lote).",
+          });
+          return;
+        }
+        selecionarAnimal(row);
+        setIdentFeedback({ kind: "ok", text: `${labelAnimal(row)} identificado.` });
+      } catch (error) {
+        const err = error as Error;
+        setIdentFeedback({ kind: "erro", text: err?.message || "Falha ao buscar animal." });
+      } finally {
+        setRfidLookupBusy(false);
+      }
+    },
+    [animaisEscopo, fazendaNum, selecionarAnimal, trpcUtils],
+  );
+
+  const pesagemMutation = trpc.pesagens.create.useMutation({
+    onSuccess: (_result, vars) => {
+      const row = animaisEscopo.find(a => a.id === vars.animalId);
+      const animalLabel = row ? labelAnimal(row) : `#${vars.animalId}`;
+      const pesoFmt = formatUltimoPesoKg(Number(vars.peso));
+      const item: ManejoSessaoItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tipoId: "pesagem",
+        label: "Pesagem",
+        resumo: pesoFmt ? `${pesoFmt} kg` : `${vars.peso} kg`,
+        animalId: vars.animalId,
+        animalLabel,
+      };
+      setHistoricoSessao(prev => [...prev, item]);
+      toast.success(`Pesagem registrada — ${animalLabel}. Próximo animal.`);
+      limparContextoAnimal();
+      void trpcUtils.pesagens.list.invalidate({ animalId: vars.animalId });
+      void trpcUtils.animais.list.invalidate();
+    },
+    onError: err => {
+      const msg = err.message || "Não foi possível salvar a pesagem.";
+      if (msg.includes("não pode ser futura") || isMensagemBloqueioBaixa(msg)) {
+        setBloqueioNegocioMsg(
+          isMensagemBloqueioBaixa(msg) ? msg : MSG_PESAGEM_DATA_FUTURA,
+        );
+        return;
+      }
+      toast.error(msg);
+    },
+  });
+
+  const ultimaPesagem = useMemo(() => {
+    if (!animalId || !pesagensAnimal.length) return null;
+    const desc = sortPesagensDesc(
+      pesagensAnimal.map(p => ({
+        id: p.id,
+        peso: p.peso,
+        data: p.data,
+        observacoes: p.observacoes,
+        createdAt: p.createdAt,
+      })),
+    );
+    return desc[0] ?? null;
+  }, [animalId, pesagensAnimal]);
+
+  const ultimoPesoNum =
+    ultimaPesagem?.peso != null && Number.isFinite(Number(ultimaPesagem.peso))
+      ? Number(ultimaPesagem.peso)
+      : animalAtual?.ultimoPeso != null && Number.isFinite(animalAtual.ultimoPeso)
+        ? animalAtual.ultimoPeso
+        : null;
+  const ultimoPesoFmt = formatUltimoPesoKg(ultimoPesoNum);
+  const ultimaPesagemDataFmt = ultimaPesagem?.data ? formatDateBR(ultimaPesagem.data) : null;
+
+  useEffect(() => {
+    if (animalId == null) return;
+    const t = window.setTimeout(() => {
+      pesoInputRef.current?.focus();
+      pesoInputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [animalId]);
+
+  const registrarPesagemCurral = () => {
+    if (!animalAtual) {
+      toast.error("Selecione o animal atual.");
+      return;
+    }
+    if (data > todayISODate()) {
+      setBloqueioNegocioMsg(MSG_PESAGEM_DATA_FUTURA);
+      return;
+    }
+    const pesoPersistir = parsePesoKgParaPersistir(novoPeso);
+    if (!pesoPersistir) {
+      toast.error("Informe um peso válido maior que zero.");
+      return;
+    }
+    pesagemMutation.mutate({
+      animalId: animalAtual.id,
+      peso: pesoPersistir,
+      data,
+      observacoes: observacoesPesagem.trim() || undefined,
+    });
   };
 
   const onChangeFazenda = (value: string) => {
@@ -4487,51 +4725,23 @@ export function ManejoSessaoPage() {
       toast.error("Informe a data da sessão.");
       return;
     }
+    if (manejosSessaoOrdem.length === 0) {
+      toast.error("Selecione ao menos um manejo.");
+      return;
+    }
+    const operacional = primeiroManejoDisponivelNaOrdem(manejosSessaoOrdem);
+    if (!operacional) {
+      toast.error("Nenhum manejo selecionado está disponível no curral ainda.");
+      return;
+    }
     const id = newSessaoId();
     setSessaoId(id);
     setHistoricoSessao([]);
     limparContextoAnimal();
+    setModoIdentificacao("brinco");
     setFase("ativa");
-    toast.success("Sessão iniciada. Localize o primeiro animal.");
-  };
-
-  const registrarManejoPendente = (tipoId: TipoManejoId) => {
-    if (!animalAtual) {
-      toast.error("Selecione o animal atual.");
-      return;
-    }
-    const tipo = TIPOS_MANEJO.find(t => t.id === tipoId);
-    if (!tipo) return;
-    const resumo = rascunhoResumo.trim() || "Registrado na sessão";
-    const item: ManejoSessaoItem = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      tipoId,
-      label: tipo.label,
-      resumo,
-      animalId: animalAtual.id,
-      animalLabel: labelAnimal(animalAtual),
-    };
-    setPendentesAnimal(prev => [...prev, item]);
-    setTipoEmFoco(null);
-    setRascunhoResumo("");
-    toast.success(`${tipo.label} adicionado ao animal.`);
-  };
-
-  const concluirAnimal = () => {
-    if (!animalAtual) {
-      toast.error("Nenhum animal selecionado.");
-      return;
-    }
-    if (pendentesAnimal.length === 0) {
-      toast.error("Registre ao menos um manejo antes de concluir o animal.");
-      return;
-    }
-    // Cada item permanece independente; sessão só agrupa (sessaoId).
-    setHistoricoSessao(prev => [...prev, ...pendentesAnimal]);
-    toast.success(
-      `${pendentesAnimal.length} registro(s) salvos para ${labelAnimal(animalAtual)}. Próximo animal.`,
-    );
-    limparContextoAnimal();
+    const label = TIPOS_MANEJO.find(t => t.id === operacional)?.label ?? "Manejo";
+    toast.success(`Sessão de ${label} iniciada. Localize o primeiro animal.`);
   };
 
   const encerrarSessao = () => {
@@ -4540,121 +4750,237 @@ export function ManejoSessaoPage() {
       return;
     }
     setFase("encerrada");
+    setAnimalSel(null);
     setAnimalId(null);
   };
 
-  const resumoPorTipo = useMemo(() => {
-    const map = new Map<TipoManejoId, number>();
-    for (const item of pendentesAnimal) {
-      map.set(item.tipoId, (map.get(item.tipoId) ?? 0) + 1);
-    }
-    return TIPOS_MANEJO.map(t => ({
-      id: t.id,
-      label: t.label,
-      count: map.get(t.id) ?? 0,
-    })).filter(t => t.count > 0);
-  }, [pendentesAnimal]);
+  const totalRegistrosSessao = historicoSessao.length;
 
-  // ── Setup ────────────────────────────────────────────────────────────────
-  if (fase === "setup") {
+  // ── Hub (escolha do manejo + contexto) ─────────────────────────────────
+  if (fase === "hub") {
+    const podeIniciar =
+      Boolean(
+        fazendaId &&
+          data &&
+          manejosSessaoOrdem.length > 0 &&
+          primeiroManejoDisponivelNaOrdem(manejosSessaoOrdem),
+      );
+
     return (
       <AppLayout>
-        <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#4ECDC4] mb-0.5">
-              Sessão no curral
-            </p>
-            <h1
-              className="text-[20px] font-semibold text-gray-900"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              Iniciar sessão
-            </h1>
-            <p className="text-[12px] text-gray-500 mt-1">
-              Defina o contexto. Depois você localiza o animal e registra os manejos.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setLocation("/manejo/registros")}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[40px]"
+        <button
+          type="button"
+          onClick={() => setLocation("/manejo/registros")}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+
+        <div className="mb-5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#4ECDC4] mb-0.5">
+            Curral
+          </p>
+          <h1
+            className="text-[20px] font-semibold text-gray-900"
+            style={{ fontFamily: "Fraunces, serif" }}
           >
-            <span className="material-icons text-[16px]">arrow_back</span>
-            Voltar
-          </button>
+            Sessão no curral
+          </h1>
+          <p className="text-[12px] text-gray-500 mt-1">
+            {manejosSessaoOrdem.length > 1 ? (
+              <>
+                {manejosSessaoOrdem
+                  .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
+                  .join(" → ")}
+                {" · "}
+              </>
+            ) : null}
+            Escolha o manejo, confira o contexto e inicie a operação em escala.
+          </p>
         </div>
 
-        <div className="bg-white rounded shadow-sm border border-gray-100 p-4 sm:p-6 max-w-xl">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[11px] text-gray-600 font-medium mb-1">Fazenda</label>
-              <select
-                value={fazendaId}
-                onChange={e => onChangeFazenda(e.target.value)}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2.5 text-gray-700 min-h-[44px]"
-                disabled={loadingFazendas}
-              >
-                <option value="">Selecione a fazenda</option>
-                {fazendas.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-600 font-medium mb-1">Data</label>
-              <input
-                type="date"
-                value={data}
-                onChange={e => setData(e.target.value)}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2.5 text-gray-700 min-h-[44px]"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-600 font-medium mb-1">
-                Lote <span className="text-gray-400 font-normal">(opcional)</span>
-              </label>
-              <select
-                value={loteId}
-                onChange={e => {
-                  setLoteId(e.target.value);
-                  limparContextoAnimal();
-                }}
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2.5 text-gray-700 min-h-[44px]"
-                disabled={!fazendaId}
-              >
-                <option value="">Todos os animais da fazenda</option>
-                {lotesDaFazenda.map(l => (
-                  <option key={l.id} value={l.id}>
-                    {l.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-600 font-medium mb-1">
-                Responsável
-              </label>
-              <input
-                type="text"
-                value={responsavel}
-                onChange={e => setResponsavel(e.target.value)}
-                placeholder="Funcionário, técnico, veterinário…"
-                className="w-full text-[12px] border border-gray-200 rounded px-3 py-2.5 text-gray-700 min-h-[44px]"
-              />
-            </div>
-          </div>
+        <div className="space-y-5 pb-10">
+          <ManejoSectionCard title="Contexto">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+              {unicaFazenda && fazendaId && nomeFazenda ? (
+                <div className="min-w-0">
+                  <FormLabel>Fazenda</FormLabel>
+                  <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
+                </div>
+              ) : (
+                <div className="min-w-0">
+                  <FormLabel required>Fazenda</FormLabel>
+                  <FazendaOverviewSelect
+                    value={fazendaId}
+                    onChange={onChangeFazenda}
+                    fazendas={fazendas}
+                    emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
+                    disabled={loadingFazendas || !fazendaInitDone}
+                    required
+                  />
+                </div>
+              )}
 
-          <button
-            type="button"
-            onClick={iniciarSessao}
-            className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg text-white text-[13px] font-semibold min-h-[48px] hover:brightness-95"
-            style={{ backgroundColor: FD_PRIMARY }}
-          >
-            Iniciar sessão
-            <span className="material-icons text-[18px]">arrow_forward</span>
-          </button>
+              <div className="min-w-0">
+                <FormLabel required>Data</FormLabel>
+                <FormDatePicker value={data} onChange={setData} max={todayISODate()} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+              <div className="min-w-0">
+                <FormLabel>Lote</FormLabel>
+                <FormNativeSelect
+                  variant="light"
+                  value={loteId}
+                  onChange={value => {
+                    setLoteId(value);
+                    limparContextoAnimal();
+                  }}
+                  placeholder="Todos os animais da fazenda"
+                  options={opcoesLoteSessao}
+                  disabled={!fazendaId}
+                />
+              </div>
+              <div className="min-w-0">
+                <FormLabel>Responsável</FormLabel>
+                <FormInput
+                  variant="light"
+                  value={responsavel}
+                  onChange={setResponsavel}
+                  placeholder="Funcionário, técnico, veterinário…"
+                />
+              </div>
+            </div>
+          </ManejoSectionCard>
+
+          <ManejoSectionCard title="Equipamento">
+            <p className="text-[11px] text-gray-500 mb-3 -mt-1">
+              Conecte bastão RFID e balança antes de iniciar. As conexões permanecem na
+              operação.
+            </p>
+            {!fazendaId ? (
+              <p className="text-[11px] text-amber-700">Selecione a fazenda para usar os equipamentos.</p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-700 mb-2">Bastão RFID</p>
+                  <At05RfidReaderControl mode="identificar" disabled={!fazendaId} onRfidRead={() => {}} />
+                </div>
+                <div className="border-t border-gray-100 pt-4">
+                  <p className="text-[11px] font-semibold text-gray-700 mb-2">Balança</p>
+                  <ScaleReaderControl variant="hub" disabled={!fazendaId} />
+                </div>
+              </div>
+            )}
+          </ManejoSectionCard>
+
+          <ManejoSectionCard title="Manejos de curral">
+            <p className="text-[12px] text-gray-600 mb-4 -mt-1 font-medium">
+              Escolha a ordem dos manejos
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {tiposHubOrdenados.map(tipo => {
+                const Icon = tipo.icon;
+                const roadmap = getCurralManejoJetBovEntry(tipo.id);
+                const ativo = isCurralManejoDisponivel(tipo.id);
+                const podeSelecionar = podeSelecionarManejoNoHub(tipo.id);
+                const ordemIdx = manejosSessaoOrdem.indexOf(tipo.id);
+                const selecionado = ordemIdx >= 0;
+                const statusLabel = roadmap
+                  ? labelStatusCurralManejo(roadmap.statusCurral)
+                  : "Em breve";
+                return (
+                  <button
+                    key={tipo.id}
+                    type="button"
+                    disabled={!podeSelecionar}
+                    onClick={() => toggleManejoHub(tipo.id)}
+                    className={cn(
+                      "relative flex flex-col items-center justify-center gap-1.5 p-4 rounded-xl border text-center min-h-[116px] transition",
+                      !podeSelecionar && "opacity-45 cursor-not-allowed border-gray-100 bg-gray-50",
+                      podeSelecionar && selecionado
+                        ? "border-[#4ECDC4] bg-[#4ECDC4]/10 shadow-sm"
+                        : podeSelecionar
+                          ? "border-gray-200 bg-white hover:border-[#4ECDC4]/40 hover:bg-[#4ECDC4]/[0.04]"
+                          : "",
+                    )}
+                  >
+                    {selecionado ? (
+                      <span className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#4ECDC4] text-white shadow-sm">
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </span>
+                    ) : null}
+                    <span
+                      className={cn(
+                        "relative inline-flex h-11 w-11 items-center justify-center rounded-xl shrink-0",
+                        selecionado
+                          ? "text-white"
+                          : "bg-gray-50 border border-gray-200 text-[#4ECDC4]",
+                      )}
+                      style={selecionado ? { backgroundColor: FD_PRIMARY } : undefined}
+                    >
+                      {selecionado ? (
+                        <span className="absolute -top-1.5 -left-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-white text-[10px] font-bold">
+                          {ordemIdx + 1}
+                        </span>
+                      ) : null}
+                      <Icon className="h-5 w-5" strokeWidth={ICON_STROKE} />
+                    </span>
+                    <span className="text-[12px] font-semibold text-gray-900 leading-tight px-1">
+                      {tipo.label}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[10px] font-medium leading-tight",
+                        ativo ? "text-[#4ECDC4]" : "text-gray-400",
+                      )}
+                    >
+                      {statusLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {manejosSessaoOrdem.length > 0 ? (
+              <p className="text-[11px] text-gray-500 mt-4 leading-relaxed">
+                Ordem selecionada:{" "}
+                {manejosSessaoOrdem
+                  .map((id, i) => {
+                    const label = TIPOS_MANEJO.find(t => t.id === id)?.label ?? id;
+                    return `${i + 1}. ${label}`;
+                  })
+                  .join(" → ")}
+              </p>
+            ) : (
+              <p className="text-[11px] text-amber-700 mt-4">
+                Toque nos manejos na ordem em que serão realizados.
+              </p>
+            )}
+          </ManejoSectionCard>
+
+          <div className="sticky bottom-0 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-[#F5F5F5] border-t border-gray-200 flex items-stretch gap-0 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-10">
+            <button
+              type="button"
+              onClick={() => setLocation("/manejo/registros")}
+              className="flex-1 py-3 text-[11px] font-bold uppercase tracking-wide text-gray-700 bg-[#EEEEEE] hover:bg-gray-200 transition-colors min-h-[44px] rounded-l-lg border border-gray-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={iniciarSessao}
+              disabled={!podeIniciar}
+              className="flex-1 py-3 text-[11px] font-bold uppercase tracking-wide text-white disabled:opacity-50 transition-opacity hover:opacity-95 min-h-[44px] rounded-r-lg border border-[#3dbdb5]"
+              style={{ backgroundColor: "#FF9800" }}
+            >
+              Continuar
+            </button>
+          </div>
         </div>
       </AppLayout>
     );
@@ -4682,7 +5008,7 @@ export function ManejoSessaoPage() {
             Resumo da sessão
           </h1>
           <p className="text-[12px] text-gray-500 mt-1">
-            {nomeFazenda} · {data}
+            {manejoSessaoMeta?.label ?? "Manejo"} · {nomeFazenda} · {data}
             {nomeLoteSessao ? ` · ${nomeLoteSessao}` : ""}
             {responsavel ? ` · ${responsavel}` : ""}
           </p>
@@ -4727,7 +5053,7 @@ export function ManejoSessaoPage() {
             <button
               type="button"
               onClick={() => {
-                setFase("setup");
+                setFase("hub");
                 setSessaoId(null);
                 setHistoricoSessao([]);
                 limparContextoAnimal();
@@ -4762,214 +5088,293 @@ export function ManejoSessaoPage() {
             className="text-[18px] sm:text-[20px] font-semibold text-gray-900"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Operação em campo
+            {manejoSessaoMeta?.label ?? "Operação em campo"}
           </h1>
           <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
             {nomeFazenda} · {data}
             {nomeLoteSessao ? ` · ${nomeLoteSessao}` : ""}
             {responsavel ? ` · ${responsavel}` : ""}
+            {manejosSessaoOrdem.length > 1 ? (
+              <span className="block sm:inline sm:ml-1 text-gray-400">
+                {manejosSessaoOrdem
+                  .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
+                  .join(" → ")}
+              </span>
+            ) : null}
+            {totalRegistrosSessao > 0 ? (
+              <span className="text-[#4ECDC4] font-semibold">
+                {" "}
+                · {totalRegistrosSessao} registro(s)
+              </span>
+            ) : null}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={encerrarSessao}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-red-200 text-[12px] text-red-700 font-semibold hover:bg-red-50 min-h-[44px]"
-        >
-          Encerrar sessão
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (animalSel) {
+                toast.message("Animal atual descartado.");
+                limparContextoAnimal();
+              }
+              setFase("hub");
+            }}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 text-[12px] text-gray-700 font-semibold hover:bg-gray-50 min-h-[44px]"
+          >
+            Trocar manejo
+          </button>
+          <button
+            type="button"
+            onClick={encerrarSessao}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-red-200 text-[12px] text-red-700 font-semibold hover:bg-red-50 min-h-[44px]"
+          >
+            Encerrar sessão
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-4 max-w-2xl">
-        {/* Animal atual */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
-          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
-            Animal atual
-          </h2>
-
-          {animalAtual ? (
-            <div className="space-y-3">
-              <div className="rounded-xl border-2 border-[#4ECDC4] bg-[#4ECDC4]/[0.06] p-4">
-                <div className="text-[22px] sm:text-[26px] font-bold text-gray-900 leading-tight">
-                  {labelAnimal(animalAtual)}
-                </div>
-                <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px]">
-                  <div>
-                    <dt className="text-gray-400 text-[10px] uppercase font-semibold">RFID</dt>
-                    <dd className="font-medium text-gray-800">
-                      {animalAtual.brincoEletronico || "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-400 text-[10px] uppercase font-semibold">Lote</dt>
-                    <dd className="font-medium text-gray-800">{loteAnimalNome}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-400 text-[10px] uppercase font-semibold">Sexo</dt>
-                    <dd className="font-medium text-gray-800">
-                      {animalAtual.sexo === "macho"
-                        ? "Macho"
-                        : animalAtual.sexo === "femea"
-                          ? "Fêmea"
-                          : "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-400 text-[10px] uppercase font-semibold">ID</dt>
-                    <dd className="font-medium text-gray-800">{animalAtual.id}</dd>
-                  </div>
-                </dl>
-              </div>
-              <button
-                type="button"
-                onClick={limparContextoAnimal}
-                className="text-[11px] font-semibold text-gray-600 underline"
-              >
-                Trocar animal (sem concluir)
-              </button>
-            </div>
-          ) : (
-            <>
-              <input
-                type="search"
-                value={buscaAnimal}
-                onChange={e => setBuscaAnimal(e.target.value)}
-                placeholder="Brinco, RFID ou nome…"
-                className="w-full text-[14px] border border-gray-200 rounded-lg px-4 py-3 text-gray-800 min-h-[48px] mb-2"
-                autoComplete="off"
-                autoFocus
-              />
-              {loadingAnimais ? (
-                <p className="text-[11px] text-gray-400 py-2">Carregando animais…</p>
-              ) : filtrados.length === 0 ? (
-                <p className="text-[11px] text-gray-400 py-2">Nenhum animal encontrado neste escopo.</p>
-              ) : (
-                <ul className="max-h-56 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
-                  {filtrados.map(a => (
-                    <li key={a.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAnimalId(a.id);
-                          setBuscaAnimal("");
-                          setPendentesAnimal([]);
-                          setTipoEmFoco(null);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-[#4ECDC4]/[0.08] transition min-h-[48px]"
-                      >
-                        <span className="text-[14px] font-semibold text-gray-900">
-                          {labelAnimal(a)}
-                        </span>
-                        {a.brincoEletronico ? (
-                          <span className="text-[11px] text-gray-500 ml-2">
-                            RFID {a.brincoEletronico}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </div>
-
-        {animalAtual && (
-          <>
-            {/* Tipos — mesmos do pontual */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
-                Manejos neste animal
-              </h2>
-              <p className="text-[11px] text-gray-500 mb-3">
-                Toque no tipo para registrar. Formulários completos entram na próxima etapa.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {TIPOS_MANEJO.map(tipo => {
-                  const Icon = tipo.icon;
-                  const ativo = tipoEmFoco === tipo.id;
-                  return (
-                    <button
-                      key={tipo.id}
-                      type="button"
-                      onClick={() => {
-                        setTipoEmFoco(ativo ? null : tipo.id);
-                        setRascunhoResumo("");
-                      }}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left min-h-[52px] transition ${
-                        ativo
-                          ? "border-[#4ECDC4] bg-[#4ECDC4]/10"
-                          : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}
-                    >
-                      <Icon className="h-5 w-5 text-[#4ECDC4] shrink-0" strokeWidth={ICON_STROKE} />
-                      <span className="text-[13px] font-semibold text-gray-900">{tipo.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {tipoEmFoco && (
-                <div className="mt-3 rounded-lg border border-gray-200 p-3 space-y-3">
-                  <p className="text-[12px] font-semibold text-gray-800">
-                    {TIPOS_MANEJO.find(t => t.id === tipoEmFoco)?.label}
-                  </p>
-                  <p className="text-[11px] text-gray-500">
-                    Esqueleto — o formulário completo deste tipo será conectado depois, com as
-                    mesmas regras do manejo pontual. Data da sessão: {data}.
-                  </p>
-                  <input
-                    type="text"
-                    value={rascunhoResumo}
-                    onChange={e => setRascunhoResumo(e.target.value)}
-                    placeholder="Resumo rápido (ex.: 425 kg, vacinação…)"
-                    className="w-full text-[13px] border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => registrarManejoPendente(tipoEmFoco)}
-                    className="w-full inline-flex items-center justify-center gap-1 rounded-lg text-white text-[13px] font-semibold min-h-[48px]"
-                    style={{ backgroundColor: FD_PRIMARY }}
-                  >
-                    Adicionar a este animal
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Realizados nesta passagem */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-5">
-              <h2 className="text-[12px] font-semibold text-gray-800 mb-2">
-                Realizados nesta sessão
-              </h2>
-              {resumoPorTipo.length === 0 ? (
-                <p className="text-[11px] text-gray-400">Nenhum manejo neste animal ainda.</p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {resumoPorTipo.map(t => (
-                    <li key={t.id} className="text-[13px] text-gray-800 flex items-center gap-2">
-                      <span className="text-[#4ECDC4] font-bold">✓</span>
-                      {t.label}
-                      {t.count > 1 ? (
-                        <span className="text-[11px] text-gray-500">({t.count})</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
+      <div className="space-y-5 max-w-2xl mx-auto pb-10">
+        {manejoOperacaoId !== "pesagem" ? (
+          <ManejoSectionCard title="Em desenvolvimento">
+            <p className="text-[12px] text-gray-600">
+              O modo curral para{" "}
+              <span className="font-semibold">{manejoSessaoMeta?.label ?? "este manejo"}</span>{" "}
+              ainda não está disponível. Volte ao hub e escolha Pesagem.
+            </p>
             <button
               type="button"
-              onClick={concluirAnimal}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl text-white text-[14px] font-semibold min-h-[52px] hover:brightness-95"
+              onClick={() => setFase("hub")}
+              className="mt-4 inline-flex items-center gap-1 px-4 py-2 rounded-lg text-white text-[12px] font-semibold min-h-[44px]"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              <span className="material-icons text-[20px]">check_circle</span>
-              Concluir animal
+              Voltar ao hub
             </button>
+          </ManejoSectionCard>
+        ) : (
+          <>
+        <ManejoSectionCard title="Identificação">
+          {animalSel ? (
+            <ManejoAnimalField
+              embedded
+              selected={animalSel}
+              onSelect={handleAnimalSelect}
+              animals={animaisEscopoBusca}
+              loading={loadingAnimais}
+              disabled={!fazendaNum}
+              selectedExtra={
+                ultimoPesoFmt ? (
+                  <>
+                    <span className="text-[#4ECDC4]/55 select-none" aria-hidden>
+                      |
+                    </span>
+                    <span className="shrink-0">
+                      Último peso{" "}
+                      <span className="font-medium text-gray-800">
+                        {ultimoPesoFmt} kg
+                        {ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}
+                      </span>
+                    </span>
+                  </>
+                ) : null
+              }
+            />
+          ) : (
+            <>
+              {!fazendaNum ? (
+                <p className="text-[11px] text-amber-700 mb-3">
+                  Aguardando contexto da sessão.
+                </p>
+              ) : (
+                <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+                  <p className="text-[11px] font-semibold text-gray-700 mb-2">RFID</p>
+                  <At05RfidReaderControl
+                    mode="identificar"
+                    disabled={rfidLookupBusy}
+                    onRfidRead={rfid => void identificarPorRfid(rfid)}
+                  />
+                </div>
+              )}
+
+              <div className="mb-3 flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: "brinco" as const, label: "Digitar brinco" },
+                    { id: "busca" as const, label: "Buscar" },
+                  ] as const
+                ).map(op => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    onClick={() => {
+                      setModoIdentificacao(op.id);
+                      setIdentFeedback(null);
+                    }}
+                    className={`h-9 px-3 rounded-lg text-[12px] font-semibold border transition min-h-[40px] ${
+                      modoIdentificacao === op.id
+                        ? "border-[#4ECDC4] bg-[#4ECDC4]/10 text-gray-900"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+
+              {modoIdentificacao === "brinco" ? (
+                <BrincoNumpadField
+                  value={brincoDigitado}
+                  onChange={v => {
+                    setBrincoDigitado(v);
+                    setIdentFeedback(null);
+                  }}
+                  onConfirm={identificarPorBrinco}
+                  disabled={!fazendaNum}
+                  confirmPending={rfidLookupBusy}
+                />
+              ) : (
+                <ManejoAnimalField
+                  embedded
+                  selected={null}
+                  onSelect={handleAnimalSelect}
+                  animals={animaisEscopoBusca}
+                  loading={loadingAnimais}
+                  disabled={!fazendaNum}
+                  hintMessage="Clique para buscar ou digite brinco, RFID ou nome."
+                />
+              )}
+
+              {identFeedback ? (
+                <p
+                  className={`mt-3 text-[11px] ${identFeedback.kind === "ok" ? "text-teal-700" : "text-red-600"}`}
+                  aria-live="polite"
+                >
+                  {identFeedback.text}
+                </p>
+              ) : null}
+            </>
+          )}
+        </ManejoSectionCard>
+
+        {animalSel ? (
+          <ManejoSectionCard title="Pesagem">
+            <p className="text-[11px] text-gray-500 -mt-1 mb-1">Data da sessão: {data}</p>
+            {ultimoPesoFmt ? (
+              <p className="text-[11px] text-gray-600 mb-3">
+                Referência:{" "}
+                <span className="font-semibold text-gray-800">{ultimoPesoFmt} kg</span>
+                {ultimaPesagemDataFmt ? ` · ${ultimaPesagemDataFmt}` : ""}
+              </p>
+            ) : (
+              <p className="text-[11px] text-gray-400 mb-3">Sem pesagem anterior registrada.</p>
+            )}
+            <ScaleReaderControl
+              variant="operacao"
+              disabled={pesagemMutation.isPending}
+              onStableWeight={aplicarPesoBalanca}
+              className="mb-4"
+            />
+            <div>
+              <FormLabel required>Novo peso (kg)</FormLabel>
+              <input
+                ref={pesoInputRef}
+                type="text"
+                inputMode="decimal"
+                value={novoPeso}
+                onChange={e => setNovoPeso(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    registrarPesagemCurral();
+                  }
+                }}
+                placeholder="Ex.: 425 ou 425,5"
+                className="w-full text-[22px] sm:text-[26px] font-bold border border-gray-200 rounded-xl px-4 py-3 text-gray-900 min-h-[56px] text-center tracking-tight bg-white"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <FormLabel>Observações</FormLabel>
+              <FormTextarea
+                variant="light"
+                rows={2}
+                value={observacoesPesagem}
+                onChange={setObservacoesPesagem}
+                placeholder="Opcional"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={registrarPesagemCurral}
+              disabled={pesagemMutation.isPending}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl text-white text-[14px] font-semibold min-h-[52px] hover:brightness-95 disabled:opacity-60"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              <span className="material-icons text-[20px]">scale</span>
+              {pesagemMutation.isPending ? "Salvando…" : "Registrar pesagem"}
+            </button>
+            <p className="text-[10px] text-gray-400 text-center">
+              Enter no campo de peso registra e prepara o próximo animal. Balança conectada
+              preenche o peso automaticamente quando estabilizar.
+            </p>
+          </ManejoSectionCard>
+        ) : null}
+
+        {historicoSessao.length > 0 ? (
+          <ManejoSectionCard title="Registros nesta sessão">
+            <ul className="space-y-2 max-h-48 overflow-y-auto">
+              {[...historicoSessao].reverse().slice(0, 12).map(item => (
+                <li
+                  key={item.id}
+                  className="flex items-start justify-between gap-3 text-[12px] border-b border-gray-50 pb-2 last:border-0 last:pb-0"
+                >
+                  <span className="font-semibold text-gray-900 shrink-0">{item.animalLabel}</span>
+                  <span className="text-gray-600 text-right">
+                    {item.label} · {item.resumo}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {historicoSessao.length > 12 ? (
+              <p className="text-[10px] text-gray-400 mt-2">
+                Mostrando os 12 registros mais recentes de {historicoSessao.length}.
+              </p>
+            ) : null}
+          </ManejoSectionCard>
+        ) : null}
           </>
         )}
       </div>
+
+      <Dialog open={Boolean(bloqueioNegocioMsg)}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={false}
+          onEscapeKeyDown={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onInteractOutside={e => e.preventDefault()}
+        >
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <DialogTitle className="text-gray-900">Não foi possível concluir</DialogTitle>
+            </div>
+            <DialogDescription className="text-gray-600 leading-relaxed whitespace-pre-line">
+              {bloqueioNegocioMsg}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={() => setBloqueioNegocioMsg(null)}
+              className="w-full text-white hover:opacity-95"
+              style={{ backgroundColor: FD_PRIMARY }}
+            >
+              Entendi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

@@ -8,9 +8,12 @@ import {
   withSexoNoSubtitulo,
 } from "@shared/animalBuscaDisplay";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FormDownSelect, FormLabel, formControlFlatCls } from "@/components/FormFields";
+import { FormLabel, FormNativeSelect, formControlFlatCls } from "@/components/FormFields";
+import { cn } from "@/lib/utils";
 
 const SEM_LOTE = "sem-lote";
+/** Radix Select não aceita value=""; sentinel para “Todos os Lotes”. */
+const TODOS_LOTES = "__all__";
 
 function opcoesLoteDeAnimais(animals: AnimalAutocompleteRow[]) {
   const map = new Map<string, string>();
@@ -29,11 +32,11 @@ function opcoesLoteDeAnimais(animals: AnimalAutocompleteRow[]) {
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
   if (semLote) opts.push({ value: SEM_LOTE, label: "Sem Lote" });
-  return [{ value: "", label: "Todos os Lotes" }, ...opts];
+  return [{ value: TODOS_LOTES, label: "Todos os Lotes" }, ...opts];
 }
 
 function animalNoLoteFiltro(animal: AnimalAutocompleteRow, loteFiltro: string) {
-  if (!loteFiltro) return true;
+  if (!loteFiltro || loteFiltro === TODOS_LOTES) return true;
   if (loteFiltro === SEM_LOTE) return !animal.loteId || animal.loteId <= 0;
   return String(animal.loteId) === loteFiltro;
 }
@@ -61,7 +64,7 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
   onAddMany,
 }: Props<T>) {
   const [busca, setBusca] = useState("");
-  const [loteFiltro, setLoteFiltro] = useState("");
+  const [loteFiltro, setLoteFiltro] = useState(TODOS_LOTES);
   const [marcados, setMarcados] = useState<Set<number>>(() => new Set());
   const [ocultos, setOcultos] = useState<Set<number>>(() => new Set());
 
@@ -80,8 +83,12 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
   const lotesOpcoes = useMemo(() => opcoesLoteDeAnimais(animals), [animals]);
 
   useEffect(() => {
-    if (loteFiltro && !lotesOpcoes.some(o => o.value === loteFiltro)) {
-      setLoteFiltro("");
+    if (
+      loteFiltro !== TODOS_LOTES &&
+      loteFiltro &&
+      !lotesOpcoes.some(o => o.value === loteFiltro)
+    ) {
+      setLoteFiltro(TODOS_LOTES);
     }
   }, [loteFiltro, lotesOpcoes]);
 
@@ -140,13 +147,14 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
       <div className="flex flex-row items-end gap-3">
         <div className="w-[13rem] shrink-0">
           <FormLabel>Lote</FormLabel>
-          <FormDownSelect
+          <FormNativeSelect
+            variant="light"
             value={loteFiltro}
             onChange={setLoteFiltro}
             placeholder="Todos os Lotes"
             disabled={disabled}
             options={lotesOpcoes}
-            required
+            required={loteFiltro !== TODOS_LOTES}
           />
         </div>
         <div className="min-w-0 flex-1">
@@ -156,7 +164,11 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
             disabled={disabled}
             onChange={e => setBusca(e.target.value)}
             placeholder={disabled ? "Selecione a Fazenda primeiro" : "Buscar por brinco, RFID ou nome"}
-            className={`${formControlFlatCls} bg-white outline-none placeholder:text-gray-400 border-l-[3px] border-l-[#4ECDC4] disabled:opacity-60`}
+            className={cn(
+              formControlFlatCls,
+              "bg-white outline-none placeholder:text-gray-400 disabled:opacity-60",
+              busca.trim() && "border-l-[3px] border-l-[#4ECDC4]",
+            )}
             autoComplete="off"
           />
         </div>
@@ -170,7 +182,7 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
                 ? "Carregando..."
                 : visiveis.length
                   ? `${visiveis.length} disponível(is)`
-                  : doLote.length === 0 && loteFiltro
+                  : doLote.length === 0 && loteFiltro !== TODOS_LOTES
                     ? "Nenhum animal neste lote"
                     : animals.length
                       ? "Nenhum resultado"
@@ -193,7 +205,7 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
             </li>
           ) : visiveis.length === 0 ? (
             <li className="px-3 py-4 text-center text-[11px] text-gray-400">
-              {doLote.length === 0 && loteFiltro
+              {doLote.length === 0 && loteFiltro !== TODOS_LOTES
                 ? "Nenhum animal neste lote."
                 : animals.length
                   ? "Nenhum animal encontrado."
@@ -209,8 +221,10 @@ export function VendaAnimaisPicker<T extends AnimalAutocompleteRow>({
               return (
                 <li key={animal.id}>
                   <label
-                    className={`flex items-center justify-between gap-3 px-3 py-2 border-b border-gray-50 last:border-0 cursor-pointer ${
-                      marcado ? "bg-white" : "bg-white hover:bg-gray-50"
+                    className={`flex items-center justify-between gap-3 px-3 py-2.5 border-b border-gray-50 last:border-0 cursor-pointer transition-colors ${
+                      marcado
+                        ? "bg-[#4ECDC4]/[0.12]"
+                        : "bg-white hover:bg-[#4ECDC4]/[0.08]"
                     }`}
                   >
                     <div className="min-w-0">

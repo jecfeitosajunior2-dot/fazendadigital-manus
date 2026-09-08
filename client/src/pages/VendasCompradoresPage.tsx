@@ -14,6 +14,8 @@ type CompradorRow = {
   documento?: string | null;
   telefone?: string | null;
   endereco?: string | null;
+  email?: string | null;
+  observacoes?: string | null;
   ativo?: boolean | null;
 };
 
@@ -47,6 +49,8 @@ export default function VendasCompradoresPage() {
       documento: formatCpfCnpj(p.documento ?? ""),
       telefone: formatPhoneBR(p.telefone ?? ""),
       endereco: p.endereco ?? "",
+      email: p.email ?? "",
+      observacoes: p.observacoes ?? "",
     });
     setFormOpen(true);
   };

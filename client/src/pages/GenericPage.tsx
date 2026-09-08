@@ -554,9 +554,9 @@ export function AnimaisPage() {
                   </td>
                 </tr>
               ) : paginated.map((animal) => (
-                <tr key={animal.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
+                <tr key={animal.id} className="border-b border-gray-100 hover:bg-[#4ECDC4]/[0.08] transition-colors group">
                   {/* Brinco — fixo à esquerda */}
-                  <td className="px-3 py-2 text-center sticky left-0 z-[1] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-gray-50">
+                  <td className="px-3 py-2 text-center sticky left-0 z-[1] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-[#4ECDC4]/[0.08]">
                     <div className="flex items-center justify-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
                       <span className="font-semibold text-gray-800">{animal.brinco || "-"}</span>

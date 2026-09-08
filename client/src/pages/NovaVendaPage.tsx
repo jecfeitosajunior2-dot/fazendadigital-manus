@@ -5,16 +5,18 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { At05RfidReaderControl } from "@/components/At05RfidReaderControl";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { CompradorFormDialog } from "@/components/venda/CompradorFormDialog";
 import { VendaAnimaisPicker } from "@/components/venda/VendaAnimaisPicker";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import {
   FD_PRIMARY,
   FormDatePicker,
-  FormDownSelect,
+  FormInput,
   FormLabel,
+  FormNativeSelect,
   FormTextarea,
   formControlFlatCls,
 } from "@/components/FormFields";
+import { FAZENDA_SELECT_PLACEHOLDER } from "@/components/ManejoPontualFormLayout";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   COMPRA_VENDA_VENDAS_PATH,
@@ -50,6 +52,20 @@ type ItemDraft = {
   pesoVenda: string;
   preco: string;
   precoManual: boolean;
+};
+
+const VENDA_DRAFT_KEY = "fd_vendas_form_draft";
+
+type VendaDraft = {
+  fazendaId: string;
+  data: string;
+  compradorId: string;
+  forma: FormaPrecificacaoVenda;
+  precoPadrao: string;
+  rendimento: string;
+  observacoes: string;
+  itens: ItemDraft[];
+  usarRfid: boolean;
 };
 
 function precoPadraoParaItem(formatted: string): string {
@@ -93,7 +109,6 @@ export default function NovaVendaPage() {
   const [rendimento, setRendimento] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<ItemDraft[]>([]);
-  const [showNovoComprador, setShowNovoComprador] = useState(false);
   const [usarRfid, setUsarRfid] = useState(false);
   const [rfidFeedback, setRfidFeedback] = useState<{ kind: "ok" | "erro"; text: string; detalhe?: string } | null>(null);
   const [ultimoBrincoRfid, setUltimoBrincoRfid] = useState<string | null>(null);
@@ -103,6 +118,56 @@ export default function NovaVendaPage() {
   useEffect(() => {
     if (!fazendaId && fazendaInicial) setFazendaId(fazendaInicial);
   }, [fazendaId, fazendaInicial]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const novoCompradorId = params.get("compradorId");
+    const raw = sessionStorage.getItem(VENDA_DRAFT_KEY);
+
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw) as VendaDraft;
+        setFazendaId(draft.fazendaId);
+        setData(draft.data);
+        setCompradorId(draft.compradorId);
+        setForma(draft.forma);
+        setPrecoPadrao(draft.precoPadrao);
+        setRendimento(draft.rendimento);
+        setObservacoes(draft.observacoes);
+        setItens(draft.itens);
+        setUsarRfid(draft.usarRfid);
+      } catch {
+        /* rascunho inválido */
+      }
+      sessionStorage.removeItem(VENDA_DRAFT_KEY);
+    }
+
+    if (novoCompradorId) {
+      setCompradorId(novoCompradorId);
+      params.delete("compradorId");
+      const qs = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+  }, []);
+
+  const irCadastrarComprador = () => {
+    sessionStorage.setItem(
+      VENDA_DRAFT_KEY,
+      JSON.stringify({
+        fazendaId,
+        data,
+        compradorId,
+        forma,
+        precoPadrao,
+        rendimento,
+        observacoes,
+        itens,
+        usarRfid,
+      } satisfies VendaDraft),
+    );
+    const retorno = window.location.pathname + window.location.search;
+    setLocation(`/financeiro/pessoas?novo=cliente&retorno=${encodeURIComponent(retorno)}`);
+  };
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
   const { data: animaisFazenda = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery(
@@ -135,6 +200,9 @@ export default function NovaVendaPage() {
       .filter((row): row is { pesoVenda: number | null; valorItem: number } => row != null);
     return { ...resumirItensVenda(calculados, { rendimentoCarcaca: rendimentoValor }), quantidade: itens.length };
   }, [itens, forma, rendimentoValor]);
+
+  const unicaFazenda = fazendas.length === 1;
+  const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
 
   const mudarFazenda = (value: string) => {
     setFazendaId(value);
@@ -380,18 +448,25 @@ export default function NovaVendaPage() {
           </div>
 
           <div className="p-5 space-y-4">
-            <div className="flex flex-row items-end gap-4">
-              <div className="min-w-0 flex-1">
-                <FormLabel required>Fazenda</FormLabel>
-                <FormDownSelect
-                  value={fazendaId}
-                  onChange={mudarFazenda}
-                  placeholder="Selecione a Fazenda"
-                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
-                  required
-                />
-              </div>
-              <div className="w-[11.5rem] shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
+              {unicaFazenda && fazendaId && nomeFazenda ? (
+                <div className="min-w-0">
+                  <FormLabel>Fazenda</FormLabel>
+                  <FormInput variant="light" value={nomeFazenda} onChange={() => {}} readOnly />
+                </div>
+              ) : (
+                <div className="min-w-0">
+                  <FormLabel required>Fazenda</FormLabel>
+                  <FazendaOverviewSelect
+                    value={fazendaId}
+                    onChange={mudarFazenda}
+                    fazendas={fazendas}
+                    emptyLabel={FAZENDA_SELECT_PLACEHOLDER}
+                    required
+                  />
+                </div>
+              )}
+              <div className="min-w-0">
                 <FormLabel required>Data</FormLabel>
                 <FormDatePicker value={data} onChange={setData} required minHeight={34} />
               </div>
@@ -399,24 +474,26 @@ export default function NovaVendaPage() {
             <div className={`grid grid-cols-1 sm:grid-cols-2 ${forma === "kg" ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
               <div>
                 <FormLabel required>Comprador</FormLabel>
-              <FormDownSelect
+              <FormNativeSelect
+                variant="light"
                 value={compradorId}
                 onChange={setCompradorId}
-                placeholder="Buscar comprador..."
+                placeholder="Selecione o comprador"
                 options={opcoesComprador(compradores)}
                 required
               />
               <button
                 type="button"
-                onClick={() => setShowNovoComprador(true)}
-                className="mt-1.5 text-[12px] font-medium text-[#4ECDC4] hover:underline"
+                onClick={irCadastrarComprador}
+                className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
               >
-                + Novo comprador
+                Cadastrar novo comprador
               </button>
             </div>
             <div className="min-w-[13rem]">
               <FormLabel required>Forma de precificação</FormLabel>
-              <FormDownSelect
+              <FormNativeSelect
+                variant="light"
                 value={forma}
                 onChange={v => setForma(v as FormaPrecificacaoVenda)}
                 placeholder="Selecione"
@@ -666,12 +743,6 @@ export default function NovaVendaPage() {
           </div>
         </div>
       </div>
-
-      <CompradorFormDialog
-        open={showNovoComprador}
-        onOpenChange={setShowNovoComprador}
-        onSaved={id => setCompradorId(String(id))}
-      />
     </AppLayout>
   );
 }
