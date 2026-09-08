@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch server/index.ts",
-    "build": "node scripts/build.mjs && node scripts/build-vercel-api.mjs",
+    "build": "node scripts/build.mjs",
     "start": "node scripts/start.mjs",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",

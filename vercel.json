@@ -10,7 +10,7 @@
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/server.js": {
+    "api/server.ts": {
       "maxDuration": 60
     }
   }
