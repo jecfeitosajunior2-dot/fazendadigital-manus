@@ -49,7 +49,7 @@ export function AppShell({ children }: AppLayoutProps) {
         <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />
-          <main className="flex-1 overflow-y-auto p-4">
+          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             {children}
           </main>
         </div>

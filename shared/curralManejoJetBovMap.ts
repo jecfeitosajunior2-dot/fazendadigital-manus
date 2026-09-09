@@ -45,7 +45,7 @@ export const CURRAL_MANEJO_JETBOV_MAP: readonly CurralManejoJetBovEntry[] = [
     labelJetBov: "Manejo sanitário",
     jetBov: "sim",
     fdPontual: true,
-    statusCurral: "em_breve",
+    statusCurral: "disponivel",
     prioridade: 2,
     nota: "Vacinação, vermifugação e tratamentos.",
   },
@@ -54,7 +54,7 @@ export const CURRAL_MANEJO_JETBOV_MAP: readonly CurralManejoJetBovEntry[] = [
     labelJetBov: "Troca de lote",
     jetBov: "sim",
     fdPontual: true,
-    statusCurral: "em_breve",
+    statusCurral: "disponivel",
     prioridade: 3,
     nota: "Frequente na mesma lida da pesagem no JetBov.",
   },
@@ -63,7 +63,7 @@ export const CURRAL_MANEJO_JETBOV_MAP: readonly CurralManejoJetBovEntry[] = [
     labelJetBov: "RFID / cadastro e reidentificação",
     jetBov: "sim",
     fdPontual: true,
-    statusCurral: "em_breve",
+    statusCurral: "disponivel",
     prioridade: 4,
     nota: "Cadastro no curral e vínculo de brinco/RFID.",
   },
@@ -166,8 +166,7 @@ export function curralManejoIdsOrdenados(): CurralManejoId[] {
 }
 
 export function podeSelecionarManejoNoHub(id: string): boolean {
-  const entry = getCurralManejoJetBovEntry(id);
-  return entry != null && entry.statusCurral !== "pontual_apenas";
+  return isCurralManejoDisponivel(id);
 }
 
 /** Primeiro manejo selecionado que já está operacional no curral. */
@@ -176,4 +175,9 @@ export function primeiroManejoDisponivelNaOrdem(ids: readonly string[]): CurralM
     if (isCurralManejoDisponivel(id)) return id as CurralManejoId;
   }
   return null;
+}
+
+/** Ordem da sessão restrita aos manejos operacionais no curral (JetBov: fila por animal). */
+export function manejosCurralOperacionaisNaOrdem(ids: readonly string[]): CurralManejoId[] {
+  return ids.filter(id => podeSelecionarManejoNoHub(id)) as CurralManejoId[];
 }

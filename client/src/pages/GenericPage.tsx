@@ -299,6 +299,11 @@ export function AnimaisPage() {
     setPage(1);
   };
 
+  const totalPages = Math.max(1, Math.ceil(sortedAnimais.length / perPage));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const paginated = sortedAnimais.slice((page - 1) * perPage, page * perPage);
 
   // Helper: formata idade
@@ -361,13 +366,19 @@ export function AnimaisPage() {
     return parseRetornoRebanhoVisaoGeral(params.get("retorno"));
   }, [searchString]);
 
+  const stickyBrincoTh =
+    "sticky left-0 top-0 z-20 min-w-[80px] bg-gray-50 border-r border-gray-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]";
+  const stickyBrincoTd =
+    "sticky left-0 z-10 min-w-[80px] bg-white border-r border-gray-200 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)] group-hover:bg-[#edfafa]";
+
   return (
     <AppLayout>
+      <div className="flex flex-col flex-1 min-h-0 w-full max-w-full overflow-hidden">
       {retornoVisaoGeral ? (
         <button
           type="button"
           onClick={() => setLocation(retornoVisaoGeral)}
-          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          className="mb-4 flex shrink-0 items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
           aria-label="Voltar"
         >
           <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
@@ -376,8 +387,8 @@ export function AnimaisPage() {
           <span className="text-[13px]">Voltar</span>
         </button>
       ) : null}
-      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-        <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
+      <div className="flex flex-col flex-1 min-h-0 bg-white border border-gray-200 rounded shadow-sm overflow-hidden w-full min-w-0 max-w-full">
+        <div className="shrink-0 px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1
             className="text-[20px] font-semibold text-gray-900 shrink-0"
             style={{ fontFamily: "Fraunces, serif" }}
@@ -445,43 +456,50 @@ export function AnimaisPage() {
           </div>
         </div>
 
-        <ListaAnimaisFiltros
-          value={filters}
-          onChange={handleFiltersChange}
-          onClear={limparFiltros}
-          fazendas={(fazendasData || []).map((f: { id: number; nome: string }) => ({ id: f.id, nome: f.nome }))}
-          lotes={(lotesData || []).map((l: { id: number; nome: string; fazendaId?: number | null }) => ({
-            id: l.id,
-            nome: l.nome,
-            fazendaId: l.fazendaId,
-          }))}
-          pastos={(pastosData || []).map((p: { id: number; nome: string; fazendaId?: number | null }) => ({
-            id: p.id,
-            nome: p.nome,
-            fazendaId: p.fazendaId,
-          }))}
-          marcadoresDisponiveis={marcasDistintas}
-          embedded
-        />
+        <div className="shrink-0">
+          <ListaAnimaisFiltros
+            value={filters}
+            onChange={handleFiltersChange}
+            onClear={limparFiltros}
+            fazendas={(fazendasData || []).map((f: { id: number; nome: string }) => ({ id: f.id, nome: f.nome }))}
+            lotes={(lotesData || []).map((l: { id: number; nome: string; fazendaId?: number | null }) => ({
+              id: l.id,
+              nome: l.nome,
+              fazendaId: l.fazendaId,
+            }))}
+            pastos={(pastosData || []).map((p: { id: number; nome: string; fazendaId?: number | null }) => ({
+              id: p.id,
+              nome: p.nome,
+              fazendaId: p.fazendaId,
+            }))}
+            marcadoresDisponiveis={marcasDistintas}
+            embedded
+          />
+        </div>
         <TableHorizontalScroll
+          fillHeight
+          className="flex-1 min-h-0"
+          minScrollWidth={1320}
           footer={
-            <div className="border-t border-gray-100">
-              <TablePaginationFooter
-                pageSize={perPage}
-                page={page}
-                totalItems={sortedAnimais.length}
-                onPageChange={setPage}
-                onPageSizeChange={size => {
-                  setPerPage(size);
-                  setPage(1);
-                }}
-                itemLabel="animais"
-              />
-            </div>
+            hasFazendaFilter ? (
+              <div className="border-t border-gray-100">
+                <TablePaginationFooter
+                  pageSize={perPage}
+                  page={page}
+                  totalItems={sortedAnimais.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={size => {
+                    setPerPage(size);
+                    setPage(1);
+                  }}
+                  itemLabel="animais"
+                />
+              </div>
+            ) : null
           }
         >
-          <table className="w-full min-w-[1180px] text-[12px] border-collapse">
-            <thead className="bg-gray-50 border-b border-gray-200">
+          <table className="text-[12px] border-collapse w-max min-w-[1320px]">
+            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
               <tr>
                 {/* Cabeçalhos ordensáveis */}
                 {([
@@ -501,7 +519,7 @@ export function AnimaisPage() {
                     key={col.key}
                     onClick={() => toggleSort(col.key)}
                     className={`px-3 py-2.5 text-[11px] font-semibold text-gray-600 whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors text-${col.align} ${col.minW} ${
-                      idx === 0 ? "sticky left-0 z-[3] bg-gray-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                      idx === 0 ? stickyBrincoTh : ""
                     }`}
                   >
                     {col.label}
@@ -556,7 +574,7 @@ export function AnimaisPage() {
               ) : paginated.map((animal) => (
                 <tr key={animal.id} className="border-b border-gray-100 hover:bg-[#4ECDC4]/[0.08] transition-colors group">
                   {/* Brinco — fixo à esquerda */}
-                  <td className="px-3 py-2 text-center sticky left-0 z-[1] bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] group-hover:bg-[#4ECDC4]/[0.08]">
+                  <td className={`px-3 py-2 text-center ${stickyBrincoTd}`}>
                     <div className="flex items-center justify-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${animal.sexo === 'macho' ? 'bg-blue-400' : 'bg-pink-400'}`} />
                       <span className="font-semibold text-gray-800">{animal.brinco || "-"}</span>
@@ -641,6 +659,7 @@ export function AnimaisPage() {
             </tbody>
           </table>
         </TableHorizontalScroll>
+      </div>
       </div>
 
       {/* Modal de importação em massa */}

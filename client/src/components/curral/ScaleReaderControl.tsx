@@ -4,13 +4,11 @@ import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import { TRUTEST_S3_SCALE_PRESET } from "@/lib/hardware/scalePresets";
 import { cn } from "@/lib/utils";
 
-const SIMULACAO_PESOS = [320, 380, 425, 480, 520] as const;
-
 type ScaleReaderControlProps = {
   disabled?: boolean;
   /** Peso estável lido (serial ou simulação). */
   onStableWeight?: (kg: number) => void;
-  /** hub: só conexão; operacao: inclui simulação para teste sem hardware. */
+  /** hub: conexão + notas de setup; operacao: só conexão na sessão. */
   variant?: "hub" | "operacao";
   className?: string;
 };
@@ -34,7 +32,6 @@ export function ScaleReaderControl({
     sessionActive,
     connect,
     disconnect,
-    simulateWeight,
   } = useScaleReader({ onStableWeight, presetId: "trutest-s3" });
 
   const handleConectar = () => {
@@ -50,8 +47,7 @@ export function ScaleReaderControl({
     <div className={cn("space-y-2", className)}>
       {!supported ? (
         <p className="text-[11px] text-gray-500 leading-snug">
-          Web Serial indisponível neste navegador. Use simulação abaixo ou digite o peso
-          manualmente.
+          Web Serial indisponível neste navegador. Digite o peso manualmente no campo abaixo.
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
@@ -105,30 +101,6 @@ export function ScaleReaderControl({
               <li key={nota}>{nota}</li>
             ))}
           </ul>
-        </div>
-      ) : null}
-
-      {variant === "operacao" ? (
-        <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/60 p-3">
-          <p className="text-[11px] font-semibold text-gray-700 mb-2">
-            Testar sem balança
-          </p>
-          <p className="text-[10px] text-gray-500 mb-2 leading-snug">
-            Simula peso estável no campo abaixo — útil até conectar o equipamento real.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {SIMULACAO_PESOS.map(kg => (
-              <button
-                key={kg}
-                type="button"
-                disabled={disabled}
-                onClick={() => simulateWeight(kg)}
-                className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 hover:border-[#4ECDC4]/50 hover:bg-[#4ECDC4]/5 disabled:opacity-50 min-h-[40px]"
-              >
-                {formatPesoKgParaCampo(kg)} kg
-              </button>
-            ))}
-          </div>
         </div>
       ) : null}
     </div>

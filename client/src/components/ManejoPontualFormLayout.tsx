@@ -15,7 +15,7 @@ export function ManejoSectionCard({
   children,
   className,
 }: {
-  title: string;
+  title?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -26,9 +26,11 @@ export function ManejoSectionCard({
         className,
       )}
     >
-      <div className="px-5 py-4 border-b border-gray-100">
-        <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
-      </div>
+      {title ? (
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
+        </div>
+      ) : null}
       <div className="p-5 space-y-4">{children}</div>
     </section>
   );

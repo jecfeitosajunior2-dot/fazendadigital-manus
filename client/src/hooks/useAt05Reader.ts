@@ -607,12 +607,12 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     return () => {
       mountedRef.current = false;
       hookAliveCount = Math.max(0, hookAliveCount - 1);
-      log(`HOOK UNMOUNT (alive=${hookAliveCount}) — shutdown imediato (sem delay)`);
+      log(`HOOK UNMOUNT (alive=${hookAliveCount})`);
 
-      // Ownership no módulo: a Promise continua após o React desmontar o componente.
-      // Não usar setTimeout — menu lateral / Voltar precisam liberar a COM de verdade.
-      // Idempotente com Cancelar (já fechou → noop/join).
-      void shutdownAt05SharedSession("effect-cleanup");
+      // Só encerra quando nenhum hook montado (ex.: hub→operação no curral mantém a COM).
+      if (hookAliveCount === 0) {
+        void shutdownAt05SharedSession("effect-cleanup");
+      }
     };
   }, []);
 
@@ -637,3 +637,5 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     disconnect: () => disconnect("manual"),
   };
 }
+
+export type At05ReaderSession = ReturnType<typeof useAt05Reader>;

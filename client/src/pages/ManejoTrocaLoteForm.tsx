@@ -14,6 +14,10 @@ import {
   FormLabel,
   FormSelect,
 } from "@/components/FormFields";
+import {
+  NovoLoteRapidoDialog,
+  NovoLoteRapidoTrigger,
+} from "@/components/lotes/NovoLoteRapidoDialog";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
@@ -89,6 +93,7 @@ export function ManejoTrocaLoteForm() {
   const [loteDestinoId, setLoteDestinoId] = useState("");
   const [bloqueioMsg, setBloqueioMsg] = useState<string | null>(null);
   const [animalPrefillDone, setAnimalPrefillDone] = useState(false);
+  const [novoLoteDialogAberto, setNovoLoteDialogAberto] = useState(false);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
   const unicaFazenda = fazendas.length === 1;
@@ -387,8 +392,20 @@ export function ManejoTrocaLoteForm() {
           {mesmoLote ? (
             <p className="mt-1.5 text-[12px] text-amber-700">{MSG_TROCA_LOTE_MESMO_LOTE}</p>
           ) : null}
+          <NovoLoteRapidoTrigger
+            onClick={() => setNovoLoteDialogAberto(true)}
+            disabled={!fazendaNum || mutation.isPending}
+          />
         </ManejoSectionCard>
       </ManejoPontualFormShell>
+      <NovoLoteRapidoDialog
+        open={novoLoteDialogAberto}
+        onOpenChange={setNovoLoteDialogAberto}
+        fazendaId={fazendaNum}
+        fazendaNome={nomeFazenda}
+        dataCriacao={dataMovimentacao}
+        onCreated={({ id }) => setLoteDestinoId(String(id))}
+      />
       <BloqueioNegocioDialog
         message={bloqueioMsg}
         onClose={() => setBloqueioMsg(null)}

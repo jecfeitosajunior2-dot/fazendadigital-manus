@@ -497,6 +497,14 @@ export function calcularQuantidadeEstoquePorDose(opts: {
     return { erro: "Produto sem unidade de estoque cadastrada. Ajuste o cadastro do insumo." };
   }
 
+  const erroUnidade = validarUnidadeDoseSanitariaParaProduto({
+    doseValor: opts.doseValor,
+    doseUnidade: opts.doseUnidade,
+    unidadeEstoque: opts.unidadeEstoque,
+    embalagensRaw: opts.embalagensRaw,
+  });
+  if (erroUnidade) return { erro: erroUnidade };
+
   const direto = converterUnidade(opts.doseValor, uDose, uEst);
   if (direto != null && Number.isFinite(direto) && direto > 0) {
     return { quantidade: direto };
@@ -514,13 +522,235 @@ export function calcularQuantidadeEstoquePorDose(opts: {
     }
   }
 
-  const rotuloEst = siglaUnidade(uEst) || uEst;
-  const rotuloDose = siglaUnidade(uDose) || uDose;
   return {
-    erro:
-      `Não é possível converter a dose (${rotuloDose}) para a unidade do estoque (${rotuloEst}) com segurança. ` +
-      `Use a mesma família de unidade ou cadastre o volume da embalagem no insumo.`,
+    erro: mensagemErroConversaoDoseSanitaria({
+      doseValor: opts.doseValor,
+      doseUnidade: opts.doseUnidade,
+      unidadeEstoque: opts.unidadeEstoque,
+      embalagensRaw: opts.embalagensRaw,
+    }),
   };
+}
+
+/** Unidades de volume/massa/UI sempre disponíveis no dropdown de dose sanitária. */
+export const UNIDADES_DOSE_SANITARIO_UI_BASE = [
+  "mL",
+  "L",
+  "g",
+  "kg",
+  "mg",
+  "UI",
+  "dose",
+] as const;
+
+/** Unidades de contagem (incluídas quando o estoque do produto é un/fr/sc). */
+export const UNIDADES_DOSE_CONTAGEM_UI = ["un", "fr", "sc"] as const;
+
+/** Todas as unidades possíveis no dropdown de dose sanitária. */
+export const UNIDADES_DOSE_SANITARIO_UI = [
+  ...UNIDADES_DOSE_SANITARIO_UI_BASE,
+  ...UNIDADES_DOSE_CONTAGEM_UI,
+] as const;
+
+export type UnidadeDoseSanitariaUi = (typeof UNIDADES_DOSE_SANITARIO_UI)[number];
+
+const SIGLA_PARA_UI_DOSE_SANITARIA: Record<string, UnidadeDoseSanitariaUi> = {
+  ml: "mL",
+  L: "L",
+  g: "g",
+  kg: "kg",
+  mg: "mg",
+  UI: "UI",
+  dose: "dose",
+  un: "un",
+  fr: "fr",
+  sc: "sc",
+};
+
+function siglaParaUiDoseSanitaria(sigla: string): UnidadeDoseSanitariaUi | null {
+  const n = normalizarUnidade(sigla);
+  return SIGLA_PARA_UI_DOSE_SANITARIA[n] ?? null;
+}
+
+/**
+ * Sugere a unidade da dose conforme o cadastro do insumo.
+ * Estoque conversível (mL, L, kg…) → mesma família; contagem (un/fr/sc) → volume da embalagem.
+ */
+export function sugerirUnidadeDoseSanitaria(opts: {
+  unidadeEstoque: string | null | undefined;
+  embalagensRaw?: string | null;
+}): UnidadeDoseSanitariaUi | null {
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  if (!uEst) return null;
+
+  const unidadesContagem = new Set(["un", "fr", "sc"]);
+  if (!unidadesContagem.has(uEst)) {
+    return siglaParaUiDoseSanitaria(uEst);
+  }
+
+  for (const emb of parseEmbalagens(opts.embalagensRaw)) {
+    if (emb.volume == null || !(emb.volume > 0) || !emb.unidade) continue;
+    const ui = siglaParaUiDoseSanitaria(emb.unidade);
+    if (ui) return ui;
+  }
+
+  return siglaParaUiDoseSanitaria(uEst);
+}
+
+/** Todas as unidades disponíveis no select de dose sanitária (curral e manejo pontual). */
+export function listarUnidadesDoseSanitariaUiParaProduto(_opts?: {
+  unidadeEstoque?: string | null;
+}): UnidadeDoseSanitariaUi[] {
+  return [...UNIDADES_DOSE_SANITARIO_UI];
+}
+
+export const OPCOES_UNIDADE_DOSE_SANITARIO: { value: UnidadeDoseSanitariaUi; label: string }[] =
+  UNIDADES_DOSE_SANITARIO_UI.map(v => ({
+    value: v,
+    label: siglaUnidade(v) || v,
+  }));
+
+export function listarOpcoesUnidadeDoseSanitaria(_opts?: {
+  unidadeEstoque?: string | null;
+}): { value: UnidadeDoseSanitariaUi; label: string }[] {
+  return OPCOES_UNIDADE_DOSE_SANITARIO;
+}
+
+/** Estoque por contagem (un/fr/sc) sem embalagem com volume cadastrada. */
+export function produtoEstoqueContagemSemEmbalagem(opts: {
+  unidadeEstoque: string | null | undefined;
+  embalagensRaw?: string | null;
+}): boolean {
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  const unidadesContagem = new Set<string>(UNIDADES_DOSE_CONTAGEM_UI);
+  if (!uEst || !unidadesContagem.has(uEst)) return false;
+  return primeiraEmbalagemComVolume(opts.embalagensRaw) == null;
+}
+
+/**
+ * A dose deve usar a unidade sugerida pelo cadastro (ex.: estoque mL → dose mL, não L).
+ * Evita conversões “válidas” porém confusas no curral (2 L vs 2 mL).
+ */
+export function validarUnidadeDoseSanitariaParaProduto(opts: {
+  doseValor?: number;
+  doseUnidade: string;
+  unidadeEstoque: string | null | undefined;
+  embalagensRaw?: string | null;
+}): string | null {
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  const uDose = normalizarUnidade(opts.doseUnidade);
+  const unidadesContagem = new Set<string>(UNIDADES_DOSE_CONTAGEM_UI);
+  if (unidadesContagem.has(uEst) && uDose === uEst) return null;
+
+  const esperada = sugerirUnidadeDoseSanitaria({
+    unidadeEstoque: opts.unidadeEstoque,
+    embalagensRaw: opts.embalagensRaw,
+  });
+  if (!esperada) return null;
+  const doseUi = siglaParaUiDoseSanitaria(uDose);
+  if (doseUi === esperada) return null;
+  return mensagemErroUnidadeDoseDesalinhada({ ...opts, unidadeEsperada: esperada });
+}
+
+function mensagemErroUnidadeDoseDesalinhada(
+  opts: {
+    doseValor?: number;
+    doseUnidade: string;
+    unidadeEstoque: string | null | undefined;
+    embalagensRaw?: string | null;
+  } & { unidadeEsperada: UnidadeDoseSanitariaUi },
+): string {
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  const rotuloEst = siglaUnidade(uEst) || uEst;
+  const rotuloDoseUi =
+    siglaParaUiDoseSanitaria(normalizarUnidade(opts.doseUnidade)) ||
+    siglaUnidade(opts.doseUnidade) ||
+    opts.doseUnidade;
+  const unidadesContagem = new Set(["un", "fr", "sc"]);
+
+  if (unidadesContagem.has(uEst)) {
+    const emb = primeiraEmbalagemComVolume(opts.embalagensRaw);
+    if (emb) {
+      const volLabel = rotuloVolumeEmbalagem(emb);
+      const exemploNegativo =
+        opts.doseValor != null && opts.doseValor > 0
+          ? `, não ${String(opts.doseValor).replace(".", ",")} ${rotuloDoseUi}`
+          : `, não em ${rotuloDoseUi}`;
+      return (
+        `Unidade incompatível: o estoque é por ${rotuloEst}, com embalagem de ${volLabel}.\n` +
+        `Troque a dose para ${opts.unidadeEsperada} (ex.: ${volLabel}${exemploNegativo}) para registrar.`
+      );
+    }
+  }
+
+  return (
+    `Dose em ${rotuloDoseUi} não combina com estoque em ${rotuloEst}.\n` +
+    `Use ${opts.unidadeEsperada} na dose (mesma unidade do estoque).`
+  );
+}
+
+function primeiraEmbalagemComVolume(
+  embalagensRaw?: string | null,
+): { volume: number; unidade: string } | null {
+  for (const emb of parseEmbalagens(embalagensRaw)) {
+    if (emb.volume != null && emb.volume > 0 && emb.unidade) {
+      return { volume: emb.volume, unidade: emb.unidade };
+    }
+  }
+  return null;
+}
+
+function rotuloVolumeEmbalagem(emb: { volume: number; unidade: string }): string {
+  const ui = siglaParaUiDoseSanitaria(emb.unidade) || siglaUnidade(emb.unidade) || emb.unidade;
+  const volFmt = emb.volume.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+  return `${volFmt} ${ui}`;
+}
+
+/**
+ * Mensagem contextual quando dose e estoque não convertem (curral / manejo pontual).
+ * Duas linhas: problema + ação — sem atalho que altere movimentação.
+ */
+export function mensagemErroConversaoDoseSanitaria(opts: {
+  doseValor?: number;
+  doseUnidade: string;
+  unidadeEstoque: string | null | undefined;
+  embalagensRaw?: string | null;
+}): string {
+  const uDose = normalizarUnidade(opts.doseUnidade);
+  const uEst = normalizarUnidade(opts.unidadeEstoque);
+  const rotuloEst = siglaUnidade(uEst) || uEst;
+  const rotuloDoseUi = siglaParaUiDoseSanitaria(uDose) || siglaUnidade(uDose) || uDose;
+  const unidadesContagem = new Set(["un", "fr", "sc"]);
+
+  if (unidadesContagem.has(uEst)) {
+    const emb = primeiraEmbalagemComVolume(opts.embalagensRaw);
+    if (emb) {
+      const volLabel = rotuloVolumeEmbalagem(emb);
+      const unidadeSugerida =
+        sugerirUnidadeDoseSanitaria({
+          unidadeEstoque: uEst,
+          embalagensRaw: opts.embalagensRaw,
+        }) || siglaParaUiDoseSanitaria(emb.unidade) || "mL";
+      const exemploNegativo =
+        opts.doseValor != null && opts.doseValor > 0
+          ? `, não ${String(opts.doseValor).replace(".", ",")} ${rotuloDoseUi}`
+          : `, não em ${rotuloDoseUi}`;
+      return (
+        `Unidade incompatível: o estoque é por ${rotuloEst}, com embalagem de ${volLabel}.\n` +
+        `Troque a dose para ${unidadeSugerida} (ex.: ${volLabel}${exemploNegativo}) para registrar.`
+      );
+    }
+    return (
+      `Dose em ${rotuloDoseUi} não combina com estoque em ${rotuloEst}.\n` +
+      `Use ${rotuloEst} na dose (ex.: 1 ${rotuloEst}), ou cadastre a embalagem em Insumos → Farmácia para informar mL.`
+    );
+  }
+
+  const unidadeSugerida = siglaParaUiDoseSanitaria(uEst) || rotuloEst;
+  return (
+    `Dose em ${rotuloDoseUi} não combina com estoque em ${rotuloEst}.\n` +
+    `Use ${unidadeSugerida} na dose (mesma unidade do estoque).`
+  );
 }
 
 /**

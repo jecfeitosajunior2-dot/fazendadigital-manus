@@ -41,6 +41,7 @@ type ManejoAnimalFieldProps<T extends ManejoAnimalRow> = {
   onAfterClear?: () => void;
   /** Sem título/divisor — use quando o card pai já tem cabeçalho de seção. */
   embedded?: boolean;
+  clearLabel?: string;
 };
 
 export function ManejoAnimalField<T extends ManejoAnimalRow>({
@@ -53,6 +54,7 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
   selectedExtra,
   onAfterClear,
   embedded = false,
+  clearLabel = "Alterar animal",
 }: ManejoAnimalFieldProps<T>) {
   const content = (
       <AnimalAutocomplete
@@ -129,7 +131,7 @@ export function ManejoAnimalField<T extends ManejoAnimalRow>({
                 }}
                 className="text-[11px] font-semibold text-gray-600 underline shrink-0"
               >
-                Alterar animal
+                {clearLabel}
               </button>
             </div>
           </div>

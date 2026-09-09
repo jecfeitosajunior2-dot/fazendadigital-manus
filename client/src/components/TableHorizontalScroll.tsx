@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 interface TableHorizontalScrollProps {
   children: ReactNode;
@@ -11,161 +11,154 @@ interface TableHorizontalScrollProps {
    * Use em tabelas que devem caber no desktop sem rolagem lateral.
    */
   fitWidth?: boolean;
+  /** Largura mínima esperada do conteúdo — garante a barra quando a tela é mais estreita. */
+  minScrollWidth?: number;
+  /** Preenche a altura disponível; corpo da tabela rola verticalmente e o rodapé fica fixo embaixo. */
+  fillHeight?: boolean;
 }
 
 /**
- * Tabela com barra de rolagem horizontal acima do rodapé de paginação.
+ * Tabela com barra de rolagem horizontal sincronizada no rodapé (acima da paginação).
+ * Usa um trilho dedicado — não depende da barra nativa do navegador.
  */
 export default function TableHorizontalScroll({
   children,
   footer,
   className,
   fitWidth = false,
+  minScrollWidth,
+  fillHeight = false,
 }: TableHorizontalScrollProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
-  const [metrics, setMetrics] = useState({ canScroll: false, thumbWidth: 0, thumbLeft: 0 });
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const footerScrollRef = useRef<HTMLDivElement>(null);
+  const syncingRef = useRef(false);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
 
-  const updateMetrics = useCallback(() => {
-    const el = scrollRef.current;
-    const track = trackRef.current;
-    if (!el || !track) return;
+  const measure = useCallback(() => {
+    const tableWrap = tableScrollRef.current;
+    if (!tableWrap) return;
 
-    const { scrollWidth, clientWidth, scrollLeft } = el;
-    const trackWidth = track.clientWidth;
-    const canScroll = scrollWidth > clientWidth + 2;
-    const thumbWidth = canScroll
-      ? Math.min(Math.max((clientWidth / scrollWidth) * trackWidth, 40), trackWidth)
-      : trackWidth;
-    const maxThumbTravel = Math.max(trackWidth - thumbWidth, 0);
-    const maxScroll = Math.max(scrollWidth - clientWidth, 0);
-    const thumbLeft = canScroll && maxScroll > 0 ? (scrollLeft / maxScroll) * maxThumbTravel : 0;
+    const content =
+      (tableWrap.querySelector("table") as HTMLElement | null) ??
+      (tableWrap.firstElementChild as HTMLElement | null);
+    const nextContentWidth = content
+      ? Math.max(content.scrollWidth, content.offsetWidth, content.getBoundingClientRect().width)
+      : tableWrap.scrollWidth;
+    const nextViewportWidth = tableWrap.clientWidth;
 
-    setMetrics({ canScroll, thumbWidth, thumbLeft });
+    setContentWidth(prev => (prev === nextContentWidth ? prev : nextContentWidth));
+    setViewportWidth(prev => (prev === nextViewportWidth ? prev : nextViewportWidth));
   }, []);
 
-  // Ao montar / recarregar, inicia a rolagem horizontal na posição zero.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollLeft = 0;
+  const syncFromTable = useCallback(() => {
+    const tableWrap = tableScrollRef.current;
+    const footerWrap = footerScrollRef.current;
+    if (!tableWrap || !footerWrap || syncingRef.current) return;
+    syncingRef.current = true;
+    footerWrap.scrollLeft = tableWrap.scrollLeft;
+    syncingRef.current = false;
   }, []);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    const track = trackRef.current;
-    if (!el || !track) return;
+  const syncFromFooter = useCallback(() => {
+    const tableWrap = tableScrollRef.current;
+    const footerWrap = footerScrollRef.current;
+    if (!tableWrap || !footerWrap || syncingRef.current) return;
+    syncingRef.current = true;
+    tableWrap.scrollLeft = footerWrap.scrollLeft;
+    syncingRef.current = false;
+  }, []);
 
-    updateMetrics();
-    el.addEventListener("scroll", updateMetrics, { passive: true });
-
-    const ro = new ResizeObserver(updateMetrics);
-    ro.observe(el);
-    ro.observe(track);
-    if (el.firstElementChild) ro.observe(el.firstElementChild);
-
-    window.addEventListener("resize", updateMetrics);
+  useLayoutEffect(() => {
+    const tableWrap = tableScrollRef.current;
+    if (!tableWrap) return;
+    tableWrap.scrollLeft = 0;
+    if (footerScrollRef.current) footerScrollRef.current.scrollLeft = 0;
+    measure();
+    const raf = requestAnimationFrame(measure);
+    const t1 = window.setTimeout(measure, 50);
+    const t2 = window.setTimeout(measure, 250);
     return () => {
-      el.removeEventListener("scroll", updateMetrics);
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [measure, children, fitWidth, fillHeight]);
+
+  useEffect(() => {
+    const tableWrap = tableScrollRef.current;
+    if (!tableWrap) return;
+
+    measure();
+    tableWrap.addEventListener("scroll", syncFromTable, { passive: true });
+
+    const ro = new ResizeObserver(measure);
+    ro.observe(tableWrap);
+    const inner = tableWrap.querySelector("table") ?? tableWrap.firstElementChild;
+    if (inner) ro.observe(inner);
+
+    window.addEventListener("resize", measure);
+    return () => {
+      tableWrap.removeEventListener("scroll", syncFromTable);
       ro.disconnect();
-      window.removeEventListener("resize", updateMetrics);
+      window.removeEventListener("resize", measure);
     };
-  }, [updateMetrics, children, fitWidth]);
+  }, [measure, syncFromTable, children, fitWidth, fillHeight]);
 
-  const scrollFromClientX = (clientX: number) => {
-    const el = scrollRef.current;
-    const track = trackRef.current;
-    if (!el || !track || !metrics.canScroll) return;
-
-    const rect = track.getBoundingClientRect();
-    const travel = rect.width - metrics.thumbWidth;
-    if (travel <= 0) return;
-
-    const ratio = (clientX - rect.left - metrics.thumbWidth / 2) / travel;
-    const clamped = Math.min(1, Math.max(0, ratio));
-    el.scrollLeft = clamped * (el.scrollWidth - el.clientWidth);
-  };
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragRef.current || !scrollRef.current || !trackRef.current) return;
-      const el = scrollRef.current;
-      const track = trackRef.current;
-      const travel = track.clientWidth - metrics.thumbWidth;
-      const maxScroll = el.scrollWidth - el.clientWidth;
-      if (travel <= 0 || maxScroll <= 0) return;
-
-      const deltaX = e.clientX - dragRef.current.startX;
-      const scrollDelta = (deltaX / travel) * maxScroll;
-      el.scrollLeft = dragRef.current.startScrollLeft + scrollDelta;
-    };
-
-    const onUp = () => {
-      dragRef.current = null;
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [metrics.thumbWidth]);
+  const effectiveContentWidth = Math.max(contentWidth, minScrollWidth ?? 0);
+  const canScroll = effectiveContentWidth > viewportWidth + 1;
 
   return (
-    <div className={cn("fd-table-scroll-wrap max-w-full min-w-0", className)}>
+    <div
+      className={cn(
+        "fd-table-scroll-wrap flex w-full min-w-0 max-w-full flex-col",
+        fillHeight && "min-h-0 flex-1",
+        className,
+      )}
+    >
       <div
-        ref={scrollRef}
-        className="fd-table-scroll-x fd-table-scroll-x--hide-native overflow-x-auto overflow-y-hidden"
+        id="fd-table-scroll-content"
+        ref={tableScrollRef}
+        className={cn(
+          "fd-table-scroll-x fd-table-scroll-x--hide-native w-full min-w-0 max-w-full overflow-x-auto",
+          fillHeight ? "min-h-0 flex-1 overflow-y-auto" : "overflow-y-hidden",
+        )}
       >
-        <div className={cn(fitWidth ? "block w-full min-w-0" : "inline-block w-max min-w-full")}>
+        <div
+          className={cn(fitWidth ? "block w-full min-w-0" : "inline-block w-max max-w-none")}
+          style={
+            !fitWidth && minScrollWidth
+              ? { minWidth: minScrollWidth }
+              : undefined
+          }
+        >
           {children}
         </div>
       </div>
 
-      <div className="px-4 pt-2 pb-1 border-t border-gray-100 bg-white">
+      {canScroll ? (
         <div
-          ref={trackRef}
-          className={cn(
-            "fd-table-scroll-track",
-            metrics.canScroll ? "cursor-pointer" : "cursor-default",
-          )}
-          onClick={e => {
-            if (!metrics.canScroll) return;
-            scrollFromClientX(e.clientX);
-          }}
+          ref={footerScrollRef}
+          className="fd-table-scroll-footer w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden border-t border-gray-200 bg-gray-50 shrink-0"
+          onScroll={syncFromFooter}
           role="scrollbar"
           aria-orientation="horizontal"
           aria-label="Rolagem horizontal da tabela"
-          aria-hidden={!metrics.canScroll}
+          aria-controls="fd-table-scroll-content"
         >
           <div
-            className={cn(
-              "fd-table-scroll-thumb",
-              !metrics.canScroll && "fd-table-scroll-thumb--idle w-full",
-              metrics.canScroll && "cursor-grab active:cursor-grabbing",
-            )}
-            style={
-              metrics.canScroll
-                ? { width: metrics.thumbWidth, transform: `translateX(${metrics.thumbLeft}px)` }
-                : undefined
-            }
-            onMouseDown={e => {
-              if (!metrics.canScroll || !scrollRef.current) return;
-              e.preventDefault();
-              e.stopPropagation();
-              dragRef.current = {
-                startX: e.clientX,
-                startScrollLeft: scrollRef.current.scrollLeft,
-              };
-            }}
-            onClick={e => e.stopPropagation()}
+            className="h-3"
+            style={{ width: Math.max(effectiveContentWidth, viewportWidth + 2) }}
+            aria-hidden
           />
         </div>
-      </div>
+      ) : null}
 
-      {footer}
+      {footer
+        ? fillHeight
+          ? <div className="shrink-0 mt-auto bg-white">{footer}</div>
+          : footer
+        : null}
     </div>
   );
 }
