@@ -177,10 +177,14 @@ import {
   MSG_REPRO_INELEGIVEL,
 } from "../shared/reproElegibilidade";
 import {
-  isCoberturaRealizadaMacho,
+  isMachoEventoComAlvoMatrizes,
   resolveReproducaoAnimalId,
   resolveReproducaoMachoIdPersistido,
 } from "./reproducaoCreateInput";
+import {
+  espelharRegistrosReproNaMatriz,
+  resolveTipoEspelhoMatriz,
+} from "./reproEspelharRegistrosMatriz";
 import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
 import {
   executeRegistrarPartoComCrias,
@@ -3928,7 +3932,7 @@ const reproducaoRouter = router({
         ReturnType<typeof resolveAndValidateCoberturaAlvo>
       > | null;
 
-      if (isCoberturaRealizadaMacho(input.tipo, animalAlvo.sexo)) {
+      if (isMachoEventoComAlvoMatrizes(input.tipo, animalAlvo.sexo)) {
         const fazendaCtx = input.fazendaId ?? null;
         if (!fazendaCtx) {
           throw new TRPCError({
@@ -3936,10 +3940,12 @@ const reproducaoRouter = router({
             message: MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
           });
         }
+        const modoAlvo =
+          input.tipo.trim() === "Estação de monta" ? ("lote" as const) : input.coberturaSelecaoModo;
         coberturaAlvoPersistida = await resolveAndValidateCoberturaAlvo({
           userId: ctx.user.id,
           fazendaId: fazendaCtx,
-          coberturaSelecaoModo: input.coberturaSelecaoModo,
+          coberturaSelecaoModo: modoAlvo,
           coberturaMatrizIds: input.coberturaMatrizIds,
           coberturaLoteId: input.coberturaLoteId,
           dataEvento: input.dataCobertura,
@@ -4082,9 +4088,10 @@ const reproducaoRouter = router({
           ? new Date(input.dataPrevistoParto)
           : undefined,
       };
+      let registroId = 0;
       try {
         const result = await db.insert(reproducaoRegistros).values(payload);
-        return { success: true, id: (result as any)[0]?.insertId };
+        registroId = (result as { insertId?: number }[])[0]?.insertId ?? 0;
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
         const result = await createLocalReproducaoRegistro(ctx.user.id, {
@@ -4096,8 +4103,37 @@ const reproducaoRouter = router({
           resultado: input.resultado,
           observacoes: observacoesPersistidas,
         });
-        return { success: true, id: result.id, localFallback: true };
+        registroId = result.id;
       }
+
+      const tipoEspelho = resolveTipoEspelhoMatriz(input.tipo);
+      if (
+        tipoEspelho &&
+        coberturaAlvoPersistida &&
+        coberturaAlvoPersistida.animalIds.length > 0 &&
+        registroId > 0
+      ) {
+        const touroLabel =
+          (animalAlvo as { brinco?: string | null; nome?: string | null }).brinco?.trim() ||
+          (animalAlvo as { nome?: string | null }).nome?.trim() ||
+          String(animalId);
+        await espelharRegistrosReproNaMatriz({
+          userId: ctx.user.id,
+          registroOrigemId: registroId,
+          tipoEspelho,
+          touroId: animalId,
+          matrizIds: coberturaAlvoPersistida.animalIds,
+          dataCobertura: input.dataCobertura,
+          touroLabel,
+          resultadoEspelho: "Realizado",
+        });
+      }
+
+      return {
+        success: true,
+        id: registroId,
+        espelhosMatriz: tipoEspelho ? coberturaAlvoPersistida?.animalIds.length ?? 0 : 0,
+      };
     }),
 
   registrarPartoComCrias: protectedProcedure

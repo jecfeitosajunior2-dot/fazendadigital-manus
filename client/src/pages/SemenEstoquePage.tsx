@@ -1,23 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import AppLayout from "@/components/AppLayout";
-import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
-import {
-  FD_PRIMARY,
-  FormDatePicker,
-  FormInput,
-  FormLabel,
-  FormNativeSelect,
-  inputClass,
-} from "@/components/FormFields";
+import { FD_PRIMARY, FormLabel, inputClass } from "@/components/FormFields";
+import { NovaEntradaSemenDialog } from "@/components/semen/NovaEntradaSemenDialog";
+import { SemenReproducaoTabs } from "@/components/semen/SemenReproducaoTabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import ListExportButtons from "@/components/ListExportButtons";
 import {
   AddActionIcon,
@@ -56,15 +44,13 @@ import {
   paginateSemenEstoqueList,
   semenEstoqueEmptyMessage,
 } from "@/lib/semenEstoqueListPagination";
-import { semenEntradaModalLayout } from "@/lib/semenEntradaModalLayout";
 import {
   buildSemenEntradaPrefillFromPartida,
   type SemenEntradaPrefill,
 } from "@/lib/semenEstoqueEntradaPrefill";
-import { isValidSemenMovimentacaoId, semenEntradaResumoPath } from "@/lib/semenRoutes";
 import { invalidateSemenQueriesAfterAjuste, invalidateSemenQueriesAfterCorrecao } from "@/lib/invalidateSemenAfterConsumo";
 import { trpc } from "@/lib/trpc";
-import { cn, formatCurrencyBrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
@@ -73,20 +59,14 @@ import type { AnimalAutocompleteRow } from "@shared/animalAutocomplete";
 import { EXCEL_FMT_MOEDA_BRL, formatMoedaBrlExcel, parseValorDecimalBanco } from "@shared/parseMoedaBr";
 import { formatValorAtualEstoqueSemenDisplay, formatValorTotalEstoqueSemenDisplay } from "@shared/semenEstoqueValor";
 import {
-  SEMEN_ORIGEM_EXTERNO,
   SEMEN_ORIGEM_INTERNO,
   SEMEN_STATUS_DISPONIVEL,
   SEMEN_STATUS_ESGOTADO,
-  calcSemenCustoUnitarioEntrada,
   formatSemenCustoTotalDisplay,
-  isSemenEntradaFormSubmittable,
   parseSemenCustoTotal,
-  parseSemenQuantidadeDoses,
 } from "@shared/semenEstoque";
 import { shouldShowSemenMovimentacaoCustoTotal, buildSemenHistoricoVisual } from "@shared/semenMovimentacaoDisplay";
 import { isSemenMovimentacaoAjusteEstoque } from "@shared/semenEstoqueAjuste";
-import { filterMachosReprodutoresCandidatos } from "@shared/reproMachoSelect";
-import { toDateOnlyISO } from "@shared/carenciaAnimal";
 import { toast } from "sonner";
 import CorrigirLancamentoSemenDialog, {
   type SemenLancamentoOriginal,
@@ -548,6 +528,7 @@ export default function SemenEstoquePage() {
   return (
     <AppLayout>
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        <SemenReproducaoTabs active="estoque" />
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1
             className="text-[20px] font-semibold text-gray-900 shrink-0"
@@ -806,323 +787,13 @@ export default function SemenEstoquePage() {
         animais={animaisFazenda as AnimalAutocompleteRow[]}
         loadingAnimais={carregandoAnimais}
         prefill={entradaPrefill}
-        onSuccess={async result => {
+        onSuccess={async () => {
           await refetch();
           utils.semen.list.invalidate();
           fecharNovaEntrada(false);
-          toast.success("Entrada de sêmen registrada.");
-          if (!isValidSemenMovimentacaoId(result.movimentacaoId)) {
-            toast.error("Entrada registrada, mas não foi possível abrir o resumo.");
-            return;
-          }
-          setLocation(semenEntradaResumoPath(result.movimentacaoId));
+          toast.success("Entrada de Sêmen registrada.");
         }}
       />
     </AppLayout>
-  );
-}
-
-function NovaEntradaSemenDialog({
-  open,
-  onOpenChange,
-  fazendaId,
-  animais,
-  loadingAnimais,
-  prefill,
-  onSuccess,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  fazendaId: number;
-  animais: AnimalAutocompleteRow[];
-  loadingAnimais: boolean;
-  prefill: SemenEntradaPrefill | null;
-  onSuccess: (result: {
-    movimentacaoId: number;
-    partidaId: number;
-    saldoAtual: number;
-    custoMedioAtual: string | null;
-    novaEntrada: boolean;
-  }) => void;
-}) {
-  const locked = prefill != null;
-  const [origem, setOrigem] = useState<"" | typeof SEMEN_ORIGEM_INTERNO | typeof SEMEN_ORIGEM_EXTERNO>(
-    "",
-  );
-  const [machoSel, setMachoSel] = useState<AnimalAutocompleteRow | null>(null);
-  const [reprodutorTexto, setReprodutorTexto] = useState("");
-  const [partida, setPartida] = useState("");
-  const [centralOrigem, setCentralOrigem] = useState("");
-  const [quantidadeDoses, setQuantidadeDoses] = useState("");
-  const [custoTotal, setCustoTotal] = useState("");
-  const [dataEntrada, setDataEntrada] = useState(toDateOnlyISO(new Date()));
-
-  const resetForm = useCallback(() => {
-    setOrigem("");
-    setMachoSel(null);
-    setReprodutorTexto("");
-    setPartida("");
-    setCentralOrigem("");
-    setQuantidadeDoses("");
-    setCustoTotal("");
-    setDataEntrada(toDateOnlyISO(new Date()));
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      resetForm();
-      return;
-    }
-    setQuantidadeDoses("");
-    setCustoTotal("");
-    setDataEntrada(toDateOnlyISO(new Date()));
-    if (prefill) {
-      setOrigem(prefill.origem);
-      setReprodutorTexto(prefill.reprodutorTexto);
-      setPartida(prefill.partida);
-      setCentralOrigem(prefill.centralOrigem);
-      setMachoSel(null);
-    } else {
-      resetForm();
-    }
-  }, [open, prefill, resetForm]);
-
-  useEffect(() => {
-    if (!open || !prefill || prefill.origem !== SEMEN_ORIGEM_INTERNO || prefill.machoId == null) {
-      return;
-    }
-    const found = animais.find(a => a.id === prefill.machoId) ?? null;
-    if (found) setMachoSel(found);
-  }, [open, prefill, animais]);
-
-  const qtdNum = parseSemenQuantidadeDoses(quantidadeDoses);
-  const custoNum = parseSemenCustoTotal(custoTotal);
-  const custoPorDose =
-    qtdNum != null && custoNum != null
-      ? formatSemenCustoTotalDisplay(
-          parseFloat(calcSemenCustoUnitarioEntrada(qtdNum, custoNum)),
-        )
-      : "—";
-
-  const formCanSubmit = useMemo(
-    () =>
-      isSemenEntradaFormSubmittable({
-        origem,
-        machoId: machoSel?.id ?? prefill?.machoId ?? null,
-        reprodutorTexto,
-        partida,
-        quantidadeDoses,
-        custoTotal,
-        dataEntrada,
-      }),
-    [origem, machoSel, prefill, reprodutorTexto, partida, quantidadeDoses, custoTotal, dataEntrada],
-  );
-
-  const filterMacho = useCallback(
-    (a: AnimalAutocompleteRow) =>
-      filterMachosReprodutoresCandidatos([a], { fazendaId }).length > 0,
-    [fazendaId],
-  );
-
-  const registrar = trpc.semen.registrarEntrada.useMutation({
-    onSuccess: result => onSuccess(result),
-    onError: err => toast.error(err.message),
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formCanSubmit || registrar.isPending) return;
-
-    const custoParsed = parseSemenCustoTotal(custoTotal);
-    const qtdParsed = parseSemenQuantidadeDoses(quantidadeDoses);
-    if (custoParsed == null || qtdParsed == null || !origem) return;
-
-    registrar.mutate({
-      fazendaId,
-      origemReprodutor: origem,
-      machoId: origem === SEMEN_ORIGEM_INTERNO ? (machoSel?.id ?? prefill?.machoId ?? undefined) : undefined,
-      reprodutorTexto: origem === SEMEN_ORIGEM_EXTERNO ? reprodutorTexto : undefined,
-      partida,
-      centralOrigem: centralOrigem || undefined,
-      quantidadeDoses: qtdParsed,
-      custoTotal: custoParsed,
-      dataEntrada,
-    });
-  };
-
-  const submitDisabled = !formCanSubmit || registrar.isPending;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className={semenEntradaModalLayout.content}
-        data-semen-entrada-modal
-      >
-        <DialogHeader className={semenEntradaModalLayout.header}>
-          <DialogTitle>Nova entrada de sêmen</DialogTitle>
-        </DialogHeader>
-
-        <form
-          onSubmit={handleSubmit}
-          className={semenEntradaModalLayout.form}
-          data-semen-entrada-form
-        >
-          <div className={semenEntradaModalLayout.body} data-semen-entrada-body>
-          <div>
-            <FormLabel required>Origem do reprodutor</FormLabel>
-            <FormNativeSelect
-              value={origem}
-              onChange={v => {
-                setOrigem(v as typeof origem);
-                setMachoSel(null);
-                setReprodutorTexto("");
-              }}
-              disabled={locked}
-              placeholder="Selecione a origem"
-              options={[
-                { value: SEMEN_ORIGEM_INTERNO, label: "Animal do rebanho" },
-                { value: SEMEN_ORIGEM_EXTERNO, label: "Sêmen / reprodutor externo" },
-              ]}
-            />
-          </div>
-
-          {origem === SEMEN_ORIGEM_INTERNO ? (
-            locked ? (
-              <div>
-                <FormLabel required>Macho do rebanho</FormLabel>
-                <input
-                  type="text"
-                  value={prefill?.reprodutorDisplay ?? ""}
-                  disabled
-                  className={cn(fieldCls, "bg-gray-50 text-gray-700")}
-                />
-              </div>
-            ) : (
-            <AnimalAutocomplete
-              label="Macho do rebanho"
-              required
-              selected={machoSel}
-              onSelect={setMachoSel}
-              animals={animais}
-              loading={loadingAnimais}
-              disabled={!fazendaId}
-              inputClassName={fieldCls}
-              placeholder="Busque pelo brinco ou nome do touro"
-              emptyMessage="Nenhum reprodutor elegível encontrado."
-              filterCandidate={filterMacho}
-            />
-            )
-          ) : null}
-
-          {origem === SEMEN_ORIGEM_EXTERNO ? (
-            <div>
-              <label className={labelCls}>
-                Reprodutor / Sêmen<span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={reprodutorTexto}
-                onChange={e => setReprodutorTexto(e.target.value)}
-                placeholder="Ex.: GSC-7117 ou REM Armador"
-                className={cn(fieldCls, locked && "bg-gray-50 text-gray-700")}
-                maxLength={500}
-                disabled={locked}
-              />
-            </div>
-          ) : null}
-
-          <div className={semenEntradaModalLayout.fieldGrid}>
-            <div>
-              <label className={labelCls}>Partida / lote</label>
-              <input
-                type="text"
-                value={partida}
-                onChange={e => setPartida(e.target.value)}
-                placeholder="Opcional — ex.: L23081"
-                className={cn(fieldCls, locked && "bg-gray-50 text-gray-700")}
-                maxLength={120}
-                disabled={locked}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Central / origem</label>
-              <input
-                type="text"
-                value={centralOrigem}
-                onChange={e => setCentralOrigem(e.target.value)}
-                placeholder="Ex.: Alta Genetics"
-                className={cn(fieldCls, locked && "bg-gray-50 text-gray-700")}
-                maxLength={150}
-                disabled={locked}
-              />
-            </div>
-          </div>
-
-          <div className={semenEntradaModalLayout.fieldGrid}>
-            <div>
-              <label className={labelCls}>
-                Quantidade de doses<span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={quantidadeDoses}
-                onChange={e => setQuantidadeDoses(e.target.value)}
-                placeholder="Ex.: 10"
-                className={fieldCls}
-              />
-            </div>
-            <div className="min-w-0">
-              <FormLabel required>Custo total (R$)</FormLabel>
-              <FormInput
-                value={custoTotal}
-                onChange={v => setCustoTotal(formatCurrencyBrl(v))}
-                placeholder="R$ 0,00"
-                inputMode="decimal"
-                required
-                aria-label="Custo total em reais"
-              />
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-gray-50 px-3 py-2 text-[12px] text-gray-700">
-            Custo por dose calculado: <strong>{custoPorDose}</strong>
-          </div>
-
-          <div>
-            <FormLabel required>Data de entrada</FormLabel>
-            <FormDatePicker
-              value={dataEntrada}
-              onChange={setDataEntrada}
-              max={toDateOnlyISO(new Date())}
-              required
-            />
-          </div>
-          </div>
-
-          <div className={semenEntradaModalLayout.footer} data-semen-entrada-footer>
-            <div className={semenEntradaModalLayout.footerActions}>
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                disabled={registrar.isPending}
-                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={submitDisabled}
-                className="inline-flex items-center justify-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {registrar.isPending ? "Salvando…" : "Registrar entrada"}
-              </button>
-            </div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -67,6 +67,12 @@ describe("deriveSituacaoReprodutivaAtual — comportamento aprovado", () => {
     expect(r?.situacao).not.toBe("Prenha");
   });
 
+  it("Exposição à monta sem diagnóstico → Aguardando diagnóstico", () => {
+    const r = situacao([reg(1, "Exposição à monta", { dataCobertura: "2026-03-15" })]);
+    expect(r?.situacao).toBe("Aguardando diagnóstico");
+    expect(r?.previsaoPartoISO).toBeNull();
+  });
+
   it("Cobertura → Diagnóstico Prenha → Prenha", () => {
     const r = situacao([
       concepcao(1, "Cobertura", "2026-01-01"),

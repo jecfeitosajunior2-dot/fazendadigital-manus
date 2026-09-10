@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,10 +11,10 @@ import { FD_PRIMARY } from "@/components/FormFields";
 import { trpc } from "@/lib/trpc";
 import type { SemenReprodutorExternoCatalogoItem } from "@shared/semenReprodutorExternoCatalogo";
 
-export const CADASTRAR_SEMEN_EXTERNO_TITULO = "Novo sêmen";
+export const CADASTRAR_SEMEN_EXTERNO_TITULO = "Novo reprodutor";
 export const CADASTRAR_SEMEN_EXTERNO_HINT =
-  "Cadastro reutilizável. Partida e custo ficam no manejo da inseminação.";
-export const CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR = "Reprodutor / sêmen";
+  "Identificação reutilizável na inseminação. Depois cadastre a partida na aba Estoque.";
+export const CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR = "Reprodutor / Sêmen";
 export const CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL = "Central padrão";
 export const CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR = "Ex.: ABS 1234";
 export const CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL = "Ex.: Alta";
@@ -45,6 +45,8 @@ type CadastrarSemenExternoDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   fazendaId: number;
+  /** Pré-preenche o nome ao abrir (ex.: texto digitado na Nova entrada). */
+  initialReprodutorTexto?: string;
   /** Pós-sucesso por contexto: Manejo seleciona; Sêmen utilizado só fecha/toast. */
   onCreated: (item: SemenReprodutorExternoCatalogoItem) => void;
 };
@@ -53,6 +55,7 @@ export function CadastrarSemenExternoDialog({
   open,
   onOpenChange,
   fazendaId,
+  initialReprodutorTexto,
   onCreated,
 }: CadastrarSemenExternoDialogProps) {
   const trpcUtils = trpc.useUtils();
@@ -68,6 +71,14 @@ export function CadastrarSemenExternoDialog({
     setErro("");
     setExistente(null);
   };
+
+  useEffect(() => {
+    if (!open) return;
+    setReprodutorTexto(String(initialReprodutorTexto ?? "").trim());
+    setCentralPadrao("");
+    setErro("");
+    setExistente(null);
+  }, [open, initialReprodutorTexto]);
 
   const fechar = (next: boolean) => {
     if (!next) reset();

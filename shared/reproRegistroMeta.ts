@@ -1,5 +1,5 @@
 import type { CoberturaAlvoPersistido } from "./reproCoberturaAlvo";
-import { formatCoberturaAlvoDetalhes } from "./reproCoberturaAlvo";
+import { formatAlvoMatrizesMachoDetalhes } from "./reproCoberturaAlvo";
 import { formatReproEccDisplay } from "./reproInseminacao";
 import {
   resolveReproReprodutorDisplay,
@@ -14,6 +14,7 @@ export const REPRO_TIPOS_FEMEA = [
   "Cio",
   "Cobertura",
   "Inseminação",
+  "Exposição à monta",
   "Diagnóstico de prenhez",
   "Parto",
   "Aborto",
@@ -23,6 +24,7 @@ export const REPRO_TIPOS_FEMEA = [
 
 export const REPRO_TIPOS_MACHO = [
   "Cobertura realizada",
+  "Estação de monta",
   "Exame andrológico",
   "Coleta de sêmen",
   "Uso como reprodutor",
@@ -34,10 +36,12 @@ export const REPRO_TIPOS_UNICO = [
   "Cio",
   "Cobertura",
   "Inseminação",
+  "Exposição à monta",
   "Diagnóstico de prenhez",
   "Parto",
   "Aborto",
   "Desmama",
+  "Estação de monta",
   "Exame andrológico",
   "Coleta de sêmen",
   "Uso como reprodutor",
@@ -69,6 +73,7 @@ const REPRO_RESULTADOS_POR_TIPO_FEMEA: Record<string, readonly string[]> = {
   Cio: ["Observado", "Repetir", "Outro"],
   Cobertura: ["Realizado", "Repetir", "Outro"],
   Inseminação: ["Realizado", "Repetir", "Outro"],
+  "Exposição à monta": ["Realizado", "Repetir", "Outro"],
   "Diagnóstico de prenhez": ["Prenha", "Vazia", "Inconclusivo", "Repetir", "Outro"],
   Parto: ["Normal", "Com assistência", "Natimorto", "Outro"],
   Aborto: ["Confirmado", "Suspeito", "Outro"],
@@ -90,6 +95,7 @@ const REPRO_RESULTADOS_POR_TIPO_MACHO: Record<string, readonly string[]> = {
 /** Tipos masculinos em que o evento já se expressa pelo Tipo — sem Resultado na UI. */
 const REPRO_TIPOS_MACHO_SEM_RESULTADO = new Set([
   "Cobertura realizada",
+  "Estação de monta",
   "Uso como reprodutor",
   "Retirada da reprodução",
   "Outro",
@@ -233,6 +239,8 @@ export function shouldCalcPrevisaoParto(
 const TIPO_REPRO_TABELA_ABREV: Record<string, string> = {
   "Coleta de sêmen": "Coleta sêmen",
   "Diagnóstico de prenhez": "Diag. prenhez",
+  "Exposição à monta": "Exp. monta",
+  "Estação de monta": "Est. monta",
 };
 
 /** Abreviação visual do tipo na tabela; valor salvo continua completo. */
@@ -285,6 +293,9 @@ export type ReproObservacoesMeta = {
   semenPartidaId: number | null;
   custoDoseSemen: number | null;
   centralOrigem: string | null;
+  /** Registro de origem quando este evento foi espelhado automaticamente. */
+  registroOrigemId: number | null;
+  espelhoAutomatico: boolean;
 };
 
 export type ReproObservacoesExtras = {
@@ -294,6 +305,8 @@ export type ReproObservacoesExtras = {
   semenPartidaId?: number | null;
   custoDoseSemen?: number | null;
   centralOrigem?: string | null;
+  registroOrigemId?: number | null;
+  espelhoAutomatico?: boolean;
 };
 
 /** Converte data do registro para valor de input type="date". */
@@ -363,6 +376,11 @@ export function packReproObservacoes(
       ? extras.custoDoseSemen
       : undefined;
   const centralOrigem = extras?.centralOrigem?.trim() || undefined;
+  const registroOrigemId =
+    extras?.registroOrigemId != null && Number.isFinite(extras.registroOrigemId)
+      ? extras.registroOrigemId
+      : undefined;
+  const espelhoAutomatico = extras?.espelhoAutomatico === true ? true : undefined;
   const hasCoberturaAlvo = Boolean(
     (coberturaAlvo?.animalIds?.length ?? 0) > 0 || coberturaAlvo?.tipo,
   );
@@ -376,7 +394,9 @@ export function packReproObservacoes(
     ecc != null ||
     semenPartidaId != null ||
     custoDoseSemen != null ||
-    centralOrigem;
+    centralOrigem ||
+    registroOrigemId != null ||
+    espelhoAutomatico;
   if (!hasMeta && !obsTrim) return undefined;
   if (!hasMeta) return obsTrim;
   const metaPayload: Record<string, unknown> = { r: reprodutor, p: resp, o: descResOutro };
@@ -386,6 +406,8 @@ export function packReproObservacoes(
   if (semenPartidaId != null) metaPayload.spi = semenPartidaId;
   if (custoDoseSemen != null) metaPayload.cds = custoDoseSemen;
   if (centralOrigem) metaPayload.co = centralOrigem;
+  if (registroOrigemId != null) metaPayload.roid = registroOrigemId;
+  if (espelhoAutomatico) metaPayload.esp = 1;
   if (hasCoberturaAlvo && coberturaAlvo) {
     metaPayload.csm = coberturaAlvo.selectionMode;
     metaPayload.caids = coberturaAlvo.animalIds;
@@ -409,9 +431,13 @@ export function showReproReprodutorFieldManejo(
   sexo: string | null | undefined,
 ): boolean {
   if (!tipo.trim()) return false;
-  if (sexo === "femea") return tipo === "Cobertura" || tipo === "Inseminação";
+  if (sexo === "femea") {
+    return (
+      tipo === "Cobertura" || tipo === "Inseminação" || tipo === "Exposição à monta"
+    );
+  }
   if (sexo === "macho") return false;
-  return tipo === "Cobertura" || tipo === "Inseminação";
+  return tipo === "Cobertura" || tipo === "Inseminação" || tipo === "Exposição à monta";
 }
 
 /** Resultado condicional no manejo pontual (Cio e Outro ficam sem Resultado). */
@@ -597,7 +623,7 @@ export function formatReproDetalhesTabela(
 ): string {
   const parts: string[] = [];
   const tipo = (reg.tipo ?? "").trim();
-  const coberturaDetalhe = formatCoberturaAlvoDetalhes(tipo, meta);
+  const coberturaDetalhe = formatAlvoMatrizesMachoDetalhes(tipo, meta);
   if (coberturaDetalhe) {
     parts.push(coberturaDetalhe);
   } else if (tipo === "Inseminação") {
@@ -632,6 +658,8 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
     semenPartidaId: null,
     custoDoseSemen: null,
     centralOrigem: null,
+    registroOrigemId: null,
+    espelhoAutomatico: false,
   };
   if (!raw) return empty;
   const idx = raw.indexOf(META_PREFIX);
@@ -665,6 +693,8 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
       clb?: string;
       clbs?: string[];
       cln?: string;
+      roid?: number;
+      esp?: number;
     };
     let coberturaAlvo: CoberturaAlvoPersistido | null = null;
     if (meta.cat === "animal" || meta.cat === "lote" || (meta.caids?.length ?? 0) > 0) {
@@ -714,6 +744,9 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
       custoDoseSemen:
         meta.cds != null && Number.isFinite(meta.cds) && meta.cds > 0 ? meta.cds : null,
       centralOrigem: meta.co?.trim() || null,
+      registroOrigemId:
+        meta.roid != null && Number.isFinite(meta.roid) && meta.roid > 0 ? meta.roid : null,
+      espelhoAutomatico: meta.esp === 1,
     };
   } catch {
     const trimmed = raw.trim();
@@ -721,7 +754,13 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
   }
 }
 
-const TIPOS_CONCEPCAO_REPRO = new Set(["Cobertura", "Inseminação"]);
+export const TIPOS_SERVICO_REPRO_FEMEA = [
+  "Cobertura",
+  "Inseminação",
+  "Exposição à monta",
+] as const;
+
+const TIPOS_CONCEPCAO_REPRO = new Set<string>(TIPOS_SERVICO_REPRO_FEMEA);
 
 export type ReproRegistroSituacaoInput = {
   id: number;
@@ -792,6 +831,7 @@ const REPRO_FEMEA_SAME_DAY_STAGE_PRIORITY: Record<string, number> = {
   Cio: 1,
   Cobertura: 2,
   Inseminação: 3,
+  "Exposição à monta": 3,
   "Diagnóstico de prenhez": 4,
   Aborto: 5,
   Parto: 6,

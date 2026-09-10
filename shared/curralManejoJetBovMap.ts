@@ -72,8 +72,9 @@ export const CURRAL_MANEJO_JETBOV_MAP: readonly CurralManejoJetBovEntry[] = [
     labelJetBov: "Reprodutivo (IA, DG, parto)",
     jetBov: "sim",
     fdPontual: true,
-    statusCurral: "em_breve",
+    statusCurral: "disponivel",
     prioridade: 5,
+    nota: "IA, diagnóstico de prenhez, cio, parto e cobertura no curral.",
   },
   {
     id: "desmama",

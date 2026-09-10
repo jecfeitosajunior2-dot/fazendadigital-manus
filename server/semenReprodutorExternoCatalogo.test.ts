@@ -6,6 +6,7 @@ import {
   canChangeSemenReprodutorExternoTexto,
   filterSemenReprodutorExternoCatalogoSugestao,
   formatSemenReprodutorExternoCatalogoSubtitulo,
+  semenReprodutorExternoCatalogoDropdownEmptyMessage,
   historicoReprodutoresExternosDeUsos,
   mergeSemenReprodutorExternoCatalogo,
   resolveSemenReprodutorExternoCreate,
@@ -172,5 +173,27 @@ describe("merge e autocomplete", () => {
     expect(canChangeSemenReprodutorExternoTexto("e:gsc-7117", "GSC-7117")).toBe(true);
     expect(canChangeSemenReprodutorExternoTexto("e:gsc-7117", "gsc-7117")).toBe(true);
     expect(canChangeSemenReprodutorExternoTexto("e:gsc-7117", "GSC 7117")).toBe(false);
+  });
+});
+
+describe("mensagem vazia do autocomplete", () => {
+  const catalogo = mergeSemenReprodutorExternoCatalogo(
+    [cadastro({ reprodutorTexto: "GSC-7117", centralPadrao: "Alta" })],
+    [],
+  );
+
+  it("diferencia catálogo vazio, busca sem match e lista inicial", () => {
+    expect(semenReprodutorExternoCatalogoDropdownEmptyMessage([], "", false)).toMatch(
+      /Nenhum reprodutor cadastrado/,
+    );
+    expect(semenReprodutorExternoCatalogoDropdownEmptyMessage(catalogo, "xyz", false)).toMatch(
+      /Nenhum resultado/,
+    );
+    expect(semenReprodutorExternoCatalogoDropdownEmptyMessage(catalogo, "", false)).toMatch(
+      /Digite para buscar/,
+    );
+    expect(semenReprodutorExternoCatalogoDropdownEmptyMessage(catalogo, "GSC", true)).toBe(
+      "Consultando cadastros…",
+    );
   });
 });

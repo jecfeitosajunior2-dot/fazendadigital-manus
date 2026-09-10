@@ -19,6 +19,7 @@ export const REPRO_TIPOS_BLOQUEIAM_FEMEA_PARA_MACHO = [
   "Cio",
   "Cobertura",
   "Inseminação",
+  "Exposição à monta",
   "Diagnóstico de prenhez",
   "Parto",
   "Aborto",
@@ -29,6 +30,7 @@ export const REPRO_TIPOS_BLOQUEIAM_MACHO_PARA_FEMEA = [
   "Exame andrológico",
   "Coleta de sêmen",
   "Cobertura realizada",
+  "Estação de monta",
   "Uso como reprodutor",
   "Retirada da reprodução",
 ] as const;

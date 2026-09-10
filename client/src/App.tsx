@@ -145,7 +145,7 @@ function ProtectedRoutes() {
       <Route path={SEMEN_CADASTRO_PATH} component={() => <Redirect to={SEMEN_UTILIZADO_PATH} replace />} />
       <Route path="/reproducao/estoque-semen/entrada/:movimentacaoId" component={SemenEntradaResumoPage} />
       <Route path="/reproducao/estoque-semen/:id" component={SemenEstoquePage} />
-      <Route path="/reproducao/estoque-semen" component={() => <RedirectTo to="/reproducao/semen-utilizado" />} />
+      <Route path="/reproducao/estoque-semen" component={SemenEstoquePage} />
       <Route path="/reproducao/semen" component={() => <RedirectTo to="/reproducao/semen-utilizado" />} />
 
       {/* Reprodução legada — redireciona para Manejo → Reprodutivo */}

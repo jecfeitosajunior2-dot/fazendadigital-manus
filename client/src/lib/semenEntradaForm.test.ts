@@ -6,6 +6,7 @@ import {
   calcSemenCustoUnitarioEntrada,
   formatSemenCustoTotalDisplay,
   formatSemenCustoTotalOnBlur,
+  formatSemenPartidaInseminacaoOptionLabel,
   isSemenEntradaFormSubmittable,
   normalizeSemenPartida,
   parseSemenCustoTotal,
@@ -81,6 +82,30 @@ describe("semen entrada — moeda", () => {
 
   it("sanitize remove R$ digitado", () => {
     expect(sanitizeSemenCustoTotalInput("R$ 500,00")).toBe("500,00");
+  });
+});
+
+describe("partida inseminação — rótulo do select", () => {
+  it("inclui lote, saldo, custo e central", () => {
+    expect(
+      formatSemenPartidaInseminacaoOptionLabel({
+        partida: "GE",
+        saldoDoses: 10,
+        custoUnitario: "100.00",
+        centralOrigem: "Alta",
+      }),
+    ).toBe("GE · 10 doses · R$ 100,00/dose · Alta");
+  });
+
+  it("singular dose e sem central", () => {
+    expect(
+      formatSemenPartidaInseminacaoOptionLabel({
+        partida: "L24001",
+        saldoDoses: 1,
+        custoUnitario: null,
+        centralOrigem: "",
+      }),
+    ).toBe("L24001 · 1 dose");
   });
 });
 

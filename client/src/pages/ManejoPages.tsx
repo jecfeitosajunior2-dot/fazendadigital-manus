@@ -83,6 +83,7 @@ import {
 } from "@shared/reproInseminacao";
 import {
   formatSemenCustoTotalDisplay,
+  formatSemenPartidaInseminacaoOptionLabel,
   parseSemenCustoTotal,
   SEMEN_ORIGEM_EXTERNO,
   SEMEN_ORIGEM_INTERNO,
@@ -101,7 +102,16 @@ import {
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
 import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExternoField";
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
-import { FormDatePicker, FormDownSelect, FormInput, FormLabel, FormNativeSelect, FormSelect, FormTextarea } from "@/components/FormFields";
+import {
+  FormDatePicker,
+  FormDownSelect,
+  FormInput,
+  FormLabel,
+  FormNativeSelect,
+  FormSelect,
+  FormTextarea,
+  formCheckboxCls,
+} from "@/components/FormFields";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { At05RfidReaderControl } from "@/components/At05RfidReaderControl";
 import {
@@ -111,6 +121,7 @@ import {
 import { CurralSanitarioPanel } from "@/components/curral/CurralSanitarioPanel";
 import { CurralBrincoEletronicoPanel } from "@/components/curral/CurralBrincoEletronicoPanel";
 import { CurralTrocaLotePanel } from "@/components/curral/CurralTrocaLotePanel";
+import { CurralReprodutivoPanel } from "@/components/curral/CurralReprodutivoPanel";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
 import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import {
@@ -146,6 +157,8 @@ import {
   MSG_REPRO_COBERTURA_MATRIZES_OBRIGATORIAS,
   MSG_REPRO_LOTE_INELEGIVEL,
   MSG_REPRO_MATRIZ_INELEGIVEL,
+  coberturaAlvoPermiteModoIndividual,
+  isEstacaoMontaMacho,
   showReproCoberturaAlvoFieldManejo,
 } from "@shared/reproCoberturaAlvo";
 import {
@@ -1849,6 +1862,8 @@ function ManejoReprodutivoForm() {
 
   const showReprodutor = showReproReprodutorFieldManejo(tipoReprodutivo, animalSexo);
   const showCoberturaAlvo = showReproCoberturaAlvoFieldManejo(tipoReprodutivo, animalSexo);
+  const estacaoMontaManejo = isEstacaoMontaMacho(tipoReprodutivo);
+  const coberturaModoIndividualPermitido = coberturaAlvoPermiteModoIndividual(tipoReprodutivo);
   const showResultado = showReproResultadoFieldManejo(tipoReprodutivo, animalSexo);
   const exigeResultado = isReproResultadoRequiredManejo(tipoReprodutivo, animalSexo);
   const showDescricaoOutro = showReproDescricaoOutroManejo(tipoReprodutivo);
@@ -2218,6 +2233,9 @@ function ManejoReprodutivoForm() {
     setDescricaoOutro("");
     setDescricaoResultadoOutro("");
     limparCoberturaAlvo();
+    if (isEstacaoMontaMacho(newTipo)) {
+      setCoberturaSelecaoModo("lote");
+    }
     limparPartoCriasState();
     limparReprodutorMacho();
     if (newTipo === "Cobertura") {
@@ -2465,17 +2483,18 @@ function ManejoReprodutivoForm() {
     }
 
     if (showCoberturaAlvo) {
-      if (!coberturaSelecaoModo) {
+      const modoAlvo = estacaoMontaManejo ? "lote" : coberturaSelecaoModo;
+      if (!modoAlvo) {
         setErroCoberturaAlvo(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO);
         toast.error(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO);
         return;
       }
-      if (coberturaSelecaoModo === "individual" && !matrizSel) {
+      if (modoAlvo === "individual" && !matrizSel) {
         setErroCoberturaAlvo("Selecione uma matriz elegível.");
         toast.error("Selecione uma matriz elegível.");
         return;
       }
-      if (coberturaSelecaoModo === "lote") {
+      if (modoAlvo === "lote") {
         if (!loteCoberturaId) {
           setErroCoberturaAlvo("Selecione um lote.");
           toast.error("Selecione um lote.");
@@ -2489,10 +2508,11 @@ function ManejoReprodutivoForm() {
       }
     }
 
+    const modoAlvoSalvar = estacaoMontaManejo ? "lote" : coberturaSelecaoModo;
     const coberturaMatrizIds =
-      showCoberturaAlvo && coberturaSelecaoModo === "individual" && matrizSel
+      showCoberturaAlvo && modoAlvoSalvar === "individual" && matrizSel
         ? [matrizSel.id]
-        : showCoberturaAlvo && coberturaSelecaoModo === "lote"
+        : showCoberturaAlvo && modoAlvoSalvar === "lote"
           ? matrizesLoteSelecionadas
           : undefined;
 
@@ -2604,10 +2624,10 @@ function ManejoReprodutivoForm() {
       resultado: showResultado && resultado.trim() ? resultado.trim() : undefined,
       ...reprodutorPayload,
       coberturaSelecaoModo:
-        showCoberturaAlvo && coberturaSelecaoModo ? coberturaSelecaoModo : undefined,
+        showCoberturaAlvo && modoAlvoSalvar ? modoAlvoSalvar : undefined,
       coberturaMatrizIds,
       coberturaLoteId:
-        showCoberturaAlvo && coberturaSelecaoModo === "lote" && loteCoberturaId
+        showCoberturaAlvo && modoAlvoSalvar === "lote" && loteCoberturaId
           ? Number(loteCoberturaId)
           : undefined,
       descricaoResultadoOutro: showDescricaoResultadoOutro
@@ -2632,6 +2652,9 @@ function ManejoReprodutivoForm() {
 
   const coberturaAlvoCompleto =
     !showCoberturaAlvo ||
+    (estacaoMontaManejo &&
+      Boolean(loteCoberturaId) &&
+      matrizesLoteSelecionadas.length > 0) ||
     (coberturaSelecaoModo === "individual" && Boolean(matrizSel)) ||
     (coberturaSelecaoModo === "lote" &&
       Boolean(loteCoberturaId) &&
@@ -2876,7 +2899,12 @@ function ManejoReprodutivoForm() {
                                 >
                                   {partidasSemenDisponiveis.map(p => (
                                     <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
-                                      {`${p.partida}${p.centralOrigem ? ` · ${p.centralOrigem}` : ""}`}
+                                      {formatSemenPartidaInseminacaoOptionLabel({
+                                        partida: p.partida,
+                                        saldoDoses: p.saldoDoses,
+                                        custoUnitario: p.custoUnitario,
+                                        centralOrigem: p.centralOrigem,
+                                      })}
                                     </SelectItem>
                                   ))}
                                 </FormSelect>
@@ -3035,28 +3063,32 @@ function ManejoReprodutivoForm() {
                 <>
                   {showCoberturaAlvo ? (
                     <div className="sm:col-span-2 space-y-4 border-t border-gray-100 pt-4">
-                      <p className={sectionTitleCls}>Matrizes atendidas</p>
-                      <div>
-                        <FormLabel required>Forma de seleção</FormLabel>
-                        <FormSelect
-                          variant="light"
-                          value={coberturaSelecaoModo}
-                          onChange={v =>
-                            onChangeCoberturaSelecaoModo(v as "" | "individual" | "lote")
-                          }
-                          placeholder="Selecione a forma de seleção"
-                          required
-                        >
-                          <SelectItem value="individual" className="text-[12px]">
-                            Matriz individual
-                          </SelectItem>
-                          <SelectItem value="lote" className="text-[12px]">
-                            Por lote
-                          </SelectItem>
-                        </FormSelect>
-                      </div>
+                      <p className={sectionTitleCls}>
+                        {estacaoMontaManejo ? "Estação de monta — lote" : "Matrizes atendidas"}
+                      </p>
+                      {coberturaModoIndividualPermitido ? (
+                        <div>
+                          <FormLabel required>Forma de seleção</FormLabel>
+                          <FormSelect
+                            variant="light"
+                            value={coberturaSelecaoModo}
+                            onChange={v =>
+                              onChangeCoberturaSelecaoModo(v as "" | "individual" | "lote")
+                            }
+                            placeholder="Selecione a forma de seleção"
+                            required
+                          >
+                            <SelectItem value="individual" className="text-[12px]">
+                              Matriz individual
+                            </SelectItem>
+                            <SelectItem value="lote" className="text-[12px]">
+                              Por lote
+                            </SelectItem>
+                          </FormSelect>
+                        </div>
+                      ) : null}
 
-                      {coberturaSelecaoModo === "individual" ? (
+                      {coberturaModoIndividualPermitido && coberturaSelecaoModo === "individual" ? (
                         <div className="relative" ref={matrizBuscaRef}>
                           <label className={labelCls}>
                             Matriz<span className="text-red-500">*</span>
@@ -3127,7 +3159,7 @@ function ManejoReprodutivoForm() {
                         </div>
                       ) : null}
 
-                      {coberturaSelecaoModo === "lote" ? (
+                      {estacaoMontaManejo || coberturaSelecaoModo === "lote" ? (
                         <div className="space-y-4">
                           <div>
                             <FormLabel required>Lote</FormLabel>
@@ -3180,7 +3212,7 @@ function ManejoReprodutivoForm() {
                                           matrizesDoLoteElegiveis.length
                                       }
                                       onChange={toggleSelecionarTodasMatrizesLote}
-                                      className="h-4 w-4 rounded border-gray-300"
+                                      className={formCheckboxCls}
                                     />
                                     <span className="text-[12px] font-semibold text-gray-700">
                                       Selecionar todas as matrizes elegíveis
@@ -3189,13 +3221,18 @@ function ManejoReprodutivoForm() {
                                   {matrizesDoLoteElegiveis.map(a => (
                                     <label
                                       key={a.id}
-                                      className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-[#4ECDC4]/[0.05]"
+                                      className={cn(
+                                        "flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors",
+                                        matrizesLoteSelecionadas.includes(a.id)
+                                          ? "bg-[#4ECDC4]/10"
+                                          : "hover:bg-[#4ECDC4]/[0.05]",
+                                      )}
                                     >
                                       <input
                                         type="checkbox"
                                         checked={matrizesLoteSelecionadas.includes(a.id)}
                                         onChange={() => toggleMatrizLote(a.id)}
-                                        className="h-4 w-4 mt-0.5 rounded border-gray-300"
+                                        className={cn(formCheckboxCls, "mt-0.5")}
                                       />
                                       <span className="min-w-0">
                                         <span className="block text-[13px] font-semibold text-gray-900">
@@ -3214,6 +3251,13 @@ function ManejoReprodutivoForm() {
                             </div>
                           ) : null}
                         </div>
+                      ) : null}
+
+                      {estacaoMontaManejo ? (
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          Registra exposição à monta na ficha de cada matriz selecionada, vinculada
+                          a este touro.
+                        </p>
                       ) : null}
 
                       {erroCoberturaAlvo ? (
@@ -3342,7 +3386,7 @@ function ManejoReprodutivoForm() {
                       }
                       setErroCrias({});
                     }}
-                    className="h-4 w-4 rounded border-gray-300"
+                    className={formCheckboxCls}
                   />
                   <span className="text-[12px] font-semibold text-gray-700">
                     Registrar cria(s) no Rebanho
@@ -4707,6 +4751,41 @@ export function ManejoSessaoPage() {
     return lotes.find(l => l.id === animalSel.loteId) ?? null;
   }, [animalSel?.loteId, lotes]);
 
+  const registrarReprodutivoCurral = useCallback(
+    (payload: { animalId: number; resumo: string }) => {
+      const row = animaisEscopo.find(a => a.id === payload.animalId);
+      const animalLabel = row ? labelAnimal(row) : `#${payload.animalId}`;
+      setHistoricoSessao(prev => [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          tipoId: "reprodutivo",
+          label: "Reprodutivo",
+          resumo: payload.resumo,
+          animalId: payload.animalId,
+          animalLabel,
+        },
+      ]);
+    },
+    [animaisEscopo],
+  );
+
+  const concluirReprodutivoCurral = useCallback(() => {
+    if (!animalSel) return;
+    const animalLabel = labelAnimal(animalSel);
+    const proximoIdx = manejoAtualIdx + 1;
+    if (proximoIdx < manejosOperacionaisSessao.length) {
+      setManejoAtualIdx(proximoIdx);
+      setIdentFeedback(null);
+      const proximoId = manejosOperacionaisSessao[proximoIdx];
+      const proximoLabel = TIPOS_MANEJO.find(t => t.id === proximoId)?.label ?? proximoId;
+      toast.success(`Reprodutivo concluído · ${animalLabel}. Próximo: ${proximoLabel}.`);
+      return;
+    }
+    toast.success(`Reprodutivo concluído — ${animalLabel}. Próximo animal.`);
+    limparContextoAnimal();
+  }, [animalSel, limparContextoAnimal, manejoAtualIdx, manejosOperacionaisSessao]);
+
   const registrarBrincoCurral = useCallback(
     (payload: {
       animalId: number;
@@ -5608,12 +5687,26 @@ export function ManejoSessaoPage() {
             />
           ) : null}
 
+          {animalSel && manejoAtualId === "reprodutivo" && animalId ? (
+            <CurralReprodutivoPanel
+              key={`reprodutivo-${animalId}-${manejoAtualIdx}`}
+              fazendaNum={fazendaNum}
+              data={data}
+              animal={animalSel}
+              onRegistrado={registrarReprodutivoCurral}
+              onConcluir={concluirReprodutivoCurral}
+              onBloqueioNegocio={setBloqueioNegocioMsg}
+              hasNextManejoNaFila={manejoAtualIdx + 1 < manejosOperacionaisSessao.length}
+            />
+          ) : null}
+
           {animalSel &&
           manejoAtualId &&
           manejoAtualId !== "pesagem" &&
           manejoAtualId !== "sanitario" &&
           manejoAtualId !== "troca-lote" &&
-          manejoAtualId !== "brinco-eletronico" ? (
+          manejoAtualId !== "brinco-eletronico" &&
+          manejoAtualId !== "reprodutivo" ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 space-y-2">
               <p className="text-[12px] text-gray-800">
                 O modo curral para{" "}

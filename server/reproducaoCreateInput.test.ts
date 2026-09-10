@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isCoberturaRealizadaMacho,
+  isEstacaoMontaMacho,
+  isMachoEventoComAlvoMatrizes,
   resolveReproducaoAnimalId,
   resolveReproducaoMachoIdPersistido,
 } from "./reproducaoCreateInput";
@@ -45,5 +47,19 @@ describe("isCoberturaRealizadaMacho", () => {
 
   it("não confunde cobertura feminina", () => {
     expect(isCoberturaRealizadaMacho("Cobertura", "femea")).toBe(false);
+  });
+});
+
+describe("isEstacaoMontaMacho", () => {
+  it("detecta estação de monta do reprodutor", () => {
+    expect(isEstacaoMontaMacho("Estação de monta", "macho")).toBe(true);
+  });
+});
+
+describe("isMachoEventoComAlvoMatrizes", () => {
+  it("agrupa cobertura e estação de monta", () => {
+    expect(isMachoEventoComAlvoMatrizes("Cobertura realizada", "macho")).toBe(true);
+    expect(isMachoEventoComAlvoMatrizes("Estação de monta", "macho")).toBe(true);
+    expect(isMachoEventoComAlvoMatrizes("Exame andrológico", "macho")).toBe(false);
   });
 });

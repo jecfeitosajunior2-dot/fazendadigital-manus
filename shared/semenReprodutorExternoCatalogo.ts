@@ -227,6 +227,22 @@ export function filterSemenReprodutorExternoCatalogoSugestao(
   return ativos.filter(i => i.reprodutorTexto.toLowerCase().includes(q));
 }
 
+export function semenReprodutorExternoCatalogoDropdownEmptyMessage(
+  items: readonly SemenReprodutorExternoCatalogoItem[],
+  search: string,
+  loading: boolean,
+): string {
+  if (loading) return "Consultando cadastros…";
+  const ativos = items.filter(i => i.ativo);
+  if (ativos.length === 0) {
+    return "Nenhum reprodutor cadastrado. Continue digitando ou cadastre abaixo.";
+  }
+  if (search.trim()) {
+    return "Nenhum resultado — continue digitando ou cadastre o reprodutor.";
+  }
+  return "Digite para buscar um reprodutor cadastrado.";
+}
+
 export function findSemenReprodutorExternoCatalogoByKey(
   items: readonly SemenReprodutorExternoCatalogoItem[],
   key: string,

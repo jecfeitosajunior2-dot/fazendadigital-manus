@@ -15,14 +15,16 @@ export type ReproReprodutorPayload = {
   reprodutorSemen?: string;
 };
 
-/** Monta machoId + reprodutorSemen para Cobertura/Inseminação feminina. */
+/** Monta machoId + reprodutorSemen para serviços femininos com reprodutor. */
 export function buildReproReprodutorPayload(
   input: BuildReproReprodutorPayloadInput,
 ): ReproReprodutorPayload {
   if (input.animalSexo !== "femea") return {};
 
   const tipo = input.tipo.trim();
-  if (tipo !== "Cobertura" && tipo !== "Inseminação") return {};
+  if (tipo !== "Cobertura" && tipo !== "Inseminação" && tipo !== "Exposição à monta") {
+    return {};
+  }
 
   const machoId =
     input.machoId != null && input.machoId > 0 ? input.machoId : undefined;

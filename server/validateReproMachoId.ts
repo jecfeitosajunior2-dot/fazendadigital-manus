@@ -8,14 +8,18 @@ import { assertAnimalNaFazenda } from "./manejoContexto";
 import { assertManejoPermitidoNaData } from "./animalBaixa";
 
 export const MSG_REPRO_MACHO_ID_TIPO_INVALIDO =
-  "Reprodutor estruturado só se aplica a Cobertura ou Inseminação.";
+  "Reprodutor estruturado só se aplica a Cobertura, Inseminação ou Exposição à monta.";
 export const MSG_REPRO_MACHO_IGUAL_MATRIZ =
   "O reprodutor não pode ser a mesma matriz do evento.";
 export const MSG_REPRO_MACHO_NAO_E_MACHO = "O reprodutor selecionado não é macho.";
 export const MSG_REPRO_MACHO_INATIVO =
   "O reprodutor selecionado deve estar ativo para registro operacional.";
 
-const TIPOS_COM_MACHO_ESTRUTURADO = new Set(["Cobertura", "Inseminação"]);
+const TIPOS_COM_MACHO_ESTRUTURADO = new Set([
+  "Cobertura",
+  "Inseminação",
+  "Exposição à monta",
+]);
 
 export async function validateReproMachoIdForFemeaEvent(
   userId: number,

@@ -474,9 +474,12 @@ export function formatSemenPartidaInseminacaoOptionLabel(params: {
   custoUnitario: string | number | null;
   centralOrigem?: string | null;
 }): string {
+  const partida = String(params.partida ?? "").trim() || "Sem lote";
+  const dosesLabel = params.saldoDoses === 1 ? "1 dose" : `${params.saldoDoses} doses`;
   const custo = formatSemenCustoTotalDisplay(params.custoUnitario);
   const central = params.centralOrigem?.trim();
-  let label = `${params.saldoDoses} doses · ${custo}/dose`;
+  let label = `${partida} · ${dosesLabel}`;
+  if (custo !== "—") label += ` · ${custo}/dose`;
   if (central) label += ` · ${central}`;
   return label;
 }

@@ -8,6 +8,10 @@ export const FD_PRIMARY = "#4ECDC4";
 /** Fundo suave para estado ativo/selecionado (~8% opacidade). */
 export const FD_PRIMARY_SUBTLE_BG = `${FD_PRIMARY}14`;
 
+/** Checkbox / seleção múltipla — cor primária verde-água (evita azul padrão do navegador). */
+export const formCheckboxCls =
+  "h-4 w-4 shrink-0 rounded border-gray-300 text-[#4ECDC4] accent-[#4ECDC4] focus:ring-[#4ECDC4] focus:ring-offset-0";
+
 export function FormLabel({
   children,
   required,
@@ -438,6 +442,7 @@ export function FormSelect({
                 "w-full min-h-[42px] justify-between pr-3 shadow-none rounded-none border-0 focus:ring-0",
               ),
           "[&>svg]:h-4 [&>svg]:w-4 [&>svg]:shrink-0 [&>svg]:text-gray-500 [&>svg]:opacity-70",
+          "*:data-[slot=select-value][data-placeholder]:text-gray-400",
           triggerClassName,
         )}
       >

@@ -91,6 +91,14 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
     else if (highlightIndex >= options.length) setHighlightIndex(0);
   }, [dropdownVisible, options.length, highlightIndex]);
 
+  /** Sincroniza busca quando o pai limpa a seleção (ex.: após registrar cobertura no curral). */
+  useEffect(() => {
+    if (selected == null) {
+      setSearch("");
+      setOpen(false);
+    }
+  }, [selected]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {

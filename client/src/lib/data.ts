@@ -57,7 +57,7 @@ export const menuItems: MenuItem[] = [
     label: "Reprodução",
     icon: "fd_dna",
     children: [
-      { label: "Sêmen utilizado", icon: "", path: "/reproducao/semen-utilizado" },
+      { label: "Controle de sêmen", icon: "", path: "/reproducao/semen-utilizado" },
     ],
   },
   {

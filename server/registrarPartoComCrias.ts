@@ -49,7 +49,7 @@ function sexoCriaParaCadastro(sexo: "macho" | "femea"): "Macho" | "Fêmea" {
   return sexo === "macho" ? "Macho" : "Fêmea";
 }
 
-const TIPOS_CONCEPCAO = new Set(["Cobertura", "Inseminação"]);
+const TIPOS_CONCEPCAO = new Set(["Cobertura", "Inseminação", "Exposição à monta"]);
 
 export const criaPartoInputSchema = z.object({
   brinco: z.string().min(1, "Brinco é obrigatório."),

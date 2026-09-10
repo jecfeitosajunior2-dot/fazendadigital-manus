@@ -7,7 +7,14 @@ import {
 describe("semen entrada modal — layout responsivo", () => {
   it("A) modal usa max-height baseado na viewport", () => {
     expect(SEMEN_ENTRADA_MODAL_MAX_HEIGHT).toContain("100dvh");
+    expect(SEMEN_ENTRADA_MODAL_MAX_HEIGHT).toContain("min(32rem");
     expect(semenEntradaModalLayout.content).toContain(SEMEN_ENTRADA_MODAL_MAX_HEIGHT);
+  });
+
+  it("H) modal compacto e centralizado na viewport", () => {
+    expect(semenEntradaModalLayout.content).toContain("max-w-md");
+    expect(semenEntradaModalLayout.content).toContain("!top-[50%]");
+    expect(semenEntradaModalLayout.content).toContain("!-translate-y-1/2");
   });
 
   it("B) body permite scroll vertical", () => {
@@ -32,6 +39,12 @@ describe("semen entrada modal — layout responsivo", () => {
   it("F) mobile empilha campos em grid", () => {
     expect(semenEntradaModalLayout.fieldGrid).toContain("grid-cols-1");
     expect(semenEntradaModalLayout.fieldGrid).toContain("sm:grid-cols-2");
+  });
+
+  it("G) card único claro no body", () => {
+    expect(semenEntradaModalLayout.formCard).toContain("rounded-lg");
+    expect(semenEntradaModalLayout.formCard).toContain("bg-white");
+    expect(semenEntradaModalLayout.content).toContain("bg-[#F7F9FA]");
   });
 
   it("content força flex column sobre grid padrão do Dialog", () => {

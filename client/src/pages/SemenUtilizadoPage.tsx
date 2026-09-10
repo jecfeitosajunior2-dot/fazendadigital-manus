@@ -5,6 +5,7 @@ import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker } from "@/components/FormFields";
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
+import { SemenReproducaoTabs } from "@/components/semen/SemenReproducaoTabs";
 import ListExportButtons from "@/components/ListExportButtons";
 import { TableIconButton, ViewActionIcon } from "@/components/icons/FarmActionIcons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
@@ -167,7 +168,7 @@ export default function SemenUtilizadoPage() {
   const [aplicados, setAplicados] = useState(FILTROS_VAZIOS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(SEMEN_ESTOQUE_PAGE_SIZE_DEFAULT);
-  const [novoSemenAberto, setNovoSemenAberto] = useState(false);
+  const [novoReprodutorAberto, setNovoReprodutorAberto] = useState(false);
 
   const searchDebounced = useDebounce(search, 300);
 
@@ -473,19 +474,25 @@ export default function SemenUtilizadoPage() {
       <div className="space-y-2">
         {filtrosCard}
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+        <SemenReproducaoTabs active="utilizado" />
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
-          <h1
-            className="text-[20px] font-semibold text-gray-900 shrink-0"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Sêmen utilizado
-          </h1>
+          <div className="min-w-0">
+            <h1
+              className="text-[20px] font-semibold text-gray-900 shrink-0"
+              style={{ fontFamily: "Fraunces, serif" }}
+            >
+              Sêmen utilizado
+            </h1>
+            <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+              Relatório de consumo. Partidas e entradas ficam na aba Estoque.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
               disabled={!temFazenda}
               title={!temFazenda ? "Selecione uma fazenda para cadastrar" : undefined}
-              onClick={() => setNovoSemenAberto(true)}
+              onClick={() => setNovoReprodutorAberto(true)}
               className={cn(
                 "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
                 temFazenda
@@ -495,8 +502,8 @@ export default function SemenUtilizadoPage() {
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[16px]">add</span>
-              <span className="hidden sm:inline">Novo Sêmen</span>
-              <span className="sm:hidden">Novo</span>
+              <span className="hidden sm:inline">Reprodutor</span>
+              <span className="sm:hidden">Reprod.</span>
             </button>
             <ListExportButtons
             title="Sêmen utilizado"
@@ -652,11 +659,11 @@ export default function SemenUtilizadoPage() {
       </div>
 
       <CadastrarSemenExternoDialog
-        open={novoSemenAberto}
-        onOpenChange={setNovoSemenAberto}
+        open={novoReprodutorAberto}
+        onOpenChange={setNovoReprodutorAberto}
         fazendaId={fazendaNum}
         onCreated={() => {
-          toast.success("Sêmen cadastrado. Já estará disponível na Inseminação.");
+          toast.success("Reprodutor cadastrado. Registre a partida na aba Estoque.");
         }}
       />
     </AppLayout>

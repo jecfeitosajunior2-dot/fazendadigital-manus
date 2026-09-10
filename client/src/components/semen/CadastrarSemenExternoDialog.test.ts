@@ -12,14 +12,14 @@ import {
 
 describe("modal Novo Sêmen", () => {
   it("teste A/B — título, texto e campos iguais nos dois fluxos", () => {
-    expect(CADASTRAR_SEMEN_EXTERNO_TITULO).toBe("Novo sêmen");
+    expect(CADASTRAR_SEMEN_EXTERNO_TITULO).toBe("Novo reprodutor");
     expect(CADASTRAR_SEMEN_EXTERNO_TITULO).not.toBe("Cadastrar sêmen / reprodutor");
-    expect(CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR).toBe("Reprodutor / sêmen");
+    expect(CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR).toBe("Reprodutor / Sêmen");
     expect(CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL).toBe("Central padrão");
     expect(CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR).toBe("Ex.: ABS 1234");
     expect(CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL).toBe("Ex.: Alta");
     expect(CADASTRAR_SEMEN_EXTERNO_HINT).toBe(
-      "Cadastro reutilizável. Partida e custo ficam no manejo da inseminação.",
+      "Identificação reutilizável na inseminação. Depois cadastre a partida na aba Estoque.",
     );
     const campos = `${CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR} ${CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL}`;
     expect(campos).not.toMatch(/observa/i);

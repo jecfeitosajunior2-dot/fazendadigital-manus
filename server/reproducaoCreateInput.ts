@@ -30,3 +30,19 @@ export function isCoberturaRealizadaMacho(
 ): boolean {
   return tipo.trim() === "Cobertura realizada" && animalPrincipalSexo === "macho";
 }
+
+export function isEstacaoMontaMacho(
+  tipo: string,
+  animalPrincipalSexo: string | null | undefined,
+): boolean {
+  return tipo.trim() === "Estação de monta" && animalPrincipalSexo === "macho";
+}
+
+/** Eventos masculinos com alvo de matrizes (cobertura ou estação de monta). */
+export function isMachoEventoComAlvoMatrizes(
+  tipo: string,
+  animalPrincipalSexo: string | null | undefined,
+): boolean {
+  return isCoberturaRealizadaMacho(tipo, animalPrincipalSexo) ||
+    isEstacaoMontaMacho(tipo, animalPrincipalSexo);
+}

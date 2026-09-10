@@ -71,6 +71,14 @@ import { formatUltimoPesoKg } from '@/lib/listaAnimaisTable';
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from '@shared/carenciaAnimal';
 import { formatMoedaBrlExcel } from '@shared/parseMoedaBr';
 import {
+  analyzeMatrizReproPipeline,
+  MATRIZ_PIPELINE_FLAG_LABEL,
+} from '@shared/reproPipeline';
+import {
+  analyzeMachoReproAlertas,
+  MACHO_REPRO_FLAG_LABEL,
+} from '@shared/reproMachoAlertas';
+import {
   deriveResumoReprodutivoMacho,
   deriveSituacaoReprodutivaAtual,
   formatReproDetalhesTabela,
@@ -528,10 +536,18 @@ export const CattleDetailPageExpanded: React.FC = () => {
     animalRepro,
     animal.sexo as string | null | undefined,
   );
+  const pipelineReprodutivo =
+    animal.sexo === "femea"
+      ? analyzeMatrizReproPipeline(animalRepro)
+      : null;
   const resumoReprodutivoMacho = deriveResumoReprodutivoMacho(
     animalRepro,
     animal.sexo as string | null | undefined,
   );
+  const alertasReprodutivoMacho =
+    animal.sexo === 'macho'
+      ? analyzeMachoReproAlertas(animalRepro, animal.sexo)
+      : null;
 
   const carenciaResumo = (() => {
     const ateLista = (animalListRow as { fimCarenciaAte?: string | null } | undefined)?.fimCarenciaAte;
@@ -747,51 +763,90 @@ export const CattleDetailPageExpanded: React.FC = () => {
                   />
                 </div>
 
-                {animal.sexo === 'femea' && situacaoReprodutiva ? (
+                {animal.sexo === 'femea' && (situacaoReprodutiva || pipelineReprodutivo?.flags.length) ? (
                   <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
                     <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
                       Reprodução
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ResumoField
-                        label="Situação reprodutiva"
-                        value={situacaoReprodutiva.situacao}
-                      />
-                      {situacaoReprodutiva.previsaoPartoISO ? (
+                      {situacaoReprodutiva ? (
+                        <ResumoField
+                          label="Situação reprodutiva"
+                          value={situacaoReprodutiva.situacao}
+                        />
+                      ) : null}
+                      {situacaoReprodutiva?.previsaoPartoISO ? (
                         <ResumoField
                           label="Previsão estimada de parto"
                           value={formatDateBR(situacaoReprodutiva.previsaoPartoISO)}
                         />
                       ) : null}
                     </div>
+                    {pipelineReprodutivo && pipelineReprodutivo.flags.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {pipelineReprodutivo.flags.map(flag => (
+                          <span
+                            key={flag}
+                            className={`inline-flex rounded px-2 py-0.5 text-[10px] font-medium ${
+                              flag === "candidata_revisao_descarte"
+                                ? "bg-red-100 text-red-800"
+                                : flag === "dg_vencido"
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-teal-50 text-teal-800"
+                            }`}
+                          >
+                            {MATRIZ_PIPELINE_FLAG_LABEL[flag]}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
-                {animal.sexo === 'macho' && resumoReprodutivoMacho ? (
+                {animal.sexo === 'macho' &&
+                (resumoReprodutivoMacho || alertasReprodutivoMacho?.flags.length) ? (
                   <div className="rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2.5">
                     <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
                       Reprodução
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {resumoReprodutivoMacho.situacaoReprodutiva ? (
+                      {resumoReprodutivoMacho?.situacaoReprodutiva ? (
                         <ResumoField
                           label="Situação reprodutiva"
                           value={resumoReprodutivoMacho.situacaoReprodutiva}
                         />
                       ) : null}
-                      {resumoReprodutivoMacho.ultimoExameResultado ? (
+                      {resumoReprodutivoMacho?.ultimoExameResultado ? (
                         <ResumoField
                           label="Último exame andrológico"
                           value={resumoReprodutivoMacho.ultimoExameResultado}
                         />
                       ) : null}
-                      {resumoReprodutivoMacho.ultimoExameDataISO ? (
+                      {resumoReprodutivoMacho?.ultimoExameDataISO ? (
                         <ResumoField
                           label="Data do último exame"
                           value={formatDateBR(resumoReprodutivoMacho.ultimoExameDataISO)}
                         />
                       ) : null}
                     </div>
+                    {alertasReprodutivoMacho && alertasReprodutivoMacho.flags.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {alertasReprodutivoMacho.flags.map(flag => (
+                          <span
+                            key={flag}
+                            className={`inline-flex rounded px-2 py-0.5 text-[10px] font-medium ${
+                              flag === 'inapto_em_reproducao'
+                                ? 'bg-red-100 text-red-800'
+                                : flag === 'exame_andrologico_vencido'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : 'bg-orange-50 text-orange-800'
+                            }`}
+                          >
+                            {MACHO_REPRO_FLAG_LABEL[flag]}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
