@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { filterMatrizesSemEspelhoDuplicado } from "../shared/reproEspelhoDuplicata";
 import { resolveTipoEspelhoMatriz } from "./reproEspelharRegistrosMatriz";
 import { packReproObservacoes, unpackReproObservacoes } from "../shared/reproRegistroMeta";
 
@@ -13,6 +14,28 @@ describe("resolveTipoEspelhoMatriz", () => {
 
   it("ignora tipos sem espelho", () => {
     expect(resolveTipoEspelhoMatriz("Exame andrológico")).toBeNull();
+  });
+});
+
+describe("filtro de duplicata antes do espelho", () => {
+  it("ignora matriz com registro no mesmo dia", () => {
+    const existentes = [
+      {
+        femeaId: 12,
+        machoId: 7,
+        tipo: "Exposição à monta",
+        dataCobertura: "2026-09-10",
+      },
+    ];
+    const { elegiveis, ignoradas } = filterMatrizesSemEspelhoDuplicado(
+      existentes,
+      [12, 27],
+      7,
+      "Exposição à monta",
+      "2026-09-10",
+    );
+    expect(elegiveis).toEqual([27]);
+    expect(ignoradas).toEqual([12]);
   });
 });
 

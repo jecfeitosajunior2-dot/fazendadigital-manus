@@ -85,6 +85,7 @@ import {
   formatReproResultadoTabela,
   formatTipoReproTabelaDisplay,
   getReproDetalhesTabelaHeader,
+  shouldShowReproRegistroNaFichaAnimal,
   unpackReproObservacoes,
 } from '@shared/reproRegistroMeta';
 import { calcularResumoCustosSemenAnimal } from '@shared/resumoCustosSemenAnimal';
@@ -399,6 +400,13 @@ export const CattleDetailPageExpanded: React.FC = () => {
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery(undefined, { enabled: !!animalId });
 
+  const fazendaIdAnimal = animal?.fazendaId ?? null;
+  const { data: pipelineConfigFicha } = trpc.reproducao.getPipelineConfig.useQuery(
+    { fazendaId: fazendaIdAnimal! },
+    { enabled: Boolean(fazendaIdAnimal),
+    },
+  );
+
   const { data: animaisLista = [] } = trpc.animais.list.useQuery(undefined, {
     enabled: !!animalId,
   });
@@ -416,12 +424,14 @@ export const CattleDetailPageExpanded: React.FC = () => {
     return map;
   }, [animaisLista]);
 
-  // Filter reproduction records for this animal
-  const animalRepro = reproducaoRegistros?.filter(
-    r =>
-      (r.femeaId === animalId || r.machoId === animalId) &&
-      !isRegistroDesmama(r.tipo),
-  ) || [];
+  const animalRepro = useMemo(() => {
+    if (!animalId || !reproducaoRegistros) return [];
+    return reproducaoRegistros.filter(
+      r =>
+        shouldShowReproRegistroNaFichaAnimal(r, animalId, animal?.sexo) &&
+        !isRegistroDesmama(r.tipo),
+    );
+  }, [animalId, animal?.sexo, reproducaoRegistros]);
 
   // ─── Add Pesagem Form ─────────────────────────────────────────────────────
   const [showPesagemForm, setShowPesagemForm] = useState(false);
@@ -538,7 +548,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
   );
   const pipelineReprodutivo =
     animal.sexo === "femea"
-      ? analyzeMatrizReproPipeline(animalRepro)
+      ? analyzeMatrizReproPipeline(animalRepro, pipelineConfigFicha)
       : null;
   const resumoReprodutivoMacho = deriveResumoReprodutivoMacho(
     animalRepro,

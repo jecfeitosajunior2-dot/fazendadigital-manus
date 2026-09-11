@@ -26,7 +26,7 @@ import {
 
 describe("curralManejoJetBovMap", () => {
 
-  it("pesagem, sanitário, troca de lote, identificação e reprodutivo estão disponíveis no curral", () => {
+  it("manejos operacionais do curral estão disponíveis no hub", () => {
 
     const disponiveis = CURRAL_MANEJO_JETBOV_MAP.filter(e => e.statusCurral === "disponivel");
 
@@ -36,6 +36,8 @@ describe("curralManejoJetBovMap", () => {
       "troca-lote",
       "brinco-eletronico",
       "reprodutivo",
+      "desmama",
+      "castracao",
     ]);
 
     expect(isCurralManejoDisponivel("pesagem")).toBe(true);
@@ -47,6 +49,10 @@ describe("curralManejoJetBovMap", () => {
     expect(isCurralManejoDisponivel("reprodutivo")).toBe(true);
 
     expect(isCurralManejoDisponivel("brinco-eletronico")).toBe(true);
+
+    expect(isCurralManejoDisponivel("desmama")).toBe(true);
+
+    expect(isCurralManejoDisponivel("castracao")).toBe(true);
 
   });
 
@@ -119,6 +125,10 @@ describe("curralManejoJetBovMap", () => {
     expect(podeSelecionarManejoNoHub("brinco-eletronico")).toBe(true);
 
     expect(podeSelecionarManejoNoHub("reprodutivo")).toBe(true);
+
+    expect(podeSelecionarManejoNoHub("desmama")).toBe(true);
+
+    expect(podeSelecionarManejoNoHub("castracao")).toBe(true);
 
     expect(podeSelecionarManejoNoHub("baixa-animal")).toBe(false);
 

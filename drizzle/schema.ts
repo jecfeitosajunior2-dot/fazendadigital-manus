@@ -60,6 +60,8 @@ export const fazendas = mysqlTable("fazendas", {
   responsavelOperacionalTelefone: varchar("responsavelOperacionalTelefone", { length: 40 }),
   responsavelOperacionalFuncao: varchar("responsavelOperacionalFuncao", { length: 80 }),
   melhoramentoGenetico: text("melhoramentoGenetico"),
+  /** JSON — prazos DG e parâmetros do pipeline reprodutivo por fazenda. */
+  configReproPipeline: text("configReproPipeline"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),

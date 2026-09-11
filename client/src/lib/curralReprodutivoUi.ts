@@ -72,9 +72,7 @@ export function usesCurralReproMultiRegistro(tipo: string): boolean {
   return tipo === "Cobertura realizada" || tipo === "Estação de monta";
 }
 
-export function formatMsgMatrizJaCobertaNesteTouro(brinco: string): string {
-  return `Matriz ${brinco} já foi registrada neste touro.`;
-}
+export { formatMsgMatrizJaRegistradaNesteTouro as formatMsgMatrizJaCobertaNesteTouro } from "@shared/reproEspelhoDuplicata";
 
 export function isMatrizJaRegistradaCoberturaCurral(
   matrizId: number,
@@ -124,4 +122,86 @@ export function curralResultadoToggleGridClass(optionCount: number): string {
 export function maisDetalhesResumoCurral(tipo: string): string {
   if (tipo === "Inseminação") return "Inseminador, ECC, observações…";
   return "Observações…";
+}
+
+/** Dica curta ao escolher tipo masculino (curral ou manejo pontual). */
+export function getReproMachoTipoHint(tipo: string): string | null {
+  if (tipo === "Estação de monta") {
+    return "Touro no Lote/Piquete — Registrar exposição à monta nas matrizes (Fluxo: IATF - Monta - DG) ou (Monta - DG).";
+  }
+  if (tipo === "Cobertura realizada") {
+    return "Touro - matriz no brete - Registrar quando souber quem cobriu quem.";
+  }
+  return null;
+}
+
+/** Estação de monta primeiro na lista do curral (fluxo mais comum pós-IATF). */
+export function orderReproTipoOptionsMachoCurral(options: readonly string[]): string[] {
+  const preferidos = ["Estação de monta", "Cobertura realizada"];
+  const cabeca = preferidos.filter(p => options.includes(p));
+  const cauda = options.filter(o => !cabeca.includes(o));
+  return [...cabeca, ...cauda];
+}
+
+export function getCurralReproRegistrarButtonLabel(tipo: string, isSaving: boolean): string {
+  if (isSaving) return "Salvando…";
+  if (tipo === "Estação de monta") return "Registrar estação";
+  if (tipo === "Cobertura realizada") return "Registrar cobertura";
+  if (usesCurralReproMultiRegistro(tipo)) return "Registrar cobertura";
+  return "Registrar reprodutivo";
+}
+
+export function getCurralReproRegistrosContadorTexto(
+  tipo: string,
+  qtd: number,
+): string | null {
+  if (qtd <= 0) return null;
+  if (tipo === "Estação de monta") {
+    return qtd === 1
+      ? "1 matriz em estação neste touro."
+      : `${qtd} matrizes em estação neste touro.`;
+  }
+  if (tipo === "Cobertura realizada") {
+    return qtd === 1
+      ? "1 cobertura registrada neste touro."
+      : `${qtd} coberturas registradas neste touro.`;
+  }
+  return null;
+}
+
+export function getCurralReproRodape(
+  tipo: string,
+  coberturaSelecaoModo: string,
+  qtdRegistrada: number,
+): string {
+  if (tipo === "Estação de monta") {
+    return "Alocar touro ao lote registra exposição à monta nas matrizes. Conclua o touro ao terminar.";
+  }
+  if (tipo === "Cobertura realizada" && coberturaSelecaoModo === "lote") {
+    return "Registre as matrizes cobertas do lote. Conclua o touro ao terminar — ou conclua sem registrar se não houve cobertura.";
+  }
+  if (tipo === "Cobertura realizada" || qtdRegistrada > 0) {
+    return "Registre cada matriz coberta. Ao terminar, conclua o touro — ou conclua sem registrar se não houve cobertura nesta passagem.";
+  }
+  return "Registre o manejo reprodutivo. Ao terminar, conclua o animal — ou conclua sem registrar se não houve manejo nesta passagem.";
+}
+
+/** Toast após registro único no curral — mantém o animal na tela. */
+export function getCurralReproPosRegistroUnicoToast(
+  resumo: string,
+  animalSexo: string | null | undefined,
+): string {
+  const concluir =
+    animalSexo === "macho" ? "conclua o touro" : "conclua o animal";
+  return `${resumo} · registre outro manejo ou ${concluir}.`;
+}
+
+export function getCurralReproMultiRegistroPendingError(tipo: string): string {
+  if (tipo === "Estação de monta") {
+    return "Há dados não registrados. Registre a estação ou limpe o formulário.";
+  }
+  if (tipo === "Cobertura realizada") {
+    return "Há dados não registrados. Registre a cobertura ou limpe o formulário.";
+  }
+  return "Há dados não registrados. Registre o manejo ou limpe o formulário.";
 }

@@ -25,6 +25,7 @@ import {
   LogOut,
   MoreVertical,
   Plus,
+  Settings2,
   Trash2,
   type LucideProps,
 } from "lucide-react";
@@ -96,6 +97,8 @@ import {
 import { resolveAnimalIdFromSelecao } from "@shared/animalAutocomplete";
 import {
   labelAnimalBusca,
+  labelSexoAnimal,
+  sexoDotClassName,
   subtituloAnimalBusca,
   subtituloMachoReprodutor,
 } from "@shared/animalBuscaDisplay";
@@ -118,10 +121,13 @@ import {
   BrincoNumpadField,
   type EntradaIdentOrigem,
 } from "@/components/curral/BrincoNumpadField";
+import { CurralCastracaoPanel } from "@/components/curral/CurralCastracaoPanel";
+import { CurralDesmamaPanel } from "@/components/curral/CurralDesmamaPanel";
 import { CurralSanitarioPanel } from "@/components/curral/CurralSanitarioPanel";
 import { CurralBrincoEletronicoPanel } from "@/components/curral/CurralBrincoEletronicoPanel";
 import { CurralTrocaLotePanel } from "@/components/curral/CurralTrocaLotePanel";
 import { CurralReprodutivoPanel } from "@/components/curral/CurralReprodutivoPanel";
+import { ReproPipelineConfigDialog } from "@/components/curral/ReproPipelineConfigDialog";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
 import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import {
@@ -143,6 +149,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -167,6 +174,10 @@ import {
   RACAS,
 } from "@shared/animal-types";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
+import {
+  getReproMachoTipoHint,
+  orderReproTipoOptionsMachoCurral,
+} from "@/lib/curralReprodutivoUi";
 
 const FD_PRIMARY = "#4ECDC4";
 const ICON_CLASS = "h-5 w-5 shrink-0";
@@ -633,6 +644,10 @@ type AnimalBuscaRow = {
   idadeMeses?: number | null;
   dataNascimento?: string | null;
   ultimoPeso?: number | null;
+  castrado?: boolean | number | null;
+  dataDesmama?: string | Date | null;
+  dataNascimento?: string | null;
+  categoria?: string | null;
 };
 
 /** Normaliza peso digitado (pt-BR ou US) para decimal do banco. Null se inválido/≤0. */
@@ -1849,6 +1864,17 @@ function ManejoReprodutivoForm() {
     [reproElegibilidadeAnimal],
   );
 
+  const reproTipoOptionsManejo = useMemo(
+    () =>
+      animalSexo === "macho"
+        ? orderReproTipoOptionsMachoCurral(reproTipoOptions)
+        : reproTipoOptions,
+    [animalSexo, reproTipoOptions],
+  );
+
+  const reproMachoTipoHint =
+    animalSexo === "macho" ? getReproMachoTipoHint(tipoReprodutivo) : null;
+
   const categoriaIdadeMismatch = useMemo(
     () =>
       reproElegibilidadeAnimal ? hasCategoriaIdadeMismatchRepro(reproElegibilidadeAnimal) : false,
@@ -2775,18 +2801,23 @@ function ManejoReprodutivoForm() {
                   placeholder="Selecione o tipo"
                   required
                 >
-                  {reproTipoOptions.map(t => (
+                  {reproTipoOptionsManejo.map(t => (
                     <SelectItem key={t} value={t} className="text-[12px]">
                       {t}
                     </SelectItem>
                   ))}
                 </FormSelect>
-                {reproTipoOptions.length === 0 ? (
+                {reproMachoTipoHint ? (
+                  <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
+                    {reproMachoTipoHint}
+                  </p>
+                ) : null}
+                {reproTipoOptionsManejo.length === 0 ? (
                   <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
                     Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
                   </p>
                 ) : null}
-                {categoriaIdadeMismatch && reproTipoOptions.length > 0 ? (
+                {categoriaIdadeMismatch && reproTipoOptionsManejo.length > 0 ? (
                   <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
                     Categoria pode estar desatualizada para a idade do animal.
                   </p>
@@ -4468,6 +4499,10 @@ type AnimalRow = {
   fazendaId?: number | null;
   loteId?: number | null;
   ultimoPeso?: number | null;
+  castrado?: boolean | number | null;
+  dataDesmama?: string | Date | null;
+  dataNascimento?: string | null;
+  categoria?: string | null;
 };
 
 /** Sessão no curral: hub (ícones) → operação em loop → resumo. */
@@ -4501,6 +4536,7 @@ export function ManejoSessaoPage() {
   );
   const [rfidLookupBusy, setRfidLookupBusy] = useState(false);
   const [historicoSessaoAberto, setHistoricoSessaoAberto] = useState(false);
+  const [reproPipelineConfigOpen, setReproPipelineConfigOpen] = useState(false);
   const pesoInputRef = useRef<HTMLInputElement>(null);
   const aplicarPesoBalanca = useCallback((kg: number) => {
     setNovoPeso(formatPesoKgParaCampo(kg));
@@ -4569,6 +4605,16 @@ export function ManejoSessaoPage() {
 
   const manejosOperacionaisSessao = useMemo(
     () => manejosCurralOperacionaisNaOrdem(manejosSessaoOrdem),
+    [manejosSessaoOrdem],
+  );
+
+  const sessaoIncluiReprodutivo = useMemo(
+    () => manejosOperacionaisSessao.includes("reprodutivo"),
+    [manejosOperacionaisSessao],
+  );
+
+  const hubIncluiReprodutivo = useMemo(
+    () => manejosSessaoOrdem.includes("reprodutivo"),
     [manejosSessaoOrdem],
   );
 
@@ -4786,6 +4832,54 @@ export function ManejoSessaoPage() {
     limparContextoAnimal();
   }, [animalSel, limparContextoAnimal, manejoAtualIdx, manejosOperacionaisSessao]);
 
+  const registrarCastracaoCurral = useCallback(
+    (payload: { animalId: number; resumo: string }) => {
+      const row = animaisEscopo.find(a => a.id === payload.animalId);
+      const animalLabel = row ? labelAnimal(row) : `#${payload.animalId}`;
+      avancarFilaManejoAnimal({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tipoId: "castracao",
+        label: "Castração",
+        resumo: payload.resumo,
+        animalId: payload.animalId,
+        animalLabel,
+      });
+    },
+    [animaisEscopo, avancarFilaManejoAnimal],
+  );
+
+  const registrarDesmamaCurral = useCallback(
+    (payload: { animalId: number; resumo: string }) => {
+      const row = animaisEscopo.find(a => a.id === payload.animalId);
+      const animalLabel = row ? labelAnimal(row) : `#${payload.animalId}`;
+      avancarFilaManejoAnimal({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tipoId: "desmama",
+        label: "Desmama",
+        resumo: payload.resumo,
+        animalId: payload.animalId,
+        animalLabel,
+      });
+    },
+    [animaisEscopo, avancarFilaManejoAnimal],
+  );
+
+  const pularDesmamaCurral = useCallback(() => {
+    if (!animalSel) return;
+    const animalLabel = labelAnimal(animalSel);
+    const proximoIdx = manejoAtualIdx + 1;
+    if (proximoIdx < manejosOperacionaisSessao.length) {
+      setManejoAtualIdx(proximoIdx);
+      setIdentFeedback(null);
+      const proximoId = manejosOperacionaisSessao[proximoIdx];
+      const proximoLabel = TIPOS_MANEJO.find(t => t.id === proximoId)?.label ?? proximoId;
+      toast.success(`Desmama pulada · ${animalLabel}. Próximo: ${proximoLabel}.`);
+      return;
+    }
+    toast.success(`Desmama pulada — ${animalLabel}. Próximo animal.`);
+    limparContextoAnimal();
+  }, [animalSel, limparContextoAnimal, manejoAtualIdx, manejosOperacionaisSessao]);
+
   const registrarBrincoCurral = useCallback(
     (payload: {
       animalId: number;
@@ -4988,6 +5082,8 @@ export function ManejoSessaoPage() {
         : null;
   const ultimoPesoFmt = formatUltimoPesoKg(ultimoPesoNum);
   const ultimaPesagemDataFmt = ultimaPesagem?.data ? formatDateBR(ultimaPesagem.data) : null;
+  const animalSexoDotCls = animalSel ? sexoDotClassName(animalSel.sexo) : null;
+  const animalSexoLabel = animalSel ? labelSexoAnimal(animalSel.sexo) : null;
 
   useEffect(() => {
     if (animalId == null || manejoAtualId !== "pesagem") return;
@@ -5373,6 +5469,16 @@ export function ManejoSessaoPage() {
             {hintIniciarSessao ? (
               <p className="text-[11px] text-amber-700 text-center leading-relaxed">{hintIniciarSessao}</p>
             ) : null}
+            {hubIncluiReprodutivo && fazendaNum > 0 ? (
+              <button
+                type="button"
+                onClick={() => setReproPipelineConfigOpen(true)}
+                className="w-full flex items-center justify-center gap-2 text-[12px] font-medium text-gray-600 hover:text-gray-900 min-h-[40px]"
+              >
+                <Settings2 className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
+                Parâmetros reprodutivos da fazenda
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={iniciarSessao}
@@ -5385,6 +5491,13 @@ export function ManejoSessaoPage() {
           </div>
         </div>
         </div>
+        {fazendaNum > 0 ? (
+          <ReproPipelineConfigDialog
+            fazendaId={fazendaNum}
+            open={reproPipelineConfigOpen}
+            onOpenChange={setReproPipelineConfigOpen}
+          />
+        ) : null}
       </AppLayout>
     );
   }
@@ -5447,6 +5560,21 @@ export function ManejoSessaoPage() {
               .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
               .join(" → ")}
           </DropdownMenuItem>
+        ) : null}
+        {sessaoIncluiReprodutivo && fazendaNum > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-[12px] gap-2"
+              onSelect={e => {
+                e.preventDefault();
+                setReproPipelineConfigOpen(true);
+              }}
+            >
+              <Settings2 className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
+              Parâmetros reprodutivos
+            </DropdownMenuItem>
+          </>
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -5562,10 +5690,17 @@ export function ManejoSessaoPage() {
                 </span>
                 <div className="min-w-0">
                   <p
-                    className="text-[22px] sm:text-[26px] font-bold text-gray-900 tabular-nums leading-tight truncate"
+                    className="text-[22px] sm:text-[26px] font-bold text-gray-900 tabular-nums leading-tight flex items-center gap-2 min-w-0"
                     aria-live="polite"
                   >
-                    {labelAnimal(animalSel)}
+                    {animalSexoDotCls ? (
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${animalSexoDotCls}`}
+                        title={animalSexoLabel ?? undefined}
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span className="truncate">{labelAnimal(animalSel)}</span>
                   </p>
                   <p className="text-[11px] text-gray-500 mt-0.5 truncate">
                     {ultimoPesoFmt ? (
@@ -5700,13 +5835,41 @@ export function ManejoSessaoPage() {
             />
           ) : null}
 
+          {animalSel && manejoAtualId === "castracao" && animalId ? (
+            <CurralCastracaoPanel
+              key={`castracao-${animalId}-${manejoAtualIdx}`}
+              fazendaNum={fazendaNum}
+              data={data}
+              animalId={animalId}
+              animal={animalSel}
+              onRegistrado={registrarCastracaoCurral}
+              onBloqueioNegocio={setBloqueioNegocioMsg}
+            />
+          ) : null}
+
+          {animalSel && manejoAtualId === "desmama" && animalId ? (
+            <CurralDesmamaPanel
+              key={`desmama-${animalId}-${manejoAtualIdx}`}
+              fazendaNum={fazendaNum}
+              data={data}
+              animalId={animalId}
+              animal={animalSel}
+              onRegistrado={registrarDesmamaCurral}
+              onPular={pularDesmamaCurral}
+              onBloqueioNegocio={setBloqueioNegocioMsg}
+              hasNextManejoNaFila={manejoAtualIdx + 1 < manejosOperacionaisSessao.length}
+            />
+          ) : null}
+
           {animalSel &&
           manejoAtualId &&
           manejoAtualId !== "pesagem" &&
           manejoAtualId !== "sanitario" &&
           manejoAtualId !== "troca-lote" &&
           manejoAtualId !== "brinco-eletronico" &&
-          manejoAtualId !== "reprodutivo" ? (
+          manejoAtualId !== "reprodutivo" &&
+          manejoAtualId !== "castracao" &&
+          manejoAtualId !== "desmama" ? (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 space-y-2">
               <p className="text-[12px] text-gray-800">
                 O modo curral para{" "}
@@ -5812,6 +5975,14 @@ export function ManejoSessaoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {fazendaNum > 0 ? (
+        <ReproPipelineConfigDialog
+          fazendaId={fazendaNum}
+          open={reproPipelineConfigOpen}
+          onOpenChange={setReproPipelineConfigOpen}
+        />
+      ) : null}
     </AppLayout>
   );
 }

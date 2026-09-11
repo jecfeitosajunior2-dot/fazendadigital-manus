@@ -10,7 +10,12 @@ import {
   PARTO_RESULTADOS_CURRAL,
   showCioResultadoCurral,
   showDgResultadoAvancadoCurral,
+  getCurralReproPosRegistroUnicoToast,
+  getCurralReproRegistrarButtonLabel,
+  getCurralReproRodape,
+  getReproMachoTipoHint,
   isMatrizJaRegistradaCoberturaCurral,
+  orderReproTipoOptionsMachoCurral,
   usesCurralReproMultiRegistro,
   usesCurralResultadoToggle,
 } from "./curralReprodutivoUi";
@@ -72,5 +77,48 @@ describe("curralReprodutivoUi", () => {
     expect(isMatrizJaRegistradaCoberturaCurral(12, [12, 27])).toBe(true);
     expect(isMatrizJaRegistradaCoberturaCurral(15, [12, 27])).toBe(false);
     expect(isMatrizJaRegistradaCoberturaCurral(12, new Set([12]))).toBe(true);
+  });
+
+  it("prioriza Estação de monta antes de Cobertura realizada no curral", () => {
+    expect(
+      orderReproTipoOptionsMachoCurral([
+        "Cobertura realizada",
+        "Exame andrológico",
+        "Estação de monta",
+      ]),
+    ).toEqual(["Estação de monta", "Cobertura realizada", "Exame andrológico"]);
+  });
+
+  it("rotula botão de registro conforme o tipo", () => {
+    expect(getCurralReproRegistrarButtonLabel("Estação de monta", false)).toBe(
+      "Registrar estação",
+    );
+    expect(getCurralReproRegistrarButtonLabel("Cobertura realizada", false)).toBe(
+      "Registrar cobertura",
+    );
+    expect(getCurralReproRegistrarButtonLabel("Exame andrológico", true)).toBe("Salvando…");
+  });
+
+  it("exibe hints para tipos masculinos de monta e cobertura", () => {
+    expect(getReproMachoTipoHint("Estação de monta")).toContain("exposição");
+    expect(getReproMachoTipoHint("Cobertura realizada")).toContain("brete");
+    expect(getReproMachoTipoHint("Exame andrológico")).toBeNull();
+  });
+
+  it("orienta permanência no animal após registro único no curral", () => {
+    expect(getCurralReproPosRegistroUnicoToast("Exame andrológico · Apto", "macho")).toContain(
+      "conclua o touro",
+    );
+    expect(getCurralReproPosRegistroUnicoToast("Diagnóstico de prenhez · Prenha", "femea")).toContain(
+      "conclua o animal",
+    );
+  });
+
+  it("diferencia rodapé de estação de monta e cobertura por lote", () => {
+    expect(getCurralReproRodape("Estação de monta", "", 0)).toContain("exposição");
+    expect(getCurralReproRodape("Cobertura realizada", "lote", 0)).toContain("cobertas");
+    expect(getCurralReproRodape("Cobertura realizada", "individual", 0)).toContain(
+      "cada matriz",
+    );
   });
 });

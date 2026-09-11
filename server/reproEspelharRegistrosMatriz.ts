@@ -1,7 +1,12 @@
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { reproducaoRegistros } from "../drizzle/schema";
 import { packReproObservacoes } from "../shared/reproRegistroMeta";
-import { createLocalReproducaoRegistro, isDatabaseUnavailable } from "./localFallbackStore";
+import {
+  filterMatrizesSemEspelhoDuplicado,
+  type ReproEspelhoDuplicataRegistroRef,
+} from "../shared/reproEspelhoDuplicata";
+import { createLocalReproducaoRegistro, isDatabaseUnavailable, listLocalReproducaoRegistros } from "./localFallbackStore";
 
 export type EspelharRegistrosMatrizInput = {
   userId: number;
@@ -13,6 +18,43 @@ export type EspelharRegistrosMatrizInput = {
   touroLabel?: string;
   resultadoEspelho?: string;
 };
+
+export type EspelharRegistrosMatrizResult = {
+  ids: number[];
+  ignoradas: number[];
+};
+
+export async function listRegistrosReproDuplicataUsuario(
+  userId: number,
+): Promise<ReproEspelhoDuplicataRegistroRef[]> {
+  try {
+    const rows = await db
+      .select({
+        id: reproducaoRegistros.id,
+        femeaId: reproducaoRegistros.femeaId,
+        machoId: reproducaoRegistros.machoId,
+        tipo: reproducaoRegistros.tipo,
+        dataCobertura: reproducaoRegistros.dataCobertura,
+        observacoes: reproducaoRegistros.observacoes,
+        resultado: reproducaoRegistros.resultado,
+      })
+      .from(reproducaoRegistros)
+      .where(eq(reproducaoRegistros.userId, userId));
+    if (rows.length > 0) return rows;
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+  }
+  const localRows = await listLocalReproducaoRegistros(userId);
+  return localRows.map(r => ({
+    id: r.id,
+    femeaId: r.femeaId,
+    machoId: r.machoId,
+    tipo: r.tipo,
+    dataCobertura: r.dataCobertura,
+    observacoes: r.observacoes,
+    resultado: r.resultado,
+  }));
+}
 
 async function inserirEspelhoMatriz(
   userId: number,
@@ -62,19 +104,24 @@ async function inserirEspelhoMatriz(
 /** Cria registros espelho na ficha de cada matriz (Cobertura ou Exposição à monta). */
 export async function espelharRegistrosReproNaMatriz(
   input: EspelharRegistrosMatrizInput,
-): Promise<number[]> {
-  const ids: number[] = [];
-  const seen = new Set<number>();
+  registrosExistentes?: readonly ReproEspelhoDuplicataRegistroRef[],
+): Promise<EspelharRegistrosMatrizResult> {
+  const existentes = registrosExistentes ?? (await listRegistrosReproDuplicataUsuario(input.userId));
+  const { elegiveis, ignoradas } = filterMatrizesSemEspelhoDuplicado(
+    existentes,
+    input.matrizIds,
+    input.touroId,
+    input.tipoEspelho,
+    input.dataCobertura,
+  );
 
-  for (const matrizId of input.matrizIds) {
-    if (!Number.isFinite(matrizId) || matrizId <= 0 || seen.has(matrizId)) continue;
-    seen.add(matrizId);
-    if (matrizId === input.touroId) continue;
+  const ids: number[] = [];
+  for (const matrizId of elegiveis) {
     const id = await inserirEspelhoMatriz(input.userId, input, matrizId);
     if (id > 0) ids.push(id);
   }
 
-  return ids;
+  return { ids, ignoradas };
 }
 
 export function resolveTipoEspelhoMatriz(tipoOrigemMacho: string): "Cobertura" | "Exposição à monta" | null {

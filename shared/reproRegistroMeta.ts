@@ -296,6 +296,10 @@ export type ReproObservacoesMeta = {
   /** Registro de origem quando este evento foi espelhado automaticamente. */
   registroOrigemId: number | null;
   espelhoAutomatico: boolean;
+  /** Registro anulado por substituição (permanece no banco, não conta em duplicatas/pipeline). */
+  anulado: boolean;
+  anuladoEmISO: string | null;
+  substituidoPorRegistroId: number | null;
 };
 
 export type ReproObservacoesExtras = {
@@ -307,6 +311,9 @@ export type ReproObservacoesExtras = {
   centralOrigem?: string | null;
   registroOrigemId?: number | null;
   espelhoAutomatico?: boolean;
+  anulado?: boolean;
+  anuladoEmISO?: string | null;
+  substituidoPorRegistroId?: number | null;
 };
 
 /** Converte data do registro para valor de input type="date". */
@@ -381,6 +388,13 @@ export function packReproObservacoes(
       ? extras.registroOrigemId
       : undefined;
   const espelhoAutomatico = extras?.espelhoAutomatico === true ? true : undefined;
+  const anulado = extras?.anulado === true ? true : undefined;
+  const anuladoEmISO = extras?.anuladoEmISO?.trim() || undefined;
+  const substituidoPorRegistroId =
+    extras?.substituidoPorRegistroId != null &&
+    Number.isFinite(extras.substituidoPorRegistroId)
+      ? extras.substituidoPorRegistroId
+      : undefined;
   const hasCoberturaAlvo = Boolean(
     (coberturaAlvo?.animalIds?.length ?? 0) > 0 || coberturaAlvo?.tipo,
   );
@@ -396,7 +410,10 @@ export function packReproObservacoes(
     custoDoseSemen != null ||
     centralOrigem ||
     registroOrigemId != null ||
-    espelhoAutomatico;
+    espelhoAutomatico ||
+    anulado ||
+    anuladoEmISO ||
+    substituidoPorRegistroId != null;
   if (!hasMeta && !obsTrim) return undefined;
   if (!hasMeta) return obsTrim;
   const metaPayload: Record<string, unknown> = { r: reprodutor, p: resp, o: descResOutro };
@@ -408,6 +425,9 @@ export function packReproObservacoes(
   if (centralOrigem) metaPayload.co = centralOrigem;
   if (registroOrigemId != null) metaPayload.roid = registroOrigemId;
   if (espelhoAutomatico) metaPayload.esp = 1;
+  if (anulado) metaPayload.anu = 1;
+  if (anuladoEmISO) metaPayload.aem = anuladoEmISO;
+  if (substituidoPorRegistroId != null) metaPayload.spr = substituidoPorRegistroId;
   if (hasCoberturaAlvo && coberturaAlvo) {
     metaPayload.csm = coberturaAlvo.selectionMode;
     metaPayload.caids = coberturaAlvo.animalIds;
@@ -566,6 +586,38 @@ export function getReproDetalhesTabelaHeader(): string {
   return "Detalhes";
 }
 
+const TIPOS_MATRIZ_DETALHE_TOURO = new Set(["Exposição à monta", "Cobertura"]);
+
+/** Rótulo do touro na ficha da matriz (espelho ou cobertura com machoId). */
+export function formatTouroDetalheMatrizRepro(
+  reg: { machoId?: number | null },
+  meta: ReproObservacoesMeta,
+  ctx?: {
+    macho?: { brinco?: string | null; nome?: string | null } | null;
+  },
+): string | null {
+  const resolved = resolveReproReprodutorDisplay({
+    machoId: reg.machoId,
+    reprodutorSemen: meta.reprodutorSemen,
+    macho: ctx?.macho,
+  });
+  const label = resolved.reprodutorDisplay?.trim();
+  if (!label || label === SEMEN_REPRODUTOR_NAO_INFORMADO_LABEL) return null;
+  return `Touro: ${label}`;
+}
+
+function shouldUsarDetalheTouroMatriz(
+  tipo: string,
+  meta: ReproObservacoesMeta,
+  reg: { machoId?: number | null },
+): boolean {
+  if (tipo === "Exposição à monta") return true;
+  if (tipo === "Cobertura") {
+    return meta.espelhoAutomatico || reg.machoId != null;
+  }
+  return false;
+}
+
 /** Linhas de detalhe para Inseminação (histórico). */
 export function formatInseminacaoDetalhesParts(
   meta: ReproObservacoesMeta,
@@ -628,6 +680,9 @@ export function formatReproDetalhesTabela(
     parts.push(coberturaDetalhe);
   } else if (tipo === "Inseminação") {
     parts.push(...formatInseminacaoDetalhesParts(meta, reg, formatDate, ctx));
+  } else if (shouldUsarDetalheTouroMatriz(tipo, meta, reg)) {
+    const touro = formatTouroDetalheMatrizRepro(reg, meta, ctx);
+    if (touro) parts.push(touro);
   } else if (meta.reprodutorSemen) {
     parts.push(meta.reprodutorSemen);
   }
@@ -645,6 +700,29 @@ export function formatReproDetalhesTabela(
   return parts.join(" · ");
 }
 
+export type ReproRegistroFichaAnimalRef = {
+  femeaId?: number | null;
+  machoId?: number | null;
+  observacoes?: string | null;
+};
+
+/**
+ * Filtra histórico reprodutivo na ficha do animal.
+ * Espelhos automáticos (Exposição à monta / Cobertura na matriz) não repetem na ficha do touro.
+ */
+export function shouldShowReproRegistroNaFichaAnimal(
+  reg: ReproRegistroFichaAnimalRef,
+  animalId: number,
+  animalSexo: string | null | undefined,
+): boolean {
+  const meta = unpackReproObservacoes(reg.observacoes);
+  if (meta.anulado) return false;
+  if (reg.femeaId === animalId) return true;
+  if (reg.machoId !== animalId) return false;
+  if (animalSexo !== "macho") return true;
+  return !meta.espelhoAutomatico;
+}
+
 export function unpackReproObservacoes(raw: string | null | undefined): ReproObservacoesMeta {
   const empty: ReproObservacoesMeta = {
     observacoes: null,
@@ -660,6 +738,9 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
     centralOrigem: null,
     registroOrigemId: null,
     espelhoAutomatico: false,
+    anulado: false,
+    anuladoEmISO: null,
+    substituidoPorRegistroId: null,
   };
   if (!raw) return empty;
   const idx = raw.indexOf(META_PREFIX);
@@ -695,6 +776,9 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
       cln?: string;
       roid?: number;
       esp?: number;
+      anu?: number;
+      aem?: string;
+      spr?: number;
     };
     let coberturaAlvo: CoberturaAlvoPersistido | null = null;
     if (meta.cat === "animal" || meta.cat === "lote" || (meta.caids?.length ?? 0) > 0) {
@@ -747,6 +831,10 @@ export function unpackReproObservacoes(raw: string | null | undefined): ReproObs
       registroOrigemId:
         meta.roid != null && Number.isFinite(meta.roid) && meta.roid > 0 ? meta.roid : null,
       espelhoAutomatico: meta.esp === 1,
+      anulado: meta.anu === 1,
+      anuladoEmISO: meta.aem?.trim() || null,
+      substituidoPorRegistroId:
+        meta.spr != null && Number.isFinite(meta.spr) && meta.spr > 0 ? meta.spr : null,
     };
   } catch {
     const trimmed = raw.trim();

@@ -1,4 +1,5 @@
 import { AnimalAutocomplete } from "@/components/AnimalAutocomplete";
+import { useConfirm } from "@/components/ConfirmDialog";
 import {
   FormInput,
   FormLabel,
@@ -30,7 +31,14 @@ import {
   showExameAndrologicoAvancadoCurral,
   showExameAndrologicoCurral,
   formatMsgMatrizJaCobertaNesteTouro,
+  getCurralReproMultiRegistroPendingError,
+  getCurralReproPosRegistroUnicoToast,
+  getCurralReproRegistrarButtonLabel,
+  getCurralReproRegistrosContadorTexto,
+  getCurralReproRodape,
+  getReproMachoTipoHint,
   isMatrizJaRegistradaCoberturaCurral,
+  orderReproTipoOptionsMachoCurral,
   usesCurralReproMultiRegistro,
   usesCurralResultadoToggle,
 } from "@/lib/curralReprodutivoUi";
@@ -70,6 +78,26 @@ import {
 } from "@shared/reproMachoSelect";
 import { buildReproReprodutorPayload } from "@shared/reproReprodutorPersist";
 import {
+  formatMachoReproAlertaCurralTexto,
+  getMachoReproAlertasParaFichaAnimal,
+  machoReproAlertaCurralSeverity,
+  MACHO_REPRO_FLAG_LABEL,
+  shouldShowMachoReproAlertaCurral,
+} from "@shared/reproMachoAlertas";
+import {
+  formatMatrizReproAlertaCurralTexto,
+  getMatrizReproPipelineParaCurral,
+  matrizReproAlertaCurralSeverity,
+  shouldShowMatrizReproAlertaCurral,
+} from "@shared/reproMatrizAlertas";
+import { MATRIZ_PIPELINE_FLAG_LABEL } from "@shared/reproPipeline";
+import { formatMsgMatrizesIgnoradasEspelhoDuplicado } from "@shared/reproEspelhoDuplicata";
+import {
+  getSubstituirEspelhoCurralDialogCopy,
+  isReproRegistroAnulado,
+} from "@shared/reproEspelhoSubstituicao";
+import { reproDataToInputISO } from "@shared/reproRegistroMeta";
+import {
   calcPrevisaoParto283,
   getReproResultadoOptions,
   isReproResultadoRequiredManejo,
@@ -95,7 +123,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ChevronDown, HeartPulse } from "lucide-react";
+import { AlertCircle, ChevronDown, HeartPulse } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -176,6 +204,7 @@ export function CurralReprodutivoPanel({
   hasNextManejoNaFila,
 }: CurralReprodutivoPanelProps) {
   const trpcUtils = trpc.useUtils();
+  const confirm = useConfirm();
   const animalId = animal.id;
   const animalSexo = animal.sexo ?? null;
 
@@ -205,10 +234,11 @@ export function CurralReprodutivoPanel({
   const matrizCoberturaRegistroRef = useRef<ManejoAnimalRow | null>(null);
   const matrizCoberturaBatchRef = useRef<{ ids: number[]; resumo: string } | null>(null);
 
-  const matrizesRegistradasSet = useMemo(
-    () => new Set(matrizesRegistradasIds),
-    [matrizesRegistradasIds],
-  );
+  const tipoEspelhoAtual = useMemo((): "Cobertura" | "Exposição à monta" | null => {
+    if (isEstacaoMontaMacho(tipoReprodutivo)) return "Exposição à monta";
+    if (tipoReprodutivo === "Cobertura realizada") return "Cobertura";
+    return null;
+  }, [tipoReprodutivo]);
 
   const limparEntradaCobertura = useCallback(() => {
     setMatrizSel(null);
@@ -218,6 +248,27 @@ export function CurralReprodutivoPanel({
     setObservacoes("");
     setMaisDetalhesAberto(false);
   }, []);
+
+  const limparFormularioReproCurral = useCallback(() => {
+    setTipoReprodutivo("");
+    setResultado("");
+    setDescricaoOutro("");
+    setDescricaoResultadoOutro("");
+    setReprodutorOrigem("");
+    setMachoSel(null);
+    limparEntradaCobertura();
+    setReprodutorSemen("");
+    setPartidaSemen("");
+    setSemenPartidaId(null);
+    setCentralOrigemSemen("");
+    setCustoDoseSemen("");
+    setInseminador("");
+    setEccMatriz("");
+    setCriaBrinco("");
+    setCriaSexo("");
+    matrizCoberturaRegistroRef.current = null;
+    matrizCoberturaBatchRef.current = null;
+  }, [limparEntradaCobertura]);
 
   useEffect(() => {
     setQtdRegistradaAnimal(0);
@@ -255,6 +306,16 @@ export function CurralReprodutivoPanel({
     [reproElegibilidade],
   );
 
+  const reproTipoOptionsCurral = useMemo(
+    () =>
+      animalSexo === "macho"
+        ? orderReproTipoOptionsMachoCurral(reproTipoOptions)
+        : reproTipoOptions,
+    [animalSexo, reproTipoOptions],
+  );
+
+  const reproMachoTipoHint = getReproMachoTipoHint(tipoReprodutivo);
+
   const categoriaIdadeMismatch = useMemo(
     () => hasCategoriaIdadeMismatchRepro(reproElegibilidade),
     [reproElegibilidade],
@@ -290,7 +351,8 @@ export function CurralReprodutivoPanel({
   const showResultadoToggle =
     showResultado &&
     !resultadoOcultoComDefault &&
-    usesCurralResultadoToggle(tipoReprodutivo);
+    usesCurralResultadoToggle(tipoReprodutivo) &&
+    !isColetaSemenCurral;
   const showResultadoSelect =
     showResultado &&
     !resultadoOcultoComDefault &&
@@ -336,14 +398,92 @@ export function CurralReprodutivoPanel({
       { enabled: Boolean(fazendaNum) },
     );
 
+  const { data: reproducaoRegistros = [] } = trpc.reproducao.list.useQuery(undefined, {
+    enabled: Boolean(animalId),
+  });
+
+  const { data: pipelineConfig } = trpc.reproducao.getPipelineConfig.useQuery(
+    { fazendaId: fazendaNum },
+    { enabled: fazendaNum > 0 },
+  );
+
+  const matrizesBloqueadasSet = useMemo(() => {
+    const bloqueadas = new Set(matrizesRegistradasIds);
+    if (animalSexo !== "macho" || !animalId || !tipoEspelhoAtual) return bloqueadas;
+    const dataISO = reproDataToInputISO(data);
+    if (!dataISO) return bloqueadas;
+    for (const reg of reproducaoRegistros) {
+      if (reg.machoId !== animalId) continue;
+      if ((reg.tipo ?? "").trim() !== tipoEspelhoAtual) continue;
+      if (reproDataToInputISO(reg.dataCobertura) !== dataISO) continue;
+      if (isReproRegistroAnulado(reg.observacoes)) continue;
+      if (reg.femeaId != null) bloqueadas.add(reg.femeaId);
+    }
+    return bloqueadas;
+  }, [
+    animalId,
+    animalSexo,
+    data,
+    matrizesRegistradasIds,
+    reproducaoRegistros,
+    tipoEspelhoAtual,
+  ]);
+
+  const alertasMachoCurral = useMemo(
+    () =>
+      getMachoReproAlertasParaFichaAnimal(
+        reproducaoRegistros,
+        animalId,
+        animalSexo,
+        data,
+      ),
+    [reproducaoRegistros, animalId, animalSexo, data],
+  );
+
+  const alertaExameMachoCurral = useMemo(() => {
+    const flags = alertasMachoCurral?.flags ?? [];
+    if (!shouldShowMachoReproAlertaCurral(tipoReprodutivo, flags)) return null;
+    return {
+      texto: formatMachoReproAlertaCurralTexto(flags),
+      severity: machoReproAlertaCurralSeverity(flags),
+      flags,
+    };
+  }, [alertasMachoCurral, tipoReprodutivo]);
+
+  const pipelineMatrizCurral = useMemo(
+    () =>
+      getMatrizReproPipelineParaCurral(
+        reproducaoRegistros,
+        animalId,
+        animalSexo,
+        pipelineConfig,
+        data,
+      ),
+    [reproducaoRegistros, animalId, animalSexo, pipelineConfig, data],
+  );
+
+  const alertaMatrizCurral = useMemo(() => {
+    const flags = pipelineMatrizCurral?.flags ?? [];
+    if (!shouldShowMatrizReproAlertaCurral(tipoReprodutivo, flags)) return null;
+    const texto = pipelineMatrizCurral
+      ? formatMatrizReproAlertaCurralTexto(pipelineMatrizCurral)
+      : null;
+    if (!texto) return null;
+    return {
+      texto,
+      severity: matrizReproAlertaCurralSeverity(flags),
+      flags,
+    };
+  }, [pipelineMatrizCurral, tipoReprodutivo]);
+
   const { data: lotesTodos = [] } = trpc.lotes.list.useQuery(
     { somenteAtivos: true },
     { enabled: Boolean(fazendaNum) && showCoberturaAlvo },
   );
 
   const matrizesElegiveisPorLote = useMemo(
-    () => countMatrizesElegiveisPorLote(animaisFazenda, matrizesRegistradasSet),
-    [animaisFazenda, matrizesRegistradasSet],
+    () => countMatrizesElegiveisPorLote(animaisFazenda, matrizesBloqueadasSet),
+    [animaisFazenda, matrizesBloqueadasSet],
   );
 
   const lotesDaFazenda = useMemo(
@@ -363,8 +503,8 @@ export function CurralReprodutivoPanel({
   const matrizesDoLoteElegiveis = useMemo(() => {
     const loteNum = loteCoberturaId ? Number(loteCoberturaId) : 0;
     if (!loteNum) return [];
-    return listMatrizesElegiveisDoLote(animaisFazenda, loteNum, matrizesRegistradasSet);
-  }, [animaisFazenda, loteCoberturaId, matrizesRegistradasSet]);
+    return listMatrizesElegiveisDoLote(animaisFazenda, loteNum, matrizesBloqueadasSet);
+  }, [animaisFazenda, loteCoberturaId, matrizesBloqueadasSet]);
 
   const { data: reprodutoresExternosCatalogo = [], isFetching: carregandoExternos } =
     trpc.semen.listCatalogoExternos.useQuery(
@@ -430,8 +570,8 @@ export function CurralReprodutivoPanel({
     (a: ManejoAnimalRow) =>
       a.sexo === "femea" &&
       isFemeaReprodutivamenteMadura(buildReproAnimalElegibilidadeInput(a)) &&
-      !isMatrizJaRegistradaCoberturaCurral(a.id, matrizesRegistradasSet),
-    [matrizesRegistradasSet],
+      !isMatrizJaRegistradaCoberturaCurral(a.id, matrizesBloqueadasSet),
+    [matrizesBloqueadasSet],
   );
 
   const invalidatePosReproSave = useCallback(() => {
@@ -493,19 +633,24 @@ export function CurralReprodutivoPanel({
         }
         return;
       }
-      onConcluir();
+      limparFormularioReproCurral();
+      toast.success(getCurralReproPosRegistroUnicoToast(resumo, animalSexo));
     },
-    [animalId, limparEntradaCobertura, onConcluir, onRegistrado],
+    [animalId, animalSexo, limparEntradaCobertura, limparFormularioReproCurral, onRegistrado],
   );
 
   const saveMutation = trpc.reproducao.create.useMutation({
-    onSuccess: async (_data, variables) => {
+    onSuccess: async (data, variables) => {
       invalidatePosReproSave();
       if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
         await invalidateSemenQueriesAfterConsumo(trpcUtils, {
           partidaId: variables.semenPartidaId,
         });
       }
+      const msgIgnoradas = formatMsgMatrizesIgnoradasEspelhoDuplicado(
+        data.matrizesIgnoradas ?? 0,
+      );
+      if (msgIgnoradas) toast.message(msgIgnoradas);
       finalizarRegistroCurral({
         tipo: variables.tipo,
         resultado: variables.resultado ?? undefined,
@@ -579,7 +724,7 @@ export function CurralReprodutivoPanel({
     setMatrizesLoteSelecionadas(matrizesDoLoteElegiveis.map(a => a.id));
   };
 
-  const registrar = useCallback(() => {
+  const registrar = useCallback(async () => {
     if (!fazendaNum) {
       toast.error("Aguardando contexto da sessão.");
       return;
@@ -679,12 +824,6 @@ export function CurralReprodutivoPanel({
           toast.error("Selecione a matriz atendida na cobertura.");
           return;
         }
-        if (isMatrizJaRegistradaCoberturaCurral(matrizSel.id, matrizesRegistradasSet)) {
-          toast.error(
-            formatMsgMatrizJaCobertaNesteTouro(matrizSel.brinco ?? String(matrizSel.id)),
-          );
-          return;
-        }
       }
       if (modoEfetivo === "lote") {
         if (!loteCoberturaId) {
@@ -760,6 +899,30 @@ export function CurralReprodutivoPanel({
           ? matrizesLoteSelecionadas
           : undefined;
 
+    let substituirEspelhosMatrizIds: number[] | undefined;
+    if (
+      showCoberturaAlvo &&
+      modoAlvoSalvar === "individual" &&
+      matrizSel &&
+      isMatrizJaRegistradaCoberturaCurral(matrizSel.id, matrizesBloqueadasSet)
+    ) {
+      if (!tipoEspelhoAtual) {
+        toast.error(
+          formatMsgMatrizJaCobertaNesteTouro(matrizSel.brinco ?? String(matrizSel.id)),
+        );
+        return;
+      }
+      const dialogCopy = getSubstituirEspelhoCurralDialogCopy(tipoEspelhoAtual);
+      const confirmou = await confirm({
+        title: dialogCopy.title,
+        description: dialogCopy.description,
+        confirmText: dialogCopy.confirmText,
+        variant: "warning",
+      });
+      if (!confirmou) return;
+      substituirEspelhosMatrizIds = [matrizSel.id];
+    }
+
     if (showCoberturaAlvo && modoAlvoSalvar === "individual") {
       matrizCoberturaRegistroRef.current = matrizSel;
       matrizCoberturaBatchRef.current = null;
@@ -812,8 +975,10 @@ export function CurralReprodutivoPanel({
       ecc: eccPersistido,
       dataPrevistoParto:
         showPrevisaoParto && previsaoPartoEstimada ? previsaoPartoEstimada : undefined,
+      substituirEspelhosMatrizIds,
     });
   }, [
+    confirm,
     animalId,
     animalSexo,
     criaBrinco,
@@ -837,7 +1002,7 @@ export function CurralReprodutivoPanel({
     lotesCoberturaElegiveis,
     matrizSel,
     matrizesLoteSelecionadas,
-    matrizesRegistradasSet,
+    matrizesBloqueadasSet,
     observacoes,
     onBloqueioNegocio,
     partidaSemen,
@@ -865,6 +1030,7 @@ export function CurralReprodutivoPanel({
     showResultadoSelect,
     showResultadoToggle,
     centralOrigemSemen,
+    tipoEspelhoAtual,
     tipoReprodutivo,
   ]);
 
@@ -902,19 +1068,23 @@ export function CurralReprodutivoPanel({
   const labelConcluirAnimal =
     animalSexo === "macho" ? "Concluir touro" : "Concluir animal";
 
-  const rodapeReproCurral =
-    estacaoMontaCurral || (modoMultiRegistroCurral && coberturaSelecaoModo === "lote")
-      ? "Alocar touro ao lote registra exposição à monta nas matrizes. Conclua o touro ao terminar."
-      : modoMultiRegistroCurral || qtdRegistradaAnimal > 0
-        ? "Registre cada matriz coberta. Ao terminar, conclua o touro — ou conclua sem registrar se não houve cobertura nesta passagem."
-        : "Registre o manejo reprodutivo. Ao terminar, conclua o animal — ou conclua sem registrar se não houve manejo nesta passagem.";
+  const rodapeReproCurral = getCurralReproRodape(
+    tipoReprodutivo,
+    coberturaSelecaoModo,
+    qtdRegistradaAnimal,
+  );
+
+  const contadorRegistrosTexto = getCurralReproRegistrosContadorTexto(
+    tipoReprodutivo,
+    qtdRegistradaAnimal,
+  );
 
   const concluirAnimal = useCallback(() => {
     if (isSaving) return;
     if (formularioPreenchido) {
       toast.error(
         modoMultiRegistroCurral
-          ? "Há dados não registrados. Registre a cobertura ou limpe o formulário."
+          ? getCurralReproMultiRegistroPendingError(tipoReprodutivo)
           : "Há dados não registrados. Registre o manejo ou limpe o formulário.",
       );
       return;
@@ -944,16 +1114,122 @@ export function CurralReprodutivoPanel({
             : false)) &&
     (!isPartoComCria || (Boolean(criaBrinco.trim()) && Boolean(criaSexo)));
 
+  const alertBannerSeverityClass = (severity: "danger" | "warning" | "info") =>
+    severity === "danger"
+      ? "border-red-200 bg-red-50/90"
+      : severity === "warning"
+        ? "border-amber-200 bg-amber-50/90"
+        : "border-teal-200 bg-teal-50/90";
+
+  const alertBannerIconClass = (severity: "danger" | "warning" | "info") =>
+    severity === "danger"
+      ? "text-red-600"
+      : severity === "warning"
+        ? "text-amber-600"
+        : "text-teal-700";
+
+  const alertBannerTextClass = (severity: "danger" | "warning" | "info") =>
+    severity === "danger"
+      ? "text-red-900"
+      : severity === "warning"
+        ? "text-amber-900"
+        : "text-teal-900";
+
+  const alertBannerBadgeClass = (severity: "danger" | "warning" | "info") =>
+    severity === "danger"
+      ? "bg-red-100 text-red-800"
+      : severity === "warning"
+        ? "bg-amber-100 text-amber-900"
+        : "bg-teal-100 text-teal-900";
+
   return (
     <div className="mt-4 space-y-4">
-      {qtdRegistradaAnimal > 0 ? (
-        <p className="text-[11px] font-medium text-teal-700">
-          {qtdRegistradaAnimal}{" "}
-          {qtdRegistradaAnimal === 1
-            ? "cobertura registrada"
-            : "coberturas registradas"}{" "}
-          neste touro.
-        </p>
+      {contadorRegistrosTexto ? (
+        <p className="text-[11px] font-medium text-teal-700">{contadorRegistrosTexto}</p>
+      ) : null}
+      {alertaExameMachoCurral?.texto ? (
+        <div
+          className={cn(
+            "rounded-lg border px-3 py-2.5 flex gap-2.5",
+            alertaExameMachoCurral.severity === "danger"
+              ? "border-red-200 bg-red-50/90"
+              : "border-amber-200 bg-amber-50/90",
+          )}
+          role="status"
+        >
+          <AlertCircle
+            className={cn(
+              "h-4 w-4 shrink-0 mt-0.5",
+              alertaExameMachoCurral.severity === "danger" ? "text-red-600" : "text-amber-600",
+            )}
+            strokeWidth={2}
+          />
+          <div className="min-w-0 space-y-1.5">
+            <p
+              className={cn(
+                "text-[11px] leading-relaxed",
+                alertaExameMachoCurral.severity === "danger" ? "text-red-900" : "text-amber-900",
+              )}
+            >
+              {alertaExameMachoCurral.texto}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {alertaExameMachoCurral.flags.map(flag => (
+                <span
+                  key={flag}
+                  className={cn(
+                    "inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium",
+                    alertaExameMachoCurral.severity === "danger"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-amber-100 text-amber-900",
+                  )}
+                >
+                  {MACHO_REPRO_FLAG_LABEL[flag]}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {alertaMatrizCurral?.texto ? (
+        <div
+          className={cn(
+            "rounded-lg border px-3 py-2.5 flex gap-2.5",
+            alertBannerSeverityClass(alertaMatrizCurral.severity),
+          )}
+          role="status"
+        >
+          <AlertCircle
+            className={cn(
+              "h-4 w-4 shrink-0 mt-0.5",
+              alertBannerIconClass(alertaMatrizCurral.severity),
+            )}
+            strokeWidth={2}
+          />
+          <div className="min-w-0 space-y-1.5">
+            <p
+              className={cn(
+                "text-[11px] leading-relaxed",
+                alertBannerTextClass(alertaMatrizCurral.severity),
+              )}
+            >
+              {alertaMatrizCurral.texto}
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {alertaMatrizCurral.flags.map(flag => (
+                <span
+                  key={flag}
+                  className={cn(
+                    "inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium",
+                    alertBannerBadgeClass(alertaMatrizCurral.severity),
+                  )}
+                >
+                  {MATRIZ_PIPELINE_FLAG_LABEL[flag]}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : null}
       <div className="space-y-4">
         <div>
@@ -965,18 +1241,21 @@ export function CurralReprodutivoPanel({
             placeholder="Selecione o tipo"
             required
           >
-            {reproTipoOptions.map(t => (
+            {reproTipoOptionsCurral.map(t => (
               <SelectItem key={t} value={t} className="text-[12px]">
                 {t}
               </SelectItem>
             ))}
           </FormSelect>
-          {reproTipoOptions.length === 0 ? (
+          {reproMachoTipoHint ? (
+            <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">{reproMachoTipoHint}</p>
+          ) : null}
+          {reproTipoOptionsCurral.length === 0 ? (
             <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
               Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
             </p>
           ) : null}
-          {categoriaIdadeMismatch && reproTipoOptions.length > 0 ? (
+          {categoriaIdadeMismatch && reproTipoOptionsCurral.length > 0 ? (
             <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
               Categoria pode estar desatualizada para a idade do animal.
             </p>
@@ -1526,17 +1805,13 @@ export function CurralReprodutivoPanel({
       <div className="space-y-2">
         <button
           type="button"
-          onClick={registrar}
+          onClick={() => void registrar()}
           disabled={!podeSalvar || isSaving}
           className="w-full inline-flex items-center justify-center gap-2 rounded-full text-gray-900 text-[13px] font-bold uppercase tracking-wide min-h-[52px] hover:opacity-95 disabled:opacity-40"
           style={{ backgroundColor: FD_PRIMARY }}
         >
           <HeartPulse className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-          {isSaving
-            ? "Salvando…"
-            : modoMultiRegistroCurral
-              ? "Registrar cobertura"
-              : "Registrar reprodutivo"}
+          {getCurralReproRegistrarButtonLabel(tipoReprodutivo, isSaving)}
         </button>
 
         <button

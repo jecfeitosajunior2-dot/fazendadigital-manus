@@ -181,8 +181,10 @@ import {
   resolveReproducaoAnimalId,
   resolveReproducaoMachoIdPersistido,
 } from "./reproducaoCreateInput";
+import { anularEspelhosMatrizAtivos } from "./reproAnularEspelhoMatriz";
 import {
   espelharRegistrosReproNaMatriz,
+  listRegistrosReproDuplicataUsuario,
   resolveTipoEspelhoMatriz,
 } from "./reproEspelharRegistrosMatriz";
 import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
@@ -208,6 +210,15 @@ import {
   MSG_REPRO_LOTE_INELEGIVEL,
   MSG_REPRO_MATRIZ_INELEGIVEL,
 } from "../shared/reproCoberturaAlvo";
+import {
+  formatMsgMatrizJaRegistradaNesteTouro,
+  matrizTemEspelhoReproDuplicado,
+} from "../shared/reproEspelhoDuplicata";
+import {
+  mergeReproPipelineConfig,
+  parseReproPipelineConfigJson,
+  serializeReproPipelineConfigJson,
+} from "../shared/reproPipelineConfig";
 import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
 import { tryDevLoginFallback } from "./_core/devLoginFallback";
@@ -3817,7 +3828,77 @@ const saudeRouter = router({
 });
 
 // ─── REPRODUCAO ROUTER ────────────────────────────────────────────────────────
+const reproPipelineConfigInputSchema = z.object({
+  maxTentativasIatfAntesMonta: z.number().int().min(1).max(10).optional(),
+  diasParaDgAposInseminacao: z.number().int().min(15).max(120).optional(),
+  diasParaDgAposMonta: z.number().int().min(30).max(180).optional(),
+  sugerirDescarteAposMontaVazia: z.boolean().optional(),
+});
+
 const reproducaoRouter = router({
+  getPipelineConfig: protectedProcedure
+    .input(z.object({ fazendaId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        const localRow = await getLocalFazenda(ctx.user.id, input.fazendaId);
+        const [row] = await db
+          .select({ configReproPipeline: fazendas.configReproPipeline })
+          .from(fazendas)
+          .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)));
+        const raw =
+          row?.configReproPipeline ??
+          (localRow as { configReproPipeline?: string | null } | null)?.configReproPipeline;
+        return parseReproPipelineConfigJson(raw);
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          const localRow = await getLocalFazenda(ctx.user.id, input.fazendaId);
+          return parseReproPipelineConfigJson(
+            (localRow as { configReproPipeline?: string | null } | null)?.configReproPipeline,
+          );
+        }
+        throw error;
+      }
+    }),
+
+  updatePipelineConfig: protectedProcedure
+    .input(
+      z.object({
+        fazendaId: z.number().int().positive(),
+        config: reproPipelineConfigInputSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const serialized = serializeReproPipelineConfigJson(
+        mergeReproPipelineConfig(input.config),
+      );
+      try {
+        await db
+          .update(fazendas)
+          .set({ configReproPipeline: serialized })
+          .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)));
+        try {
+          await updateLocalFazenda(ctx.user.id, input.fazendaId, {
+            configReproPipeline: serialized,
+          });
+        } catch (mirrorError) {
+          console.warn("[repro.updatePipelineConfig] Espelho local não gravado:", mirrorError);
+        }
+        return { success: true, config: parseReproPipelineConfigJson(serialized) };
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) {
+          await updateLocalFazenda(ctx.user.id, input.fazendaId, {
+            configReproPipeline: serialized,
+          });
+          return {
+            success: true,
+            localFallback: true,
+            config: parseReproPipelineConfigJson(serialized),
+          };
+        }
+        throw error;
+      }
+    }),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     try {
       const rows = await db
@@ -3861,6 +3942,8 @@ const reproducaoRouter = router({
       coberturaSelecaoModo: z.enum(["individual", "lote"]).optional(),
       coberturaMatrizIds: z.array(z.number()).optional(),
       coberturaLoteId: z.number().optional(),
+      /** Matrizes cujo espelho ativo será anulado antes de criar o substituto (curral). */
+      substituirEspelhosMatrizIds: z.array(z.number().int().positive()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const animalId = resolveReproducaoAnimalId(input);
@@ -4107,32 +4190,83 @@ const reproducaoRouter = router({
       }
 
       const tipoEspelho = resolveTipoEspelhoMatriz(input.tipo);
+      let espelhosMatriz = 0;
+      let matrizesIgnoradas = 0;
+
       if (
         tipoEspelho &&
         coberturaAlvoPersistida &&
         coberturaAlvoPersistida.animalIds.length > 0 &&
         registroId > 0
       ) {
+        let existentes = await listRegistrosReproDuplicataUsuario(ctx.user.id);
+        const substituirSet = new Set(input.substituirEspelhosMatrizIds ?? []);
+
+        if (
+          coberturaAlvoPersistida.selectionMode === "individual" &&
+          coberturaAlvoPersistida.animalIds.length === 1
+        ) {
+          const matrizId = coberturaAlvoPersistida.animalIds[0]!;
+          if (
+            !substituirSet.has(matrizId) &&
+            matrizTemEspelhoReproDuplicado(
+              existentes,
+              matrizId,
+              animalId,
+              tipoEspelho,
+              input.dataCobertura,
+            )
+          ) {
+            const brincoLabel =
+              coberturaAlvoPersistida.labelsBrinco[0]?.trim() || String(matrizId);
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: formatMsgMatrizJaRegistradaNesteTouro(brincoLabel),
+            });
+          }
+        }
+
+        if (substituirSet.size > 0) {
+          await anularEspelhosMatrizAtivos(
+            {
+              userId: ctx.user.id,
+              matrizIds: [...substituirSet],
+              touroId: animalId,
+              tipoEspelho,
+              dataCobertura: input.dataCobertura,
+              registroOrigemSubstitutoId: registroId,
+            },
+            existentes,
+          );
+          existentes = await listRegistrosReproDuplicataUsuario(ctx.user.id);
+        }
+
         const touroLabel =
           (animalAlvo as { brinco?: string | null; nome?: string | null }).brinco?.trim() ||
           (animalAlvo as { nome?: string | null }).nome?.trim() ||
           String(animalId);
-        await espelharRegistrosReproNaMatriz({
-          userId: ctx.user.id,
-          registroOrigemId: registroId,
-          tipoEspelho,
-          touroId: animalId,
-          matrizIds: coberturaAlvoPersistida.animalIds,
-          dataCobertura: input.dataCobertura,
-          touroLabel,
-          resultadoEspelho: "Realizado",
-        });
+        const espelhoResult = await espelharRegistrosReproNaMatriz(
+          {
+            userId: ctx.user.id,
+            registroOrigemId: registroId,
+            tipoEspelho,
+            touroId: animalId,
+            matrizIds: coberturaAlvoPersistida.animalIds,
+            dataCobertura: input.dataCobertura,
+            touroLabel,
+            resultadoEspelho: "Realizado",
+          },
+          existentes,
+        );
+        espelhosMatriz = espelhoResult.ids.length;
+        matrizesIgnoradas = espelhoResult.ignoradas.length;
       }
 
       return {
         success: true,
         id: registroId,
-        espelhosMatriz: tipoEspelho ? coberturaAlvoPersistida?.animalIds.length ?? 0 : 0,
+        espelhosMatriz,
+        matrizesIgnoradas,
       };
     }),
 
@@ -9631,6 +9765,7 @@ const fazendaFields = {
   responsavelOperacionalTelefone: z.string().optional(),
   responsavelOperacionalFuncao: z.string().optional(),
   melhoramentoGenetico: z.string().optional(),
+  configReproPipeline: z.string().optional(),
   observacoes: z.string().optional(),
 };
 

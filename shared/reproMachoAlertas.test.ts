@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { analyzeMachoReproAlertas } from "./reproMachoAlertas";
+import {
+  analyzeMachoReproAlertas,
+  formatMachoReproAlertaCurralTexto,
+  getMachoReproAlertasParaFichaAnimal,
+  shouldShowMachoReproAlertaCurral,
+} from "./reproMachoAlertas";
 
 describe("analyzeMachoReproAlertas", () => {
   it("marca inapto em reprodução", () => {
@@ -41,5 +46,47 @@ describe("analyzeMachoReproAlertas", () => {
 
   it("retorna null para fêmea", () => {
     expect(analyzeMachoReproAlertas([], "femea")).toBeNull();
+  });
+
+  it("filtra espelhos ao calcular alertas na ficha do touro", () => {
+    const snap = getMachoReproAlertasParaFichaAnimal(
+      [
+        {
+          id: 1,
+          femeaId: 7,
+          machoId: 7,
+          tipo: "Uso como reprodutor",
+          dataCobertura: "2026-01-01",
+        },
+        {
+          id: 2,
+          femeaId: 27,
+          machoId: 7,
+          tipo: "Exposição à monta",
+          dataCobertura: "2026-09-10",
+          observacoes: "\n__fd_repro__{\"esp\":1}__end__",
+        },
+      ],
+      7,
+      "macho",
+      "2026-09-10",
+    );
+    expect(snap?.flags).toContain("sem_exame_andrologico");
+  });
+
+  it("monta texto do banner do curral", () => {
+    expect(formatMachoReproAlertaCurralTexto(["sem_exame_andrologico"])).toContain(
+      "Registre o exame",
+    );
+  });
+
+  it("oculta banner ao registrar exame andrológico", () => {
+    expect(
+      shouldShowMachoReproAlertaCurral("Exame andrológico", ["sem_exame_andrologico"]),
+    ).toBe(false);
+    expect(shouldShowMachoReproAlertaCurral("", ["sem_exame_andrologico"])).toBe(true);
+    expect(
+      shouldShowMachoReproAlertaCurral("Estação de monta", ["sem_exame_andrologico"]),
+    ).toBe(true);
   });
 });
