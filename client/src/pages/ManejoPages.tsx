@@ -71,9 +71,12 @@ import {
   getReproTipoOptionsElegiveis,
   hasCategoriaIdadeMismatchRepro,
   isFemeaReprodutivamenteMadura,
-  isMachoReprodutivamenteMaduro,
+  isMachoBloqueadoReproPorCastracao,
   isReproTipoPermitidoParaAnimal,
+  mensagemReproInelegivelAnimal,
   MSG_REPRO_INELEGIVEL,
+  MSG_REPRO_MACHO_CASTRADO,
+  MSG_REPRO_MACHO_CASTRADO_REPRODUTOR,
 } from "@shared/reproElegibilidade";
 import { buildReproReprodutorPayload } from "@shared/reproReprodutorPersist";
 import {
@@ -122,12 +125,14 @@ import {
   type EntradaIdentOrigem,
 } from "@/components/curral/BrincoNumpadField";
 import { CurralCastracaoPanel } from "@/components/curral/CurralCastracaoPanel";
+import { CurralCadastroAnimalPanel } from "@/components/curral/CurralCadastroAnimalPanel";
 import { CurralDesmamaPanel } from "@/components/curral/CurralDesmamaPanel";
 import { CurralSanitarioPanel } from "@/components/curral/CurralSanitarioPanel";
 import { CurralBrincoEletronicoPanel } from "@/components/curral/CurralBrincoEletronicoPanel";
 import { CurralTrocaLotePanel } from "@/components/curral/CurralTrocaLotePanel";
 import { CurralReprodutivoPanel } from "@/components/curral/CurralReprodutivoPanel";
 import { ReproPipelineConfigDialog } from "@/components/curral/ReproPipelineConfigDialog";
+import { formatReproPipelineConfigResumo } from "@shared/reproPipelineConfig";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
 import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import {
@@ -138,6 +143,13 @@ import {
   primeiroManejoDisponivelNaOrdem,
   manejosCurralOperacionaisNaOrdem,
 } from "@shared/curralManejoJetBovMap";
+import {
+  aplicarOrdemDesmamaJetBov,
+  CURRAL_DESMAMA_HUB_SUBTITULO,
+  CURRAL_DESMAMA_ORDEM_JETBOV_LABEL,
+  manejosDesmamaJetBovFaltando,
+} from "@shared/curralDesmamaHub";
+import { pesagemReutilizavelDesmama } from "@shared/desmamaManejo";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import {
   FAZENDA_SELECT_PLACEHOLDER,
@@ -2127,8 +2139,12 @@ function ManejoReprodutivoForm() {
         );
         return;
       }
-      if (msg.includes(MSG_REPRO_INELEGIVEL)) {
-        setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+      if (
+        msg.includes(MSG_REPRO_MACHO_CASTRADO) ||
+        msg.includes(MSG_REPRO_MACHO_CASTRADO_REPRODUTOR) ||
+        msg.includes(MSG_REPRO_INELEGIVEL)
+      ) {
+        setBloqueioNegocioMsg(msg);
         return;
       }
       if (
@@ -2162,8 +2178,12 @@ function ManejoReprodutivoForm() {
         );
         return;
       }
-      if (msg.includes(MSG_REPRO_INELEGIVEL)) {
-        setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+      if (
+        msg.includes(MSG_REPRO_MACHO_CASTRADO) ||
+        msg.includes(MSG_REPRO_MACHO_CASTRADO_REPRODUTOR) ||
+        msg.includes(MSG_REPRO_INELEGIVEL)
+      ) {
+        setBloqueioNegocioMsg(msg);
         return;
       }
       if (msg.includes(MSG_REPRO_RESULTADO_INCOMPATIVEL)) {
@@ -2434,7 +2454,7 @@ function ManejoReprodutivoForm() {
       reproElegibilidadeAnimal &&
       !isReproTipoPermitidoParaAnimal(reproElegibilidadeAnimal, tipoReprodutivo)
     ) {
-      setBloqueioNegocioMsg(MSG_REPRO_INELEGIVEL);
+      setBloqueioNegocioMsg(mensagemReproInelegivelAnimal(reproElegibilidadeAnimal));
       return;
     }
     if (exigeResultado && !resultado.trim()) {
@@ -2814,7 +2834,10 @@ function ManejoReprodutivoForm() {
                 ) : null}
                 {reproTipoOptionsManejo.length === 0 ? (
                   <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
-                    Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
+                    {reproElegibilidadeAnimal &&
+                    isMachoBloqueadoReproPorCastracao(reproElegibilidadeAnimal)
+                      ? MSG_REPRO_MACHO_CASTRADO
+                      : "Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria."}
                   </p>
                 ) : null}
                 {categoriaIdadeMismatch && reproTipoOptionsManejo.length > 0 ? (
@@ -4478,6 +4501,8 @@ type SessaoFase = "hub" | "ativa";
 
 /** Coluna única centralizada — mesmo fluxo mobile, confortável no desktop. */
 const SESSAO_CURRAL_SHELL = "max-w-3xl mx-auto w-full";
+/** Valor sentinela do select de lote no hub da sessão (Radix não aceita value=""). */
+const LOTE_SESSAO_TODOS = "__todos__";
 
 
 type ManejoSessaoItem = {
@@ -4510,7 +4535,6 @@ export function ManejoSessaoPage() {
   const [, setLocation] = useLocation();
   const confirm = useConfirm();
   const trpcUtils = trpc.useUtils();
-  const { data: user } = trpc.auth.me.useQuery();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
 
@@ -4521,7 +4545,6 @@ export function ManejoSessaoPage() {
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [data, setData] = useState(todayISODate);
   const [loteId, setLoteId] = useState("");
-  const [responsavel, setResponsavel] = useState("");
   const [animalSel, setAnimalSel] = useState<AnimalBuscaRow | null>(null);
   const [animalId, setAnimalId] = useState<number | null>(null);
   /** Índice do manejo atual na fila JetBov (mesmo animal, ordem do hub). */
@@ -4535,6 +4558,12 @@ export function ManejoSessaoPage() {
     null,
   );
   const [rfidLookupBusy, setRfidLookupBusy] = useState(false);
+  const [cadastroCurral, setCadastroCurral] = useState<{
+    aberto: boolean;
+    brinco?: string;
+    rfid?: string;
+    initKey: number;
+  }>({ aberto: false, initKey: 0 });
   const [historicoSessaoAberto, setHistoricoSessaoAberto] = useState(false);
   const [reproPipelineConfigOpen, setReproPipelineConfigOpen] = useState(false);
   const pesoInputRef = useRef<HTMLInputElement>(null);
@@ -4571,10 +4600,6 @@ export function ManejoSessaoPage() {
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone, loadingFazendas]);
 
-  useEffect(() => {
-    if (!responsavel && user?.name) setResponsavel(user.name);
-  }, [user?.name, responsavel]);
-
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
 
   const lotesDaFazenda = useMemo(
@@ -4587,7 +4612,10 @@ export function ManejoSessaoPage() {
   );
 
   const opcoesLoteSessao = useMemo(
-    () => lotesDaFazenda.map(l => ({ value: String(l.id), label: l.nome })),
+    () => [
+      { value: LOTE_SESSAO_TODOS, label: "Todos os lotes" },
+      ...lotesDaFazenda.map(l => ({ value: String(l.id), label: l.nome })),
+    ],
     [lotesDaFazenda],
   );
 
@@ -4608,14 +4636,30 @@ export function ManejoSessaoPage() {
     [manejosSessaoOrdem],
   );
 
-  const sessaoIncluiReprodutivo = useMemo(
-    () => manejosOperacionaisSessao.includes("reprodutivo"),
-    [manejosOperacionaisSessao],
-  );
-
   const hubIncluiReprodutivo = useMemo(
     () => manejosSessaoOrdem.includes("reprodutivo"),
     [manejosSessaoOrdem],
+  );
+
+  const hubIncluiDesmama = useMemo(
+    () => manejosSessaoOrdem.includes("desmama"),
+    [manejosSessaoOrdem],
+  );
+
+  const desmamaHubFaltando = useMemo(
+    () => (hubIncluiDesmama ? manejosDesmamaJetBovFaltando(manejosSessaoOrdem) : []),
+    [hubIncluiDesmama, manejosSessaoOrdem],
+  );
+
+  const { data: reproPipelineConfigHub } = trpc.reproducao.getPipelineConfig.useQuery(
+    { fazendaId: fazendaNum },
+    { enabled: fase === "hub" && hubIncluiReprodutivo && fazendaNum > 0 },
+  );
+
+  const reproPipelineResumoHub = useMemo(
+    () =>
+      reproPipelineConfigHub ? formatReproPipelineConfigResumo(reproPipelineConfigHub) : null,
+    [reproPipelineConfigHub],
   );
 
   const manejoAtualId = useMemo((): TipoManejoId | null => {
@@ -4634,8 +4678,28 @@ export function ManejoSessaoPage() {
     setManejosSessaoOrdem(prev => {
       const idx = prev.indexOf(id);
       if (idx >= 0) return prev.filter(x => x !== id);
-      return [...prev, id];
+      const next = [...prev, id];
+      if (id === "desmama") {
+        const faltando = manejosDesmamaJetBovFaltando(next);
+        if (faltando.length > 0) {
+          queueMicrotask(() => {
+            const nomes = faltando
+              .map(fid => TIPOS_MANEJO.find(t => t.id === fid)?.label ?? fid)
+              .join(" e ");
+            toast.info(
+              `Para desmama completa no curral, inclua também: ${nomes}.`,
+              { duration: 6000 },
+            );
+          });
+        }
+      }
+      return next;
     });
+  }, []);
+
+  const aplicarOrdemDesmamaHub = useCallback(() => {
+    setManejosSessaoOrdem(prev => aplicarOrdemDesmamaJetBov(prev));
+    toast.success(`Ordem aplicada: ${CURRAL_DESMAMA_ORDEM_JETBOV_LABEL}.`);
   }, []);
 
   const tiposHubOrdenados = useMemo(
@@ -4864,22 +4928,6 @@ export function ManejoSessaoPage() {
     [animaisEscopo, avancarFilaManejoAnimal],
   );
 
-  const pularDesmamaCurral = useCallback(() => {
-    if (!animalSel) return;
-    const animalLabel = labelAnimal(animalSel);
-    const proximoIdx = manejoAtualIdx + 1;
-    if (proximoIdx < manejosOperacionaisSessao.length) {
-      setManejoAtualIdx(proximoIdx);
-      setIdentFeedback(null);
-      const proximoId = manejosOperacionaisSessao[proximoIdx];
-      const proximoLabel = TIPOS_MANEJO.find(t => t.id === proximoId)?.label ?? proximoId;
-      toast.success(`Desmama pulada · ${animalLabel}. Próximo: ${proximoLabel}.`);
-      return;
-    }
-    toast.success(`Desmama pulada — ${animalLabel}. Próximo animal.`);
-    limparContextoAnimal();
-  }, [animalSel, limparContextoAnimal, manejoAtualIdx, manejosOperacionaisSessao]);
-
   const registrarBrincoCurral = useCallback(
     (payload: {
       animalId: number;
@@ -4918,6 +4966,55 @@ export function ManejoSessaoPage() {
     [handleAnimalSelect, toAnimalBuscaRow],
   );
 
+  const fecharCadastroCurral = useCallback(() => {
+    setCadastroCurral(prev => {
+      if (!prev.aberto) return prev;
+      const brinco = (prev.brinco ?? "").trim();
+      const rfid = (prev.rfid ?? "").trim();
+      if (brinco) {
+        setEntradaIdentValor(brinco);
+        setEntradaIdentOrigem("manual");
+      } else if (rfid) {
+        setEntradaIdentValor(rfid);
+        setEntradaIdentOrigem("rfid");
+      }
+      setIdentFeedback(null);
+      return { ...prev, aberto: false };
+    });
+  }, []);
+
+  const abrirCadastroCurral = useCallback((rascunho?: { brinco?: string; rfid?: string }) => {
+    setCadastroCurral(prev => ({
+      aberto: true,
+      brinco: rascunho?.brinco,
+      rfid: rascunho?.rfid,
+      initKey: prev.initKey + 1,
+    }));
+    setIdentFeedback(null);
+  }, []);
+
+  const handleSalvarEManejarCurral = useCallback(
+    async (animalId: number) => {
+      setCadastroCurral(prev => ({ ...prev, aberto: false }));
+      try {
+        const animal = await trpcUtils.animais.getById.fetch({ id: animalId });
+        if (!animal) {
+          toast.error("Animal cadastrado, mas não foi possível carregá-lo.");
+          return;
+        }
+        handleAnimalSelect(animal as AnimalBuscaRow);
+        setIdentFeedback({
+          kind: "ok",
+          text: `${labelAnimal(animal as AnimalBuscaRow)} cadastrado e selecionado.`,
+        });
+      } catch (error) {
+        const err = error as Error;
+        toast.error(err?.message || "Animal cadastrado, mas falha ao selecionar.");
+      }
+    },
+    [handleAnimalSelect, trpcUtils],
+  );
+
   const identificarPorBrinco = useCallback(() => {
     const brinco = entradaIdentValor.trim();
     if (!brinco) {
@@ -4933,10 +5030,8 @@ export function ManejoSessaoPage() {
       a => (a.brinco || "").trim().toLowerCase() === brincoNorm,
     );
     if (matches.length === 0) {
-      setIdentFeedback({
-        kind: "erro",
-        text: `Nenhum animal com brinco ${brinco} neste escopo.`,
-      });
+      abrirCadastroCurral({ brinco });
+      limparEntradaIdent();
       return;
     }
     if (matches.length > 1) {
@@ -4950,7 +5045,7 @@ export function ManejoSessaoPage() {
     selecionarAnimal(row);
     limparEntradaIdent();
     setIdentFeedback({ kind: "ok", text: `${labelAnimal(row)} identificado.` });
-  }, [animaisEscopoBusca, entradaIdentValor, fazendaNum, limparEntradaIdent, selecionarAnimal]);
+  }, [abrirCadastroCurral, animaisEscopoBusca, entradaIdentValor, fazendaNum, limparEntradaIdent, selecionarAnimal]);
 
   const identificarPorRfid = useCallback(
     async (rfidBruto: string) => {
@@ -4967,7 +5062,8 @@ export function ManejoSessaoPage() {
           brincoEletronico: rfid,
         });
         if (!animal) {
-          setIdentFeedback({ kind: "erro", text: "Animal não encontrado com este RFID." });
+          abrirCadastroCurral({ rfid });
+          limparEntradaIdent();
           return;
         }
         const row = animaisEscopo.find(a => a.id === animal.id);
@@ -4988,7 +5084,7 @@ export function ManejoSessaoPage() {
         setRfidLookupBusy(false);
       }
     },
-    [animalSel, animaisEscopo, fazendaNum, limparEntradaIdent, rfidLookupBusy, selecionarAnimal, trpcUtils],
+    [abrirCadastroCurral, animalSel, animaisEscopo, fazendaNum, limparEntradaIdent, rfidLookupBusy, selecionarAnimal, trpcUtils],
   );
 
   const preencherRfidNoDisplay = useCallback(
@@ -5082,6 +5178,20 @@ export function ManejoSessaoPage() {
         : null;
   const ultimoPesoFmt = formatUltimoPesoKg(ultimoPesoNum);
   const ultimaPesagemDataFmt = ultimaPesagem?.data ? formatDateBR(ultimaPesagem.data) : null;
+  const pesoPesagemDesmamaCurral = useMemo(() => {
+    if (!animalId || manejoAtualId !== "desmama") return null;
+    const reuse = pesagemReutilizavelDesmama(
+      pesagensAnimal.map(p => ({
+        id: p.id,
+        data: p.data,
+        peso: p.peso,
+        observacoes: p.observacoes,
+      })),
+      data,
+    );
+    if (!reuse || reuse.jaMarcadaDesmama) return null;
+    return reuse.peso;
+  }, [animalId, data, manejoAtualId, pesagensAnimal]);
   const animalSexoDotCls = animalSel ? sexoDotClassName(animalSel.sexo) : null;
   const animalSexoLabel = animalSel ? labelSexoAnimal(animalSel.sexo) : null;
 
@@ -5145,6 +5255,7 @@ export function ManejoSessaoPage() {
     setHistoricoSessao([]);
     setManejoAtualIdx(0);
     limparContextoAnimal();
+    setCadastroCurral(prev => ({ ...prev, aberto: false }));
     setFase("ativa");
     const ordemLabels = manejosCurralOperacionaisNaOrdem(manejosSessaoOrdem)
       .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
@@ -5168,6 +5279,7 @@ export function ManejoSessaoPage() {
     setSessaoId(null);
     setHistoricoSessao([]);
     limparContextoAnimal();
+    setCadastroCurral(prev => ({ ...prev, aberto: false }));
 
     if (total > 0) {
       toast.success(
@@ -5212,9 +5324,7 @@ export function ManejoSessaoPage() {
       if (podeIniciar) return null;
       if (!fazendaId) return "Selecione a fazenda para iniciar a sessão.";
       if (!data) return "Informe a data da sessão.";
-      if (manejosSessaoOrdem.length === 0) {
-        return "Selecione um manejo disponível para montar a ordem da sessão.";
-      }
+      if (manejosSessaoOrdem.length === 0) return null;
       if (!primeiroManejoDisponivelNaOrdem(manejosSessaoOrdem)) {
         return "Nenhum manejo selecionado está operacional no curral ainda.";
       }
@@ -5246,17 +5356,13 @@ export function ManejoSessaoPage() {
               >
                 Sessão no curral
               </h1>
-              <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">
-                {manejosSessaoOrdem.length > 1 ? (
-                  <>
-                    {manejosSessaoOrdem
-                      .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
-                      .join(" → ")}
-                    {" · "}
-                  </>
-                ) : null}
-                Escolha o manejo, confira o contexto e inicie a operação em escala.
-              </p>
+              {manejosSessaoOrdem.length > 1 ? (
+                <p className="text-[12px] sm:text-[13px] text-gray-500 mt-1">
+                  {manejosSessaoOrdem
+                    .map(id => TIPOS_MANEJO.find(t => t.id === id)?.label ?? id)
+                    .join(" → ")}
+                </p>
+              ) : null}
         </div>
 
         <div className="flex flex-col gap-5 pb-[max(2.5rem,env(safe-area-inset-bottom,0px))]">
@@ -5287,30 +5393,23 @@ export function ManejoSessaoPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-              <div className="min-w-0">
-                <FormLabel>Lote</FormLabel>
-                <FormNativeSelect
-                  variant="light"
-                  value={loteId}
-                  onChange={value => {
-                    setLoteId(value);
-                    limparContextoAnimal();
-                  }}
-                  placeholder="Todos os animais da fazenda"
-                  options={opcoesLoteSessao}
-                  disabled={!fazendaId}
-                />
-              </div>
-              <div className="min-w-0">
-                <FormLabel>Responsável</FormLabel>
-                <FormInput
-                  variant="light"
-                  value={responsavel}
-                  onChange={setResponsavel}
-                  placeholder="Funcionário, técnico, veterinário…"
-                />
-              </div>
+            <div className="min-w-0 max-w-md">
+              <FormLabel>Lote</FormLabel>
+              <FormNativeSelect
+                variant="light"
+                value={loteId || LOTE_SESSAO_TODOS}
+                onChange={value => {
+                  setLoteId(value === LOTE_SESSAO_TODOS ? "" : value);
+                  limparContextoAnimal();
+                }}
+                placeholder="Todos os lotes"
+                options={opcoesLoteSessao}
+                disabled={!fazendaId}
+              />
+              <p className="text-[10px] text-gray-400 mt-1.5 leading-snug">
+                Filtro opcional da sessão. &quot;Todos os lotes&quot; inclui todos os animais ativos
+                da fazenda.
+              </p>
             </div>
           </ManejoSectionCard>
 
@@ -5428,17 +5527,10 @@ export function ManejoSessaoPage() {
                   })
                   .join(" → ")}
               </p>
-            ) : (
-              <p className="text-[11px] text-amber-700 mt-4">
-                <span className="sm:hidden">Toque nos manejos na ordem em que serão realizados.</span>
-                <span className="hidden sm:inline">
-                  Clique nos manejos na ordem em que serão realizados.
-                </span>
-              </p>
-            )}
+            ) : null}
           </ManejoSectionCard>
 
-          <ManejoSectionCard title="Equipamento" className="order-3 sm:order-2">
+          <ManejoSectionCard title="Equipamentos" className="order-3 sm:order-2">
             <p className="text-[11px] text-gray-500 mb-3 -mt-1">
               Conecte bastão RFID e balança antes de iniciar. As conexões permanecem na
               operação.
@@ -5469,14 +5561,48 @@ export function ManejoSessaoPage() {
             {hintIniciarSessao ? (
               <p className="text-[11px] text-amber-700 text-center leading-relaxed">{hintIniciarSessao}</p>
             ) : null}
+            {hubIncluiDesmama ? (
+              <div className="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 space-y-2">
+                <span className="flex items-center gap-2 text-[12px] font-semibold text-gray-800">
+                  <MilkOff className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
+                  Desmama no curral
+                </span>
+                <p className="pl-6 text-[11px] text-gray-500 leading-relaxed">
+                  {CURRAL_DESMAMA_HUB_SUBTITULO}
+                </p>
+                <p className="pl-6 text-[10px] font-medium text-[#2D5A5A]/80 leading-relaxed">
+                  Ordem sugerida: {CURRAL_DESMAMA_ORDEM_JETBOV_LABEL}
+                </p>
+                {desmamaHubFaltando.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={aplicarOrdemDesmamaHub}
+                    className="ml-6 mt-1 inline-flex items-center rounded-full border border-[#3dbdb5] bg-[#4ECDC4]/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-900 hover:bg-[#4ECDC4]/20 transition-colors"
+                  >
+                    Usar ordem sugerida
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {hubIncluiReprodutivo && fazendaNum > 0 ? (
               <button
                 type="button"
                 onClick={() => setReproPipelineConfigOpen(true)}
-                className="w-full flex items-center justify-center gap-2 text-[12px] font-medium text-gray-600 hover:text-gray-900 min-h-[40px]"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-left hover:border-gray-300 hover:bg-gray-50/80 transition-colors"
               >
-                <Settings2 className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-                Parâmetros reprodutivos da fazenda
+                <span className="flex items-center gap-2 text-[12px] font-semibold text-gray-800">
+                  <Settings2 className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
+                  Parâmetros reprodutivos da fazenda
+                </span>
+                <span className="block mt-1.5 pl-6 text-[11px] text-gray-500 leading-relaxed">
+                  Prazos de diagnóstico e alertas de inseminação — ajuste aqui antes de entrar no
+                  curral.
+                </span>
+                {reproPipelineResumoHub ? (
+                  <span className="block mt-1 pl-6 text-[10px] font-medium text-[#2D5A5A]/80 leading-relaxed">
+                    Atual nesta fazenda: {reproPipelineResumoHub}
+                  </span>
+                ) : null}
               </button>
             ) : null}
             <button
@@ -5561,21 +5687,6 @@ export function ManejoSessaoPage() {
               .join(" → ")}
           </DropdownMenuItem>
         ) : null}
-        {sessaoIncluiReprodutivo && fazendaNum > 0 ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-[12px] gap-2"
-              onSelect={e => {
-                e.preventDefault();
-                setReproPipelineConfigOpen(true);
-              }}
-            >
-              <Settings2 className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-              Parâmetros reprodutivos
-            </DropdownMenuItem>
-          </>
-        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : null;
@@ -5585,7 +5696,7 @@ export function ManejoSessaoPage() {
       <div className={cn(SESSAO_CURRAL_SHELL, "mb-3 space-y-2")}>
         <div className="flex items-center justify-between gap-2 sm:gap-3">
           <div className="flex items-center min-w-0 flex-1">
-            {!animalSel && fazendaNum ? (
+            {!animalSel && fazendaNum && !cadastroCurral.aberto ? (
               <At05RfidReaderControl
                 variant="compact"
                 className="w-full max-w-md"
@@ -5649,35 +5760,49 @@ export function ManejoSessaoPage() {
           <>
         <ManejoSectionCard>
           {!animalSel ? (
-            <div className="space-y-4">
-              <BrincoNumpadField
-                value={entradaIdentValor}
-                origem={entradaIdentOrigem}
-                onChange={v => {
-                  setEntradaIdentValor(v);
-                  if (!v) setEntradaIdentOrigem(null);
-                  setIdentFeedback(null);
-                }}
-                onManualInput={() => setEntradaIdentOrigem("manual")}
-                onConfirm={confirmarEntradaIdent}
-                disabled={!fazendaNum}
-                confirmPending={rfidLookupBusy}
+            cadastroCurral.aberto && fazendaNum ? (
+              <CurralCadastroAnimalPanel
+                fazendaNum={fazendaNum}
+                dataEntrada={data}
+                loteIdSessao={loteId ? Number(loteId) : null}
+                rascunho={{ brinco: cadastroCurral.brinco, rfid: cadastroCurral.rfid }}
+                initKey={cadastroCurral.initKey}
+                onSalvarEManejar={handleSalvarEManejarCurral}
+                onCancelar={fecharCadastroCurral}
+                at05Session={at05CurralSession}
+                bindAt05ReadHandler={bindAt05ReadHandler}
               />
+            ) : (
+              <div className="space-y-4">
+                <BrincoNumpadField
+                  value={entradaIdentValor}
+                  origem={entradaIdentOrigem}
+                  onChange={v => {
+                    setEntradaIdentValor(v);
+                    if (!v) setEntradaIdentOrigem(null);
+                    setIdentFeedback(null);
+                  }}
+                  onManualInput={() => setEntradaIdentOrigem("manual")}
+                  onConfirm={confirmarEntradaIdent}
+                  disabled={!fazendaNum}
+                  confirmPending={rfidLookupBusy}
+                />
 
-              {identFeedback ? (
-                <p
-                  className={`text-[11px] font-medium ${identFeedback.kind === "ok" ? "text-teal-700" : "text-red-600"}`}
-                  aria-live="polite"
-                >
-                  {identFeedback.text}
-                </p>
-              ) : (
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  Leia a tag no bastão ou digite o brinco visual, depois confirme com{" "}
-                  <span className="font-semibold text-gray-700">OK</span>.
-                </p>
-              )}
-            </div>
+                {identFeedback ? (
+                  <p
+                    className={`text-[11px] font-medium ${identFeedback.kind === "ok" ? "text-teal-700" : "text-red-600"}`}
+                    aria-live="polite"
+                  >
+                    {identFeedback.text}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gray-500 leading-relaxed">
+                    Leia a tag no bastão ou digite o brinco visual, depois confirme com{" "}
+                    <span className="font-semibold text-gray-700">OK</span>.
+                  </p>
+                )}
+              </div>
+            )
           ) : (
             <div className="flex items-start justify-between gap-3 rounded-xl border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-4 py-3">
               <div className="flex items-start gap-2.5 min-w-0">
@@ -5854,10 +5979,9 @@ export function ManejoSessaoPage() {
               data={data}
               animalId={animalId}
               animal={animalSel}
+              pesoPesagemSessao={pesoPesagemDesmamaCurral}
               onRegistrado={registrarDesmamaCurral}
-              onPular={pularDesmamaCurral}
               onBloqueioNegocio={setBloqueioNegocioMsg}
-              hasNextManejoNaFila={manejoAtualIdx + 1 < manejosOperacionaisSessao.length}
             />
           ) : null}
 
@@ -5976,13 +6100,6 @@ export function ManejoSessaoPage() {
         </DialogContent>
       </Dialog>
 
-      {fazendaNum > 0 ? (
-        <ReproPipelineConfigDialog
-          fazendaId={fazendaNum}
-          open={reproPipelineConfigOpen}
-          onOpenChange={setReproPipelineConfigOpen}
-        />
-      ) : null}
     </AppLayout>
   );
 }

@@ -95,7 +95,8 @@ export function ReproPipelineConfigDialog({ fazendaId, open, onOpenChange }: Pro
             Parâmetros reprodutivos
           </h2>
           <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">
-            Prazos para alertas de DG no curral e na ficha da matriz.
+            Configuração desta fazenda — prazos para alertas de DG no curral e na ficha da
+            matriz.
           </p>
         </div>
 
@@ -153,7 +154,7 @@ export function ReproPipelineConfigDialog({ fazendaId, open, onOpenChange }: Pro
                     </div>
                   </div>
                   <p className="text-[10px] text-gray-400">
-                    Padrão do sistema:{" "}
+                    Sugestão inicial do sistema:{" "}
                     <span className="font-semibold text-gray-600">
                       {DEFAULT_REPRO_PIPELINE_CONFIG.diasParaDgAposInseminacao}
                     </span>{" "}

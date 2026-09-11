@@ -6,7 +6,7 @@ import {
 } from "./animalAutocomplete";
 import {
   buildReproAnimalElegibilidadeInput,
-  isMachoReprodutivamenteMaduro,
+  isMachoElegivelRepro,
 } from "./reproElegibilidade";
 
 export type ReproMachoSelectRow = AnimalAutocompleteRow;
@@ -30,7 +30,7 @@ export function isMachoReprodutorCandidato(
   if (opts.fazendaId != null && opts.fazendaId > 0 && animal.fazendaId != null) {
     if (animal.fazendaId !== opts.fazendaId) return false;
   }
-  return isMachoReprodutivamenteMaduro(buildReproAnimalElegibilidadeInput(animal));
+  return isMachoElegivelRepro(buildReproAnimalElegibilidadeInput(animal));
 }
 
 /** Lista de machos elegíveis para autocomplete (filtro client-side). */

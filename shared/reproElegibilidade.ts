@@ -1,4 +1,5 @@
 import { CATEGORIAS_POR_SEXO } from "./animal-types";
+import { isCastradoFlag } from "./castracaoManejo";
 import { calcularIdadeMeses } from "./lote-faixas-idade";
 import {
   getReproTipoOptionsManejoPontual,
@@ -8,6 +9,12 @@ import {
 /** Mensagem padrão para bloqueio de manejo reprodutivo incompatível. */
 export const MSG_REPRO_INELEGIVEL =
   "Este manejo reprodutivo não é compatível com a idade ou categoria do animal.";
+
+export const MSG_REPRO_MACHO_CASTRADO =
+  "Este animal está castrado e não pode receber manejo reprodutivo.";
+
+export const MSG_REPRO_MACHO_CASTRADO_REPRODUTOR =
+  "O reprodutor selecionado está castrado.";
 
 /**
  * Idade mínima (meses) para eventos reprodutivos de matriz em fêmeas.
@@ -77,6 +84,7 @@ export type ReproAnimalElegibilidadeInput = {
   sexo?: string | null;
   categoria?: string | null;
   idadeMeses?: number | null;
+  castrado?: boolean | number | null;
 };
 
 export function buildReproAnimalElegibilidadeInput(animal: {
@@ -84,6 +92,7 @@ export function buildReproAnimalElegibilidadeInput(animal: {
   categoria?: string | null;
   dataNascimento?: string | Date | null;
   idadeMeses?: number | null;
+  castrado?: boolean | number | null;
 }): ReproAnimalElegibilidadeInput {
   const idadeMeses =
     animal.idadeMeses != null && Number.isFinite(Number(animal.idadeMeses))
@@ -93,7 +102,24 @@ export function buildReproAnimalElegibilidadeInput(animal: {
     sexo: animal.sexo ?? null,
     categoria: animal.categoria ?? null,
     idadeMeses,
+    castrado: animal.castrado ?? null,
   };
+}
+
+/** Macho castrado não participa de manejo reprodutivo nem como touro. */
+export function isMachoBloqueadoReproPorCastracao(animal: ReproAnimalElegibilidadeInput): boolean {
+  return animal.sexo === "macho" && isCastradoFlag(animal.castrado);
+}
+
+export function mensagemReproInelegivelAnimal(animal: ReproAnimalElegibilidadeInput): string {
+  if (isMachoBloqueadoReproPorCastracao(animal)) return MSG_REPRO_MACHO_CASTRADO;
+  return MSG_REPRO_INELEGIVEL;
+}
+
+/** Maturidade reprodutiva + não castrado (touro / macho alvo). */
+export function isMachoElegivelRepro(animal: ReproAnimalElegibilidadeInput): boolean {
+  if (isMachoBloqueadoReproPorCastracao(animal)) return false;
+  return isMachoReprodutivamenteMaduro(animal);
 }
 
 /**
@@ -179,6 +205,7 @@ export function isReproTipoPermitidoParaAnimal(
 
   if (animal.sexo === "macho") {
     if (TIPOS_SOMENTE_FEMEA_ALVO.has(tipoKey)) return false;
+    if (isMachoBloqueadoReproPorCastracao(animal)) return false;
     if (TIPOS_EXIGEM_MACHO_MADURA_SET.has(tipoKey)) {
       return isMachoReprodutivamenteMaduro(animal);
     }

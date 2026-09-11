@@ -7,7 +7,7 @@ import {
   MSG_REPRO_MACHO_NAO_E_MACHO,
   validateReproMachoIdForFemeaEvent,
 } from "./validateReproMachoId";
-import { MSG_REPRO_INELEGIVEL } from "../shared/reproElegibilidade";
+import { MSG_REPRO_INELEGIVEL, MSG_REPRO_MACHO_CASTRADO_REPRODUTOR } from "../shared/reproElegibilidade";
 
 const mockAssertAnimalNaFazenda = vi.fn();
 
@@ -132,6 +132,27 @@ describe("validateReproMachoIdForFemeaEvent", () => {
       }),
     ).rejects.toMatchObject({
       message: MSG_REPRO_INELEGIVEL,
+    });
+  });
+
+  it("rejeita macho castrado como reprodutor", async () => {
+    mockAssertAnimalNaFazenda.mockResolvedValue({
+      id: 16,
+      sexo: "macho",
+      status: "ativo",
+      categoria: "Boi",
+      dataNascimento: "2020-01-01",
+      castrado: true,
+    });
+    await expect(
+      validateReproMachoIdForFemeaEvent(1, {
+        matrizId: 58,
+        fazendaId: 1,
+        machoId: 16,
+        tipo: "Cobertura",
+      }),
+    ).rejects.toMatchObject({
+      message: MSG_REPRO_MACHO_CASTRADO_REPRODUTOR,
     });
   });
 

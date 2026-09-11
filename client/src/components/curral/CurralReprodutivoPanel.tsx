@@ -51,8 +51,12 @@ import {
   getReproTipoOptionsElegiveis,
   hasCategoriaIdadeMismatchRepro,
   isFemeaReprodutivamenteMadura,
+  isMachoBloqueadoReproPorCastracao,
   isReproTipoPermitidoParaAnimal,
+  mensagemReproInelegivelAnimal,
   MSG_REPRO_INELEGIVEL,
+  MSG_REPRO_MACHO_CASTRADO,
+  MSG_REPRO_MACHO_CASTRADO_REPRODUTOR,
 } from "@shared/reproElegibilidade";
 import {
   coberturaAlvoPermiteModoIndividual,
@@ -589,6 +593,8 @@ export function CurralReprodutivoPanel({
         return;
       }
       if (
+        msg.includes(MSG_REPRO_MACHO_CASTRADO) ||
+        msg.includes(MSG_REPRO_MACHO_CASTRADO_REPRODUTOR) ||
         msg.includes(MSG_REPRO_INELEGIVEL) ||
         msg.includes(MSG_REPRO_RESULTADO_INCOMPATIVEL) ||
         msg.includes(MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO)
@@ -742,7 +748,7 @@ export function CurralReprodutivoPanel({
       return;
     }
     if (!isReproTipoPermitidoParaAnimal(reproElegibilidade, tipoReprodutivo)) {
-      onBloqueioNegocio(MSG_REPRO_INELEGIVEL);
+      onBloqueioNegocio(mensagemReproInelegivelAnimal(reproElegibilidade));
       return;
     }
     if (exigeResultado && !resultadoEfetivo.trim()) {
@@ -1252,7 +1258,9 @@ export function CurralReprodutivoPanel({
           ) : null}
           {reproTipoOptionsCurral.length === 0 ? (
             <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">
-              Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria.
+              {isMachoBloqueadoReproPorCastracao(reproElegibilidade)
+                ? MSG_REPRO_MACHO_CASTRADO
+                : "Este animal não possui manejos reprodutivos compatíveis com a idade ou categoria."}
             </p>
           ) : null}
           {categoriaIdadeMismatch && reproTipoOptionsCurral.length > 0 ? (

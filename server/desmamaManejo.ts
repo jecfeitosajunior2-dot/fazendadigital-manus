@@ -9,15 +9,20 @@ import {
   listLocalPesagens,
   listLocalReproducaoRegistros,
   updateLocalAnimal,
+  updateLocalPesagemObservacoes,
 } from "./localFallbackStore";
 import { assertAnimalNaFazenda, assertFazendaDoUsuario } from "./manejoContexto";
 import { assertManejoPermitidoNaData } from "./animalBaixa";
 import {
-  jaPossuiPesagemIgual,
   MSG_DESMAMA_GENERICO,
+  observacaoAoVincularPesagemDesmama,
   observacaoPesagemDesmama,
+  resolverDataNascimentoDesmama,
+  resolverPesagemDesmama,
+  toISODateOnly,
   validarAnimalParaDesmama,
   validarDesmamaInput,
+  type PesagemDesmamaRow,
 } from "../shared/desmamaManejo";
 
 export type RegistrarDesmamaInput = {
@@ -26,12 +31,15 @@ export type RegistrarDesmamaInput = {
   dataDesmama: string;
   pesoKg?: string;
   observacoes?: string;
+  /** Quando o animal não tem nascimento cadastrado, idade aproximada na data da desmama. */
+  idadeMeses?: number;
 };
 
 export type RegistrarDesmamaResult = {
   success: true;
   pesagemCriada: boolean;
   pesagemReutilizada: boolean;
+  pesagemVinculada: boolean;
   localFallback?: true;
 };
 
@@ -53,10 +61,15 @@ async function listEventosDesmamaAnimal(userId: number, animalId: number) {
   }
 }
 
-async function listPesagensAnimal(userId: number, animalId: number) {
+async function listPesagensAnimal(userId: number, animalId: number): Promise<PesagemDesmamaRow[]> {
   try {
     const rows = await db
-      .select({ data: pesagens.data, peso: pesagens.peso })
+      .select({
+        id: pesagens.id,
+        data: pesagens.data,
+        peso: pesagens.peso,
+        observacoes: pesagens.observacoes,
+      })
       .from(pesagens)
       .where(and(eq(pesagens.userId, userId), eq(pesagens.animalId, animalId)));
     return rows;
@@ -83,29 +96,46 @@ export async function registrarDesmama(
   await assertManejoPermitidoNaData(userId, input.animalId, campos.dataISO);
   const eventos = await listEventosDesmamaAnimal(userId, input.animalId);
 
+  const dataISO = campos.dataISO;
+  const dataNascimentoResolvida = resolverDataNascimentoDesmama({
+    dataNascimento: animal.dataNascimento,
+    idadeMesesInformada: input.idadeMeses,
+    dataEvento: dataISO,
+  });
+  const dataNascimentoPersistir =
+    !toISODateOnly(animal.dataNascimento) && dataNascimentoResolvida
+      ? dataNascimentoResolvida
+      : undefined;
+
   const elegivel = validarAnimalParaDesmama(
     {
-      // Status/data já foram validados pelo evento de baixa; permite retroativo válido.
       status: "ativo",
       dataDesmama: animal.dataDesmama,
-      dataNascimento: animal.dataNascimento,
+      dataNascimento: dataNascimentoResolvida ?? animal.dataNascimento,
       categoria: animal.categoria,
       registrosEvento: eventos,
     },
-    campos.dataISO,
+    dataISO,
   );
   if (!elegivel.ok) toTrpc(elegivel.message);
-
-  const dataISO = campos.dataISO;
-  const peso = campos.peso;
   const observacoes = (input.observacoes ?? "").trim() || undefined;
-  let pesagemReutilizada = false;
-  let criarPesagem = false;
+  const historicoPeso = await listPesagensAnimal(userId, input.animalId);
+  const resolucao = resolverPesagemDesmama({
+    dataISO,
+    pesoInformado: campos.peso,
+    historico: historicoPeso,
+  });
+  const peso = resolucao.peso;
+  const criarPesagem = resolucao.criarPesagem;
+  const pesagemReutilizada = resolucao.pesagemReutilizada;
+  const pesagemIdVincular = resolucao.pesagemIdVincular;
 
-  if (peso) {
-    const historicoPeso = await listPesagensAnimal(userId, input.animalId);
-    pesagemReutilizada = jaPossuiPesagemIgual(historicoPeso, dataISO, peso);
-    criarPesagem = !pesagemReutilizada;
+  let pesagemVinculada = false;
+  let obsVinculo: string | null = null;
+  if (pesagemIdVincular != null) {
+    const row = historicoPeso.find(p => p.id === pesagemIdVincular);
+    obsVinculo = observacaoAoVincularPesagemDesmama(row?.observacoes, observacoes);
+    pesagemVinculada = obsVinculo !== (row?.observacoes ?? "").trim();
   }
 
   try {
@@ -114,6 +144,7 @@ export async function registrarDesmama(
         .update(animais)
         .set({
           dataDesmama: dataISO,
+          ...(dataNascimentoPersistir ? { dataNascimento: dataNascimentoPersistir } : {}),
           ...(criarPesagem && peso ? { pesoAtual: peso } : {}),
         })
         .where(and(eq(animais.id, input.animalId), eq(animais.userId, userId)));
@@ -126,9 +157,25 @@ export async function registrarDesmama(
           data: new Date(dataISO),
           observacoes: observacaoPesagemDesmama(observacoes),
         });
+      } else if (pesagemIdVincular != null && obsVinculo != null) {
+        await tx
+          .update(pesagens)
+          .set({ observacoes: obsVinculo })
+          .where(
+            and(
+              eq(pesagens.id, pesagemIdVincular),
+              eq(pesagens.userId, userId),
+              eq(pesagens.animalId, input.animalId),
+            ),
+          );
       }
     });
-    return { success: true, pesagemCriada: criarPesagem, pesagemReutilizada };
+    return {
+      success: true,
+      pesagemCriada: criarPesagem,
+      pesagemReutilizada,
+      pesagemVinculada: pesagemVinculada || (pesagemIdVincular != null && !criarPesagem),
+    };
   } catch (error) {
     if (error instanceof TRPCError) throw error;
     if (!isDatabaseUnavailable(error)) {
@@ -138,11 +185,16 @@ export async function registrarDesmama(
 
   const localAnimal = await getLocalAnimal(userId, input.animalId);
   if (localAnimal) {
+    const localNascimento = resolverDataNascimentoDesmama({
+      dataNascimento: localAnimal.dataNascimento,
+      idadeMesesInformada: input.idadeMeses,
+      dataEvento: dataISO,
+    });
     const localElegivel = validarAnimalParaDesmama(
       {
         status: "ativo",
         dataDesmama: localAnimal.dataDesmama,
-        dataNascimento: localAnimal.dataNascimento,
+        dataNascimento: localNascimento ?? localAnimal.dataNascimento,
         categoria: localAnimal.categoria,
       },
       dataISO,
@@ -157,12 +209,18 @@ export async function registrarDesmama(
       data: dataISO,
       observacoes: observacaoPesagemDesmama(observacoes),
     });
+  } else if (pesagemIdVincular != null && obsVinculo != null) {
+    await updateLocalPesagemObservacoes(userId, pesagemIdVincular, obsVinculo);
   }
-  await updateLocalAnimal(userId, input.animalId, { dataDesmama: dataISO });
+  await updateLocalAnimal(userId, input.animalId, {
+    dataDesmama: dataISO,
+    ...(dataNascimentoPersistir ? { dataNascimento: dataNascimentoPersistir } : {}),
+  });
   return {
     success: true,
     pesagemCriada: criarPesagem,
     pesagemReutilizada,
+    pesagemVinculada: pesagemIdVincular != null && !criarPesagem,
     localFallback: true,
   };
 }

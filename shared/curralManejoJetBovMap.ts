@@ -112,10 +112,6 @@ export const CURRAL_JETBOV_LACUNAS: readonly { label: string; descricao: string 
     descricao: "Registro de suplementação/fornecimento por animal ou lote.",
   },
   {
-    label: "Cadastro de animal no curral",
-    descricao: "Inclusão de novos bovinos sem voltar ao escritório.",
-  },
-  {
     label: "Offline + sync",
     descricao: "Operação sem internet e envio posterior à plataforma.",
   },

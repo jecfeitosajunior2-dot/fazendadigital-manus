@@ -2073,6 +2073,19 @@ export async function createLocalPesagem(
   return { id };
 }
 
+export async function updateLocalPesagemObservacoes(
+  userId: number,
+  id: number,
+  observacoes: string,
+): Promise<boolean> {
+  const rows = await readPesagens();
+  const idx = rows.findIndex(row => row.userId === userId && row.id === id);
+  if (idx < 0) return false;
+  rows[idx] = { ...rows[idx]!, observacoes };
+  await writePesagens(rows);
+  return true;
+}
+
 export async function deleteLocalPesagem(userId: number, id: number): Promise<void> {
   const rows = await readPesagens();
   const remaining = rows.filter(row => !(row.userId === userId && row.id === id));

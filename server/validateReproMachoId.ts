@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import {
   buildReproAnimalElegibilidadeInput,
+  isMachoBloqueadoReproPorCastracao,
   isMachoReprodutivamenteMaduro,
   MSG_REPRO_INELEGIVEL,
+  MSG_REPRO_MACHO_CASTRADO_REPRODUTOR,
 } from "../shared/reproElegibilidade";
 import { assertAnimalNaFazenda } from "./manejoContexto";
 import { assertManejoPermitidoNaData } from "./animalBaixa";
@@ -53,6 +55,9 @@ export async function validateReproMachoIdForFemeaEvent(
   }
 
   const elegInput = buildReproAnimalElegibilidadeInput(macho);
+  if (isMachoBloqueadoReproPorCastracao(elegInput)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_MACHO_CASTRADO_REPRODUTOR });
+  }
   if (!isMachoReprodutivamenteMaduro(elegInput)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_INELEGIVEL });
   }

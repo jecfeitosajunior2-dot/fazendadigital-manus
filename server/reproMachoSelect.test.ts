@@ -57,6 +57,17 @@ const machoOutraFazenda = {
   fazendaId: 2,
 };
 
+const machoCastrado = {
+  id: 11,
+  brinco: "77",
+  sexo: "macho" as const,
+  status: "ativo" as const,
+  categoria: "Boi",
+  idadeMeses: 36,
+  fazendaId: 1,
+  castrado: true,
+};
+
 describe("matchesReproMachoBusca", () => {
   it("A) busca encontra macho elegível por brinco", () => {
     expect(matchesReproMachoBusca(machoElegivelFazenda1, "16")).toBe(true);
@@ -84,6 +95,16 @@ describe("isMachoReprodutorCandidato", () => {
 
   it("E) macho de outra fazenda não aparece quando fazendaId explícito no animal", () => {
     expect(isMachoReprodutorCandidato(machoOutraFazenda, { fazendaId: 1 })).toBe(false);
+  });
+
+  it("F) macho castrado não aparece como reprodutor", () => {
+    expect(isMachoReprodutorCandidato(machoCastrado, { fazendaId: 1 })).toBe(false);
+    const found = filterMachosReprodutoresCandidatos(
+      [machoElegivelFazenda1, machoCastrado],
+      { fazendaId: 1 },
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.id).toBe(machoElegivelFazenda1.id);
   });
 });
 

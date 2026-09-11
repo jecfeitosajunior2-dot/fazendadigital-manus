@@ -3,8 +3,12 @@ import {
   getReproTipoOptionsElegiveis,
   hasCategoriaIdadeMismatchRepro,
   isFemeaReprodutivamenteMadura,
+  isMachoBloqueadoReproPorCastracao,
+  isMachoElegivelRepro,
   isMachoReprodutivamenteMaduro,
   isReproTipoPermitidoParaAnimal,
+  mensagemReproInelegivelAnimal,
+  MSG_REPRO_MACHO_CASTRADO,
 } from "../shared/reproElegibilidade";
 import { REPRO_TIPOS_MACHO } from "../shared/reproRegistroMeta";
 
@@ -66,5 +70,21 @@ describe("reproElegibilidade — idade prioritária sobre categoria manual", () 
   it("fêmea Novilha jovem permanece bloqueada", () => {
     const animal = { sexo: "femea" as const, categoria: "Novilha", idadeMeses: 8 };
     expect(isFemeaReprodutivamenteMadura(animal)).toBe(false);
+  });
+
+  it("macho castrado não recebe manejo reprodutivo", () => {
+    const animal = { sexo: "macho" as const, categoria: "Boi", idadeMeses: 36, castrado: true };
+    expect(isMachoBloqueadoReproPorCastracao(animal)).toBe(true);
+    expect(isMachoElegivelRepro(animal)).toBe(false);
+    expect(getReproTipoOptionsElegiveis(animal)).toEqual([]);
+    expect(isReproTipoPermitidoParaAnimal(animal, "Exame andrológico")).toBe(false);
+    expect(mensagemReproInelegivelAnimal(animal)).toBe(MSG_REPRO_MACHO_CASTRADO);
+  });
+
+  it("macho maduro não castrado continua elegível", () => {
+    const animal = { sexo: "macho" as const, categoria: "Boi", idadeMeses: 36, castrado: false };
+    expect(isMachoBloqueadoReproPorCastracao(animal)).toBe(false);
+    expect(isMachoElegivelRepro(animal)).toBe(true);
+    expect(getReproTipoOptionsElegiveis(animal)).toEqual([...REPRO_TIPOS_MACHO]);
   });
 });

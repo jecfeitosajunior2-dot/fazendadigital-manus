@@ -9,10 +9,13 @@ import {
   MSG_DESMAMA_DUPLICADA,
   MSG_DESMAMA_INATIVO,
   MSG_DESMAMA_PESO,
+  observacaoAoVincularPesagemDesmama,
   observacaoPesagemDesmama,
   parsePesoKgDesmama,
+  pesagemReutilizavelDesmama,
   podeSalvarDesmama,
   pesosNumericamenteIguais,
+  resolverPesagemDesmama,
   temDataDesmama,
   validarAnimalParaDesmama,
   validarDesmamaInput,
@@ -136,5 +139,50 @@ describe("desmamaManejo", () => {
   it("marca origem Desmama na pesagem quando não há observação", () => {
     expect(observacaoPesagemDesmama("")).toBe("Desmama");
     expect(observacaoPesagemDesmama("Desmama convencional.")).toBe("Desmama convencional.");
+  });
+
+  it("reutiliza pesagem genérica na mesma data do fluxo curral", () => {
+    const reuse = pesagemReutilizavelDesmama(
+      [{ id: 5, data: "2026-08-29", peso: "200.00", observacoes: null }],
+      "2026-08-29",
+    );
+    expect(reuse).toMatchObject({ peso: "200.00", id: 5, jaMarcadaDesmama: false });
+  });
+
+  it("resolverPesagemDesmama vincula pesagem existente sem criar nova", () => {
+    const historico = [{ id: 5, data: "2026-08-29", peso: "200.00", observacoes: null }];
+    expect(
+      resolverPesagemDesmama({
+        dataISO: "2026-08-29",
+        historico,
+      }),
+    ).toMatchObject({
+      peso: "200.00",
+      criarPesagem: false,
+      pesagemIdVincular: 5,
+      pesagemReutilizada: true,
+    });
+    expect(
+      resolverPesagemDesmama({
+        dataISO: "2026-08-29",
+        pesoInformado: "200.00",
+        historico,
+      }),
+    ).toMatchObject({
+      criarPesagem: false,
+      pesagemIdVincular: 5,
+    });
+    expect(
+      resolverPesagemDesmama({
+        dataISO: "2026-08-29",
+        pesoInformado: "210.00",
+        historico,
+      }),
+    ).toMatchObject({ criarPesagem: true, pesagemReutilizada: false });
+  });
+
+  it("observacaoAoVincularPesagemDesmama marca pesagem genérica", () => {
+    expect(observacaoAoVincularPesagemDesmama(null, "")).toBe("Desmama");
+    expect(observacaoAoVincularPesagemDesmama("Curral", "Precoce")).toBe("Precoce");
   });
 });

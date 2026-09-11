@@ -1,6 +1,7 @@
-import { FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
-import { SelectItem } from "@/components/ui/select";
+import { FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
+import { curralResultadoToggleGridClass } from "@/lib/curralReprodutivoUi";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
 import {
   labelMetodoCastracao,
@@ -36,8 +37,6 @@ type Props = {
   onRegistrado: (payload: CurralCastracaoRegistrado) => void;
   onBloqueioNegocio: (msg: string) => void;
 };
-
-const metodoOptions = METODOS_CASTRACAO.map(m => ({ value: m.value, label: m.label }));
 
 function isMetodo(value: string): value is MetodoCastracao {
   return METODOS_CASTRACAO.some(m => m.value === value);
@@ -144,23 +143,34 @@ export function CurralCastracaoPanel({
         <>
           <div>
             <FormLabel required>Método</FormLabel>
-            <FormSelect
-              variant="light"
-              value={metodo}
-              onChange={next => {
-                setMetodo(next);
-                if (next !== "outro") setDescricaoMetodo("");
-              }}
-              placeholder="Selecione o método"
-              required
-              disabled={isSaving}
+            <div
+              className={cn(
+                "grid gap-2 mt-1.5",
+                curralResultadoToggleGridClass(METODOS_CASTRACAO.length),
+              )}
             >
-              {metodoOptions.map(o => (
-                <SelectItem key={o.value} value={o.value} className="text-[12px]">
-                  {o.label}
-                </SelectItem>
+              {METODOS_CASTRACAO.map(opcao => (
+                <button
+                  key={opcao.value}
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    const next = metodo === opcao.value ? "" : opcao.value;
+                    setMetodo(next);
+                    if (next !== "outro") setDescricaoMetodo("");
+                  }}
+                  className={cn(
+                    "rounded-xl border px-2 py-4 min-h-[52px] text-[13px] font-semibold leading-snug transition-colors",
+                    metodo === opcao.value
+                      ? "border-[#4ECDC4] bg-[#4ECDC4]/10 text-gray-900"
+                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300",
+                    isSaving && "opacity-60 cursor-not-allowed",
+                  )}
+                >
+                  {opcao.label}
+                </button>
               ))}
-            </FormSelect>
+            </div>
           </div>
 
           {metodoOutro ? (

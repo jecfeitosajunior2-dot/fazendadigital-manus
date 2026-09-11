@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import {
   buildReproAnimalElegibilidadeInput,
+  isMachoBloqueadoReproPorCastracao,
   isMachoReprodutivamenteMaduro,
   MSG_REPRO_INELEGIVEL,
+  MSG_REPRO_MACHO_CASTRADO_REPRODUTOR,
 } from "../shared/reproElegibilidade";
 import { resolveSemenMachoDisplayLabel } from "../shared/semenEstoque";
 import { assertAnimalNaFazenda } from "./manejoContexto";
@@ -27,6 +29,9 @@ export async function validateSemenMachoInterno(
   }
 
   const elegInput = buildReproAnimalElegibilidadeInput(macho);
+  if (isMachoBloqueadoReproPorCastracao(elegInput)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_MACHO_CASTRADO_REPRODUTOR });
+  }
   if (!isMachoReprodutivamenteMaduro(elegInput)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_INELEGIVEL });
   }

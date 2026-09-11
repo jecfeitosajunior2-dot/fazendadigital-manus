@@ -174,7 +174,7 @@ import { registrarInseminacaoComSemenLocal } from "./semenEstoqueLocal";
 import {
   buildReproAnimalElegibilidadeInput,
   isReproTipoPermitidoParaAnimal,
-  MSG_REPRO_INELEGIVEL,
+  mensagemReproInelegivelAnimal,
 } from "../shared/reproElegibilidade";
 import {
   isMachoEventoComAlvoMatrizes,
@@ -2003,6 +2003,7 @@ const animaisRouter = router({
       dataDesmama: z.string().min(1).max(10),
       pesoKg: z.string().max(20).optional(),
       observacoes: z.string().max(2000).optional(),
+      idadeMeses: z.number().int().min(0).max(600).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       return registrarDesmama(ctx.user.id, input);
@@ -3975,7 +3976,10 @@ const reproducaoRouter = router({
 
       const elegInput = buildReproAnimalElegibilidadeInput(animalAlvo);
       if (!isReproTipoPermitidoParaAnimal(elegInput, input.tipo)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_REPRO_INELEGIVEL });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: mensagemReproInelegivelAnimal(elegInput),
+        });
       }
 
       const validacaoResultado = validateReproResultadoForSave({

@@ -1,5 +1,6 @@
 import AppLayout from "@/components/AppLayout";
 import { BloqueioNegocioDialog } from "@/components/BloqueioNegocioDialog";
+import { useConfirm } from "@/components/ConfirmDialog";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { ManejoAnimalField } from "@/components/ManejoAnimalField";
 import {
@@ -20,14 +21,17 @@ import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
 import { persistRebanhoFazendaId } from "@shared/animal-filter-types";
 import { formatLoteAtualDisplay } from "@shared/transferirAnimaisEntreLotes";
 import {
+  avisosDesmamaCompletos,
   filtrarAnimaisElegiveisDesmama,
   isAnimalElegivelParaDesmama,
+  mensagemMotivoDesmama,
   MSG_DESMAMA_GENERICO,
-  MSG_DESMAMA_IDADE,
   MSG_DESMAMA_PESO,
   MSG_DESMAMA_SUCESSO,
   parsePesoKgDesmama,
   podeSalvarDesmama,
+  precisaConfirmarDesmama,
+  textosAvisoDesmama,
 } from "@shared/desmamaManejo";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -66,6 +70,7 @@ type AnimalDesmamaRow = {
 
 export function ManejoDesmamaForm() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const utils = trpc.useUtils();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
@@ -114,19 +119,49 @@ export function ManejoDesmamaForm() {
     [animais, dataDesmama],
   );
 
-  useEffect(() => {
-    if (!animalSel) return;
-    const r = isAnimalElegivelParaDesmama({
+  const elegibilidadeAnimal = useMemo(() => {
+    if (!animalSel) return null;
+    return isAnimalElegivelParaDesmama({
       status: animalSel.status,
       dataDesmama: animalSel.dataDesmama,
       dataNascimento: animalSel.dataNascimento,
       categoria: animalSel.categoria,
       dataEvento: dataDesmama,
+      fazendaAnimalId: animalSel.fazendaId,
+      fazendaSelecionadaId: fazendaNum || null,
     });
-    if (r.eligible) return;
+  }, [animalSel, dataDesmama, fazendaNum]);
+
+  useEffect(() => {
+    if (!animalSel || !elegibilidadeAnimal || elegibilidadeAnimal.eligible) return;
     setAnimalSel(null);
-    toast(MSG_DESMAMA_IDADE);
-  }, [animalSel, dataDesmama]);
+    toast.error(mensagemMotivoDesmama(elegibilidadeAnimal.reason));
+  }, [animalSel, elegibilidadeAnimal]);
+
+  const avisosDesmama = useMemo(() => {
+    if (!elegibilidadeAnimal?.eligible) return [];
+    return avisosDesmamaCompletos(elegibilidadeAnimal, pesoKg);
+  }, [elegibilidadeAnimal, pesoKg]);
+
+  const animalLabelDesmama = useMemo(() => {
+    if (!animalSel) return undefined;
+    const brinco = animalSel.brinco?.trim();
+    const nome = animalSel.nome?.trim();
+    if (brinco && nome) return `${brinco} · ${nome}`;
+    return brinco || nome || `#${animalSel.id}`;
+  }, [animalSel]);
+
+  const textosAvisoDesmamaCtx = useMemo(() => {
+    if (avisosDesmama.length === 0) return null;
+    return textosAvisoDesmama(
+      avisosDesmama,
+      {
+        idadeMeses: elegibilidadeAnimal?.idadeMeses,
+        pesoKg,
+      },
+      { animalLabel: animalLabelDesmama },
+    );
+  }, [animalLabelDesmama, avisosDesmama, elegibilidadeAnimal?.idadeMeses, pesoKg]);
 
   const animalId = resolveAnimalIdFromSelecao(animalSel);
 
@@ -197,12 +232,28 @@ export function ManejoDesmamaForm() {
     setDataDesmama(v);
   };
 
-  const handleSalvar = () => {
-    if (!podeSalvar || !animalId) return;
+  const handleSalvar = async () => {
+    if (!podeSalvar || !animalId || !elegibilidadeAnimal?.eligible) return;
     const pesoOk = parsePesoKgDesmama(pesoKg);
     if (!pesoOk.ok) {
       toast.error(MSG_DESMAMA_PESO);
       return;
+    }
+    if (precisaConfirmarDesmama(elegibilidadeAnimal, pesoKg)) {
+      const avisos = avisosDesmamaCompletos(elegibilidadeAnimal, pesoKg);
+      const textos = textosAvisoDesmama(
+        avisos,
+        { idadeMeses: elegibilidadeAnimal.idadeMeses, pesoKg },
+        { animalLabel: animalLabelDesmama },
+      );
+      const ok = await confirm({
+        title: textos.confirmTitle,
+        description: textos.confirmDescription,
+        confirmText: textos.confirmText,
+        cancelText: "Revisar",
+        variant: "warning",
+      });
+      if (!ok) return;
     }
     mutation.mutate({
       fazendaId: fazendaNum,
@@ -291,6 +342,11 @@ export function ManejoDesmamaForm() {
         </ManejoSectionCard>
 
         <ManejoSectionCard title="Desmama">
+          {textosAvisoDesmamaCtx ? (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 leading-relaxed">
+              {textosAvisoDesmamaCtx.banner}
+            </p>
+          ) : null}
           <FormLabel>Peso à desmama (kg)</FormLabel>
           <FormInput
             value={pesoKg}
