@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MSG_RFID_BASTAO_INDISPONIVEL,
   decidirAplicacaoRfidLido,
+  mensagemErroConexaoRfid,
   deveMostrarLeituraRfidCadastro,
   textoStatusBastaoRfid,
   textoStatusLeitorRfid,
@@ -44,5 +45,15 @@ describe("leitura RFID no cadastro inicial", () => {
     expect(textoStatusBastaoRfid("connected")).toBe("Bastão conectado");
     expect(textoStatusBastaoRfid("disconnected")).toBe("Bastão desconectado");
     expect(textoStatusBastaoRfid("unsupported")).toBe(MSG_RFID_BASTAO_INDISPONIVEL);
+  });
+
+  it("mensagemErroConexaoRfid é amigável e não vaza NetworkError", () => {
+    expect(mensagemErroConexaoRfid(null)).toBe("Não foi possível abrir a porta do AT05.");
+    expect(mensagemErroConexaoRfid("NetworkError: Failed to open serial port.")).toBe(
+      "Não foi possível abrir a porta do AT05.",
+    );
+    expect(mensagemErroConexaoRfid("InvalidStateError: readable locked")).toContain(
+      "outra aba ou aplicativo",
+    );
   });
 });

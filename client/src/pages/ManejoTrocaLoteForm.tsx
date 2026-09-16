@@ -376,7 +376,7 @@ export function ManejoTrocaLoteForm() {
               onChange={setLoteDestinoId}
               placeholder={
                 fazendaNum
-                  ? "Selecione o lote de destino"
+                  ? "Selecione o Lote de destino"
                   : "Selecione uma Fazenda primeiro"
               }
               disabled={destinoDisabled || destinoOptions.length === 0}

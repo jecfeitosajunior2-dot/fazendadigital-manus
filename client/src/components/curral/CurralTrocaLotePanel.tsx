@@ -216,7 +216,7 @@ export function CurralTrocaLotePanel({
             variant="light"
             value={loteDestinoId}
             onChange={setLoteDestinoId}
-            placeholder="Selecione o lote de destino"
+            placeholder="Selecione o Lote de destino"
             required
             disabled={mutation.isPending}
           >

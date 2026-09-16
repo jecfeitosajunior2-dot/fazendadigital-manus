@@ -1302,7 +1302,7 @@ export function CurralReprodutivoPanel({
                     Animal do rebanho
                   </SelectItem>
                   <SelectItem value="externo" className="text-[12px]">
-                    Sêmen / reprodutor externo
+                    Sêmen / Reprodutor externo
                   </SelectItem>
                 </FormSelect>
               </div>
@@ -1322,7 +1322,7 @@ export function CurralReprodutivoPanel({
                 loading={carregandoAnimais}
                 disabled={!fazendaNum}
                 inputClassName={fieldCls}
-                placeholder="Busque pelo brinco ou nome do touro"
+                placeholder="Busque pelo Brinco ou nome do Touro"
                 emptyMessage="Nenhum reprodutor elegível encontrado."
                 filterCandidate={filterMachoReprodutor}
                 getOptionSubtitle={subtituloMachoReprodutor}

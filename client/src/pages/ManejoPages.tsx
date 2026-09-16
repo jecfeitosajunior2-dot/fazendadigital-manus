@@ -20,7 +20,6 @@ import {
   ArrowLeftRight,
   Stethoscope,
   MilkOff,
-  Bluetooth,
   AlertCircle,
   LogOut,
   MoreVertical,
@@ -110,7 +109,6 @@ import { SemenReprodutorExternoField } from "@/components/SemenReprodutorExterno
 import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
 import {
   FormDatePicker,
-  FormDownSelect,
   FormInput,
   FormLabel,
   FormNativeSelect,
@@ -134,7 +132,18 @@ import { CurralReprodutivoPanel } from "@/components/curral/CurralReprodutivoPan
 import { ReproPipelineConfigDialog } from "@/components/curral/ReproPipelineConfigDialog";
 import { formatReproPipelineConfigResumo } from "@shared/reproPipelineConfig";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
+import { useScaleReader } from "@/hooks/useScaleReader";
+import { useTruTestBleReader } from "@/hooks/useTruTestBleReader";
 import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
+import { textoPesoRecebidoBalanca, type ScaleTransport } from "@/lib/hardware/scaleTransport";
+import {
+  decidirLeituraRfidSessaoCurral,
+  estadoAtendimentoSessaoCurral,
+  estadoFormularioPesoAposAvancar,
+  identidadeAtendimentoSessao,
+  rotuloAguardandoAnimal,
+  textoAvisoAnimalEmAtendimento,
+} from "@/lib/curralSessaoLeituraRfid";
 import {
   getCurralManejoJetBovEntry,
   isCurralManejoDisponivel,
@@ -626,21 +635,6 @@ function isBloqueioNegocioIdentificacao(message: string): boolean {
     m.includes("data da identificação não pode ser futura")
   );
 }
-
-/**
- * Status visual do bastão AnimalTAG AT05 (UI do Brinco Eletrônico).
- * Separado do último evento RFID — conexão ≠ RFID processado.
- */
-type At05ReaderUiStatus =
-  | "idle"
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "listening"
-  | "error";
-
-/** Destino lógico da próxima IDENTIFICAÇÃO RFID (não cria reader novo). */
-type At05ReadRoute = "identify-animal" | "capture-new-rfid";
 
 type AnimalBuscaRow = {
   id: number;
@@ -2870,7 +2864,7 @@ function ManejoReprodutivoForm() {
                               Animal do rebanho
                             </SelectItem>
                             <SelectItem value="externo" className="text-[12px]">
-                              Sêmen / reprodutor externo
+                              Sêmen / Reprodutor externo
                             </SelectItem>
                           </FormSelect>
                         </div>
@@ -2888,7 +2882,7 @@ function ManejoReprodutivoForm() {
                           loading={carregandoAnimaisFazenda}
                           disabled={!fazendaNum}
                           inputClassName={fieldCls}
-                          placeholder="Busque pelo brinco ou nome do touro"
+                          placeholder="Busque pelo Brinco ou nome do Touro"
                           emptyMessage="Nenhum reprodutor elegível encontrado."
                           errorMessage={erroMacho || undefined}
                           hintMessage={
@@ -2967,7 +2961,7 @@ function ManejoReprodutivoForm() {
                           ) : null}
                           <div>
                             <label className={labelCls}>
-                              Partida / lote
+                              Partida / Lote
                               <span className="text-gray-400 font-normal"> (opcional)</span>
                             </label>
                             <input
@@ -3674,10 +3668,9 @@ function ManejoReprodutivoForm() {
   );
 }
 
-/** Manejo pontual — Brinco Eletrônico (fluxo funcional). */
+/** Manejo pontual — Identificação sem bastão (RFID digitado). */
 function ManejoBrincoEletronicoForm() {
   const [, setLocation] = useLocation();
-  const trpcUtils = trpc.useUtils();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
 
   const [fazendaId, setFazendaId] = useState("");
@@ -3693,20 +3686,6 @@ function ManejoBrincoEletronicoForm() {
   const [erroFazenda, setErroFazenda] = useState("");
   /** Modal central para bloqueios de regra de negócio (não limpa o formulário). */
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
-  const [at05Feedback, setAt05Feedback] = useState<string | null>(null);
-  const [at05LookupBusy, setAt05LookupBusy] = useState(false);
-  const [at05ReadSeq, setAt05ReadSeq] = useState(0);
-  /** Roteamento explícito: identificar animal × capturar Novo RFID. */
-  const [at05ReadRoute, setAt05ReadRoute] = useState<At05ReadRoute>("identify-animal");
-  const [novoRfidError, setNovoRfidError] = useState<string | null>(null);
-  const at05ReadRouteRef = useRef<At05ReadRoute>("identify-animal");
-  const fazendaNumRef = useRef(0);
-  const nomeFazendaRef = useRef<string | undefined>(undefined);
-  const animalIdRef = useRef<number | null>(null);
-  const animalRfidRef = useRef<string>("");
-  const operacaoRef = useRef<OperacaoBrinco | "">("");
-  const animalLookupSeqRef = useRef(0);
-  const captureSeqRef = useRef(0);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
 
@@ -3745,14 +3724,9 @@ function ManejoBrincoEletronicoForm() {
     setNovoBrinco("");
     setMotivo("");
     setMotivoOutro("");
-    setNovoRfidError(null);
-    at05ReadRouteRef.current = "identify-animal";
-    setAt05ReadRoute("identify-animal");
   }, []);
 
   const limparAnimal = useCallback(() => {
-    animalIdRef.current = null;
-    animalRfidRef.current = "";
     setAnimalId(null);
     setAnimalSel(null);
     limparOperacao();
@@ -3764,26 +3738,16 @@ function ManejoBrincoEletronicoForm() {
         limparAnimal();
         return;
       }
-      const id = resolveAnimalIdFromSelecao(a) ?? a.id;
-      animalIdRef.current = id;
-      animalRfidRef.current = a.brincoEletronico?.trim() || "";
-      setAnimalId(id);
+      setAnimalId(resolveAnimalIdFromSelecao(a) ?? a.id);
       setAnimalSel(a);
       limparOperacao();
     },
     [limparAnimal, limparOperacao],
   );
 
-  const selecionarAnimal = handleAnimalSelect;
-
   const limparDependentesFazenda = () => {
     limparAnimal();
   };
-
-  const setReadRoute = useCallback((route: At05ReadRoute) => {
-    at05ReadRouteRef.current = route;
-    setAt05ReadRoute(route);
-  }, []);
 
   useEffect(() => {
     if (loadingFazendas || fazendaInitDone) return;
@@ -3825,12 +3789,6 @@ function ManejoBrincoEletronicoForm() {
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
 
-  fazendaNumRef.current = fazendaNum;
-  nomeFazendaRef.current = nomeFazenda;
-  animalIdRef.current = animalId;
-  animalRfidRef.current = animalSel?.brincoEletronico?.trim() || "";
-  operacaoRef.current = operacao;
-
   const onChangeFazenda = (value: string) => {
     setFazendaId(value);
     setErroFazenda("");
@@ -3847,277 +3805,8 @@ function ManejoBrincoEletronicoForm() {
   const exigeMotivo =
     operacao === "brinco" || operacao === "ambos" || operacao === "rfid";
 
-  /** Captura Novo RFID (Trocar RFID / Trocar brinco e RFID). Não troca selectedAnimal. */
-  const handleNewRfidCapture = useCallback(
-    (rfid: string) => {
-      const seq = ++captureSeqRef.current;
-      // Sai do modo captura imediatamente — leituras seguintes não sobrescrevem.
-      setReadRoute("identify-animal");
-      setAt05Feedback(`RFID recebido para Novo RFID: ${rfid}`);
-
-      const currentAnimalId = animalIdRef.current;
-      const currentRfid = animalRfidRef.current;
-
-      if (!currentAnimalId) {
-        setNovoRfid("");
-        setNovoRfidError("Selecione um animal antes de capturar o novo RFID.");
-        toast.error("Selecione um animal antes de capturar o novo RFID.");
-        return;
-      }
-
-      if (currentRfid && rfid === currentRfid) {
-        setNovoRfid("");
-        setNovoRfidError("O novo RFID é igual ao RFID atual do animal.");
-        toast.error("O novo RFID é igual ao RFID atual. Não é necessário trocar.");
-        return;
-      }
-
-      setAt05LookupBusy(true);
-      void (async () => {
-        try {
-          const linked = await trpcUtils.animais.getByBrincoEletronicoExact.fetch({
-            brincoEletronico: rfid,
-          });
-          if (seq !== captureSeqRef.current) return;
-
-          if (linked && Number(linked.id) !== currentAnimalId) {
-            const status = (linked.status ?? "").toString().trim().toLowerCase();
-            const msg =
-              status === "ativo"
-                ? "Este RFID já está vinculado a outro animal ativo nesta fazenda."
-                : "Este RFID já foi vinculado a outro animal e não pode ser reutilizado.";
-            // Mantém o RFID no campo para o usuário corrigir; bloqueio só no modal (sem erro inline).
-            setNovoRfid(rfid);
-            setNovoRfidError(null);
-            avisarBloqueioNegocio(msg);
-            setAt05Feedback(
-              `RFID ${rfid} já vinculado a outro animal — seleção atual preservada.`,
-            );
-            return;
-          }
-
-          if (linked && Number(linked.id) === currentAnimalId) {
-            setNovoRfid("");
-            setNovoRfidError("O novo RFID é igual ao RFID atual do animal.");
-            toast.error("O novo RFID é igual ao RFID atual. Não é necessário trocar.");
-            return;
-          }
-
-          // Não vinculado → aceitar no campo (não seleciona outro animal).
-          setNovoRfid(rfid);
-          setNovoRfidError(null);
-          setAt05Feedback(`Novo RFID capturado: ${rfid}`);
-        } catch (error) {
-          if (seq !== captureSeqRef.current) return;
-          const err = error as Error;
-          setNovoRfid("");
-          setNovoRfidError(err?.message || "Falha ao validar o novo RFID.");
-          toast.error(err?.message || "Falha ao validar o novo RFID.");
-        } finally {
-          if (seq === captureSeqRef.current) setAt05LookupBusy(false);
-        }
-      })();
-    },
-    [setReadRoute, trpcUtils, avisarBloqueioNegocio],
-  );
-
-  /** Identificação normal do animal (modo identify-animal). */
-  const handleAnimalIdentification = useCallback(
-    (rfid: string) => {
-      const seq = ++animalLookupSeqRef.current;
-      console.info("[AT05 PROD] IDENTIFY ANIMAL", rfid);
-
-      limparAnimal();
-      setAt05Feedback(`RFID recebido: ${rfid}`);
-      setAt05LookupBusy(true);
-
-      void (async () => {
-        try {
-          const animal = await trpcUtils.animais.getByBrincoEletronicoExact.fetch({
-            brincoEletronico: rfid,
-          });
-          if (seq !== animalLookupSeqRef.current) return;
-
-          if (!animal) {
-            const msg = "Brinco eletrônico não vinculado a nenhum animal.";
-            limparAnimal();
-            setAt05Feedback(`RFID recebido: ${rfid}. ${msg}`);
-            toast.error(msg);
-            return;
-          }
-
-          const farmSel = fazendaNumRef.current;
-          const farmNomeSel = nomeFazendaRef.current;
-          if (!farmSel) {
-            limparAnimal();
-            setAt05Feedback(`RFID recebido: ${rfid}. Selecione uma Fazenda antes de identificar.`);
-            toast.error("Selecione uma Fazenda antes de identificar o animal.");
-            return;
-          }
-
-          if (animal.fazendaId != null && Number(animal.fazendaId) !== farmSel) {
-            const nomeOutra =
-              animal.fazendaNome == null || String(animal.fazendaNome).trim() === ""
-                ? `Fazenda #${animal.fazendaId}`
-                : String(animal.fazendaNome).trim();
-            const nomeAtual = farmNomeSel?.trim() || `Fazenda #${farmSel}`;
-            const aviso = `Este animal pertence à ${nomeOutra}. A fazenda selecionada é ${nomeAtual}.`;
-            limparAnimal();
-            setAt05Feedback(`RFID recebido: ${rfid}. ${aviso}`);
-            toast.error(aviso);
-            return;
-          }
-
-          const row: AnimalBuscaRow = {
-            id: Number(animal.id),
-            brinco: animal.brinco == null ? null : String(animal.brinco),
-            brincoEletronico:
-              animal.brincoEletronico == null ? null : String(animal.brincoEletronico),
-            loteId: animal.loteId == null ? null : Number(animal.loteId),
-            loteNome: animal.loteNome == null ? null : String(animal.loteNome),
-            fazendaId: animal.fazendaId == null ? null : Number(animal.fazendaId),
-            status: animal.status == null ? null : String(animal.status),
-            sexo: animal.sexo == null ? null : String(animal.sexo),
-          };
-          const labelBrinco = row.brinco?.trim() || `#${row.id}`;
-          if (seq !== animalLookupSeqRef.current) return;
-
-          selecionarAnimal(row);
-          setAt05Feedback(`RFID recebido: ${rfid}. Animal encontrado: ${labelBrinco}`);
-        } catch (error) {
-          if (seq !== animalLookupSeqRef.current) return;
-          const err = error as Error;
-          limparAnimal();
-          setAt05Feedback(
-            `RFID recebido: ${rfid}. Falha na consulta: ${err?.message ?? String(error)}`,
-          );
-          toast.error(err?.message || "Não foi possível consultar o animal pelo RFID.");
-        } finally {
-          if (seq === animalLookupSeqRef.current) setAt05LookupBusy(false);
-        }
-      })();
-    },
-    [limparAnimal, selecionarAnimal, trpcUtils],
-  );
-
-  /**
-   * Roteamento central da IDENTIFICAÇÃO RFID (cartões já filtrados no hook).
-   * capture-new-rfid → Novo RFID (não limpa animal).
-   * identify-animal → lookup / seleção de animal.
-   */
-  const handleRfidRead = useCallback(
-    (rfid: string) => {
-      setAt05ReadSeq(n => n + 1);
-
-      if (at05ReadRouteRef.current === "capture-new-rfid") {
-        console.info("[AT05 PROD] ROUTE capture-new-rfid", rfid);
-        handleNewRfidCapture(rfid);
-        return;
-      }
-
-      // Durante Trocar/Vincular RFID com animal já escolhido, não identificar outro
-      // animal nem limpar o formulário — só captura sob “Ler com bastão”.
-      const op = operacaoRef.current;
-      if (animalIdRef.current && (op === "rfid" || op === "ambos")) {
-        setAt05Feedback(
-          "Clique em “Ler com bastão” para capturar o Novo RFID (animal atual preservado).",
-        );
-        return;
-      }
-
-      console.info("[AT05 PROD] ROUTE identify-animal", rfid);
-      handleAnimalIdentification(rfid);
-    },
-    [handleAnimalIdentification, handleNewRfidCapture],
-  );
-
-  const {
-    supported: at05Supported,
-    status: at05Status,
-    error: at05Error,
-    busy: at05Busy,
-    sessionActive: at05SessionActive,
-    connect: connectAt05,
-    disconnect: disconnectAt05,
-  } = useAt05Reader({ onRead: handleRfidRead });
-
-  // Conexão serial ≠ último RFID. Nunca mapear "RFID processado" como desconectado.
-  const at05UiStatus: At05ReaderUiStatus = !at05Supported
-    ? "error"
-    : at05Status === "connecting"
-      ? "connecting"
-      : at05Status === "listening"
-        ? "listening"
-        : at05Status === "connected"
-          ? "connected"
-          : at05Status === "error"
-            ? "error"
-            : at05Status === "disconnected"
-              ? "disconnected"
-              : "idle";
-
-  const at05ConnectionText = !at05Supported
-    ? "Web Serial indisponível — use Microsoft Edge no desktop"
-    : at05UiStatus === "connecting"
-      ? "Conectando…"
-      : at05UiStatus === "listening" || at05UiStatus === "connected"
-        ? "Conectado"
-        : at05UiStatus === "error"
-          ? at05Error
-            ? `Erro: ${at05Error}`
-            : "Erro na conexão"
-          : "Não conectado";
-
-  const at05LastEventText =
-    at05ReadRoute === "capture-new-rfid"
-      ? "Aguardando Novo RFID…"
-      : at05LookupBusy
-        ? "Consultando…"
-        : at05Feedback
-          ? "RFID processado"
-          : at05SessionActive
-            ? "Aguardando leitura"
-            : null;
-
-  /** Conectar / manter sessão para identificação de animal. */
-  const connectAt05Identify = () => {
-    setReadRoute("identify-animal");
-    if (!at05SessionActive) void connectAt05();
-  };
-
-  /**
-   * Arma captura de Novo RFID. Não cria segundo reader —
-   * só define o destino da próxima IDENTIFICAÇÃO RFID.
-   * Pode ser clicado mesmo com sessão já ativa (não usa at05Busy).
-   */
-  const armCaptureNewRfid = () => {
-    if (!at05Supported) return;
-    setNovoRfid("");
-    setNovoRfidError(null);
-    setReadRoute("capture-new-rfid");
-    setAt05Feedback("Aguardando leitura do novo RFID…");
-    if (!at05SessionActive) {
-      void connectAt05();
-    }
-  };
-
-  const [cancelandoAt05, setCancelandoAt05] = useState(false);
-
-  const handleCancelar = async () => {
-    if (cancelandoAt05) return;
-    setCancelandoAt05(true);
-    try {
-      // Libera COM/reader ANTES de navegar — evita porta presa no Edge.
-      await disconnectAt05();
-    } catch (err) {
-      console.error("[AT05 PROD] disconnect on Cancelar", err);
-      toast.error(
-        "Não foi possível liberar o AT05. Tente fechar a aba se a porta continuar ocupada.",
-      );
-    } finally {
-      setCancelandoAt05(false);
-      setLocation("/manejo/registros");
-    }
+  const handleCancelar = () => {
+    setLocation("/manejo/registros");
   };
 
   const handleSalvar = () => {
@@ -4142,16 +3831,6 @@ function ManejoBrincoEletronicoForm() {
     }
     if (!operacao) {
       toast.error("Selecione a operação.");
-      return;
-    }
-    if (mostraNovoRfid && novoRfidError) {
-      if (isBloqueioNegocioIdentificacao(novoRfidError)) {
-        // Bloqueio de negócio: só modal, sem manter erro inline.
-        setNovoRfidError(null);
-        avisarBloqueioNegocio(novoRfidError);
-      } else {
-        toast.error(novoRfidError);
-      }
       return;
     }
     if (mostraNovoRfid && !novoRfid.trim()) {
@@ -4192,11 +3871,9 @@ function ManejoBrincoEletronicoForm() {
     <AppLayout>
       <ManejoPontualFormShell
         title="Identificação"
-        onCancel={() => void handleCancelar()}
-        cancelDisabled={cancelandoAt05}
-        cancelLabel={cancelandoAt05 ? "Desconectando AT05…" : "Cancelar"}
+        onCancel={handleCancelar}
         onSave={handleSalvar}
-        saveDisabled={!animalId || !animalSel || Boolean(novoRfidError)}
+        saveDisabled={!animalId || !animalSel}
         savePending={saveMutation.isPending}
       >
         <ManejoSectionCard title="Contexto">
@@ -4244,87 +3921,36 @@ function ManejoBrincoEletronicoForm() {
             disabled={!fazendaNum}
             onAfterClear={limparOperacao}
           />
-
-          <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-3 space-y-2">
-            <p className="text-[12px] font-semibold text-gray-800">Leitura RFID / Bastão</p>
-            <p className="text-[12px] text-gray-600" aria-live="polite">
-              Dispositivo: AT05
-            </p>
-            <p className="text-[12px] text-gray-600" aria-live="polite">
-              Status: {at05ConnectionText}
-            </p>
-            {at05LastEventText ? (
-              <p className="text-[12px] text-gray-600" aria-live="polite">
-                Último evento: {at05LastEventText}
-                {at05SessionActive && at05Feedback ? " · Pronto para próxima leitura" : ""}
-              </p>
-            ) : null}
-            {at05Feedback ? (
-              <p className="text-[11px] text-gray-700" aria-live="polite">
-                {at05Feedback}
-                {at05ReadSeq > 0 ? (
-                  <span className="text-gray-400"> · leitura #{at05ReadSeq}</span>
-                ) : null}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              {at05SessionActive ? (
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-2 rounded border border-[#4ECDC4]/50 text-gray-800 bg-[#4ECDC4]/10 text-[12px] font-semibold min-h-[36px] opacity-90 cursor-default"
-                >
-                  <Bluetooth className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-                  Pronto para próxima leitura
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!at05Supported || at05Busy}
-                  onClick={connectAt05Identify}
-                  className={`inline-flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-2 rounded border text-[12px] font-semibold min-h-[36px] disabled:opacity-60 disabled:cursor-not-allowed ${
-                    at05Supported
-                      ? "border-[#4ECDC4]/50 text-gray-800 bg-[#4ECDC4]/10 hover:bg-[#4ECDC4]/15"
-                      : "border-gray-200 text-gray-500 bg-gray-50"
-                  }`}
-                >
-                  <Bluetooth className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-                  Conectar bastão
-                </button>
-              )}
-            </div>
-          </div>
         </ManejoSectionCard>
 
         <ManejoSectionCard title="Operação">
           <FormLabel required>Operação</FormLabel>
-          <FormDownSelect
+          <FormSelect
+            variant="light"
             value={operacao}
             placeholder="Selecione a operação"
             disabled={!animalSel}
-            options={[
-              { value: "brinco", label: "Trocar brinco visual" },
-              {
-                value: "rfid",
-                label: temRfidAtual ? "Trocar RFID" : "Vincular RFID",
-              },
-              {
-                value: "ambos",
-                label: temRfidAtual
-                  ? "Trocar brinco visual e RFID"
-                  : "Trocar brinco visual e vincular RFID",
-              },
-            ]}
+            required
             onChange={next => {
               setOperacao(next as OperacaoBrinco);
               setNovoRfid("");
               setNovoBrinco("");
               setMotivo("");
               setMotivoOutro("");
-              setNovoRfidError(null);
-              setReadRoute("identify-animal");
             }}
-          />
+          >
+            <SelectItem value="brinco" className="text-[12px]">
+              Trocar Brinco visual
+            </SelectItem>
+            <SelectItem value="rfid" className="text-[12px]">
+              {temRfidAtual ? "Trocar RFID" : "Vincular RFID"}
+            </SelectItem>
+            <SelectItem value="ambos" className="text-[12px]">
+              {temRfidAtual
+                ? "Trocar Brinco visual e RFID"
+                : "Trocar Brinco visual e vincular RFID"}
+            </SelectItem>
+          </FormSelect>
 
           {mostraNovoRfid || mostraNovoBrinco || exigeMotivo ? (
             <div className="space-y-4">
@@ -4339,7 +3965,7 @@ function ManejoBrincoEletronicoForm() {
                   {mostraNovoBrinco ? (
                     <div className="min-w-0">
                       <label className={labelCls}>
-                        Novo brinco visual<span className="text-red-500">*</span>
+                        Novo Brinco visual<span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -4356,62 +3982,15 @@ function ManejoBrincoEletronicoForm() {
                       <label className={labelCls}>
                         Novo RFID<span className="text-red-500">*</span>
                       </label>
-                      <div className="flex flex-row gap-2 items-stretch">
-                        <input
-                          type="text"
-                          value={novoRfid}
-                          onChange={e => {
-                            setNovoRfid(e.target.value);
-                            setNovoRfidError(null);
-                          }}
-                          className={`${fieldCls} flex-1 min-w-0`}
-                          placeholder="Informe o RFID"
-                          autoComplete="off"
-                          maxLength={80}
-                        />
-                        <button
-                          type="button"
-                          disabled={!at05Supported || at05Status === "connecting"}
-                          title={
-                            !at05Supported
-                              ? "Web Serial indisponível — use Microsoft Edge no desktop"
-                              : at05ReadRoute === "capture-new-rfid"
-                                ? "Aguardando leitura do novo RFID…"
-                                : "Armar captura do novo RFID com o bastão AT05"
-                          }
-                          aria-label="Ler com bastão"
-                          onClick={() => {
-                            if (!at05Supported) return;
-                            armCaptureNewRfid();
-                          }}
-                          className={`inline-flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-2 rounded border text-[12px] font-semibold min-h-[40px] sm:min-h-[34px] disabled:opacity-60 disabled:cursor-not-allowed ${
-                            at05ReadRoute === "capture-new-rfid"
-                              ? "border-amber-300 text-amber-900 bg-amber-50"
-                              : at05Supported
-                                ? "border-[#4ECDC4]/50 text-gray-800 bg-[#4ECDC4]/10 hover:bg-[#4ECDC4]/15"
-                                : "border-gray-200 text-gray-500 bg-gray-50"
-                          }`}
-                        >
-                          <Bluetooth className="h-4 w-4 shrink-0" strokeWidth={ICON_STROKE} aria-hidden />
-                          {at05ReadRoute === "capture-new-rfid"
-                            ? "Aguardando…"
-                            : "Ler com bastão"}
-                        </button>
-                      </div>
-                      {novoRfidError && !isBloqueioNegocioIdentificacao(novoRfidError) ? (
-                        <p className="text-[11px] text-red-600 mt-1.5">{novoRfidError}</p>
-                      ) : null}
-                      <p className="text-[10px] text-gray-400 mt-1.5 min-h-[1rem]" aria-live="polite">
-                        {!at05Supported
-                          ? "Web Serial indisponível. Use Microsoft Edge no desktop para ler com o AT05."
-                          : at05Status === "connecting"
-                            ? "Conectando ao bastão…"
-                            : at05ReadRoute === "capture-new-rfid"
-                              ? "Modo captura ativo — aproxime o novo brinco eletrônico do bastão."
-                              : at05SessionActive
-                                ? "Clique em “Ler com bastão” para capturar o Novo RFID (não troca o animal)."
-                                : "Clique em “Ler com bastão” para capturar o Novo RFID."}
-                      </p>
+                      <input
+                        type="text"
+                        value={novoRfid}
+                        onChange={e => setNovoRfid(e.target.value)}
+                        className={fieldCls}
+                        placeholder="Informe o RFID"
+                        autoComplete="off"
+                        maxLength={80}
+                      />
                     </div>
                   ) : null}
                 </div>
@@ -4551,6 +4130,7 @@ export function ManejoSessaoPage() {
   const [manejoAtualIdx, setManejoAtualIdx] = useState(0);
   const [historicoSessao, setHistoricoSessao] = useState<ManejoSessaoItem[]>([]);
   const [novoPeso, setNovoPeso] = useState("");
+  const [pesoFonteBalanca, setPesoFonteBalanca] = useState<ScaleTransport | null>(null);
   const [bloqueioNegocioMsg, setBloqueioNegocioMsg] = useState<string | null>(null);
   const [entradaIdentValor, setEntradaIdentValor] = useState("");
   const [entradaIdentOrigem, setEntradaIdentOrigem] = useState<EntradaIdentOrigem>(null);
@@ -4613,7 +4193,7 @@ export function ManejoSessaoPage() {
 
   const opcoesLoteSessao = useMemo(
     () => [
-      { value: LOTE_SESSAO_TODOS, label: "Todos os lotes" },
+      { value: LOTE_SESSAO_TODOS, label: "Todos os Lotes" },
       ...lotesDaFazenda.map(l => ({ value: String(l.id), label: l.nome })),
     ],
     [lotesDaFazenda],
@@ -4754,7 +4334,8 @@ export function ManejoSessaoPage() {
     setAnimalSel(null);
     setAnimalId(null);
     setManejoAtualIdx(0);
-    setNovoPeso("");
+    setNovoPeso(estadoFormularioPesoAposAvancar().novoPeso);
+    setPesoFonteBalanca(estadoFormularioPesoAposAvancar().pesoFonteBalanca);
     limparEntradaIdent();
     setIdentFeedback(null);
   }, [limparEntradaIdent]);
@@ -4768,7 +4349,8 @@ export function ManejoSessaoPage() {
       setAnimalSel(a);
       setAnimalId(a.id);
       setManejoAtualIdx(0);
-      setNovoPeso("");
+      setNovoPeso(estadoFormularioPesoAposAvancar().novoPeso);
+      setPesoFonteBalanca(estadoFormularioPesoAposAvancar().pesoFonteBalanca);
       setIdentFeedback(null);
       limparEntradaIdent();
     },
@@ -4781,7 +4363,8 @@ export function ManejoSessaoPage() {
       const proximoIdx = manejoAtualIdx + 1;
       if (proximoIdx < manejosOperacionaisSessao.length) {
         setManejoAtualIdx(proximoIdx);
-        setNovoPeso("");
+        setNovoPeso(estadoFormularioPesoAposAvancar().novoPeso);
+        setPesoFonteBalanca(estadoFormularioPesoAposAvancar().pesoFonteBalanca);
         setIdentFeedback(null);
         const proximoId = manejosOperacionaisSessao[proximoIdx];
         const proximoLabel = TIPOS_MANEJO.find(t => t.id === proximoId)?.label ?? proximoId;
@@ -5051,7 +4634,18 @@ export function ManejoSessaoPage() {
     async (rfidBruto: string) => {
       const rfid = normalizeRfidKey(rfidBruto);
       if (!rfid) return;
-      if (animalSel || rfidLookupBusy) return;
+      if (rfidLookupBusy) return;
+      const decisao = decidirLeituraRfidSessaoCurral({
+        temAnimalAtual: identidadeAtendimentoSessao(animalId) != null,
+        capturaNovoRfidAtiva: false,
+        rfidLido: rfid,
+        rfidAnimalAtual: animalSel?.brincoEletronico,
+      });
+      if (decisao === "manter_contexto_animal") return;
+      if (decisao === "avisar_animal_em_atendimento") {
+        toast.message(textoAvisoAnimalEmAtendimento(animalSel ? labelAnimal(animalSel) : ""));
+        return;
+      }
       if (!fazendaNum) {
         setIdentFeedback({ kind: "erro", text: "Selecione a fazenda da sessão." });
         return;
@@ -5084,26 +4678,59 @@ export function ManejoSessaoPage() {
         setRfidLookupBusy(false);
       }
     },
-    [abrirCadastroCurral, animalSel, animaisEscopo, fazendaNum, limparEntradaIdent, rfidLookupBusy, selecionarAnimal, trpcUtils],
-  );
-
-  const preencherRfidNoDisplay = useCallback(
-    (rfidBruto: string) => {
-      if (animalSel || rfidLookupBusy) return;
-      const rfid = normalizeRfidKey(rfidBruto);
-      if (!rfid) return;
-      setEntradaIdentValor(rfid);
-      setEntradaIdentOrigem("rfid");
-      setIdentFeedback(null);
-    },
-    [animalSel, rfidLookupBusy],
+    [abrirCadastroCurral, animalId, animalSel, animaisEscopo, fazendaNum, limparEntradaIdent, rfidLookupBusy, selecionarAnimal, trpcUtils],
   );
 
   /** Uma sessão serial para hub + operação — conexão persiste ao iniciar a sessão. */
   const at05ReadDispatchRef = useRef<(rfid: string) => void>(() => undefined);
+  /** Prioridade sobre dispatch: captura Novo RFID (Identificação / Trocar RFID no curral). */
+  const curralNovoRfidCaptureRef = useRef<((rfid: string) => void) | null>(null);
+  const animalAtualRef = useRef<{
+    id: number | null;
+    rfid: string | null;
+    label: string;
+  }>({ id: null, rfid: null, label: "" });
+  animalAtualRef.current = {
+    id: identidadeAtendimentoSessao(animalId),
+    rfid: animalSel?.brincoEletronico ?? null,
+    label: animalSel ? labelAnimal(animalSel) : "",
+  };
+  const lastAvisoRfidRef = useRef<{ rfid: string; at: number } | null>(null);
+  const at05OnReadCurral = useCallback((rfid: string) => {
+    const atual = animalAtualRef.current;
+    const decisao = decidirLeituraRfidSessaoCurral({
+      temAnimalAtual: atual.id != null,
+      capturaNovoRfidAtiva: Boolean(curralNovoRfidCaptureRef.current),
+      rfidLido: rfid,
+      rfidAnimalAtual: atual.rfid,
+    });
+    if (decisao === "capturar_novo_rfid") {
+      curralNovoRfidCaptureRef.current?.(rfid);
+      return;
+    }
+    if (decisao === "manter_contexto_animal") return;
+    if (decisao === "avisar_animal_em_atendimento") {
+      const key = normalizeRfidKey(rfid);
+      const agora = Date.now();
+      if (
+        lastAvisoRfidRef.current &&
+        lastAvisoRfidRef.current.rfid === key &&
+        agora - lastAvisoRfidRef.current.at < 2500
+      ) {
+        return;
+      }
+      lastAvisoRfidRef.current = { rfid: key, at: agora };
+      toast.message(textoAvisoAnimalEmAtendimento(atual.label));
+      return;
+    }
+    at05ReadDispatchRef.current(rfid);
+  }, []);
   const at05CurralSession = useAt05Reader({
-    onRead: rfid => at05ReadDispatchRef.current(rfid),
+    onRead: at05OnReadCurral,
   });
+  const registerCurralNovoRfidCapture = useCallback((handler: ((rfid: string) => void) | null) => {
+    curralNovoRfidCaptureRef.current = handler;
+  }, []);
   const bindAt05ReadHandler = useCallback((handler: (rfid: string) => void) => {
     at05ReadDispatchRef.current = handler;
     return () => {
@@ -5112,6 +4739,38 @@ export function ManejoSessaoPage() {
       }
     };
   }, []);
+
+  const scaleStableWeightRef = useRef<(kg: number) => void>(() => undefined);
+  const lastScaleSourceRef = useRef<ScaleTransport>("usb");
+  const scaleCurralSession = useScaleReader({
+    presetId: "trutest-s3",
+    onStableWeight: kg => {
+      lastScaleSourceRef.current = "usb";
+      scaleStableWeightRef.current(kg);
+    },
+  });
+  const bleCurralSession = useTruTestBleReader({
+    onWeight: kg => {
+      lastScaleSourceRef.current = "ble";
+      scaleStableWeightRef.current(kg);
+    },
+  });
+  const bindScaleStableWeight = useCallback((handler: (kg: number) => void) => {
+    scaleStableWeightRef.current = handler;
+    return () => {
+      if (scaleStableWeightRef.current === handler) {
+        scaleStableWeightRef.current = () => undefined;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fase !== "ativa" || manejoAtualId !== "pesagem" || !animalSel) return;
+    return bindScaleStableWeight(kg => {
+      setPesoFonteBalanca(lastScaleSourceRef.current);
+      aplicarPesoBalanca(kg);
+    });
+  }, [animalSel, aplicarPesoBalanca, bindScaleStableWeight, fase, manejoAtualId]);
 
   const confirmarEntradaIdent = useCallback(() => {
     const valor = entradaIdentValor.trim();
@@ -5402,12 +5061,12 @@ export function ManejoSessaoPage() {
                   setLoteId(value === LOTE_SESSAO_TODOS ? "" : value);
                   limparContextoAnimal();
                 }}
-                placeholder="Todos os lotes"
+                placeholder="Todos os Lotes"
                 options={opcoesLoteSessao}
                 disabled={!fazendaId}
               />
               <p className="text-[10px] text-gray-400 mt-1.5 leading-snug">
-                Filtro opcional da sessão. &quot;Todos os lotes&quot; inclui todos os animais ativos
+                Filtro opcional da sessão. &quot;Todos os Lotes&quot; inclui todos os animais ativos
                 da fazenda.
               </p>
             </div>
@@ -5532,27 +5191,25 @@ export function ManejoSessaoPage() {
 
           <ManejoSectionCard title="Equipamentos" className="order-3 sm:order-2">
             <p className="text-[11px] text-gray-500 mb-3 -mt-1">
-              Conecte bastão RFID e balança antes de iniciar. As conexões permanecem na
-              operação.
+              Conecte os equipamentos antes de iniciar. As conexões permanecem na operação.
             </p>
             {!fazendaId ? (
               <p className="text-[11px] text-amber-700">Selecione a fazenda para usar os equipamentos.</p>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[11px] font-semibold text-gray-700 mb-2">Bastão RFID</p>
-                  <At05RfidReaderControl
-                    variant="hub"
-                    disabled={!fazendaId}
-                    onRfidRead={() => {}}
-                    session={at05CurralSession}
-                    bindReadHandler={bindAt05ReadHandler}
-                  />
-                </div>
-                <div className="border-t border-gray-100 pt-4">
-                  <p className="text-[11px] font-semibold text-gray-700 mb-2">Balança</p>
-                  <ScaleReaderControl variant="hub" disabled={!fazendaId} />
-                </div>
+              <div className="space-y-3">
+                <At05RfidReaderControl
+                  variant="hub"
+                  disabled={!fazendaId}
+                  onRfidRead={() => {}}
+                  session={at05CurralSession}
+                  bindReadHandler={bindAt05ReadHandler}
+                />
+                <ScaleReaderControl
+                  variant="hub"
+                  disabled={!fazendaId}
+                  session={scaleCurralSession}
+                  bleSession={bleCurralSession}
+                />
               </div>
             )}
           </ManejoSectionCard>
@@ -5646,7 +5303,10 @@ export function ManejoSessaoPage() {
   );
 
   const ManejoToolbarIcon = manejoSessaoMeta?.icon;
-  const identificacaoToolbarBadge = renderCurralToolbarBadge(Tag, "Identificação");
+  const aguardandoAnimalToolbarBadge = renderCurralToolbarBadge(
+    Tag,
+    rotuloAguardandoAnimal(historicoSessao.length > 0),
+  );
   const manejoToolbarBadge =
     manejoSessaoMeta && ManejoToolbarIcon
       ? renderCurralToolbarBadge(
@@ -5659,8 +5319,8 @@ export function ManejoSessaoPage() {
       : null;
 
   const mostrarEncerrarSessaoTopo = !animalSel && historicoSessao.length > 0;
-  /** Menu ⋮ só na identificação; nas telas de manejo (animal selecionado) fica oculto. */
-  const mostrarMenuSessao = !animalSel;
+  /** Menu ⋮ só enquanto aguarda animal; nas telas de manejo fica oculto. */
+  const mostrarMenuSessao = estadoAtendimentoSessaoCurral(animalId) === "aguardando_animal";
 
   const menuOpcoesSessao = mostrarMenuSessao ? (
     <DropdownMenu>
@@ -5703,7 +5363,7 @@ export function ManejoSessaoPage() {
                 mode="identificar"
                 continuous
                 disabled={rfidLookupBusy}
-                onRfidRead={preencherRfidNoDisplay}
+                onRfidRead={identificarPorRfid}
                 session={at05CurralSession}
                 bindReadHandler={bindAt05ReadHandler}
               />
@@ -5712,7 +5372,7 @@ export function ManejoSessaoPage() {
             ) : null}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {!animalSel ? identificacaoToolbarBadge : manejoToolbarBadge}
+            {!animalSel ? aguardandoAnimalToolbarBadge : manejoToolbarBadge}
             {totalRegistrosSessao > 0 ? (
               !animalSel ? (
                 <button
@@ -5774,6 +5434,9 @@ export function ManejoSessaoPage() {
               />
             ) : (
               <div className="space-y-4">
+                <p className="text-[13px] font-semibold text-gray-900">
+                  {rotuloAguardandoAnimal(historicoSessao.length > 0)}
+                </p>
                 <BrincoNumpadField
                   value={entradaIdentValor}
                   origem={entradaIdentOrigem}
@@ -5855,7 +5518,8 @@ export function ManejoSessaoPage() {
               <ScaleReaderControl
                 variant="operacao"
                 disabled={pesagemMutation.isPending}
-                onStableWeight={aplicarPesoBalanca}
+                session={scaleCurralSession}
+                bleSession={bleCurralSession}
               />
 
               <div>
@@ -5865,7 +5529,10 @@ export function ManejoSessaoPage() {
                   type="text"
                   inputMode="decimal"
                   value={novoPeso}
-                  onChange={e => setNovoPeso(e.target.value)}
+                  onChange={e => {
+                    setPesoFonteBalanca(null);
+                    setNovoPeso(e.target.value);
+                  }}
                   onKeyDown={e => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -5877,6 +5544,11 @@ export function ManejoSessaoPage() {
                   className="w-full text-[22px] sm:text-[26px] lg:text-[28px] font-bold border border-gray-200 rounded-xl px-4 py-3 sm:py-3.5 text-gray-900 min-h-[56px] sm:min-h-[60px] text-center tracking-tight bg-white disabled:bg-gray-50"
                   autoComplete="off"
                 />
+                {pesoFonteBalanca ? (
+                  <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+                    {textoPesoRecebidoBalanca(pesoFonteBalanca)}
+                  </p>
+                ) : null}
               </div>
 
               <button
@@ -5894,7 +5566,7 @@ export function ManejoSessaoPage() {
                 {manejoAtualIdx + 1 < manejosOperacionaisSessao.length
                   ? "Enter registra e avança para o próximo manejo deste animal."
                   : "Enter registra e prepara o próximo animal."}{" "}
-                Balança conectada preenche automaticamente quando estabilizar.
+                Balança conectada preenche o campo. Confira e registre.
               </p>
             </div>
           ) : null}
@@ -5944,6 +5616,7 @@ export function ManejoSessaoPage() {
               hasNextManejoNaFila={manejoAtualIdx + 1 < manejosOperacionaisSessao.length}
               at05Session={at05CurralSession}
               bindAt05ReadHandler={bindAt05ReadHandler}
+              registerNovoRfidCapture={registerCurralNovoRfidCapture}
             />
           ) : null}
 
@@ -5980,6 +5653,9 @@ export function ManejoSessaoPage() {
               animalId={animalId}
               animal={animalSel}
               pesoPesagemSessao={pesoPesagemDesmamaCurral}
+              scaleSession={scaleCurralSession}
+              bleSession={bleCurralSession}
+              bindScaleStableWeight={bindScaleStableWeight}
               onRegistrado={registrarDesmamaCurral}
               onBloqueioNegocio={setBloqueioNegocioMsg}
             />

@@ -46,6 +46,7 @@ import {
   ManejoSessaoPage,
 } from "./pages/ManejoPages";
 import DiagnosticoAt05Page from "./pages/DiagnosticoAt05Page";
+import DiagnosticoTruTestS3Page from "./pages/DiagnosticoTruTestS3Page";
 import FarmRegistrationPage from "./pages/FarmRegistrationPage";
 import BenfeitoriasListPage from "./pages/BenfeitoriasListPage";
 import BenfeitoriaRegistrationPage from "./pages/BenfeitoriaRegistrationPage";
@@ -118,6 +119,8 @@ function ProtectedRoutes() {
 
       {/* POC temporária — Diagnóstico AT05 (Web Serial). Sem item de menu. */}
       <Route path="/diagnostico/at05" component={DiagnosticoAt05Page} />
+      {/* POC temporária — Tru-Test S3 via Web Bluetooth BLE. Sem item de menu. */}
+      <Route path="/diagnostico/trutest-s3" component={DiagnosticoTruTestS3Page} />
 
       {/* Insumos */}
       <Route path="/insumos/visao-geral" component={() => <InsumosVisaoGeralPage />} />

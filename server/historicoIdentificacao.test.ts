@@ -81,7 +81,7 @@ describe("buildObservacoesHistoricoIdentificacao", () => {
       }),
     );
     expect(display.operacao).toBe("ambos");
-    expect(display.operacaoLabel).toBe("Trocar brinco visual e RFID");
+    expect(display.operacaoLabel).toBe("Trocar Brinco visual e RFID");
     expect(display.rfidAnterior).toBe("963000400291061");
     expect(display.rfidNovo).toBe("963000400650124");
     expect(display.brincoAnterior).toBe("01");

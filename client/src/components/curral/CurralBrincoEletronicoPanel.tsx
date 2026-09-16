@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
+import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import { Tag } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -75,11 +76,11 @@ function todayISODate() {
 }
 
 function labelOperacaoBrinco(operacao: OperacaoBrinco, temRfidAtual: boolean): string {
-  if (operacao === "brinco") return "Trocar brinco visual";
+  if (operacao === "brinco") return "Trocar Brinco visual";
   if (operacao === "rfid") return temRfidAtual ? "Trocar RFID" : "Vincular RFID";
   return temRfidAtual
-    ? "Trocar brinco visual e RFID"
-    : "Trocar brinco visual e vincular RFID";
+    ? "Trocar Brinco visual e RFID"
+    : "Trocar Brinco visual e vincular RFID";
 }
 
 function montarResumoIdentificacao(params: {
@@ -113,6 +114,8 @@ type CurralBrincoEletronicoPanelProps = {
   /** Sessão serial compartilhada da Sessão no curral (escuta contínua). */
   at05Session?: At05ReaderSession;
   bindAt05ReadHandler?: (handler: (rfid: string) => void) => () => void;
+  /** Registro direto no onRead da sessão AT05 (prioridade sobre bindReadHandler). */
+  registerNovoRfidCapture?: (handler: ((rfid: string) => void) | null) => void;
 };
 
 export function CurralBrincoEletronicoPanel({
@@ -126,6 +129,7 @@ export function CurralBrincoEletronicoPanel({
   hasNextManejoNaFila,
   at05Session,
   bindAt05ReadHandler,
+  registerNovoRfidCapture,
 }: CurralBrincoEletronicoPanelProps) {
   const escutaContinuaCurral = Boolean(at05Session && bindAt05ReadHandler);
   const trpcUtils = trpc.useUtils();
@@ -136,6 +140,7 @@ export function CurralBrincoEletronicoPanel({
   const [motivoOutro, setMotivoOutro] = useState("");
   const [motivoExpandido, setMotivoExpandido] = useState(false);
   const [rfidLookupBusy, setRfidLookupBusy] = useState(false);
+  const [rfidLeituraFeedback, setRfidLeituraFeedback] = useState<string | null>(null);
 
   const rfidAtualTrim = rfidAtual?.trim() || "";
   const brincoAtualTrim = brincoAtual?.trim() || "";
@@ -148,6 +153,7 @@ export function CurralBrincoEletronicoPanel({
     setMotivo("");
     setMotivoOutro("");
     setMotivoExpandido(false);
+    setRfidLeituraFeedback(null);
   }, []);
 
   useEffect(() => {
@@ -160,7 +166,7 @@ export function CurralBrincoEletronicoPanel({
 
   const opcoesOperacao = useMemo(
     () => [
-      { value: "brinco", label: "Trocar brinco visual" },
+      { value: "brinco", label: "Trocar Brinco visual" },
       {
         value: "rfid",
         label: temRfidAtual ? "Trocar RFID" : "Vincular RFID",
@@ -168,8 +174,8 @@ export function CurralBrincoEletronicoPanel({
       {
         value: "ambos",
         label: temRfidAtual
-          ? "Trocar brinco visual e RFID"
-          : "Trocar brinco visual e vincular RFID",
+          ? "Trocar Brinco visual e RFID"
+          : "Trocar Brinco visual e vincular RFID",
       },
     ],
     [temRfidAtual],
@@ -192,6 +198,7 @@ export function CurralBrincoEletronicoPanel({
     setMotivo(next ? "reidentificacao" : "");
     setMotivoOutro("");
     setMotivoExpandido(false);
+    setRfidLeituraFeedback(null);
   }, []);
 
   const validarNovoRfid = useCallback(
@@ -240,10 +247,58 @@ export function CurralBrincoEletronicoPanel({
   const handleNovoRfidRead = useCallback(
     async (rfid: string) => {
       const ok = await validarNovoRfid(rfid);
-      if (ok) setNovoRfid(rfid);
+      if (ok) {
+        setNovoRfid(rfid);
+        setRfidLeituraFeedback(`Novo RFID: ${rfid}`);
+      } else {
+        setRfidLeituraFeedback(null);
+      }
     },
     [validarNovoRfid],
   );
+
+  const handleNovoRfidReadRef = useRef(handleNovoRfidRead);
+  handleNovoRfidReadRef.current = handleNovoRfidRead;
+
+  /**
+   * Captura Novo RFID na origem (useAt05Reader.onRead), sem depender de bindReadHandler
+   * em componentes que somem quando o bastão já está conectado.
+   */
+  useEffect(() => {
+    if (!registerNovoRfidCapture) return;
+
+    if (!mostraNovoRfid) {
+      registerNovoRfidCapture(null);
+      return;
+    }
+
+    const onTag = (raw: string) => {
+      const key = normalizeRfidKey(raw);
+      if (!key) {
+        toast.message("Leitura ignorada — RFID inválido.");
+        return;
+      }
+      setRfidLeituraFeedback(`Tag lida — validando ${key}…`);
+      void handleNovoRfidReadRef.current(key);
+    };
+
+    registerNovoRfidCapture(onTag);
+    return () => registerNovoRfidCapture(null);
+  }, [mostraNovoRfid, registerNovoRfidCapture]);
+
+  /** Segunda via: lastRfid da sessão compartilhada (sobrevive remount do hook). */
+  const lastRfidBaselineRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!mostraNovoRfid) {
+      lastRfidBaselineRef.current = at05Session?.lastRfid ?? null;
+      return;
+    }
+    const latest = at05Session?.lastRfid ?? null;
+    if (!latest || latest === lastRfidBaselineRef.current) return;
+    lastRfidBaselineRef.current = latest;
+    setRfidLeituraFeedback(`Tag lida — validando ${latest}…`);
+    void handleNovoRfidReadRef.current(latest);
+  }, [at05Session?.lastRfid, mostraNovoRfid]);
 
   const saveMutation = trpc.manejo.registrarPontualBrinco.useMutation({
     onSuccess: (_result, vars) => {
@@ -348,6 +403,7 @@ export function CurralBrincoEletronicoPanel({
 
   const bastaoStatusLinha = (() => {
     if (!mostraNovoRfid) return null;
+    if (rfidLeituraFeedback) return rfidLeituraFeedback;
     if (rfidLookupBusy) return "Validando RFID…";
     if (escutaContinuaCurral && at05Session?.sessionActive) {
       return "Bastão conectado — bipe a nova tag para preencher o RFID.";
@@ -401,7 +457,7 @@ export function CurralBrincoEletronicoPanel({
         >
           {mostraNovoBrinco ? (
             <div className="min-w-0">
-              <FormLabel required>Novo brinco visual</FormLabel>
+              <FormLabel required>Novo Brinco visual</FormLabel>
               <BrincoNumpadField
                 value={novoBrinco}
                 onChange={setNovoBrinco}
@@ -446,16 +502,16 @@ export function CurralBrincoEletronicoPanel({
                 disabled={saveMutation.isPending || rfidLookupBusy}
                 className="text-[12px] h-9"
               />
-              <At05RfidReaderControl
-                variant="embedded"
-                mode={escutaContinuaCurral ? "identificar" : "cadastro"}
-                continuous={escutaContinuaCurral}
-                currentValue={novoRfid}
-                disabled={saveMutation.isPending || rfidLookupBusy}
-                onRfidRead={rfid => void handleNovoRfidRead(rfid)}
-                session={at05Session}
-                bindReadHandler={bindAt05ReadHandler}
-              />
+              {!at05Session?.sessionActive ? (
+                <At05RfidReaderControl
+                  variant="embedded"
+                  mode="cadastro"
+                  currentValue={novoRfid}
+                  disabled={saveMutation.isPending || rfidLookupBusy}
+                  onRfidRead={rfid => void handleNovoRfidRead(rfid)}
+                  session={at05Session}
+                />
+              ) : null}
               {bastaoStatusLinha ? (
                 <p className="text-[10px] text-gray-400 leading-snug" aria-live="polite">
                   {bastaoStatusLinha}

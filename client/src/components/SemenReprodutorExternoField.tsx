@@ -52,7 +52,7 @@ export function SemenReprodutorExternoField({
 
   const showCadastrarAcao = Boolean(onCadastrarNovo && (showCadastrarNovo || cadastrarNovoLabel));
   const cadastrarLabel =
-    cadastrarNovoLabel ?? "+ Cadastrar novo sêmen/reprodutor";
+    cadastrarNovoLabel ?? "+ Cadastrar Novo Sêmen/Reprodutor";
 
   useEffect(() => {
     if (!open) return;

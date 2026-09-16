@@ -57,8 +57,8 @@ export const MOTIVO_IDENTIFICACAO_LABELS: Record<MotivoTrocaIdentificacao, strin
 
 const OPERACAO_LABELS: Record<Exclude<OperacaoIdentificacao, "desconhecida">, string> = {
   rfid: "Trocar RFID",
-  brinco: "Trocar brinco visual",
-  ambos: "Trocar brinco visual e RFID",
+  brinco: "Trocar Brinco visual",
+  ambos: "Trocar Brinco visual e RFID",
 };
 
 /** Rótulos gravados nas observações (atuais e legado). */
@@ -167,10 +167,10 @@ export function buildObservacoesHistoricoIdentificacao(input: {
   let operacaoLabel: string;
   if (input.operacao === "ambos") {
     operacaoLabel = input.tinhaRfid
-      ? "Trocar brinco visual e RFID"
-      : "Trocar brinco visual e vincular RFID";
+      ? "Trocar Brinco visual e RFID"
+      : "Trocar Brinco visual e vincular RFID";
   } else if (input.operacao === "brinco") {
-    operacaoLabel = "Trocar brinco visual";
+    operacaoLabel = "Trocar Brinco visual";
   } else {
     operacaoLabel = input.tinhaRfid ? "Trocar RFID" : "Vincular RFID";
   }

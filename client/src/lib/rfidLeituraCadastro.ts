@@ -1,9 +1,19 @@
+import { mensagemErroAberturaAt05 } from "@/lib/hardware/serialPortLabels";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 
 export const MSG_RFID_BASTAO_INDISPONIVEL =
   "Leitura por bastão não disponível neste navegador. O RFID pode ser informado manualmente.";
 
 export const MSG_RFID_CONEXAO_FALHOU = "Não foi possível conectar ao leitor RFID.";
+
+/** Texto operacional — detalhe técnico só no console/diagnóstico. */
+export function mensagemErroConexaoRfid(detalhe: string | null | undefined): string {
+  const raw = (detalhe ?? "").trim();
+  if (raw.includes("Esta porta é da balança Tru-Test") || raw.includes("COM USB da balança")) {
+    return raw;
+  }
+  return mensagemErroAberturaAt05(detalhe);
+}
 
 export const MSG_RFID_SUBSTITUIR =
   "Já existe um RFID informado. Deseja substituir pelo RFID lido?";

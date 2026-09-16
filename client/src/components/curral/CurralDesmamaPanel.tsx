@@ -1,5 +1,7 @@
 import { FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
+import type { ScaleReaderSession } from "@/hooks/useScaleReader";
+import type { TruTestBleReaderSession } from "@/hooks/useTruTestBleReader";
 import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { trpc } from "@/lib/trpc";
@@ -47,6 +49,10 @@ type Props = {
   animal: AnimalDesmamaCurral;
   /** Peso já registrado na pesagem da mesma data (fluxo Pesagem → Desmama). */
   pesoPesagemSessao?: string | null;
+  /** Sessão da balança iniciada no hub (mesma conexão Web Serial). */
+  scaleSession?: ScaleReaderSession;
+  bleSession?: TruTestBleReaderSession;
+  bindScaleStableWeight?: (handler: (kg: number) => void) => () => void;
   onRegistrado: (payload: CurralDesmamaRegistrado) => void;
   onBloqueioNegocio: (msg: string) => void;
 };
@@ -57,6 +63,9 @@ export function CurralDesmamaPanel({
   animalId,
   animal,
   pesoPesagemSessao,
+  scaleSession,
+  bleSession,
+  bindScaleStableWeight,
   onRegistrado,
   onBloqueioNegocio,
 }: Props) {
@@ -143,6 +152,17 @@ export function CurralDesmamaPanel({
       pesoInputRef.current?.select();
     }, 30);
   }, []);
+
+  useEffect(() => {
+    if (!scaleSession || !bindScaleStableWeight || reutilizaPesagem || !elegivel) return;
+    return bindScaleStableWeight(aplicarPesoBalanca);
+  }, [
+    aplicarPesoBalanca,
+    bindScaleStableWeight,
+    elegivel,
+    reutilizaPesagem,
+    scaleSession,
+  ]);
 
   const podeSalvar =
     elegivel &&
@@ -317,7 +337,9 @@ export function CurralDesmamaPanel({
           <ScaleReaderControl
             variant="operacao"
             disabled={isSaving}
-            onStableWeight={aplicarPesoBalanca}
+            session={scaleSession}
+            bleSession={bleSession}
+            onStableWeight={scaleSession ? undefined : aplicarPesoBalanca}
           />
 
           <div>

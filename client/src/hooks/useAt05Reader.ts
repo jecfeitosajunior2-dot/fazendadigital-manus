@@ -2,12 +2,30 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   At05SerialService,
   closeLingeringAuthorizedPorts,
+  openAt05PortWithRetry,
+  releaseSerialPortBeforeAt05Open,
+  waitAt05CleanupIdle,
   type At05ReaderStatus,
   formatSerialError,
   isPortSelectionCancelled,
   isSerialPortOpen,
   isWebSerialAvailable,
+  isCurralScaleSerialPort,
+  MSG_AT05_PORTA_E_BALANCA,
+  MSG_AT05_PORTA_USB_PROVAVEL_BALANCA,
 } from "@/lib/hardware/at05Serial";
+import {
+  describeSerialPortHint,
+  isUsbWebSerialPort,
+  resolveAt05PortForConnect,
+} from "@/lib/hardware/serialPortHints";
+import {
+  comFromSerialPort,
+  linhaModeloComCom,
+  rememberSerialPortRole,
+  statusOperacionalEquipamento,
+} from "@/lib/hardware/serialPortLabels";
+import { registerCurralAt05SerialPort } from "@/lib/hardware/curralSerialPeers";
 import {
   createAt05OnlineRxProcessor,
   type At05OnlineMode,
@@ -78,6 +96,8 @@ type SharedAt05Session = {
   observedLink: At05OnlineMode;
   /** true enquanto shutdown corre (idempotente). */
   shuttingDown: boolean;
+  /** COM só se o navegador expuser; nunca inventada. */
+  connectedCom: string | null;
 };
 
 let shared: SharedAt05Session | null = null;
@@ -93,6 +113,46 @@ let sharedShutdownPromise: Promise<void> | null = null;
 /** Listener pagehide registrado enquanto há sessão (back/fechar aba). */
 let pageHideHandlerBound = false;
 
+/**
+ * onRead vive no módulo — o loop RX pode ter sido aberto por um hook que já desmontou
+ * (HMR, hub→operação). Sem isso o bip some e a tela não muda.
+ */
+const onReadStack: Array<(rfid: string) => void> = [];
+let sharedLastRfid: string | null = null;
+const lastRfidListeners = new Set<(rfid: string | null) => void>();
+
+function pushAt05OnRead(handler: (rfid: string) => void): () => void {
+  onReadStack.push(handler);
+  return () => {
+    const idx = onReadStack.lastIndexOf(handler);
+    if (idx >= 0) onReadStack.splice(idx, 1);
+  };
+}
+
+function deliverSharedRfid(rfid: string): void {
+  const s = getShared();
+  if (s.stopReading || s.shuttingDown) {
+    log("ONREAD ignored — shutting down", rfid);
+    return;
+  }
+  sharedLastRfid = rfid;
+  lastRfidListeners.forEach(fn => {
+    try {
+      fn(rfid);
+    } catch (err) {
+      console.error(`[AT05 PROD] ${ts()} lastRfid listener threw`, err);
+    }
+  });
+  const handler = onReadStack[onReadStack.length - 1];
+  log("ONREAD (IDENTIFICAÇÃO RFID)", { rfid, hasHandler: Boolean(handler) });
+  if (!handler) return;
+  try {
+    handler(rfid);
+  } catch (err) {
+    console.error(`[AT05 PROD] ${ts()} ONREAD threw`, err);
+  }
+}
+
 function getShared(): SharedAt05Session {
   if (!shared) {
     shared = {
@@ -104,8 +164,10 @@ function getShared(): SharedAt05Session {
       status: "idle",
       observedLink: "DESCONHECIDO",
       shuttingDown: false,
+      connectedCom: null,
     };
   }
+  if (shared.connectedCom === undefined) shared.connectedCom = null;
   return shared;
 }
 
@@ -146,11 +208,13 @@ export async function shutdownAt05SharedSession(reason: string): Promise<void> {
     s.stopReading = false;
     s.shuttingDown = false;
     setSharedStatus("disconnected");
-    // Mesmo em noop: garantir que nenhuma porta autorizada ficou aberta órfã.
-    try {
-      await closeLingeringAuthorizedPorts();
-    } catch {
-      /* ignore */
+    // pre-open-cleanup libera só a porta escolhida antes do open(); evitar varredura aqui.
+    if (reason !== "pre-open-cleanup") {
+      try {
+        await closeLingeringAuthorizedPorts();
+      } catch {
+        /* ignore */
+      }
     }
     return;
   }
@@ -232,6 +296,9 @@ export async function shutdownAt05SharedSession(reason: string): Promise<void> {
     s.stopReading = false;
     s.observedLink = "DESCONHECIDO";
     s.shuttingDown = false;
+    s.connectedCom = null;
+    sharedLastRfid = null;
+    lastRfidListeners.forEach(fn => fn(null));
     setSharedStatus("disconnected");
     log(`SHUTDOWN COMPLETE reason=${reason}`);
   })().finally(() => {
@@ -265,13 +332,31 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     onReadRef.current = options.onRead;
   }, [options.onRead]);
 
+  useEffect(() => {
+    const handler = (rfid: string) => {
+      onReadRef.current?.(rfid);
+    };
+    return pushAt05OnRead(handler);
+  }, []);
+
   const mountedRef = useRef(true);
   const [status, setStatus] = useState<At05ReaderStatus>(() => getShared().status);
   const [observedLink, setObservedLink] = useState<At05OnlineMode>(
     () => getShared().observedLink,
   );
-  const [lastRfid, setLastRfid] = useState<string | null>(null);
+  const [lastRfid, setLastRfid] = useState<string | null>(() => sharedLastRfid);
+
+  useEffect(() => {
+    lastRfidListeners.add(setLastRfid);
+    setLastRfid(sharedLastRfid);
+    return () => {
+      lastRfidListeners.delete(setLastRfid);
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
+  const [connectedCom, setConnectedCom] = useState<string | null>(
+    () => getShared().connectedCom,
+  );
   const [supported] = useState(() => isWebSerialAvailable());
 
   const syncStatus = useCallback((next: At05ReaderStatus) => {
@@ -283,21 +368,6 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     getShared().observedLink = next;
     if (mountedRef.current) setObservedLink(next);
     log(`OBSERVED LINK -> ${next}`);
-  }, []);
-
-  const deliverRfid = useCallback((rfid: string) => {
-    const s = getShared();
-    if (s.stopReading || s.shuttingDown) {
-      log("ONREAD ignored — shutting down", rfid);
-      return;
-    }
-    log("ONREAD (IDENTIFICAÇÃO RFID)", rfid);
-    try {
-      onReadRef.current?.(rfid);
-    } catch (err) {
-      console.error(`[AT05 PROD] ${ts()} ONREAD threw`, err);
-    }
-    if (mountedRef.current) setLastRfid(rfid);
   }, []);
 
   const startRxLoop = useCallback(
@@ -317,7 +387,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
           syncObservedLink(mode);
         },
         onIdentificationRfid: rfid => {
-          deliverRfid(rfid);
+          deliverSharedRfid(rfid);
         },
       });
 
@@ -357,7 +427,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
         log(`RX LOOP END (readCalls=${readCall})`);
       }
     },
-    [deliverRfid, syncObservedLink, syncStatus],
+    [syncObservedLink, syncStatus],
   );
 
   const disconnect = useCallback(
@@ -367,6 +437,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
         if (mountedRef.current) {
           setStatus(getShared().status);
           setObservedLink(getShared().observedLink);
+          setConnectedCom(getShared().connectedCom);
           setError(null);
         }
       } catch (err) {
@@ -380,7 +451,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     [],
   );
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (preferredPort?: SerialPort) => {
     log("CONNECT CLICK");
     log(
       `CONNECT GUARD inFlight=${String(connectInFlight)} shuttingDown=${String(getShared().shuttingDown)} status=${getShared().status}`,
@@ -430,11 +501,37 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     if (mountedRef.current) setError(null);
     syncStatus("connecting");
 
-    log("REQUEST PORT START");
-    let port: SerialPort;
+    connectInFlight = false;
     try {
-      port = await s.service.requestPortFromUserGesture();
-      log("REQUEST PORT OK");
+      await waitAt05CleanupIdle();
+      await shutdownAt05SharedSession("pre-open-cleanup");
+    } catch (err) {
+      if (mountedRef.current) setError(formatSerialError(err));
+      syncStatus("error");
+      return;
+    }
+    connectInFlight = true;
+    if (s.connectGen !== connectGen) {
+      connectInFlight = false;
+      return;
+    }
+
+    log("RESOLVE PORT START");
+    let port: SerialPort;
+    let portSource: "authorized" | "requested" = "requested";
+    try {
+      if (preferredPort) {
+        port = preferredPort;
+        portSource = "authorized";
+        log("RESOLVE PORT OK source=preferred");
+      } else {
+        const resolved = await resolveAt05PortForConnect(() =>
+          s.service.requestPortFromUserGesture(),
+        );
+        port = resolved.port;
+        portSource = resolved.source;
+        log(`RESOLVE PORT OK source=${portSource}`);
+      }
     } catch (err) {
       connectInFlight = false;
       if (isPortSelectionCancelled(err)) {
@@ -450,25 +547,24 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     }
 
     if (s.connectGen !== connectGen) {
-      log("CONNECT IGNORED — gen obsoleto após requestPort");
+      log("CONNECT IGNORED — gen obsoleto após resolve port");
       connectInFlight = false;
       return;
     }
 
-    // Após o gesto: liberar sessão residual + qualquer porta autorizada ainda aberta.
-    // Necessário quando o unmount anterior não concluiu o close a tempo / ficou órfão.
-    connectInFlight = false;
-    try {
-      await shutdownAt05SharedSession("pre-open-cleanup");
-      await closeLingeringAuthorizedPorts();
-    } catch (err) {
-      if (mountedRef.current) setError(formatSerialError(err));
+    log(`PORT HINT ${describeSerialPortHint(port)} source=${portSource}`);
+
+    if (isCurralScaleSerialPort(port)) {
+      connectInFlight = false;
+      if (mountedRef.current) setError(MSG_AT05_PORTA_E_BALANCA);
       syncStatus("error");
       return;
     }
-    connectInFlight = true;
-    if (s.connectGen !== connectGen) {
+
+    if (isUsbWebSerialPort(port)) {
       connectInFlight = false;
+      if (mountedRef.current) setError(MSG_AT05_PORTA_USB_PROVAVEL_BALANCA);
+      syncStatus("error");
       return;
     }
 
@@ -488,7 +584,11 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     });
 
     try {
-      await s.service.openPort(port);
+      await releaseSerialPortBeforeAt05Open(port);
+      await openAt05PortWithRetry(s.service, port);
+      rememberSerialPortRole(port, "bastao");
+      s.connectedCom = comFromSerialPort(port);
+      if (mountedRef.current) setConnectedCom(s.connectedCom);
       console.info(`[AT05 PROD] OPEN OK`, {
         timestamp: new Date().toISOString(),
         attemptId,
@@ -594,12 +694,17 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
       s.rxLoopPromise &&
       !s.shuttingDown
     ) {
+      registerCurralAt05SerialPort(s.service.getPort());
       const restore =
         s.status === "listening" || s.status === "connected" || s.status === "connecting"
           ? s.status
           : "listening";
       syncStatusRef.current(restore);
+      if (mountedRef.current) setConnectedCom(s.connectedCom);
       log("restored live session after mount", { status: restore });
+    } else if (s.service.getPort() && isSerialPortOpen(s.service.getPort()!)) {
+      registerCurralAt05SerialPort(s.service.getPort());
+      if (mountedRef.current) setStatus(s.status);
     } else if (mountedRef.current) {
       setStatus(s.status);
     }
@@ -631,6 +736,10 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     error,
     busy,
     sessionActive,
+    equipamentoLinha: sessionActive
+      ? linhaModeloComCom("AT05", connectedCom)
+      : "AT05",
+    statusOperacional: statusOperacionalEquipamento(status, "m"),
     isListening: status === "listening",
     connect,
     /** Aguardável — Cancelar/navegação devem await antes de sair. */

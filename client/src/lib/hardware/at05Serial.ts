@@ -1,3 +1,27 @@
+import {
+  collectCurralPeerExceptPorts,
+  isCurralScaleSerialPort,
+  getCurralAt05SerialPort,
+  registerCurralAt05SerialPort,
+} from "@/lib/hardware/curralSerialPeers";
+
+export {
+  getCurralAt05SerialPort,
+  getCurralScaleSerialPort,
+  isCurralScaleSerialPort,
+  isProtectedCurralSerialPort,
+  registerCurralAt05SerialPort,
+  registerCurralScaleSerialPort,
+} from "@/lib/hardware/curralSerialPeers";
+
+/** Porta da balança escolhida por engano no lugar do bastão AT05. */
+export const MSG_AT05_PORTA_E_BALANCA =
+  "Esta porta é da balança Tru-Test. No seletor do Chrome, escolha o bastão (ex.: AT05 pareado), não a COM da balança.";
+
+/** Cabo USB da balança no PC — COM virtual no popup, mesmo sem “Conectar” no app. */
+export const MSG_AT05_PORTA_USB_PROVAVEL_BALANCA =
+  "Esta porta parece ser a COM USB da balança (cabo conectado no PC). Para o bastão, escolha AT05 / Bluetooth pareado — não a “Virtual Serial Port” da Tru-Test.";
+
 /**
  * Serviço isolado de leitura do bastão AnimallTAG AT05 via Web Serial (SPP).
  * POC — sem integração com Brinco Eletrônico / backend.
@@ -134,15 +158,57 @@ export async function safeCloseSerialSession(options: {
 }
 
 /**
+ * Fecha só a porta escolhida para o AT05 se estiver aberta órfã (HMR / tentativa anterior).
+ * Não mexe na balança nem na sessão AT05 ativa de outra aba.
+ */
+export async function releaseSerialPortBeforeAt05Open(target: SerialPort): Promise<void> {
+  if (isCurralScaleSerialPort(target)) return;
+  if (!isSerialPortOpen(target)) return;
+
+  await enqueueAt05Cleanup(async () => {
+    if (!isSerialPortOpen(target)) return;
+    if (isCurralScaleSerialPort(target)) return;
+    const at05Active = getCurralAt05SerialPort();
+    if (at05Active && target === at05Active && isSerialPortOpen(at05Active)) return;
+
+    console.warn("[AT05 PROD] liberando porta AT05 residual antes de open()");
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    if (target.readable && !target.readable.locked) {
+      try {
+        reader = target.readable.getReader();
+      } catch {
+        reader = null;
+      }
+    }
+    await safeCloseSerialSession({ reader, port: target });
+  });
+  await waitAt05CleanupIdle();
+}
+
+export type CloseLingeringAuthorizedPortsOptions = {
+  /** Portas adicionais que não devem ser fechadas (além das sessões curral ativas). */
+  except?: readonly SerialPort[];
+};
+
+/**
  * Antes de um novo open(): se alguma porta autorizada ainda estiver aberta
  * (cleanup anterior falhou / aba POC / HMR), tenta fechar sem retry de open.
+ * Respeita bastão + balança conectados ao mesmo tempo no hub.
  */
-export async function closeLingeringAuthorizedPorts(): Promise<void> {
+export async function closeLingeringAuthorizedPorts(
+  options?: CloseLingeringAuthorizedPortsOptions,
+): Promise<void> {
   if (!isWebSerialAvailable()) return;
+
   await enqueueAt05Cleanup(async () => {
+    const exceptSet = new Set<SerialPort>([
+      ...collectCurralPeerExceptPorts(),
+      ...(options?.except ?? []),
+    ]);
     const ports = await navigator.serial!.getPorts();
     for (const port of ports) {
       if (!port.readable && !port.writable) continue;
+      if (exceptSet.has(port)) continue;
       console.warn("[AT05 PROD] porta autorizada ainda aberta — cleanup residual");
       try {
         // Se readable estiver locked, tenta cancelar via getReader falha —
@@ -292,6 +358,10 @@ export class At05SerialService {
       throw new Error("Já existe outra porta aberta neste serviço. Desconecte antes.");
     }
 
+    if (isCurralScaleSerialPort(port)) {
+      throw new Error(MSG_AT05_PORTA_E_BALANCA);
+    }
+
     this.stopRequested = false;
     this.readLoopActive = false;
     this.reader = null;
@@ -306,8 +376,12 @@ export class At05SerialService {
 
     // Já aberta (mesma instância reutilizada pelo browser) — não chamar open() de novo.
     if (readable || writable) {
+      if (isCurralScaleSerialPort(port)) {
+        throw new Error(MSG_AT05_PORTA_E_BALANCA);
+      }
       console.info("[AT05 PROD] OPEN SKIP — porta já aberta nesta instância");
       this.port = port;
+      registerCurralAt05SerialPort(port);
       onLog?.("Porta já estava aberta — reutilizando sem novo open()");
       if (!this.disconnectHandler) {
         this.disconnectHandler = () => {
@@ -343,6 +417,7 @@ export class At05SerialService {
     }
 
     this.port = port;
+    registerCurralAt05SerialPort(port);
     console.info("[AT05 PROD] OPEN OK");
     console.info("[AT05 PROD] PORT REF SET");
     onLog?.("Porta aberta em 9600 baud (8N1, sem flow control)");
@@ -358,6 +433,7 @@ export class At05SerialService {
   clearPortAfterOpenFailure(): void {
     this.reader = null;
     this.port = null;
+    registerCurralAt05SerialPort(null);
     this.readLoopActive = false;
     this.stopRequested = false;
     this.disconnectHandler = null;
@@ -400,6 +476,7 @@ export class At05SerialService {
         }),
       );
       this.port = null;
+      registerCurralAt05SerialPort(null);
       onLog?.("Porta fechada");
     } catch (err) {
       // close falhou: NÃO zerar this.port se a porta segue aberta no SO.
@@ -408,6 +485,7 @@ export class At05SerialService {
         onLog?.(`Erro ao fechar porta (porta ainda aberta): ${formatSerialError(err)}`);
       } else {
         this.port = null;
+        registerCurralAt05SerialPort(null);
         onLog?.(`Erro ao fechar porta: ${formatSerialError(err)}`);
       }
       throw err;
@@ -417,4 +495,36 @@ export class At05SerialService {
       this.lastAcceptedAt = 0;
     }
   }
+}
+
+const AT05_OPEN_RETRY_DELAYS_MS = [0, 450, 1000] as const;
+
+/** Bluetooth SPP no Windows às vezes falha no 1º open — tenta de novo após liberar a COM. */
+export async function openAt05PortWithRetry(
+  service: At05SerialService,
+  port: SerialPort,
+  options?: { attempts?: number },
+): Promise<void> {
+  const maxAttempts = options?.attempts ?? AT05_OPEN_RETRY_DELAYS_MS.length;
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      console.info(`[AT05 PROD] OPEN RETRY #${attempt + 1}`);
+      await releaseSerialPortBeforeAt05Open(port);
+      const delayMs = AT05_OPEN_RETRY_DELAYS_MS[attempt] ?? 500;
+      await new Promise<void>(resolve => {
+        window.setTimeout(resolve, delayMs);
+      });
+    }
+    try {
+      await service.openPort(port);
+      return;
+    } catch (err) {
+      lastErr = err;
+      service.clearPortAfterOpenFailure();
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(formatSerialError(lastErr));
 }

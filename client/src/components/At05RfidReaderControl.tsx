@@ -4,9 +4,11 @@ import { cn } from "@/lib/utils";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useAt05Reader, type At05ReaderSession } from "@/hooks/useAt05Reader";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
+import { CurralEquipamentoCard } from "@/components/curral/CurralEquipamentoCard";
 import {
   MSG_RFID_CONEXAO_FALHOU,
   MSG_RFID_SUBSTITUIR,
+  mensagemErroConexaoRfid,
   decidirAplicacaoRfidLido,
   textoStatusBastaoRfid,
   textoStatusLeitorRfid,
@@ -130,7 +132,17 @@ function At05RfidReaderControlInner({
     return bindReadHandler(applyRead);
   }, [applyRead, bindReadHandler]);
 
-  const { supported, status, sessionActive, connect, disconnect, isListening } = session;
+  const {
+    supported,
+    status,
+    sessionActive,
+    connect,
+    disconnect,
+    isListening,
+    error,
+    equipamentoLinha,
+    statusOperacional,
+  } = session;
 
   const uiStatus: StatusLeitorRfidCadastro = !supported
     ? "unsupported"
@@ -144,12 +156,16 @@ function At05RfidReaderControlInner({
             ? "error"
             : "disconnected";
 
+  const erroConexao = uiStatus === "error" ? mensagemErroConexaoRfid(error) : null;
+
   const statusTexto =
     variant === "hub" && uiStatus === "connected"
-      ? "Bastão conectado — após iniciar a sessão, passe a tag para identificar o animal."
-      : variant === "hub" && uiStatus === "disconnected"
-        ? "Conecte o bastão antes de iniciar a sessão."
-        : mode === "identificar" && continuous && isListening
+      ? "Conecte o AT05 para identificar os animais automaticamente."
+      : variant === "hub" && uiStatus === "error" && erroConexao
+        ? erroConexao
+        : variant === "hub" && uiStatus === "disconnected"
+          ? "Conecte o AT05 para identificar os animais automaticamente."
+          : mode === "identificar" && continuous && isListening
           ? "Bastão conectado · passe a tag no animal"
           : mode === "identificar"
             ? textoStatusBastaoRfid(uiStatus)
@@ -200,7 +216,7 @@ function At05RfidReaderControlInner({
     if (uiStatus === "error") {
       return (
         <p className={cn("text-[10px] text-red-500 leading-snug", className)} aria-live="polite">
-          {MSG_RFID_CONEXAO_FALHOU}
+          {erroConexao ?? MSG_RFID_CONEXAO_FALHOU}
         </p>
       );
     }
@@ -252,11 +268,52 @@ function At05RfidReaderControlInner({
           {statusCompacto}
         </p>
         {uiStatus === "error" ? (
-          <span className="text-[10px] text-red-500 shrink-0" title={MSG_RFID_CONEXAO_FALHOU}>
+          <span className="text-[10px] text-red-500 shrink-0" title={erroConexao ?? MSG_RFID_CONEXAO_FALHOU}>
             !
           </span>
         ) : null}
       </div>
+    );
+  }
+
+  if (variant === "hub") {
+    const btnHub =
+      "inline-flex items-center justify-center px-3 py-2 rounded border text-[12px] font-semibold min-h-[36px] disabled:opacity-60 disabled:cursor-not-allowed";
+    return (
+      <CurralEquipamentoCard
+        titulo="Bastão RFID"
+        modeloLinha={equipamentoLinha ?? "AT05"}
+        status={statusOperacional ?? statusCompacto}
+        conectado={sessionActive}
+        erro={erroConexao}
+        ajuda={
+          uiStatus === "disconnected"
+            ? "Conecte o AT05 para identificar os animais automaticamente."
+            : undefined
+        }
+        unsupported={!supported ? statusTexto : null}
+        acao={
+          !supported ? null : !sessionActive ? (
+            <button
+              type="button"
+              disabled={disabled || status === "connecting"}
+              onClick={handleConectar}
+              className={cn(btnHub, "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}
+            >
+              Conectar
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled || status === "connecting"}
+              onClick={() => void disconnect().catch(() => undefined)}
+              className={cn(btnHub, "border-gray-200 bg-white text-gray-600 hover:bg-gray-50")}
+            >
+              Desconectar
+            </button>
+          )
+        }
+      />
     );
   }
 
@@ -283,7 +340,7 @@ function At05RfidReaderControlInner({
             Desconectar
           </button>
         )}
-        {variant !== "hub" && !(mode === "identificar" && continuous) ? (
+        {!(mode === "identificar" && continuous) ? (
           <button
             type="button"
             disabled={disabled || status === "connecting" || capturing}
@@ -295,12 +352,15 @@ function At05RfidReaderControlInner({
           </button>
         ) : null}
       </div>
-      <p className="text-[10px] text-gray-400 leading-snug" aria-live="polite">
+      <p
+        className={cn(
+          "text-[10px] leading-snug",
+          uiStatus === "error" ? "text-red-500" : "text-gray-400",
+        )}
+        aria-live="polite"
+      >
         {statusTexto}
       </p>
-      {uiStatus === "error" ? (
-        <p className="text-[10px] text-red-500 leading-snug">{MSG_RFID_CONEXAO_FALHOU}</p>
-      ) : null}
       {mode === "cadastro" && lastFilled ? (
         <p className="text-[10px] text-gray-400 leading-snug" aria-live="polite">
           RFID lido: {lastFilled}

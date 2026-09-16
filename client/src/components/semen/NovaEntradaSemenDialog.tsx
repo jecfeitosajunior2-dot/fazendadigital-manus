@@ -250,7 +250,7 @@ export function NovaEntradaSemenDialog({
                     placeholder="Selecione a origem"
                     options={[
                       { value: SEMEN_ORIGEM_INTERNO, label: "Animal do rebanho" },
-                      { value: SEMEN_ORIGEM_EXTERNO, label: "Sêmen / reprodutor externo" },
+                      { value: SEMEN_ORIGEM_EXTERNO, label: "Sêmen / Reprodutor externo" },
                     ]}
                   />
                 </div>

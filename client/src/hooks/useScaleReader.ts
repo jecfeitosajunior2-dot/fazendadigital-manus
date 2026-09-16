@@ -7,6 +7,18 @@ import {
   isWebSerialAvailable,
   safeCloseSerialSession,
 } from "@/lib/hardware/at05Serial";
+import { registerCurralScaleSerialPort } from "@/lib/hardware/curralSerialPeers";
+import {
+  comFromSerialPort,
+  linhaModeloComCom,
+  rememberSerialPortRole,
+  resolveScalePortForConnect,
+  rotuloPortaSerial,
+  statusOperacionalEquipamento,
+} from "@/lib/hardware/serialPortLabels";
+
+const MSG_SCALE_PORTA_E_BASTAO =
+  "Esta porta é do bastão RFID. Para a balança, escolha a porta USB da Tru-Test S3.";
 import {
   createScaleRxProcessor,
   createScaleStabilizer,
@@ -69,6 +81,7 @@ type SharedScaleSession = {
   preset: ScaleBrandPreset;
   pollTimer: ReturnType<typeof setInterval> | null;
   pollWriter: WritableStreamDefaultWriter<Uint8Array> | null;
+  connectedCom: string | null;
 };
 
 let shared: SharedScaleSession | null = null;
@@ -91,8 +104,10 @@ function getShared(): SharedScaleSession {
       preset: TRUTEST_S3_SCALE_PRESET,
       pollTimer: null,
       pollWriter: null,
+      connectedCom: null,
     };
   }
+  if (shared.connectedCom === undefined) shared.connectedCom = null;
   return shared;
 }
 
@@ -190,6 +205,8 @@ export async function shutdownScaleSharedSession(reason: string): Promise<void> 
     }
 
     s.port = null;
+    s.connectedCom = null;
+    registerCurralScaleSerialPort(null);
     s.rxLoopPromise = null;
     s.stopReading = false;
     s.stabilizer?.reset();
@@ -228,6 +245,9 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
   const [status, setStatus] = useState<ScaleReaderStatus>(() => getShared().status);
   const [lastWeightKg, setLastWeightKg] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connectedCom, setConnectedCom] = useState<string | null>(
+    () => getShared().connectedCom,
+  );
   const [supported] = useState(() => isWebSerialAvailable());
 
   const syncStatus = useCallback((next: ScaleReaderStatus) => {
@@ -326,6 +346,7 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
       await shutdownScaleSharedSession("manual");
       if (mountedRef.current) {
         setStatus(getShared().status);
+        setConnectedCom(getShared().connectedCom);
         setError(null);
       }
     } catch (err) {
@@ -336,7 +357,7 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
     }
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (preferredPort?: SerialPort) => {
     if (!isWebSerialAvailable()) {
       if (mountedRef.current) {
         setError("Web Serial indisponível. Use Edge ou Chrome no desktop.");
@@ -375,7 +396,12 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
 
     let port: SerialPort;
     try {
-      port = await navigator.serial!.requestPort();
+      if (preferredPort) {
+        port = preferredPort;
+      } else {
+        const resolved = await resolveScalePortForConnect(() => navigator.serial!.requestPort());
+        port = resolved.port;
+      }
     } catch (err) {
       connectInFlight = false;
       if (isPortSelectionCancelled(err)) {
@@ -385,6 +411,13 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
       if (mountedRef.current) {
         setError(err instanceof Error ? err.message : String(err));
       }
+      syncStatus("error");
+      return;
+    }
+
+    if (rotuloPortaSerial(port).papelSugerido === "bastao") {
+      connectInFlight = false;
+      if (mountedRef.current) setError(MSG_SCALE_PORTA_E_BASTAO);
       syncStatus("error");
       return;
     }
@@ -408,6 +441,10 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
         flowControl: "none",
       });
       s.port = port;
+      registerCurralScaleSerialPort(port);
+      rememberSerialPortRole(port, "balanca");
+      s.connectedCom = comFromSerialPort(port);
+      if (mountedRef.current) setConnectedCom(s.connectedCom);
       syncStatus("connected");
 
       const loopPromise = startRxLoop(port, connectGen);
@@ -441,14 +478,37 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
     hookAliveCount += 1;
     ensureStabilizer();
 
+    const s = getShared();
+    if (sharedShutdownPromise) {
+      void sharedShutdownPromise.finally(() => {
+        if (mountedRef.current) setStatus(getShared().status);
+      });
+    } else if (
+      s.port &&
+      isSerialPortOpen(s.port) &&
+      s.rxLoopPromise &&
+      !s.shuttingDown &&
+      (s.status === "listening" || s.status === "connected" || s.status === "connecting")
+    ) {
+      registerCurralScaleSerialPort(s.port);
+      if (mountedRef.current) setConnectedCom(s.connectedCom);
+      syncStatus(s.status === "connecting" ? "connecting" : "listening");
+    } else if (s.port && isSerialPortOpen(s.port)) {
+      registerCurralScaleSerialPort(s.port);
+      if (mountedRef.current) setStatus(s.status);
+    } else if (mountedRef.current) {
+      setStatus(s.status);
+    }
+
     return () => {
       mountedRef.current = false;
       hookAliveCount = Math.max(0, hookAliveCount - 1);
+      // Só encerra quando nenhum hook montado (ex.: hub→operação no curral mantém a COM).
       if (hookAliveCount === 0) {
         void shutdownScaleSharedSession("effect-cleanup");
       }
     };
-  }, [ensureStabilizer]);
+  }, [ensureStabilizer, syncStatus]);
 
   const busy =
     status === "connecting" || status === "connected" || status === "listening";
@@ -462,8 +522,15 @@ export function useScaleReader(options: UseScaleReaderOptions = {}) {
     error,
     busy,
     sessionActive: busy,
+    equipamentoLinha: busy
+      ? linhaModeloComCom("Tru-Test S3", connectedCom)
+      : "Tru-Test S3",
+    connectedCom,
+    statusOperacional: statusOperacionalEquipamento(status, "f"),
     connect,
     disconnect,
     simulateWeight: simulateScaleWeight,
   };
 }
+
+export type ScaleReaderSession = ReturnType<typeof useScaleReader>;
