@@ -1416,7 +1416,7 @@ export function CurralReprodutivoPanel({
                     />
                     {!temPartidasEstoque ? (
                       <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                        Sem partida no estoque. Cadastre em Reprodução → Controle de sêmen →
+                        Sem partida no estoque. Cadastre em Reprodução → Controle de Sêmen →
                         Estoque, ou informe o custo aqui.
                       </p>
                     ) : null}

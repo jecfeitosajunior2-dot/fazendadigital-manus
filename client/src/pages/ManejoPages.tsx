@@ -344,50 +344,6 @@ function labelAnimal(a: {
   return a.brinco?.trim() || a.nome?.trim() || `#${a.id}`;
 }
 
-function NovoManejoButton({ className }: { className?: string }) {
-  const [, setLocation] = useLocation();
-  return (
-    <button
-      type="button"
-      onClick={() => setLocation("/manejo/registros")}
-      className={
-        className ??
-        "inline-flex items-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 transition shrink-0 min-h-[44px]"
-      }
-      style={{ backgroundColor: FD_PRIMARY }}
-    >
-      <span className="material-icons text-[16px]">add</span>
-      Novo manejo
-    </button>
-  );
-}
-
-/** Stub de Visão Geral — layout interno será definido em tarefa posterior. */
-export function ManejoVisaoGeralPage() {
-  return (
-    <AppLayout>
-      <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h1
-            className="text-[20px] font-semibold text-gray-900"
-            style={{ fontFamily: "Fraunces, serif" }}
-          >
-            Visão Geral — Manejo
-          </h1>
-          <NovoManejoButton />
-        </div>
-        <div className="p-8 text-center">
-          <span className="material-icons text-4xl text-gray-200 mb-2 block">assignment</span>
-          <p className="text-[12px] text-gray-400">Visão Geral em desenvolvimento</p>
-          <p className="text-[11px] text-gray-300 mt-1">
-            Use Registros de Manejo para consultar o histórico ou registre um novo manejo.
-          </p>
-        </div>
-      </div>
-    </AppLayout>
-  );
-}
-
 /** Hub: Sessão no curral + Manejo pontual. */
 export function ManejoRegistrosPage() {
   const [, setLocation] = useLocation();

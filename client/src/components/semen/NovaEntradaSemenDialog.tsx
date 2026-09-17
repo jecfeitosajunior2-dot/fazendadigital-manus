@@ -23,7 +23,7 @@ import {
 } from "@/lib/semenEntradaModalLayout";
 import type { SemenEntradaPrefill } from "@/lib/semenEstoqueEntradaPrefill";
 import { trpc } from "@/lib/trpc";
-import { formatCurrencyBrl } from "@/lib/utils";
+import { cn, formatCurrencyBrl } from "@/lib/utils";
 import type { AnimalAutocompleteRow } from "@shared/animalAutocomplete";
 import { toDateOnlyISO } from "@shared/carenciaAnimal";
 import { filterMachosReprodutoresCandidatos } from "@shared/reproMachoSelect";
@@ -46,10 +46,21 @@ function SemenEntradaSection({
   children: ReactNode;
 }) {
   return (
-    <section className={semenEntradaModalLayout.section}>
-      <h3 className={semenEntradaModalLayout.sectionTitle}>{title}</h3>
-      {children}
+    <section className={semenEntradaModalLayout.opCard}>
+      <div className={semenEntradaModalLayout.opCardHead}>
+        <h3 className={semenEntradaModalLayout.opCardTitle}>{title}</h3>
+      </div>
+      <div className={semenEntradaModalLayout.opCardBody}>{children}</div>
     </section>
+  );
+}
+
+function ResumoCampo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-0.5 text-[13px] font-medium text-gray-900 break-words">{value}</p>
+    </div>
   );
 }
 
@@ -214,13 +225,16 @@ export function NovaEntradaSemenDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={semenEntradaModalLayout.content}
+        className={cn(
+          semenEntradaModalLayout.content,
+          "max-h-[min(36rem,calc(100dvh-2rem))] overflow-visible",
+        )}
         data-semen-entrada-modal
       >
         <div className={semenEntradaModalLayout.shell}>
           <DialogHeader className={semenEntradaModalLayout.header}>
             <DialogTitle className="text-[15px] font-semibold text-gray-900 leading-tight">
-              Nova entrada de Sêmen
+              Nova Entrada de Sêmen
             </DialogTitle>
           </DialogHeader>
 
@@ -229,12 +243,11 @@ export function NovaEntradaSemenDialog({
             className={semenEntradaModalLayout.form}
             data-semen-entrada-form
           >
-          <div className={semenEntradaModalLayout.body} data-semen-entrada-body>
-            <div className={semenEntradaModalLayout.formCard}>
+          <div className={cn(semenEntradaModalLayout.body, "space-y-3")} data-semen-entrada-body>
               <SemenEntradaSection title="Reprodutor">
                 <div>
                   <FormLabel required className="mb-1">
-                    Origem do reprodutor
+                    Origem do Reprodutor
                   </FormLabel>
                   <FormNativeSelect
                     value={origem}
@@ -290,7 +303,7 @@ export function NovaEntradaSemenDialog({
                   locked ? (
                     <div>
                       <FormLabel required className="mb-1">
-                        Reprodutor / Sêmen
+                        Reprodutor
                       </FormLabel>
                       <FormInput
                         value={reprodutorTexto}
@@ -310,12 +323,14 @@ export function NovaEntradaSemenDialog({
                       }}
                       onCadastrarNovo={() => setCadastroReprodutorOpen(true)}
                       showCadastrarNovo={false}
+                      showHint={false}
                       cadastrarNovoLabel={SEMEN_REPRODUTOR_CADASTRAR_ENTRADA_LABEL}
                       options={reprodutoresExternosCatalogo}
                       disabled={!fazendaId}
                       loading={carregandoExternos}
                       inputClassName={SEMEN_ENTRADA_FIELD_LIGHT}
                       labelClassName="block text-[11px] font-semibold text-gray-700 mb-1"
+                      label="Reprodutor"
                     />
                   )
                 ) : null}
@@ -348,11 +363,11 @@ export function NovaEntradaSemenDialog({
                 </div>
               </SemenEntradaSection>
 
-              <SemenEntradaSection title="Valores e data">
-                <div className={semenEntradaModalLayout.fieldGrid3}>
+              <SemenEntradaSection title="Valores e Data">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <FormLabel required className="mb-1">
-                      Doses
+                      Quantidade de doses
                     </FormLabel>
                     <FormInput
                       type="number"
@@ -360,7 +375,7 @@ export function NovaEntradaSemenDialog({
                       step={1}
                       value={quantidadeDoses}
                       onChange={setQuantidadeDoses}
-                      placeholder="10"
+                      placeholder="Ex.: 10"
                       variant="light"
                       compact
                       inputMode="numeric"
@@ -368,7 +383,7 @@ export function NovaEntradaSemenDialog({
                   </div>
                   <div className="min-w-0">
                     <FormLabel required className="mb-1">
-                      Custo unit.
+                      Custo/dose
                     </FormLabel>
                     <FormInput
                       value={custoUnitario}
@@ -381,25 +396,24 @@ export function NovaEntradaSemenDialog({
                       aria-label="Custo unitário por dose em reais"
                     />
                   </div>
-                  <div>
-                    <FormLabel required className="mb-1">
-                      Data
-                    </FormLabel>
-                    <FormDatePicker
-                      value={dataEntrada}
-                      onChange={setDataEntrada}
-                      max={toDateOnlyISO(new Date())}
-                      required
-                      variant="light"
-                      minHeight={34}
-                    />
-                  </div>
                 </div>
-                <p className={semenEntradaModalLayout.infoLine}>
-                  Custo total: <strong className="text-gray-700">{custoTotalCalculado}</strong>
-                </p>
+                <div className="rounded-xl border border-gray-100 bg-[#F7F9FA] px-3 py-2 min-h-[58px] flex flex-col justify-center">
+                  <ResumoCampo label="Custo total" value={custoTotalCalculado} />
+                </div>
+                <div>
+                  <FormLabel required className="mb-1">
+                    Data
+                  </FormLabel>
+                  <FormDatePicker
+                    value={dataEntrada}
+                    onChange={setDataEntrada}
+                    max={toDateOnlyISO(new Date())}
+                    required
+                    variant="light"
+                    minHeight={34}
+                  />
+                </div>
               </SemenEntradaSection>
-            </div>
           </div>
 
           <div className={semenEntradaModalLayout.footer} data-semen-entrada-footer>
@@ -408,14 +422,14 @@ export function NovaEntradaSemenDialog({
                 type="button"
                 onClick={() => onOpenChange(false)}
                 disabled={registrar.isPending}
-                className="px-5 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={submitDisabled}
-                className="inline-flex items-center justify-center px-5 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
+                className="inline-flex items-center justify-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 {registrar.isPending ? "Salvando…" : "Registrar entrada"}

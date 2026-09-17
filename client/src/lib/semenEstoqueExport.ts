@@ -1,6 +1,8 @@
 import { paginateSemenEstoqueList } from "./semenEstoqueListPagination";
 import { parseValorDecimalBanco } from "@shared/parseMoedaBr";
-import { calcularValorEstoqueSemen } from "@shared/semenEstoqueValor";
+import { calcularValorEstoqueSemen, somarValorEstoqueSemen } from "@shared/semenEstoqueValor";
+
+export const SEMEN_ESTOQUE_TITULO = "Estoque de Sêmen";
 
 export const SEMEN_ESTOQUE_EXPORT_HEADERS = [
   "Reprodutor",
@@ -15,6 +17,27 @@ export const SEMEN_ESTOQUE_EXPORT_HEADERS = [
 /** Custo por dose e Valor em estoque. */
 export const SEMEN_ESTOQUE_EXPORT_CURRENCY_COLS = [4, 5];
 export const SEMEN_ESTOQUE_EXPORT_INTEGER_COLS = [3];
+export const SEMEN_ESTOQUE_EXPORT_COLUMN_ALIGNS = [
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+] as const;
+export const SEMEN_ESTOQUE_PDF_COLUMN_ALIGNS = [
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+] as const;
+
+/** Primeira célula do rodapé — o PDF destaca linhas que começam com este texto. */
+export const SEMEN_ESTOQUE_EXPORT_TOTAIS_LABEL = "Valor total em estoque";
 
 export type SemenEstoqueExportItem = {
   reprodutorDisplay: string;
@@ -26,11 +49,26 @@ export type SemenEstoqueExportItem = {
   valorAtualEstoque?: number | null;
 };
 
-/** Exporta o conjunto filtrado na ordem recebida — não pagina. */
-export function buildSemenEstoqueExportRows(
+export function isSemenEstoqueExportTotaisRow(row: readonly (string | number)[]): boolean {
+  return String(row[0] ?? "").trim() === SEMEN_ESTOQUE_EXPORT_TOTAIS_LABEL;
+}
+
+export function buildSemenEstoqueExportFooterRow(
   items: readonly SemenEstoqueExportItem[],
-): (string | number)[][] {
-  return items.map(p => [
+): (string | number)[] {
+  return [
+    SEMEN_ESTOQUE_EXPORT_TOTAIS_LABEL,
+    "",
+    "",
+    "",
+    "",
+    somarValorEstoqueSemen(items),
+    "",
+  ];
+}
+
+function itemToExportRow(p: SemenEstoqueExportItem): (string | number)[] {
+  return [
     p.reprodutorDisplay,
     p.partida,
     p.centralOrigem || "",
@@ -40,7 +78,16 @@ export function buildSemenEstoqueExportRows(
       ? p.valorAtualEstoque
       : calcularValorEstoqueSemen(p.saldoDoses, p.custoUnitario),
     p.statusLabel,
-  ]);
+  ];
+}
+
+/** Exporta o conjunto filtrado na ordem recebida — não pagina. */
+export function buildSemenEstoqueExportRows(
+  items: readonly SemenEstoqueExportItem[],
+): (string | number)[][] {
+  const rows = items.map(itemToExportRow);
+  if (rows.length === 0) return rows;
+  return [...rows, buildSemenEstoqueExportFooterRow(items)];
 }
 
 export function semenEstoqueExportFilenameBase(fazendaNome: string): string {

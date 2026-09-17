@@ -464,7 +464,7 @@ export async function exportListPdf(
     );
 
     const isTotaisRow = (row: ExportRow) =>
-      /^totais\b/i.test(String(row[0] ?? "").trim());
+      /^(totais\b|valor total em estoque\b)/i.test(String(row[0] ?? "").trim());
     const detailRowsCount = rows.filter(r => !isTotaisRow(r)).length;
 
     const doc = new jsPDF({

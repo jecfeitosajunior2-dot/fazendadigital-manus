@@ -1,6 +1,21 @@
 /** Padrão da Lista de Fazendas / listas administrativas. */
 export const SEMEN_ESTOQUE_PAGE_SIZE_DEFAULT = 10;
 
+/** Ordena a lista visível por nome do reprodutor, como a coluna Produto. */
+export function sortSemenEstoqueByReprodutor<T extends { reprodutorDisplay?: string | null }>(
+  items: readonly T[],
+  asc: boolean,
+): T[] {
+  return [...items].sort((a, b) => {
+    const cmp = String(a.reprodutorDisplay ?? "").localeCompare(
+      String(b.reprodutorDisplay ?? ""),
+      "pt-BR",
+      { sensitivity: "base" },
+    );
+    return asc ? cmp : -cmp;
+  });
+}
+
 export function paginateSemenEstoqueList<T>(
   items: readonly T[],
   page: number,

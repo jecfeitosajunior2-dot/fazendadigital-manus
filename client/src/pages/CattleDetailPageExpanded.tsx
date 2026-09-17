@@ -1337,7 +1337,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
                             {reproDetalhesTabelaHeader}
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
-                            Resultado
+                            Desfecho
                           </th>
                           <th className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                             Observações

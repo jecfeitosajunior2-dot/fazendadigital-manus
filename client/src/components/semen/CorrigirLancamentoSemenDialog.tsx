@@ -15,7 +15,8 @@ import {
   FormTextarea,
 } from "@/components/FormFields";
 import { formatDateBR } from "@/lib/date-utils";
-import { formatCurrencyBrl } from "@/lib/utils";
+import { semenEntradaModalLayout } from "@/lib/semenEntradaModalLayout";
+import { cn, formatCurrencyBrl } from "@/lib/utils";
 import { toDateOnlyISO } from "@shared/carenciaAnimal";
 import {
   calcSemenCustoUnitarioEntrada,
@@ -26,14 +27,20 @@ import {
 import {
   hasSemenCorrecaoAlteracaoReal,
   MSG_SEMEN_CORRECAO_CONSUMO,
-  MSG_SEMEN_CORRECAO_SEM_ALTERACAO,
   SEMEN_CORRECAO_MOTIVO_OUTRO,
   SEMEN_CORRECAO_MOTIVOS,
   validateSemenCorrecaoDados,
   validateSemenCorrecaoMotivo,
 } from "@shared/semenEstoqueLedger";
+import { SEMEN_OP_CORRIGIR_LANCAMENTO_TITULO } from "@shared/semenEstoqueOperacoes";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+
+const correcaoCardCls =
+  "rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden";
+const correcaoCardHeadCls = "px-4 py-3 border-b border-gray-100";
+const correcaoCardTitleCls = "text-[13px] font-semibold text-[#4ECDC4]";
+const correcaoCardBodyCls = "p-4 space-y-3";
 
 export type SemenLancamentoOriginal = {
   id: number;
@@ -144,6 +151,10 @@ export default function CorrigirLancamentoSemenDialog({
 
   if (!original) return null;
 
+  const dosesOriginal =
+    original.quantidadeDoses === 1 ? "1 dose" : `${original.quantidadeDoses} doses`;
+  const dosesNovo = qtdNum === 1 ? "1 dose" : qtdNum != null ? `${qtdNum} doses` : "—";
+
   return (
     <Dialog
       open={open}
@@ -151,200 +162,239 @@ export default function CorrigirLancamentoSemenDialog({
         if (!v && !corrigir.isPending) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden flex flex-col max-h-[min(36rem,calc(100dvh-2rem))]">
-        <DialogHeader className="shrink-0 px-6 pt-6 pb-3 pr-12">
-          <DialogTitle className="text-[16px] font-semibold text-gray-900">
-            {step === "form" ? "Corrigir lançamento" : "Confirmar correção"}
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent
+        className={cn(semenEntradaModalLayout.content, "max-h-[min(36rem,calc(100dvh-2rem))]")}
+      >
+        <div className={semenEntradaModalLayout.shell}>
+          <DialogHeader className={semenEntradaModalLayout.header}>
+            <DialogTitle className="text-[15px] font-semibold text-gray-900 leading-tight">
+              {step === "form" ? SEMEN_OP_CORRIGIR_LANCAMENTO_TITULO : "Confirmar correção"}
+            </DialogTitle>
+          </DialogHeader>
 
-        {step === "form" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4 space-y-4">
-            <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2.5 space-y-1">
-              <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                Lançamento original
-              </p>
-              <ResumoLinha label="Data" value={formatDateBR(original.dataEntrada)} />
-              <ResumoLinha
-                label="Quantidade"
-                value={
-                  original.quantidadeDoses === 1
-                    ? "1 dose"
-                    : `${original.quantidadeDoses} doses`
-                }
-              />
-              <ResumoLinha label="Custo total" value={formatSemenCustoTotalDisplay(original.custoTotal)} />
-              <ResumoLinha label="Custo/dose" value={formatSemenCustoTotalDisplay(original.custoUnitario)} />
-            </div>
-
-            <div>
-              <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                Dados corrigidos
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <FormLabel required>Quantidade de doses</FormLabel>
-                  <FormInput
-                    value={quantidadeDoses}
-                    onChange={setQuantidadeDoses}
-                    placeholder="Ex.: 8"
-                    inputMode="numeric"
-                    required
-                  />
+          {step === "form" ? (
+            <div className={cn(semenEntradaModalLayout.body, "space-y-3")}>
+              <section className={correcaoCardCls}>
+                <div className={correcaoCardHeadCls}>
+                  <h3 className={correcaoCardTitleCls}>Lançamento original</h3>
                 </div>
-                <div>
-                  <FormLabel required>Custo total (R$)</FormLabel>
-                  <FormInput
-                    value={custoTotal}
-                    onChange={v => setCustoTotal(formatCurrencyBrl(v))}
-                    placeholder="R$ 0,00"
-                    inputMode="decimal"
-                    required
-                  />
+                <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <ResumoCampo label="Data" value={formatDateBR(original.dataEntrada)} />
+                  <ResumoCampo label="Quantidade" value={dosesOriginal} />
+                  <ResumoCampo label="Custo/dose" value={formatSemenCustoTotalDisplay(original.custoUnitario)} />
+                  <ResumoCampo label="Custo total" value={formatSemenCustoTotalDisplay(original.custoTotal)} />
                 </div>
-              </div>
-              <div className="rounded-lg bg-gray-50 px-3 py-2 text-[12px] text-gray-700 mt-3">
-                Custo por dose calculado: <strong>{custoPorDose}</strong>
-              </div>
-              <div className="mt-3">
-                <FormLabel required>Data de entrada</FormLabel>
-                <FormDatePicker
-                  value={dataEntrada}
-                  onChange={setDataEntrada}
-                  max={toDateOnlyISO(new Date())}
-                  required
-                />
-              </div>
-            </div>
+              </section>
 
-            <div>
-              <FormLabel required>Motivo da correção</FormLabel>
-              <FormNativeSelect
-                value={motivoCodigo}
-                onChange={codigo => {
-                  setMotivoCodigo(codigo);
-                  if (codigo !== SEMEN_CORRECAO_MOTIVO_OUTRO) setMotivoDescricao("");
-                }}
-                placeholder="Selecione o motivo"
-                modal={false}
-                required
-                options={SEMEN_CORRECAO_MOTIVOS.map(m => ({ value: m.codigo, label: m.label }))}
+              <section className={correcaoCardCls}>
+                <div className={correcaoCardHeadCls}>
+                  <h3 className={correcaoCardTitleCls}>Dados corrigidos</h3>
+                </div>
+                <div className={correcaoCardBodyCls}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <FormLabel required className="mb-1">
+                        Quantidade de doses
+                      </FormLabel>
+                      <FormInput
+                        value={quantidadeDoses}
+                        onChange={setQuantidadeDoses}
+                        placeholder="Ex.: 8"
+                        inputMode="numeric"
+                        variant="light"
+                        compact
+                        required
+                      />
+                    </div>
+                    <div className="rounded-xl border border-gray-100 bg-[#F7F9FA] px-3 py-2 min-h-[58px] flex flex-col justify-center">
+                      <ResumoCampo label="Custo/dose" value={custoPorDose} />
+                    </div>
+                  </div>
+                  <div>
+                    <FormLabel required className="mb-1">
+                      Custo total (R$)
+                    </FormLabel>
+                    <FormInput
+                      value={custoTotal}
+                      onChange={v => setCustoTotal(formatCurrencyBrl(v))}
+                      placeholder="R$ 0,00"
+                      inputMode="decimal"
+                      variant="light"
+                      compact
+                      required
+                    />
+                  </div>
+                  <div>
+                    <FormLabel required className="mb-1">
+                      Data de entrada
+                    </FormLabel>
+                    <FormDatePicker
+                      value={dataEntrada}
+                      onChange={setDataEntrada}
+                      max={toDateOnlyISO(new Date())}
+                      variant="light"
+                      required
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className={correcaoCardCls}>
+                <div className={correcaoCardHeadCls}>
+                  <h3 className={correcaoCardTitleCls}>Motivo</h3>
+                </div>
+                <div className={correcaoCardBodyCls}>
+                  <div>
+                    <FormLabel required className="mb-1">
+                      Motivo da correção
+                    </FormLabel>
+                    <FormNativeSelect
+                      value={motivoCodigo}
+                      onChange={codigo => {
+                        setMotivoCodigo(codigo);
+                        if (codigo !== SEMEN_CORRECAO_MOTIVO_OUTRO) setMotivoDescricao("");
+                      }}
+                      placeholder="Selecione o motivo"
+                      modal={false}
+                      variant="light"
+                      compact
+                      required
+                      options={SEMEN_CORRECAO_MOTIVOS.map(m => ({ value: m.codigo, label: m.label }))}
+                    />
+                  </div>
+                  {motivoCodigo === SEMEN_CORRECAO_MOTIVO_OUTRO ? (
+                    <div>
+                      <FormLabel required className="mb-1">
+                        Descreva o motivo
+                      </FormLabel>
+                      <FormTextarea
+                        value={motivoDescricao}
+                        onChange={setMotivoDescricao}
+                        placeholder="Informe o motivo da correção..."
+                        rows={2}
+                        variant="light"
+                        required
+                        className="min-h-[64px]"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <ErroCorrecao
+                erroLocal={erroLocal}
+                onAjustarEstoque={onAjustarEstoque}
               />
             </div>
-            {motivoCodigo === SEMEN_CORRECAO_MOTIVO_OUTRO ? (
-              <div>
-                <FormLabel required>Descreva o motivo</FormLabel>
-                <FormTextarea
-                  value={motivoDescricao}
-                  onChange={setMotivoDescricao}
-                  placeholder="Informe o motivo da correção..."
-                  rows={2}
-                  required
-                  className="min-h-[64px]"
-                />
-              </div>
-            ) : null}
+          ) : (
+            <div className={cn(semenEntradaModalLayout.body, "space-y-3")}>
+              <section className={correcaoCardCls}>
+                <div className={correcaoCardHeadCls}>
+                  <h3 className={correcaoCardTitleCls}>Lançamento original</h3>
+                </div>
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <ResumoCampo label="Quantidade" value={dosesOriginal} />
+                  <ResumoCampo label="Custo total" value={formatSemenCustoTotalDisplay(original.custoTotal)} />
+                </div>
+              </section>
+              <section className={correcaoCardCls}>
+                <div className={correcaoCardHeadCls}>
+                  <h3 className={correcaoCardTitleCls}>Dados corrigidos</h3>
+                </div>
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <ResumoCampo label="Quantidade" value={dosesNovo} />
+                  <ResumoCampo label="Custo total" value={formatSemenCustoTotalDisplay(custoNum)} />
+                </div>
+              </section>
+              <p className="text-[12px] text-gray-600 leading-relaxed px-0.5">
+                O lançamento original será mantido no histórico e uma correção auditável será registrada.
+              </p>
+              <ErroCorrecao
+                erroLocal={erroLocal}
+                onAjustarEstoque={onAjustarEstoque}
+              />
+            </div>
+          )}
 
-            {erroLocal ? (
-              <div className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2 space-y-2">
-                <p>{erroLocal}</p>
-                {erroLocal === MSG_SEMEN_CORRECAO_CONSUMO && onAjustarEstoque ? (
+          <DialogFooter className={cn(semenEntradaModalLayout.footer, "flex-col gap-2 sm:flex-col sm:items-stretch sm:justify-end")}>
+            <div className={semenEntradaModalLayout.footerActions}>
+              {step === "form" ? (
+                <>
                   <button
                     type="button"
-                    onClick={onAjustarEstoque}
-                    className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 underline underline-offset-2"
+                    onClick={onClose}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200"
                   >
-                    Ajustar estoque
+                    Cancelar
                   </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4 space-y-3">
-            <p className="text-[13px] text-gray-700">
-              Original: {original.quantidadeDoses} doses — {formatSemenCustoTotalDisplay(original.custoTotal)}
-            </p>
-            <p className="text-[13px] text-gray-700">
-              Novo: {qtdNum} doses — {formatSemenCustoTotalDisplay(custoNum)}
-            </p>
-            <p className="text-[13px] text-gray-600 leading-relaxed">
-              O lançamento original será mantido no histórico e uma correção auditável será registrada.
-            </p>
-            {erroLocal ? (
-              <div className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2 space-y-2">
-                <p>{erroLocal}</p>
-                {erroLocal === MSG_SEMEN_CORRECAO_CONSUMO && onAjustarEstoque ? (
                   <button
                     type="button"
-                    onClick={onAjustarEstoque}
-                    className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 underline underline-offset-2"
+                    onClick={irParaConfirmacao}
+                    disabled={!formValido}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50"
+                    style={{ backgroundColor: FD_PRIMARY }}
                   >
-                    Ajustar estoque
+                    Continuar
                   </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        <DialogFooter className="shrink-0 flex-col border-t border-gray-100 px-6 py-4 gap-2 sm:flex-col sm:items-stretch sm:justify-end">
-          {step === "form" && !alteracaoReal ? (
-            <p className="text-[11px] text-gray-500 text-left">{MSG_SEMEN_CORRECAO_SEM_ALTERACAO}</p>
-          ) : null}
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
-            {step === "form" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={irParaConfirmacao}
-                  disabled={!formValido}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50"
-                  style={{ backgroundColor: FD_PRIMARY }}
-                >
-                  Continuar
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setStep("form")}
-                  disabled={corrigir.isPending}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void confirmar()}
-                  disabled={corrigir.isPending || !formValido}
-                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50"
-                  style={{ backgroundColor: FD_PRIMARY }}
-                >
-                  {corrigir.isPending ? "Salvando…" : "Confirmar correção"}
-                </button>
-              </>
-            )}
-          </div>
-        </DialogFooter>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setStep("form")}
+                    disabled={corrigir.isPending}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmar()}
+                    disabled={corrigir.isPending || !formValido}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50"
+                    style={{ backgroundColor: FD_PRIMARY }}
+                  >
+                    {corrigir.isPending ? "Salvando…" : "Confirmar correção"}
+                  </button>
+                </>
+              )}
+            </div>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ResumoLinha({ label, value }: { label: string; value: string }) {
+function ResumoCampo({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3 text-[12px]">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-800 text-right">{value}</span>
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-0.5 text-[13px] font-medium text-gray-900 break-words">{value}</p>
+    </div>
+  );
+}
+
+function ErroCorrecao({
+  erroLocal,
+  onAjustarEstoque,
+}: {
+  erroLocal: string;
+  onAjustarEstoque?: () => void;
+}) {
+  if (!erroLocal) return null;
+  return (
+    <div className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 space-y-2">
+      <p>{erroLocal}</p>
+      {erroLocal === MSG_SEMEN_CORRECAO_CONSUMO && onAjustarEstoque ? (
+        <button
+          type="button"
+          onClick={onAjustarEstoque}
+          className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 underline underline-offset-2"
+        >
+          Ajustar estoque
+        </button>
+      ) : null}
     </div>
   );
 }

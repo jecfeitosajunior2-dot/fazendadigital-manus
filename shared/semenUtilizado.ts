@@ -1,3 +1,4 @@
+import { formatMoedaBrlExcel } from "./parseMoedaBr";
 import { reproDataToInputISO, unpackReproObservacoes } from "./reproRegistroMeta";
 import {
   formatReprodutorAnimalLabel,
@@ -14,6 +15,9 @@ import {
 } from "./semenEstoque";
 
 export const REPRO_TIPO_INSEMINACAO = "Inseminação";
+/** Cada registro de IA consome exatamente 1 dose — não há quantidade variável no modelo. */
+export const SEMEN_UTILIZADO_IA_DOSES_POR_REGISTRO = 1;
+export const SEMEN_UTILIZADO_COLUNA_STATUS = "Status";
 export {
   SEMEN_REPRODUTOR_NAO_INFORMADO_KEY,
   SEMEN_REPRODUTOR_NAO_INFORMADO_LABEL,
@@ -110,6 +114,45 @@ export function formatSemenUtilizadoMatrizLabel(brinco: string | null | undefine
   return `Matriz ${t}`;
 }
 
+function rotuloContagem(n: number, singular: string, plural: string): string {
+  return n === 1 ? `1 ${singular}` : `${n} ${plural}`;
+}
+
+/** Cabeçalho do histórico: identifica Reprodutor e Partida sem inventar nome. */
+export function formatSemenUtilizadoHistoricoCabecalho(params: {
+  reprodutorDisplay?: string | null;
+  partida?: string | null;
+}): {
+  reprodutor: string;
+  partida: string;
+  reprodutorLinha: string;
+  partidaLinha: string;
+  compacto: string;
+} {
+  const raw = String(params.reprodutorDisplay ?? "").trim();
+  const reprodutor =
+    !raw || raw === "—" ? SEMEN_REPRODUTOR_NAO_INFORMADO_LABEL : raw;
+  const partida = String(params.partida ?? "").trim() || "—";
+  return {
+    reprodutor,
+    partida,
+    reprodutorLinha: `Reprodutor: ${reprodutor}`,
+    partidaLinha: `Partida: ${partida}`,
+    compacto: `Reprodutor: ${reprodutor} · Partida: ${partida}`,
+  };
+}
+
+/** Resumo do acordeão: matrizes distintas + doses reais (1 IA = 1 dose) + custo histórico. */
+export function formatSemenUtilizadoDiaResumo(params: {
+  matrizes: number;
+  doses: number;
+  custoTotal: number | null | undefined;
+}): string {
+  const n = Number(params.custoTotal);
+  const custo = Number.isFinite(n) && n > 0 ? formatMoedaBrlExcel(n) : "—";
+  return `${rotuloContagem(params.matrizes, "matriz", "matrizes")} · ${rotuloContagem(params.doses, "dose", "doses")} · Custo total ${custo}`;
+}
+
 function cents(n: number): number {
   return Math.round(n * 100);
 }
@@ -189,6 +232,13 @@ export type SemenUtilizadoTotalGeral = {
   custoTotal: number | null;
 };
 
+/** Totais da consulta filtrada — doses = IAs; matrizes = DISTINCT femeaId. */
+export type SemenUtilizadoConsultaTotais = {
+  dosesUtilizadas: number;
+  matrizesAtendidas: number;
+  custoTotal: number | null;
+};
+
 /** Resumo do período exportado: IAs, matrizes distintas por femeaId e soma dos snapshots. */
 export function calcularSemenUtilizadoTotalGeral(
   usos: readonly SemenUtilizadoUso[],
@@ -197,6 +247,18 @@ export function calcularSemenUtilizadoTotalGeral(
     totalUtilizacoes: usos.length,
     totalMatrizes: new Set(usos.map(u => u.femeaId)).size,
     custoTotal: calcularCustosSemenUtilizado(usos.map(u => u.custoDose)).custoTotal,
+  };
+}
+
+/** Totais da consulta filtrada. Não soma a coluna Matrizes das linhas consolidadas. */
+export function buildSemenUtilizadoConsultaTotais(
+  usos: readonly SemenUtilizadoUso[],
+): SemenUtilizadoConsultaTotais {
+  const geral = calcularSemenUtilizadoTotalGeral(usos);
+  return {
+    dosesUtilizadas: geral.totalUtilizacoes,
+    matrizesAtendidas: geral.totalMatrizes,
+    custoTotal: geral.custoTotal,
   };
 }
 
@@ -345,6 +407,7 @@ export function buildSemenUtilizadoVisao(
 ): {
   usos: SemenUtilizadoUso[];
   grupos: SemenUtilizadoGrupo[];
+  totais: SemenUtilizadoConsultaTotais;
   custoTotalFiltrado: number | null;
   reprodutoresOpcoes: SemenUtilizadoReprodutorOpcao[];
 } {
@@ -354,10 +417,12 @@ export function buildSemenUtilizadoVisao(
     fazendaId > 0 ? extraidos.filter(uso => uso.fazendaId === fazendaId) : extraidos;
   const usos = filterSemenUtilizadoUsos(extraidos, filtros);
   const grupos = aggregateSemenUtilizado(usos);
+  const totais = buildSemenUtilizadoConsultaTotais(usos);
   return {
     usos,
     grupos,
-    custoTotalFiltrado: somarCustoTotalSemenUtilizado(grupos),
+    totais,
+    custoTotalFiltrado: totais.custoTotal,
     reprodutoresOpcoes: listSemenUtilizadoReprodutorOpcoes(daFazenda),
   };
 }
@@ -448,6 +513,8 @@ export type SemenUtilizadoDiaGrupo = {
   dataIso: string;
   usos: SemenUtilizadoUso[];
   utilizacoes: number;
+  /** Soma das doses do dia. Hoje 1 registro de IA = 1 dose. */
+  doses: number;
   matrizes: number;
   usosComCusto: number;
   custoTotal: number | null;
@@ -469,10 +536,12 @@ export function groupSemenUtilizadoUsosPorDia(
     .map(([dataIso, list]) => {
       const usosDoDia = sortSemenUtilizadoUsosPorBrinco(list);
       const custos = calcularCustosSemenUtilizado(usosDoDia.map(u => u.custoDose));
+      const utilizacoes = usosDoDia.length;
       return {
         dataIso,
         usos: usosDoDia,
-        utilizacoes: usosDoDia.length,
+        utilizacoes,
+        doses: utilizacoes * SEMEN_UTILIZADO_IA_DOSES_POR_REGISTRO,
         matrizes: new Set(usosDoDia.map(u => u.femeaId)).size,
         usosComCusto: custos.usosComCusto,
         custoTotal: custos.custoTotal,

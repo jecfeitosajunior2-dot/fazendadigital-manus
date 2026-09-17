@@ -17,17 +17,18 @@ function childPaths(groupLabel: string): string[] {
 }
 
 describe("menu lateral — Manejo vs Reprodução", () => {
-  it("Manejo contém Registros de Manejo", () => {
-    expect(childLabels("Manejo")).toContain("Registros de Manejo");
-    expect(childPaths("Manejo")).toContain("/manejo/registros");
+  it("Manejo contém só Registros de Manejo", () => {
+    expect(childLabels("Manejo")).toEqual(["Registros de Manejo"]);
+    expect(childPaths("Manejo")).toEqual(["/manejo/registros"]);
   });
 
-  it("Reprodução contém apenas Sêmen utilizado, sem cadastro separado nem estoque", () => {
-    expect(childLabels("Reprodução")).toContain("Sêmen utilizado");
-    expect(childPaths("Reprodução")).toContain("/reproducao/semen-utilizado");
+  it("Reprodução contém apenas Controle de sêmen, sem cadastro separado", () => {
+    expect(childLabels("Reprodução")).toEqual(["Controle de Sêmen"]);
+    expect(childPaths("Reprodução")).toEqual(["/reproducao/estoque-semen"]);
     expect(childLabels("Reprodução")).not.toContain("Cadastro de sêmen");
     expect(childPaths("Reprodução")).not.toContain("/reproducao/cadastro-semen");
     expect(childLabels("Reprodução")).not.toContain("Estoque de sêmen");
+    expect(childLabels("Reprodução")).not.toContain("Visão Geral");
   });
 
   it("Reprodução NÃO contém Registrar manejo", () => {
@@ -41,7 +42,7 @@ describe("menu lateral — Manejo vs Reprodução", () => {
   });
 
   it("Reprodução tem apenas recursos de apoio (sem duplicar Manejo)", () => {
-    expect(childLabels("Reprodução")).toEqual(["Sêmen utilizado"]);
+    expect(childLabels("Reprodução")).toEqual(["Controle de Sêmen"]);
   });
 });
 
@@ -50,8 +51,9 @@ describe("rotas oficiais — manejo reprodutivo e estoque", () => {
     expect(MANEJO_REPRODUTIVO_PATH).toBe("/manejo/registros/cadastro?tipo=reprodutivo");
   });
 
-  it("rota oficial de sêmen utilizado permanece em Reprodução", () => {
-    expect(childPaths("Reprodução")).toContain("/reproducao/semen-utilizado");
+  it("Controle de sêmen abre em Estoque; Utilizado continua como aba", () => {
+    expect(childPaths("Reprodução")).toEqual(["/reproducao/estoque-semen"]);
+    expect(childPaths("Reprodução")).not.toContain("/reproducao/semen-utilizado");
   });
 });
 

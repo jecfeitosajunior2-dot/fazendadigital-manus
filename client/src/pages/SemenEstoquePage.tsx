@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
-import { FD_PRIMARY, FormLabel, inputClass } from "@/components/FormFields";
+import { FD_PRIMARY, FormLabel, FormSelect, inputClass } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { NovaEntradaSemenDialog } from "@/components/semen/NovaEntradaSemenDialog";
 import { SemenReproducaoTabs } from "@/components/semen/SemenReproducaoTabs";
 import { Badge } from "@/components/ui/badge";
@@ -19,19 +20,24 @@ import TablePaginationFooter, {
 } from "@/components/TablePaginationFooter";
 import { formatDateBR } from "@/lib/date-utils";
 import {
+  SEMEN_ESTOQUE_EXPORT_COLUMN_ALIGNS,
   SEMEN_ESTOQUE_EXPORT_CURRENCY_COLS,
   SEMEN_ESTOQUE_EXPORT_HEADERS,
   SEMEN_ESTOQUE_EXPORT_INTEGER_COLS,
+  SEMEN_ESTOQUE_PDF_COLUMN_ALIGNS,
+  SEMEN_ESTOQUE_TITULO,
   buildSemenEstoqueExportRows,
   semenEstoqueExportDisabled,
   semenEstoqueExportDisabledTitle,
   semenEstoqueExportFilenameBase,
 } from "@/lib/semenEstoqueExport";
 import {
+  SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS,
   SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_WIDTHS,
   SEMEN_PARTIDA_HISTORICO_EXPORT_CURRENCY_COLS,
   SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS,
   SEMEN_PARTIDA_HISTORICO_EXPORT_TEXT_COLS,
+  SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS,
   appendSemenPartidaHistoricoExportFooter,
   buildSemenPartidaHistoricoExportRows,
   buildSemenPartidaHistoricoExportTitle,
@@ -49,6 +55,16 @@ import {
   type SemenEntradaPrefill,
 } from "@/lib/semenEstoqueEntradaPrefill";
 import { invalidateSemenQueriesAfterAjuste, invalidateSemenQueriesAfterCorrecao } from "@/lib/invalidateSemenAfterConsumo";
+import {
+  SEMEN_DETALHE_LABEL_CENTRAL,
+  SEMEN_DETALHE_LABEL_CUSTO_DOSE,
+  SEMEN_DETALHE_LABEL_PROCEDENCIA,
+  SEMEN_DETALHE_LABEL_SALDO,
+  SEMEN_DETALHE_LABEL_VALOR_ESTOQUE,
+  buildSemenPartidaDetalheIdentidade,
+  formatSemenPartidaDetalheValorEstoque,
+  formatSemenPartidaProcedenciaLabel,
+} from "@/lib/semenPartidaDetalheCard";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -59,7 +75,6 @@ import type { AnimalAutocompleteRow } from "@shared/animalAutocomplete";
 import { EXCEL_FMT_MOEDA_BRL, formatMoedaBrlExcel, parseValorDecimalBanco } from "@shared/parseMoedaBr";
 import { formatValorAtualEstoqueSemenDisplay, formatValorTotalEstoqueSemenDisplay } from "@shared/semenEstoqueValor";
 import {
-  SEMEN_ORIGEM_INTERNO,
   SEMEN_STATUS_DISPONIVEL,
   SEMEN_STATUS_ESGOTADO,
   formatSemenCustoTotalDisplay,
@@ -67,6 +82,11 @@ import {
 } from "@shared/semenEstoque";
 import { shouldShowSemenMovimentacaoCustoTotal, buildSemenHistoricoVisual } from "@shared/semenMovimentacaoDisplay";
 import { isSemenMovimentacaoAjusteEstoque } from "@shared/semenEstoqueAjuste";
+import {
+  SEMEN_OP_AJUSTAR_ESTOQUE_TITULO,
+  SEMEN_OP_AJUSTAR_ESTOQUE_TOOLTIP,
+  SEMEN_OP_CORRIGIR_LANCAMENTO_TOOLTIP,
+} from "@shared/semenEstoqueOperacoes";
 import { toast } from "sonner";
 import CorrigirLancamentoSemenDialog, {
   type SemenLancamentoOriginal,
@@ -125,7 +145,7 @@ function SemenHistoricoMovLinha({
   const showCustoTotal = shouldShowSemenMovimentacaoCustoTotal(mov.tipo);
   const isAjuste = isSemenMovimentacaoAjusteEstoque(mov.tipo);
   return (
-    <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-[12px]">
+    <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-6 gap-2 text-[12px]">
       <div>
         <p className="text-gray-500">Data</p>
         <p className="font-medium text-gray-800">{formatDateBR(mov.dataEntrada)}</p>
@@ -154,37 +174,37 @@ function SemenHistoricoMovLinha({
         <p className="font-medium text-gray-800">{formatCusto(mov.custoUnitario)}</p>
       </div>
       {showCustoTotal ? (
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-gray-500">Custo total</p>
-            <p className="font-medium text-gray-800">{formatCusto(mov.custoTotal)}</p>
-          </div>
-          {mov.podeCorrigir ? (
-            <TableIconButton
-              label="Corrigir lançamento"
-              onClick={() =>
-                onCorrigir({
-                  id: mov.id,
-                  dataEntrada: mov.dataEntrada,
-                  quantidadeDoses: mov.quantidadeDoses,
-                  custoTotal: mov.custoTotal,
-                  custoUnitario: mov.custoUnitario,
-                })
-              }
-              tone="neutral"
-              compact
-            >
-              <EditActionIcon size={15} />
-            </TableIconButton>
-          ) : null}
+        <div>
+          <p className="text-gray-500">Custo total</p>
+          <p className="font-medium text-gray-800">{formatCusto(mov.custoTotal)}</p>
         </div>
       ) : (
         <div />
       )}
+      <div className="flex items-start justify-center min-h-7">
+        {mov.podeCorrigir ? (
+          <TableIconButton
+            label={SEMEN_OP_CORRIGIR_LANCAMENTO_TOOLTIP}
+            onClick={() =>
+              onCorrigir({
+                id: mov.id,
+                dataEntrada: mov.dataEntrada,
+                quantidadeDoses: mov.quantidadeDoses,
+                custoTotal: mov.custoTotal,
+                custoUnitario: mov.custoUnitario,
+              })
+            }
+            tone="neutral"
+            compact
+          >
+            <EditActionIcon size={15} />
+          </TableIconButton>
+        ) : null}
+      </div>
         </>
       )}
       {isAjuste ? (
-        <div className="sm:col-span-5 text-[11px] text-gray-600 leading-snug space-y-0.5">
+        <div className="sm:col-span-6 text-[11px] text-gray-600 leading-snug space-y-0.5">
           {mov.ajusteResumoTela?.linhaMudancas ? (
             <p>{mov.ajusteResumoTela.linhaMudancas}</p>
           ) : null}
@@ -192,10 +212,10 @@ function SemenHistoricoMovLinha({
         </div>
       ) : null}
       {mov.contextoDisplay && !isSemenMovimentacaoAjusteEstoque(mov.tipo) ? (
-        <div className="sm:col-span-5 text-gray-600">{mov.contextoDisplay}</div>
+        <div className="sm:col-span-6 text-gray-600">{mov.contextoDisplay}</div>
       ) : null}
       {mov.correcaoResumo ? (
-        <div className="sm:col-span-5 text-[11px] text-gray-500 leading-snug">{mov.correcaoResumo}</div>
+        <div className="sm:col-span-6 text-[11px] text-gray-500 leading-snug">{mov.correcaoResumo}</div>
       ) : null}
     </div>
   );
@@ -257,12 +277,7 @@ export default function SemenEstoquePage() {
   );
 
   const hasActiveFilters = search.trim().length > 0 || statusFilter !== "todos";
-  /** Lista já vem ordenada por última movimentação; a paginação só fatia. */
-  const { pageItems, pageSafe, totalItems } = paginateSemenEstoqueList(
-    partidas,
-    page,
-    pageSize,
-  );
+  const { pageItems, pageSafe, totalItems } = paginateSemenEstoqueList(partidas, page, pageSize);
   const fazendaNome = fazendas.find(f => Number(f.id) === fazendaNum)?.nome ?? "";
   const exportRows = useMemo(() => buildSemenEstoqueExportRows(partidas), [partidas]);
   const exportDisabled = semenEstoqueExportDisabled({
@@ -303,6 +318,16 @@ export default function SemenEstoquePage() {
     detalhe != null
       ? fazendas.find(f => Number(f.id) === Number(detalhe.fazendaId))?.nome ?? ""
       : "";
+  const identidadeDetalhe = useMemo(
+    () =>
+      detalhe
+        ? buildSemenPartidaDetalheIdentidade({
+            reprodutorDisplay: detalhe.reprodutorDisplay,
+            partida: detalhe.partida,
+          })
+        : null,
+    [detalhe],
+  );
   const emptyMessage = semenEstoqueEmptyMessage({
     hasFazenda: fazendaNum > 0,
     loading: loadingPartidas,
@@ -358,10 +383,10 @@ export default function SemenEstoquePage() {
                 <button
                   type="button"
                   onClick={() => setAjusteOpen(true)}
-                  title="Ajuste saldo ou custo atual sem alterar movimentações passadas."
+                  title={SEMEN_OP_AJUSTAR_ESTOQUE_TOOLTIP}
                   className="inline-flex items-center min-h-[36px] px-3 rounded-lg text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
                 >
-                  Ajustar estoque
+                  {SEMEN_OP_AJUSTAR_ESTOQUE_TITULO}
                 </button>
                 <ListExportButtons
                 title={`Histórico de sêmen — ${detalhe.partida}`}
@@ -389,30 +414,10 @@ export default function SemenEstoquePage() {
                 spreadsheetCurrencyCols={[...SEMEN_PARTIDA_HISTORICO_EXPORT_CURRENCY_COLS]}
                 spreadsheetCurrencyFormat={EXCEL_FMT_MOEDA_BRL}
                 spreadsheetTextCols={[...SEMEN_PARTIDA_HISTORICO_EXPORT_TEXT_COLS]}
-                spreadsheetColumnAligns={[
-                  "center",
-                  "left",
-                  "left",
-                  "right",
-                  "right",
-                  "center",
-                  "center",
-                  "left",
-                  "left",
-                ]}
-                pdfColumnAligns={[
-                  "center",
-                  "left",
-                  "left",
-                  "right",
-                  "right",
-                  "center",
-                  "center",
-                  "left",
-                  "left",
-                ]}
+                spreadsheetColumnAligns={[...SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS]}
+                pdfColumnAligns={[...SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS]}
                 pdfLandscape
-                pdfWrapCols={[7, 8]}
+                pdfWrapCols={[7]}
                 pdfShowRegistrosSubtitle={false}
                 pdfIncludeSpreadsheetTitle={false}
               />
@@ -427,8 +432,12 @@ export default function SemenEstoquePage() {
               <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h1 className="text-lg font-semibold text-gray-900">{detalhe.partida}</h1>
-                    <p className="text-sm text-gray-600 mt-0.5">{detalhe.reprodutorDisplay}</p>
+                    <h1 className="text-lg font-semibold text-gray-900">
+                      {identidadeDetalhe?.titulo}
+                    </h1>
+                    {identidadeDetalhe?.partidaLinha ? (
+                      <p className="text-sm text-gray-600 mt-0.5">{identidadeDetalhe.partidaLinha}</p>
+                    ) : null}
                   </div>
                   <Badge
                     variant={detalhe.status === SEMEN_STATUS_ESGOTADO ? "secondary" : "default"}
@@ -440,27 +449,31 @@ export default function SemenEstoquePage() {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-[12px]">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-[12px]">
                   <div>
-                    <p className="text-gray-500">Central / origem</p>
+                    <p className="text-gray-500">{SEMEN_DETALHE_LABEL_CENTRAL}</p>
                     <p className="font-medium text-gray-800">{detalhe.centralOrigem || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Saldo</p>
+                    <p className="text-gray-500">{SEMEN_DETALHE_LABEL_SALDO}</p>
                     <p className="font-medium text-gray-800">{detalhe.saldoDoses} doses</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Custo por dose</p>
+                    <p className="text-gray-500">{SEMEN_DETALHE_LABEL_CUSTO_DOSE}</p>
                     <p className="font-medium text-gray-800">
                       {formatCustoDisplay(detalhe.custoUnitario)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Origem</p>
+                    <p className="text-gray-500">{SEMEN_DETALHE_LABEL_VALOR_ESTOQUE}</p>
                     <p className="font-medium text-gray-800">
-                      {detalhe.origemReprodutor === SEMEN_ORIGEM_INTERNO
-                        ? "Rebanho"
-                        : "Externo"}
+                      {formatSemenPartidaDetalheValorEstoque(detalhe.valorAtualEstoque)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">{SEMEN_DETALHE_LABEL_PROCEDENCIA}</p>
+                    <p className="font-medium text-gray-800">
+                      {formatSemenPartidaProcedenciaLabel(detalhe.origemReprodutor)}
                     </p>
                   </div>
                 </div>
@@ -534,7 +547,7 @@ export default function SemenEstoquePage() {
             className="text-[20px] font-semibold text-gray-900 shrink-0"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Estoque de sêmen
+            {SEMEN_ESTOQUE_TITULO}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -551,10 +564,10 @@ export default function SemenEstoquePage() {
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[16px]">add</span>
-              Nova entrada
+              Nova Entrada
             </button>
             <ListExportButtons
-              title="Estoque de sêmen"
+              title={SEMEN_ESTOQUE_TITULO}
               filename={exportFilename}
               headers={[...SEMEN_ESTOQUE_EXPORT_HEADERS]}
               rows={exportRows}
@@ -562,9 +575,9 @@ export default function SemenEstoquePage() {
               variant="secondary"
               disabled={exportDisabled}
               disabledTitle={exportDisabledTitle}
-              spreadsheetSheetName="Estoque de sêmen"
+              spreadsheetSheetName={SEMEN_ESTOQUE_TITULO}
               spreadsheetReportTitle={() =>
-                fazendaNome ? `${fazendaNome} — Estoque de sêmen` : "Estoque de sêmen"
+                fazendaNome ? `${fazendaNome} — ${SEMEN_ESTOQUE_TITULO}` : SEMEN_ESTOQUE_TITULO
               }
               spreadsheetBlankAfterMeta={false}
               spreadsheetAutoFilter={false}
@@ -572,24 +585,9 @@ export default function SemenEstoquePage() {
               spreadsheetCurrencyCols={[...SEMEN_ESTOQUE_EXPORT_CURRENCY_COLS]}
               spreadsheetCurrencyFormat={EXCEL_FMT_MOEDA_BRL}
               spreadsheetIntegerCols={[...SEMEN_ESTOQUE_EXPORT_INTEGER_COLS]}
-              spreadsheetColumnAligns={[
-                "left",
-                "center",
-                "center",
-                "center",
-                "center",
-                "center",
-                "center",
-              ]}
-              pdfColumnAligns={[
-                "left",
-                "center",
-                "center",
-                "center",
-                "center",
-                "center",
-                "center",
-              ]}
+              spreadsheetColumnAligns={[...SEMEN_ESTOQUE_EXPORT_COLUMN_ALIGNS]}
+              spreadsheetFooterRowCount={exportRows.length > 0 ? 1 : 0}
+              pdfColumnAligns={[...SEMEN_ESTOQUE_PDF_COLUMN_ALIGNS]}
               pdfLandscape
               pdfShowRegistrosSubtitle={false}
               pdfIncludeSpreadsheetTitle={false}
@@ -626,19 +624,26 @@ export default function SemenEstoquePage() {
           </div>
           <div className="min-w-0">
             <FormLabel>Status</FormLabel>
-            <select
+            <FormSelect
+              variant="light"
               value={statusFilter}
-              onChange={e => {
-                setStatusFilter(e.target.value as StatusFilter);
+              onChange={v => {
+                setStatusFilter(v as StatusFilter);
                 setPage(1);
               }}
-              className={listControlClass}
-              aria-label="Status"
+              placeholder="Todos"
+              triggerClassName={cn(listControlClass, "min-w-0")}
             >
-              <option value="todos">Todos</option>
-              <option value={SEMEN_STATUS_DISPONIVEL}>Disponível</option>
-              <option value={SEMEN_STATUS_ESGOTADO}>Esgotado</option>
-            </select>
+              <SelectItem value="todos" className="text-[12px]">
+                Todos
+              </SelectItem>
+              <SelectItem value={SEMEN_STATUS_DISPONIVEL} className="text-[12px]">
+                Disponível
+              </SelectItem>
+              <SelectItem value={SEMEN_STATUS_ESGOTADO} className="text-[12px]">
+                Esgotado
+              </SelectItem>
+            </FormSelect>
           </div>
         </div>
 
@@ -673,7 +678,7 @@ export default function SemenEstoquePage() {
           <table className="w-full min-w-[920px] text-[12px] border-collapse">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className={`pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide min-w-[140px] ${stickyReprodutorTh}`}>
+                <th className={`px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide min-w-[140px] ${stickyReprodutorTh}`}>
                   Reprodutor
                 </th>
                 <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -694,7 +699,7 @@ export default function SemenEstoquePage() {
                 <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                   Status
                 </th>
-                <th className="px-2 py-2.5 text-right align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-2 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                   Ações
                 </th>
               </tr>
@@ -713,7 +718,7 @@ export default function SemenEstoquePage() {
                     className="border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors group"
                     onClick={() => abrirDetalhe(p.id)}
                   >
-                    <td className={`pl-4 pr-2 py-2 align-middle text-gray-800 ${stickyReprodutorTd}`}>
+                    <td className={`px-3 py-2 text-center align-middle text-gray-800 ${stickyReprodutorTd}`}>
                       {p.reprodutorDisplay}
                     </td>
                     <td className="px-3 py-2 text-center align-middle font-medium text-gray-900">
@@ -743,10 +748,10 @@ export default function SemenEstoquePage() {
                       </Badge>
                     </td>
                     <td
-                      className="px-2 py-2 align-middle"
+                      className="px-2 py-2 align-middle text-center"
                       onClick={e => e.stopPropagation()}
                     >
-                      <div className="flex items-center justify-end gap-0.5">
+                      <div className="flex items-center justify-center gap-0.5">
                         <TableIconButton
                           label="Ver detalhes"
                           onClick={() => abrirDetalhe(p.id)}

@@ -3,8 +3,8 @@ import { ArrowLeft, ChevronDown } from "lucide-react";
 import { Link, useLocation, useRoute } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
-import { FD_PRIMARY, FormDatePicker } from "@/components/FormFields";
-import { CadastrarSemenExternoDialog } from "@/components/semen/CadastrarSemenExternoDialog";
+import { FD_PRIMARY, FormDatePicker, FormSelect } from "@/components/FormFields";
+import { SelectItem } from "@/components/ui/select";
 import { SemenReproducaoTabs } from "@/components/semen/SemenReproducaoTabs";
 import ListExportButtons from "@/components/ListExportButtons";
 import { TableIconButton, ViewActionIcon } from "@/components/icons/FarmActionIcons";
@@ -23,6 +23,9 @@ import {
   SEMEN_UTILIZADO_EXPORT_INTEGER_COLS,
   SEMEN_UTILIZADO_EXPORT_COLUMN_ALIGNS,
   SEMEN_UTILIZADO_PDF_COLUMN_ALIGNS,
+  SEMEN_UTILIZADO_HISTORICO_TITULO,
+  SEMEN_UTILIZADO_TITULO,
+  formatSemenUtilizadoRodapeConsulta,
   buildSemenUtilizadoDetalheExcelRows,
   buildSemenUtilizadoDetalheExportIdentificacao,
   buildSemenUtilizadoDetalheExportTitle,
@@ -41,7 +44,15 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
 import { EXCEL_FMT_MOEDA_BRL, formatMoedaBrlExcel } from "@shared/parseMoedaBr";
-import { formatSemenUtilizadoMatrizLabel, groupSemenUtilizadoUsosPorDia, semenUtilizadoDiasAbertosIniciais, type SemenUtilizadoUso } from "@shared/semenUtilizado";
+import {
+  formatSemenUtilizadoDiaResumo,
+  formatSemenUtilizadoHistoricoCabecalho,
+  formatSemenUtilizadoMatrizLabel,
+  groupSemenUtilizadoUsosPorDia,
+  semenUtilizadoDiasAbertosIniciais,
+  SEMEN_UTILIZADO_COLUNA_STATUS,
+  type SemenUtilizadoUso,
+} from "@shared/semenUtilizado";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 
@@ -50,6 +61,13 @@ const FILTROS_VAZIOS = {
   dataIni: "",
   dataFim: "",
 };
+
+const TOTAIS_VAZIOS = {
+  dosesUtilizadas: 0,
+  matrizesAtendidas: 0,
+  custoTotal: null as number | null,
+};
+const REPRODUTOR_TODOS = "__todos__";
 
 const selectClass =
   "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px] disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
@@ -69,10 +87,6 @@ function formatCustoUso(val: number | null | undefined): string {
 function custoParcialTitle(usosComCusto: number, doses: number): string | undefined {
   if (usosComCusto >= doses || doses <= 0) return undefined;
   return `${usosComCusto} de ${doses} utilizações com custo informado.`;
-}
-
-function rotuloContagem(n: number, singular: string, plural: string): string {
-  return n === 1 ? `1 ${singular}` : `${n} ${plural}`;
 }
 
 function HistoricoUtilizacoesPorDia({ usos }: { usos: SemenUtilizadoUso[] }) {
@@ -103,9 +117,11 @@ function HistoricoUtilizacoesPorDia({ usos }: { usos: SemenUtilizadoUso[] }) {
               <div className="min-w-0">
                 <p className="text-[13px] font-semibold text-gray-900">{formatDateBR(dia.dataIso)}</p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  {rotuloContagem(dia.matrizes, "matriz", "matrizes")}
-                  {" · Custo total "}
-                  {formatCustoUso(dia.custoTotal)}
+                  {formatSemenUtilizadoDiaResumo({
+                    matrizes: dia.matrizes,
+                    doses: dia.doses,
+                    custoTotal: dia.custoTotal,
+                  })}
                 </p>
               </div>
               <ChevronDown
@@ -141,7 +157,7 @@ function HistoricoUtilizacoesPorDia({ usos }: { usos: SemenUtilizadoUso[] }) {
                       <p className="font-medium text-gray-800 tabular-nums">{formatCustoUso(uso.custoDose)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Resultado</p>
+                      <p className="text-gray-500">{SEMEN_UTILIZADO_COLUNA_STATUS}</p>
                       <p className="font-medium text-gray-800">{uso.resultado || "—"}</p>
                     </div>
                   </div>
@@ -168,7 +184,6 @@ export default function SemenUtilizadoPage() {
   const [aplicados, setAplicados] = useState(FILTROS_VAZIOS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(SEMEN_ESTOQUE_PAGE_SIZE_DEFAULT);
-  const [novoReprodutorAberto, setNovoReprodutorAberto] = useState(false);
 
   const searchDebounced = useDebounce(search, 300);
 
@@ -210,7 +225,8 @@ export default function SemenUtilizadoPage() {
   );
 
   const grupos = listagem?.grupos ?? [];
-  const custoTotalFiltrado = listagem?.custoTotalFiltrado ?? null;
+  const totaisConsulta = listagem?.totais ?? TOTAIS_VAZIOS;
+  const rodapeConsulta = formatSemenUtilizadoRodapeConsulta(totaisConsulta);
   const reprodutoresOpcoes = detalheKey
     ? detalhe?.reprodutoresOpcoes ?? []
     : listagem?.reprodutoresOpcoes ?? [];
@@ -261,7 +277,10 @@ export default function SemenUtilizadoPage() {
     hasActiveFilters,
   });
 
-  const exportRows = useMemo(() => buildSemenUtilizadoExportRows(grupos), [grupos]);
+  const exportRows = useMemo(
+    () => buildSemenUtilizadoExportRows(grupos, totaisConsulta),
+    [grupos, totaisConsulta],
+  );
   const exportDisabled = semenUtilizadoExportDisabled({
     hasFazenda: temFazenda,
     loading: loadingLista,
@@ -288,23 +307,27 @@ export default function SemenUtilizadoPage() {
         </div>
         <div>
           <label className={labelClass}>Reprodutor</label>
-          <select
-            value={filtros.reprodutor}
-            onChange={e => setFiltros(f => ({ ...f, reprodutor: e.target.value }))}
-            className={selectClass}
-            disabled={!temFazenda}
-            title={!temFazenda ? disabledHint : undefined}
-            aria-label="Filtrar por reprodutor"
-          >
-            <option value="">
-              {temFazenda ? "Todos os reprodutores" : "Selecione primeiro uma Fazenda"}
-            </option>
-            {reprodutoresOpcoes.map(op => (
-              <option key={op.value} value={op.value}>
-                {op.label}
-              </option>
-            ))}
-          </select>
+          <div title={!temFazenda ? disabledHint : undefined}>
+            <FormSelect
+              variant="light"
+              value={filtros.reprodutor.trim() ? filtros.reprodutor : REPRODUTOR_TODOS}
+              onChange={v =>
+                setFiltros(f => ({ ...f, reprodutor: v === REPRODUTOR_TODOS ? "" : v }))
+              }
+              placeholder={temFazenda ? "Todos os reprodutores" : "Selecione primeiro uma Fazenda"}
+              disabled={!temFazenda}
+              triggerClassName={cn(selectClass, "min-w-0")}
+            >
+              <SelectItem value={REPRODUTOR_TODOS} className="text-[12px]">
+                {temFazenda ? "Todos os reprodutores" : "Selecione primeiro uma Fazenda"}
+              </SelectItem>
+              {reprodutoresOpcoes.map(op => (
+                <SelectItem key={op.value} value={op.value} className="text-[12px]">
+                  {op.label}
+                </SelectItem>
+              ))}
+            </FormSelect>
+          </div>
         </div>
       </div>
 
@@ -379,15 +402,19 @@ export default function SemenUtilizadoPage() {
   if (detalheKey) {
     const grupo = detalhe?.grupo;
     const usos = detalhe?.usos ?? [];
+    const cabecalho = formatSemenUtilizadoHistoricoCabecalho({
+      reprodutorDisplay: grupo?.reprodutorDisplay,
+      partida: grupo?.partida,
+    });
     const historicoExcel = buildSemenUtilizadoDetalheExcelRows(usos);
     const detalheTitulo = buildSemenUtilizadoDetalheExportTitle({
       fazendaNome,
-      reprodutor: grupo?.reprodutorDisplay || "Reprodutor",
-      partida: grupo?.partida || "Partida",
+      reprodutor: cabecalho.reprodutor,
+      partida: cabecalho.partida,
     });
     const detalheIdentificacao = buildSemenUtilizadoDetalheExportIdentificacao({
-      reprodutor: grupo?.reprodutorDisplay || "Não informado",
-      partida: grupo?.partida || "—",
+      reprodutor: cabecalho.reprodutor,
+      partida: cabecalho.partida,
     });
     return (
       <AppLayout>
@@ -407,20 +434,21 @@ export default function SemenUtilizadoPage() {
                 className="text-[20px] font-semibold text-gray-900"
                 style={{ fontFamily: "Fraunces, serif" }}
               >
-                Histórico de utilizações
+                {SEMEN_UTILIZADO_HISTORICO_TITULO}
               </h1>
               {grupo ? (
-                <p className="text-[12px] text-gray-500 mt-0.5">
-                  {grupo.reprodutorDisplay} · {grupo.partida}
-                </p>
+                <div className="text-[12px] text-gray-500 mt-0.5 space-y-0.5">
+                  <p>{cabecalho.reprodutorLinha}</p>
+                  <p>{cabecalho.partidaLinha}</p>
+                </div>
               ) : null}
             </div>
             <ListExportButtons
-              title="Histórico de utilizações"
+              title={SEMEN_UTILIZADO_HISTORICO_TITULO}
               filename={semenUtilizadoDetalheExportFilenameBase(
                 fazendaNome || "Fazenda",
-                grupo?.reprodutorDisplay || "reprodutor",
-                grupo?.partida || "partida",
+                cabecalho.reprodutor,
+                cabecalho.partida,
               )}
               headers={[...SEMEN_UTILIZADO_DETALHE_EXPORT_HEADERS]}
               rows={historicoExcel.rows}
@@ -481,32 +509,12 @@ export default function SemenUtilizadoPage() {
               className="text-[20px] font-semibold text-gray-900 shrink-0"
               style={{ fontFamily: "Fraunces, serif" }}
             >
-              Sêmen utilizado
+              {SEMEN_UTILIZADO_TITULO}
             </h1>
-            <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-              Relatório de consumo. Partidas e entradas ficam na aba Estoque.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
-            <button
-              type="button"
-              disabled={!temFazenda}
-              title={!temFazenda ? "Selecione uma fazenda para cadastrar" : undefined}
-              onClick={() => setNovoReprodutorAberto(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold transition shrink-0 min-h-[44px]",
-                temFazenda
-                  ? "hover:brightness-95 active:scale-[0.97]"
-                  : "opacity-50 cursor-not-allowed",
-              )}
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              <span className="material-icons text-[16px]">add</span>
-              <span className="hidden sm:inline">Reprodutor</span>
-              <span className="sm:hidden">Reprod.</span>
-            </button>
             <ListExportButtons
-            title="Sêmen utilizado"
+            title={SEMEN_UTILIZADO_TITULO}
             filename={exportFilename}
             headers={[...SEMEN_UTILIZADO_EXPORT_HEADERS]}
             rows={exportRows}
@@ -514,9 +522,9 @@ export default function SemenUtilizadoPage() {
             variant="secondary"
             disabled={exportDisabled}
             disabledTitle={exportDisabledTitle}
-            spreadsheetSheetName="Sêmen utilizado"
+            spreadsheetSheetName={SEMEN_UTILIZADO_TITULO}
             spreadsheetReportTitle={() =>
-              fazendaNome ? `${fazendaNome} — Sêmen utilizado` : "Sêmen utilizado"
+              fazendaNome ? `${fazendaNome} — ${SEMEN_UTILIZADO_TITULO}` : SEMEN_UTILIZADO_TITULO
             }
             spreadsheetBlankAfterMeta={false}
             spreadsheetAutoFilter={false}
@@ -538,13 +546,16 @@ export default function SemenUtilizadoPage() {
           footer={
             fazendaNum > 0 ? (
               <div className="border-t border-gray-100">
-                <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
-                  <span>
-                    Custo total utilizado:{" "}
-                    <span className="font-semibold text-gray-800 tabular-nums">
-                      {loadingLista || isFetching ? "…" : formatCustoUso(custoTotalFiltrado)}
-                    </span>
-                  </span>
+                <div className="px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-600 bg-gray-50/60">
+                  {loadingLista || isFetching ? (
+                    <span>…</span>
+                  ) : (
+                    <>
+                      <span className="tabular-nums">{rodapeConsulta.doses}</span>
+                      <span className="tabular-nums">{rodapeConsulta.matrizes}</span>
+                      <span className="tabular-nums font-semibold text-gray-800">{rodapeConsulta.custo}</span>
+                    </>
+                  )}
                 </div>
                 <TablePaginationFooter
                   pageSize={pageSize}
@@ -564,7 +575,7 @@ export default function SemenUtilizadoPage() {
           <table className="w-full min-w-[1080px] text-[12px] border-collapse">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className={`pl-4 pr-2 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide min-w-[140px] ${stickyReprodutorTh}`}>
+                <th className={`px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide min-w-[140px] ${stickyReprodutorTh}`}>
                   Reprodutor
                 </th>
                 <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -580,7 +591,7 @@ export default function SemenUtilizadoPage() {
                   Matrizes
                 </th>
                 <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                  Custo médio
+                  Custo médio/dose
                 </th>
                 <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                   Custo total
@@ -657,15 +668,6 @@ export default function SemenUtilizadoPage() {
         </TableHorizontalScroll>
         </div>
       </div>
-
-      <CadastrarSemenExternoDialog
-        open={novoReprodutorAberto}
-        onOpenChange={setNovoReprodutorAberto}
-        fazendaId={fazendaNum}
-        onCreated={() => {
-          toast.success("Reprodutor cadastrado. Registre a partida na aba Estoque.");
-        }}
-      />
     </AppLayout>
   );
 }

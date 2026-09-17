@@ -7,7 +7,9 @@ import {
 } from "@shared/semenEstoque";
 import { buildSemenHistoricoVisual } from "@shared/semenMovimentacaoDisplay";
 import {
+  SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS,
   SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS,
+  SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS,
   appendSemenPartidaHistoricoExportFooter,
   buildSemenPartidaHistoricoExportRows,
   buildSemenPartidaHistoricoExportTitle,
@@ -150,7 +152,8 @@ describe("exportação do histórico da partida", () => {
       "26/08/2026|Entrada",
       "26/08/2026|Uso em inseminação",
     ]);
-    expect(rows[4]?.[8]).toBe("Matriz 58 · Inseminador João");
+    expect(rows[4]?.[1]).toBe("Uso em inseminação");
+    expect(rows[4]).toHaveLength(8);
   });
 
   it("não exporta ESTORNO_ENTRADA como linha", () => {
@@ -163,7 +166,7 @@ describe("exportação do histórico da partida", () => {
     expect(rows).toHaveLength(3);
   });
 
-  it("Uso em inseminação usa nome humano e contexto, sem IDs técnicos", () => {
+  it("Uso em inseminação usa nome humano, sem IDs técnicos nem coluna Contexto", () => {
     const visuais = visuaisExport([original, estorno, nova, saidaIa]);
     const rows = buildSemenPartidaHistoricoExportRows(visuais);
     const ia = rows.find(r => String(r[1]).includes("inseminação"));
@@ -171,9 +174,11 @@ describe("exportação do histórico da partida", () => {
     expect(ia?.[2]).toBe("1 dose");
     expect(ia?.[3]).toBe(150);
     expect(ia?.[4]).toBe("");
-    expect(ia?.[8]).toBe("Matriz 58 · Inseminador João");
+    expect(ia).toHaveLength(8);
 
     const blob = textoArquivo(rows);
+    expect(blob).not.toContain("Contexto");
+    expect(blob).not.toContain("Matriz 58");
     expect(blob).not.toContain("SAIDA_IA");
     expect(blob).not.toContain("animalId");
     expect(blob).not.toContain("userId");
@@ -226,7 +231,7 @@ describe("exportação do histórico da partida", () => {
     );
   });
 
-  it("I) Ajuste de estoque entra na ordem ASC, com Contexto humano e sem JSON", () => {
+  it("I) Ajuste de estoque entra na ordem ASC, com motivo humano e sem JSON", () => {
     const ajuste = {
       id: 9,
       tipo: SEMEN_MOV_TIPO_AJUSTE_ESTOQUE,
@@ -256,9 +261,10 @@ describe("exportação do histórico da partida", () => {
     const linha = rows[rows.length - 1];
     expect(linha?.[5]).toBe("—");
     expect(linha?.[7]).toBe("Correção de valor histórico");
-    expect(linha?.[8]).toContain("Saldo 6→6");
-    expect(linha?.[8]).toContain("R$ 90,00");
+    expect(linha).toHaveLength(8);
     const blob = textoArquivo(rows);
+    expect(blob).not.toContain("Contexto");
+    expect(blob).not.toContain("Saldo 6→6");
     expect(blob).not.toContain("AJUSTE_ESTOQUE");
     expect(blob).not.toContain("__fd_semen_ajuste");
     expect(blob).not.toContain("FIFO");
@@ -287,14 +293,19 @@ describe("exportação do histórico da partida", () => {
       "Situação",
       "Data da correção",
       "Motivo da correção",
-      "Contexto",
     ]);
-    expect(SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS[8]).toBe("Contexto");
-    expect(SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS[8]).not.toBe("ntexto");
-    expect("Contexto".slice(2)).toBe("ntexto");
+    expect(SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS).not.toContain("Contexto");
+    expect([...SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS]).toEqual(
+      SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS.map(() => "center"),
+    );
+    expect(SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS.every(align => align === "center")).toBe(true);
+    expect([...SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS]).toEqual(
+      SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS.map(() => "center"),
+    );
+    expect(SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS.every(align => align === "center")).toBe(true);
   });
 
-  it("gera a célula de cabeçalho Contexto por extenso, sem quebrar em ntexto", async () => {
+  it("gera a planilha sem coluna Contexto e com células centralizadas", async () => {
     const { buildExportSpreadsheetWorkbook } = await import("@shared/buildExportSpreadsheet");
     const visuais = visuaisExport([original, estorno, nova, recente]);
     const rows = appendSemenPartidaHistoricoExportFooter(
@@ -311,15 +322,19 @@ describe("exportação do histórico da partida", () => {
         autoFilter: false,
         plainHeader: true,
         headerWrapText: false,
-        columnWidths: [12, 22, 14, 16, 14, 14, 16, 28, 28],
+        columnWidths: [12, 22, 14, 16, 14, 14, 16, 28],
         footerRowCount: 1,
         sheetName: "Histórico da partida",
+        columnAligns: [...SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS],
       },
     );
     const ws = wb.getWorksheet("Histórico da partida")!;
-    expect(ws.getCell("I2").value).toBe("Contexto");
-    expect(String(ws.getCell("I2").value)).not.toBe("ntexto");
-    expect(ws.getColumn(9).width).toBeGreaterThanOrEqual(18);
-    expect(ws.getCell("I2").alignment?.wrapText).toBe(false);
+    expect(ws.getCell("H2").value).toBe("Motivo da correção");
+    expect(ws.getCell("I2").value).toBeNull();
+    expect(ws.getCell("A3").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("B3").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("D3").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("E3").alignment?.horizontal).toBe("center");
+    expect(ws.getCell("H3").alignment?.horizontal).toBe("center");
   });
 });

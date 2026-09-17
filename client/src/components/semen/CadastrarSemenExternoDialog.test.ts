@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CADASTRAR_SEMEN_EXTERNO_HINT,
   CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL,
   CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR,
   CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL,
@@ -11,16 +10,13 @@ import {
 } from "./CadastrarSemenExternoDialog";
 
 describe("modal Novo Sêmen", () => {
-  it("teste A/B — título, texto e campos iguais nos dois fluxos", () => {
-    expect(CADASTRAR_SEMEN_EXTERNO_TITULO).toBe("Novo reprodutor");
+  it("teste A/B — título e campos iguais nos dois fluxos", () => {
+    expect(CADASTRAR_SEMEN_EXTERNO_TITULO).toBe("Novo Reprodutor");
     expect(CADASTRAR_SEMEN_EXTERNO_TITULO).not.toBe("Cadastrar sêmen / reprodutor");
-    expect(CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR).toBe("Reprodutor / Sêmen");
+    expect(CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR).toBe("Reprodutor");
     expect(CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL).toBe("Central padrão");
     expect(CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR).toBe("Ex.: ABS 1234");
     expect(CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL).toBe("Ex.: Alta");
-    expect(CADASTRAR_SEMEN_EXTERNO_HINT).toBe(
-      "Identificação reutilizável na inseminação. Depois cadastre a partida na aba Estoque.",
-    );
     const campos = `${CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR} ${CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL}`;
     expect(campos).not.toMatch(/observa/i);
     expect(campos).not.toMatch(/partida|lote|custo|quantidade|saldo/i);

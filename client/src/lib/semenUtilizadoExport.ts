@@ -1,14 +1,21 @@
 import {
   calcularCustosSemenUtilizado,
   calcularSemenUtilizadoTotalGeral,
+  formatSemenUtilizadoHistoricoCabecalho,
   formatSemenUtilizadoMatrizLabel,
   somarCustoTotalSemenUtilizado,
   sortSemenUtilizadoGruposExport,
   sortSemenUtilizadoUsosExport,
+  SEMEN_UTILIZADO_COLUNA_STATUS,
+  type SemenUtilizadoConsultaTotais,
   type SemenUtilizadoGrupo,
   type SemenUtilizadoUso,
 } from "@shared/semenUtilizado";
 import type { ExportSpreadsheetRowMeta } from "@shared/buildExportSpreadsheet";
+import { formatMoedaBrlExcel } from "@shared/parseMoedaBr";
+
+export const SEMEN_UTILIZADO_TITULO = "Sêmen Utilizado";
+export const SEMEN_UTILIZADO_HISTORICO_TITULO = "Histórico de Utilizações";
 
 export const SEMEN_UTILIZADO_EXPORT_HEADERS = [
   "Reprodutor",
@@ -16,7 +23,7 @@ export const SEMEN_UTILIZADO_EXPORT_HEADERS = [
   "Central",
   "Doses utilizadas",
   "Matrizes",
-  "Custo médio",
+  "Custo médio/dose",
   "Custo total",
   "Último uso",
 ] as const;
@@ -48,13 +55,16 @@ export const SEMEN_UTILIZADO_PDF_COLUMN_ALIGNS = [
 
 /** Primeira célula do rodapé — o PDF destaca linhas que começam com "Totais". */
 export const SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL = "Totais";
+export const SEMEN_UTILIZADO_RODAPE_DOSES_PREFIX = "Total de doses utilizadas:";
+export const SEMEN_UTILIZADO_RODAPE_MATRIZES_PREFIX = "Matrizes atendidas:";
+export const SEMEN_UTILIZADO_RODAPE_CUSTO_PREFIX = "Custo total:";
 
 export const SEMEN_UTILIZADO_DETALHE_EXPORT_HEADERS = [
   "Data",
   "Matriz",
   "Inseminador",
   "Custo da dose",
-  "Resultado",
+  SEMEN_UTILIZADO_COLUNA_STATUS,
 ] as const;
 
 export const SEMEN_UTILIZADO_DETALHE_EXPORT_CURRENCY_COLS = [3];
@@ -115,17 +125,57 @@ export function isSemenUtilizadoExportTotaisRow(row: readonly (string | number)[
   return /^totais\b/i.test(String(row[0] ?? "").trim());
 }
 
+export function somarDosesSemenUtilizado(grupos: readonly SemenUtilizadoGrupo[]): number {
+  return grupos.reduce((acc, g) => acc + (Number(g.dosesUtilizadas) || 0), 0);
+}
+
+/** Doses e custo podem vir das linhas; matrizes só entram com DISTINCT da consulta. */
+export function resolveSemenUtilizadoExportTotais(
+  grupos: readonly SemenUtilizadoGrupo[],
+  totais?: SemenUtilizadoConsultaTotais | null,
+): {
+  dosesUtilizadas: number;
+  matrizesAtendidas: number | null;
+  custoTotal: number | null;
+} {
+  return {
+    dosesUtilizadas: totais?.dosesUtilizadas ?? somarDosesSemenUtilizado(grupos),
+    matrizesAtendidas: totais ? totais.matrizesAtendidas : null,
+    custoTotal: totais ? totais.custoTotal : somarCustoTotalSemenUtilizado(grupos),
+  };
+}
+
+export function formatSemenUtilizadoCustoRodape(
+  custo: number | null,
+  doses: number,
+): string {
+  if (custo == null) return doses === 0 ? formatMoedaBrlExcel(0) : "—";
+  return formatMoedaBrlExcel(custo);
+}
+
+export function formatSemenUtilizadoRodapeConsulta(
+  totais: SemenUtilizadoConsultaTotais,
+): { doses: string; matrizes: string; custo: string } {
+  return {
+    doses: `${SEMEN_UTILIZADO_RODAPE_DOSES_PREFIX} ${totais.dosesUtilizadas}`,
+    matrizes: `${SEMEN_UTILIZADO_RODAPE_MATRIZES_PREFIX} ${totais.matrizesAtendidas}`,
+    custo: `${SEMEN_UTILIZADO_RODAPE_CUSTO_PREFIX} ${formatSemenUtilizadoCustoRodape(totais.custoTotal, totais.dosesUtilizadas)}`,
+  };
+}
+
 export function buildSemenUtilizadoExportFooterRow(
   grupos: readonly SemenUtilizadoGrupo[],
+  totais?: SemenUtilizadoConsultaTotais | null,
 ): (string | number)[] {
+  const resolved = resolveSemenUtilizadoExportTotais(grupos, totais);
   return [
     SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL,
     "",
     "",
+    resolved.dosesUtilizadas,
+    resolved.matrizesAtendidas == null ? "" : resolved.matrizesAtendidas,
     "",
-    "",
-    "",
-    custoCelula(somarCustoTotalSemenUtilizado(grupos)),
+    custoCelula(resolved.custoTotal),
     "",
   ];
 }
@@ -133,6 +183,7 @@ export function buildSemenUtilizadoExportFooterRow(
 /** Exporta a listagem consolidada de utilização — nunca saldo/estoque. */
 export function buildSemenUtilizadoExportRows(
   grupos: readonly SemenUtilizadoGrupo[],
+  totais?: SemenUtilizadoConsultaTotais | null,
 ): (string | number)[][] {
   const rows = sortSemenUtilizadoGruposExport(grupos).map(g => [
     g.reprodutorDisplay,
@@ -145,7 +196,7 @@ export function buildSemenUtilizadoExportRows(
     isoToBr(g.ultimoUso),
   ]);
   if (rows.length === 0) return rows;
-  return [...rows, buildSemenUtilizadoExportFooterRow(grupos)];
+  return [...rows, buildSemenUtilizadoExportFooterRow(grupos, totais)];
 }
 
 /** Linhas de dados (uma por IA), sem faixa de dia. */
@@ -206,7 +257,7 @@ export function buildSemenUtilizadoDetalheExportTitle(params: {
   const fazenda = String(params.fazendaNome ?? "").trim() || "Fazenda";
   const reprodutor = String(params.reprodutor ?? "").trim() || "Reprodutor";
   const partida = String(params.partida ?? "").trim() || "Partida";
-  return `${fazenda} — Histórico de utilizações de sêmen — ${reprodutor} — ${partida}`;
+  return `${fazenda} — ${SEMEN_UTILIZADO_HISTORICO_TITULO} de sêmen — ${reprodutor} — ${partida}`;
 }
 
 /** Identificação humana do reprodutor e da partida (lote), sem IDs técnicos. */
@@ -214,9 +265,10 @@ export function buildSemenUtilizadoDetalheExportIdentificacao(params: {
   reprodutor: string;
   partida: string;
 }): string {
-  const reprodutor = String(params.reprodutor ?? "").trim() || "Não informado";
-  const partida = String(params.partida ?? "").trim() || "—";
-  return `Reprodutor: ${reprodutor} · Partida: ${partida}`;
+  return formatSemenUtilizadoHistoricoCabecalho({
+    reprodutorDisplay: params.reprodutor,
+    partida: params.partida,
+  }).compacto;
 }
 
 function sanitizeExportFilenamePart(raw: string): string {

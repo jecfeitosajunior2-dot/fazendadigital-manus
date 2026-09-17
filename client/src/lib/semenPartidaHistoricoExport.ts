@@ -18,12 +18,31 @@ export const SEMEN_PARTIDA_HISTORICO_EXPORT_HEADERS = [
   "Situação",
   "Data da correção",
   "Motivo da correção",
-  "Contexto",
 ] as const;
 
 /** Custo por dose e Custo total. */
 export const SEMEN_PARTIDA_HISTORICO_EXPORT_CURRENCY_COLS = [3, 4];
-export const SEMEN_PARTIDA_HISTORICO_EXPORT_TEXT_COLS = [0, 1, 2, 5, 6, 7, 8];
+export const SEMEN_PARTIDA_HISTORICO_EXPORT_TEXT_COLS = [0, 1, 2, 5, 6, 7];
+export const SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_ALIGNS = [
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+] as const;
+export const SEMEN_PARTIDA_HISTORICO_PDF_COLUMN_ALIGNS = [
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+  "center",
+] as const;
 
 export type SemenPartidaHistoricoExportRow = {
   tipo: string;
@@ -48,7 +67,7 @@ export type SemenPartidaHistoricoExportCabecalho = {
 };
 
 export const SEMEN_PARTIDA_HISTORICO_EXPORT_COLUMN_WIDTHS = [
-  12, 22, 14, 16, 14, 14, 16, 28, 28,
+  12, 22, 14, 16, 14, 14, 16, 28,
 ];
 
 function custoExcel(val: string | number | null | undefined): number | "" {
@@ -101,7 +120,6 @@ export function buildSemenPartidaHistoricoExportRows(
       corrigida ? "Corrigida" : "—",
       row.dataCorrecaoIso ? formatDateBR(row.dataCorrecaoIso) : "—",
       textoOuTraco(row.motivoCorrecaoExport),
-      textoOuTraco(row.contextoDisplay),
     ];
   });
 }
@@ -117,7 +135,6 @@ export function buildSemenPartidaHistoricoExportFooterRow(
     dosesLabel(partida.saldoDoses),
     custoExcel(partida.custoUnitario),
     calcularValorAtualEstoqueSemen(movimentacoes),
-    "",
     "",
     "",
     "",

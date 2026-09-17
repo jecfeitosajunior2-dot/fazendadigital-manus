@@ -2,19 +2,20 @@ import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { FD_PRIMARY, FormLabel } from "@/components/FormFields";
+import {
+  SEMEN_ENTRADA_FIELD_LIGHT,
+  semenEntradaModalLayout,
+} from "@/lib/semenEntradaModalLayout";
+import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import type { SemenReprodutorExternoCatalogoItem } from "@shared/semenReprodutorExternoCatalogo";
 
-export const CADASTRAR_SEMEN_EXTERNO_TITULO = "Novo reprodutor";
-export const CADASTRAR_SEMEN_EXTERNO_HINT =
-  "Identificação reutilizável na inseminação. Depois cadastre a partida na aba Estoque.";
-export const CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR = "Reprodutor / Sêmen";
+export const CADASTRAR_SEMEN_EXTERNO_TITULO = "Novo Reprodutor";
+export const CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR = "Reprodutor";
 export const CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL = "Central padrão";
 export const CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR = "Ex.: ABS 1234";
 export const CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL = "Ex.: Alta";
@@ -118,83 +119,91 @@ export function CadastrarSemenExternoDialog({
   };
 
   const pending = createCatalogoExterno.isPending;
-  const fieldCls =
-    "border border-gray-300 rounded px-2 py-1.5 text-[12px] text-gray-700 bg-white w-full min-h-[34px]";
-  const labelCls = "block text-[11px] font-medium text-gray-600 mb-0.5";
 
   return (
     <Dialog open={open} onOpenChange={fechar}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-[16px]">{CADASTRAR_SEMEN_EXTERNO_TITULO}</DialogTitle>
-          <DialogDescription className="text-[12px]">
-            {CADASTRAR_SEMEN_EXTERNO_HINT}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-1">
-          <div>
-            <label className={labelCls}>
-              {CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR}
-              <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={reprodutorTexto}
-              onChange={e => {
-                setReprodutorTexto(e.target.value);
-                setExistente(null);
-                setErro("");
-              }}
-              placeholder={CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR}
-              className={fieldCls}
-              maxLength={500}
-              autoFocus
-            />
+      <DialogContent className={cn(semenEntradaModalLayout.content, "max-h-[min(28rem,calc(100dvh-2rem))]")}>
+        <div className={semenEntradaModalLayout.shell}>
+          <DialogHeader className={semenEntradaModalLayout.header}>
+            <DialogTitle className="text-[15px] font-semibold text-gray-900 leading-tight">
+              {CADASTRAR_SEMEN_EXTERNO_TITULO}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className={cn(semenEntradaModalLayout.body, "space-y-3")}>
+            <section className={semenEntradaModalLayout.opCard}>
+              <div className={semenEntradaModalLayout.opCardHead}>
+                <h3 className={semenEntradaModalLayout.opCardTitle}>Reprodutor</h3>
+              </div>
+              <div className={semenEntradaModalLayout.opCardBody}>
+                <div>
+                  <FormLabel required className="mb-1">
+                    {CADASTRAR_SEMEN_EXTERNO_LABEL_REPRODUTOR}
+                  </FormLabel>
+                  <input
+                    type="text"
+                    value={reprodutorTexto}
+                    onChange={e => {
+                      setReprodutorTexto(e.target.value);
+                      setExistente(null);
+                      setErro("");
+                    }}
+                    placeholder={CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_REPRODUTOR}
+                    className={SEMEN_ENTRADA_FIELD_LIGHT}
+                    maxLength={500}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <FormLabel className="mb-1">{CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL}</FormLabel>
+                  <input
+                    type="text"
+                    value={centralPadrao}
+                    onChange={e => setCentralPadrao(e.target.value)}
+                    placeholder={CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL}
+                    className={SEMEN_ENTRADA_FIELD_LIGHT}
+                    maxLength={150}
+                  />
+                </div>
+                {erro ? <p className="text-[12px] text-amber-700">{erro}</p> : null}
+              </div>
+            </section>
           </div>
-          <div>
-            <label className={labelCls}>{CADASTRAR_SEMEN_EXTERNO_LABEL_CENTRAL}</label>
-            <input
-              type="text"
-              value={centralPadrao}
-              onChange={e => setCentralPadrao(e.target.value)}
-              placeholder={CADASTRAR_SEMEN_EXTERNO_PLACEHOLDER_CENTRAL}
-              className={fieldCls}
-              maxLength={150}
-            />
+
+          <div className={semenEntradaModalLayout.footer}>
+            <div className={semenEntradaModalLayout.footerActions}>
+              {existente ? (
+                <button
+                  type="button"
+                  onClick={usarExistente}
+                  className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800"
+                  style={{ backgroundColor: FD_PRIMARY }}
+                >
+                  Usar {existente.reprodutorTexto}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => fechar(false)}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void salvar()}
+                    disabled={pending || fazendaId <= 0 || !canSaveCadastrarSemenExterno(reprodutorTexto)}
+                    className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50"
+                    style={{ backgroundColor: FD_PRIMARY }}
+                  >
+                    {pending ? "Salvando…" : "Salvar"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-          {erro ? <p className="text-[12px] text-amber-700">{erro}</p> : null}
         </div>
-        <DialogFooter className="gap-2">
-          {existente ? (
-            <button
-              type="button"
-              onClick={usarExistente}
-              className="px-4 py-1.5 rounded text-[12px] font-semibold text-white min-h-[34px]"
-              style={{ backgroundColor: FD_PRIMARY }}
-            >
-              Usar {existente.reprodutorTexto}
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => fechar(false)}
-                className="px-4 py-1.5 rounded text-[12px] font-semibold border border-gray-300 text-gray-600 min-h-[34px]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void salvar()}
-                disabled={pending || fazendaId <= 0 || !canSaveCadastrarSemenExterno(reprodutorTexto)}
-                className="px-4 py-1.5 rounded text-[12px] font-semibold text-white min-h-[34px] disabled:opacity-50"
-                style={{ backgroundColor: FD_PRIMARY }}
-              >
-                {pending ? "Salvando…" : "Salvar"}
-              </button>
-            </>
-          )}
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

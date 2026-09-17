@@ -49,7 +49,6 @@ export const menuItems: MenuItem[] = [
     label: "Manejo",
     icon: "fd_management_checklist",
     children: [
-      { label: "Visão Geral", icon: "", path: "/manejo/visao-geral" },
       { label: "Registros de Manejo", icon: "", path: "/manejo/registros" },
     ],
   },
@@ -57,7 +56,7 @@ export const menuItems: MenuItem[] = [
     label: "Reprodução",
     icon: "fd_dna",
     children: [
-      { label: "Controle de sêmen", icon: "", path: "/reproducao/semen-utilizado" },
+      { label: "Controle de Sêmen", icon: "", path: "/reproducao/estoque-semen" },
     ],
   },
   {

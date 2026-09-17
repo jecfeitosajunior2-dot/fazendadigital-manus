@@ -8,6 +8,10 @@ import {
   SEMEN_UTILIZADO_EXPORT_HEADERS,
   SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL,
   SEMEN_UTILIZADO_PDF_COLUMN_ALIGNS,
+  SEMEN_UTILIZADO_HISTORICO_TITULO,
+  SEMEN_UTILIZADO_TITULO,
+  formatSemenUtilizadoRodapeConsulta,
+  somarDosesSemenUtilizado,
   buildSemenUtilizadoDetalheExcelRows,
   buildSemenUtilizadoDetalheExportIdentificacao,
   buildSemenUtilizadoDetalheExportRows,
@@ -42,10 +46,17 @@ const grupo: SemenUtilizadoGrupo = {
 };
 
 describe("exportação Sêmen utilizado", () => {
+  it("título da tela e da exportação usa Utilizado com U maiúsculo", () => {
+    expect(SEMEN_UTILIZADO_TITULO).toBe("Sêmen Utilizado");
+    expect(SEMEN_UTILIZADO_TITULO).not.toBe("Sêmen utilizado");
+    expect(SEMEN_UTILIZADO_HISTORICO_TITULO).toBe("Histórico de Utilizações");
+    expect(SEMEN_UTILIZADO_HISTORICO_TITULO).not.toBe("Histórico de utilizações");
+  });
+
   it("teste J — listagem exporta utilização e custos, sem inventário", () => {
     const headers = SEMEN_UTILIZADO_EXPORT_HEADERS.join(" ");
     expect(headers).toContain("Doses utilizadas");
-    expect(headers).toContain("Custo médio");
+    expect(headers).toContain("Custo médio/dose");
     expect(headers).toContain("Custo total");
     expect(headers).not.toContain("Custo médio/uso");
     expect(headers).not.toContain("Custo total utilizado");
@@ -56,7 +67,7 @@ describe("exportação Sêmen utilizado", () => {
 
     const rows = buildSemenUtilizadoExportRows([grupo]);
     expect(rows[0]).toEqual(["GSC-7117", "P-01", "Alta", 3, 2, 100, 300, "26/08/2026"]);
-    expect(rows[1]).toEqual([SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL, "", "", "", "", "", 300, ""]);
+    expect(rows[1]).toEqual([SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL, "", "", 3, "", "", 300, ""]);
     expect(isSemenUtilizadoExportTotaisRow(rows[1]!)).toBe(true);
     expect(JSON.stringify(rows)).not.toContain("Saldo");
     expect(JSON.stringify(rows)).not.toContain("ESTORNO_ENTRADA");
@@ -113,8 +124,9 @@ describe("exportação Sêmen utilizado", () => {
       "Matriz",
       "Inseminador",
       "Custo da dose",
-      "Resultado",
+      "Status",
     ]);
+    expect(headers).not.toContain("Resultado");
     expect(headers).not.toContain("Contexto");
     expect(headers).not.toContain("Saldo");
     expect(headers).not.toContain("SAIDA_IA");
@@ -304,8 +316,51 @@ describe("exportação Sêmen utilizado", () => {
       { ...grupo, key: "b", custoTotalUtilizado: 339.99 },
       { ...grupo, key: "c", custoTotalUtilizado: null },
     ]);
-    expect(rows.at(-1)).toEqual([SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL, "", "", "", "", "", 489.99, ""]);
+    expect(rows.at(-1)).toEqual([SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL, "", "", 9, "", "", 489.99, ""]);
     expect(buildSemenUtilizadoExportRows([])).toEqual([]);
+  });
+
+  it("tela, Excel e PDF compartilham os mesmos totais da consulta filtrada", () => {
+    const totais = { dosesUtilizadas: 18, matrizesAtendidas: 7, custoTotal: 2845 };
+    const grupos = [
+      { ...grupo, key: "a", dosesUtilizadas: 10, matrizes: 5, custoTotalUtilizado: 2000 },
+      { ...grupo, key: "b", dosesUtilizadas: 8, matrizes: 4, custoTotalUtilizado: 845 },
+    ];
+    expect(grupos.reduce((acc, g) => acc + g.matrizes, 0)).toBe(9);
+    const rows = buildSemenUtilizadoExportRows(grupos, totais);
+    const footer = rows.at(-1)!;
+    expect(footer[0]).toBe(SEMEN_UTILIZADO_EXPORT_TOTAIS_LABEL);
+    expect(footer[3]).toBe(18);
+    expect(footer[4]).toBe(7);
+    expect(footer[4]).not.toBe(9);
+    expect(footer[6]).toBe(2845);
+    const tela = formatSemenUtilizadoRodapeConsulta(totais);
+    expect(tela.doses).toBe("Total de doses utilizadas: 18");
+    expect(tela.matrizes).toBe("Matrizes atendidas: 7");
+    expect(tela.custo).toBe("Custo total: R$ 2.845,00");
+    expect(SEMEN_UTILIZADO_PDF_COLUMN_ALIGNS).toHaveLength(SEMEN_UTILIZADO_EXPORT_HEADERS.length);
+  });
+
+  it("totais consideram a consulta filtrada, não só a página", async () => {
+    const { paginateSemenEstoqueList } = await import("./semenEstoqueListPagination");
+    const grupos = Array.from({ length: 25 }, (_, i) => ({
+      ...grupo,
+      key: `g-${i}`,
+      dosesUtilizadas: 2,
+      custoTotalUtilizado: 100,
+    }));
+    const { pageItems } = paginateSemenEstoqueList(grupos, 1, 10);
+    expect(pageItems).toHaveLength(10);
+    expect(somarDosesSemenUtilizado(pageItems)).toBe(20);
+    expect(somarDosesSemenUtilizado(grupos)).toBe(50);
+    const footer = buildSemenUtilizadoExportRows(grupos, {
+      dosesUtilizadas: 50,
+      matrizesAtendidas: 12,
+      custoTotal: 2500,
+    }).at(-1)!;
+    expect(footer[3]).toBe(50);
+    expect(footer[3]).not.toBe(20);
+    expect(footer[6]).toBe(2500);
   });
 });
 
@@ -333,7 +388,7 @@ describe("exportação Histórico de utilizações", () => {
       partida: "P-10FAZ",
     });
     expect(titulo).toBe(
-      "Fazenda J — Histórico de utilizações de sêmen — Não informado — P-10FAZ",
+      "Fazenda J — Histórico de Utilizações de sêmen — Não informado — P-10FAZ",
     );
     expect(titulo).not.toContain("fazendaId");
     expect(titulo).not.toContain("userId");
@@ -347,14 +402,14 @@ describe("exportação Histórico de utilizações", () => {
         reprodutor: "Não informado",
         partida: "P-10FAZ",
       }),
-    ).not.toBe("Fazenda J — Histórico de utilizações de sêmen — P-10FAZ — P-10FAZ");
+    ).not.toBe("Fazenda J — Histórico de Utilizações de sêmen — P-10FAZ — P-10FAZ");
     expect(
       buildSemenUtilizadoDetalheExportTitle({
         fazendaNome: "Fazenda J",
         reprodutor: "GSC-7117",
         partida: "Sem lote",
       }),
-    ).toBe("Fazenda J — Histórico de utilizações de sêmen — GSC-7117 — Sem lote");
+    ).toBe("Fazenda J — Histórico de Utilizações de sêmen — GSC-7117 — Sem lote");
   });
 
   it("identifica reprodutor e partida sem repetir lote nem usar ID técnico", () => {

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { isAnimalAutocompleteMenuOutsideEvent } from "@shared/animalAutocomplete";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import * as React from "react";
@@ -94,11 +95,24 @@ function DialogContent({
   children,
   showCloseButton = true,
   onEscapeKeyDown,
+  onPointerDownOutside,
+  onInteractOutside,
+  onFocusOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
   const { isComposing } = useDialogComposition();
+
+  const ignoreAutocompleteOutside = (
+    event: {
+      target: EventTarget;
+      preventDefault: () => void;
+      detail?: { originalEvent?: { target?: EventTarget | null } };
+    },
+  ) => {
+    if (isAnimalAutocompleteMenuOutsideEvent(event)) event.preventDefault();
+  };
 
   const handleEscapeKeyDown = React.useCallback(
     (e: KeyboardEvent) => {
@@ -128,6 +142,18 @@ function DialogContent({
           className
         )}
         onEscapeKeyDown={handleEscapeKeyDown}
+        onPointerDownOutside={event => {
+          ignoreAutocompleteOutside(event);
+          onPointerDownOutside?.(event);
+        }}
+        onInteractOutside={event => {
+          ignoreAutocompleteOutside(event);
+          onInteractOutside?.(event);
+        }}
+        onFocusOutside={event => {
+          ignoreAutocompleteOutside(event);
+          onFocusOutside?.(event);
+        }}
         {...props}
       >
         {children}

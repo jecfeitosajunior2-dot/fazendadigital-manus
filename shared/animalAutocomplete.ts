@@ -84,3 +84,22 @@ export function shouldShowAnimalAutocompleteDropdown(params: {
 }): boolean {
   return Boolean(params.open) && !params.disabled && params.selected == null;
 }
+
+export const ANIMAL_AUTOCOMPLETE_MENU_ATTR = "data-animal-autocomplete-menu";
+
+/** Clique na lista portada não deve fechar o Dialog. */
+export function isAnimalAutocompleteMenuEventTarget(target: EventTarget | null): boolean {
+  if (!target || typeof (target as Element).closest !== "function") return false;
+  return Boolean((target as Element).closest(`[${ANIMAL_AUTOCOMPLETE_MENU_ATTR}]`));
+}
+
+/** Radix manda o clique real em detail.originalEvent.target, não em event.target. */
+export function isAnimalAutocompleteMenuOutsideEvent(event: {
+  target?: EventTarget | null;
+  detail?: { originalEvent?: { target?: EventTarget | null } };
+}): boolean {
+  return (
+    isAnimalAutocompleteMenuEventTarget(event.detail?.originalEvent?.target ?? null) ||
+    isAnimalAutocompleteMenuEventTarget(event.target ?? null)
+  );
+}

@@ -43,11 +43,15 @@ describe("semenRoutes", () => {
     expect(SEMEN_ESTOQUE_PATH).toBe("/reproducao/estoque-semen");
   });
 
-  it("nova rota principal é Sêmen utilizado", () => {
+  it("aba Utilizado permanece em /reproducao/semen-utilizado", () => {
     expect(SEMEN_UTILIZADO_PATH).toBe("/reproducao/semen-utilizado");
     expect(semenUtilizadoDetalhePath("externo|e:gsc-7117|P-01")).toBe(
       "/reproducao/semen-utilizado/externo%7Ce%3Agsc-7117%7CP-01",
     );
+  });
+
+  it("entrada do menu Controle de sêmen é Estoque", () => {
+    expect(SEMEN_ESTOQUE_PATH).toBe("/reproducao/estoque-semen");
   });
 
   it("cadastro de sêmen legado redireciona para Sêmen utilizado", () => {

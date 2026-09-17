@@ -8,6 +8,8 @@ import {
   calcularCustosSemenUtilizado,
   encodeSemenUtilizadoGrupoKey,
   extractSemenUtilizadoUsos,
+  formatSemenUtilizadoDiaResumo,
+  formatSemenUtilizadoHistoricoCabecalho,
   formatSemenUtilizadoMatrizLabel,
   parseSemenUtilizadoGrupoKey,
   SEMEN_REPRODUTOR_NAO_INFORMADO_KEY,
@@ -362,6 +364,63 @@ describe("Sêmen utilizado — agregação", () => {
     expect(visao.grupos[0]?.matrizes).toBe(1);
     expect(visao.grupos[0]?.custoTotalUtilizado).toBe(90);
     expect(visao.custoTotalFiltrado).toBe(90);
+    expect(visao.totais).toEqual({
+      dosesUtilizadas: 1,
+      matrizesAtendidas: 1,
+      custoTotal: 90,
+    });
+  });
+
+  it("totais da consulta usam DISTINCT de femeaId e não somam a coluna Matrizes", () => {
+    const visao = buildSemenUtilizadoVisao(
+      [
+        ia({ id: 1, femeaId: 15, data: "2026-08-20", reprodutor: "GSC-7117", partida: "P-01", custo: 100 }),
+        ia({ id: 2, femeaId: 14, data: "2026-08-21", reprodutor: "GSC-7117", partida: "P-01", custo: 100 }),
+        ia({ id: 3, femeaId: 15, data: "2026-08-22", reprodutor: "16", partida: "Lote-A", custo: 90 }),
+      ],
+      animais,
+      { fazendaId: 1 },
+    );
+    expect(visao.grupos).toHaveLength(2);
+    const somaColunaMatrizes = visao.grupos.reduce((acc, g) => acc + g.matrizes, 0);
+    expect(somaColunaMatrizes).toBe(3);
+    expect(visao.totais.matrizesAtendidas).toBe(2);
+    expect(visao.totais.matrizesAtendidas).not.toBe(somaColunaMatrizes);
+    expect(visao.totais.dosesUtilizadas).toBe(3);
+    expect(visao.totais.custoTotal).toBe(290);
+  });
+
+  it("filtro de fazenda, reprodutor, período e busca altera tabela e totais", () => {
+    const registros = [
+      ia({ id: 1, femeaId: 15, data: "2026-08-10", reprodutor: "GSC-7117", partida: "P-01", custo: 90 }),
+      ia({ id: 2, femeaId: 14, data: "2026-08-20", reprodutor: "16", partida: "Lote-A", custo: 80 }),
+      ia({ id: 3, femeaId: 15, data: "2026-08-26", reprodutor: "GSC-7117", partida: "P-01", custo: 120 }),
+    ];
+    const outraFazenda = buildSemenUtilizadoVisao(registros, animais, { fazendaId: 99 });
+    expect(outraFazenda.grupos).toHaveLength(0);
+    expect(outraFazenda.totais.dosesUtilizadas).toBe(0);
+
+    const soGsc = buildSemenUtilizadoVisao(registros, animais, {
+      fazendaId: 1,
+      reprodutor: "GSC-7117",
+    });
+    expect(soGsc.totais.dosesUtilizadas).toBe(2);
+    expect(soGsc.totais.custoTotal).toBe(210);
+
+    const periodo = buildSemenUtilizadoVisao(registros, animais, {
+      fazendaId: 1,
+      dataIni: "2026-08-18",
+      dataFim: "2026-08-22",
+    });
+    expect(periodo.totais.dosesUtilizadas).toBe(1);
+    expect(periodo.totais.custoTotal).toBe(80);
+
+    const busca = buildSemenUtilizadoVisao(registros, animais, {
+      fazendaId: 1,
+      search: "Lote-A",
+    });
+    expect(busca.totais.dosesUtilizadas).toBe(1);
+    expect(busca.grupos[0]?.partida).toBe("Lote-A");
   });
 
   it("custo total filtrado ignora grupos sem snapshot e não soma zero fictício", () => {
@@ -707,6 +766,7 @@ describe("ordem do histórico de utilizações", () => {
     const dias = groupSemenUtilizadoUsosPorDia(usos);
     expect(dias.map(d => d.dataIso)).toEqual(["2026-08-26", "2026-08-24"]);
     expect(dias[0]?.utilizacoes).toBe(3);
+    expect(dias[0]?.doses).toBe(3);
     expect(dias[0]?.matrizes).toBe(2);
     expect(dias[0]?.custoTotal).toBe(428.89);
     expect(dias[0]?.usos.filter(u => u.matrizBrinco === "27")).toHaveLength(2);
@@ -728,6 +788,7 @@ describe("ordem do histórico de utilizações", () => {
     const dias = groupSemenUtilizadoUsosPorDia(usos);
     expect(dias).toHaveLength(1);
     expect(dias[0]?.utilizacoes).toBe(4);
+    expect(dias[0]?.doses).toBe(4);
     expect(dias[0]?.matrizes).toBe(3);
     expect(dias[0]?.custoTotal).toBe(339.99);
     expect(dias[0]?.usos.filter(u => u.matrizBrinco === "58")).toHaveLength(2);
@@ -747,6 +808,7 @@ describe("ordem do histórico de utilizações", () => {
     );
     const dia = groupSemenUtilizadoUsosPorDia(usos)[0];
     expect(dia?.utilizacoes).toBe(4);
+    expect(dia?.doses).toBe(4);
     expect(dia?.usosComCusto).toBe(3);
     expect(dia?.custoTotal).toBe(256.66);
     expect(dia?.custoTotal).not.toBe(0);
@@ -824,6 +886,62 @@ describe("ordem do histórico de utilizações", () => {
     expect(ordenados.map(u => u.matrizBrinco)).toEqual(["8", "27", "58", "58"]);
     expect(ordenados.filter(u => u.matrizBrinco === "58")).toHaveLength(2);
     expect(ordenados.map(u => u.registroId)).toEqual([1, 2, 4, 3]);
+  });
+
+  it("matrizes distintas e doses reais no resumo do dia", () => {
+    const usos = extractSemenUtilizadoUsos(
+      [
+        ia({ id: 1, femeaId: 15, data: "2026-08-27", custo: 83.33 }),
+        ia({ id: 2, femeaId: 15, data: "2026-08-27", custo: 83.33 }),
+        ia({ id: 3, femeaId: 14, data: "2026-08-27", custo: 90 }),
+      ],
+      animais,
+    );
+    const dia = groupSemenUtilizadoUsosPorDia(usos)[0];
+    expect(dia?.matrizes).toBe(2);
+    expect(dia?.doses).toBe(3);
+    expect(dia?.custoTotal).toBe(256.66);
+    expect(
+      formatSemenUtilizadoDiaResumo({
+        matrizes: dia!.matrizes,
+        doses: dia!.doses,
+        custoTotal: dia!.custoTotal,
+      }),
+    ).toBe("2 matrizes · 3 doses · Custo total R$ 256,66");
+  });
+
+  it("cabeçalho identifica Reprodutor e Partida sem inventar nome", () => {
+    const vazio = formatSemenUtilizadoHistoricoCabecalho({
+      reprodutorDisplay: "",
+      partida: "P-10FAZ",
+    });
+    expect(vazio.reprodutorLinha).toBe("Reprodutor: Não informado");
+    expect(vazio.partidaLinha).toBe("Partida: P-10FAZ");
+    expect(vazio.reprodutor).toBe("Não informado");
+    expect(vazio.reprodutor).not.toBe("P-10FAZ");
+
+    const traco = formatSemenUtilizadoHistoricoCabecalho({
+      reprodutorDisplay: "—",
+      partida: "P-10FAZ",
+    });
+    expect(traco.reprodutorLinha).toBe("Reprodutor: Não informado");
+
+    const conhecido = formatSemenUtilizadoHistoricoCabecalho({
+      reprodutorDisplay: "GSC-7117",
+      partida: "P-01",
+    });
+    expect(conhecido.reprodutorLinha).toBe("Reprodutor: GSC-7117");
+    expect(conhecido.partidaLinha).toBe("Partida: P-01");
+    expect(conhecido.compacto).toBe("Reprodutor: GSC-7117 · Partida: P-01");
+  });
+
+  it("custo da dose vem do snapshot da IA, não do estoque atual", () => {
+    const usos = extractSemenUtilizadoUsos(
+      [ia({ id: 1, femeaId: 15, data: "2026-08-27", custo: 83.33 })],
+      animais,
+    );
+    expect(usos[0]?.custoDose).toBe(83.33);
+    expect(JSON.stringify(usos)).not.toMatch(/custoUnitario|custoMedioAtual|saldoDoses/);
   });
 });
 

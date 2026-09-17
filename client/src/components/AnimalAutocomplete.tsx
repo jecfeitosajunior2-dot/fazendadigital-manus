@@ -1,4 +1,5 @@
 import {
+  ANIMAL_AUTOCOMPLETE_MENU_ATTR,
   filterAnimalAutocompleteCandidates,
   shouldClearAutocompleteSelection,
   shouldShowAnimalAutocompleteDropdown,
@@ -12,6 +13,7 @@ import {
   withSexoNoSubtitulo,
 } from "@shared/animalBuscaDisplay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 function SexoBolinha({ sexo }: { sexo?: string | null }) {
   const cls = sexoDotClassName(sexo);
@@ -67,8 +69,13 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(
+    null,
+  );
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   const options = useMemo(
     () =>
@@ -99,12 +106,50 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
     }
   }, [selected]);
 
+  const updateMenuPosition = useCallback(() => {
+    const el = inputRef.current;
+    if (!el || typeof document === "undefined") return;
+    const dialog = el.closest("[data-slot=dialog-content]") as HTMLElement | null;
+    const root = dialog ?? document.body;
+    setPortalRoot(root);
+    const rect = el.getBoundingClientRect();
+    if (dialog) {
+      const rootRect = dialog.getBoundingClientRect();
+      setMenuStyle({
+        top: rect.bottom - rootRect.top + 4,
+        left: rect.left - rootRect.left,
+        width: rect.width,
+      });
+      return;
+    }
+    setMenuStyle({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!dropdownVisible) {
+      setMenuStyle(null);
+      return;
+    }
+    updateMenuPosition();
+    const onReposition = () => updateMenuPosition();
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [dropdownVisible, options.length, updateMenuPosition]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target) || listRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -218,54 +263,73 @@ export function AnimalAutocomplete<T extends AnimalAutocompleteRow>({
         aria-expanded={dropdownVisible}
         aria-autocomplete="list"
       />
-      {dropdownVisible ? (
-        <ul
-          className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
-          role="listbox"
-        >
-          {loading ? (
-            <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
-          ) : options.length === 0 ? (
-            <li className="px-3 py-2.5 text-[11px] text-gray-400">{emptyMessage}</li>
-          ) : (
-            options.map((a, index) => {
-              const titulo = getOptionLabel(a);
-              const sexoLabel = labelSexoAnimal(a.sexo);
-              const temBolinha = Boolean(sexoDotClassName(a.sexo));
-              const subtitle = withSexoNoSubtitulo(a.sexo, getOptionSubtitle(a) ?? "");
-              return (
-                <li key={a.id} role="option" aria-selected={index === highlightIndex}>
-                  <button
-                    type="button"
-                    onMouseEnter={() => setHighlightIndex(index)}
-                    onClick={() => handlePick(a)}
-                    aria-label={sexoLabel ? `${titulo} — ${sexoLabel}` : titulo}
-                    className={`w-full text-left px-3 py-2.5 transition border-b border-gray-50 last:border-0 ${
-                      index === highlightIndex
-                        ? "bg-[#4ECDC4]/[0.12]"
-                        : "hover:bg-[#4ECDC4]/[0.08]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <SexoBolinha sexo={a.sexo} />
-                      <span className="text-[13px] font-semibold text-gray-900 truncate">
-                        {titulo}
-                      </span>
-                    </div>
-                    {subtitle ? (
-                      <div
-                        className={`text-[11px] text-gray-500 ${temBolinha ? "pl-3.5" : ""}`}
+      {dropdownVisible && menuStyle && portalRoot
+        ? createPortal(
+            <ul
+              ref={listRef}
+              {...{ [ANIMAL_AUTOCOMPLETE_MENU_ATTR]: "" }}
+              className="pointer-events-auto max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+              role="listbox"
+              style={{
+                position: "fixed",
+                top: menuStyle.top,
+                left: menuStyle.left,
+                width: menuStyle.width,
+                zIndex: 200,
+                pointerEvents: "auto",
+              }}
+              onPointerDown={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              {loading ? (
+                <li className="px-3 py-2.5 text-[11px] text-gray-400">Buscando…</li>
+              ) : options.length === 0 ? (
+                <li className="px-3 py-2.5 text-[11px] text-gray-400">{emptyMessage}</li>
+              ) : (
+                options.map((a, index) => {
+                  const titulo = getOptionLabel(a);
+                  const sexoLabel = labelSexoAnimal(a.sexo);
+                  const temBolinha = Boolean(sexoDotClassName(a.sexo));
+                  const subtitle = withSexoNoSubtitulo(a.sexo, getOptionSubtitle(a) ?? "");
+                  return (
+                    <li key={a.id} role="option" aria-selected={index === highlightIndex}>
+                      <button
+                        type="button"
+                        onMouseEnter={() => setHighlightIndex(index)}
+                        onPointerDown={e => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handlePick(a);
+                        }}
+                        aria-label={sexoLabel ? `${titulo} — ${sexoLabel}` : titulo}
+                        className={`w-full text-left px-3 py-2.5 transition border-b border-gray-50 last:border-0 ${
+                          index === highlightIndex
+                            ? "bg-[#4ECDC4]/[0.12]"
+                            : "hover:bg-[#4ECDC4]/[0.08]"
+                        }`}
                       >
-                        {subtitle}
-                      </div>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      ) : null}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <SexoBolinha sexo={a.sexo} />
+                          <span className="text-[13px] font-semibold text-gray-900 truncate">
+                            {titulo}
+                          </span>
+                        </div>
+                        {subtitle ? (
+                          <div
+                            className={`text-[11px] text-gray-500 ${temBolinha ? "pl-3.5" : ""}`}
+                          >
+                            {subtitle}
+                          </div>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>,
+            portalRoot,
+          )
+        : null}
       {errorMessage ? (
         <p className="text-[11px] text-red-600 mt-1">{errorMessage}</p>
       ) : hintMessage ? (

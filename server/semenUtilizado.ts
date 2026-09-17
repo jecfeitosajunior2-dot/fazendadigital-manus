@@ -4,6 +4,7 @@ import {
   buildSemenUtilizadoVisao,
   parseSemenUtilizadoGrupoKey,
   sortSemenUtilizadoUsosDetalhe,
+  type SemenUtilizadoConsultaTotais,
   type SemenUtilizadoFiltros,
   type SemenUtilizadoGrupo,
   type SemenUtilizadoReprodutorOpcao,
@@ -16,6 +17,7 @@ import { listSemenPartidasCentralLocal } from "./semenEstoqueLocal";
 
 export type SemenUtilizadoListResult = {
   grupos: SemenUtilizadoGrupo[];
+  totais: SemenUtilizadoConsultaTotais;
   custoTotalFiltrado: number | null;
   reprodutoresOpcoes: SemenUtilizadoReprodutorOpcao[];
 };
@@ -112,6 +114,7 @@ export async function listSemenUtilizadoDb(
   );
   return {
     grupos: visao.grupos,
+    totais: visao.totais,
     custoTotalFiltrado: visao.custoTotalFiltrado,
     reprodutoresOpcoes: visao.reprodutoresOpcoes,
   };
@@ -132,6 +135,7 @@ export async function listSemenUtilizadoLocal(
   );
   return {
     grupos: visao.grupos,
+    totais: visao.totais,
     custoTotalFiltrado: visao.custoTotalFiltrado,
     reprodutoresOpcoes: visao.reprodutoresOpcoes,
   };

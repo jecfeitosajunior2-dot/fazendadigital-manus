@@ -20,6 +20,10 @@ export const semenEntradaModalLayout = {
   body: "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-2.5",
   formCard:
     "rounded-lg border border-gray-100 bg-white shadow-sm p-3 space-y-3 divide-y divide-gray-100 [&>section]:pt-0 [&>section:not(:first-child)]:pt-3",
+  opCard: "rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden",
+  opCardHead: "px-4 py-3 border-b border-gray-100",
+  opCardTitle: "text-[13px] font-semibold text-[#4ECDC4]",
+  opCardBody: "p-4 space-y-3",
   section: "space-y-2",
   sectionTitle:
     "text-[10px] font-semibold uppercase tracking-wide text-[#2D5A5A]/70 mb-1.5",

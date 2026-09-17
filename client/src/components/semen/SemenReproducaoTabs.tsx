@@ -8,10 +8,12 @@ type SemenReproducaoTabsProps = {
   active: SemenReproducaoTabId;
 };
 
-const TABS: { id: SemenReproducaoTabId; label: string; path: string }[] = [
-  { id: "utilizado", label: "Utilizado", path: SEMEN_UTILIZADO_PATH },
+export const SEMEN_REPRODUCAO_TABS: { id: SemenReproducaoTabId; label: string; path: string }[] = [
   { id: "estoque", label: "Estoque", path: SEMEN_ESTOQUE_PATH },
+  { id: "utilizado", label: "Utilizado", path: SEMEN_UTILIZADO_PATH },
 ];
+
+const TABS = SEMEN_REPRODUCAO_TABS;
 
 export function SemenReproducaoTabs({ active }: SemenReproducaoTabsProps) {
   const [, setLocation] = useLocation();
@@ -20,7 +22,7 @@ export function SemenReproducaoTabs({ active }: SemenReproducaoTabsProps) {
     <div
       className="flex gap-1 px-5 pt-3 border-b border-gray-100"
       role="tablist"
-      aria-label="Controle de sêmen"
+      aria-label="Controle de Sêmen"
     >
       {TABS.map(tab => (
         <button

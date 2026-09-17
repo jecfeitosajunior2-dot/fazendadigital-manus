@@ -40,7 +40,6 @@ import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import SuppliesManagementPage from "./pages/SuppliesManagementPage";
 import {
-  ManejoVisaoGeralPage,
   ManejoRegistrosPage,
   ManejoFormPage,
   ManejoSessaoPage,
@@ -64,7 +63,7 @@ import SemenEstoquePage from "./pages/SemenEstoquePage";
 import SemenUtilizadoPage from "./pages/SemenUtilizadoPage";
 import SemenEntradaResumoPage from "./pages/SemenEntradaResumoPage";
 import { MANEJO_REPRODUTIVO_PATH } from "./const";
-import { SEMEN_CADASTRO_PATH, SEMEN_UTILIZADO_PATH } from "./lib/semenRoutes";
+import { SEMEN_CADASTRO_PATH, SEMEN_ESTOQUE_PATH, SEMEN_UTILIZADO_PATH } from "./lib/semenRoutes";
 
 function RedirectTo({ to }: { to: string }) {
   return <Redirect to={to} />;
@@ -108,7 +107,7 @@ function ProtectedRoutes() {
       <Route path="/rebanho/editar-animal" component={EditAnimalPage} />
 
       {/* Manejo */}
-      <Route path="/manejo/visao-geral" component={ManejoVisaoGeralPage} />
+      <Route path="/manejo/visao-geral" component={() => <RedirectTo to="/manejo/registros" />} />
       <Route path="/manejo/registros/sessao" component={ManejoSessaoPage} />
       <Route path="/manejo/registros/cadastro" component={ManejoFormPage} />
       <Route path="/manejo/registros" component={ManejoRegistrosPage} />
@@ -149,7 +148,7 @@ function ProtectedRoutes() {
       <Route path="/reproducao/estoque-semen/entrada/:movimentacaoId" component={SemenEntradaResumoPage} />
       <Route path="/reproducao/estoque-semen/:id" component={SemenEstoquePage} />
       <Route path="/reproducao/estoque-semen" component={SemenEstoquePage} />
-      <Route path="/reproducao/semen" component={() => <RedirectTo to="/reproducao/semen-utilizado" />} />
+      <Route path="/reproducao/semen" component={() => <RedirectTo to={SEMEN_ESTOQUE_PATH} />} />
 
       {/* Reprodução legada — redireciona para Manejo → Reprodutivo */}
       <Route path="/reproducao" component={RedirectReproducaoLegado} />

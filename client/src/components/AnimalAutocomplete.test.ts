@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  ANIMAL_AUTOCOMPLETE_MENU_ATTR,
   filterAnimalAutocompleteCandidates,
+  isAnimalAutocompleteMenuEventTarget,
+  isAnimalAutocompleteMenuOutsideEvent,
   resolveAnimalIdFromSelecao,
   shouldShowAnimalAutocompleteDropdown,
   type AnimalAutocompleteRow,
@@ -44,6 +50,31 @@ const macho20: AnimalAutocompleteRow = {
   idadeMeses: 36,
   fazendaId: 1,
 };
+
+describe("AnimalAutocomplete — lista no modal", () => {
+  it("abre a listagem fora do card para não cortar no overflow", () => {
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "./AnimalAutocomplete.tsx"),
+      "utf8",
+    );
+    expect(src).toContain("createPortal");
+    expect(src).toContain("[data-slot=dialog-content]");
+    expect(src).toContain("pointerEvents: \"auto\"");
+    expect(src).toContain("ANIMAL_AUTOCOMPLETE_MENU_ATTR");
+    expect(src).toContain("handlePick");
+    expect(isAnimalAutocompleteMenuEventTarget(null)).toBe(false);
+    const menuTarget = {
+      closest: (sel: string) => (sel.includes(ANIMAL_AUTOCOMPLETE_MENU_ATTR) ? {} : null),
+    } as unknown as EventTarget;
+    expect(isAnimalAutocompleteMenuEventTarget(menuTarget)).toBe(true);
+    expect(
+      isAnimalAutocompleteMenuOutsideEvent({
+        target: { closest: () => null } as unknown as EventTarget,
+        detail: { originalEvent: { target: menuTarget } },
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("AnimalAutocomplete — abertura com busca vazia", () => {
   it("A) focus com busca vazia → dropdown abre", () => {

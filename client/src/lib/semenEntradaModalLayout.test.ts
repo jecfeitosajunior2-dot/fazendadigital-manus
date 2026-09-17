@@ -47,6 +47,12 @@ describe("semen entrada modal — layout responsivo", () => {
     expect(semenEntradaModalLayout.content).toContain("bg-[#F7F9FA]");
   });
 
+  it("cards operacionais iguais aos de Corrigir/Ajustar", () => {
+    expect(semenEntradaModalLayout.opCard).toContain("rounded-xl");
+    expect(semenEntradaModalLayout.opCardTitle).toContain("text-[#4ECDC4]");
+    expect(semenEntradaModalLayout.opCardBody).toContain("p-4");
+  });
+
   it("content força flex column sobre grid padrão do Dialog", () => {
     expect(semenEntradaModalLayout.content).toContain("!flex");
     expect(semenEntradaModalLayout.content).toContain("!flex-col");
