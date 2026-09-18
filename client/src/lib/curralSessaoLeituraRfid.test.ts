@@ -58,6 +58,17 @@ describe("RFID do próprio animal durante Pesagem (cenário A validado)", () => 
     });
   });
 
+  it("cadastro rápido captura o RFID em vez de identificar", () => {
+    const decisao = decidirLeituraRfidSessaoCurral({
+      temAnimalAtual: false,
+      capturaNovoRfidAtiva: true,
+      rfidLido: "963000400650112",
+    });
+    expect(decisao).toBe("capturar_novo_rfid");
+    expect(efeitosLeituraRfidSessaoCurral(decisao).criaRegistro).toBe(false);
+    expect(efeitosLeituraRfidSessaoCurral(decisao).trocaAnimal).toBe(false);
+  });
+
   it("sem animal na sessão a leitura segue para identificação — sem criar registro sozinha", () => {
     const decisao = decidirLeituraRfidSessaoCurral({
       temAnimalAtual: false,
@@ -260,6 +271,18 @@ describe("shutdown só com o último hook da sessão", () => {
 });
 
 describe("Sessão no Curral — ciclo operacional na página", () => {
+  it("Cadastro rápido registra captura AT05 na sessão, sem salvar o animal", () => {
+    const cadastro = readSrc("../components/curral/CurralCadastroAnimalPanel.tsx");
+    const sessao = readSrc("../pages/ManejoPages.tsx").slice(
+      readSrc("../pages/ManejoPages.tsx").indexOf("export function ManejoSessaoPage"),
+    );
+    expect(cadastro).toContain("registerNovoRfidCapture");
+    expect(cadastro).toContain("registerNovoRfidCapture(onTag)");
+    expect(cadastro).toContain("Salvar e manejar");
+    expect(sessao).toContain("registerNovoRfidCapture={registerCurralNovoRfidCapture}");
+    expect(cadastro).not.toMatch(/onSalvarEManejar\(.*rfid/);
+  });
+
   it("aguarda animal, RFID define o atual e outro RFID só avisa", () => {
     const page = readSrc("../pages/ManejoPages.tsx");
     const sessao = page.slice(page.indexOf("export function ManejoSessaoPage"));

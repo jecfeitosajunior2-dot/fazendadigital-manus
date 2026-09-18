@@ -107,7 +107,7 @@ export default function VendaDetalhePage() {
                   <tr>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Brinco</th>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lote</th>
-                    <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso vivo</th>
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso do embarque</th>
                     {temRendimento ? (
                       <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso carne</th>
                     ) : null}

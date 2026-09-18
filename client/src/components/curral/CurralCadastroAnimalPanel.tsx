@@ -16,7 +16,7 @@ import {
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import type { At05ReaderSession } from "@/hooks/useAt05Reader";
 import { UserPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const FD_PRIMARY = "#4ECDC4";
@@ -34,6 +34,8 @@ type Props = {
   /** Sessão serial compartilhada da sessão no curral. */
   at05Session?: At05ReaderSession;
   bindAt05ReadHandler?: (handler: (rfid: string) => void) => () => void;
+  /** Prioridade no onRead da sessão: preenche RFID em vez de identificar animal. */
+  registerNovoRfidCapture?: (handler: ((rfid: string) => void) | null) => void;
 };
 
 export function CurralCadastroAnimalPanel({
@@ -46,6 +48,7 @@ export function CurralCadastroAnimalPanel({
   onCancelar,
   at05Session,
   bindAt05ReadHandler,
+  registerNovoRfidCapture,
 }: Props) {
   const trpcUtils = trpc.useUtils();
   const { data: lotes = [] } = trpc.lotes.list.useQuery({ somenteAtivos: true });
@@ -124,11 +127,39 @@ export function CurralCadastroAnimalPanel({
 
   const handleRfidRead = useCallback(
     async (rfidBruto: string) => {
+      console.info("[AT05-CURRAL] 6 painel recebeu RFID", { rfid: rfidBruto });
       const ok = await validarRfidCadastro(rfidBruto);
-      if (ok) setRfid(normalizeRfidKey(rfidBruto));
+      if (ok) {
+        const key = normalizeRfidKey(rfidBruto);
+        console.info("[AT05-CURRAL] 7 atualizar campo RFID", { rfid: key });
+        setRfid(key);
+        return;
+      }
+      console.info("[AT05-CURRAL] 7 campo RFID nao atualizado", { rfid: rfidBruto, ok });
     },
     [validarRfidCadastro],
   );
+
+  const handleRfidReadRef = useRef(handleRfidRead);
+  handleRfidReadRef.current = handleRfidRead;
+
+  useEffect(() => {
+    console.info("[AT05-CURRAL] 6 painel cadastro montado", {
+      temRegister: Boolean(registerNovoRfidCapture),
+    });
+    if (!registerNovoRfidCapture) return;
+    const onTag = (raw: string) => {
+      const key = normalizeRfidKey(raw);
+      console.info("[AT05-CURRAL] 6 captura do painel", { rfid: raw, key });
+      if (!key) return;
+      void handleRfidReadRef.current(key);
+    };
+    registerNovoRfidCapture(onTag);
+    return () => {
+      console.info("[AT05-CURRAL] 6 painel cadastro desmontado");
+      registerNovoRfidCapture(null);
+    };
+  }, [registerNovoRfidCapture]);
 
   const mutation = trpc.animais.create.useMutation({
     onSuccess: async result => {

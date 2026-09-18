@@ -25,7 +25,12 @@ vi.mock("./animaisPorFazenda", async importOriginal => {
 });
 
 import { confirmarVendaComercial } from "./confirmarVenda";
-import { MSG_VENDA_ANIMAL_DUPLICADO, MSG_VENDA_ANIMAL_OUTRA_FAZENDA, MSG_VENDA_SEM_ITENS } from "../shared/vendaComercial";
+import {
+  MSG_VENDA_ANIMAL_DUPLICADO,
+  MSG_VENDA_ANIMAL_OUTRA_FAZENDA,
+  MSG_VENDA_ARROBA_REQUER_MIGRATION,
+  MSG_VENDA_SEM_ITENS,
+} from "../shared/vendaComercial";
 
 type Op =
   | { kind: "insert"; values: unknown }
@@ -209,5 +214,12 @@ describe("confirmarVendaComercial", () => {
       message: expect.stringContaining("não estão mais disponíveis"),
     });
     expect(ops.some(op => op.kind === "insert")).toBe(true);
+  });
+
+  it("não grava R$/@ de carcaça enquanto o enum do banco não aceitar arroba", async () => {
+    await expect(
+      confirmarVendaComercial(1, { ...inputBase, formaPrecificacao: "arroba" }),
+    ).rejects.toMatchObject({ message: MSG_VENDA_ARROBA_REQUER_MIGRATION });
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });

@@ -4652,15 +4652,26 @@ export function ManejoSessaoPage() {
     label: animalSel ? labelAnimal(animalSel) : "",
   };
   const lastAvisoRfidRef = useRef<{ rfid: string; at: number } | null>(null);
+  const cadastroAbertoRef = useRef(false);
+  cadastroAbertoRef.current = cadastroCurral.aberto;
   const at05OnReadCurral = useCallback((rfid: string) => {
     const atual = animalAtualRef.current;
+    const capturaRegistrada = Boolean(curralNovoRfidCaptureRef.current);
     const decisao = decidirLeituraRfidSessaoCurral({
       temAnimalAtual: atual.id != null,
-      capturaNovoRfidAtiva: Boolean(curralNovoRfidCaptureRef.current),
+      capturaNovoRfidAtiva: capturaRegistrada,
       rfidLido: rfid,
       rfidAnimalAtual: atual.rfid,
     });
+    console.info("[AT05-CURRAL] 2 at05OnReadCurral", {
+      rfid,
+      decisao,
+      capturaRegistrada,
+      cadastroRapidoAberto: cadastroAbertoRef.current,
+      animalId: atual.id,
+    });
     if (decisao === "capturar_novo_rfid") {
+      console.info("[AT05-CURRAL] 5 encaminhar captura", { rfid, temHandler: Boolean(curralNovoRfidCaptureRef.current) });
       curralNovoRfidCaptureRef.current?.(rfid);
       return;
     }
@@ -4679,13 +4690,27 @@ export function ManejoSessaoPage() {
       toast.message(textoAvisoAnimalEmAtendimento(atual.label));
       return;
     }
+    console.info("[AT05-CURRAL] 3 roteamento identificar/dispatch", { rfid, decisao });
     at05ReadDispatchRef.current(rfid);
   }, []);
   const at05CurralSession = useAt05Reader({
     onRead: at05OnReadCurral,
   });
+  useEffect(() => {
+    console.info("[AT05-CURRAL] hook sessao montado", {
+      sessionActive: at05CurralSession.sessionActive,
+    });
+    return () => {
+      console.info("[AT05-CURRAL] hook sessao desmontado");
+    };
+    // Só diagnostica permanência do hook da página — não reagir a status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const registerCurralNovoRfidCapture = useCallback((handler: ((rfid: string) => void) | null) => {
     curralNovoRfidCaptureRef.current = handler;
+    console.info("[AT05-CURRAL] 5 registerCurralNovoRfidCapture", {
+      registrada: handler != null,
+    });
   }, []);
   const bindAt05ReadHandler = useCallback((handler: (rfid: string) => void) => {
     at05ReadDispatchRef.current = handler;
@@ -5387,6 +5412,7 @@ export function ManejoSessaoPage() {
                 onCancelar={fecharCadastroCurral}
                 at05Session={at05CurralSession}
                 bindAt05ReadHandler={bindAt05ReadHandler}
+                registerNovoRfidCapture={registerCurralNovoRfidCapture}
               />
             ) : (
               <div className="space-y-4">

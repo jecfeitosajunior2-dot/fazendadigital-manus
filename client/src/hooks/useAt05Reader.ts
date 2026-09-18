@@ -145,6 +145,14 @@ function deliverSharedRfid(rfid: string): void {
   });
   const handler = onReadStack[onReadStack.length - 1];
   log("ONREAD (IDENTIFICAÇÃO RFID)", { rfid, hasHandler: Boolean(handler) });
+  console.info("[AT05-CURRAL] 1 deliver to last onRead", {
+    rfid,
+    hookAliveCount,
+    onReadStack: onReadStack.length,
+    hasHandler: Boolean(handler),
+    stopReading: s.stopReading,
+    shuttingDown: s.shuttingDown,
+  });
   if (!handler) return;
   try {
     handler(rfid);
@@ -387,6 +395,11 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
           syncObservedLink(mode);
         },
         onIdentificationRfid: rfid => {
+          console.info("[AT05-CURRAL] 1 reader identification", {
+            rfid,
+            hookAliveCount,
+            onReadStack: onReadStack.length,
+          });
           deliverSharedRfid(rfid);
         },
       });

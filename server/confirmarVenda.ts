@@ -4,9 +4,8 @@ import { animalBaixas, animais, fazendas, lotes, pessoas, vendaItens, vendas } f
 import { normalizarDataOperacional } from "../shared/animalBaixa";
 import {
   calcularValorItem,
-  isFormaPrecificacaoVenda,
+  isFormaPrecificacaoVendaPersistivel,
   mensagemAnimaisIndisponiveis,
-  parseRendimentoCarcaca,
   MSG_VENDA_ANIMAL_INDISPONIVEL,
   MSG_VENDA_ANIMAL_OUTRA_FAZENDA,
   MSG_VENDA_SEM_COMPRADOR,
@@ -16,8 +15,9 @@ import {
   MSG_VENDA_SEM_ITENS,
   MSG_VENDA_FORMA_INVALIDA,
   MSG_VENDA_ANIMAL_DUPLICADO,
+  MSG_VENDA_ARROBA_REQUER_MIGRATION,
   resumirItensVenda,
-  type FormaPrecificacaoVenda,
+  type FormaPrecificacaoVendaPersistivel,
 } from "../shared/vendaComercial";
 import { db } from "./db";
 import { animalPertenceFazenda, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
@@ -33,7 +33,7 @@ export type ConfirmarVendaInput = {
   fazendaId: number;
   data: string;
   compradorId: number;
-  formaPrecificacao: FormaPrecificacaoVenda;
+  formaPrecificacao: FormaPrecificacaoVendaPersistivel | "arroba";
   precoPadrao?: number | null;
   rendimentoCarcaca?: number | null;
   observacoes?: string | null;
@@ -75,15 +75,16 @@ function affectedRowsOf(result: unknown): number {
 export async function confirmarVendaComercial(userId: number, input: ConfirmarVendaInput) {
   if (!input.fazendaId || input.fazendaId <= 0) toTrpc(MSG_VENDA_SEM_FAZENDA);
   if (!input.compradorId || input.compradorId <= 0) toTrpc(MSG_VENDA_SEM_COMPRADOR);
-  if (!isFormaPrecificacaoVenda(input.formaPrecificacao)) toTrpc(MSG_VENDA_FORMA_INVALIDA);
+  if (input.formaPrecificacao === "arroba") toTrpc(MSG_VENDA_ARROBA_REQUER_MIGRATION);
+  if (!isFormaPrecificacaoVendaPersistivel(input.formaPrecificacao)) toTrpc(MSG_VENDA_FORMA_INVALIDA);
+  const forma: FormaPrecificacaoVendaPersistivel =
+    input.formaPrecificacao === "cabeca" ? "cabeca" : "kg";
   if (!(input.data ?? "").trim()) toTrpc(MSG_VENDA_SEM_DATA);
   const dataISO = normalizarDataOperacional(input.data);
   if (!dataISO) toTrpc(MSG_VENDA_DATA_INVALIDA);
   if (!input.itens?.length) toTrpc(MSG_VENDA_SEM_ITENS);
 
-  const rendimentoParse = parseRendimentoCarcaca(input.rendimentoCarcaca);
-  if (!rendimentoParse.ok) toTrpc(rendimentoParse.message);
-  const rendimentoCarcaca = input.formaPrecificacao === "kg" ? rendimentoParse.valor : null;
+  const rendimentoCarcaca = null;
 
   const animalIds = input.itens.map(i => i.animalId);
   const uniqueIds = new Set(animalIds);
@@ -91,15 +92,14 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
 
   const itensCalculados = input.itens.map(item => {
     const calc = calcularValorItem({
-      forma: input.formaPrecificacao,
+      forma,
       pesoVenda: item.pesoVenda,
       precoUnitario: item.precoUnitario,
-      rendimentoCarcaca,
     });
     if (!calc.ok) toTrpc(calc.message);
     return { ...item, valorItem: calc.valor };
   });
-  const totais = resumirItensVenda(itensCalculados, { rendimentoCarcaca });
+  const totais = resumirItensVenda(itensCalculados, { forma });
 
   await assertFazendaDoUsuario(userId, input.fazendaId);
   const { loteFazendaById } = await loadLoteFazendaContextForUser(userId);
@@ -182,7 +182,7 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
         compradorId: input.compradorId,
         comprador: compradorNome,
         data: dataISO,
-        formaPrecificacao: input.formaPrecificacao,
+        formaPrecificacao: forma,
         precoPadrao: input.precoPadrao != null ? String(input.precoPadrao) : null,
         rendimentoCarcaca: rendimentoCarcaca != null ? String(rendimentoCarcaca) : null,
         quantidadeAnimais: totais.quantidade,
@@ -204,7 +204,7 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
             brincoSnapshot: animal.brinco?.trim() || null,
             loteNomeSnapshot: animal.loteId ? loteNomeMap.get(animal.loteId) ?? null : null,
             pesoVenda: item.pesoVenda != null ? String(item.pesoVenda) : null,
-            formaPrecificacao: input.formaPrecificacao,
+            formaPrecificacao: forma,
             precoUnitario: String(item.precoUnitario),
             valorItem: String(item.valorItem),
           };

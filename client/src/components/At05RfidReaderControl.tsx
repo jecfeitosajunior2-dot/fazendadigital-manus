@@ -21,8 +21,10 @@ type At05RfidReaderControlProps = {
   onRfidRead: (rfid: string) => void;
   /** cadastro: confirma substituição. identificar: só devolve o RFID lido. */
   mode?: "cadastro" | "identificar";
-  /** Curral: após conectar, escuta tags sem botão "Ler RFID". */
+  /** Curral / Nova Venda: após conectar, escuta tags sem botão "Ler RFID". */
   continuous?: boolean;
+  /** Texto quando continuous + identificar e o bastão está escutando. */
+  listeningHint?: string;
   /** compact: barra superior do curral · embedded: só conectar se necessário · hub: só conexão (pré-sessão). */
   variant?: "default" | "compact" | "embedded" | "hub";
   className?: string;
@@ -75,6 +77,7 @@ function At05RfidReaderControlInner({
   onRfidRead,
   mode = "cadastro",
   continuous = false,
+  listeningHint,
   variant = "default",
   className,
   session,
@@ -166,7 +169,7 @@ function At05RfidReaderControlInner({
         : variant === "hub" && uiStatus === "disconnected"
           ? "Conecte o AT05 para identificar os animais automaticamente."
           : mode === "identificar" && continuous && isListening
-          ? "Bastão conectado · passe a tag no animal"
+          ? listeningHint ?? "Bastão conectado · passe a tag no animal"
           : mode === "identificar"
             ? textoStatusBastaoRfid(uiStatus)
             : textoStatusLeitorRfid(uiStatus);
@@ -289,7 +292,9 @@ function At05RfidReaderControlInner({
         ajuda={
           uiStatus === "disconnected"
             ? "Conecte o AT05 para identificar os animais automaticamente."
-            : undefined
+            : mode === "identificar" && continuous
+              ? listeningHint
+              : undefined
         }
         unsupported={!supported ? statusTexto : null}
         acao={

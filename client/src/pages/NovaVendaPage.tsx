@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { At05RfidReaderControl } from "@/components/At05RfidReaderControl";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
 import { VendaAnimaisPicker } from "@/components/venda/VendaAnimaisPicker";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import {
@@ -17,6 +18,9 @@ import {
   formControlFlatCls,
 } from "@/components/FormFields";
 import { FAZENDA_SELECT_PLACEHOLDER } from "@/components/ManejoPontualFormLayout";
+import { useScaleReader } from "@/hooks/useScaleReader";
+import { useTruTestBleReader } from "@/hooks/useTruTestBleReader";
+import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   COMPRA_VENDA_VENDAS_PATH,
@@ -26,20 +30,27 @@ import {
 import { hojeISODate } from "@shared/animalBaixa";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import {
+  aplicarPadraoEmLinhas,
   avaliarInclusaoAnimalVenda,
   calcularValorItem,
+  escolherAlvoPesoBalanca,
+  estadoAnimalAtualVenda,
   FORMA_PRECIFICACAO_VENDA_LABEL,
+  isFormaPrecificacaoVendaPersistivel,
   MSG_VENDA_ANIMAL_DUPLICADO,
   MSG_VENDA_ANIMAL_OUTRA_FAZENDA,
+  MSG_VENDA_ARROBA_REQUER_MIGRATION,
   MSG_VENDA_RFID_SEM_FAZENDA,
   MSG_VENDA_SEM_ITENS,
   MSG_VENDA_RENDIMENTO_INVALIDO,
+  ordenarItensVendaPorBrinco,
   parsePrecoVenda,
   parsePesoVenda,
   parseRendimentoCarcaca,
-  calcularPesoCarne,
+  pesoEmbarqueObrigatorio,
   resumirItensVenda,
   type FormaPrecificacaoVenda,
+  type OrigemPesoEmbarque,
 } from "@shared/vendaComercial";
 import { formatarMetricaPeso, formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
@@ -50,8 +61,11 @@ type ItemDraft = {
   brinco: string;
   loteNome: string;
   pesoVenda: string;
+  pesoOrigem: OrigemPesoEmbarque;
   preco: string;
   precoManual: boolean;
+  rendimento: string;
+  rendimentoManual: boolean;
 };
 
 const VENDA_DRAFT_KEY = "fd_vendas_form_draft";
@@ -65,7 +79,6 @@ type VendaDraft = {
   rendimento: string;
   observacoes: string;
   itens: ItemDraft[];
-  usarRfid: boolean;
 };
 
 function precoPadraoParaItem(formatted: string): string {
@@ -73,20 +86,19 @@ function precoPadraoParaItem(formatted: string): string {
   return n == null ? "" : String(n).replace(".", ",");
 }
 
-function valorItemDraft(
-  forma: FormaPrecificacaoVenda,
-  item: ItemDraft,
-  rendimentoCarcaca?: number | null,
-) {
+function valorItemDraft(forma: FormaPrecificacaoVenda, item: ItemDraft, rendimentoPadrao?: number | null) {
   const preco = parsePrecoVenda(item.preco);
   if (preco == null) return null;
+  const rendItem = parseRendimentoCarcaca(item.rendimento);
+  const rendimento =
+    forma === "arroba" ? (rendItem.ok ? rendItem.valor : null) : rendimentoPadrao;
   const calc = calcularValorItem({
     forma,
     pesoVenda: parsePesoVenda(item.pesoVenda),
     precoUnitario: preco,
-    rendimentoCarcaca,
+    rendimentoCarcaca: rendimento,
   });
-  return calc.ok ? calc.valor : null;
+  return calc.ok ? calc : null;
 }
 
 export default function NovaVendaPage() {
@@ -109,11 +121,14 @@ export default function NovaVendaPage() {
   const [rendimento, setRendimento] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<ItemDraft[]>([]);
-  const [usarRfid, setUsarRfid] = useState(false);
   const [rfidFeedback, setRfidFeedback] = useState<{ kind: "ok" | "erro"; text: string; detalhe?: string } | null>(null);
-  const [ultimoBrincoRfid, setUltimoBrincoRfid] = useState<string | null>(null);
   const [focoPesoAnimalId, setFocoPesoAnimalId] = useState<number | null>(null);
   const pesoInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const itensRef = useRef(itens);
+  itensRef.current = itens;
+  const focoRef = useRef(focoPesoAnimalId);
+  focoRef.current = focoPesoAnimalId;
+  const ultimoFocoAplicadoRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!fazendaId && fazendaInicial) setFazendaId(fazendaInicial);
@@ -130,12 +145,20 @@ export default function NovaVendaPage() {
         setFazendaId(draft.fazendaId);
         setData(draft.data);
         setCompradorId(draft.compradorId);
-        setForma(draft.forma);
+        setForma(draft.forma === "arroba" || draft.forma === "cabeca" || draft.forma === "kg" ? draft.forma : "kg");
         setPrecoPadrao(draft.precoPadrao);
         setRendimento(draft.rendimento);
         setObservacoes(draft.observacoes);
-        setItens(draft.itens);
-        setUsarRfid(draft.usarRfid);
+        setItens(
+          ordenarItensVendaPorBrinco(
+            (draft.itens ?? []).map(item => ({
+              ...item,
+              pesoOrigem: item.pesoOrigem === "balanca" ? "balanca" : "manual",
+              rendimento: item.rendimento ?? "",
+              rendimentoManual: Boolean(item.rendimentoManual),
+            })),
+          ),
+        );
       } catch {
         /* rascunho inválido */
       }
@@ -162,7 +185,6 @@ export default function NovaVendaPage() {
         rendimento,
         observacoes,
         itens,
-        usarRfid,
       } satisfies VendaDraft),
     );
     const retorno = window.location.pathname + window.location.search;
@@ -186,20 +208,23 @@ export default function NovaVendaPage() {
     );
   }, [animaisFazenda, itens]);
 
-  const rendimentoParse = parseRendimentoCarcaca(rendimento);
-  const rendimentoValor =
-    forma === "kg" && rendimentoParse.ok ? rendimentoParse.valor : null;
-  const temRendimento = rendimentoValor != null;
+  const rendimentoParse = parseRendimentoCarcaca(rendimento, { obrigatorio: forma === "arroba" });
+  const rendimentoPadrao = rendimentoParse.ok ? rendimentoParse.valor : null;
 
   const resumo = useMemo(() => {
     const calculados = itens
       .map(item => {
-        const valor = valorItemDraft(forma, item, rendimentoValor);
-        return valor == null ? null : { pesoVenda: parsePesoVenda(item.pesoVenda), valorItem: valor };
+        const calc = valorItemDraft(forma, item, rendimentoPadrao);
+        return calc == null
+          ? null
+          : { pesoVenda: parsePesoVenda(item.pesoVenda), valorItem: calc.valor, arrobas: calc.arrobas };
       })
-      .filter((row): row is { pesoVenda: number | null; valorItem: number } => row != null);
-    return { ...resumirItensVenda(calculados, { rendimentoCarcaca: rendimentoValor }), quantidade: itens.length };
-  }, [itens, forma, rendimentoValor]);
+      .filter((row): row is { pesoVenda: number | null; valorItem: number; arrobas: number | null } => row != null);
+    return {
+      ...resumirItensVenda(calculados, { forma, rendimentoCarcaca: rendimentoPadrao }),
+      quantidade: itens.length,
+    };
+  }, [itens, forma, rendimentoPadrao]);
 
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
@@ -214,33 +239,30 @@ export default function NovaVendaPage() {
     const formatted = formatCurrencyBrl(value);
     setPrecoPadrao(formatted);
     const paraItem = precoPadraoParaItem(formatted);
-    setItens(prev =>
-      prev.map(item => (item.precoManual ? item : { ...item, preco: paraItem })),
-    );
+    setItens(prev => aplicarPadraoEmLinhas(prev, item => item.precoManual, item => ({ ...item, preco: paraItem })));
   };
 
-  const pesoSugeridoDoAnimal = (animal: {
-    ultimoPeso?: number | null;
-    origemUltimoPeso?: "pesagem" | "entrada" | null;
-  }) => {
-    if (animal.origemUltimoPeso !== "pesagem") return "";
-    const peso = parsePesoVenda(animal.ultimoPeso);
-    return peso == null ? "" : String(peso).replace(".", ",");
+  const aplicarRendimentoPadrao = (value: string) => {
+    setRendimento(value);
+    setItens(prev =>
+      aplicarPadraoEmLinhas(prev, item => item.rendimentoManual, item => ({ ...item, rendimento: value })),
+    );
   };
 
   const montarDraft = (animal: {
     id: number;
     brinco?: string | null;
     loteNome?: string | null;
-    ultimoPeso?: number | null;
-    origemUltimoPeso?: "pesagem" | "entrada" | null;
   }): ItemDraft => ({
     animalId: animal.id,
     brinco: String(animal.brinco ?? "").trim() || `#${animal.id}`,
     loteNome: String(animal.loteNome ?? "").trim() || "—",
-    pesoVenda: pesoSugeridoDoAnimal(animal),
+    pesoVenda: "",
+    pesoOrigem: "manual",
     preco: precoPadraoParaItem(precoPadrao),
     precoManual: false,
+    rendimento: rendimento,
+    rendimentoManual: false,
   });
 
   const anexarItens = (novos: ItemDraft[]) => {
@@ -248,7 +270,7 @@ export default function NovaVendaPage() {
     setItens(prev => {
       const jaTem = new Set(prev.map(i => i.animalId));
       const unique = novos.filter(n => !jaTem.has(n.animalId));
-      return unique.length ? [...prev, ...unique] : prev;
+      return unique.length ? ordenarItensVendaPorBrinco([...prev, ...unique]) : prev;
     });
   };
 
@@ -259,8 +281,6 @@ export default function NovaVendaPage() {
       loteNome?: string | null;
       fazendaId?: number | null;
       status?: string | null;
-      ultimoPeso?: number | null;
-      origemUltimoPeso?: "pesagem" | "entrada" | null;
     }>,
   ) => {
     if (!lista.length) return;
@@ -287,21 +307,48 @@ export default function NovaVendaPage() {
       toast.error(MSG_VENDA_ANIMAL_DUPLICADO);
       return;
     }
-    if (jaIncluidos.length) {
-      toast.error(MSG_VENDA_ANIMAL_DUPLICADO);
-    }
+    if (jaIncluidos.length) toast.error(MSG_VENDA_ANIMAL_DUPLICADO);
     anexarItens(aceitos.map(montarDraft));
+    const ultimo = aceitos[aceitos.length - 1];
+    if (ultimo) setFocoPesoAnimalId(ultimo.id);
   };
 
   useEffect(() => {
     if (focoPesoAnimalId == null) return;
+    if (ultimoFocoAplicadoRef.current === focoPesoAnimalId) return;
     const el = pesoInputRefs.current.get(focoPesoAnimalId);
-    if (el) {
-      el.focus();
-      el.select();
-    }
-    setFocoPesoAnimalId(null);
+    if (!el) return;
+    el.focus();
+    el.select();
+    ultimoFocoAplicadoRef.current = focoPesoAnimalId;
   }, [focoPesoAnimalId, itens]);
+
+  const aplicarPesoBalanca = useCallback((kg: number) => {
+    const peso = parsePesoVenda(kg);
+    if (peso == null) return;
+    const alvo = escolherAlvoPesoBalanca(itensRef.current, focoRef.current);
+    if (alvo == null) return;
+    setItens(prev =>
+      prev.map(row =>
+        row.animalId === alvo
+          ? { ...row, pesoVenda: formatPesoKgParaCampo(peso), pesoOrigem: "balanca" }
+          : row,
+      ),
+    );
+    setFocoPesoAnimalId(alvo);
+  }, []);
+
+  const bleSession = useTruTestBleReader({ onWeight: aplicarPesoBalanca });
+  const scaleSession = useScaleReader({
+    presetId: "trutest-s3",
+    onStableWeight: aplicarPesoBalanca,
+  });
+  const balancaConectada = Boolean(bleSession.sessionActive || scaleSession.sessionActive);
+  const animalAtual = estadoAnimalAtualVenda({
+    animalAtualId: focoPesoAnimalId,
+    itens,
+    balancaConectada,
+  });
 
   const incluirPorRfid = async (rfidBruto: string) => {
     const rfid = normalizeRfidKey(rfidBruto);
@@ -311,40 +358,36 @@ export default function NovaVendaPage() {
       return;
     }
     const animal = await utils.animais.getByBrincoEletronicoExact.fetch({ brincoEletronico: rfid });
-    const naLista = (animaisFazenda as Array<{
-      id: number;
-      ultimoPeso?: number | null;
-      origemUltimoPeso?: "pesagem" | "entrada" | null;
-    }>).find(a => a.id === animal?.id);
+    const animalId = Number(animal?.id);
     const decisao = avaliarInclusaoAnimalVenda({
-      animal: animal
+      animal: animal && Number.isInteger(animalId) && animalId > 0
         ? {
-            id: animal.id,
-            brinco: animal.brinco,
-            fazendaId: animal.fazendaId,
-            fazendaNome: animal.fazendaNome,
-            status: animal.status,
+            id: animalId,
+            brinco: animal.brinco != null ? String(animal.brinco) : null,
+            fazendaId: animal.fazendaId != null ? Number(animal.fazendaId) : null,
+            fazendaNome: animal.fazendaNome != null ? String(animal.fazendaNome) : null,
+            status: animal.status != null ? String(animal.status) : null,
           }
         : null,
       fazendaId: fazendaNum,
-      idsNaVenda: itens.map(i => i.animalId),
+      idsNaVenda: itensRef.current.map(i => i.animalId),
     });
     if (!decisao.ok) {
       setRfidFeedback({ kind: "erro", text: decisao.message, detalhe: decisao.detalhe });
       return;
     }
     const draft = montarDraft({
-      id: animal!.id,
-      brinco: animal!.brinco,
-      loteNome: animal!.loteNome,
-      ultimoPeso: naLista?.ultimoPeso,
-      origemUltimoPeso: naLista?.origemUltimoPeso,
+      id: animalId,
+      brinco: animal?.brinco != null ? String(animal.brinco) : null,
+      loteNome: animal?.loteNome != null ? String(animal.loteNome) : null,
     });
     anexarItens([draft]);
-    setUltimoBrincoRfid(draft.brinco);
-    setRfidFeedback({ kind: "ok", text: `Animal ${draft.brinco} adicionado.` });
+    setRfidFeedback(null);
     setFocoPesoAnimalId(draft.animalId);
   };
+
+  const labelPrecoPadrao =
+    forma === "kg" ? "Preço padrão (R$/kg)" : forma === "cabeca" ? "Valor padrão (R$/cabeça)" : "Preço padrão (R$/@)";
 
   const confirmar = async () => {
     if (!fazendaNum) {
@@ -359,8 +402,8 @@ export default function NovaVendaPage() {
       toast.error(MSG_VENDA_SEM_ITENS);
       return;
     }
-    if (forma === "kg" && !rendimentoParse.ok) {
-      toast.error(MSG_VENDA_RENDIMENTO_INVALIDO);
+    if (!isFormaPrecificacaoVendaPersistivel(forma)) {
+      toast.error(MSG_VENDA_ARROBA_REQUER_MIGRATION);
       return;
     }
     const payloadItens = [];
@@ -374,7 +417,6 @@ export default function NovaVendaPage() {
         forma,
         pesoVenda: parsePesoVenda(item.pesoVenda),
         precoUnitario: preco,
-        rendimentoCarcaca: rendimentoValor,
       });
       if (!calc.ok) {
         toast.error(`${item.brinco}: ${calc.message}`);
@@ -396,11 +438,9 @@ export default function NovaVendaPage() {
         <div className="space-y-1 text-[13px] text-gray-700">
           <p>Comprador: <span className="font-medium">{compradorNome}</span></p>
           <p>Data: <span className="font-medium">{data.split("-").reverse().join("/")}</span></p>
+          <p>Forma: <span className="font-medium">{FORMA_PRECIFICACAO_VENDA_LABEL[forma]}</span></p>
           <p>Animais: <span className="font-medium">{resumo.quantidade}</span></p>
-          {temRendimento ? (
-            <p>Rendimento: <span className="font-medium">{rendimentoValor.toLocaleString("pt-BR")}%</span></p>
-          ) : null}
-          <p>{temRendimento ? "Peso carne" : "Peso total"}: <span className="font-medium">{resumo.pesoTotal != null ? `${resumo.pesoTotal.toLocaleString("pt-BR")} kg` : "—"}</span></p>
+          <p>Peso do embarque: <span className="font-medium">{resumo.pesoTotal != null ? `${resumo.pesoTotal.toLocaleString("pt-BR")} kg` : "—"}</span></p>
           <p>Valor total: <span className="font-medium">{resumo.valorTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</span></p>
         </div>
       ),
@@ -413,7 +453,6 @@ export default function NovaVendaPage() {
       compradorId: Number(compradorId),
       formaPrecificacao: forma,
       precoPadrao: parsePrecoVenda(parseCurrencyBrl(precoPadrao)),
-      rendimentoCarcaca: rendimentoValor,
       observacoes: observacoes.trim() || undefined,
       itens: payloadItens,
     });
@@ -425,6 +464,8 @@ export default function NovaVendaPage() {
     ]);
     setLocation(compraVendaVendaDetalhePath(result.vendaId));
   };
+
+  const colSpan = forma === "arroba" ? 9 : forma === "kg" ? 6 : 5;
 
   return (
     <AppLayout>
@@ -471,63 +512,83 @@ export default function NovaVendaPage() {
                 <FormDatePicker value={data} onChange={setData} required minHeight={34} />
               </div>
             </div>
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${forma === "kg" ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${forma === "arroba" ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
               <div>
                 <FormLabel required>Comprador</FormLabel>
-              <FormNativeSelect
-                variant="light"
-                value={compradorId}
-                onChange={setCompradorId}
-                placeholder="Selecione o comprador"
-                options={opcoesComprador(compradores)}
-                required
-              />
-              <button
-                type="button"
-                onClick={irCadastrarComprador}
-                className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
-              >
-                Cadastrar novo comprador
-              </button>
-            </div>
-            <div className="min-w-[13rem]">
-              <FormLabel required>Forma de precificação</FormLabel>
-              <FormNativeSelect
-                variant="light"
-                value={forma}
-                onChange={v => setForma(v as FormaPrecificacaoVenda)}
-                placeholder="Selecione"
-                options={[
-                  { value: "kg", label: FORMA_PRECIFICACAO_VENDA_LABEL.kg },
-                  { value: "cabeca", label: FORMA_PRECIFICACAO_VENDA_LABEL.cabeca },
-                ]}
-                required
-              />
-            </div>
-            <div>
-              <FormLabel>Preço padrão (R$)</FormLabel>
-              <input
-                value={precoPadrao}
-                onChange={e => aplicarPrecoPadrao(e.target.value)}
-                placeholder="R$ 0,00"
-                className={`${formControlFlatCls} bg-white outline-none placeholder:text-gray-400`}
-              />
-            </div>
-            {forma === "kg" ? (
+                <FormNativeSelect
+                  variant="light"
+                  value={compradorId}
+                  onChange={setCompradorId}
+                  placeholder="Selecione o comprador"
+                  options={opcoesComprador(compradores)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={irCadastrarComprador}
+                  className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
+                >
+                  Cadastrar novo comprador
+                </button>
+              </div>
+              <div className="min-w-[13rem]">
+                <FormLabel required>Forma de precificação</FormLabel>
+                <FormNativeSelect
+                  variant="light"
+                  value={forma}
+                  onChange={v => {
+                    const next = v as FormaPrecificacaoVenda;
+                    setForma(next);
+                    if (next === "arroba") {
+                      setItens(prev =>
+                        aplicarPadraoEmLinhas(
+                          prev,
+                          item => item.rendimentoManual,
+                          item => ({ ...item, rendimento }),
+                        ),
+                      );
+                    }
+                  }}
+                  placeholder="Selecione"
+                  options={[
+                    { value: "kg", label: FORMA_PRECIFICACAO_VENDA_LABEL.kg },
+                    { value: "cabeca", label: FORMA_PRECIFICACAO_VENDA_LABEL.cabeca },
+                    { value: "arroba", label: FORMA_PRECIFICACAO_VENDA_LABEL.arroba },
+                  ]}
+                  required
+                />
+              </div>
               <div>
-                <FormLabel>Rendimento (%)</FormLabel>
+                <FormLabel>{labelPrecoPadrao}</FormLabel>
                 <input
-                  value={rendimento}
-                  onChange={e => setRendimento(e.target.value)}
-                  placeholder="Ex.: 52"
+                  value={precoPadrao}
+                  onChange={e => aplicarPrecoPadrao(e.target.value)}
+                  placeholder="R$ 0,00"
                   className={`${formControlFlatCls} bg-white outline-none placeholder:text-gray-400`}
                 />
-                <p className="mt-1 text-[10px] text-gray-400">
-                  Em branco = peso vivo. 52 = 52% de carne.
-                </p>
               </div>
-            ) : null}
+              {forma === "arroba" ? (
+                <div>
+                  <FormLabel required>Rendimento padrão (%)</FormLabel>
+                  <input
+                    value={rendimento}
+                    onChange={e => aplicarRendimentoPadrao(e.target.value)}
+                    placeholder="Ex.: 50"
+                    className={`${formControlFlatCls} bg-white outline-none placeholder:text-gray-400`}
+                  />
+                  {!rendimentoParse.ok ? (
+                    <p className="mt-1 text-[10px] text-red-600">{MSG_VENDA_RENDIMENTO_INVALIDO}</p>
+                  ) : (
+                    <p className="mt-1 text-[10px] text-gray-400">Cada animal herda este valor até você alterar a linha.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
+            {forma === "arroba" ? (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
+                A fórmula de R$/@ já calcula na tela. A gravação desta modalidade aguarda atualização do banco.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -538,45 +599,51 @@ export default function NovaVendaPage() {
 
           <div className="p-5 space-y-5">
           <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] text-gray-500">Buscar e selecionar abaixo</span>
-              <button
-                type="button"
-                onClick={() => setUsarRfid(aberto => !aberto)}
-                className={`h-7 px-2.5 rounded text-[11px] font-medium border ${
-                  usarRfid
-                    ? "border-[#4ECDC4] bg-[#4ECDC4]/10 text-gray-800"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                Usar RFID
-              </button>
-            </div>
-            {usarRfid ? (
-              <div className="mb-3 rounded border border-gray-200 bg-white p-3">
-                <p className="text-[12px] font-semibold text-gray-800">RFID</p>
-                {!fazendaNum ? (
-                  <p className="mt-2 text-[12px] text-amber-700">{MSG_VENDA_RFID_SEM_FAZENDA}</p>
-                ) : (
+            <div className="mb-3 space-y-3">
+              <p className="text-[11px] text-gray-500">
+                Identifique o animal pelo RFID. Com a balança conectada, o peso do embarque será preenchido automaticamente.
+              </p>
+              {!fazendaNum ? (
+                <p className="text-[11px] text-amber-700">{MSG_VENDA_RFID_SEM_FAZENDA}</p>
+              ) : (
+                <>
                   <At05RfidReaderControl
+                    variant="hub"
                     mode="identificar"
+                    continuous
+                    listeningHint="Bastão conectado — aguardando próximo animal..."
                     onRfidRead={rfid => void incluirPorRfid(rfid)}
                   />
-                )}
-                {ultimoBrincoRfid ? (
-                  <p className="mt-1 text-[11px] text-gray-500">Último animal: {ultimoBrincoRfid}</p>
-                ) : null}
-                {rfidFeedback ? (
-                  <p
-                    className={`mt-1 text-[11px] ${rfidFeedback.kind === "ok" ? "text-teal-700" : "text-red-600"}`}
-                    aria-live="polite"
-                  >
-                    {rfidFeedback.text}
-                    {rfidFeedback.detalhe ? ` ${rfidFeedback.detalhe}` : ""}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+                  {animalAtual ? (
+                    <div className="text-[11px] leading-relaxed space-y-0.5" aria-live="polite">
+                      <p className="text-gray-800">
+                        Animal atual: <span className="font-semibold">{animalAtual.brinco}</span>
+                      </p>
+                      <p className="text-teal-700">✓ Adicionado à venda</p>
+                      {animalAtual.aguardandoPesoBalanca ? (
+                        <p className="text-gray-500">Aguardando peso...</p>
+                      ) : animalAtual.pesoKg != null ? (
+                        <p className="text-teal-700">
+                          ✓ Peso do embarque: {formatPesoKgParaCampo(animalAtual.pesoKg)} kg
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {rfidFeedback?.kind === "erro" ? (
+                    <p className="text-[11px] text-red-600" aria-live="polite">
+                      {rfidFeedback.text}
+                      {rfidFeedback.detalhe ? ` ${rfidFeedback.detalhe}` : ""}
+                    </p>
+                  ) : null}
+                  <ScaleReaderControl
+                    variant="hub"
+                    session={scaleSession}
+                    onStableWeight={aplicarPesoBalanca}
+                    bleSession={bleSession}
+                  />
+                </>
+              )}
+            </div>
             <VendaAnimaisPicker
               animals={animaisDisponiveis as never}
               loading={loadingAnimais}
@@ -585,35 +652,41 @@ export default function NovaVendaPage() {
             />
           </div>
 
-          <div className="border border-gray-100 rounded overflow-hidden">
+          <div className="border border-gray-100 rounded overflow-x-auto">
             <table className="w-full text-[11px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Brinco</th>
                   <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Lote</th>
-                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso vivo</th>
-                  {temRendimento ? (
-                    <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Peso carne</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">
+                    {forma === "arroba" ? "Peso vivo" : "Peso do embarque"}
+                  </th>
+                  {forma === "arroba" ? (
+                    <>
+                      <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Rend. %</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Carcaça</th>
+                      <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">@</th>
+                    </>
                   ) : null}
-                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Preço</th>
-                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">
+                    {forma === "kg" ? "Preço/kg" : forma === "cabeca" ? "Valor/cabeça" : "Preço/@"}
+                  </th>
+                  {forma === "cabeca" ? null : (
+                    <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor</th>
+                  )}
                   <th className="px-3 py-2 w-10" />
                 </tr>
               </thead>
               <tbody>
                 {itens.length === 0 ? (
                   <tr>
-                    <td colSpan={temRendimento ? 7 : 6} className="px-3 py-6 text-center text-gray-400">
+                    <td colSpan={colSpan} className="px-3 py-6 text-center text-gray-400">
                       Nenhum animal adicionado
                     </td>
                   </tr>
                 ) : (
                   itens.map(item => {
-                    const valor = valorItemDraft(forma, item, rendimentoValor);
-                    const pesoVivo = parsePesoVenda(item.pesoVenda);
-                    const pesoCarne = pesoVivo != null && temRendimento
-                      ? calcularPesoCarne(pesoVivo, rendimentoValor)
-                      : null;
+                    const calc = valorItemDraft(forma, item, rendimentoPadrao);
                     return (
                       <tr key={item.animalId} className="border-t border-gray-50">
                         <td className="px-3 py-1.5 font-medium text-gray-800">{item.brinco}</td>
@@ -628,23 +701,53 @@ export default function NovaVendaPage() {
                             onChange={e =>
                               setItens(prev =>
                                 prev.map(row =>
-                                  row.animalId === item.animalId ? { ...row, pesoVenda: e.target.value } : row,
+                                  row.animalId === item.animalId
+                                    ? { ...row, pesoVenda: e.target.value, pesoOrigem: "manual" }
+                                    : row,
                                 ),
                               )
                             }
+                            onFocus={() => {
+                              focoRef.current = item.animalId;
+                              setFocoPesoAnimalId(item.animalId);
+                            }}
                             onKeyDown={e => {
                               if (e.key !== "Enter") return;
                               e.preventDefault();
                               e.currentTarget.blur();
                             }}
                             className="w-full text-right border border-gray-200 rounded px-2 py-1"
-                            placeholder={forma === "kg" ? "kg *" : "kg"}
+                            placeholder={pesoEmbarqueObrigatorio(forma) ? "kg *" : "kg"}
                           />
                         </td>
-                        {temRendimento ? (
-                          <td className="px-3 py-1.5 text-right text-gray-700">
-                            {pesoCarne != null ? `${pesoCarne.toLocaleString("pt-BR")} kg` : "—"}
-                          </td>
+                        {forma === "arroba" ? (
+                          <>
+                            <td className="px-3 py-1.5">
+                              <input
+                                value={item.rendimento}
+                                onChange={e =>
+                                  setItens(prev =>
+                                    prev.map(row =>
+                                      row.animalId === item.animalId
+                                        ? { ...row, rendimento: e.target.value, rendimentoManual: true }
+                                        : row,
+                                    ),
+                                  )
+                                }
+                                className="w-full text-right border border-gray-200 rounded px-2 py-1"
+                                placeholder="%"
+                              />
+                              {item.rendimentoManual ? (
+                                <p className="text-[9px] text-teal-700 text-right">próprio</p>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-gray-700">
+                              {calc?.pesoCarcaca != null ? `${calc.pesoCarcaca.toLocaleString("pt-BR")} kg` : "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-gray-700">
+                              {calc?.arrobas != null ? calc.arrobas.toLocaleString("pt-BR") : "—"}
+                            </td>
+                          </>
                         ) : null}
                         <td className="px-3 py-1.5">
                           <input
@@ -660,12 +763,17 @@ export default function NovaVendaPage() {
                             }
                             className="w-full text-right border border-gray-200 rounded px-2 py-1"
                           />
+                          {item.precoManual ? (
+                            <p className="text-[9px] text-teal-700 text-right">próprio</p>
+                          ) : null}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-medium text-gray-800">
-                          {valor != null
-                            ? valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-                            : "—"}
-                        </td>
+                        {forma === "cabeca" ? null : (
+                          <td className="px-3 py-1.5 text-right font-medium text-gray-800">
+                            {calc
+                              ? calc.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                              : "—"}
+                          </td>
+                        )}
                         <td className="px-3 py-1.5 text-center">
                           <button
                             type="button"
@@ -690,22 +798,32 @@ export default function NovaVendaPage() {
               <p className="text-[18px] font-bold text-gray-800">{formatarMetricaQuantidade({ kind: "known", value: resumo.quantidade })}</p>
             </div>
             <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-              <p className="text-[10px] uppercase text-gray-500">{temRendimento ? "Peso carne" : "Peso total"}</p>
+              <p className="text-[10px] uppercase text-gray-500">Peso do embarque</p>
               <p className="text-[18px] font-bold text-gray-800">
                 {resumo.pesoTotal != null ? formatarMetricaPeso({ kind: "known", value: resumo.pesoTotal }) : "—"}
               </p>
             </div>
             <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-              <p className="text-[10px] uppercase text-gray-500">Valor total</p>
-              <p className="text-[18px] font-bold text-gray-800">{formatarMetricaValor({ kind: "known", value: resumo.valorTotal })}</p>
+              <p className="text-[10px] uppercase text-gray-500">
+                {forma === "cabeca" ? "Média/cabeça" : forma === "arroba" ? "Média/@" : "Média/kg"}
+              </p>
+              <p className="text-[18px] font-bold text-gray-800">
+                {forma === "cabeca"
+                  ? resumo.precoMedioCabeca != null
+                    ? formatarMetricaValor({ kind: "known", value: resumo.precoMedioCabeca })
+                    : "—"
+                  : forma === "arroba"
+                    ? resumo.precoMedioArroba != null
+                      ? formatarMetricaValor({ kind: "known", value: resumo.precoMedioArroba })
+                      : "—"
+                    : resumo.precoMedioKg != null
+                      ? formatarMetricaValor({ kind: "known", value: resumo.precoMedioKg })
+                      : "—"}
+              </p>
             </div>
             <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-              <p className="text-[10px] uppercase text-gray-500">Preço médio/kg</p>
-              <p className="text-[18px] font-bold text-gray-800">
-                {resumo.precoMedioKg != null
-                  ? formatarMetricaValor({ kind: "known", value: resumo.precoMedioKg })
-                  : "—"}
-              </p>
+              <p className="text-[10px] uppercase text-gray-500">Valor total</p>
+              <p className="text-[18px] font-bold text-gray-800">{formatarMetricaValor({ kind: "known", value: resumo.valorTotal })}</p>
             </div>
           </div>
 

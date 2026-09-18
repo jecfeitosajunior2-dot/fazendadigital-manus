@@ -9595,7 +9595,10 @@ const vendasRouter = router({
               pesoVenda: i.pesoVenda != null ? Number(i.pesoVenda) : null,
               valorItem: Number(i.valorItem) || 0,
             })),
-            { rendimentoCarcaca: v.rendimentoCarcaca != null ? Number(v.rendimentoCarcaca) : null },
+            {
+              forma: v.formaPrecificacao === "cabeca" ? "cabeca" : "kg",
+              rendimentoCarcaca: v.rendimentoCarcaca != null ? Number(v.rendimentoCarcaca) : null,
+            },
           )
         : null;
       return {
@@ -9637,13 +9640,18 @@ const vendasRouter = router({
               pesoVenda: i.pesoVenda != null ? Number(i.pesoVenda) : null,
               valorItem: Number(i.valorItem) || 0,
             })),
-            { rendimentoCarcaca: venda.rendimentoCarcaca != null ? Number(venda.rendimentoCarcaca) : null },
+            {
+              forma: venda.formaPrecificacao === "cabeca" ? "cabeca" : "kg",
+              rendimentoCarcaca: venda.rendimentoCarcaca != null ? Number(venda.rendimentoCarcaca) : null,
+            },
           )
         : {
             quantidade: venda.quantidadeAnimais ?? 0,
             pesoTotal: null as number | null,
             valorTotal: Number(venda.valorTotal) || 0,
             precoMedioKg: null as number | null,
+            precoMedioCabeca: null as number | null,
+            precoMedioArroba: null as number | null,
           };
       return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0 };
     }),
@@ -9672,7 +9680,7 @@ const vendasRouter = router({
         fazendaId: z.number().int().positive(),
         data: z.string(),
         compradorId: z.number().int().positive(),
-        formaPrecificacao: z.enum(["kg", "cabeca"]),
+        formaPrecificacao: z.enum(["kg", "cabeca", "arroba"]),
         precoPadrao: z.number().positive().nullable().optional(),
         rendimentoCarcaca: z.number().positive().max(100).nullable().optional(),
         observacoes: z.string().optional(),

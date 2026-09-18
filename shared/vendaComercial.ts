@@ -1,12 +1,22 @@
+import { compareBrincoCrescente } from "./animalAutocomplete";
+
 /** Regras puras da Venda comercial (Venda + Itens). */
 
-export const FORMAS_PRECIFICACAO_VENDA = ["kg", "cabeca"] as const;
+export const FORMAS_PRECIFICACAO_VENDA = ["kg", "cabeca", "arroba"] as const;
 export type FormaPrecificacaoVenda = (typeof FORMAS_PRECIFICACAO_VENDA)[number];
 
+/** Enum atual do MySQL — sem migration não dá para gravar `arroba`. */
+export const FORMAS_PRECIFICACAO_VENDA_PERSISTIVEIS = ["kg", "cabeca"] as const;
+export type FormaPrecificacaoVendaPersistivel = (typeof FORMAS_PRECIFICACAO_VENDA_PERSISTIVEIS)[number];
+
 export const FORMA_PRECIFICACAO_VENDA_LABEL: Record<FormaPrecificacaoVenda, string> = {
-  kg: "R$/kg",
+  kg: "R$/kg vivo",
   cabeca: "R$/cabeça",
+  arroba: "R$/@ de carcaça",
 };
+
+export const KG_POR_ARROBA = 15;
+export type OrigemPesoEmbarque = "manual" | "balanca";
 
 export const MSG_VENDA_SEM_FAZENDA = "Selecione a Fazenda.";
 export const MSG_VENDA_SEM_COMPRADOR = "Selecione o comprador.";
@@ -17,14 +27,32 @@ export const MSG_VENDA_ANIMAL_DUPLICADO = "Este animal já está incluído nesta
 export const MSG_VENDA_ANIMAL_OUTRA_FAZENDA = "O animal selecionado não pertence à Fazenda da venda.";
 export const MSG_VENDA_ANIMAL_INDISPONIVEL =
   "Um ou mais animais selecionados não estão mais disponíveis para Venda.";
-export const MSG_VENDA_PESO_OBRIGATORIO = "Informe o peso da venda para precificação em R$/kg.";
+export const MSG_VENDA_PESO_OBRIGATORIO = "Informe o peso do embarque.";
 export const MSG_VENDA_PRECO_OBRIGATORIO = "Informe o preço do item.";
 export const MSG_VENDA_FORMA_INVALIDA = "Selecione a forma de precificação.";
 export const MSG_VENDA_RENDIMENTO_INVALIDO =
-  "Informe um rendimento de carcaça entre 0 e 100, ou deixe em branco para vender no peso vivo.";
+  "Informe um rendimento de carcaça maior que 0 e até 100.";
+export const MSG_VENDA_RENDIMENTO_OBRIGATORIO =
+  "Informe o rendimento de carcaça para venda em R$/@.";
+export const MSG_VENDA_ARROBA_REQUER_MIGRATION =
+  "A forma R$/@ de carcaça ainda não pode ser gravada: o banco só aceita R$/kg vivo e R$/cabeça. A fórmula já está pronta na tela; falta autorizar a migration.";
 
 export function isFormaPrecificacaoVenda(value: unknown): value is FormaPrecificacaoVenda {
+  return value === "kg" || value === "cabeca" || value === "arroba";
+}
+
+export function isFormaPrecificacaoVendaPersistivel(
+  value: unknown,
+): value is FormaPrecificacaoVendaPersistivel {
   return value === "kg" || value === "cabeca";
+}
+
+export function pesoEmbarqueObrigatorio(forma: FormaPrecificacaoVenda): boolean {
+  return forma === "kg" || forma === "arroba";
+}
+
+export function rendimentoObrigatorio(forma: FormaPrecificacaoVenda): boolean {
+  return forma === "arroba";
 }
 
 export function arredondarMoeda(valor: number): number {
@@ -45,13 +73,22 @@ export function parsePesoVenda(raw: unknown): number | null {
   return Math.round(n * 100) / 100;
 }
 
-/** Vazio = sem conversão. Preenchido precisa estar entre 0 e 100. */
+/** Vazio = sem rendimento. Preenchido precisa estar entre 0 e 100, exclusive 0. */
 export function parseRendimentoCarcaca(
   raw: unknown,
+  opts?: { obrigatorio?: boolean },
 ): { ok: true; valor: number | null } | { ok: false; message: string } {
-  if (raw == null) return { ok: true, valor: null };
+  if (raw == null) {
+    return opts?.obrigatorio
+      ? { ok: false, message: MSG_VENDA_RENDIMENTO_OBRIGATORIO }
+      : { ok: true, valor: null };
+  }
   const texto = String(raw).trim().replace("%", "");
-  if (!texto) return { ok: true, valor: null };
+  if (!texto) {
+    return opts?.obrigatorio
+      ? { ok: false, message: MSG_VENDA_RENDIMENTO_OBRIGATORIO }
+      : { ok: true, valor: null };
+  }
   const n = Number(texto.replace(",", "."));
   if (!Number.isFinite(n) || n <= 0 || n > 100) {
     return { ok: false, message: MSG_VENDA_RENDIMENTO_INVALIDO };
@@ -59,54 +96,179 @@ export function parseRendimentoCarcaca(
   return { ok: true, valor: Math.round(n * 100) / 100 };
 }
 
-/** Sem rendimento, o peso cobrado é o peso vivo. */
-export function calcularPesoCarne(pesoVivo: number, rendimentoCarcaca?: number | null): number {
-  if (rendimentoCarcaca == null) return Math.round(pesoVivo * 100) / 100;
+/** Peso estimado de carcaça = peso vivo × rendimento%. */
+export function calcularPesoCarcacaKg(pesoVivo: number, rendimentoCarcaca: number): number {
   return Math.round(pesoVivo * (rendimentoCarcaca / 100) * 100) / 100;
 }
+
+/** Arrobas = carcaça kg ÷ 15. */
+export function calcularArrobas(pesoCarcacaKg: number): number {
+  return Math.round((pesoCarcacaKg / KG_POR_ARROBA) * 100) / 100;
+}
+
+/** Legado: kg de carne a partir do rendimento. Novas vendas em R$/kg vivo não usam isto. */
+export function calcularPesoCarne(pesoVivo: number, rendimentoCarcaca?: number | null): number {
+  if (rendimentoCarcaca == null) return Math.round(pesoVivo * 100) / 100;
+  return calcularPesoCarcacaKg(pesoVivo, rendimentoCarcaca);
+}
+
+export type ValorItemVendaOk = {
+  ok: true;
+  valor: number;
+  pesoCobrado: number | null;
+  pesoVivo: number | null;
+  pesoCarcaca: number | null;
+  arrobas: number | null;
+};
 
 export function calcularValorItem(input: {
   forma: FormaPrecificacaoVenda;
   pesoVenda?: number | null;
   precoUnitario: number;
   rendimentoCarcaca?: number | null;
-}): { ok: true; valor: number; pesoCobrado: number | null } | { ok: false; message: string } {
+}): ValorItemVendaOk | { ok: false; message: string } {
   const preco = parsePrecoVenda(input.precoUnitario);
   if (preco == null) return { ok: false, message: MSG_VENDA_PRECO_OBRIGATORIO };
+
   if (input.forma === "cabeca") {
-    return { ok: true, valor: arredondarMoeda(preco), pesoCobrado: parsePesoVenda(input.pesoVenda) };
+    const pesoVivo = parsePesoVenda(input.pesoVenda);
+    return {
+      ok: true,
+      valor: arredondarMoeda(preco),
+      pesoCobrado: pesoVivo,
+      pesoVivo,
+      pesoCarcaca: null,
+      arrobas: null,
+    };
   }
+
   const pesoVivo = parsePesoVenda(input.pesoVenda);
   if (pesoVivo == null) return { ok: false, message: MSG_VENDA_PESO_OBRIGATORIO };
-  const pesoCobrado = calcularPesoCarne(pesoVivo, input.rendimentoCarcaca);
-  if (pesoCobrado <= 0) return { ok: false, message: MSG_VENDA_PESO_OBRIGATORIO };
-  return { ok: true, valor: arredondarMoeda(pesoCobrado * preco), pesoCobrado };
+
+  if (input.forma === "kg") {
+    return {
+      ok: true,
+      valor: arredondarMoeda(pesoVivo * preco),
+      pesoCobrado: pesoVivo,
+      pesoVivo,
+      pesoCarcaca: null,
+      arrobas: null,
+    };
+  }
+
+  const rend = parseRendimentoCarcaca(input.rendimentoCarcaca, { obrigatorio: true });
+  if (!rend.ok) return rend;
+  const pesoCarcaca = calcularPesoCarcacaKg(pesoVivo, rend.valor!);
+  if (pesoCarcaca <= 0) return { ok: false, message: MSG_VENDA_PESO_OBRIGATORIO };
+  const arrobas = calcularArrobas(pesoCarcaca);
+  return {
+    ok: true,
+    valor: arredondarMoeda(arrobas * preco),
+    pesoCobrado: pesoVivo,
+    pesoVivo,
+    pesoCarcaca,
+    arrobas,
+  };
 }
 
 export type ItemVendaResumo = {
   pesoVenda?: number | null;
   valorItem: number;
+  arrobas?: number | null;
 };
 
 export function resumirItensVenda(
   itens: ReadonlyArray<ItemVendaResumo>,
-  opts?: { rendimentoCarcaca?: number | null },
+  opts?: { forma?: FormaPrecificacaoVenda; rendimentoCarcaca?: number | null },
 ): {
   quantidade: number;
   pesoTotal: number | null;
   valorTotal: number;
   precoMedioKg: number | null;
+  precoMedioCabeca: number | null;
+  precoMedioArroba: number | null;
 } {
   const quantidade = itens.length;
   const valorTotal = arredondarMoeda(itens.reduce((acc, item) => acc + item.valorItem, 0));
-  const pesos = itens
-    .map(i => parsePesoVenda(i.pesoVenda))
-    .filter((n): n is number => n != null)
-    .map(peso => calcularPesoCarne(peso, opts?.rendimentoCarcaca));
+  const pesos = itens.map(i => parsePesoVenda(i.pesoVenda)).filter((n): n is number => n != null);
   const pesoTotal = pesos.length ? Math.round(pesos.reduce((a, b) => a + b, 0) * 100) / 100 : null;
+  const forma = opts?.forma;
   const precoMedioKg =
-    pesoTotal != null && pesoTotal > 0 ? arredondarMoeda(valorTotal / pesoTotal) : null;
-  return { quantidade, pesoTotal, valorTotal, precoMedioKg };
+    forma !== "cabeca" && forma !== "arroba" && pesoTotal != null && pesoTotal > 0
+      ? arredondarMoeda(valorTotal / pesoTotal)
+      : null;
+  const precoMedioCabeca =
+    forma === "cabeca" && quantidade > 0 ? arredondarMoeda(valorTotal / quantidade) : null;
+  let precoMedioArroba: number | null = null;
+  if (forma === "arroba") {
+    const arrobasItens = itens
+      .map(i => (i.arrobas != null && Number.isFinite(i.arrobas) && i.arrobas > 0 ? i.arrobas : null));
+    if (arrobasItens.length && arrobasItens.every((n): n is number => n != null)) {
+      const totalArrobas = Math.round(arrobasItens.reduce((a, b) => a + b, 0) * 100) / 100;
+      precoMedioArroba = totalArrobas > 0 ? arredondarMoeda(valorTotal / totalArrobas) : null;
+    } else if (pesoTotal != null && pesoTotal > 0 && opts?.rendimentoCarcaca != null) {
+      const carcaca = calcularPesoCarcacaKg(pesoTotal, opts.rendimentoCarcaca);
+      const arrobas = calcularArrobas(carcaca);
+      precoMedioArroba = arrobas > 0 ? arredondarMoeda(valorTotal / arrobas) : null;
+    }
+  }
+  return { quantidade, pesoTotal, valorTotal, precoMedioKg, precoMedioCabeca, precoMedioArroba };
+}
+
+export function aplicarPadraoEmLinhas<T>(
+  itens: readonly T[],
+  usaExcecao: (item: T) => boolean,
+  aplicar: (item: T) => T,
+): T[] {
+  return itens.map(item => (usaExcecao(item) ? item : aplicar(item)));
+}
+
+/** Mesma ordem crescente da listagem / Rebanho → Animais. */
+export function ordenarItensVendaPorBrinco<T extends { brinco?: string | null; animalId: number }>(
+  itens: readonly T[],
+): T[] {
+  return [...itens].sort((a, b) =>
+    compareBrincoCrescente({ brinco: a.brinco, id: a.animalId }, { brinco: b.brinco, id: b.animalId }),
+  );
+}
+
+export function escolherAlvoPesoBalanca(
+  itens: ReadonlyArray<{ animalId: number; pesoVenda?: string | null }>,
+  preferidoId?: number | null,
+): number | null {
+  if (preferidoId && itens.some(i => i.animalId === preferidoId)) return preferidoId;
+  const vazio = itens.find(i => !String(i.pesoVenda ?? "").trim());
+  if (vazio) return vazio.animalId;
+  return itens.length ? itens[itens.length - 1]!.animalId : null;
+}
+
+export type EstadoAnimalAtualVenda = {
+  animalId: number;
+  brinco: string;
+  pesoKg: number | null;
+  recebeProximoPeso: boolean;
+  aguardandoPesoBalanca: boolean;
+};
+
+/** Estado operacional do animal atual — só o que a venda já sabe associar. */
+export function estadoAnimalAtualVenda(input: {
+  animalAtualId?: number | null;
+  itens: ReadonlyArray<{ animalId: number; brinco?: string | null; pesoVenda?: string | null }>;
+  balancaConectada: boolean;
+}): EstadoAnimalAtualVenda | null {
+  const id = input.animalAtualId;
+  if (id == null || id <= 0) return null;
+  const item = input.itens.find(i => i.animalId === id);
+  if (!item) return null;
+  const pesoKg = parsePesoVenda(item.pesoVenda);
+  const recebeProximoPeso = escolherAlvoPesoBalanca(input.itens, id) === id;
+  return {
+    animalId: id,
+    brinco: String(item.brinco ?? "").trim() || `#${id}`,
+    pesoKg,
+    recebeProximoPeso,
+    aguardandoPesoBalanca: Boolean(input.balancaConectada && recebeProximoPeso && pesoKg == null),
+  };
 }
 
 export function mensagemAnimaisIndisponiveis(brincos: string[]): string {
