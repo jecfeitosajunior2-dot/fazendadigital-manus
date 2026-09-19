@@ -57,6 +57,11 @@ export type BuildExportSpreadsheetOptions = {
   reportSubtitles?: string[];
   /** Linhas de contexto label/valor antes da tabela (legado). */
   reportInfo?: ExportReportInfoLine[];
+  /** Identificação à esquerda e resumo à direita (A/B e D/E). */
+  reportInfoTwoColumn?: {
+    left: ExportReportInfoLine[];
+    right: ExportReportInfoLine[];
+  };
   /** Linha em branco após o meta (padrão: true). */
   blankAfterMeta?: boolean;
   /** Filtro automático na tabela (padrão: true). */
@@ -248,11 +253,18 @@ function addGroupedTableHeader(
   return subHeaderRow.number;
 }
 
+function reportInfoTwoColumnRowCount(options?: BuildExportSpreadsheetOptions): number {
+  const two = options?.reportInfoTwoColumn;
+  if (!two) return 0;
+  return Math.max(two.left.length, two.right.length);
+}
+
 function reportMetaRowCount(options?: BuildExportSpreadsheetOptions): number {
   const title = options?.reportTitle ? 1 : 0;
   const subs = options?.reportSubtitles?.length ?? 0;
+  const twoCol = reportInfoTwoColumnRowCount(options);
   const info = options?.reportInfo?.length ?? 0;
-  const meta = title + subs + info;
+  const meta = title + subs + twoCol + info;
   const blank = meta > 0 && options?.blankAfterMeta !== false ? 1 : 0;
   return meta + blank;
 }
@@ -272,6 +284,7 @@ export async function buildExportSpreadsheetWorkbook(
   const hasMeta = Boolean(
     options?.reportTitle
     || (options?.reportSubtitles?.length ?? 0) > 0
+    || reportInfoTwoColumnRowCount(options) > 0
     || (options?.reportInfo?.length ?? 0) > 0,
   );
   const blankAfterMeta = hasMeta && options?.blankAfterMeta !== false;
@@ -354,6 +367,34 @@ export async function buildExportSpreadsheetWorkbook(
       const subCell = subRow.getCell(1);
       subCell.font = { name: FONT, size: 10, color: { argb: "FF6B7280" } };
       subCell.alignment = { horizontal: "left", vertical: "middle" };
+    }
+  }
+
+  if (options?.reportInfoTwoColumn) {
+    const left = options.reportInfoTwoColumn.left;
+    const right = options.reportInfoTwoColumn.right;
+    const n = Math.max(left.length, right.length);
+    for (let i = 0; i < n; i++) {
+      const leftLine = left[i];
+      const rightLine = right[i];
+      const infoRow = ws.addRow([
+        leftLine?.label ?? "",
+        leftLine?.value ?? "",
+        "",
+        rightLine?.label ?? "",
+        rightLine?.value ?? "",
+      ]);
+      infoRow.height = 18;
+      for (const col of [1, 4]) {
+        const labelCell = infoRow.getCell(col);
+        labelCell.font = { name: FONT, size: 10, bold: true, color: { argb: "FF374151" } };
+        labelCell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+      for (const col of [2, 5]) {
+        const valueCell = infoRow.getCell(col);
+        valueCell.font = { name: FONT, size: 10, color: { argb: "FF111827" } };
+        valueCell.alignment = { horizontal: "left", vertical: "middle" };
+      }
     }
   }
 

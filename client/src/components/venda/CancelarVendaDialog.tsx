@@ -40,6 +40,8 @@ export default function CancelarVendaDialog({
     await onConfirm(texto);
   };
 
+  const motivoValido = motivo.trim().length > 0;
+  const podeConfirmar = motivoValido && !submitting;
   const erroExibido = erroLocal || submitError;
 
   return (
@@ -81,16 +83,19 @@ export default function CancelarVendaDialog({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex items-center px-3 min-h-[36px] rounded-lg border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Voltar
           </button>
           <button
             type="button"
             onClick={() => { void confirmar(); }}
-            disabled={submitting || !motivo.trim()}
-            className="px-4 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "#D97706" }}
+            disabled={!podeConfirmar}
+            className={
+              podeConfirmar
+                ? "inline-flex items-center px-3 min-h-[36px] rounded-lg border border-amber-200 bg-amber-50 text-[12px] font-semibold text-amber-800 hover:bg-amber-100"
+                : "inline-flex items-center px-3 min-h-[36px] rounded-lg border border-amber-100 bg-amber-50/50 text-[12px] font-semibold text-amber-800/40 cursor-not-allowed"
+            }
           >
             {submitting ? "Cancelando..." : "Confirmar cancelamento"}
           </button>

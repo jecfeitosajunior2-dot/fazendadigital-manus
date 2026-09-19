@@ -9,11 +9,11 @@ import { formatDateBR } from "@/lib/date-utils";
 import { COMPRA_VENDA_VENDAS_PATH } from "@/lib/compraVendaCompradores";
 import { isVendaStatus, labelStatusVenda } from "@/lib/vendasListagem";
 import {
-  VENDA_DETALHE_EXPORT_SISTEMA,
   VENDA_DETALHE_EXPORT_TITULO,
   buildVendaDetalheExportHeaders,
-  buildVendaDetalheExportIdentificacao,
   buildVendaDetalheExportRows,
+  buildVendaDetalheExportSubtitlesExcel,
+  buildVendaDetalhePdfReportBlocks,
   cabecalhoPrecoUnitarioVenda,
   nomeAbaExcelVendaDetalhe,
   nomeArquivoVendaDetalhe,
@@ -74,7 +74,8 @@ export default function VendaDetalhePage() {
     return {
       headers: buildVendaDetalheExportHeaders(data.formaPrecificacao),
       rows: buildVendaDetalheExportRows(data),
-      info: buildVendaDetalheExportIdentificacao(data),
+      excelSubtitles: buildVendaDetalheExportSubtitlesExcel(data),
+      pdfBlocks: buildVendaDetalhePdfReportBlocks(data),
       pdfName: nomeArquivoVendaDetalhe(data, "pdf"),
       xlsxName: nomeArquivoVendaDetalhe(data, "xlsx"),
       sheetName: nomeAbaExcelVendaDetalhe(data.id),
@@ -146,8 +147,8 @@ export default function VendaDetalhePage() {
                     rows={exportacao.rows}
                     fazendaNome={data.fazendaNome || undefined}
                     spreadsheetReportTitle={VENDA_DETALHE_EXPORT_TITULO}
-                    spreadsheetReportSubtitles={[VENDA_DETALHE_EXPORT_SISTEMA]}
-                    spreadsheetReportInfo={exportacao.info}
+                    spreadsheetReportSubtitles={exportacao.excelSubtitles}
+                    pdfReportBlocks={exportacao.pdfBlocks}
                     spreadsheetSheetName={exportacao.sheetName}
                     spreadsheetDownloadFilename={exportacao.xlsxName}
                     pdfDownloadFilename={exportacao.pdfName}

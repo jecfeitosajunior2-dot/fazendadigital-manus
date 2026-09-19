@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { exportListPdf, exportListSpreadsheet, type ExportRow, type PdfHeadCell } from "@/lib/exportList";
+import { exportListPdf, exportListSpreadsheet, type ExportRow, type PdfHeadCell, type PdfReportBlock } from "@/lib/exportList";
 import type { GroupedTableHeader, ExportReportInfoLine, ExportSpreadsheetRowMeta } from "@shared/buildExportSpreadsheet";
 import { PdfExportIcon, SpreadsheetExportIcon } from "@/components/icons/ExportFormatIcons";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,17 @@ type Props = {
   spreadsheetReportTitle?: string | (() => string);
   /** Linhas compactas de contexto (texto corrido). */
   spreadsheetReportSubtitles?: string[] | (() => string[]);
+  /** Subtítulos do PDF. Se omitido, reutiliza os do Excel. */
+  pdfReportSubtitles?: string[] | (() => string[]);
   /** Linhas de contexto label/valor (legado). */
   spreadsheetReportInfo?: ExportReportInfoLine[] | (() => ExportReportInfoLine[]);
+  /** Identificação à esquerda e resumo à direita no Excel. */
+  spreadsheetReportInfoTwoColumn?: {
+    left: ExportReportInfoLine[];
+    right: ExportReportInfoLine[];
+  } | (() => { left: ExportReportInfoLine[]; right: ExportReportInfoLine[] });
+  /** Cabeçalho estruturado do PDF (identificação + resumo). */
+  pdfReportBlocks?: PdfReportBlock[] | (() => PdfReportBlock[]);
   /** Permite Excel com 0 linhas de dados. */
   spreadsheetAllowEmpty?: boolean;
   /** Linha em branco após identificação (padrão true). */
@@ -139,7 +148,10 @@ export default function ListExportButtons({
   spreadsheetSheetName,
   spreadsheetReportTitle,
   spreadsheetReportSubtitles,
+  pdfReportSubtitles,
   spreadsheetReportInfo,
+  spreadsheetReportInfoTwoColumn,
+  pdfReportBlocks,
   spreadsheetAllowEmpty,
   spreadsheetBlankAfterMeta,
   spreadsheetAutoFilter,
@@ -256,6 +268,7 @@ export default function ListExportButtons({
                 reportInfo: typeof spreadsheetReportInfo === "function"
                   ? spreadsheetReportInfo()
                   : spreadsheetReportInfo,
+                reportInfoTwoColumn: resolveExportMeta(spreadsheetReportInfoTwoColumn),
                 allowEmpty: spreadsheetAllowEmpty,
                 blankAfterMeta: spreadsheetBlankAfterMeta,
                 autoFilter: spreadsheetAutoFilter,
@@ -292,13 +305,16 @@ export default function ListExportButtons({
                 columnAligns: pdfColumnAligns ?? spreadsheetColumnAligns,
                 wrapColIndexes: pdfWrapCols,
                 headRows: pdfHeadRows,
-                reportSubtitles: buildListExportPdfSubtitles(
-                  title,
-                  spreadsheetReportTitle,
-                  spreadsheetReportSubtitles,
-                  pdfIncludeSpreadsheetTitle,
-                ),
+                reportSubtitles:
+                  resolveExportMeta(pdfReportSubtitles) ??
+                  buildListExportPdfSubtitles(
+                    title,
+                    spreadsheetReportTitle,
+                    spreadsheetReportSubtitles,
+                    pdfIncludeSpreadsheetTitle,
+                  ),
                 reportInfo: resolveExportMeta(spreadsheetReportInfo),
+                reportBlocks: resolveExportMeta(pdfReportBlocks),
                 showRegistrosSubtitle: pdfShowRegistrosSubtitle,
                 downloadFilename: pdfDownloadFilename,
               });

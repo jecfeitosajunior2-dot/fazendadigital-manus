@@ -77,6 +77,18 @@ export async function exportListSpreadsheet(
   }
 }
 
+export type PdfReportField = {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+};
+
+export type PdfReportBlock =
+  | { type: "fields"; items: PdfReportField[] }
+  | { type: "metrics"; items: PdfReportField[] }
+  | { type: "divider" }
+  | { type: "text"; text: string };
+
 export type ExportPdfOptions = {
   alignRightFrom?: number;
   alignRightCols?: number[];
@@ -94,6 +106,8 @@ export type ExportPdfOptions = {
   reportSubtitles?: string[];
   /** Linhas label/valor abaixo do título (mesmo padrão do Excel). */
   reportInfo?: ExportReportInfoLine[];
+  /** Cabeçalho estruturado (identificação + resumo) abaixo do título. */
+  reportBlocks?: PdfReportBlock[];
   /** Oculta subtítulo (ex.: Mapa do Rebanho). */
   skipSubtitle?: boolean;
   /** Exibe "X registros encontrados" (padrão: true, exceto skipSubtitle). */
@@ -143,6 +157,22 @@ const PDF_SUBTITLE_FONT_SIZE = 9;
 const PDF_TITLE_OFFSET = 8;
 const PDF_SUBTITLE_OFFSET = 14;
 const PDF_TABLE_GAP = 6;
+const PDF_BLOCKS_AFTER_TITLE = 6;
+
+function heightOfPdfReportBlock(block: PdfReportBlock): number {
+  if (block.type === "divider") return 3.5;
+  if (block.type === "text") return 5;
+  if (block.type === "metrics") return 13;
+  return block.items.length <= 1 ? 9 : 11;
+}
+
+export function heightOfPdfReportBlocks(blocks: PdfReportBlock[]): number {
+  return blocks.reduce((sum, block) => sum + heightOfPdfReportBlock(block), 0);
+}
+
+function pdfTableStartYFromBlocks(blocks: PdfReportBlock[]): number {
+  return PDF_BAND_H + PDF_TITLE_OFFSET + PDF_BLOCKS_AFTER_TITLE + heightOfPdfReportBlocks(blocks) + PDF_TABLE_GAP;
+}
 
 function pdfTableStartY(summaryLineCount = 0, titleOnly = false): number {
   if (titleOnly) {
@@ -278,6 +308,59 @@ async function renderPdfSidebarBrand(symbolDataUrl: string): Promise<string | nu
   }
 }
 
+function drawPdfReportBlocks(
+  doc: {
+    setFont: (font: string, style?: string) => void;
+    setFontSize: (size: number) => void;
+    setTextColor: (r: number, g?: number, b?: number) => void;
+    text: (
+      text: string,
+      x: number,
+      y: number,
+      options?: { align?: "left" | "center" | "right"; maxWidth?: number },
+    ) => void;
+    setDrawColor: (r: number, g: number, b: number) => void;
+    setLineWidth: (width: number) => void;
+    line: (x1: number, y1: number, x2: number, y2: number) => void;
+  },
+  blocks: PdfReportBlock[],
+  startY: number,
+  marginX: number,
+  pageWidth: number,
+) {
+  let y = startY;
+  const innerW = pageWidth - marginX * 2;
+  for (const block of blocks) {
+    const height = heightOfPdfReportBlock(block);
+    if (block.type === "divider") {
+      doc.setDrawColor(232, 237, 237);
+      doc.setLineWidth(0.25);
+      doc.line(marginX, y + 1.2, pageWidth - marginX, y + 1.2);
+    } else if (block.type === "text") {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(90, 90, 90);
+      doc.text(block.text, marginX, y + 3, { maxWidth: innerW });
+    } else {
+      const colW = innerW / block.items.length;
+      const isMetrics = block.type === "metrics";
+      block.items.forEach((item, i) => {
+        const x = marginX + i * colW;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.5);
+        doc.setTextColor(140, 148, 156);
+        doc.text(item.label.toUpperCase(), x, y + 2.5, { maxWidth: colW - 2 });
+        const emphasize = Boolean(item.emphasize);
+        doc.setFont("helvetica", emphasize ? "bold" : "normal");
+        doc.setFontSize(emphasize ? 11 : isMetrics ? 10 : 9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(item.value, x, y + (isMetrics ? 8 : 7), { maxWidth: colW - 2 });
+      });
+    }
+    y += height;
+  }
+}
+
 function drawPdfPageChrome(
   doc: {
     setFillColor: (r: number, g: number, b: number) => void;
@@ -286,7 +369,12 @@ function drawPdfPageChrome(
     setFont: (font: string, style?: string) => void;
     setFontSize: (size: number) => void;
     setTextColor: (r: number, g?: number, b?: number) => void;
-    text: (text: string, x: number, y: number, options?: { align?: "left" | "center" | "right" }) => void;
+    text: (
+      text: string,
+      x: number,
+      y: number,
+      options?: { align?: "left" | "center" | "right"; maxWidth?: number },
+    ) => void;
     setDrawColor: (r: number, g: number, b: number) => void;
     setLineWidth: (width: number) => void;
     line: (x1: number, y1: number, x2: number, y2: number) => void;
@@ -305,6 +393,7 @@ function drawPdfPageChrome(
     dataFormatada: string;
     horaFormatada: string;
     summaryLines?: string[];
+    reportBlocks?: PdfReportBlock[];
     /** Sem subtítulo (ex.: Mapa do Rebanho — só título). */
     skipSubtitle?: boolean;
   },
@@ -322,6 +411,7 @@ function drawPdfPageChrome(
     dataFormatada,
     horaFormatada,
     summaryLines,
+    reportBlocks,
     skipSubtitle,
   } = opts;
 
@@ -353,20 +443,24 @@ function drawPdfPageChrome(
   doc.setFontSize(PDF_TITLE_FONT_SIZE);
   doc.setTextColor(15, 23, 42);
   doc.text(title, marginX, titleY);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(PDF_SUBTITLE_FONT_SIZE);
-  doc.setTextColor(90, 90, 90);
-  if (!skipSubtitle) {
-    if (summaryLines?.length) {
-      summaryLines.forEach((line, i) => {
-        doc.text(line, marginX, PDF_BAND_H + PDF_SUBTITLE_OFFSET + i * 3.5);
-      });
-    } else {
-  doc.text(
-    `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
-    marginX,
-    PDF_BAND_H + PDF_SUBTITLE_OFFSET,
-  );
+  if (reportBlocks?.length) {
+    drawPdfReportBlocks(doc, reportBlocks, titleY + PDF_BLOCKS_AFTER_TITLE, marginX, pageWidth);
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(PDF_SUBTITLE_FONT_SIZE);
+    doc.setTextColor(90, 90, 90);
+    if (!skipSubtitle) {
+      if (summaryLines?.length) {
+        summaryLines.forEach((line, i) => {
+          doc.text(line, marginX, PDF_BAND_H + PDF_SUBTITLE_OFFSET + i * 3.5);
+        });
+      } else {
+        doc.text(
+          `${rowsCount} registro${rowsCount !== 1 ? "s" : ""} encontrado${rowsCount !== 1 ? "s" : ""}`,
+          marginX,
+          PDF_BAND_H + PDF_SUBTITLE_OFFSET,
+        );
+      }
     }
   }
 
@@ -482,11 +576,14 @@ export async function exportListPdf(
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const marginX = 10;
+    const reportBlocks = options?.reportBlocks;
     const { lines: summaryLines, titleOnly } = buildPdfReportSubtitleLines(
       detailRowsCount,
       options,
     );
-    const tableStartY = pdfTableStartY(summaryLines.length, titleOnly);
+    const tableStartY = reportBlocks?.length
+      ? pdfTableStartYFromBlocks(reportBlocks)
+      : pdfTableStartY(summaryLines.length, titleOnly);
 
     const drawHeaderFooter = () => {
       drawPdfPageChrome(doc, {
@@ -502,7 +599,8 @@ export async function exportListPdf(
         dataFormatada,
         horaFormatada,
         summaryLines: summaryLines.length > 0 ? summaryLines : undefined,
-        skipSubtitle: titleOnly,
+        reportBlocks,
+        skipSubtitle: titleOnly || Boolean(reportBlocks?.length),
       });
     };
 
