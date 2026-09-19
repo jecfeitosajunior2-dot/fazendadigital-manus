@@ -7,6 +7,7 @@ import { handleOAuthCallback } from "./_core/oauth";
 import { clearAuthCookie } from "./_core/cookies";
 import { ensureSchema } from "./ensureSchema";
 import { mountLocalManusStorage } from "./_core/localManusStorage";
+import { registerVendaDocumentosHttp } from "./vendaDocumentosHttp";
 import mysql from "mysql2/promise";
 import { env } from "./_core/env";
 
@@ -31,6 +32,7 @@ mountLocalManusStorage(app);
 app.use(cookieParser());
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+registerVendaDocumentosHttp(app);
 
 // OAuth callback
 app.get("/api/oauth/callback", handleOAuthCallback);

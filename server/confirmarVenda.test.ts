@@ -121,8 +121,15 @@ describe("confirmarVendaComercial", () => {
     expect(ops[2]).toEqual({
       kind: "insert",
       values: expect.arrayContaining([
-        expect.objectContaining({ animalId: 10, tipo: "venda", destino: "Comprador X" }),
-        expect.objectContaining({ animalId: 11, tipo: "venda" }),
+        expect.objectContaining({
+          animalId: 10,
+          tipo: "venda",
+          destino: "Comprador X",
+          vendaId: 44,
+          status: "ativa",
+          motivo: "Venda #44",
+        }),
+        expect.objectContaining({ animalId: 11, tipo: "venda", vendaId: 44, status: "ativa" }),
       ]),
     });
     expect(ops[3]).toEqual({ kind: "update", values: { status: "vendido" } });
@@ -214,6 +221,52 @@ describe("confirmarVendaComercial", () => {
       message: expect.stringContaining("não estão mais disponíveis"),
     });
     expect(ops.some(op => op.kind === "insert")).toBe(true);
+  });
+
+  it("baixa estornada antiga não impede venda futura", async () => {
+    const ops: Op[] = [];
+    makeTransaction(
+      [
+        [{ id: 1, nome: "Fazenda J" }],
+        [{ id: 2, nome: "Comprador X", tipo: "cliente", ativo: true }],
+        [{ id: 10, brinco: "10", status: "ativo", fazendaId: 1, loteId: null }],
+        [],
+      ],
+      ops,
+      1,
+    );
+
+    await expect(
+      confirmarVendaComercial(1, {
+        ...inputBase,
+        itens: [{ animalId: 10, pesoVenda: 391, precoUnitario: 20.5 }],
+      }),
+    ).resolves.toMatchObject({ success: true });
+    expect(ops.some(op => op.kind === "insert")).toBe(true);
+  });
+
+  it("baixa ativa impede nova venda", async () => {
+    const ops: Op[] = [];
+    makeTransaction(
+      [
+        [{ id: 1, nome: "Fazenda J" }],
+        [{ id: 2, nome: "Comprador X", tipo: "cliente", ativo: true }],
+        [{ id: 10, brinco: "10", status: "ativo", fazendaId: 1, loteId: null }],
+        [{ animalId: 10 }],
+      ],
+      ops,
+      1,
+    );
+
+    await expect(
+      confirmarVendaComercial(1, {
+        ...inputBase,
+        itens: [{ animalId: 10, pesoVenda: 391, precoUnitario: 20.5 }],
+      }),
+    ).rejects.toMatchObject({
+      message: "O animal 10 não está mais disponível para Venda.",
+    });
+    expect(ops).toHaveLength(0);
   });
 
   it("não grava R$/@ de carcaça enquanto o enum do banco não aceitar arroba", async () => {

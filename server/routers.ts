@@ -121,6 +121,8 @@ import {
 } from "./animalBaixa";
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
 import { confirmarVendaComercial } from "./confirmarVenda";
+import { cancelarVendaComercial } from "./cancelarVenda";
+import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
@@ -9556,11 +9558,15 @@ const comprasRouter = router({
 
 // ─── VENDAS ROUTER ───────────────────────────────────────────────────────────
 const vendasRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure
+    .input(z.object({ fazendaId: z.number().int().positive().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    const conditions = [eq(vendas.userId, ctx.user.id)];
+    if (input?.fazendaId) conditions.push(eq(vendas.fazendaId, input.fazendaId));
     const rows = await db
       .select()
       .from(vendas)
-      .where(eq(vendas.userId, ctx.user.id))
+      .where(and(...conditions))
       .orderBy(desc(vendas.createdAt));
     if (!rows.length) return [];
 
@@ -9653,7 +9659,8 @@ const vendasRouter = router({
             precoMedioCabeca: null as number | null,
             precoMedioArroba: null as number | null,
           };
-      return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0 };
+      const documentos = await vendaDocumentosService.listarPublicos(ctx.user.id, venda.id);
+      return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0, documentos };
     }),
 
   porAnimal: protectedProcedure
@@ -9699,6 +9706,60 @@ const vendasRouter = router({
       confirmarVendaComercial(ctx.user.id, {
         ...input,
         usuarioNome: ctx.user.name,
+      }),
+    ),
+
+  cancelar: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        motivo: z.string().trim().min(1).max(255),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      cancelarVendaComercial(ctx.user.id, {
+        vendaId: input.id,
+        motivo: input.motivo,
+        canceladoPorUserId: ctx.user.id,
+        canceladoPorNome: ctx.user.name,
+      }),
+    ),
+
+  documentosAnexar: protectedProcedure
+    .input(
+      z.object({
+        vendaId: z.number().int().positive(),
+        tipo: z.enum(["gta", "nota_fiscal"]),
+        data: z.string().min(1),
+        nomeOriginal: z.string().min(1).max(255),
+        mimeType: z.string().optional(),
+        substituir: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      vendaDocumentosService.anexar(ctx.user.id, {
+        vendaId: input.vendaId,
+        tipo: input.tipo,
+        data: Buffer.from(input.data, "base64"),
+        nomeOriginal: input.nomeOriginal,
+        mimeType: input.mimeType,
+        substituir: input.substituir,
+        uploadedByUserId: ctx.user.id,
+        uploadedByNome: ctx.user.name,
+      }),
+    ),
+
+  documentosExcluir: protectedProcedure
+    .input(
+      z.object({
+        vendaId: z.number().int().positive(),
+        documentoId: z.number().int().positive(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      vendaDocumentosService.excluir(ctx.user.id, {
+        vendaId: input.vendaId,
+        documentoId: input.documentoId,
       }),
     ),
 

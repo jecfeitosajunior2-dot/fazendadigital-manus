@@ -111,6 +111,9 @@ temp/
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 
+# PDFs de GTA/Nota Fiscal da venda — não versionar documentos fiscais
+client/public/manus-storage/venda_doc_*.pdf
+
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json

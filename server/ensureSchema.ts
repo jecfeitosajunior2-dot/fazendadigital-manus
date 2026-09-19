@@ -14,6 +14,314 @@ async function ensureColumn(
   }
 }
 
+async function indexExists(pool: mysql.Pool, table: string, keyName: string): Promise<boolean> {
+  const [rows] = await pool.query(`SHOW INDEX FROM \`${table}\` WHERE Key_name = ?`, [keyName]);
+  return (rows as unknown[]).length > 0;
+}
+
+/**
+ * Rastreio de cancelamento de venda: vendaId + status da baixa,
+ * no máximo uma baixa ATIVA por animal (índice funcional MySQL 8.4).
+ * Idempotente. Não apaga baixa. Só vincula ids 3 e 4 à Venda #1 quando inequívoco.
+ */
+async function ensureAnimalBaixasVendaRastreio(pool: mysql.Pool) {
+  if (!(await tableExists(pool, "animal_baixas"))) return;
+
+  await ensureColumn(pool, "animal_baixas", "vendaId", "int");
+  await ensureColumn(
+    pool,
+    "animal_baixas",
+    "status",
+    "enum('ativa','estornada') NOT NULL DEFAULT 'ativa'",
+  );
+
+  if (!(await indexExists(pool, "animal_baixas", "animal_baixas_venda_idx"))) {
+    await pool.query("CREATE INDEX `animal_baixas_venda_idx` ON `animal_baixas` (`vendaId`)");
+    console.log("[schema] Índice adicionado: animal_baixas.animal_baixas_venda_idx");
+  }
+  if (!(await indexExists(pool, "animal_baixas", "animal_baixas_animal_status_idx"))) {
+    await pool.query(
+      "CREATE INDEX `animal_baixas_animal_status_idx` ON `animal_baixas` (`animalId`, `status`)",
+    );
+    console.log("[schema] Índice adicionado: animal_baixas.animal_baixas_animal_status_idx");
+  }
+
+  if (await tableExists(pool, "venda_itens")) {
+    const [result] = await pool.query(`
+      UPDATE \`animal_baixas\` b
+      INNER JOIN \`venda_itens\` i
+        ON i.animal_id = b.animalId
+       AND i.venda_id = 1
+      SET b.vendaId = 1
+      WHERE b.id IN (3, 4)
+        AND b.tipo = 'venda'
+        AND TRIM(b.motivo) = 'Venda #1'
+        AND b.animalId IN (25, 26)
+        AND b.vendaId IS NULL
+    `);
+    const filled = updateAffectedRows(result);
+    if (filled > 0) {
+      console.log(`[schema] animal_baixas.vendaId preenchido para ${filled} baixa(s) da Venda #1`);
+    }
+  }
+
+  if (await indexExists(pool, "animal_baixas", "animal_baixas_animal_uq")) {
+    await pool.query("ALTER TABLE `animal_baixas` DROP INDEX `animal_baixas_animal_uq`");
+    console.log("[schema] Índice removido: animal_baixas.animal_baixas_animal_uq");
+  }
+
+  if (!(await indexExists(pool, "animal_baixas", "animal_baixas_animal_ativa_uq"))) {
+    await pool.query(`
+      CREATE UNIQUE INDEX \`animal_baixas_animal_ativa_uq\`
+        ON \`animal_baixas\` ((CASE WHEN \`status\` = 'ativa' THEN \`animalId\` END))
+    `);
+    console.log("[schema] Índice único funcional adicionado: animal_baixas.animal_baixas_animal_ativa_uq");
+  }
+}
+
+async function tableExists(pool: mysql.Pool, table: string): Promise<boolean> {
+  const [rows] = await pool.query(`SHOW TABLES LIKE ?`, [table]);
+  return (rows as unknown[]).length > 0;
+}
+
+async function getColumnNullability(
+  pool: mysql.Pool,
+  table: string,
+  column: string,
+): Promise<{ exists: boolean; nullable: boolean }> {
+  const [rows] = await pool.query(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+  const col = (rows as { Null?: string }[])[0];
+  if (!col) return { exists: false, nullable: true };
+  return { exists: true, nullable: String(col.Null).toUpperCase() === "YES" };
+}
+
+async function tableHasColumn(
+  pool: mysql.Pool,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  if (!(await tableExists(pool, table))) return false;
+  return (await getColumnNullability(pool, table, column)).exists;
+}
+
+function updateAffectedRows(result: unknown): number {
+  const n = (result as mysql.ResultSetHeader | undefined)?.affectedRows;
+  return typeof n === "number" ? n : 0;
+}
+
+async function countLotesSemUserId(pool: mysql.Pool): Promise<number> {
+  const [rows] = await pool.query(
+    "SELECT COUNT(*) AS total FROM `lotes` WHERE `userId` IS NULL",
+  );
+  return Number((rows as { total: number }[])[0]?.total ?? 0);
+}
+
+async function backfillLotesUserIdFromFazendas(pool: mysql.Pool): Promise<number> {
+  const ready =
+    (await tableHasColumn(pool, "lotes", "fazendaId")) &&
+    (await tableHasColumn(pool, "fazendas", "userId"));
+  if (!ready) return 0;
+
+  const [result] = await pool.query(`
+    UPDATE \`lotes\` l
+    INNER JOIN \`fazendas\` f ON f.id = l.fazendaId
+    SET l.userId = f.userId
+    WHERE l.userId IS NULL
+      AND l.fazendaId IS NOT NULL
+      AND f.userId IS NOT NULL
+  `);
+  return updateAffectedRows(result);
+}
+
+async function backfillLotesUserIdFromPastos(pool: mysql.Pool): Promise<number> {
+  const ready =
+    (await tableHasColumn(pool, "lotes", "pastoAtualId")) &&
+    (await tableHasColumn(pool, "pastos", "userId"));
+  if (!ready) return 0;
+
+  const [result] = await pool.query(`
+    UPDATE \`lotes\` l
+    INNER JOIN \`pastos\` p ON p.id = l.pastoAtualId
+    SET l.userId = p.userId
+    WHERE l.userId IS NULL
+      AND l.pastoAtualId IS NOT NULL
+      AND p.userId IS NOT NULL
+  `);
+  return updateAffectedRows(result);
+}
+
+async function backfillLotesUserIdFromAnimais(pool: mysql.Pool): Promise<number> {
+  const ready =
+    (await tableHasColumn(pool, "animais", "loteId")) &&
+    (await tableHasColumn(pool, "animais", "userId"));
+  if (!ready) return 0;
+
+  const [ambiguous] = await pool.query(`
+    SELECT COUNT(*) AS total
+    FROM \`lotes\` l
+    INNER JOIN (
+      SELECT \`loteId\`
+      FROM \`animais\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`
+      HAVING COUNT(DISTINCT \`userId\`) > 1
+    ) amb ON amb.loteId = l.id
+    WHERE l.userId IS NULL
+  `);
+  const ambiguousCount = Number((ambiguous as { total: number }[])[0]?.total ?? 0);
+  if (ambiguousCount > 0) {
+    console.warn(
+      `[schema] WARNING: ${ambiguousCount} lotes sem proprietário por animais com mais de um userId`,
+    );
+  }
+
+  const [result] = await pool.query(`
+    UPDATE \`lotes\` l
+    INNER JOIN (
+      SELECT \`loteId\`, \`userId\`
+      FROM \`animais\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`, \`userId\`
+    ) src ON src.loteId = l.id
+    INNER JOIN (
+      SELECT \`loteId\`
+      FROM \`animais\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`
+      HAVING COUNT(DISTINCT \`userId\`) = 1
+    ) unico ON unico.loteId = l.id
+    SET l.userId = src.userId
+    WHERE l.userId IS NULL
+  `);
+  return updateAffectedRows(result);
+}
+
+async function backfillLotesUserIdFromHistoricoPasto(pool: mysql.Pool): Promise<number> {
+  const ready =
+    (await tableHasColumn(pool, "lote_pasto_movimentacoes", "loteId")) &&
+    (await tableHasColumn(pool, "lote_pasto_movimentacoes", "userId"));
+  if (!ready) return 0;
+
+  const [ambiguous] = await pool.query(`
+    SELECT COUNT(*) AS total
+    FROM \`lotes\` l
+    INNER JOIN (
+      SELECT \`loteId\`
+      FROM \`lote_pasto_movimentacoes\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`
+      HAVING COUNT(DISTINCT \`userId\`) > 1
+    ) amb ON amb.loteId = l.id
+    WHERE l.userId IS NULL
+  `);
+  const ambiguousCount = Number((ambiguous as { total: number }[])[0]?.total ?? 0);
+  if (ambiguousCount > 0) {
+    console.warn(
+      `[schema] WARNING: ${ambiguousCount} lotes sem proprietário por histórico de pasto com mais de um userId`,
+    );
+  }
+
+  const [result] = await pool.query(`
+    UPDATE \`lotes\` l
+    INNER JOIN (
+      SELECT \`loteId\`, \`userId\`
+      FROM \`lote_pasto_movimentacoes\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`, \`userId\`
+    ) src ON src.loteId = l.id
+    INNER JOIN (
+      SELECT \`loteId\`
+      FROM \`lote_pasto_movimentacoes\`
+      WHERE \`loteId\` IS NOT NULL AND \`userId\` IS NOT NULL
+      GROUP BY \`loteId\`
+      HAVING COUNT(DISTINCT \`userId\`) = 1
+    ) unico ON unico.loteId = l.id
+    SET l.userId = src.userId
+    WHERE l.userId IS NULL
+  `);
+  return updateAffectedRows(result);
+}
+
+async function logLotesUserIdInconsistencias(pool: mysql.Pool) {
+  try {
+    if (
+      (await tableHasColumn(pool, "lotes", "fazendaId")) &&
+      (await tableHasColumn(pool, "fazendas", "userId")) &&
+      (await tableHasColumn(pool, "lotes", "pastoAtualId")) &&
+      (await tableHasColumn(pool, "pastos", "userId"))
+    ) {
+      const [rows] = await pool.query(`
+        SELECT COUNT(*) AS total
+        FROM \`lotes\` l
+        INNER JOIN \`fazendas\` f ON f.id = l.fazendaId
+        INNER JOIN \`pastos\` p ON p.id = l.pastoAtualId
+        WHERE l.userId IS NOT NULL
+          AND f.userId IS NOT NULL
+          AND p.userId IS NOT NULL
+          AND f.userId <> p.userId
+      `);
+      const total = Number((rows as { total: number }[])[0]?.total ?? 0);
+      if (total > 0) {
+        console.warn(
+          `[schema] WARNING: ${total} lotes com fazenda e pasto atual de usuários diferentes; userId existente preservado`,
+        );
+      }
+    }
+  } catch {
+    /* tabelas/colunas auxiliares ausentes */
+  }
+}
+
+/**
+ * Compatibilidade de banco legado: `lotes.userId` existe no schema.ts,
+ * mas migrations antigas e o ensureSchema anterior não criavam a coluna.
+ * Idempotente. Nunca recria lote, nunca inventa userId e nunca sobrescreve dono já preenchido.
+ */
+async function ensureLotesUserId(pool: mysql.Pool) {
+  const current = await getColumnNullability(pool, "lotes", "userId");
+
+  if (current.exists && !current.nullable) {
+    return;
+  }
+
+  if (!current.exists) {
+    await pool.query("ALTER TABLE `lotes` ADD COLUMN `userId` int NULL");
+    console.log("[schema] lotes.userId adicionada para compatibilidade com banco legado");
+  }
+
+  let filled = 0;
+  const sources: Array<[string, (pool: mysql.Pool) => Promise<number>]> = [
+    ["fazenda", backfillLotesUserIdFromFazendas],
+    ["pasto", backfillLotesUserIdFromPastos],
+    ["animais", backfillLotesUserIdFromAnimais],
+    ["historico", backfillLotesUserIdFromHistoricoPasto],
+  ];
+  for (const [label, run] of sources) {
+    try {
+      filled += await run(pool);
+    } catch {
+      console.warn(`[schema] lotes.userId: fonte ${label} indisponível, ignorada`);
+    }
+  }
+
+  if (filled > 0) {
+    console.log(`[schema] lotes.userId preenchida para ${filled} lotes`);
+  }
+
+  await logLotesUserIdInconsistencias(pool);
+
+  const remaining = await countLotesSemUserId(pool);
+  if (remaining === 0) {
+    await pool.query("ALTER TABLE `lotes` MODIFY COLUMN `userId` int NOT NULL");
+    console.log("[schema] lotes.userId definida como NOT NULL");
+    return;
+  }
+
+  console.warn(
+    `[schema] WARNING: ${remaining} lotes permanecem sem proprietário identificável`,
+  );
+}
+
 export async function ensureSchema() {
   const pool = createMysqlPool(1);
   try {
@@ -118,6 +426,7 @@ export async function ensureSchema() {
       await ensureColumn(pool, "lotes", "dataEntradaPasto", "date");
       await ensureColumn(pool, "lotes", "sigla", "varchar(20)");
       await ensureColumn(pool, "lotes", "dataCriacao", "date");
+      await ensureLotesUserId(pool);
     }
 
     const [pastosTable] = await pool.query(`SHOW TABLES LIKE 'pastos'`);
@@ -398,12 +707,17 @@ export async function ensureSchema() {
         \`observacoes\` text,
         \`usuarioNome\` varchar(200),
         \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`vendaId\` int,
+        \`status\` enum('ativa','estornada') NOT NULL DEFAULT 'ativa',
         PRIMARY KEY(\`id\`),
-        UNIQUE KEY \`animal_baixas_animal_uq\` (\`animalId\`),
+        UNIQUE KEY \`animal_baixas_animal_ativa_uq\` ((CASE WHEN \`status\` = 'ativa' THEN \`animalId\` END)),
         INDEX \`animal_baixas_user_data_idx\` (\`userId\`, \`dataBaixa\`),
-        INDEX \`animal_baixas_fazenda_data_idx\` (\`fazendaId\`, \`dataBaixa\`)
+        INDEX \`animal_baixas_fazenda_data_idx\` (\`fazendaId\`, \`dataBaixa\`),
+        INDEX \`animal_baixas_venda_idx\` (\`vendaId\`),
+        INDEX \`animal_baixas_animal_status_idx\` (\`animalId\`, \`status\`)
       )
     `);
+    await ensureAnimalBaixasVendaRastreio(pool);
 
     // ── Animais: novas colunas fazendaId e pastoId ──────────────────────────────────────
     const [animaisTable] = await pool.query(`SHOW TABLES LIKE 'animais'`);
@@ -553,6 +867,10 @@ export async function ensureSchema() {
       await ensureColumn(pool, "vendas", "preco_padrao", "decimal(12,2)");
       await ensureColumn(pool, "vendas", "peso_total", "decimal(10,2)");
       await ensureColumn(pool, "vendas", "rendimento_carcaca", "decimal(5,2)");
+      await ensureColumn(pool, "vendas", "cancelado_em", "timestamp NULL");
+      await ensureColumn(pool, "vendas", "cancelado_por_user_id", "int");
+      await ensureColumn(pool, "vendas", "cancelado_por_nome", "varchar(200)");
+      await ensureColumn(pool, "vendas", "motivo_cancelamento", "varchar(255)");
     }
 
     await pool.query(`
@@ -572,6 +890,24 @@ export async function ensureSchema() {
         UNIQUE KEY \`venda_itens_venda_animal_uq\` (\`venda_id\`, \`animal_id\`),
         INDEX \`venda_itens_venda_idx\` (\`venda_id\`),
         INDEX \`venda_itens_animal_idx\` (\`animal_id\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`venda_documentos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`venda_id\` int NOT NULL,
+        \`tipo\` enum('gta','nota_fiscal') NOT NULL,
+        \`nome_original\` varchar(255) NOT NULL,
+        \`storage_path\` varchar(500) NOT NULL,
+        \`uploaded_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`uploaded_by_user_id\` int,
+        \`uploaded_by_nome\` varchar(200),
+        PRIMARY KEY(\`id\`),
+        UNIQUE KEY \`venda_documentos_venda_tipo_uq\` (\`venda_id\`, \`tipo\`),
+        INDEX \`venda_documentos_venda_idx\` (\`venda_id\`),
+        INDEX \`venda_documentos_user_idx\` (\`user_id\`)
       )
     `);
   } catch (err) {

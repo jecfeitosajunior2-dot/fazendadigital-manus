@@ -7,6 +7,10 @@ async function redirectToSignedUrl(req: Request, res: Response) {
     res.status(400).send("Missing storage key");
     return;
   }
+  if (key.startsWith("venda_doc_")) {
+    res.status(404).send("Not found");
+    return;
+  }
 
   const forgeBaseUrl = env.BUILT_IN_FORGE_API_URL.replace(/\/+$/, "");
   const forgeKey = env.BUILT_IN_FORGE_API_KEY;

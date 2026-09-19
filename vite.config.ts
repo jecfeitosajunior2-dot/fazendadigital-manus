@@ -15,6 +15,11 @@ function vitePluginStorageProxy(): Plugin {
           res.end("Missing storage key");
           return;
         }
+        if (key.startsWith("venda_doc_")) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not found");
+          return;
+        }
         const forgeBaseUrl = (process.env.BUILT_IN_FORGE_API_URL || "").replace(/\/+$/, "");
         const forgeKey = process.env.BUILT_IN_FORGE_API_KEY;
         if (!forgeBaseUrl || !forgeKey) {

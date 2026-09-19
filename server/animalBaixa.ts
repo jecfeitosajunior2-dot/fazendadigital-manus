@@ -45,7 +45,8 @@ function isDuplicateKey(error: unknown): boolean {
   return (
     item?.code === "ER_DUP_ENTRY" ||
     item?.errno === 1062 ||
-    String(item?.message ?? "").includes("animal_baixas_animal_uq")
+    String(item?.message ?? "").includes("animal_baixas_animal_uq") ||
+    String(item?.message ?? "").includes("animal_baixas_animal_ativa_uq")
   );
 }
 
@@ -54,7 +55,13 @@ export async function getBaixaAnimal(userId: number, animalId: number) {
     const [row] = await db
       .select()
       .from(animalBaixas)
-      .where(and(eq(animalBaixas.userId, userId), eq(animalBaixas.animalId, animalId)))
+      .where(
+        and(
+          eq(animalBaixas.userId, userId),
+          eq(animalBaixas.animalId, animalId),
+          eq(animalBaixas.status, "ativa"),
+        ),
+      )
       .limit(1);
     return row ?? null;
   } catch (error) {
@@ -101,7 +108,7 @@ export async function registrarBaixaAnimal(
       const [existente] = await tx
         .select({ id: animalBaixas.id })
         .from(animalBaixas)
-        .where(eq(animalBaixas.animalId, input.animalId))
+        .where(and(eq(animalBaixas.animalId, input.animalId), eq(animalBaixas.status, "ativa")))
         .limit(1);
       if (existente) toTrpc(mensagemSaidaDuplicada(validacao.tipo));
 
@@ -115,6 +122,8 @@ export async function registrarBaixaAnimal(
         motivo,
         observacoes,
         usuarioNome,
+        vendaId: null,
+        status: "ativa",
       });
       await tx
         .update(animais)
@@ -208,7 +217,13 @@ export async function assertManejoPermitidoNaData(
       db
         .select({ dataBaixa: animalBaixas.dataBaixa })
         .from(animalBaixas)
-        .where(and(eq(animalBaixas.userId, userId), eq(animalBaixas.animalId, animalId)))
+        .where(
+          and(
+            eq(animalBaixas.userId, userId),
+            eq(animalBaixas.animalId, animalId),
+            eq(animalBaixas.status, "ativa"),
+          ),
+        )
         .limit(1),
     ]);
     if (!animal[0]) toTrpc("Animal não encontrado.", "NOT_FOUND");

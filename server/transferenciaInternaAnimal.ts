@@ -117,7 +117,7 @@ export async function registrarTransferenciaInternaAnimal(
       const [existente] = await tx
         .select({ id: animalBaixas.id })
         .from(animalBaixas)
-        .where(eq(animalBaixas.animalId, input.animalId))
+        .where(and(eq(animalBaixas.animalId, input.animalId), eq(animalBaixas.status, "ativa")))
         .limit(1);
       if (existente) toTrpc(MSG_SAIDA_TRANSFERENCIA_DUPLICADA);
 

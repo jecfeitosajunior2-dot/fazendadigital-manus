@@ -65,6 +65,10 @@ type Props = {
   onExportSpreadsheet?: () => void;
   /** Substitui a exportação padrão para PDF. */
   onExportPdf?: () => void;
+  /** Nome final do Excel, sem carimbo. */
+  spreadsheetDownloadFilename?: string;
+  /** Nome final do PDF, sem carimbo. */
+  pdfDownloadFilename?: string;
 };
 
 function resolveExportMeta<T>(value: T | (() => T) | undefined): T | undefined {
@@ -156,6 +160,8 @@ export default function ListExportButtons({
   pdfIncludeSpreadsheetTitle = true,
   onExportSpreadsheet,
   onExportPdf,
+  spreadsheetDownloadFilename,
+  pdfDownloadFilename,
 }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -259,6 +265,7 @@ export default function ListExportButtons({
                 groupedTableHeader: spreadsheetGroupedTableHeader,
                 rowMeta: spreadsheetRowMeta,
                 currencyAsNumber: spreadsheetCurrencyAsNumber,
+                downloadFilename: spreadsheetDownloadFilename,
               });
             }}
           />
@@ -293,6 +300,7 @@ export default function ListExportButtons({
                 ),
                 reportInfo: resolveExportMeta(spreadsheetReportInfo),
                 showRegistrosSubtitle: pdfShowRegistrosSubtitle,
+                downloadFilename: pdfDownloadFilename,
               });
             }}
           />

@@ -51,7 +51,8 @@ function isDuplicateKey(error: unknown): boolean {
     item?.code === "ER_DUP_ENTRY" ||
     item?.errno === 1062 ||
     String(item?.message ?? "").includes("venda_itens_venda_animal_uq") ||
-    String(item?.message ?? "").includes("animal_baixas_animal_uq")
+    String(item?.message ?? "").includes("animal_baixas_animal_uq") ||
+    String(item?.message ?? "").includes("animal_baixas_animal_ativa_uq")
   );
 }
 
@@ -159,7 +160,7 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
       const baixas = await tx
         .select({ animalId: animalBaixas.animalId })
         .from(animalBaixas)
-        .where(inArray(animalBaixas.animalId, animalIds));
+        .where(and(inArray(animalBaixas.animalId, animalIds), eq(animalBaixas.status, "ativa")));
       for (const baixa of baixas) {
         const animal = animalMap.get(baixa.animalId);
         indisponiveis.push(animal ? identificacao(animal) : `#${baixa.animalId}`);
@@ -222,6 +223,8 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
           motivo: `Venda #${vendaId}`,
           observacoes: null,
           usuarioNome: input.usuarioNome?.trim() || null,
+          vendaId,
+          status: "ativa" as const,
         })),
       );
 

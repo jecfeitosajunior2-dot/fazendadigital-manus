@@ -10,7 +10,10 @@ import {
 import { formatValorCelulaMoedaBrlExcel } from "@shared/parseMoedaBr";
 
 export type ExportRow = ExportSpreadsheetRow;
-export type ExportSpreadsheetOptions = BuildExportSpreadsheetOptions;
+export type ExportSpreadsheetOptions = BuildExportSpreadsheetOptions & {
+  /** Nome final do arquivo, sem carimbo de data/hora. */
+  downloadFilename?: string;
+};
 
 function downloadXlsxBuffer(buffer: ArrayBuffer, filename: string) {
   const blob = new Blob([buffer], {
@@ -66,7 +69,7 @@ export async function exportListSpreadsheet(
 
   try {
     const buffer = await buildExportSpreadsheetBuffer(headers, rows, options);
-    downloadXlsxBuffer(buffer, exportFilename(filename));
+    downloadXlsxBuffer(buffer, options?.downloadFilename ?? exportFilename(filename));
     toast.success("Planilha exportada!");
   } catch (error) {
     console.error("[exportListSpreadsheet]", error);
@@ -97,6 +100,8 @@ export type ExportPdfOptions = {
   showRegistrosSubtitle?: boolean;
   /** Estilo por linha (ex.: faixa de dia com Custo total). */
   rowMeta?: ExportSpreadsheetRowMeta[];
+  /** Nome final do arquivo, sem carimbo de data/hora. */
+  downloadFilename?: string;
 };
 
 function buildPdfReportSubtitleLines(
@@ -565,7 +570,7 @@ export async function exportListPdf(
     });
 
     const blob = doc.output("blob");
-    downloadPdfBlob(blob, exportPdfFilename(title));
+    downloadPdfBlob(blob, options?.downloadFilename ?? exportPdfFilename(title));
     toast.success("PDF exportado!");
   } catch (error) {
     console.error("[exportListPdf]", error);

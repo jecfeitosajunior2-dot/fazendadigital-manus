@@ -131,7 +131,14 @@ export const animalBaixas = mysqlTable("animal_baixas", {
   observacoes: text("observacoes"),
   usuarioNome: varchar("usuarioNome", { length: 200 }),
   createdAt: timestamp("createdAt").defaultNow(),
-});
+  /** Vínculo estrutural com a venda comercial. Null em morte/transferência. */
+  vendaId: int("vendaId"),
+  /** ativa | estornada — uma baixa ativa por animal (índice funcional no MySQL). */
+  status: mysqlEnum("status", ["ativa", "estornada"]).default("ativa").notNull(),
+}, table => ({
+  vendaIdx: index("animal_baixas_venda_idx").on(table.vendaId),
+  animalStatusIdx: index("animal_baixas_animal_status_idx").on(table.animalId, table.status),
+}));
 
 // Pastos (subdivisões/piquetes por fazenda)
 export const pastos = mysqlTable("pastos", {
@@ -555,6 +562,10 @@ export const vendas = mysqlTable("vendas", {
   precoPadrao: decimal("preco_padrao", { precision: 12, scale: 2 }),
   pesoTotal: decimal("peso_total", { precision: 10, scale: 2 }),
   rendimentoCarcaca: decimal("rendimento_carcaca", { precision: 5, scale: 2 }),
+  canceladoEm: timestamp("cancelado_em"),
+  canceladoPorUserId: int("cancelado_por_user_id"),
+  canceladoPorNome: varchar("cancelado_por_nome", { length: 200 }),
+  motivoCancelamento: varchar("motivo_cancelamento", { length: 255 }),
 }, table => ({
   fazendaIdx: index("vendas_fazenda_idx").on(table.fazendaId),
   compradorIdx: index("vendas_comprador_idx").on(table.compradorId),
@@ -580,6 +591,27 @@ export const vendaItens = mysqlTable(
     vendaAnimalUq: uniqueIndex("venda_itens_venda_animal_uq").on(table.vendaId, table.animalId),
     vendaIdx: index("venda_itens_venda_idx").on(table.vendaId),
     animalIdx: index("venda_itens_animal_idx").on(table.animalId),
+  }),
+);
+
+/** Anexos opcionais da venda (GTA / Nota Fiscal). Não entram na regra comercial. */
+export const vendaDocumentos = mysqlTable(
+  "venda_documentos",
+  {
+    id: int("id").primaryKey().autoincrement(),
+    userId: int("user_id").notNull(),
+    vendaId: int("venda_id").notNull(),
+    tipo: mysqlEnum("tipo", ["gta", "nota_fiscal"]).notNull(),
+    nomeOriginal: varchar("nome_original", { length: 255 }).notNull(),
+    storagePath: varchar("storage_path", { length: 500 }).notNull(),
+    uploadedAt: timestamp("uploaded_at").defaultNow(),
+    uploadedByUserId: int("uploaded_by_user_id"),
+    uploadedByNome: varchar("uploaded_by_nome", { length: 200 }),
+  },
+  table => ({
+    vendaTipoUq: uniqueIndex("venda_documentos_venda_tipo_uq").on(table.vendaId, table.tipo),
+    vendaIdx: index("venda_documentos_venda_idx").on(table.vendaId),
+    userIdx: index("venda_documentos_user_idx").on(table.userId),
   }),
 );
 

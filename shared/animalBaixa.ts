@@ -9,6 +9,10 @@ export type TipoBaixaAnimal = (typeof TIPOS_BAIXA_ANIMAL)[number];
 export const TIPOS_MOVIMENTACAO_ANIMAL = ["morte", "transferencia"] as const;
 export type TipoMovimentacaoAnimal = (typeof TIPOS_MOVIMENTACAO_ANIMAL)[number];
 
+/** Estado operacional da linha em `animal_baixas` (não confundir com status do animal). */
+export const ESTADO_BAIXA_REGISTRO = ["ativa", "estornada"] as const;
+export type EstadoBaixaRegistro = (typeof ESTADO_BAIXA_REGISTRO)[number];
+
 export const STATUS_BAIXA_ANIMAL = ["vendido", "morto", "transferido"] as const;
 export type StatusBaixaAnimal = (typeof STATUS_BAIXA_ANIMAL)[number];
 export type StatusAnimal = "ativo" | StatusBaixaAnimal;

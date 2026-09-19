@@ -103,6 +103,8 @@ describe("registrarBaixaAnimal — transação", () => {
           tipo: "morte",
           dataBaixa: "2026-08-20",
           motivo: "doenca",
+          status: "ativa",
+          vendaId: null,
         }),
       },
       { kind: "update", values: { status: "morto" } },

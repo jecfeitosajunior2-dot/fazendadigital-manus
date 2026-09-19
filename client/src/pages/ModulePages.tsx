@@ -10,9 +10,11 @@ import {
   DeleteActionIcon,
   EditActionIcon,
   FarmRowActionButtons,
+  TableIconButton,
+  ViewActionIcon,
 } from "@/components/icons/FarmActionIcons";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
-import TablePaginationFooter from "@/components/TablePaginationFooter";
+import TablePaginationFooter, { type TablePageSize } from "@/components/TablePaginationFooter";
 import { useConfirm } from "@/components/ConfirmDialog";
 import {
   DropdownMenu,
@@ -30,7 +32,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { periodoMesAtual } from "@/lib/date-utils";
+import { formatDateBR, periodoMesAtual } from "@/lib/date-utils";
+import { normalizeOperacaoData } from "@/lib/compraVendaResumo";
+import {
+  FILTRO_TODOS,
+  filtrarVendasListagem,
+  isVendaStatus,
+  labelStatusVenda,
+  opcoesCompradorVenda,
+  opcoesStatusVenda,
+  precoMedioKgVendaListagem,
+  resumirVendasListagem,
+  vendasParaTotaisRodape,
+} from "@/lib/vendasListagem";
 import {
   COMPRA_VENDA_COMPRADORES_PATH,
   COMPRA_VENDA_VENDA_NOVA_PATH,
@@ -39,7 +53,7 @@ import {
 import { useDeleteFazenda } from "@/hooks/useDeleteFazenda";
 import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { FD_PRIMARY, FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
 import { listaAnimaisComRetornoVisaoGeral, mapaRebanhoComRetornoVisaoGeral } from "@/lib/rebanhoRoutes";
 
 function areaUnitLabel(unidade?: string | null) {
@@ -2058,15 +2072,209 @@ export function PurchasesPage() {
   );
 }
 
+const VENDA_FILTRO_SELECT_EMPTY = "__empty__";
+const vendaFiltroLabelCls = "block text-[11px] font-medium text-gray-600 mb-1";
+const vendaFiltroTriggerCls =
+  "w-full h-auto min-h-0 py-1.5 border-gray-300 text-[12px] text-gray-700 shadow-none focus-visible:ring-0";
+const vendaFiltroInputCls =
+  "border border-gray-300 rounded px-3 py-1.5 text-[12px] text-gray-700 bg-white w-full min-w-0 focus:outline-none focus:border-[#4ECDC4] transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed";
+
+function VendaFilterSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+}) {
+  const current = String(value ?? "").trim();
+  return (
+    <div className="min-w-0">
+      <FormSelect
+        variant="light"
+        disabled={disabled}
+        value={!current ? VENDA_FILTRO_SELECT_EMPTY : current}
+        onChange={v => onChange(v === VENDA_FILTRO_SELECT_EMPTY ? "" : v)}
+        placeholder={placeholder}
+        triggerClassName={vendaFiltroTriggerCls}
+      >
+        <SelectItem value={VENDA_FILTRO_SELECT_EMPTY} className="text-[12px] text-gray-400">
+          {placeholder}
+        </SelectItem>
+        {options.map(o => (
+          <SelectItem key={o.value} value={o.value} className="text-[12px]">
+            {o.label}
+          </SelectItem>
+        ))}
+      </FormSelect>
+    </div>
+  );
+}
+
+function VendaSortIcon({ active, asc }: { active: boolean; asc: boolean }) {
+  return (
+    <span
+      className={cn(
+        "material-icons text-[14px] leading-none",
+        active ? "text-gray-600" : "text-gray-300",
+      )}
+      aria-hidden
+    >
+      {asc ? "arrow_drop_up" : "arrow_drop_down"}
+    </span>
+  );
+}
+
+function StatusVendaBadge({ status }: { status?: string | null }) {
+  const cls = isVendaStatus(status)
+    ? status === "concluido"
+      ? "bg-green-100 text-green-700"
+      : status === "pendente"
+        ? "bg-amber-50 text-amber-800"
+        : "bg-gray-100 text-gray-600"
+    : "bg-gray-100 text-gray-500";
+  return (
+    <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium", cls)}>
+      {labelStatusVenda(status)}
+    </span>
+  );
+}
+
+type FiltrosVendaTela = {
+  periodoDe: string;
+  periodoAte: string;
+  comprador: string;
+  status: string;
+};
+
+const FILTROS_VENDA_VAZIOS: FiltrosVendaTela = {
+  periodoDe: "",
+  periodoAte: "",
+  comprador: "",
+  status: "",
+};
+
 export function SalesPage() {
   const [, setLocation] = useLocation();
   const [busca, setBusca] = useState("");
-  const { data: vendas, isLoading } = trpc.vendas.list.useQuery();
-  const filtradas = (vendas ?? []).filter(v => {
-    const q = busca.trim().toLowerCase();
-    if (!q) return true;
-    return [v.comprador, v.fazendaNome, v.data].some(campo => String(campo ?? "").toLowerCase().includes(q));
-  });
+  const [filtros, setFiltros] = useState<FiltrosVendaTela>(FILTROS_VENDA_VAZIOS);
+  const [aplicados, setAplicados] = useState<FiltrosVendaTela>(FILTROS_VENDA_VAZIOS);
+  const [maisFiltros, setMaisFiltros] = useState(false);
+  const [fazendaId, setFazendaId] = useState("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<TablePageSize>(10);
+  const [sortAsc, setSortAsc] = useState(false);
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const { data: vendas, isLoading } = trpc.vendas.list.useQuery(
+    { fazendaId: fazendaNum },
+    { enabled: fazendaNum > 0 },
+  );
+
+  useEffect(() => {
+    if (fazendaInitDone || !fazendas.length) return;
+    const ids = fazendas.map(f => f.id);
+    const stored = readPersistedRebanhoFazendaId(ids);
+    const resolved = stored || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setFazendaId(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone]);
+
+  const limparFiltrosSecundarios = () => {
+    setFiltros(FILTROS_VENDA_VAZIOS);
+    setAplicados(FILTROS_VENDA_VAZIOS);
+    setBusca("");
+    setMaisFiltros(false);
+    setPage(1);
+  };
+
+  const mudarFazenda = (value: string) => {
+    setFazendaId(value);
+    if (value) persistRebanhoFazendaId(value);
+    else persistRebanhoFazendaId("");
+    limparFiltrosSecundarios();
+  };
+
+  const aplicarFiltros = () => {
+    if (fazendaNum <= 0) return;
+    if (filtros.periodoDe && filtros.periodoAte && filtros.periodoDe > filtros.periodoAte) {
+      toast.error("Data inicial não pode ser maior que a data final.");
+      return;
+    }
+    setAplicados({ ...filtros });
+    setPage(1);
+  };
+
+  const filtradas = useMemo(
+    () =>
+      filtrarVendasListagem(vendas ?? [], {
+        busca,
+        periodoDe: aplicados.periodoDe,
+        periodoAte: aplicados.periodoAte,
+        comprador: aplicados.comprador || FILTRO_TODOS,
+        status: aplicados.status || FILTRO_TODOS,
+        fazendaId: fazendaNum > 0 ? fazendaNum : null,
+      }),
+    [vendas, busca, aplicados, fazendaNum],
+  );
+  const ordenadas = useMemo(() => {
+    const list = [...filtradas];
+    list.sort((a, b) => {
+      const da = normalizeOperacaoData(a.data) ?? "";
+      const db = normalizeOperacaoData(b.data) ?? "";
+      let cmp = da.localeCompare(db);
+      if (cmp === 0) cmp = b.id - a.id;
+      return sortAsc ? cmp : -cmp;
+    });
+    return list;
+  }, [filtradas, sortAsc]);
+  const opcoesComprador = useMemo(
+    () => opcoesCompradorVenda(vendas ?? []).filter(o => o.value !== FILTRO_TODOS),
+    [vendas],
+  );
+  const opcoesStatus = useMemo(
+    () => opcoesStatusVenda().filter(o => o.value !== FILTRO_TODOS),
+    [],
+  );
+  const fazendaSelecionada = fazendaNum > 0;
+  const fazendaSelecionadaNome = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+  const tituloQuadro = fazendaSelecionadaNome ? `Vendas — ${fazendaSelecionadaNome}` : "Vendas";
+  const disabledHint = "Selecione uma fazenda para usar este filtro";
+  const totalPages = Math.max(1, Math.ceil(ordenadas.length / pageSize));
+  const pageItems = ordenadas.slice((page - 1) * pageSize, page * pageSize);
+  const totaisRodape = useMemo(() => {
+    const linhas = vendasParaTotaisRodape(filtradas);
+    return {
+      resumo: resumirVendasListagem(linhas),
+      excluidas: filtradas.length - linhas.length,
+    };
+  }, [filtradas]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const emptySemFazenda = fazendaInitDone && !fazendaSelecionada;
+  const emptyTotal = !isLoading && fazendaSelecionada && (vendas?.length ?? 0) === 0;
+  const emptyFiltro =
+    !isLoading && fazendaSelecionada && (vendas?.length ?? 0) > 0 && filtradas.length === 0;
+  const exportDisabled = !fazendaSelecionada || filtradas.length === 0;
+  const exportFilenameBase =
+    `vendas-${String(fazendaSelecionadaNome || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")}` || "vendas";
 
   return (
     <AppLayout>
@@ -2076,18 +2284,19 @@ export function SalesPage() {
             className="text-[20px] font-semibold text-gray-900 shrink-0"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Vendas
+            {tituloQuadro}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setLocation(COMPRA_VENDA_VENDA_NOVA_PATH)}
-              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
+              disabled={!fazendaSelecionada}
+              title={fazendaSelecionada ? "Nova Venda" : "Selecione uma fazenda para registrar vendas."}
+              className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0 min-h-[44px]"
               style={{ backgroundColor: FD_PRIMARY }}
             >
               <span className="material-icons text-[16px]">add</span>
-              <span className="hidden sm:inline">Nova Venda</span>
-              <span className="sm:hidden">Nova</span>
+              Nova Venda
             </button>
             <button
               type="button"
@@ -2097,45 +2306,159 @@ export function SalesPage() {
               Gerenciar Compradores
             </button>
             <ListExportButtons
-              title="Vendas"
-              filename="vendas"
-              headers={["Data", "Fazenda", "Comprador", "Animais", "Peso total (kg)", "Valor Total (R$)"]}
-              rows={filtradas.map(v => [
+              title={tituloQuadro}
+              filename={exportFilenameBase}
+              headers={["Data", "Comprador", "Animais", "Peso total (kg)", "Valor Total (R$)"]}
+              rows={fazendaSelecionada ? ordenadas.map(v => [
                 v.data,
-                v.fazendaNome ?? "",
                 v.comprador,
                 v.quantidade,
                 v.pesoTotal ?? "",
                 Number(v.valorTotalNumero).toFixed(2),
-              ])}
-              alignRightFrom={3}
+              ]) : []}
+              fazendaNome={fazendaSelecionadaNome}
+              alignRightFrom={2}
               variant="secondary"
+              disabled={exportDisabled}
+              disabledTitle={
+                !fazendaSelecionada
+                  ? "Selecione uma fazenda para exportar."
+                  : "Nenhuma venda disponível para exportação."
+              }
               spreadsheetAllowEmpty
             />
           </div>
         </div>
 
-        {vendas && vendas.length > 0 ? (
-          <div className="px-5 py-4 border-b border-gray-100">
-            <div className="relative max-w-sm">
-              <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
-                search
-              </span>
-              <input
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Pesquisar por comprador, fazenda ou data"
-                className="w-full min-h-[34px] pl-9 pr-3 text-[12px] border border-gray-200 rounded bg-white text-gray-700 placeholder:text-gray-400"
-              />
+        {fazendaInitDone && (
+          <div className="px-5 py-3 border-b border-gray-100 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <label className={vendaFiltroLabelCls}>Fazenda</label>
+                <VendaFilterSelect
+                  value={fazendaId}
+                  onChange={mudarFazenda}
+                  placeholder="Selecione uma fazenda"
+                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
+              </div>
+              <div className="min-w-0">
+                <label className={vendaFiltroLabelCls}>Comprador</label>
+                <VendaFilterSelect
+                  value={filtros.comprador}
+                  onChange={v => setFiltros(f => ({ ...f, comprador: v }))}
+                  placeholder={fazendaSelecionada ? "Todos" : "Selecione primeiro uma Fazenda"}
+                  disabled={!fazendaSelecionada}
+                  options={opcoesComprador}
+                />
+              </div>
             </div>
-          </div>
-        ) : null}
 
-        {isLoading ? (
-          <div className="px-5 py-12 text-center">
-            <p className="text-[12px] text-gray-400">Carregando...</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data inicial</FormLabel>
+                <FormDatePicker
+                  value={filtros.periodoDe}
+                  onChange={v => setFiltros(f => ({ ...f, periodoDe: v }))}
+                />
+              </div>
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data final</FormLabel>
+                <FormDatePicker
+                  value={filtros.periodoAte}
+                  onChange={v => setFiltros(f => ({ ...f, periodoAte: v }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={vendaFiltroLabelCls}>Buscar</label>
+              <div className="relative">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={e => {
+                    setBusca(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Buscar por comprador ou data"
+                  className={`${vendaFiltroInputCls} pl-8 pr-3`}
+                  disabled={!fazendaSelecionada}
+                  title={!fazendaSelecionada ? disabledHint : undefined}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMaisFiltros(o => !o)}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-600 min-h-[34px] px-2"
+              >
+                <span className="material-icons text-[16px]">
+                  {maisFiltros ? "expand_less" : "expand_more"}
+                </span>
+                Mais filtros
+              </button>
+              <button
+                type="button"
+                onClick={limparFiltrosSecundarios}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="px-4 py-1.5 rounded text-[12px] font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white min-h-[34px]"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={aplicarFiltros}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[34px]"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                Filtrar
+              </button>
+            </div>
+
+            {maisFiltros && fazendaSelecionada ? (
+              <div className="pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="min-w-0">
+                  <label className={vendaFiltroLabelCls}>Status</label>
+                  <VendaFilterSelect
+                    value={filtros.status}
+                    onChange={v => setFiltros(f => ({ ...f, status: v }))}
+                    placeholder="Todos"
+                    options={opcoesStatus}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : !vendas?.length ? (
+        )}
+
+        {emptySemFazenda ? (
+          <div className="py-14 px-6 text-center">
+            <CompraVendaCartEmptyIcon />
+            <h2 className="text-[16px] font-semibold text-gray-900">
+              Selecione uma fazenda para visualizar as vendas.
+            </h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Selecione uma fazenda no filtro acima para consultar, registrar e exportar vendas.
+            </p>
+          </div>
+        ) : emptyTotal ? (
           <div className="py-14 px-6 text-center">
             <CompraVendaCartEmptyIcon />
             <h2 className="text-[16px] font-semibold text-gray-900">Nenhuma venda registrada</h2>
@@ -2143,60 +2466,182 @@ export function SalesPage() {
               Registre a primeira venda comercial de animais informando comprador, itens e forma de precificação.
             </p>
           </div>
-        ) : !filtradas.length ? (
-          <div className="px-5 py-12 text-center">
-            <p className="text-[13px] text-gray-500">Nenhuma venda encontrada para essa pesquisa.</p>
+        ) : emptyFiltro ? (
+          <div className="py-14 px-6 text-center">
+            <span className="material-icons text-[40px] text-gray-300 block mb-3">search_off</span>
+            <h2 className="text-[16px] font-semibold text-gray-900">
+              Nenhuma venda encontrada com os filtros aplicados.
+            </h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Revise os filtros ou limpe a busca para visualizar outros registros.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={limparFiltrosSecundarios}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Limpar filtros
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+          <TableHorizontalScroll
+            fitWidth
+            footer={
+              !isLoading && filtradas.length > 0 ? (
+                <div className="border-t border-gray-100">
+                  <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                    <span>
+                      Animais:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {totaisRodape.resumo.animais.kind === "known"
+                          ? totaisRodape.resumo.animais.value.toLocaleString("pt-BR")
+                          : "—"}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      Peso:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {totaisRodape.resumo.peso.kind === "known"
+                          ? `${totaisRodape.resumo.peso.value.toLocaleString("pt-BR")} kg`
+                          : "—"}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      Valor total:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {totaisRodape.resumo.valor.kind === "known"
+                          ? totaisRodape.resumo.valor.value.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })
+                          : "—"}
+                      </span>
+                    </span>
+                    {totaisRodape.excluidas > 0 ? (
+                      <span className="text-[10px] text-gray-500">
+                        Exclui {totaisRodape.excluidas}{" "}
+                        {totaisRodape.excluidas === 1 ? "cancelada" : "canceladas"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <TablePaginationFooter
+                    pageSize={pageSize}
+                    page={page}
+                    totalItems={filtradas.length}
+                    onPageChange={setPage}
+                    onPageSizeChange={size => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                    itemLabel="vendas"
+                  />
+                </div>
+              ) : null
+            }
+          >
+            <table className="w-full min-w-[860px] table-fixed text-[12px] border-collapse">
+              <colgroup>
+                <col style={{ width: "110px" }} />
+                <col />
+                <col style={{ width: "88px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "120px" }} />
+                <col style={{ width: "130px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "72px" }} />
+              </colgroup>
+              <thead className="bg-gray-100 border-b border-gray-200">
                 <tr>
-                  <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Data
+                  <th className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setSortAsc(a => !a)}
+                      className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide mx-auto"
+                    >
+                      Data
+                      <VendaSortIcon active asc={sortAsc} />
+                    </button>
                   </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Fazenda
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Comprador
                   </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Animais
                   </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Peso
                   </th>
-                  <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    R$/kg médio
+                  </th>
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Valor Total
+                  </th>
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Status
+                  </th>
+                  <th className="px-3 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Ações
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map(v => (
-                  <tr
-                    key={v.id}
-                    className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
-                    onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
-                  >
-                    <td className="px-5 py-2.5 text-gray-700 whitespace-nowrap">{v.data}</td>
-                    <td className="px-3 py-2.5 text-gray-700">{v.fazendaNome || "—"}</td>
-                    <td className="px-3 py-2.5 text-gray-800 font-medium">{v.comprador || "—"}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums">{v.quantidade}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums whitespace-nowrap">
-                      {v.pesoTotal != null ? `${Number(v.pesoTotal).toLocaleString("pt-BR")} kg` : "—"}
-                    </td>
-                    <td className="px-5 py-2.5 text-right text-gray-800 font-medium tabular-nums whitespace-nowrap">
-                      {Number(v.valorTotalNumero).toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
+                      Carregando...
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  pageItems.map(v => {
+                    const precoMedio = precoMedioKgVendaListagem(v);
+                    return (
+                      <tr
+                        key={v.id}
+                        className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
+                        onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
+                      >
+                        <td className="px-4 py-2.5 text-center text-gray-700 whitespace-nowrap">
+                          {formatDateBR(v.data)}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-800 font-medium">{v.comprador || "—"}</td>
+                        <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums">{v.quantidade}</td>
+                        <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
+                          {v.pesoTotal != null ? `${Number(v.pesoTotal).toLocaleString("pt-BR")} kg` : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
+                          {precoMedio != null
+                            ? precoMedio.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-gray-800 font-medium tabular-nums whitespace-nowrap">
+                          {Number(v.valorTotalNumero).toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <StatusVendaBadge status={v.status} />
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center justify-center">
+                            <TableIconButton
+                              label="Ver detalhes"
+                              onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
+                              tone="view"
+                              compact
+                            >
+                              <ViewActionIcon size={16} />
+                            </TableIconButton>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
-          </div>
+          </TableHorizontalScroll>
         )}
       </div>
     </AppLayout>

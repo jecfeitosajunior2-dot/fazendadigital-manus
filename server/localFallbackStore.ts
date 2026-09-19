@@ -1441,6 +1441,8 @@ export type LocalAnimalBaixa = {
   observacoes: string | null;
   usuarioNome: string | null;
   createdAt: string;
+  vendaId?: number | null;
+  status?: "ativa" | "estornada";
 };
 
 async function readAnimalBaixas(): Promise<LocalAnimalBaixa[]> {
@@ -1470,7 +1472,7 @@ export async function getLocalAnimalBaixa(
   animalId: number,
 ): Promise<LocalAnimalBaixa | null> {
   const rows = await listLocalAnimalBaixas(userId, animalId);
-  return rows[0] ?? null;
+  return rows.find(row => row.status !== "estornada") ?? null;
 }
 
 /**
@@ -1495,7 +1497,7 @@ export async function registrarLocalAnimalBaixa(
     row => row.userId === userId && row.id === input.animalId,
   );
   if (animalIndex < 0) throw new Error("Animal não encontrado.");
-  if (baixasRows.some(row => row.animalId === input.animalId)) {
+  if (baixasRows.some(row => row.animalId === input.animalId && row.status !== "estornada")) {
     throw new Error(mensagemSaidaDuplicada(input.tipo));
   }
 
@@ -1518,6 +1520,8 @@ export async function registrarLocalAnimalBaixa(
     observacoes: input.observacoes?.trim() || null,
     usuarioNome: input.usuarioNome?.trim() || null,
     createdAt: now,
+    vendaId: null,
+    status: "ativa",
   };
 
   const animalAnterior = { ...animal };

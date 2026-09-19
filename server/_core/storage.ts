@@ -9,9 +9,9 @@ const localStorageDir = path.resolve(
   "../../client/public/manus-storage",
 );
 
-async function uploadToLocalStorage(data: Buffer, ext: string): Promise<string> {
+async function uploadToLocalStorage(data: Buffer, ext: string, keyPrefix: string): Promise<string> {
   await fs.mkdir(localStorageDir, { recursive: true });
-  const key = `benfeitoria_${randomBytes(8).toString("hex")}.${ext}`;
+  const key = `${keyPrefix}_${randomBytes(8).toString("hex")}.${ext}`;
   await fs.writeFile(path.join(localStorageDir, key), data);
   return `/manus-storage/${key}`;
 }
@@ -19,32 +19,33 @@ async function uploadToLocalStorage(data: Buffer, ext: string): Promise<string> 
 export async function uploadToStorage(
   data: Buffer,
   contentType: string,
-  ext: string
+  ext: string,
+  keyPrefix = "benfeitoria"
 ): Promise<string> {
   const forgeBaseUrl = env.BUILT_IN_FORGE_API_URL.replace(/\/+$/, "");
   const forgeKey = env.BUILT_IN_FORGE_API_KEY;
   if (!forgeBaseUrl || !forgeKey) {
-    return uploadToLocalStorage(data, ext);
+    return uploadToLocalStorage(data, ext, keyPrefix);
   }
 
-  const key = `benfeitoria_${randomBytes(8).toString("hex")}.${ext}`;
+  const key = `${keyPrefix}_${randomBytes(8).toString("hex")}.${ext}`;
   const presignUrl = new URL("v1/storage/presign/put", `${forgeBaseUrl}/`);
   presignUrl.searchParams.set("path", key);
 
   const presignResp = await fetch(presignUrl, {
     headers: { Authorization: `Bearer ${forgeKey}` },
   });
-  if (!presignResp.ok) return uploadToLocalStorage(data, ext);
+  if (!presignResp.ok) return uploadToLocalStorage(data, ext, keyPrefix);
 
   const { url } = (await presignResp.json()) as { url: string };
-  if (!url) return uploadToLocalStorage(data, ext);
+  if (!url) return uploadToLocalStorage(data, ext, keyPrefix);
 
   const putResp = await fetch(url, {
     method: "PUT",
     body: data,
     headers: { "Content-Type": contentType },
   });
-  if (!putResp.ok) return uploadToLocalStorage(data, ext);
+  if (!putResp.ok) return uploadToLocalStorage(data, ext, keyPrefix);
 
   return `/manus-storage/${key}`;
 }
