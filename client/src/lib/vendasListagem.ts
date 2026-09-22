@@ -1,5 +1,6 @@
 /** Apresentação da listagem de Vendas — só lê campos já persistidos. */
 
+import { formatDateBR } from "@/lib/date-utils";
 import { arredondarMoeda } from "@shared/vendaComercial";
 import {
   normalizeOperacaoData,
@@ -43,14 +44,22 @@ export function isVendaStatus(value: unknown): value is VendaStatus {
   return value === "pendente" || value === "concluido" || value === "cancelado";
 }
 
+/** Valor persistido enviado ao `vendas.list`. `Todos` não envia status. */
+export function statusQueryVendasListagem(status?: string | null): VendaStatus | undefined {
+  if (!status || status === FILTRO_TODOS) return undefined;
+  return isVendaStatus(status) ? status : undefined;
+}
+
 export function labelStatusVenda(status: unknown): string {
   return isVendaStatus(status) ? VENDA_STATUS_LABEL[status] : "—";
 }
 
+/** Filtro da listagem: só os status do fluxo atual. `pendente` fica no banco. */
 export function opcoesStatusVenda(): Array<{ value: string; label: string }> {
   return [
     { value: FILTRO_TODOS, label: "Todos" },
-    ...VENDA_STATUS.map(status => ({ value: status, label: VENDA_STATUS_LABEL[status] })),
+    { value: "concluido", label: VENDA_STATUS_LABEL.concluido },
+    { value: "cancelado", label: VENDA_STATUS_LABEL.cancelado },
   ];
 }
 
@@ -94,14 +103,26 @@ export function filtrarVendasListagem(
   });
 }
 
-/** Rodapé da listagem: tira cancelada, salvo quando o recorte é só canceladas. */
+export type ModoTotaisRodapeVendas = "efetivo" | "canceladas" | "pendentes";
+
+export function modoTotaisRodapeVendas(statusFiltro?: string | null): ModoTotaisRodapeVendas {
+  if (statusFiltro === "cancelado") return "canceladas";
+  if (statusFiltro === "pendente") return "pendentes";
+  return "efetivo";
+}
+
+/**
+ * Recorte do rodapé: efetivo só `concluido`.
+ * Cancelada/Pendente só entram quando o filtro de status pede explicitamente esse recorte.
+ */
 export function vendasParaTotaisRodape(
   vendas: ReadonlyArray<VendaListagemRow>,
+  statusFiltro?: string | null,
 ): VendaListagemRow[] {
-  if (vendas.length === 0) return [];
-  const soCanceladas = vendas.every(venda => venda.status === "cancelado");
-  if (soCanceladas) return [...vendas];
-  return vendas.filter(venda => venda.status !== "cancelado");
+  const modo = modoTotaisRodapeVendas(statusFiltro);
+  if (modo === "canceladas") return vendas.filter(venda => venda.status === "cancelado");
+  if (modo === "pendentes") return vendas.filter(venda => venda.status === "pendente");
+  return vendas.filter(venda => venda.status === "concluido");
 }
 
 export function resumirVendasListagem(vendas: ReadonlyArray<VendaListagemRow>): {
@@ -110,6 +131,15 @@ export function resumirVendasListagem(vendas: ReadonlyArray<VendaListagemRow>): 
   peso: CommercialMetric;
   valor: CommercialMetric;
 } {
+  if (vendas.length === 0) {
+    return {
+      vendas: { kind: "known", value: 0 },
+      animais: { kind: "known", value: 0 },
+      peso: { kind: "known", value: 0 },
+      valor: { kind: "known", value: 0 },
+    };
+  }
+
   const pesos = vendas
     .map(venda => {
       if (venda.pesoTotal == null || venda.pesoTotal === "") return null;
@@ -144,4 +174,73 @@ export function precoMedioKgVendaListagem(venda: VendaListagemRow): number | nul
   const valor = parseValorOperacao(venda.valorTotalNumero ?? venda.valorTotal);
   if (!Number.isFinite(peso) || peso <= 0 || valor == null) return null;
   return arredondarMoeda(valor / peso);
+}
+
+/** Mesma sequência da tabela de Vendas — sem a coluna Ações. */
+export const VENDAS_LISTAGEM_EXPORT_HEADERS = [
+  "Data",
+  "Comprador",
+  "Animais",
+  "Peso",
+  "R$/kg médio",
+  "Valor Total",
+  "Status",
+] as const;
+
+export const VENDAS_LISTAGEM_PDF_HEADERS = VENDAS_LISTAGEM_EXPORT_HEADERS;
+
+function moedaListagem(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+export function linhaPdfVendasListagem(venda: VendaListagemRow): string[] {
+  const precoMedio = precoMedioKgVendaListagem(venda);
+  const pesoNumero = venda.pesoTotal == null || venda.pesoTotal === "" ? NaN : Number(venda.pesoTotal);
+  const valor = parseValorOperacao(venda.valorTotalNumero ?? venda.valorTotal);
+  return [
+    formatDateBR(venda.data),
+    String(venda.comprador ?? "").trim() || "—",
+    String(venda.quantidade ?? venda.quantidadeAnimais ?? ""),
+    Number.isFinite(pesoNumero) ? `${pesoNumero.toLocaleString("pt-BR")} kg` : "—",
+    precoMedio != null ? moedaListagem(precoMedio) : "—",
+    valor != null ? moedaListagem(valor) : "—",
+    labelStatusVenda(venda.status),
+  ];
+}
+
+function metricaOuTraco(
+  metrica: { kind: "known"; value: number } | { kind: "unknown" },
+  formatar: (valor: number) => string,
+): string {
+  return metrica.kind === "known" ? formatar(metrica.value) : "—";
+}
+
+/** Mesmo recorte do rodapé da listagem: efetivo só concluída; Cancelada soma o histórico. */
+export function linhaTotaisExportVendasListagem(
+  vendas: ReadonlyArray<VendaListagemRow>,
+  statusFiltro?: string | null,
+): string[] {
+  const modo = modoTotaisRodapeVendas(statusFiltro);
+  const resumo = resumirVendasListagem(vendasParaTotaisRodape(vendas, statusFiltro));
+  const excluidas = vendas.filter(venda => venda.status === "cancelado").length;
+  const rotulo =
+    modo === "canceladas" ? "Totais (canceladas)" : modo === "pendentes" ? "Totais (pendentes)" : "Totais";
+  return [
+    rotulo,
+    "",
+    metricaOuTraco(resumo.animais, valor => valor.toLocaleString("pt-BR")),
+    metricaOuTraco(resumo.peso, valor => `${valor.toLocaleString("pt-BR")} kg`),
+    "",
+    metricaOuTraco(resumo.valor, moedaListagem),
+    modo === "efetivo" && excluidas > 0 ? "Canceladas não incluídas nos totais" : "",
+  ];
+}
+
+export function linhasExportVendasListagem(
+  vendas: ReadonlyArray<VendaListagemRow>,
+  statusFiltro?: string | null,
+): string[][] {
+  const detalhe = vendas.map(linhaPdfVendasListagem);
+  if (detalhe.length === 0) return detalhe;
+  return [...detalhe, linhaTotaisExportVendasListagem(vendas, statusFiltro)];
 }

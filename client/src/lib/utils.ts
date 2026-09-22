@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { normalizeCpfCnpj } from "@shared/cpfCnpj";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -36,7 +37,7 @@ export function parsePercent(value: string): number | undefined {
 }
 
 export function formatCpfCnpj(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 14);
+  const digits = normalizeCpfCnpj(value).slice(0, 14);
   if (digits.length <= 11) {
     return digits
       .replace(/(\d{3})(\d)/, "$1.$2")

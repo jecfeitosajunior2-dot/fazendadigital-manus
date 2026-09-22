@@ -9,6 +9,7 @@ import {
   parseCustoMedio,
 } from "./custoMedioEstoque";
 import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelCombustivel, produtoControlaSaldo } from "../shared/estoqueControle";
+import { pessoaVisivelNaListagem } from "./pessoasListFiltro";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
 const DATA_FILE = path.join(DATA_DIR, "local.json");
@@ -141,6 +142,10 @@ type DevPessoa = {
   telefone: string | null;
   email: string | null;
   observacoes: string | null;
+  propriedadeEstabelecimento: string | null;
+  nomeContato: string | null;
+  cidade: string | null;
+  uf: string | null;
   ativo: boolean;
   createdAt: Date | null;
 };
@@ -388,11 +393,11 @@ function defaultStore(): StoreData {
       { id: 8, contaId: 1, categoriaId: null, tipo: "despesa", descricao: "Vacinas do rebanho", valor: "6300.00", data: diasAtras(25), status: "confirmado", observacoes: null, createdAt },
     ],
     pessoas: [
-      { id: 1, userId: 0, nome: "Posto Rural", tipo: "fornecedor", funcao: "Combustível", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
-      { id: 2, userId: 0, nome: "Nutrição Animal Ltda", tipo: "fornecedor", funcao: "Insumos", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
-      { id: 3, userId: 0, nome: "Agropecuária Central", tipo: "fornecedor", funcao: "Insumos", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
-      { id: 4, userId: 0, nome: "Frigorífico São Paulo", tipo: "cliente", funcao: "Comprador", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
-      { id: 5, userId: 0, nome: "João Silva", tipo: "funcionario", funcao: "Vaqueiro", documento: null, telefone: null, email: null, observacoes: null, ativo: true, createdAt },
+      { id: 1, userId: 0, nome: "Posto Rural", tipo: "fornecedor", funcao: "Combustível", documento: null, endereco: null, telefone: null, email: null, observacoes: null, propriedadeEstabelecimento: null, nomeContato: null, cidade: null, uf: null, ativo: true, createdAt },
+      { id: 2, userId: 0, nome: "Nutrição Animal Ltda", tipo: "fornecedor", funcao: "Insumos", documento: null, endereco: null, telefone: null, email: null, observacoes: null, propriedadeEstabelecimento: null, nomeContato: null, cidade: null, uf: null, ativo: true, createdAt },
+      { id: 3, userId: 0, nome: "Agropecuária Central", tipo: "fornecedor", funcao: "Insumos", documento: null, endereco: null, telefone: null, email: null, observacoes: null, propriedadeEstabelecimento: null, nomeContato: null, cidade: null, uf: null, ativo: true, createdAt },
+      { id: 4, userId: 0, nome: "Frigorífico São Paulo", tipo: "cliente", funcao: "Comprador", documento: null, endereco: null, telefone: null, email: null, observacoes: null, propriedadeEstabelecimento: null, nomeContato: null, cidade: null, uf: null, ativo: true, createdAt },
+      { id: 5, userId: 0, nome: "João Silva", tipo: "funcionario", funcao: "Vaqueiro", documento: null, endereco: null, telefone: null, email: null, observacoes: null, propriedadeEstabelecimento: null, nomeContato: null, cidade: null, uf: null, ativo: true, createdAt },
     ],
   };
 }
@@ -536,6 +541,12 @@ function loadStore(): StoreData {
     }
   }
   if (ensurePessoasSeed(data)) migrated = true;
+  for (const p of data.pessoas ?? []) {
+    if (p.propriedadeEstabelecimento === undefined) p.propriedadeEstabelecimento = null;
+    if (p.nomeContato === undefined) p.nomeContato = null;
+    if (p.cidade === undefined) p.cidade = null;
+    if (p.uf === undefined) p.uf = null;
+  }
   if (migrated) saveStore(data);
   return data;
 }
@@ -2059,15 +2070,17 @@ export const devLocalStore = {
     return REBANHO_OVERVIEW_DEMO;
   },
 
-  listPessoas(userId: number, tipo?: DevPessoaTipo) {
+  listPessoas(userId: number, tipo?: DevPessoaTipo, incluirInativos = false) {
     const data = loadStore();
+    const visivel = (ativo: boolean | null | undefined) =>
+      pessoaVisivelNaListagem(ativo, incluirInativos);
     const matched = data.pessoas
-      .filter(p => p.userId === userId && p.ativo)
+      .filter(p => p.userId === userId && visivel(p.ativo))
       .filter(p => !tipo || p.tipo === tipo);
     const visible =
       matched.length > 0
         ? matched
-        : data.pessoas.filter(p => p.ativo).filter(p => !tipo || p.tipo === tipo);
+        : data.pessoas.filter(p => visivel(p.ativo)).filter(p => !tipo || p.tipo === tipo);
     return visible.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   },
 
@@ -2088,6 +2101,10 @@ export const devLocalStore = {
         telefone: input.telefone?.trim() || null,
         email: input.email?.trim() || null,
         observacoes: input.observacoes?.trim() || null,
+        propriedadeEstabelecimento: input.propriedadeEstabelecimento?.trim() || null,
+        nomeContato: input.nomeContato?.trim() || null,
+        cidade: input.cidade?.trim() || null,
+        uf: input.uf?.trim() || null,
         ativo: true,
         createdAt: now(),
       };
@@ -2118,6 +2135,12 @@ export const devLocalStore = {
       if (input.telefone !== undefined) row.telefone = input.telefone?.trim() || null;
       if (input.email !== undefined) row.email = input.email?.trim() || null;
       if (input.observacoes !== undefined) row.observacoes = input.observacoes?.trim() || null;
+      if (input.propriedadeEstabelecimento !== undefined) {
+        row.propriedadeEstabelecimento = input.propriedadeEstabelecimento?.trim() || null;
+      }
+      if (input.nomeContato !== undefined) row.nomeContato = input.nomeContato?.trim() || null;
+      if (input.cidade !== undefined) row.cidade = input.cidade?.trim() || null;
+      if (input.uf !== undefined) row.uf = input.uf?.trim() || null;
       if (input.ativo !== undefined) row.ativo = input.ativo;
       return row;
     });
@@ -2128,6 +2151,15 @@ export const devLocalStore = {
       const row = data.pessoas.find(p => p.id === id && (p.userId === userId || p.userId === 0));
       if (!row) throw new Error("Pessoa não encontrada.");
       row.ativo = false;
+      return { success: true };
+    });
+  },
+
+  reativarPessoa(userId: number, id: number) {
+    return withStore(data => {
+      const row = data.pessoas.find(p => p.id === id && p.userId === userId);
+      if (!row) throw new Error("Comprador não encontrado.");
+      row.ativo = true;
       return { success: true };
     });
   },

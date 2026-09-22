@@ -6,7 +6,9 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
+import { CompradorCadastroCampos, CompradorFormAcoes } from "@/components/venda/CompradorCadastroCampos";
 import { FD_PRIMARY, FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
+import { compradorFormFromPessoa, documentoPodeSalvarComprador, payloadPessoaCliente } from "@/lib/compradoresCadastro";
 import { cn, formatCpfCnpj, formatPhoneBR } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
@@ -39,6 +41,10 @@ type FormState = {
   telefone: string;
   email: string;
   observacoes: string;
+  propriedadeEstabelecimento: string;
+  nomeContato: string;
+  cidade: string;
+  uf: string;
 };
 
 const emptyForm = (tipo: PessoaTipo = "fornecedor"): FormState => ({
@@ -49,20 +55,22 @@ const emptyForm = (tipo: PessoaTipo = "fornecedor"): FormState => ({
   telefone: "",
   email: "",
   observacoes: "",
+  propriedadeEstabelecimento: "",
+  nomeContato: "",
+  cidade: "",
+  uf: "",
 });
 
 function FormCard({
   title,
   variant = "section",
   children,
-  footer,
 }: {
   title: string;
   variant?: "page" | "section";
   children?: ReactNode;
-  footer?: ReactNode;
 }) {
-  const hasBody = Boolean(children) || Boolean(footer);
+  const hasBody = Boolean(children);
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className={cn("px-5 py-4", hasBody && "border-b border-gray-100")}>
@@ -77,16 +85,7 @@ function FormCard({
           <h2 className="text-[13px] font-semibold text-[#4ECDC4]">{title}</h2>
         )}
       </div>
-      {hasBody ? (
-        <div className="p-5 space-y-4">
-          {children}
-          {footer ? (
-            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
-              {footer}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {hasBody ? <div className="p-5 space-y-4">{children}</div> : null}
     </div>
   );
 }
@@ -143,6 +142,7 @@ export default function FinancialPeoplePage() {
   );
   const [showForm, setShowForm] = useState(!!novoTipo);
   const [editId, setEditId] = useState<number | null>(null);
+  const [documentoOriginal, setDocumentoOriginal] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm(novoTipo ?? "fornecedor"));
 
   const utils = trpc.useUtils();
@@ -155,6 +155,7 @@ export default function FinancialPeoplePage() {
 
   const resetFormLocal = () => {
     setEditId(null);
+    setDocumentoOriginal("");
     setForm(emptyForm(filtro === "todos" ? "fornecedor" : filtro));
   };
 
@@ -209,20 +210,27 @@ export default function FinancialPeoplePage() {
 
   const abrirNovo = (tipo: PessoaTipo = filtro === "todos" ? "fornecedor" : filtro) => {
     setEditId(null);
+    setDocumentoOriginal("");
     setForm(emptyForm(tipo));
     setShowForm(true);
   };
 
   const abrirEditar = (p: (typeof todasPessoas)[number]) => {
     setEditId(p.id);
+    setDocumentoOriginal((p as { documento?: string | null }).documento ?? "");
+    const extra = compradorFormFromPessoa(p);
     setForm({
       nome: p.nome,
       tipo: p.tipo as PessoaTipo,
       documento: formatCpfCnpj((p as { documento?: string | null }).documento ?? ""),
-      endereco: (p as { endereco?: string | null }).endereco ?? "",
+      endereco: extra.endereco,
       telefone: formatPhoneBR(p.telefone ?? ""),
-      email: p.email ?? "",
-      observacoes: p.observacoes ?? "",
+      email: extra.email,
+      observacoes: extra.observacoes,
+      propriedadeEstabelecimento: extra.propriedadeEstabelecimento,
+      nomeContato: extra.nomeContato,
+      cidade: extra.cidade,
+      uf: extra.uf,
     });
     setShowForm(true);
   };
@@ -233,34 +241,57 @@ export default function FinancialPeoplePage() {
       return;
     }
     const documento = form.documento.trim();
-    if (!documento) {
-      toast.error("Informe o CPF/CNPJ.");
-      return;
-    }
-    const documentoDigitos = documento.replace(/\D/g, "");
-    if (documentoDigitos.length !== 11 && documentoDigitos.length !== 14) {
-      toast.error("Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) completo.");
-      return;
+    const ehComprador = form.tipo === "cliente" || clienteContext;
+    if (ehComprador) {
+      if (!documentoPodeSalvarComprador({
+        documento: form.documento,
+        documentoOriginal,
+        editando: Boolean(editId),
+      })) {
+        toast.error("Informe um CPF ou CNPJ válido.");
+        return;
+      }
+    } else {
+      if (!documento) {
+        toast.error("Informe o CPF/CNPJ.");
+        return;
+      }
+      const documentoDigitos = documento.replace(/\D/g, "");
+      if (documentoDigitos.length !== 11 && documentoDigitos.length !== 14) {
+        toast.error("Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) completo.");
+        return;
+      }
     }
     const email = form.email.trim();
     if (email && !emailValido(email)) {
       toast.error("Informe um e-mail válido.");
       return;
     }
-    const payload = {
-      nome: form.nome.trim(),
-      tipo:
-        fornecedorContext && !editId
-          ? "fornecedor"
-          : clienteContext && !editId
-            ? "cliente"
-            : form.tipo,
-      documento,
-      endereco: form.endereco.trim() || undefined,
-      telefone: form.telefone.trim() || undefined,
-      email: email || undefined,
-      observacoes: form.observacoes.trim() || undefined,
-    };
+    const payload = ehComprador
+      ? payloadPessoaCliente({
+          nome: form.nome,
+          propriedadeEstabelecimento: form.propriedadeEstabelecimento,
+          nomeContato: form.nomeContato,
+          documento: form.documento,
+          telefone: form.telefone,
+          email: form.email,
+          endereco: form.endereco,
+          cidade: form.cidade,
+          uf: form.uf,
+          observacoes: form.observacoes,
+        })
+      : {
+          nome: form.nome.trim(),
+          tipo:
+            fornecedorContext && !editId
+              ? "fornecedor"
+              : form.tipo,
+          documento,
+          endereco: form.endereco.trim() || undefined,
+          telefone: form.telefone.trim() || undefined,
+          email: email || undefined,
+          observacoes: form.observacoes.trim() || undefined,
+        };
     if (editId) {
       updateMutation.mutate({ id: editId, ...payload });
     } else {
@@ -290,28 +321,40 @@ export default function FinancialPeoplePage() {
   };
 
   const botoesFormulario = (
-    <>
-      <button
-        type="button"
-        onClick={cancelar}
-        disabled={isBusy}
-        className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-      >
-        Cancelar
-      </button>
-      <button
-        type="button"
-        onClick={salvar}
-        disabled={isBusy}
-        className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
-        style={{ backgroundColor: FD_PRIMARY }}
-      >
-        {isBusy ? "Salvando..." : "Salvar"}
-      </button>
-    </>
+    <CompradorFormAcoes
+      isBusy={isBusy}
+      saveDisabled={
+        isCompradorForm &&
+        !documentoPodeSalvarComprador({
+          documento: form.documento,
+          documentoOriginal,
+          editando: Boolean(editId),
+        })
+      }
+      onCancel={cancelar}
+      onSave={salvar}
+    />
   );
 
-  const camposFormulario = (
+  const camposFormulario = isCompradorForm ? (
+    <CompradorCadastroCampos
+      form={{
+        nome: form.nome,
+        propriedadeEstabelecimento: form.propriedadeEstabelecimento,
+        nomeContato: form.nomeContato,
+        documento: form.documento,
+        telefone: form.telefone,
+        email: form.email,
+        endereco: form.endereco,
+        cidade: form.cidade,
+        uf: form.uf,
+        observacoes: form.observacoes,
+      }}
+      documentoOriginal={documentoOriginal}
+      editando={Boolean(editId)}
+      onChange={patch => setForm(f => ({ ...f, ...patch }))}
+    />
+  ) : (
     <>
       <div>
         <FormLabel required>{isCadastroComercial ? "Nome / Razão social" : "Nome"}</FormLabel>
@@ -391,9 +434,12 @@ export default function FinancialPeoplePage() {
           </span>
           <span className="text-[13px]">Voltar</span>
         </button>
-        <FormCard variant="page" title={modalTitulo} footer={botoesFormulario}>
-          {camposFormulario}
-        </FormCard>
+        <div className="space-y-5 pb-10">
+          <FormCard variant="page" title={modalTitulo}>
+            {camposFormulario}
+          </FormCard>
+          {botoesFormulario}
+        </div>
       </AppLayout>
     );
   }
@@ -414,9 +460,7 @@ export default function FinancialPeoplePage() {
           </div>
           <div className="p-5 space-y-4">
             {camposFormulario}
-            <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
-              {botoesFormulario}
-            </div>
+            {botoesFormulario}
           </div>
         </DialogContent>
       </Dialog>

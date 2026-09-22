@@ -681,6 +681,10 @@ export const pessoas = mysqlTable("pessoas", {
   telefone: varchar("telefone", { length: 30 }),
   email: varchar("email", { length: 150 }),
   observacoes: text("observacoes"),
+  propriedadeEstabelecimento: varchar("propriedade_estabelecimento", { length: 255 }),
+  nomeContato: varchar("nome_contato", { length: 255 }),
+  cidade: varchar("cidade", { length: 100 }),
+  uf: varchar("uf", { length: 2 }),
   ativo: boolean("ativo").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });

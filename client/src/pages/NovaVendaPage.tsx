@@ -27,6 +27,7 @@ import {
   compraVendaVendaDetalhePath,
   opcoesComprador,
 } from "@/lib/compraVendaCompradores";
+import { CONSULTA_COMPRADORES_NOVA_VENDA } from "@/lib/compradoresListagem";
 import { hojeISODate } from "@shared/animalBaixa";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import {
@@ -106,7 +107,7 @@ export default function NovaVendaPage() {
   const confirm = useConfirm();
   const utils = trpc.useUtils();
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: compradores = [] } = trpc.pessoas.list.useQuery({ tipo: "cliente" });
+  const { data: compradores = [] } = trpc.pessoas.list.useQuery(CONSULTA_COMPRADORES_NOVA_VENDA);
 
   const fazendaInicial = useMemo(() => {
     const ids = fazendas.map(f => f.id);

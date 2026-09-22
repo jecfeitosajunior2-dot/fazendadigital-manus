@@ -756,6 +756,10 @@ export async function ensureSchema() {
         \`telefone\` varchar(30),
         \`email\` varchar(150),
         \`observacoes\` text,
+        \`propriedade_estabelecimento\` varchar(255),
+        \`nome_contato\` varchar(255),
+        \`cidade\` varchar(100),
+        \`uf\` varchar(2),
         \`ativo\` boolean DEFAULT true,
         \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(\`id\`)
@@ -764,6 +768,10 @@ export async function ensureSchema() {
 
     await ensureColumn(pool, "pessoas", "documento", "varchar(20)");
     await ensureColumn(pool, "pessoas", "endereco", "varchar(255)");
+    await ensureColumn(pool, "pessoas", "propriedade_estabelecimento", "varchar(255)");
+    await ensureColumn(pool, "pessoas", "nome_contato", "varchar(255)");
+    await ensureColumn(pool, "pessoas", "cidade", "varchar(100)");
+    await ensureColumn(pool, "pessoas", "uf", "varchar(2)");
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`semen_partidas\` (

@@ -8,6 +8,7 @@ import {
   nomeCompradorPorId,
   opcoesComprador,
 } from "./compraVendaCompradores";
+import { CONSULTA_COMPRADORES_NOVA_VENDA } from "./compradoresListagem";
 
 const compraVenda = menuItems.find(item => item.label === "Compra e Venda");
 
@@ -45,5 +46,10 @@ describe("Compra e Venda — compradores ficam dentro de Vendas", () => {
     expect(COMPRA_VENDA_VENDA_NOVA_PATH).toBe("/compra-venda/vendas/nova");
     expect(compraVendaVendaDetalhePath(12)).toBe("/compra-venda/vendas/12");
     expect(COMPRA_VENDA_VENDA_NOVA_PATH.startsWith(`${COMPRA_VENDA_VENDAS_PATH}/`)).toBe(true);
+  });
+
+  it("consulta da Nova Venda não pede compradores inativos", () => {
+    expect(CONSULTA_COMPRADORES_NOVA_VENDA).toEqual({ tipo: "cliente" });
+    expect(Object.keys(CONSULTA_COMPRADORES_NOVA_VENDA)).not.toContain("incluirInativos");
   });
 });

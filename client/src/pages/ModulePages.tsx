@@ -39,10 +39,14 @@ import {
   filtrarVendasListagem,
   isVendaStatus,
   labelStatusVenda,
+  linhasExportVendasListagem,
   opcoesCompradorVenda,
   opcoesStatusVenda,
+  modoTotaisRodapeVendas,
   precoMedioKgVendaListagem,
   resumirVendasListagem,
+  statusQueryVendasListagem,
+  VENDAS_LISTAGEM_EXPORT_HEADERS,
   vendasParaTotaisRodape,
 } from "@/lib/vendasListagem";
 import {
@@ -2172,8 +2176,9 @@ export function SalesPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const statusQuery = statusQueryVendasListagem(aplicados.status);
   const { data: vendas, isLoading } = trpc.vendas.list.useQuery(
-    { fazendaId: fazendaNum },
+    { fazendaId: fazendaNum, status: statusQuery },
     { enabled: fazendaNum > 0 },
   );
 
@@ -2252,21 +2257,30 @@ export function SalesPage() {
   const totalPages = Math.max(1, Math.ceil(ordenadas.length / pageSize));
   const pageItems = ordenadas.slice((page - 1) * pageSize, page * pageSize);
   const totaisRodape = useMemo(() => {
-    const linhas = vendasParaTotaisRodape(filtradas);
+    const statusFiltro = aplicados.status || FILTRO_TODOS;
+    const linhas = vendasParaTotaisRodape(filtradas, statusFiltro);
     return {
+      modo: modoTotaisRodapeVendas(statusFiltro),
       resumo: resumirVendasListagem(linhas),
-      excluidas: filtradas.length - linhas.length,
+      excluidas: filtradas.filter(venda => venda.status === "cancelado").length,
     };
-  }, [filtradas]);
+  }, [filtradas, aplicados.status]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
   const emptySemFazenda = fazendaInitDone && !fazendaSelecionada;
-  const emptyTotal = !isLoading && fazendaSelecionada && (vendas?.length ?? 0) === 0;
+  const temFiltroSecundario = Boolean(
+    busca.trim()
+    || aplicados.comprador
+    || aplicados.periodoDe
+    || aplicados.periodoAte
+    || statusQuery,
+  );
+  const emptyTotal = !isLoading && fazendaSelecionada && (vendas?.length ?? 0) === 0 && !temFiltroSecundario;
   const emptyFiltro =
-    !isLoading && fazendaSelecionada && (vendas?.length ?? 0) > 0 && filtradas.length === 0;
+    !isLoading && fazendaSelecionada && filtradas.length === 0 && (temFiltroSecundario || (vendas?.length ?? 0) > 0);
   const exportDisabled = !fazendaSelecionada || filtradas.length === 0;
   const exportFilenameBase =
     `vendas-${String(fazendaSelecionadaNome || "")
@@ -2275,6 +2289,19 @@ export function SalesPage() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")}` || "vendas";
+  const exportTitleLine = `${(fazendaSelecionadaNome || "").trim() || "Fazenda"} — Vendas`;
+  const exportLinhas = fazendaSelecionada
+    ? linhasExportVendasListagem(ordenadas, aplicados.status || FILTRO_TODOS)
+    : [];
+  const exportAlinhamento = [
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+  ] as const;
 
   return (
     <AppLayout>
@@ -2308,16 +2335,12 @@ export function SalesPage() {
             <ListExportButtons
               title={tituloQuadro}
               filename={exportFilenameBase}
-              headers={["Data", "Comprador", "Animais", "Peso total (kg)", "Valor Total (R$)"]}
-              rows={fazendaSelecionada ? ordenadas.map(v => [
-                v.data,
-                v.comprador,
-                v.quantidade,
-                v.pesoTotal ?? "",
-                Number(v.valorTotalNumero).toFixed(2),
-              ]) : []}
+              headers={[...VENDAS_LISTAGEM_EXPORT_HEADERS]}
+              rows={exportLinhas}
+              pdfHeaders={[...VENDAS_LISTAGEM_EXPORT_HEADERS]}
+              pdfRows={exportLinhas}
+              pdfColumnAligns={[...exportAlinhamento]}
               fazendaNome={fazendaSelecionadaNome}
-              alignRightFrom={2}
               variant="secondary"
               disabled={exportDisabled}
               disabledTitle={
@@ -2325,6 +2348,16 @@ export function SalesPage() {
                   ? "Selecione uma fazenda para exportar."
                   : "Nenhuma venda disponível para exportação."
               }
+              spreadsheetSheetName="Vendas"
+              spreadsheetReportTitle={() => exportTitleLine}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0, 1, 2, 3, 4, 5, 6]}
+              spreadsheetColumnAligns={[...exportAlinhamento]}
+              spreadsheetFooterRowCount={exportLinhas.length > 0 ? 1 : 0}
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
               spreadsheetAllowEmpty
             />
           </div>
@@ -2437,8 +2470,12 @@ export function SalesPage() {
                 <div className="min-w-0">
                   <label className={vendaFiltroLabelCls}>Status</label>
                   <VendaFilterSelect
-                    value={filtros.status}
-                    onChange={v => setFiltros(f => ({ ...f, status: v }))}
+                    value={filtros.status === "pendente" ? "" : filtros.status}
+                    onChange={v => {
+                      setFiltros(f => ({ ...f, status: v }));
+                      setAplicados(f => ({ ...f, status: v }));
+                      setPage(1);
+                    }}
                     placeholder="Todos"
                     options={opcoesStatus}
                   />
@@ -2493,6 +2530,11 @@ export function SalesPage() {
                 <div className="border-t border-gray-100">
                   <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
                     <span>
+                      {totaisRodape.modo === "canceladas"
+                        ? "Canceladas — "
+                        : totaisRodape.modo === "pendentes"
+                          ? "Pendentes — "
+                          : null}
                       Animais:{" "}
                       <span className="font-semibold text-gray-800 tabular-nums">
                         {totaisRodape.resumo.animais.kind === "known"
@@ -2507,7 +2549,7 @@ export function SalesPage() {
                           : "—"}
                       </span>
                       <span className="text-gray-400 mx-1.5">·</span>
-                      Valor total:{" "}
+                      {totaisRodape.modo === "efetivo" ? "Valor total" : "Valor"}:{" "}
                       <span className="font-semibold text-gray-800 tabular-nums">
                         {totaisRodape.resumo.valor.kind === "known"
                           ? totaisRodape.resumo.valor.value.toLocaleString("pt-BR", {
@@ -2517,10 +2559,9 @@ export function SalesPage() {
                           : "—"}
                       </span>
                     </span>
-                    {totaisRodape.excluidas > 0 ? (
+                    {totaisRodape.modo === "efetivo" && totaisRodape.excluidas > 0 ? (
                       <span className="text-[10px] text-gray-500">
-                        Exclui {totaisRodape.excluidas}{" "}
-                        {totaisRodape.excluidas === 1 ? "cancelada" : "canceladas"}
+                        Canceladas não incluídas nos totais
                       </span>
                     ) : null}
                   </div>

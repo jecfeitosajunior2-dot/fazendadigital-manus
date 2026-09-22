@@ -122,6 +122,15 @@ import {
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
 import { confirmarVendaComercial } from "./confirmarVenda";
 import { cancelarVendaComercial } from "./cancelarVenda";
+import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
+import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
+import { MSG_PESSOA_REATIVAR_NAO_ENCONTRADA, reativarPessoa } from "./reativarPessoa";
+import { normalizeUfBrasil } from "../shared/ufsBrasil";
+import {
+  MSG_COMPRADOR_DOC_INVALIDO,
+  avaliarDocumentoClienteCreate,
+  avaliarDocumentoClienteUpdate,
+} from "../shared/pessoaDocumentoCliente";
 import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
@@ -9559,10 +9568,12 @@ const comprasRouter = router({
 // ─── VENDAS ROUTER ───────────────────────────────────────────────────────────
 const vendasRouter = router({
   list: protectedProcedure
-    .input(z.object({ fazendaId: z.number().int().positive().optional() }).optional())
+    .input(vendasListInputSchema)
     .query(async ({ ctx, input }) => {
     const conditions = [eq(vendas.userId, ctx.user.id)];
     if (input?.fazendaId) conditions.push(eq(vendas.fazendaId, input.fazendaId));
+    const statusFiltro = statusWhereVendasList(input?.status);
+    if (statusFiltro) conditions.push(eq(vendas.status, statusFiltro));
     const rows = await db
       .select()
       .from(vendas)
@@ -10255,14 +10266,73 @@ const pessoaFieldsSchema = z.object({
   telefone: z.string().optional(),
   email: z.string().optional(),
   observacoes: z.string().optional(),
+  propriedadeEstabelecimento: z.string().optional(),
+  nomeContato: z.string().optional(),
+  cidade: z.string().optional(),
+  uf: z.string().max(2).optional(),
 });
+
+function throwSeDocumentoClienteInvalido(result: { ok: true } | { ok: false; message: string }) {
+  if (result.ok) return;
+  throw new TRPCError({
+    code: result.message === MSG_COMPRADOR_DOC_INVALIDO ? "BAD_REQUEST" : "CONFLICT",
+    message: result.message,
+  });
+}
+
+async function clientesDocumentoDoUsuario(userId: number) {
+  try {
+    return await db
+      .select({
+        id: pessoas.id,
+        userId: pessoas.userId,
+        tipo: pessoas.tipo,
+        documento: pessoas.documento,
+        ativo: pessoas.ativo,
+      })
+      .from(pessoas)
+      .where(and(eq(pessoas.userId, userId), eq(pessoas.tipo, "cliente")));
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    return devLocalStore.listPessoas(userId, "cliente", true);
+  }
+}
+
+async function pessoaDoUsuario(userId: number, id: number) {
+  try {
+    const [row] = await db
+      .select({
+        id: pessoas.id,
+        userId: pessoas.userId,
+        tipo: pessoas.tipo,
+        documento: pessoas.documento,
+      })
+      .from(pessoas)
+      .where(and(eq(pessoas.id, id), eq(pessoas.userId, userId)))
+      .limit(1);
+    return row;
+  } catch (error) {
+    if (!isDatabaseUnavailable(error)) throw error;
+    return devLocalStore.listPessoas(userId, undefined, true).find(p => p.id === id);
+  }
+}
 
 const pessoasRouter = router({
   list: protectedProcedure
-    .input(z.object({ tipo: pessoaTipoSchema.optional() }).optional())
+    .input(
+      z
+        .object({
+          tipo: pessoaTipoSchema.optional(),
+          incluirInativos: z.boolean().optional(),
+        })
+        .optional(),
+    )
     .query(async ({ ctx, input }) => {
       try {
-        const conditions = [eq(pessoas.userId, ctx.user.id), eq(pessoas.ativo, true)];
+        const conditions = [eq(pessoas.userId, ctx.user.id)];
+        if (deveRestringirPessoasListAosAtivos(input?.incluirInativos)) {
+          conditions.push(eq(pessoas.ativo, true));
+        }
         if (input?.tipo) conditions.push(eq(pessoas.tipo, input.tipo));
         return await db
           .select()
@@ -10271,7 +10341,7 @@ const pessoasRouter = router({
           .orderBy(pessoas.nome);
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        return devLocalStore.listPessoas(ctx.user.id, input?.tipo);
+        return devLocalStore.listPessoas(ctx.user.id, input?.tipo, Boolean(input?.incluirInativos));
       }
     }),
 
@@ -10279,6 +10349,14 @@ const pessoasRouter = router({
     .input(pessoaFieldsSchema)
     .mutation(async ({ ctx, input }) => {
       const documento = input.documento?.trim() || null;
+      throwSeDocumentoClienteInvalido(
+        avaliarDocumentoClienteCreate({
+          userId: ctx.user.id,
+          tipo: input.tipo,
+          documento,
+          existentes: await clientesDocumentoDoUsuario(ctx.user.id),
+        }),
+      );
 
       try {
         const result = await db.insert(pessoas).values({
@@ -10291,6 +10369,10 @@ const pessoasRouter = router({
           telefone: input.telefone?.trim() || null,
           email: input.email?.trim() || null,
           observacoes: input.observacoes?.trim() || null,
+          propriedadeEstabelecimento: input.propriedadeEstabelecimento?.trim() || null,
+          nomeContato: input.nomeContato?.trim() || null,
+          cidade: input.cidade?.trim() || null,
+          uf: normalizeUfBrasil(input.uf),
           ativo: true,
         });
         const id = Number((result as [{ insertId?: number }])[0]?.insertId ?? 0);
@@ -10306,6 +10388,10 @@ const pessoasRouter = router({
           telefone: input.telefone ?? null,
           email: input.email ?? null,
           observacoes: input.observacoes ?? null,
+          propriedadeEstabelecimento: input.propriedadeEstabelecimento ?? null,
+          nomeContato: input.nomeContato ?? null,
+          cidade: input.cidade ?? null,
+          uf: normalizeUfBrasil(input.uf),
         });
         return { success: true, id: row.id, localFallback: true };
       }
@@ -10315,6 +10401,21 @@ const pessoasRouter = router({
     .input(pessoaFieldsSchema.partial().extend({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
+      const atual = await pessoaDoUsuario(ctx.user.id, id);
+      if (atual) {
+        throwSeDocumentoClienteInvalido(
+          avaliarDocumentoClienteUpdate({
+            userId: ctx.user.id,
+            id,
+            tipoAtual: atual.tipo,
+            tipoNovo: rest.tipo,
+            documentoAtual: atual.documento,
+            documentoNovo: rest.documento,
+            documentoInformado: rest.documento !== undefined,
+            existentes: await clientesDocumentoDoUsuario(ctx.user.id),
+          }),
+        );
+      }
       try {
         const patch: Record<string, unknown> = {};
         if (rest.nome !== undefined) patch.nome = rest.nome.trim();
@@ -10327,6 +10428,12 @@ const pessoasRouter = router({
         if (rest.telefone !== undefined) patch.telefone = rest.telefone?.trim() || null;
         if (rest.email !== undefined) patch.email = rest.email?.trim() || null;
         if (rest.observacoes !== undefined) patch.observacoes = rest.observacoes?.trim() || null;
+        if (rest.propriedadeEstabelecimento !== undefined) {
+          patch.propriedadeEstabelecimento = rest.propriedadeEstabelecimento?.trim() || null;
+        }
+        if (rest.nomeContato !== undefined) patch.nomeContato = rest.nomeContato?.trim() || null;
+        if (rest.cidade !== undefined) patch.cidade = rest.cidade?.trim() || null;
+        if (rest.uf !== undefined) patch.uf = normalizeUfBrasil(rest.uf);
 
         await db
           .update(pessoas)
@@ -10334,6 +10441,7 @@ const pessoasRouter = router({
           .where(and(eq(pessoas.id, id), eq(pessoas.userId, ctx.user.id)));
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         if (error instanceof Error && /CPF\/CNPJ|Informe o nome/i.test(error.message)) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
         devLocalStore.updatePessoa(ctx.user.id, id, {
@@ -10345,6 +10453,10 @@ const pessoasRouter = router({
           telefone: rest.telefone,
           email: rest.email,
           observacoes: rest.observacoes,
+          propriedadeEstabelecimento: rest.propriedadeEstabelecimento,
+          nomeContato: rest.nomeContato,
+          cidade: rest.cidade,
+          uf: rest.uf !== undefined ? normalizeUfBrasil(rest.uf) : undefined,
         });
         return { success: true, localFallback: true };
       }
@@ -10362,6 +10474,25 @@ const pessoasRouter = router({
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
         return { ...devLocalStore.deletePessoa(ctx.user.id, input.id), localFallback: true };
+      }
+    }),
+
+  reativar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await reativarPessoa(ctx.user.id, input.id);
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (!isDatabaseUnavailable(error)) throw error;
+        try {
+          return { ...devLocalStore.reativarPessoa(ctx.user.id, input.id), localFallback: true };
+        } catch {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: MSG_PESSOA_REATIVAR_NAO_ENCONTRADA,
+          });
+        }
       }
     }),
 });

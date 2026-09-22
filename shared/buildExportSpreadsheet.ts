@@ -426,8 +426,13 @@ export async function buildExportSpreadsheetWorkbook(
     const headerRow = ws.addRow(headers);
     headerRow.height =
       options?.headerRowHeight ?? (headerTheme === "dark" ? 32 : 22);
-    headerRow.eachCell(cell => {
-      applyHeaderCellStyle(cell, headerTheme, "center", headerWrapText);
+    headerRow.eachCell((cell, colNumber) => {
+      applyHeaderCellStyle(
+        cell,
+        headerTheme,
+        options?.columnAligns?.[colNumber - 1] ?? "center",
+        headerWrapText,
+      );
     });
     headerExcelRow = headerRow.number;
     ws.views = [{ state: "frozen", ySplit: headerExcelRow }];
@@ -559,6 +564,13 @@ export async function buildExportSpreadsheetWorkbook(
       } else {
         excelCell.value = String(rawCell);
       }
+
+      excelCell.alignment = {
+        horizontal: isSection ? "center" : horizontal,
+        vertical: "middle",
+        wrapText,
+        ...(indent > 0 && !isSection ? { indent } : {}),
+      };
     });
   }
 
