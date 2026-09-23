@@ -10,7 +10,11 @@ import {
   efeitosLeituraRfidSessaoCurral,
   estadoAtendimentoSessaoCurral,
   estadoFormularioPesoAposAvancar,
+  formatPesoKgVisorSessao,
   identidadeAtendimentoSessao,
+  pesoBalancaAtualNaIdentificacao,
+  pesoBalancaParaIdentificacao,
+  pesoVisorSessao,
   leituraRfidEhDoAnimalAtual,
   rotuloAguardandoAnimal,
   textoAvisoAnimalEmAtendimento,
@@ -150,6 +154,61 @@ describe("peso do formulário após avançar", () => {
       pesoFonteBalanca: null,
     });
   });
+
+  it("visor vazio mostra 0.0 no estilo da S3", () => {
+    expect(pesoVisorSessao("")).toBe("0.0");
+    expect(pesoVisorSessao("   ")).toBe("0.0");
+    expect(pesoVisorSessao("33.0")).toBe("33.0");
+    expect(formatPesoKgVisorSessao(33)).toBe("33.0");
+    expect(formatPesoKgVisorSessao(33.5)).toBe("33.5");
+    expect(formatPesoKgVisorSessao(33.54)).toBe("33.5");
+  });
+
+  it("na identificação usa peso da S3 posterior ao save, não o do animal anterior", () => {
+    expect(
+      pesoBalancaParaIdentificacao({
+        last: { kg: 82.5, at: 100 },
+        ultimaSalva: { kg: 82.5, at: 200 },
+      }),
+    ).toBeNull();
+    expect(
+      pesoBalancaParaIdentificacao({
+        last: { kg: 60, at: 300 },
+        ultimaSalva: { kg: 82.5, at: 200 },
+      }),
+    ).toBe(60);
+    expect(
+      pesoBalancaParaIdentificacao({
+        last: { kg: 60, at: 50 },
+        ultimaSalva: null,
+      }),
+    ).toBe(60);
+    expect(
+      pesoBalancaParaIdentificacao({
+        last: { kg: 0, at: 300 },
+        ultimaSalva: { kg: 82.5, at: 200 },
+      }),
+    ).toBeNull();
+  });
+
+  it("primeiro animal da sessão aceita peso já estável no hub", () => {
+    expect(
+      pesoBalancaAtualNaIdentificacao({
+        last: null,
+        ultimaSalva: null,
+        liveKg: 75,
+        pesoSessaoAnteriorKg: 82.5,
+      }),
+    ).toBe(75);
+    expect(
+      pesoBalancaAtualNaIdentificacao({
+        last: null,
+        ultimaSalva: null,
+        liveKg: 82.5,
+        pesoSessaoAnteriorKg: 82.5,
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("independência AT05 × S3 BLE", () => {
@@ -224,14 +283,40 @@ describe("ciclo de vida — equipamentos pertencem à sessão", () => {
 
   it("peso da balança só preenche o campo — registro exige clique explícito", () => {
     const page = readSrc("../pages/ManejoPages.tsx");
-    expect(page).toMatch(/bindScaleStableWeight\(kg => \{\s*setPesoFonteBalanca/);
+    expect(page).toContain("pesoBalancaAtualNaIdentificacao");
+    expect(page).toContain("readCurrentTruTestBleWeightKg");
+    expect(page).not.toMatch(/aplicarPesoBalanca\(doStash\);\s*return;/);
     expect(page).toContain("aplicarPesoBalanca(kg)");
     expect(page).toContain("onClick={registrarPesagemCurral}");
     const bindBlock = page.slice(
       page.indexOf("return bindScaleStableWeight(kg =>"),
-      page.indexOf("}, [animalSel, aplicarPesoBalanca, bindScaleStableWeight, fase, manejoAtualId]"),
+      page.indexOf("}, [aplicarPesoBalanca, bindScaleStableWeight]"),
     );
     expect(bindBlock).not.toMatch(/pesagens\.create|pesagemMutation\.mutate|setHistoricoSessao/);
+  });
+
+  it("sessão escuta a balança no hub e entre animais, sem exigir animal na tela", () => {
+    const sessao = readSrc("../pages/ManejoPages.tsx").slice(
+      readSrc("../pages/ManejoPages.tsx").indexOf("export function ManejoSessaoPage"),
+    );
+    expect(sessao).toContain("lastScaleKgRef.current");
+    expect(sessao).toContain("pesoSessaoAnteriorKgRef");
+    expect(sessao).not.toMatch(
+      /if \(fase !== "ativa" \|\| manejoAtualId !== "pesagem" \|\| !animalSel\) return;\s*return bindScaleStableWeight/,
+    );
+    expect(sessao).not.toMatch(/if \(fase !== "ativa"\) return;\s*return bindScaleStableWeight/);
+  });
+
+  it("visor de pesagem da sessão não usa exemplo 425", () => {
+    const sessao = readSrc("../pages/ManejoPages.tsx").slice(
+      readSrc("../pages/ManejoPages.tsx").indexOf("export function ManejoSessaoPage"),
+    );
+    expect(sessao).toContain("pesoVisorSessao(novoPeso)");
+    expect(sessao).toContain("formatPesoKgVisorSessao(kg)");
+    expect(sessao).toContain("focarVisorPesoSemSelecionar");
+    expect(sessao).not.toMatch(/Ex\.: 425/);
+    expect(sessao).not.toMatch(/pesoInputRef\.current\?\.select\(/);
+    expect(sessao).not.toMatch(/currentTarget\.select\(/);
   });
 
   it("não hardcodar COM5 no AT05 da sessão", () => {

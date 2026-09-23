@@ -24,6 +24,7 @@ import {
   validarDesmamaInput,
   type PesagemDesmamaRow,
 } from "../shared/desmamaManejo";
+import { dataCivilParaColunaDate } from "../shared/dataCivil";
 
 export type RegistrarDesmamaInput = {
   fazendaId: number;
@@ -154,7 +155,7 @@ export async function registrarDesmama(
           userId,
           animalId: input.animalId,
           peso,
-          data: new Date(dataISO),
+          data: dataCivilParaColunaDate(dataISO),
           observacoes: observacaoPesagemDesmama(observacoes),
         });
       } else if (pesagemIdVincular != null && obsVinculo != null) {

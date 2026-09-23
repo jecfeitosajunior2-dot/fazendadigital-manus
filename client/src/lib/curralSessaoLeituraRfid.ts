@@ -1,4 +1,5 @@
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
+import { isPlausibleScaleKg } from "@/lib/hardware/scaleProtocol";
 
 /**
  * Ciclo da Sessão no Curral — um animal por vez.
@@ -123,6 +124,56 @@ export function estadoFormularioPesoAposAvancar(): {
   pesoFonteBalanca: null;
 } {
   return { novoPeso: "", pesoFonteBalanca: null };
+}
+
+/** Visor no estilo da S3: 33.0 — ponto e uma casa. Sem leitura, 0.0. Não é peso gravável. */
+export function formatPesoKgVisorSessao(kg: number): string {
+  if (!Number.isFinite(kg)) return "0.0";
+  return (Math.round(kg * 10) / 10).toFixed(1);
+}
+
+export function pesoVisorSessao(novoPeso: string): string {
+  return novoPeso.trim() === "" ? "0.0" : novoPeso;
+}
+
+export type LeituraBalancaStash = { kg: number; at: number };
+export type PesagemSalvaStash = { at: number; kg: number };
+
+/**
+ * Peso da S3 para o animal recém-identificado.
+ * Só usa leitura posterior ao último save — não herda o peso do animal anterior.
+ */
+export function pesoBalancaParaIdentificacao(opts: {
+  last: LeituraBalancaStash | null;
+  ultimaSalva: PesagemSalvaStash | null;
+}): number | null {
+  const last = opts.last;
+  if (!last || !isPlausibleScaleKg(last.kg)) return null;
+  if (opts.ultimaSalva && last.at <= opts.ultimaSalva.at) return null;
+  return last.kg;
+}
+
+/**
+ * Primeiro animal da sessão: aceita o peso já estável na S3 (hub, antes do Iniciar).
+ * Não reaproveita o último save da sessão anterior.
+ */
+export function pesoBalancaAtualNaIdentificacao(opts: {
+  last: LeituraBalancaStash | null;
+  ultimaSalva: PesagemSalvaStash | null;
+  liveKg: number | null;
+  pesoSessaoAnteriorKg?: number | null;
+}): number | null {
+  const doStash = pesoBalancaParaIdentificacao(opts);
+  if (doStash != null) return doStash;
+  if (opts.ultimaSalva) return null;
+  if (opts.liveKg == null || !isPlausibleScaleKg(opts.liveKg)) return null;
+  if (
+    opts.pesoSessaoAnteriorKg != null &&
+    Math.abs(opts.liveKg - opts.pesoSessaoAnteriorKg) < 0.05
+  ) {
+    return null;
+  }
+  return opts.liveKg;
 }
 
 export function contextoAposFinalizarAnimal(): {

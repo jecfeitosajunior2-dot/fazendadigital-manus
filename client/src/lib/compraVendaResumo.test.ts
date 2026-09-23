@@ -47,6 +47,11 @@ describe("compraVendaResumo", () => {
     expect(formatarMetricaPeso(resumo.peso)).toBe("—");
   });
 
+  it("não arredonda 7,5 kg para 8 kg", () => {
+    expect(formatarMetricaPeso({ kind: "known", value: 7.5 })).toBe("7,5 kg");
+    expect(formatarMetricaPeso({ kind: "known", value: 691 })).toBe("691 kg");
+  });
+
   it("soma valor e quantidade reais do período", () => {
     const resumo = resumirOperacoes(
       [

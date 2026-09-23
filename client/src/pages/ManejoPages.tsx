@@ -133,14 +133,16 @@ import { ReproPipelineConfigDialog } from "@/components/curral/ReproPipelineConf
 import { formatReproPipelineConfigResumo } from "@shared/reproPipelineConfig";
 import { ScaleReaderControl } from "@/components/curral/ScaleReaderControl";
 import { useScaleReader } from "@/hooks/useScaleReader";
-import { useTruTestBleReader } from "@/hooks/useTruTestBleReader";
-import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
+import { readCurrentTruTestBleWeightKg, useTruTestBleReader } from "@/hooks/useTruTestBleReader";
 import { textoPesoRecebidoBalanca, type ScaleTransport } from "@/lib/hardware/scaleTransport";
 import {
   decidirLeituraRfidSessaoCurral,
   estadoAtendimentoSessaoCurral,
   estadoFormularioPesoAposAvancar,
+  formatPesoKgVisorSessao,
   identidadeAtendimentoSessao,
+  pesoBalancaAtualNaIdentificacao,
+  pesoVisorSessao,
   rotuloAguardandoAnimal,
   textoAvisoAnimalEmAtendimento,
 } from "@/lib/curralSessaoLeituraRfid";
@@ -4103,13 +4105,17 @@ export function ManejoSessaoPage() {
   const [historicoSessaoAberto, setHistoricoSessaoAberto] = useState(false);
   const [reproPipelineConfigOpen, setReproPipelineConfigOpen] = useState(false);
   const pesoInputRef = useRef<HTMLInputElement>(null);
-  const aplicarPesoBalanca = useCallback((kg: number) => {
-    setNovoPeso(formatPesoKgParaCampo(kg));
-    window.setTimeout(() => {
-      pesoInputRef.current?.focus();
-      pesoInputRef.current?.select();
-    }, 30);
+  const focarVisorPesoSemSelecionar = useCallback(() => {
+    const el = pesoInputRef.current;
+    if (!el) return;
+    el.focus();
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
   }, []);
+  const aplicarPesoBalanca = useCallback((kg: number) => {
+    setNovoPeso(formatPesoKgVisorSessao(kg));
+    window.setTimeout(() => focarVisorPesoSemSelecionar(), 30);
+  }, [focarVisorPesoSemSelecionar]);
   const { data: animais = [], isLoading: loadingAnimais } = trpc.animais.list.useQuery({
     status: "ativo",
     dataManejo: data,
@@ -4723,6 +4729,10 @@ export function ManejoSessaoPage() {
 
   const scaleStableWeightRef = useRef<(kg: number) => void>(() => undefined);
   const lastScaleSourceRef = useRef<ScaleTransport>("usb");
+  const lastScaleKgRef = useRef<{ kg: number; at: number } | null>(null);
+  const lastPesagemSalvaRef = useRef<{ at: number; kg: number } | null>(null);
+  const pesoSessaoAnteriorKgRef = useRef<number | null>(null);
+  const aplicarPesoVisorSePesagemRef = useRef(false);
   const scaleCurralSession = useScaleReader({
     presetId: "trutest-s3",
     onStableWeight: kg => {
@@ -4745,13 +4755,50 @@ export function ManejoSessaoPage() {
     };
   }, []);
 
+  aplicarPesoVisorSePesagemRef.current =
+    fase === "ativa" && manejoAtualId === "pesagem" && Boolean(animalSel);
+
   useEffect(() => {
-    if (fase !== "ativa" || manejoAtualId !== "pesagem" || !animalSel) return;
     return bindScaleStableWeight(kg => {
+      lastScaleKgRef.current = { kg, at: Date.now() };
+      if (!aplicarPesoVisorSePesagemRef.current) return;
       setPesoFonteBalanca(lastScaleSourceRef.current);
       aplicarPesoBalanca(kg);
     });
-  }, [animalSel, aplicarPesoBalanca, bindScaleStableWeight, fase, manejoAtualId]);
+  }, [aplicarPesoBalanca, bindScaleStableWeight]);
+
+  useEffect(() => {
+    if (fase !== "ativa" || manejoAtualId !== "pesagem" || !animalSel) return;
+    let cancelled = false;
+    const liveKg = bleCurralSession.lastWeightKg ?? scaleCurralSession.lastWeightKg;
+    const doStash = pesoBalancaAtualNaIdentificacao({
+      last: lastScaleKgRef.current,
+      ultimaSalva: lastPesagemSalvaRef.current,
+      liveKg,
+      pesoSessaoAnteriorKg: pesoSessaoAnteriorKgRef.current,
+    });
+    if (doStash != null) {
+      setPesoFonteBalanca(lastScaleSourceRef.current);
+      aplicarPesoBalanca(doStash);
+    }
+    void readCurrentTruTestBleWeightKg().then(lido => {
+      if (cancelled || lido == null) return;
+      lastScaleKgRef.current = { kg: lido, at: Date.now() };
+      lastScaleSourceRef.current = "ble";
+      setPesoFonteBalanca("ble");
+      aplicarPesoBalanca(lido);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    animalSel,
+    aplicarPesoBalanca,
+    bleCurralSession.lastWeightKg,
+    fase,
+    manejoAtualId,
+    scaleCurralSession.lastWeightKg,
+  ]);
 
   const confirmarEntradaIdent = useCallback(() => {
     const valor = entradaIdentValor.trim();
@@ -4780,6 +4827,7 @@ export function ManejoSessaoPage() {
         animalId: vars.animalId,
         animalLabel,
       };
+      lastPesagemSalvaRef.current = { at: Date.now(), kg: Number(vars.peso) };
       avancarFilaManejoAnimal(item);
       void trpcUtils.pesagens.list.invalidate({ animalId: vars.animalId });
       void trpcUtils.animais.list.invalidate();
@@ -4837,12 +4885,9 @@ export function ManejoSessaoPage() {
 
   useEffect(() => {
     if (animalId == null || manejoAtualId !== "pesagem") return;
-    const t = window.setTimeout(() => {
-      pesoInputRef.current?.focus();
-      pesoInputRef.current?.select();
-    }, 50);
+    const t = window.setTimeout(() => focarVisorPesoSemSelecionar(), 50);
     return () => window.clearTimeout(t);
-  }, [animalId, manejoAtualId]);
+  }, [animalId, focarVisorPesoSemSelecionar, manejoAtualId]);
 
   const registrarPesagemCurral = () => {
     if (!animalAtual) {
@@ -4891,6 +4936,22 @@ export function ManejoSessaoPage() {
       return;
     }
     const id = newSessaoId();
+    pesoSessaoAnteriorKgRef.current = lastPesagemSalvaRef.current?.kg ?? null;
+    lastPesagemSalvaRef.current = null;
+    lastScaleKgRef.current = null;
+    const liveKg = bleCurralSession.lastWeightKg ?? scaleCurralSession.lastWeightKg;
+    if (
+      liveKg != null &&
+      (pesoSessaoAnteriorKgRef.current == null ||
+        Math.abs(liveKg - pesoSessaoAnteriorKgRef.current) >= 0.05)
+    ) {
+      lastScaleKgRef.current = { kg: liveKg, at: Date.now() };
+    }
+    void readCurrentTruTestBleWeightKg().then(lido => {
+      if (lido == null) return;
+      lastScaleKgRef.current = { kg: lido, at: Date.now() };
+      lastScaleSourceRef.current = "ble";
+    });
     setSessaoId(id);
     setHistoricoSessao([]);
     setManejoAtualIdx(0);
@@ -5449,7 +5510,7 @@ export function ManejoSessaoPage() {
               </div>
             )
           ) : (
-            <div className="flex items-start justify-between gap-3 rounded-xl border border-[#4ECDC4]/40 bg-[#4ECDC4]/[0.06] px-4 py-3">
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
               <div className="flex items-start gap-2.5 min-w-0">
                 <span
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white"
@@ -5506,11 +5567,12 @@ export function ManejoSessaoPage() {
 
               <div>
                 <FormLabel required>Novo peso (kg)</FormLabel>
+                <div className="relative">
                 <input
                   ref={pesoInputRef}
                   type="text"
                   inputMode="decimal"
-                  value={novoPeso}
+                  value={pesoVisorSessao(novoPeso)}
                   onChange={e => {
                     setPesoFonteBalanca(null);
                     setNovoPeso(e.target.value);
@@ -5521,11 +5583,15 @@ export function ManejoSessaoPage() {
                       registrarPesagemCurral();
                     }
                   }}
-                  placeholder="Ex.: 425 ou 425,5"
                   disabled={pesagemMutation.isPending}
-                  className="w-full text-[22px] sm:text-[26px] lg:text-[28px] font-bold border border-gray-200 rounded-xl px-4 py-3 sm:py-3.5 text-gray-900 min-h-[56px] sm:min-h-[60px] text-center tracking-tight bg-white disabled:bg-gray-50"
+                  className="w-full text-[28px] sm:text-[32px] lg:text-[36px] font-bold border border-gray-200 rounded-xl px-4 py-3 sm:py-3.5 pr-14 text-gray-900 min-h-[64px] sm:min-h-[72px] text-center tracking-tight bg-white disabled:bg-gray-50"
                   autoComplete="off"
+                  aria-label="Novo peso em quilogramas"
                 />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[14px] font-semibold text-gray-400">
+                  kg
+                </span>
+                </div>
                 {pesoFonteBalanca ? (
                   <p className="text-[10px] text-gray-400 mt-1.5 text-center">
                     {textoPesoRecebidoBalanca(pesoFonteBalanca)}
@@ -5536,7 +5602,7 @@ export function ManejoSessaoPage() {
               <button
                 type="button"
                 onClick={registrarPesagemCurral}
-                disabled={pesagemMutation.isPending}
+                disabled={pesagemMutation.isPending || !parsePesoKgParaPersistir(novoPeso)}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-full text-gray-900 text-[13px] font-bold uppercase tracking-wide min-h-[52px] hover:opacity-95 disabled:opacity-40"
                 style={{ backgroundColor: FD_PRIMARY }}
               >

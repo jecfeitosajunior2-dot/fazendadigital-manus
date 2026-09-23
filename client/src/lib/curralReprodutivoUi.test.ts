@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ABORTO_RESULTADOS_CURRAL,
@@ -7,7 +10,10 @@ import {
   isDgResultadoCurralAvancado,
   isDgResultadoCurralPrincipal,
   maisDetalhesResumoCurral,
+  mapSemenDisponivelParaOpcaoCurral,
   PARTO_RESULTADOS_CURRAL,
+  partidaSemenCurralObrigatoria,
+  reprodutorExternoCurralEstaEmEstoque,
   showCioResultadoCurral,
   showDgResultadoAvancadoCurral,
   getCurralReproPosRegistroUnicoToast,
@@ -19,6 +25,11 @@ import {
   usesCurralReproMultiRegistro,
   usesCurralResultadoToggle,
 } from "./curralReprodutivoUi";
+
+const panelSrc = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../components/curral/CurralReprodutivoPanel.tsx"),
+  "utf8",
+);
 
 describe("curralReprodutivoUi", () => {
   it("identifica resultados principais e avançados do DG", () => {
@@ -120,5 +131,73 @@ describe("curralReprodutivoUi", () => {
     expect(getCurralReproRodape("Cobertura realizada", "individual", 0)).toContain(
       "cada matriz",
     );
+  });
+});
+
+describe("curral — sêmen externo só com estoque", () => {
+  const gsc = {
+    reprodutorKey: "e:gsc-7117",
+    reprodutorTexto: "GSC-7117",
+    saldoDoses: 20,
+  };
+
+  it("mapeia disponível do estoque para a lista do curral", () => {
+    const opcao = mapSemenDisponivelParaOpcaoCurral(gsc);
+    expect(opcao.reprodutorKey).toBe("e:gsc-7117");
+    expect(opcao.reprodutorTexto).toBe("GSC-7117");
+    expect(opcao.centralPadrao).toBe("20 doses");
+    expect(opcao.ativo).toBe(true);
+  });
+
+  it("só aceita reprodutor externo que tem dose", () => {
+    expect(reprodutorExternoCurralEstaEmEstoque("GSC-7117", [gsc])).toBe(true);
+    expect(reprodutorExternoCurralEstaEmEstoque("KREMEL-063", [gsc])).toBe(false);
+    expect(reprodutorExternoCurralEstaEmEstoque("GSC-7117", [{ ...gsc, saldoDoses: 0 }])).toBe(
+      false,
+    );
+  });
+
+  it("IA externa exige partida; touro da fazenda só se tiver estoque", () => {
+    expect(
+      partidaSemenCurralObrigatoria({
+        isInseminacao: true,
+        origemExterna: true,
+        temPartidasEstoque: false,
+      }),
+    ).toBe(true);
+    expect(
+      partidaSemenCurralObrigatoria({
+        isInseminacao: true,
+        origemExterna: false,
+        temPartidasEstoque: false,
+      }),
+    ).toBe(false);
+    expect(
+      partidaSemenCurralObrigatoria({
+        isInseminacao: true,
+        origemExterna: false,
+        temPartidasEstoque: true,
+      }),
+    ).toBe(true);
+    expect(
+      partidaSemenCurralObrigatoria({
+        isInseminacao: false,
+        origemExterna: true,
+        temPartidasEstoque: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("painel do curral lista só estoque, mostra custo e não pede digitação", () => {
+    expect(panelSrc).toContain("listReprodutoresExternosDisponiveis");
+    expect(panelSrc).not.toContain("listCatalogoExternos");
+    expect(panelSrc).toContain("Custo da dose:");
+    expect(panelSrc).toContain("· estoque");
+    expect(panelSrc).not.toContain("informe o custo aqui");
+    expect(panelSrc).not.toContain("showCustoManualCurral");
+    expect(panelSrc).not.toContain("placeholder=\"R$ 0,00\"");
+    expect(panelSrc).toContain("MSG_CURRAL_SEMEN_EXTERNO_SEM_ESTOQUE");
+    expect(panelSrc).toContain("filterMachosReprodutoresCandidatos");
+    expect(panelSrc).toContain("AnimalAutocomplete");
   });
 });

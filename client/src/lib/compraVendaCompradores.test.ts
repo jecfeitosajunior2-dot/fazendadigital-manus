@@ -48,6 +48,12 @@ describe("Compra e Venda — compradores ficam dentro de Vendas", () => {
     expect(COMPRA_VENDA_VENDA_NOVA_PATH.startsWith(`${COMPRA_VENDA_VENDAS_PATH}/`)).toBe(true);
   });
 
+  it("expõe Nova Compra dentro de Compras", async () => {
+    const { COMPRA_VENDA_COMPRA_NOVA_PATH, COMPRA_VENDA_COMPRAS_PATH } = await import("./compraVendaCompradores");
+    expect(COMPRA_VENDA_COMPRA_NOVA_PATH).toBe("/compra-venda/compras/nova");
+    expect(COMPRA_VENDA_COMPRA_NOVA_PATH.startsWith(`${COMPRA_VENDA_COMPRAS_PATH}/`)).toBe(true);
+  });
+
   it("consulta da Nova Venda não pede compradores inativos", () => {
     expect(CONSULTA_COMPRADORES_NOVA_VENDA).toEqual({ tipo: "cliente" });
     expect(Object.keys(CONSULTA_COMPRADORES_NOVA_VENDA)).not.toContain("incluirInativos");

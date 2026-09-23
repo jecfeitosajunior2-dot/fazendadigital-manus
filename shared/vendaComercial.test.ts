@@ -8,8 +8,10 @@ import {
   calcularPesoCarne,
   calcularValorItem,
   escolherAlvoPesoBalanca,
+  pesoBalancaVendaNaIdentificacao,
   estadoAnimalAtualVenda,
   mensagemAnimaisIndisponiveis,
+  anexarItensVendaNaOrdemDaLida,
   ordenarItensVendaPorBrinco,
   MSG_VENDA_ANIMAL_DUPLICADO,
   MSG_VENDA_PESO_OBRIGATORIO,
@@ -17,11 +19,20 @@ import {
   MSG_VENDA_RFID_SEM_FAZENDA,
   MSG_VENDA_RENDIMENTO_INVALIDO,
   MSG_VENDA_RENDIMENTO_OBRIGATORIO,
+  parsePesoVenda,
   parseRendimentoCarcaca,
   resumirItensVenda,
 } from "./vendaComercial";
 
 describe("vendaComercial", () => {
+  it("visor 7.5 entra no cálculo como 7,5 kg — não vira 8", () => {
+    expect(parsePesoVenda("7.5")).toBe(7.5);
+    expect(parsePesoVenda("7,50")).toBe(7.5);
+    const item = calcularValorItem({ forma: "kg", pesoVenda: "7.5", precoUnitario: 10.25 });
+    expect(item).toMatchObject({ ok: true, valor: 76.88, pesoVivo: 7.5 });
+    expect(resumirItensVenda([{ pesoVenda: 7.5, valorItem: 76.88 }]).pesoTotal).toBe(7.5);
+  });
+
   it("calcula R$/kg com arredondamento monetário (teste E: 391 × 20,50 = 8.015,50)", () => {
     expect(calcularValorItem({ forma: "kg", pesoVenda: 391, precoUnitario: 20.5 })).toMatchObject({
       ok: true,
@@ -273,7 +284,7 @@ describe("vendaComercial — modalidades e exceções", () => {
     expect(calc).toMatchObject({ ok: true, valor: 4120, pesoVivo: 412 });
   });
 
-  it("grade da venda fica em ordem crescente de brinco, como a listagem", () => {
+  it("listagem/PDF ordena brinco crescente; a lida mantém a fila", () => {
     expect(
       ordenarItensVendaPorBrinco([
         { animalId: 1, brinco: "17" },
@@ -281,6 +292,15 @@ describe("vendaComercial — modalidades e exceções", () => {
         { animalId: 3, brinco: "04" },
       ]).map(i => i.brinco),
     ).toEqual(["04", "12", "17"]);
+    expect(
+      anexarItensVendaNaOrdemDaLida(
+        [
+          { animalId: 27, brinco: "27" },
+          { animalId: 800, brinco: "800" },
+        ],
+        [{ animalId: 97, brinco: "97" }],
+      ).map(i => i.brinco),
+    ).toEqual(["27", "800", "97"]);
   });
 
   it("Animal atual: RFID 802, inclusão, aguarda peso só com balança, depois mostra o kg", () => {
@@ -316,6 +336,40 @@ describe("vendaComercial — modalidades e exceções", () => {
         balancaConectada: true,
       }),
     ).toMatchObject({ brinco: "900", aguardandoPesoBalanca: true });
+    expect(
+      estadoAnimalAtualVenda({
+        animalAtualId: 27,
+        itens: [
+          { animalId: 27, brinco: "27", pesoVenda: "10.0" },
+          { animalId: 800, brinco: "800", pesoVenda: "" },
+        ],
+        balancaConectada: true,
+      }),
+    ).toMatchObject({ brinco: "27", recebeProximoPeso: false, aguardandoPesoBalanca: false });
+  });
+
+  it("visor da S3 no próximo animal não herda o peso travado do anterior", () => {
+    expect(
+      pesoBalancaVendaNaIdentificacao({
+        kg: 75,
+        alvoId: 27,
+        ultimoBalanca: null,
+      }),
+    ).toBe(75);
+    expect(
+      pesoBalancaVendaNaIdentificacao({
+        kg: 350,
+        alvoId: 12,
+        ultimoBalanca: { animalId: 27, kg: 350 },
+      }),
+    ).toBeNull();
+    expect(
+      pesoBalancaVendaNaIdentificacao({
+        kg: 360,
+        alvoId: 12,
+        ultimoBalanca: { animalId: 27, kg: 350 },
+      }),
+    ).toBe(360);
   });
 
   it("cenário I — peso da balança preenche o alvo sem confirmar venda", () => {
@@ -328,6 +382,15 @@ describe("vendaComercial — modalidades e exceções", () => {
         null,
       ),
     ).toBe(2);
+    expect(
+      escolherAlvoPesoBalanca(
+        [
+          { animalId: 27, pesoVenda: "10.0" },
+          { animalId: 800, pesoVenda: "" },
+        ],
+        27,
+      ),
+    ).toBe(800);
     expect(
       escolherAlvoPesoBalanca(
         [

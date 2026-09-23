@@ -142,5 +142,8 @@ export function formatarMetricaQuantidade(metric: CommercialMetric): string {
 
 export function formatarMetricaPeso(metric: CommercialMetric): string {
   if (metric.kind === "unknown") return "—";
-  return `${metric.value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kg`;
+  return `${metric.value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })} kg`;
 }

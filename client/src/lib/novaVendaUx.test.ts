@@ -20,7 +20,12 @@ describe("Nova Venda — regras da tela", () => {
     expect(page).toContain("At05RfidReaderControl");
     expect(page).toContain("ScaleReaderControl");
     expect(page).toContain("useTruTestBleReader");
+    expect(page).toContain("readCurrentTruTestBleWeightKg");
+    expect(page).toContain("pedirPesoVisorBalanca");
+    expect(page).toContain("pesoBalancaVendaNaIdentificacao");
     expect(page).toContain("aplicarPesoBalanca");
+    expect(page).toContain("formatPesoKgVisorSessao");
+    expect(page).not.toContain("formatPesoKgParaCampo");
     expect(page).toContain("pesoOrigem: \"balanca\"");
   });
 
@@ -74,8 +79,9 @@ describe("Nova Venda — regras da tela", () => {
     expect(page).toContain("rendimentoManual");
   });
 
-  it("ordena a grade por brinco crescente, igual à listagem", () => {
-    expect(page).toContain("ordenarItensVendaPorBrinco");
+  it("grade da Nova Venda segue a fila da lida, último embaixo", () => {
+    expect(page).toContain("anexarItensVendaNaOrdemDaLida");
+    expect(page).not.toContain("ordenarItensVendaPorBrinco");
   });
 
   it("R$/@ calcula na tela mas não grava sem migration", () => {

@@ -31,6 +31,13 @@ import {
   showExameAndrologicoAvancadoCurral,
   showExameAndrologicoCurral,
   formatMsgMatrizJaCobertaNesteTouro,
+  mapSemenDisponivelParaOpcaoCurral,
+  MSG_CURRAL_PARTIDA_SEM_CUSTO,
+  MSG_CURRAL_SEMEN_EXTERNO_BUSCA_VAZIA,
+  MSG_CURRAL_SEMEN_EXTERNO_SEM_ESTOQUE,
+  MSG_CURRAL_SEMEN_EXTERNO_SO_ESTOQUE,
+  partidaSemenCurralObrigatoria,
+  reprodutorExternoCurralEstaEmEstoque,
   getCurralReproMultiRegistroPendingError,
   getCurralReproPosRegistroUnicoToast,
   getCurralReproRegistrarButtonLabel,
@@ -42,7 +49,7 @@ import {
   usesCurralReproMultiRegistro,
   usesCurralResultadoToggle,
 } from "@/lib/curralReprodutivoUi";
-import { cn, formatCurrencyBrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { subtituloMachoReprodutor } from "@shared/animalBuscaDisplay";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
@@ -70,12 +77,7 @@ import {
   labelAnimalCobertura,
   listMatrizesElegiveisDoLote,
 } from "@shared/reproCoberturaAlvoSelection";
-import {
-  custoDoseInseminacaoExternaInformado,
-  sanitizeReproEccInputString,
-  validateReproCustoDoseInseminacaoExterna,
-  validateReproEcc,
-} from "@shared/reproInseminacao";
+import { sanitizeReproEccInputString, validateReproEcc } from "@shared/reproInseminacao";
 import {
   filterMachosReprodutoresCandidatos,
   resolveMachoIdFromSelecao,
@@ -510,11 +512,15 @@ export function CurralReprodutivoPanel({
     return listMatrizesElegiveisDoLote(animaisFazenda, loteNum, matrizesBloqueadasSet);
   }, [animaisFazenda, loteCoberturaId, matrizesBloqueadasSet]);
 
-  const { data: reprodutoresExternosCatalogo = [], isFetching: carregandoExternos } =
-    trpc.semen.listCatalogoExternos.useQuery(
+  const { data: reprodutoresExternosEstoque = [], isFetching: carregandoExternos } =
+    trpc.semen.listReprodutoresExternosDisponiveis.useQuery(
       { fazendaId: fazendaNum },
       { enabled: isDadosInseminacao && reprodutorOrigem === "externo" && fazendaNum > 0 },
     );
+  const reprodutoresExternosCatalogo = useMemo(
+    () => reprodutoresExternosEstoque.map(mapSemenDisponivelParaOpcaoCurral),
+    [reprodutoresExternosEstoque],
+  );
 
   const partidasSemenQueryEnabled = shouldLoadSemenPartidasParaInseminacao({
     tipoReprodutivo,
@@ -545,21 +551,15 @@ export function CurralReprodutivoPanel({
 
   const temPartidasEstoque =
     partidasSemenQueryEnabled && partidasSemenDisponiveis.length > 0;
-  const partidaEstoqueObrigatoria = isDadosInseminacao && temPartidasEstoque;
+  const partidaEstoqueObrigatoria = partidaSemenCurralObrigatoria({
+    isInseminacao: isDadosInseminacao,
+    origemExterna: reprodutorModoExterno,
+    temPartidasEstoque,
+  });
   const custoAutoPartida =
     partidaSemenSelecionada != null &&
     parseSemenCustoTotal(partidaSemenSelecionada.custoUnitario) != null;
-  /** JetBov: custo vem da partida; manual só sem estoque (ou partida sem custo cadastrado). */
-  const showCustoManualCurral =
-    reprodutorModoExterno &&
-    partidasSemenQueryEnabled &&
-    !carregandoPartidas &&
-    (!temPartidasEstoque ||
-      (semenPartidaId != null && !custoAutoPartida));
-  const custoExternoCompleto = custoDoseInseminacaoExternaInformado(
-    reprodutorModoExterno,
-    custoDoseSemen,
-  );
+  const custoExternoCompleto = !reprodutorModoExterno || custoAutoPartida;
 
   const filterMachoReprodutor = useCallback(
     (a: ManejoAnimalRow) =>
@@ -583,7 +583,7 @@ export function CurralReprodutivoPanel({
     void trpcUtils.animais.list.invalidate();
     void trpcUtils.dashboard.stats.invalidate();
     invalidateSemenUtilizadoQueries(trpcUtils);
-    void trpcUtils.semen.listCatalogoExternos.invalidate();
+    void trpcUtils.semen.listReprodutoresExternosDisponiveis.invalidate();
   }, [trpcUtils]);
 
   const handleMutationError = useCallback(
@@ -795,18 +795,23 @@ export function CurralReprodutivoPanel({
       toast.error("Informe o reprodutor ou sêmen externo.");
       return;
     }
+    if (reprodutorModoExterno && isDadosInseminacao) {
+      if (!reprodutorExternoCurralEstaEmEstoque(reprodutorSemen, reprodutoresExternosEstoque)) {
+        toast.error(MSG_CURRAL_SEMEN_EXTERNO_SO_ESTOQUE);
+        return;
+      }
+      if (semenPartidaId == null) {
+        toast.error("Selecione a partida do estoque.");
+        return;
+      }
+      if (!custoAutoPartida) {
+        toast.error(MSG_CURRAL_PARTIDA_SEM_CUSTO);
+        return;
+      }
+    }
     if (isDadosInseminacao && temPartidasEstoque && semenPartidaId == null) {
       toast.error("Selecione a partida do estoque.");
       return;
-    }
-    if (reprodutorModoExterno) {
-      const validacaoCusto = validateReproCustoDoseInseminacaoExterna(
-        parseSemenCustoTotal(custoDoseSemen),
-      );
-      if (!validacaoCusto.ok) {
-        toast.error(validacaoCusto.message);
-        return;
-      }
     }
 
     let eccPersistido: number | undefined;
@@ -987,6 +992,7 @@ export function CurralReprodutivoPanel({
     confirm,
     animalId,
     animalSexo,
+    custoAutoPartida,
     criaBrinco,
     criaSexo,
     custoDoseSemen,
@@ -1019,6 +1025,7 @@ export function CurralReprodutivoPanel({
     reprodutorModoInterno,
     reprodutorOrigem,
     reprodutorSemen,
+    reprodutoresExternosEstoque,
     isDgCurral,
     resultadoEfetivo,
     resultadoOcultoComDefault,
@@ -1341,13 +1348,17 @@ export function CurralReprodutivoPanel({
                 }}
                 onSelect={item => {
                   setReprodutorSemen(item.reprodutorTexto);
-                  setCentralOrigemSemen(item.centralPadrao ?? "");
+                  setCentralOrigemSemen("");
                   setCustoDoseSemen("");
                 }}
                 showCadastrarNovo={false}
                 options={reprodutoresExternosCatalogo}
                 disabled={!fazendaNum}
                 loading={carregandoExternos}
+                loadingLabel="Consultando estoque…"
+                hint={MSG_CURRAL_SEMEN_EXTERNO_SO_ESTOQUE}
+                emptyNoOptionsMessage={MSG_CURRAL_SEMEN_EXTERNO_SEM_ESTOQUE}
+                emptyNoMatchMessage={MSG_CURRAL_SEMEN_EXTERNO_BUSCA_VAZIA}
                 inputClassName={fieldCls}
                 labelClassName="text-[12px] font-medium text-gray-700 mb-1 block"
               />
@@ -1398,29 +1409,15 @@ export function CurralReprodutivoPanel({
                         </span>{" "}
                         · estoque
                       </p>
+                    ) : semenPartidaId != null && !custoAutoPartida ? (
+                      <p className="text-[11px] text-amber-700 mt-1">{MSG_CURRAL_PARTIDA_SEM_CUSTO}</p>
                     ) : null}
                   </div>
-                ) : null}
-                {showCustoManualCurral ? (
-                  <div>
-                    <FormLabel required>Custo da dose (R$)</FormLabel>
-                    <FormInput
-                      inputMode="decimal"
-                      value={custoDoseSemen}
-                      onChange={v => {
-                        const digits = v.replace(/\D/g, "");
-                        setCustoDoseSemen(digits ? formatCurrencyBrl(v) : "");
-                      }}
-                      placeholder="R$ 0,00"
-                      variant="light"
-                    />
-                    {!temPartidasEstoque ? (
-                      <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                        Sem partida no estoque. Cadastre em Reprodução → Controle de Sêmen →
-                        Estoque, ou informe o custo aqui.
-                      </p>
-                    ) : null}
-                  </div>
+                ) : reprodutorModoExterno &&
+                  partidasSemenQueryEnabled &&
+                  !carregandoPartidas &&
+                  !temPartidasEstoque ? (
+                  <p className="text-[11px] text-gray-500">{MSG_CURRAL_SEMEN_EXTERNO_SO_ESTOQUE}</p>
                 ) : null}
               </div>
             ) : null}

@@ -1,7 +1,9 @@
 /**
- * POC Web Bluetooth da Tru-Test S3.
- * Não usa Web Serial. Não grava pesagem. Não escreve no Nordic UART.
+ * Web Bluetooth da Tru-Test S3.
+ * Peso ao vivo: 0x2A9D. Pedido do visor atual: {RW} no Nordic UART (mesmo SCP do USB).
  */
+
+import { parseScaleWeightKgFromText } from "./scaleProtocol";
 
 export const TRUTEST_S3_NAME_PREFIX = "S3";
 
@@ -12,6 +14,8 @@ export const BLE_UUID = {
   weightMeasurement: 0x2a9d,
   weightScaleFeature: 0x2a9e,
   nordicUartService: "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+  nordicUartRx: "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+  nordicUartTx: "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
 } as const;
 
 export const BLE_UUID_LABEL = {
@@ -24,7 +28,8 @@ export const BLE_UUID_LABEL = {
 
 const SIG_BASE = "-0000-1000-8000-00805f9b34fb";
 const INVALID_WEIGHT_RAW = 0xffff;
-const SI_KG_RESOLUTION = 0.005;
+/** Tru-Test S3 de gado: 1 unidade = 0,05 kg. O 0,005 do Bluetooth SIG lia 6 kg quando a S3 mostrava 60. */
+const SI_KG_RESOLUTION = 0.05;
 const IMPERIAL_LB_RESOLUTION = 0.01;
 const LB_TO_KG = 0.45359237;
 
@@ -229,9 +234,9 @@ function parseBleDateTime(view: DataView, offset: number): BleDateTimeFields {
 }
 
 /**
- * Bluetooth SIG — Weight Measurement (0x2A9D).
+ * Weight Measurement (0x2A9D) da Tru-Test S3.
  * Flags (1) + Weight uint16 LE (2) + opcionais conforme flags.
- * SI: raw × 0,005 kg. Imperial: raw × 0,01 lb.
+ * SI (gado): raw × 0,05 kg. Imperial: raw × 0,01 lb.
  * 0xFFFF = medição inválida.
  */
 export function parseBleWeightMeasurement(data: DataView): ParsedBleWeightMeasurement {
@@ -454,7 +459,47 @@ export type TruTestBleDiscovery = {
   featureError: string | null;
   batteryPercent: number | null;
   nusDetected: boolean;
+  nusWrite: BluetoothRemoteGATTCharacteristic | null;
+  nusNotify: BluetoothRemoteGATTCharacteristic | null;
 };
+
+/** Pedido SCP {RW} via NUS — mesmo comando do cabo USB. */
+export async function requestWeightViaNusRw(
+  writeChar: BluetoothRemoteGATTCharacteristic,
+  notifyChar: BluetoothRemoteGATTCharacteristic,
+  timeoutMs = 900,
+): Promise<number | null> {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (kg: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      notifyChar.removeEventListener("characteristicvaluechanged", onVal);
+      resolve(kg);
+    };
+    const onVal: EventListener = ev => {
+      const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
+      const value = target?.value;
+      if (!value) return;
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(dataViewToBytes(value));
+      const kg = parseScaleWeightKgFromText(text);
+      if (kg != null) finish(kg);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    notifyChar.addEventListener("characteristicvaluechanged", onVal);
+    const payload = new TextEncoder().encode("{RW}");
+    const doWrite = () =>
+      writeChar.properties.writeWithoutResponse
+        ? writeChar.writeValueWithoutResponse(payload)
+        : writeChar.writeValue(payload);
+    void notifyChar
+      .startNotifications()
+      .catch(() => undefined)
+      .then(() => doWrite())
+      .catch(() => finish(null));
+  });
+}
 
 async function listPrimaryServiceUuids(server: BluetoothRemoteGATTServer): Promise<string[]> {
   try {
@@ -531,6 +576,19 @@ export async function connectTruTestS3Gatt(device: BluetoothDevice): Promise<Tru
     batteryPercent = null;
   }
 
+  let nusWrite: BluetoothRemoteGATTCharacteristic | null = null;
+  let nusNotify: BluetoothRemoteGATTCharacteristic | null = null;
+  if (nusDetected) {
+    try {
+      const nus = await server.getPrimaryService(BLE_UUID.nordicUartService);
+      nusWrite = await nus.getCharacteristic(BLE_UUID.nordicUartRx).catch(() => null);
+      nusNotify = await nus.getCharacteristic(BLE_UUID.nordicUartTx).catch(() => null);
+    } catch {
+      nusWrite = null;
+      nusNotify = null;
+    }
+  }
+
   return {
     server,
     serviceUuids,
@@ -540,6 +598,8 @@ export async function connectTruTestS3Gatt(device: BluetoothDevice): Promise<Tru
     featureError,
     batteryPercent,
     nusDetected,
+    nusWrite,
+    nusNotify,
   };
 }
 

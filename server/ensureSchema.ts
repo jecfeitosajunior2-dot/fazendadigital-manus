@@ -19,6 +19,20 @@ async function indexExists(pool: mysql.Pool, table: string, keyName: string): Pr
   return (rows as unknown[]).length > 0;
 }
 
+async function columnHasIndex(pool: mysql.Pool, table: string, column: string): Promise<boolean> {
+  const [rows] = await pool.query(`SHOW INDEX FROM \`${table}\` WHERE Column_name = ?`, [column]);
+  return (rows as unknown[]).length > 0;
+}
+
+async function foreignKeyExists(pool: mysql.Pool, table: string, constraintName: string): Promise<boolean> {
+  const [rows] = await pool.query(
+    `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+    [table, constraintName],
+  );
+  return (rows as unknown[]).length > 0;
+}
+
 /**
  * Rastreio de cancelamento de venda: vendaId + status da baixa,
  * no máximo uma baixa ATIVA por animal (índice funcional MySQL 8.4).
@@ -918,6 +932,71 @@ export async function ensureSchema() {
         INDEX \`venda_documentos_user_idx\` (\`user_id\`)
       )
     `);
+
+    if (await tableExists(pool, "compras")) {
+      await ensureColumn(pool, "compras", "fazenda_id", "int");
+      await ensureColumn(pool, "compras", "fornecedor_id", "int");
+      await ensureColumn(pool, "compras", "referencia", "varchar(120)");
+      await ensureColumn(pool, "compras", "forma_precificacao", "enum('kg','cabeca')");
+      await ensureColumn(pool, "compras", "preco_unitario", "decimal(12,2)");
+      await ensureColumn(pool, "compras", "valor_animais", "decimal(12,2)");
+      await ensureColumn(pool, "compras", "frete", "decimal(12,2)");
+      await ensureColumn(pool, "compras", "outros_custos", "decimal(12,2)");
+      await ensureColumn(pool, "compras", "custo_total", "decimal(12,2)");
+      await ensureColumn(pool, "compras", "peso_total", "decimal(10,2)");
+      await ensureColumn(pool, "compras", "lote_destino_id", "int");
+      await ensureColumn(pool, "compras", "pasto_destino_id", "int");
+      await ensureColumn(
+        pool,
+        "compras",
+        "modo_identificacao",
+        "enum('nao_identificados','individuais')",
+      );
+      await ensureColumn(pool, "compras", "updated_at", "timestamp NULL");
+
+      if (!(await columnHasIndex(pool, "compras", "user_id"))) {
+        await pool.query("CREATE INDEX `compras_user_idx` ON `compras` (`user_id`)");
+        console.log("[schema] Índice adicionado: compras.compras_user_idx");
+      }
+      if (!(await indexExists(pool, "compras", "compras_fazenda_idx"))) {
+        await pool.query("CREATE INDEX `compras_fazenda_idx` ON `compras` (`fazenda_id`)");
+        console.log("[schema] Índice adicionado: compras.compras_fazenda_idx");
+      }
+      if (!(await indexExists(pool, "compras", "compras_fornecedor_idx"))) {
+        await pool.query("CREATE INDEX `compras_fornecedor_idx` ON `compras` (`fornecedor_id`)");
+        console.log("[schema] Índice adicionado: compras.compras_fornecedor_idx");
+      }
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`compra_grupos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`compra_id\` int NOT NULL,
+        \`categoria\` varchar(50) NOT NULL,
+        \`sexo\` enum('macho','femea') NOT NULL,
+        \`quantidade\` int NOT NULL,
+        \`peso_total\` decimal(10,2),
+        \`created_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(\`id\`),
+        INDEX \`compra_grupos_compra_idx\` (\`compra_id\`),
+        INDEX \`compra_grupos_user_idx\` (\`user_id\`)
+      )
+    `);
+    if (
+      (await tableExists(pool, "compra_grupos")) &&
+      (await tableExists(pool, "compras")) &&
+      !(await foreignKeyExists(pool, "compra_grupos", "compra_grupos_compra_fk"))
+    ) {
+      await pool.query(`
+        ALTER TABLE \`compra_grupos\`
+          ADD CONSTRAINT \`compra_grupos_compra_fk\`
+          FOREIGN KEY (\`compra_id\`) REFERENCES \`compras\` (\`id\`)
+          ON DELETE RESTRICT
+          ON UPDATE RESTRICT
+      `);
+      console.log("[schema] FK adicionada: compra_grupos.compra_grupos_compra_fk");
+    }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

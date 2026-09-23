@@ -1,6 +1,7 @@
 /** Rotas de Compra e Venda. Compradores não entram no menu lateral. */
 export const COMPRA_VENDA_VISAO_GERAL_PATH = "/compra-venda/visao-geral";
 export const COMPRA_VENDA_COMPRAS_PATH = "/compra-venda/compras";
+export const COMPRA_VENDA_COMPRA_NOVA_PATH = "/compra-venda/compras/nova";
 export const COMPRA_VENDA_VENDA_NOVA_PATH = "/compra-venda/vendas/nova";
 export const COMPRA_VENDA_VENDAS_PATH = "/compra-venda/vendas";
 export const COMPRA_VENDA_COMPRADORES_PATH = "/compra-venda/vendas/compradores";

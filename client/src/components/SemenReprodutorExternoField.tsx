@@ -28,6 +28,11 @@ type SemenReprodutorExternoFieldProps = {
   label?: string;
   /** Texto cinza abaixo do campo. Nova entrada omite. */
   showHint?: boolean;
+  /** Substitui o hint padrão (ex.: curral só com estoque). */
+  hint?: string;
+  emptyNoOptionsMessage?: string;
+  emptyNoMatchMessage?: string;
+  loadingLabel?: string;
 };
 
 export function SemenReprodutorExternoField({
@@ -44,6 +49,10 @@ export function SemenReprodutorExternoField({
   labelClassName,
   label = "Reprodutor / Sêmen",
   showHint = true,
+  hint,
+  emptyNoOptionsMessage,
+  emptyNoMatchMessage,
+  loadingLabel,
 }: SemenReprodutorExternoFieldProps) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(
@@ -59,10 +68,21 @@ export function SemenReprodutorExternoField({
     [options, value],
   );
 
-  const emptyDropdownMessage = useMemo(
-    () => semenReprodutorExternoCatalogoDropdownEmptyMessage(options, value, Boolean(loading)),
-    [options, value, loading],
-  );
+  const emptyDropdownMessage = useMemo(() => {
+    if (loading) return loadingLabel ?? semenReprodutorExternoCatalogoDropdownEmptyMessage(options, value, true);
+    const ativos = options.filter(i => i.ativo);
+    if (ativos.length === 0 && emptyNoOptionsMessage) return emptyNoOptionsMessage;
+    if (value.trim() && sugestoes.length === 0 && emptyNoMatchMessage) return emptyNoMatchMessage;
+    return semenReprodutorExternoCatalogoDropdownEmptyMessage(options, value, false);
+  }, [
+    emptyNoMatchMessage,
+    emptyNoOptionsMessage,
+    loading,
+    loadingLabel,
+    options,
+    sugestoes.length,
+    value,
+  ]);
 
   const showCadastrarAcao = Boolean(onCadastrarNovo && (showCadastrarNovo || cadastrarNovoLabel));
   const cadastrarLabel =
@@ -211,7 +231,11 @@ export function SemenReprodutorExternoField({
           )
         : null}
       {loading ? (
-        <p className="text-[11px] text-gray-500 mt-1">Consultando cadastro de sêmen…</p>
+        <p className="text-[11px] text-gray-500 mt-1">
+          {loadingLabel ?? "Consultando cadastro de sêmen…"}
+        </p>
+      ) : showHint && hint ? (
+        <p className="text-[11px] text-gray-400 mt-1">{hint}</p>
       ) : showHint && showCadastrarNovo ? (
         <p className="text-[11px] text-gray-400 mt-1">
           Clique para ver os já cadastrados ou cadastre um novo sem sair desta tela.

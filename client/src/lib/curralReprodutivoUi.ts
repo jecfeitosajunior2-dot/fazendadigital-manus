@@ -1,3 +1,9 @@
+import {
+  tryBuildSemenReprodutorKeyExterno,
+  type SemenReprodutorExternoDisponivel,
+} from "@shared/semenEstoque";
+import type { SemenReprodutorExternoCatalogoItem } from "@shared/semenReprodutorExternoCatalogo";
+
 /** Resultados principais do DG no curral (toque rápido). */
 export const DG_RESULTADOS_CURRAL = ["Prenha", "Vazia"] as const;
 
@@ -204,4 +210,47 @@ export function getCurralReproMultiRegistroPendingError(tipo: string): string {
     return "Há dados não registrados. Registre a cobertura ou limpe o formulário.";
   }
   return "Há dados não registrados. Registre o manejo ou limpe o formulário.";
+}
+
+export const MSG_CURRAL_SEMEN_EXTERNO_SO_ESTOQUE =
+  "Selecione um sêmen com dose em estoque.";
+export const MSG_CURRAL_SEMEN_EXTERNO_SEM_ESTOQUE =
+  "Nenhum sêmen com estoque nesta fazenda. Cadastre a entrada em Reprodução → Controle de Sêmen.";
+export const MSG_CURRAL_SEMEN_EXTERNO_BUSCA_VAZIA =
+  "Nenhum sêmen com estoque corresponde à busca.";
+export const MSG_CURRAL_PARTIDA_SEM_CUSTO =
+  "Esta partida está sem custo. Ajuste em Controle de Sêmen → Estoque.";
+
+export function mapSemenDisponivelParaOpcaoCurral(
+  item: SemenReprodutorExternoDisponivel,
+): SemenReprodutorExternoCatalogoItem {
+  return {
+    id: null,
+    reprodutorKey: item.reprodutorKey,
+    reprodutorTexto: item.reprodutorTexto,
+    centralPadrao: item.saldoDoses === 1 ? "1 dose" : `${item.saldoDoses} doses`,
+    observacoes: null,
+    ativo: true,
+    origem: "historico",
+    ultimoUso: null,
+  };
+}
+
+export function reprodutorExternoCurralEstaEmEstoque(
+  texto: string,
+  disponiveis: readonly SemenReprodutorExternoDisponivel[],
+): boolean {
+  const key = tryBuildSemenReprodutorKeyExterno(texto);
+  if (!key) return false;
+  return disponiveis.some(d => d.reprodutorKey === key && d.saldoDoses > 0);
+}
+
+/** IA externa no curral: partida obrigatória. Interna: só se o touro tiver estoque. */
+export function partidaSemenCurralObrigatoria(opts: {
+  isInseminacao: boolean;
+  origemExterna: boolean;
+  temPartidasEstoque: boolean;
+}): boolean {
+  if (!opts.isInseminacao) return false;
+  return opts.origemExterna || opts.temPartidasEstoque;
 }

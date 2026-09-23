@@ -223,7 +223,7 @@ export function aplicarPadraoEmLinhas<T>(
   return itens.map(item => (usaExcecao(item) ? item : aplicar(item)));
 }
 
-/** Mesma ordem crescente da listagem / Rebanho → Animais. */
+/** Listagem / PDF — brinco crescente. A grade da Nova Venda usa a ordem da lida. */
 export function ordenarItensVendaPorBrinco<T extends { brinco?: string | null; animalId: number }>(
   itens: readonly T[],
 ): T[] {
@@ -232,14 +232,50 @@ export function ordenarItensVendaPorBrinco<T extends { brinco?: string | null; a
   );
 }
 
+/** Nova Venda: fila da lida. Quem entra por último fica embaixo. */
+export function anexarItensVendaNaOrdemDaLida<T extends { animalId: number }>(
+  atuais: readonly T[],
+  novos: readonly T[],
+): T[] {
+  const jaTem = new Set(atuais.map(i => i.animalId));
+  const unique = novos.filter(n => !jaTem.has(n.animalId));
+  return unique.length ? [...atuais, ...unique] : [...atuais];
+}
+
+function pesoEmbarqueVazio(peso?: string | null): boolean {
+  return !String(peso ?? "").trim();
+}
+
 export function escolherAlvoPesoBalanca(
   itens: ReadonlyArray<{ animalId: number; pesoVenda?: string | null }>,
   preferidoId?: number | null,
 ): number | null {
-  if (preferidoId && itens.some(i => i.animalId === preferidoId)) return preferidoId;
-  const vazio = itens.find(i => !String(i.pesoVenda ?? "").trim());
+  const vazio = itens.find(i => pesoEmbarqueVazio(i.pesoVenda));
+  const preferido = preferidoId
+    ? itens.find(i => i.animalId === preferidoId)
+    : undefined;
+  if (preferido && pesoEmbarqueVazio(preferido.pesoVenda)) return preferido.animalId;
   if (vazio) return vazio.animalId;
+  if (preferido) return preferido.animalId;
   return itens.length ? itens[itens.length - 1]!.animalId : null;
+}
+
+/** Visor da S3 para o animal atual. Não herda o peso travado do animal anterior. */
+export function pesoBalancaVendaNaIdentificacao(opts: {
+  kg: number;
+  alvoId: number;
+  ultimoBalanca?: { animalId: number; kg: number } | null;
+}): number | null {
+  const peso = parsePesoVenda(opts.kg);
+  if (peso == null) return null;
+  if (
+    opts.ultimoBalanca &&
+    opts.ultimoBalanca.animalId !== opts.alvoId &&
+    Math.abs(peso - opts.ultimoBalanca.kg) < 0.05
+  ) {
+    return null;
+  }
+  return peso;
 }
 
 export type EstadoAnimalAtualVenda = {

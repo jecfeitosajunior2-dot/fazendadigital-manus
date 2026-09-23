@@ -36,25 +36,37 @@ describe("truTestBle — identificação", () => {
 });
 
 describe("parseBleWeightMeasurement", () => {
-  it("interpreta pacote SI de 3 bytes 00 50 C3 como 250,0 kg", () => {
-    const parsed = parseBleWeightMeasurement(view([0x00, 0x50, 0xc3]));
+  it("interpreta 00 B0 04 como 60 kg (S3 de gado, não o 0,005 do SIG)", () => {
+    const parsed = parseBleWeightMeasurement(view([0x00, 0xb0, 0x04]));
     expect(parsed.valid).toBe(true);
     expect(parsed.byteLength).toBe(3);
-    expect(parsed.hex).toBe("00 50 C3");
-    expect(parsed.dec).toBe("0 80 195");
+    expect(parsed.hex).toBe("00 B0 04");
     expect(parsed.flags?.imperial).toBe(false);
-    expect(parsed.rawWeight).toBe(50000);
+    expect(parsed.rawWeight).toBe(1200);
+    expect(parsed.unit).toBe("kg");
+    expect(parsed.weightKg).toBe(60);
+    expect(parsed.weightInSourceUnit).toBe(60);
+  });
+
+  it("interpreta pacote SI 00 88 13 como 250,0 kg", () => {
+    const parsed = parseBleWeightMeasurement(view([0x00, 0x88, 0x13]));
+    expect(parsed.valid).toBe(true);
+    expect(parsed.byteLength).toBe(3);
+    expect(parsed.hex).toBe("00 88 13");
+    expect(parsed.dec).toBe("0 136 19");
+    expect(parsed.flags?.imperial).toBe(false);
+    expect(parsed.rawWeight).toBe(5000);
     expect(parsed.unit).toBe("kg");
     expect(parsed.weightKg).toBe(250);
     expect(parsed.weightInSourceUnit).toBe(250);
   });
 
-  it("interpreta 00 30 C3 como 249,84 kg sem inventar COM", () => {
-    const parsed = parseBleWeightMeasurement(view([0x00, 0x30, 0xc3]));
+  it("interpreta 00 84 13 como 249,80 kg sem inventar COM", () => {
+    const parsed = parseBleWeightMeasurement(view([0x00, 0x84, 0x13]));
     expect(parsed.valid).toBe(true);
-    expect(parsed.hex).toBe("00 30 C3");
-    expect(parsed.rawWeight).toBe(49968);
-    expect(parsed.weightKg).toBeCloseTo(249.84, 5);
+    expect(parsed.hex).toBe("00 84 13");
+    expect(parsed.rawWeight).toBe(4996);
+    expect(parsed.weightKg).toBeCloseTo(249.8, 5);
   });
 
   it("não assume kg quando o flag é imperial", () => {
@@ -77,7 +89,7 @@ describe("parseBleWeightMeasurement", () => {
 
   it("não assume pacote de 3 bytes quando há timestamp", () => {
     const bytes = [
-      0x02, 0x50, 0xc3, 0xea, 0x07, 0x09, 0x10, 0x08, 0x20, 0x0f,
+      0x02, 0x88, 0x13, 0xea, 0x07, 0x09, 0x10, 0x08, 0x20, 0x0f,
     ];
     const parsed = parseBleWeightMeasurement(view(bytes));
     expect(parsed.valid).toBe(true);
@@ -96,7 +108,7 @@ describe("parseBleWeightMeasurement", () => {
 
   it("desloca user ID e BMI sem perder o peso", () => {
     const bytes = [
-      0x0c, 0x50, 0xc3, 0x07, 0x2c, 0x01, 0xac, 0x06,
+      0x0c, 0x88, 0x13, 0x07, 0x2c, 0x01, 0xac, 0x06,
     ];
     const parsed = parseBleWeightMeasurement(view(bytes));
     expect(parsed.valid).toBe(true);

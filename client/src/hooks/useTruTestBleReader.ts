@@ -10,6 +10,7 @@ import {
   isWebBluetoothAvailable,
   parseBleWeightMeasurement,
   requestTruTestS3Device,
+  requestWeightViaNusRw,
   startWeightMeasurementIndications,
   TruTestBleError,
 } from "@/lib/hardware/truTestBle";
@@ -30,10 +31,13 @@ export type UseTruTestBleReaderOptions = {
 type SharedBleSession = {
   device: BluetoothDevice | null;
   characteristic: BluetoothRemoteGATTCharacteristic | null;
+  nusWrite: BluetoothRemoteGATTCharacteristic | null;
+  nusNotify: BluetoothRemoteGATTCharacteristic | null;
   listener: EventListener | null;
   disconnectHandler: ((ev: Event) => void) | null;
   status: TruTestBleStatus;
   lastWeightKg: number | null;
+  lastWeightAt: number;
   error: string | null;
   lost: boolean;
   deviceName: string | null;
@@ -54,10 +58,13 @@ function getShared(): SharedBleSession {
     shared = {
       device: null,
       characteristic: null,
+      nusWrite: null,
+      nusNotify: null,
       listener: null,
       disconnectHandler: null,
       status: "idle",
       lastWeightKg: null,
+      lastWeightAt: 0,
       error: null,
       lost: false,
       deviceName: null,
@@ -98,6 +105,7 @@ function deliverBleWeight(kg: number) {
   const s = getShared();
   if (s.shuttingDown) return;
   s.lastWeightKg = kg;
+  s.lastWeightAt = Date.now();
   weightListeners.forEach(fn => {
     try {
       fn(kg);
@@ -142,6 +150,8 @@ export async function shutdownTruTestBleSharedSession(reason: string): Promise<v
     detachDisconnectHandler(s);
     await disconnectTruTestS3(s.device, s.characteristic, s.listener);
     s.characteristic = null;
+    s.nusWrite = null;
+    s.nusNotify = null;
     s.listener = null;
     s.lost = false;
     s.error = null;
@@ -152,6 +162,71 @@ export async function shutdownTruTestBleSharedSession(reason: string): Promise<v
   });
 
   return sharedShutdownPromise;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function acceptLiveKg(kg: number | null | undefined): number | null {
+  if (kg == null || !Number.isFinite(kg) || kg < 1) return null;
+  return kg;
+}
+
+/** Lê o visor atual da S3. A tela travada não reenvia 0x2A9D — pede {RW} no NUS. */
+export async function readCurrentTruTestBleWeightKg(): Promise<number | null> {
+  const s = getShared();
+  if (s.shuttingDown) return null;
+
+  if (s.characteristic) {
+    try {
+      const view = await s.characteristic.readValue();
+      const parsed = parseBleWeightMeasurement(view);
+      const kg = acceptLiveKg(parsed.valid ? parsed.weightKg : null);
+      if (kg != null) {
+        deliverBleWeight(kg);
+        return kg;
+      }
+    } catch {
+      /* 0x2A9D costuma ser só Indicate */
+    }
+  }
+
+  if (s.nusWrite && s.nusNotify) {
+    const before = s.lastWeightAt;
+    try {
+      const kg = acceptLiveKg(await requestWeightViaNusRw(s.nusWrite, s.nusNotify));
+      if (kg != null) {
+        deliverBleWeight(kg);
+        return kg;
+      }
+    } catch {
+      /* NUS pode recusar o write */
+    }
+    if (s.lastWeightAt > before) {
+      const fromNotify = acceptLiveKg(s.lastWeightKg);
+      if (fromNotify != null) return fromNotify;
+    }
+  }
+
+  if (s.characteristic) {
+    const before = s.lastWeightAt;
+    try {
+      await s.characteristic.stopNotifications();
+      await s.characteristic.startNotifications();
+    } catch {
+      return acceptLiveKg(s.lastWeightKg);
+    }
+    await sleepMs(450);
+    if (s.lastWeightAt > before) {
+      const bounced = acceptLiveKg(s.lastWeightKg);
+      if (bounced != null) return bounced;
+    }
+  }
+
+  return null;
 }
 
 export function getTruTestBleSharedSnapshot() {
@@ -186,6 +261,8 @@ export function useTruTestBleReader(options: UseTruTestBleReaderOptions = {}) {
   const handleUnexpectedDisconnect = useCallback(() => {
     const s = getShared();
     s.characteristic = null;
+    s.nusWrite = null;
+    s.nusNotify = null;
     s.listener = null;
     s.lost = true;
     s.error = "Conexão Bluetooth com a Tru-Test S3 foi perdida.";
@@ -214,7 +291,8 @@ export function useTruTestBleReader(options: UseTruTestBleReaderOptions = {}) {
       if (discovery.feature) {
         log(`2A9E HEX=${discovery.feature.hex} res=${discovery.feature.weightResolutionLabel}`);
       }
-      if (discovery.nusDetected) log("NUS detected (unused)");
+      if (discovery.nusWrite && discovery.nusNotify) log("NUS ready for {RW}");
+      else if (discovery.nusDetected) log("NUS detected without RX/TX");
 
       const listener: EventListener = ev => {
         const target = ev.target as BluetoothRemoteGATTCharacteristic | null;
@@ -229,10 +307,20 @@ export function useTruTestBleReader(options: UseTruTestBleReaderOptions = {}) {
 
       await startWeightMeasurementIndications(discovery.measurement!, listener);
       s.characteristic = discovery.measurement;
+      s.nusWrite = discovery.nusWrite;
+      s.nusNotify = discovery.nusNotify;
       s.listener = listener;
       s.lost = false;
       s.error = null;
+      if (discovery.nusNotify) {
+        try {
+          await discovery.nusNotify.startNotifications();
+        } catch {
+          /* já ativa ou sem notify */
+        }
+      }
       log("notifications active");
+      void readCurrentTruTestBleWeightKg();
       bindPageHideHandler();
       syncStatus("listening");
       if (mountedRef.current) {

@@ -25,6 +25,8 @@ describe("parseScaleWeightKgFromText", () => {
 
   it("aceita SCP Tru-Test S3 [425.5] e ignora instável [U425.5]", () => {
     expect(parseScaleWeightKgFromText("[425.5]")).toBe(425.5);
+    expect(parseScaleWeightKgFromText("[75]")).toBe(75);
+    expect(parseScaleWeightKgFromText("[75.0]")).toBe(75);
     expect(parseScaleWeightKgFromText("[U425.5]")).toBe(null);
     expect(parseScaleWeightKgFromText("[U102.5]")).toBe(null);
   });

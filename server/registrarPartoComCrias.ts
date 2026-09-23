@@ -15,6 +15,7 @@ import {
 } from "../shared/reproElegibilidade";
 import { isCategoriaValidaParaSexo } from "../shared/animal-types";
 import { db } from "./db";
+import { dataCivilParaColunaDate } from "../shared/dataCivil";
 import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
 import { assertManejoPermitidoNaData } from "./animalBaixa";
 import {
@@ -396,7 +397,7 @@ export async function executeRegistrarPartoComCrias(
             userId,
             animalId: criaAnimalId,
             peso,
-            data: new Date(dataISO),
+            data: dataCivilParaColunaDate(dataISO),
             observacoes: "Peso ao nascimento",
           });
           pesagemId = Number((pesagemInsert as any)[0]?.insertId ?? (pesagemInsert as any).insertId);

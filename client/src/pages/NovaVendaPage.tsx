@@ -19,8 +19,8 @@ import {
 } from "@/components/FormFields";
 import { FAZENDA_SELECT_PLACEHOLDER } from "@/components/ManejoPontualFormLayout";
 import { useScaleReader } from "@/hooks/useScaleReader";
-import { useTruTestBleReader } from "@/hooks/useTruTestBleReader";
-import { formatPesoKgParaCampo } from "@/lib/hardware/scaleProtocol";
+import { readCurrentTruTestBleWeightKg, useTruTestBleReader } from "@/hooks/useTruTestBleReader";
+import { formatPesoKgVisorSessao } from "@/lib/curralSessaoLeituraRfid";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   COMPRA_VENDA_VENDAS_PATH,
@@ -44,16 +44,17 @@ import {
   MSG_VENDA_RFID_SEM_FAZENDA,
   MSG_VENDA_SEM_ITENS,
   MSG_VENDA_RENDIMENTO_INVALIDO,
-  ordenarItensVendaPorBrinco,
+  anexarItensVendaNaOrdemDaLida,
   parsePrecoVenda,
   parsePesoVenda,
   parseRendimentoCarcaca,
+  pesoBalancaVendaNaIdentificacao,
   pesoEmbarqueObrigatorio,
   resumirItensVenda,
   type FormaPrecificacaoVenda,
   type OrigemPesoEmbarque,
 } from "@shared/vendaComercial";
-import { formatarMetricaPeso, formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
+import { formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
 import { trpc } from "@/lib/trpc";
 
@@ -130,6 +131,7 @@ export default function NovaVendaPage() {
   const focoRef = useRef(focoPesoAnimalId);
   focoRef.current = focoPesoAnimalId;
   const ultimoFocoAplicadoRef = useRef<number | null>(null);
+  const pesoS3AnteriorRef = useRef<{ animalId: number; kg: number } | null>(null);
 
   useEffect(() => {
     if (!fazendaId && fazendaInicial) setFazendaId(fazendaInicial);
@@ -151,14 +153,12 @@ export default function NovaVendaPage() {
         setRendimento(draft.rendimento);
         setObservacoes(draft.observacoes);
         setItens(
-          ordenarItensVendaPorBrinco(
-            (draft.itens ?? []).map(item => ({
-              ...item,
-              pesoOrigem: item.pesoOrigem === "balanca" ? "balanca" : "manual",
-              rendimento: item.rendimento ?? "",
-              rendimentoManual: Boolean(item.rendimentoManual),
-            })),
-          ),
+          (draft.itens ?? []).map(item => ({
+            ...item,
+            pesoOrigem: item.pesoOrigem === "balanca" ? "balanca" : "manual",
+            rendimento: item.rendimento ?? "",
+            rendimentoManual: Boolean(item.rendimentoManual),
+          })),
         );
       } catch {
         /* rascunho inválido */
@@ -269,9 +269,9 @@ export default function NovaVendaPage() {
   const anexarItens = (novos: ItemDraft[]) => {
     if (!novos.length) return;
     setItens(prev => {
-      const jaTem = new Set(prev.map(i => i.animalId));
-      const unique = novos.filter(n => !jaTem.has(n.animalId));
-      return unique.length ? ordenarItensVendaPorBrinco([...prev, ...unique]) : prev;
+      const next = anexarItensVendaNaOrdemDaLida(prev, novos);
+      itensRef.current = next;
+      return next;
     });
   };
 
@@ -311,7 +311,10 @@ export default function NovaVendaPage() {
     if (jaIncluidos.length) toast.error(MSG_VENDA_ANIMAL_DUPLICADO);
     anexarItens(aceitos.map(montarDraft));
     const ultimo = aceitos[aceitos.length - 1];
-    if (ultimo) setFocoPesoAnimalId(ultimo.id);
+    if (ultimo) {
+      focoRef.current = ultimo.id;
+      setFocoPesoAnimalId(ultimo.id);
+    }
   };
 
   useEffect(() => {
@@ -325,19 +328,31 @@ export default function NovaVendaPage() {
   }, [focoPesoAnimalId, itens]);
 
   const aplicarPesoBalanca = useCallback((kg: number) => {
-    const peso = parsePesoVenda(kg);
-    if (peso == null) return;
     const alvo = escolherAlvoPesoBalanca(itensRef.current, focoRef.current);
     if (alvo == null) return;
+    const peso = pesoBalancaVendaNaIdentificacao({
+      kg,
+      alvoId: alvo,
+      ultimoBalanca: pesoS3AnteriorRef.current,
+    });
+    if (peso == null) return;
+    pesoS3AnteriorRef.current = { animalId: alvo, kg: peso };
     setItens(prev =>
       prev.map(row =>
         row.animalId === alvo
-          ? { ...row, pesoVenda: formatPesoKgParaCampo(peso), pesoOrigem: "balanca" }
+          ? { ...row, pesoVenda: formatPesoKgVisorSessao(peso), pesoOrigem: "balanca" }
           : row,
       ),
     );
     setFocoPesoAnimalId(alvo);
   }, []);
+
+  const pedirPesoVisorBalanca = useCallback(() => {
+    void readCurrentTruTestBleWeightKg().then(lido => {
+      if (lido == null) return;
+      aplicarPesoBalanca(lido);
+    });
+  }, [aplicarPesoBalanca]);
 
   const bleSession = useTruTestBleReader({ onWeight: aplicarPesoBalanca });
   const scaleSession = useScaleReader({
@@ -350,6 +365,13 @@ export default function NovaVendaPage() {
     itens,
     balancaConectada,
   });
+
+  useEffect(() => {
+    if (!animalAtual?.aguardandoPesoBalanca) return;
+    pedirPesoVisorBalanca();
+    const timer = window.setInterval(() => pedirPesoVisorBalanca(), 800);
+    return () => window.clearInterval(timer);
+  }, [animalAtual?.aguardandoPesoBalanca, animalAtual?.animalId, pedirPesoVisorBalanca]);
 
   const incluirPorRfid = async (rfidBruto: string) => {
     const rfid = normalizeRfidKey(rfidBruto);
@@ -384,7 +406,9 @@ export default function NovaVendaPage() {
     });
     anexarItens([draft]);
     setRfidFeedback(null);
+    focoRef.current = draft.animalId;
     setFocoPesoAnimalId(draft.animalId);
+    pedirPesoVisorBalanca();
   };
 
   const labelPrecoPadrao =
@@ -625,7 +649,7 @@ export default function NovaVendaPage() {
                         <p className="text-gray-500">Aguardando peso...</p>
                       ) : animalAtual.pesoKg != null ? (
                         <p className="text-teal-700">
-                          ✓ Peso do embarque: {formatPesoKgParaCampo(animalAtual.pesoKg)} kg
+                          ✓ Peso do embarque: {formatPesoKgVisorSessao(animalAtual.pesoKg)} kg
                         </p>
                       ) : null}
                     </div>
@@ -801,7 +825,7 @@ export default function NovaVendaPage() {
             <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
               <p className="text-[10px] uppercase text-gray-500">Peso do embarque</p>
               <p className="text-[18px] font-bold text-gray-800">
-                {resumo.pesoTotal != null ? formatarMetricaPeso({ kind: "known", value: resumo.pesoTotal }) : "—"}
+                {resumo.pesoTotal != null ? `${formatPesoKgVisorSessao(resumo.pesoTotal)} kg` : "—"}
               </p>
             </div>
             <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">

@@ -376,7 +376,7 @@ export const pesagens = mysqlTable("pesagens", {
   userId: int("userId").notNull(),
   animalId: int("animalId").notNull(),
   peso: decimal("peso", { precision: 8, scale: 2 }).notNull(),
-  data: date("data").notNull(),
+  data: date("data", { mode: "string" }).notNull(),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
@@ -543,7 +543,45 @@ export const compras = mysqlTable("compras", {
   observacoes: text("observacoes"),
   status: mysqlEnum("status", ["pendente", "concluido", "cancelado"]).default("pendente"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+  /** Novos: nullable para preservar compras agregadas legadas. */
+  fazendaId: int("fazenda_id"),
+  fornecedorId: int("fornecedor_id"),
+  referencia: varchar("referencia", { length: 120 }),
+  formaPrecificacao: mysqlEnum("forma_precificacao", ["kg", "cabeca"]),
+  precoUnitario: decimal("preco_unitario", { precision: 12, scale: 2 }),
+  valorAnimais: decimal("valor_animais", { precision: 12, scale: 2 }),
+  frete: decimal("frete", { precision: 12, scale: 2 }),
+  outrosCustos: decimal("outros_custos", { precision: 12, scale: 2 }),
+  custoTotal: decimal("custo_total", { precision: 12, scale: 2 }),
+  pesoTotal: decimal("peso_total", { precision: 10, scale: 2 }),
+  loteDestinoId: int("lote_destino_id"),
+  pastoDestinoId: int("pasto_destino_id"),
+  modoIdentificacao: mysqlEnum("modo_identificacao", ["nao_identificados", "individuais"]),
+  updatedAt: timestamp("updated_at"),
+}, table => ({
+  userIdx: index("compras_user_idx").on(table.userId),
+  fazendaIdx: index("compras_fazenda_idx").on(table.fazendaId),
+  fornecedorIdx: index("compras_fornecedor_idx").on(table.fornecedorId),
+}));
+
+/** Um grupo comercial da aquisição (não é animal individual). */
+export const compraGrupos = mysqlTable(
+  "compra_grupos",
+  {
+    id: int("id").primaryKey().autoincrement(),
+    userId: int("user_id").notNull(),
+    compraId: int("compra_id").notNull(),
+    categoria: varchar("categoria", { length: 50 }).notNull(),
+    sexo: mysqlEnum("sexo", ["macho", "femea"]).notNull(),
+    quantidade: int("quantidade").notNull(),
+    pesoTotal: decimal("peso_total", { precision: 10, scale: 2 }),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  table => ({
+    compraIdx: index("compra_grupos_compra_idx").on(table.compraId),
+    userIdx: index("compra_grupos_user_idx").on(table.userId),
+  }),
+);
 
 export const vendas = mysqlTable("vendas", {
   id: int("id").primaryKey().autoincrement(),

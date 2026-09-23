@@ -7,7 +7,7 @@ import {
   users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
   benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
-  compras, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
+  compras, compraGrupos, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
 import { eq, desc, and, sql, isNull, isNotNull, inArray, gte, lte, or, like, ne } from "drizzle-orm";
@@ -121,6 +121,7 @@ import {
 } from "./animalBaixa";
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
 import { confirmarVendaComercial } from "./confirmarVenda";
+import { confirmarCompraNaoIdentificados } from "./confirmarCompra";
 import { cancelarVendaComercial } from "./cancelarVenda";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
 import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
@@ -140,6 +141,7 @@ import {
   MSG_DESCRICAO_SERVICO_OBRIGATORIA,
   normalizeDescricaoServico,
 } from "@shared/manutencaoDescricao";
+import { dataCivilParaColunaDate } from "@shared/dataCivil";
 import {
   mensagemExclusaoLoteBloqueada,
   mensagemInativacaoLoteSucesso,
@@ -7366,11 +7368,12 @@ const pesagensRouter = router({
       await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
 
       try {
-        const { data, ...rest } = input;
         const result = await db.insert(pesagens).values({
           userId: ctx.user.id,
-          ...rest,
-          data: new Date(data),
+          animalId: input.animalId,
+          peso: input.peso,
+          observacoes: input.observacoes,
+          data: dataCivilParaColunaDate(dataISO),
         });
         await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
         return { success: true, id: (result as any)[0]?.insertId };
@@ -9557,10 +9560,38 @@ const comprasRouter = router({
       await db.insert(compras).values({ userId: ctx.user.id, ...input });
       return { success: true };
     }),
+  confirmarNaoIdentificados: protectedProcedure
+    .input(z.object({
+      fazendaId: z.number(),
+      data: z.string(),
+      fornecedorId: z.number(),
+      referencia: z.string().optional(),
+      formaPrecificacao: z.enum(["kg", "cabeca"]),
+      precoUnitario: z.number(),
+      frete: z.number().nullable().optional(),
+      outrosCustos: z.number().nullable().optional(),
+      loteDestinoId: z.number().nullable().optional(),
+      pastoDestinoId: z.number().nullable().optional(),
+      observacoes: z.string().optional(),
+      modoIdentificacao: z.literal("nao_identificados"),
+      grupos: z.array(z.object({
+        categoria: z.string(),
+        sexo: z.string(),
+        quantidade: z.number(),
+        pesoTotal: z.number().nullable().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => confirmarCompraNaoIdentificados(ctx.user.id, input)),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.delete(compras).where(and(eq(compras.id, input.id), eq(compras.userId, ctx.user.id)));
+      await db.transaction(async tx => {
+        await tx.delete(compraGrupos).where(and(
+          eq(compraGrupos.compraId, input.id),
+          eq(compraGrupos.userId, ctx.user.id),
+        ));
+        await tx.delete(compras).where(and(eq(compras.id, input.id), eq(compras.userId, ctx.user.id)));
+      });
       return { success: true };
     }),
 });
