@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MSG_COMPRA_FORNECEDOR_INVALIDO, MSG_COMPRA_LOTE_OUTRA_FAZENDA, MSG_COMPRA_MODO_INDIVIDUAL, MSG_COMPRA_PASTO_OUTRA_FAZENDA } from "../shared/compraComercial";
+import { MSG_COMPRA_FORNECEDOR_INVALIDO, MSG_COMPRA_MODO_INDIVIDUAL } from "../shared/compraComercial";
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -72,32 +72,27 @@ describe("confirmarCompraNaoIdentificados", () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
-  it("20. lote/pasto de outra fazenda bloqueado", async () => {
+  it("20. confirma sem lote/pasto e ignora destino enviado", async () => {
     const ops: Op[] = [];
     makeTransaction(
       [
         [{ id: 1 }],
         [{ id: 9, nome: "Agro Central", tipo: "fornecedor", ativo: true }],
-        [{ id: 3, fazendaId: 1, userId: 1 }],
-        [{ id: 80, userId: 1, fazendaId: 2, pastoAtualId: null }],
       ],
       ops,
     );
-    await expect(
-      confirmarCompraNaoIdentificados(1, { ...inputBase, loteDestinoId: 80 }),
-    ).rejects.toMatchObject({ message: MSG_COMPRA_LOTE_OUTRA_FAZENDA });
-
-    makeTransaction(
-      [
-        [{ id: 1 }],
-        [{ id: 9, nome: "Agro Central", tipo: "fornecedor", ativo: true }],
-        [{ id: 3, fazendaId: 1, userId: 1 }],
-      ],
-      [],
-    );
-    await expect(
-      confirmarCompraNaoIdentificados(1, { ...inputBase, pastoDestinoId: 99 }),
-    ).rejects.toMatchObject({ message: MSG_COMPRA_PASTO_OUTRA_FAZENDA });
+    const result = await confirmarCompraNaoIdentificados(1, {
+      ...inputBase,
+      loteDestinoId: 80,
+      pastoDestinoId: 99,
+    });
+    expect(result.success).toBe(true);
+    const compra = ops.find(op => op.kind === "insert")?.values as {
+      loteDestinoId?: number | null;
+      pastoDestinoId?: number | null;
+    };
+    expect(compra.loteDestinoId).toBeNull();
+    expect(compra.pastoDestinoId).toBeNull();
   });
 
   it("21-23. não cria animal, pesagem nem movimentação", async () => {

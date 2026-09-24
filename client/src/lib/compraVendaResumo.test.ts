@@ -50,6 +50,8 @@ describe("compraVendaResumo", () => {
   it("não arredonda 7,5 kg para 8 kg", () => {
     expect(formatarMetricaPeso({ kind: "known", value: 7.5 })).toBe("7,5 kg");
     expect(formatarMetricaPeso({ kind: "known", value: 691 })).toBe("691 kg");
+    expect(formatarMetricaPeso({ kind: "known", value: 8400 })).toBe("8.400 kg");
+    expect(formatarMetricaPeso({ kind: "known", value: 425.5 })).toBe("425,5 kg");
   });
 
   it("soma valor e quantidade reais do período", () => {
@@ -87,5 +89,20 @@ describe("compraVendaResumo", () => {
       "comprador",
     );
     expect(resumo.peso).toEqual({ kind: "known", value: 691 });
+  });
+
+  it("compra cancelada permanece fora dos totais efetivos", () => {
+    const resumo = resumirOperacoes(
+      [
+        { id: 9001, data: "2026-09-24", fornecedor: "Ativa", quantidadeAnimais: 10, valorTotal: "1000", pesoTotal: 200, status: "concluido" },
+        { id: 9002, data: "2026-09-24", fornecedor: "Cancelada", quantidadeAnimais: 40, valorTotal: "108000", pesoTotal: 8400, status: "cancelado" },
+      ],
+      { de: "2026-09-01", ate: "2026-09-30" },
+      "fornecedor",
+    );
+    expect(resumo.valor).toEqual({ kind: "known", value: 1000 });
+    expect(resumo.animais).toEqual({ kind: "known", value: 10 });
+    expect(resumo.peso).toEqual({ kind: "known", value: 200 });
+    expect(resumo.recentes.map(r => r.id)).toEqual([9001]);
   });
 });

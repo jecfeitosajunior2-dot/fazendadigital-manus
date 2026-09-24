@@ -56,8 +56,6 @@ type CompraDraft = {
   outros: string;
   observacoes: string;
   modo: ModoIdentificacaoCompra;
-  loteId: string;
-  pastoId: string;
   grupos: GrupoDraft[];
 };
 
@@ -69,16 +67,6 @@ function novoGrupo(sexo: "macho" | "femea" = "macho"): GrupoDraft {
     quantidade: "",
     pesoTotal: "",
   };
-}
-
-function loteDaFazenda(
-  lote: { fazendaId?: number | null; pastoAtualId?: number | null },
-  pastoIdsFazenda: Set<number>,
-  fazendaId: number,
-) {
-  if (lote.fazendaId != null && Number(lote.fazendaId) === fazendaId) return true;
-  if (lote.pastoAtualId != null && pastoIdsFazenda.has(Number(lote.pastoAtualId))) return true;
-  return false;
 }
 
 function formatMoney(n: number) {
@@ -107,8 +95,6 @@ export default function NovaCompraPage() {
   const [outros, setOutros] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [modo, setModo] = useState<ModoIdentificacaoCompra>("nao_identificados");
-  const [loteId, setLoteId] = useState("");
-  const [pastoId, setPastoId] = useState("");
   const [grupos, setGrupos] = useState<GrupoDraft[]>([novoGrupo()]);
 
   useEffect(() => {
@@ -132,8 +118,6 @@ export default function NovaCompraPage() {
         setOutros(draft.outros);
         setObservacoes(draft.observacoes);
         setModo(draft.modo === "individuais" ? "individuais" : "nao_identificados");
-        setLoteId(draft.loteId);
-        setPastoId(draft.pastoId);
         setGrupos(draft.grupos?.length ? draft.grupos : [novoGrupo()]);
       } catch {
         /* rascunho inválido */
@@ -149,28 +133,12 @@ export default function NovaCompraPage() {
   }, []);
 
   const fazendaNum = fazendaId ? Number(fazendaId) : 0;
-  const { data: pastos = [] } = trpc.pastos.listByFazenda.useQuery(
-    { fazendaId: fazendaNum },
-    { enabled: fazendaNum > 0 },
-  );
-  const { data: lotes = [] } = trpc.lotes.list.useQuery(
-    { somenteAtivos: true },
-    { enabled: fazendaNum > 0 },
-  );
-
-  const pastoIdsFazenda = useMemo(() => new Set(pastos.map(p => p.id)), [pastos]);
-  const lotesFazenda = useMemo(
-    () => lotes.filter(l => loteDaFazenda(l, pastoIdsFazenda, fazendaNum)),
-    [lotes, pastoIdsFazenda, fazendaNum],
-  );
 
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome ?? "";
 
   const mudarFazenda = (id: string) => {
     setFazendaId(id);
-    setLoteId("");
-    setPastoId("");
     const n = Number(id);
     if (n > 0) persistRebanhoFazendaId(id);
   };
@@ -180,7 +148,7 @@ export default function NovaCompraPage() {
       DRAFT_KEY,
       JSON.stringify({
         fazendaId, data, fornecedorId, referencia, forma, preco, frete, outros,
-        observacoes, modo, loteId, pastoId, grupos,
+        observacoes, modo, grupos,
       } satisfies CompraDraft),
     );
     const retorno = COMPRA_VENDA_COMPRA_NOVA_PATH;
@@ -233,6 +201,9 @@ export default function NovaCompraPage() {
           <p>Data: <span className="font-medium">{data.split("-").reverse().join("/")}</span></p>
           <p>Forma: <span className="font-medium">{FORMA_PRECIFICACAO_COMPRA_LABEL[forma]}</span></p>
           <p>Animais: <span className="font-medium">{calc.quantidadeTotal}</span></p>
+          {calc.pesoTotal != null && calc.pesoTotal > 0 ? (
+            <p>Peso total: <span className="font-medium">{formatarMetricaPeso({ kind: "known", value: calc.pesoTotal })}</span></p>
+          ) : null}
           <p>Custo total: <span className="font-medium">{formatMoney(calc.custoTotal)}</span></p>
         </div>
       ),
@@ -248,8 +219,6 @@ export default function NovaCompraPage() {
       precoUnitario: calc.precoUnitario,
       frete: calc.frete,
       outrosCustos: calc.outrosCustos,
-      loteDestinoId: loteId ? Number(loteId) : null,
-      pastoDestinoId: pastoId ? Number(pastoId) : null,
       observacoes: observacoes.trim() || undefined,
       modoIdentificacao: "nao_identificados",
       grupos: calc.grupos.map((g: GrupoCompraValido) => ({
@@ -591,40 +560,11 @@ export default function NovaCompraPage() {
 
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Destino no Rebanho</h2>
+            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Observações</h2>
           </div>
-          <div className="p-5 space-y-3">
-            <p className="text-[11px] text-gray-500">
-              Destino planejado da aquisição. Nenhum animal é criado agora e nenhuma movimentação individual é gerada.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <FormLabel>Lote de destino</FormLabel>
-                <FormNativeSelect
-                  variant="light"
-                  value={loteId}
-                  onChange={setLoteId}
-                  placeholder={fazendaNum ? "Opcional" : "Selecione a fazenda primeiro"}
-                  disabled={!fazendaNum}
-                  options={lotesFazenda.map(l => ({ value: String(l.id), label: l.nome }))}
-                />
-              </div>
-              <div>
-                <FormLabel>Pasto de destino</FormLabel>
-                <FormNativeSelect
-                  variant="light"
-                  value={pastoId}
-                  onChange={setPastoId}
-                  placeholder={fazendaNum ? "Opcional" : "Selecione a fazenda primeiro"}
-                  disabled={!fazendaNum}
-                  options={pastos.map(p => ({ value: String(p.id), label: p.nome }))}
-                />
-              </div>
-            </div>
-            <div>
-              <FormLabel>Observações</FormLabel>
-              <FormTextarea variant="light" value={observacoes} onChange={setObservacoes} rows={2} />
-            </div>
+          <div className="p-5">
+            <FormLabel>Observações</FormLabel>
+            <FormTextarea variant="light" value={observacoes} onChange={setObservacoes} rows={2} />
           </div>
         </div>
 

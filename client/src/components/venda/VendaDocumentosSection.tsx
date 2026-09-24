@@ -38,12 +38,18 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-function urlArquivo(documentoId: number, disposition: "inline" | "attachment") {
-  return `/api/vendas/documentos/${documentoId}/arquivo?disposition=${disposition}`;
+function urlArquivo(
+  kind: "venda" | "compra",
+  documentoId: number,
+  disposition: "inline" | "attachment",
+) {
+  const base = kind === "compra" ? "/api/compras/documentos" : "/api/vendas/documentos";
+  return `${base}/${documentoId}/arquivo?disposition=${disposition}`;
 }
 
 function DocumentoSlot({
-  vendaId,
+  operacaoId,
+  dataAttr,
   tipo,
   label,
   documento,
@@ -54,7 +60,8 @@ function DocumentoSlot({
   onSubstituir,
   onExcluir,
 }: {
-  vendaId: number;
+  operacaoId: number;
+  dataAttr: "data-venda" | "data-compra";
   tipo: TipoDocumento;
   label: string;
   documento?: DocumentoPublico;
@@ -85,13 +92,6 @@ function DocumentoSlot({
             >
               Visualizar
             </button>
-            <button
-              type="button"
-              onClick={() => onBaixar(documento)}
-              className="px-2.5 min-h-[32px] rounded-lg border border-gray-200 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Baixar
-            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -107,6 +107,12 @@ function DocumentoSlot({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[160px] z-[100]">
+                <DropdownMenuItem
+                  className="text-[12px] cursor-pointer"
+                  onSelect={() => onBaixar(documento)}
+                >
+                  Baixar
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-[12px] cursor-pointer"
                   onSelect={() => onSubstituir(tipo)}
@@ -139,7 +145,7 @@ function DocumentoSlot({
           accept="application/pdf,.pdf"
           className="sr-only"
           data-tipo={tipo}
-          data-venda={vendaId}
+          {...{ [dataAttr]: operacaoId }}
           onChange={e => {
             const file = e.target.files?.[0];
             e.target.value = "";
@@ -151,25 +157,36 @@ function DocumentoSlot({
   );
 }
 
-export default function VendaDocumentosSection({
-  vendaId,
+function DocumentosGtaNfSection({
+  kind,
+  operacaoId,
   documentos,
 }: {
-  vendaId: number;
+  kind: "venda" | "compra";
+  operacaoId: number;
   documentos: DocumentoPublico[];
 }) {
   const confirm = useConfirm();
   const utils = trpc.useUtils();
-  const anexarMut = trpc.vendas.documentosAnexar.useMutation();
-  const excluirMut = trpc.vendas.documentosExcluir.useMutation();
+  const anexarVendaMut = trpc.vendas.documentosAnexar.useMutation();
+  const excluirVendaMut = trpc.vendas.documentosExcluir.useMutation();
+  const anexarCompraMut = trpc.compras.documentosAnexar.useMutation();
+  const excluirCompraMut = trpc.compras.documentosExcluir.useMutation();
   const [busyTipo, setBusyTipo] = useState<TipoDocumento | null>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const [tipoSubstituicao, setTipoSubstituicao] = useState<TipoDocumento | null>(null);
 
   const porTipo = new Map(documentos.map(doc => [doc.tipo, doc]));
+  const anexarMut = kind === "compra" ? anexarCompraMut : anexarVendaMut;
+  const excluirMut = kind === "compra" ? excluirCompraMut : excluirVendaMut;
   const busy = anexarMut.isPending || excluirMut.isPending;
+  const operacaoLabel = kind === "compra" ? "compra" : "venda";
+  const dataAttr = kind === "compra" ? "data-compra" : "data-venda";
 
-  const refresh = () => utils.vendas.get.invalidate({ id: vendaId });
+  const refresh = () =>
+    kind === "compra"
+      ? utils.compras.get.invalidate({ id: operacaoId })
+      : utils.vendas.get.invalidate({ id: operacaoId });
 
   const enviar = async (tipo: TipoDocumento, file: File, substituir: boolean) => {
     if (file.size > VENDA_DOCUMENTO_MAX_BYTES) {
@@ -179,14 +196,25 @@ export default function VendaDocumentosSection({
     setBusyTipo(tipo);
     try {
       const data = await readFileAsBase64(file);
-      await anexarMut.mutateAsync({
-        vendaId,
-        tipo,
-        data,
-        nomeOriginal: file.name,
-        mimeType: file.type || undefined,
-        substituir,
-      });
+      if (kind === "compra") {
+        await anexarCompraMut.mutateAsync({
+          compraId: operacaoId,
+          tipo,
+          data,
+          nomeOriginal: file.name,
+          mimeType: file.type || undefined,
+          substituir,
+        });
+      } else {
+        await anexarVendaMut.mutateAsync({
+          vendaId: operacaoId,
+          tipo,
+          data,
+          nomeOriginal: file.name,
+          mimeType: file.type || undefined,
+          substituir,
+        });
+      }
       await refresh();
       toast.success(substituir ? "Arquivo substituído." : "PDF anexado.");
     } catch (error) {
@@ -230,14 +258,18 @@ export default function VendaDocumentosSection({
       description: (
         <>
           <p>Remover {doc.nomeOriginal} da {label}?</p>
-          <p className="mt-3">A venda em si não será alterada.</p>
+          <p className="mt-3">A {operacaoLabel} em si não será alterada.</p>
         </>
       ),
       confirmText: "Excluir arquivo",
       cancelText: "Voltar",
       variant: "danger",
       onConfirm: async () => {
-        await excluirMut.mutateAsync({ vendaId, documentoId: doc.id });
+        if (kind === "compra") {
+          await excluirCompraMut.mutateAsync({ compraId: operacaoId, documentoId: doc.id });
+        } else {
+          await excluirVendaMut.mutateAsync({ vendaId: operacaoId, documentoId: doc.id });
+        }
         await refresh();
         toast.success("Arquivo excluído.");
       },
@@ -253,16 +285,17 @@ export default function VendaDocumentosSection({
         {SLOTS.map(slot => (
           <DocumentoSlot
             key={slot.tipo}
-            vendaId={vendaId}
+            operacaoId={operacaoId}
+            dataAttr={dataAttr}
             tipo={slot.tipo}
             label={slot.label}
             documento={porTipo.get(slot.tipo)}
             busy={busy || busyTipo === slot.tipo}
             onPick={handlePick}
-            onVisualizar={doc => window.open(urlArquivo(doc.id, "inline"), "_blank", "noopener,noreferrer")}
+            onVisualizar={doc => window.open(urlArquivo(kind, doc.id, "inline"), "_blank", "noopener,noreferrer")}
             onBaixar={doc => {
               const a = document.createElement("a");
-              a.href = urlArquivo(doc.id, "attachment");
+              a.href = urlArquivo(kind, doc.id, "attachment");
               a.rel = "noopener";
               a.click();
             }}
@@ -286,4 +319,24 @@ export default function VendaDocumentosSection({
       />
     </div>
   );
+}
+
+export default function VendaDocumentosSection({
+  vendaId,
+  documentos,
+}: {
+  vendaId: number;
+  documentos: DocumentoPublico[];
+}) {
+  return <DocumentosGtaNfSection kind="venda" operacaoId={vendaId} documentos={documentos} />;
+}
+
+export function CompraDocumentosSection({
+  compraId,
+  documentos,
+}: {
+  compraId: number;
+  documentos: DocumentoPublico[];
+}) {
+  return <DocumentosGtaNfSection kind="compra" operacaoId={compraId} documentos={documentos} />;
 }

@@ -122,6 +122,10 @@ import {
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
 import { confirmarVendaComercial } from "./confirmarVenda";
 import { confirmarCompraNaoIdentificados } from "./confirmarCompra";
+import { getCompraDetalhe } from "./compraDetalhe";
+import { cancelarCompraComercial } from "./cancelarCompra";
+import { excluirCompraLegada } from "./excluirCompra";
+import { listarComprasDoUsuario } from "./comprasListagem";
 import { cancelarVendaComercial } from "./cancelarVenda";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
 import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
@@ -133,6 +137,7 @@ import {
   avaliarDocumentoClienteUpdate,
 } from "../shared/pessoaDocumentoCliente";
 import { vendaDocumentosService } from "./vendaDocumentosDb";
+import { compraDocumentosService } from "./compraDocumentosDb";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
@@ -9545,9 +9550,23 @@ const dashboardRouter = router({
 
 // ─── COMPRAS ROUTER ─────────────────────────────────────────────────────────
 const comprasRouter = router({
-  list: protectedProcedure.query(({ ctx }) =>
-    db.select().from(compras).where(eq(compras.userId, ctx.user.id)).orderBy(desc(compras.createdAt))
-  ),
+  list: protectedProcedure.query(({ ctx }) => listarComprasDoUsuario(ctx.user.id)),
+  get: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => getCompraDetalhe(ctx.user.id, input.id)),
+  cancelar: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      motivo: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) =>
+      cancelarCompraComercial(ctx.user.id, {
+        compraId: input.id,
+        motivo: input.motivo,
+        canceladoPorUserId: ctx.user.id,
+        canceladoPorNome: ctx.user.name,
+      }),
+    ),
   create: protectedProcedure
     .input(z.object({
       fornecedor: z.string().optional(),
@@ -9582,18 +9601,45 @@ const comprasRouter = router({
       })),
     }))
     .mutation(async ({ ctx, input }) => confirmarCompraNaoIdentificados(ctx.user.id, input)),
+  documentosAnexar: protectedProcedure
+    .input(
+      z.object({
+        compraId: z.number().int().positive(),
+        tipo: z.enum(["gta", "nota_fiscal"]),
+        data: z.string().min(1),
+        nomeOriginal: z.string().min(1).max(255),
+        mimeType: z.string().optional(),
+        substituir: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      compraDocumentosService.anexar(ctx.user.id, {
+        compraId: input.compraId,
+        tipo: input.tipo,
+        data: Buffer.from(input.data, "base64"),
+        nomeOriginal: input.nomeOriginal,
+        mimeType: input.mimeType,
+        substituir: input.substituir,
+        uploadedByUserId: ctx.user.id,
+        uploadedByNome: ctx.user.name,
+      }),
+    ),
+  documentosExcluir: protectedProcedure
+    .input(
+      z.object({
+        compraId: z.number().int().positive(),
+        documentoId: z.number().int().positive(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      compraDocumentosService.excluir(ctx.user.id, {
+        compraId: input.compraId,
+        documentoId: input.documentoId,
+      }),
+    ),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      await db.transaction(async tx => {
-        await tx.delete(compraGrupos).where(and(
-          eq(compraGrupos.compraId, input.id),
-          eq(compraGrupos.userId, ctx.user.id),
-        ));
-        await tx.delete(compras).where(and(eq(compras.id, input.id), eq(compras.userId, ctx.user.id)));
-      });
-      return { success: true };
-    }),
+    .mutation(async ({ ctx, input }) => excluirCompraLegada(ctx.user.id, input.id)),
 });
 
 // ─── VENDAS ROUTER ───────────────────────────────────────────────────────────

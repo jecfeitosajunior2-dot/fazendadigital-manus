@@ -10,6 +10,7 @@ import {
   DeleteActionIcon,
   EditActionIcon,
   FarmRowActionButtons,
+  InactivateActionIcon,
   TableIconButton,
   ViewActionIcon,
 } from "@/components/icons/FarmActionIcons";
@@ -52,6 +53,7 @@ import {
 import {
   COMPRA_VENDA_COMPRADORES_PATH,
   COMPRA_VENDA_COMPRA_NOVA_PATH,
+  compraVendaCompraDetalhePath,
   COMPRA_VENDA_VENDA_NOVA_PATH,
   compraVendaVendaDetalhePath,
 } from "@/lib/compraVendaCompradores";
@@ -60,6 +62,8 @@ import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog"
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
 import { listaAnimaisComRetornoVisaoGeral, mapaRebanhoComRetornoVisaoGeral } from "@/lib/rebanhoRoutes";
+import CancelarVendaDialog from "@/components/venda/CancelarVendaDialog";
+import { labelStatusComercialCompra } from "@shared/compraIdentificacao";
 
 function areaUnitLabel(unidade?: string | null) {
   const value = String(unidade || "Hectare").toLowerCase();
@@ -1849,17 +1853,30 @@ function CompraVendaCartEmptyIcon() {
 export function PurchasesPage() {
   const [, setLocation] = useLocation();
   const [busca, setBusca] = useState("");
+  const [cancelarId, setCancelarId] = useState<number | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const utils = trpc.useUtils();
   const { data: compras, refetch, isLoading } = trpc.compras.list.useQuery();
   const filtradas = (compras ?? []).filter(c => {
     const q = busca.trim().toLowerCase();
     if (!q) return true;
-    return [c.fornecedor, c.data, c.observacoes].some(campo => String(campo ?? "").toLowerCase().includes(q));
+    return [c.fornecedor, c.data, c.observacoes, c.status].some(campo => String(campo ?? "").toLowerCase().includes(q));
   });
+  const cancelarMut = trpc.compras.cancelar.useMutation();
 
-  const deleteMutation = trpc.compras.delete.useMutation({
-    onSuccess: () => { toast.success("Compra removida."); refetch(); },
-    onError: (e) => toast.error(e.message),
-  });
+  const handleCancelar = async (motivo: string) => {
+    if (cancelarId == null) return;
+    setSubmitError(null);
+    try {
+      await cancelarMut.mutateAsync({ id: cancelarId, motivo });
+      await Promise.all([utils.compras.list.invalidate(), refetch()]);
+      setCancelarId(null);
+      toast.success("Compra cancelada. O registro comercial foi preservado.");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Não foi possível cancelar a compra.");
+    }
+  };
+
   return (
     <AppLayout>
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
@@ -1884,12 +1901,13 @@ export function PurchasesPage() {
             <ListExportButtons
               title="Compras"
               filename="compras"
-              headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)"]}
-              rows={filtradas.map((c: { data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number }) => [
+              headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)", "Status"]}
+              rows={filtradas.map((c: { data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null }) => [
                 c.data,
                 c.fornecedor,
                 c.quantidadeAnimais ?? 0,
                 Number(c.valorTotal).toFixed(2),
+                labelStatusComercialCompra(c.status),
               ])}
               alignRightFrom={2}
               variant="secondary"
@@ -1947,31 +1965,65 @@ export function PurchasesPage() {
                   <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Valor Total
                   </th>
-                  <th className="px-5 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-16">
+                  <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Status
+                  </th>
+                  <th className="px-5 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24">
                     Ações
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map((c: { id: number; data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number }) => (
-                  <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50/60 transition-colors">
+                {filtradas.map((c: { id: number; data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null; podeCancelar?: boolean }) => (
+                  <tr
+                    key={c.id}
+                    className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
+                    onClick={() => setLocation(compraVendaCompraDetalhePath(c.id))}
+                  >
                     <td className="px-5 py-2.5 text-gray-700 whitespace-nowrap">{c.data}</td>
                     <td className="px-3 py-2.5 text-gray-800 font-medium">{c.fornecedor}</td>
                     <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums">{c.quantidadeAnimais ?? "—"}</td>
                     <td className="px-3 py-2.5 text-right text-gray-800 font-medium tabular-nums whitespace-nowrap">
                       {Number(c.valorTotal).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                     </td>
-                    <td className="px-5 py-2.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm("Remover esta compra?")) deleteMutation.mutate({ id: c.id });
-                        }}
-                        className="p-0.5 rounded hover:bg-red-50 text-red-400"
-                        title="Excluir"
+                    <td className="px-3 py-2.5 text-center">
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium",
+                          c.status === "concluido"
+                            ? "bg-green-100 text-green-700"
+                            : c.status === "cancelado"
+                              ? "bg-gray-100 text-gray-600"
+                              : "bg-amber-50 text-amber-800",
+                        )}
                       >
-                        <span className="material-icons text-[14px]">delete</span>
-                      </button>
+                        {labelStatusComercialCompra(c.status)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-0.5">
+                        <TableIconButton
+                          label="Ver detalhes"
+                          onClick={() => setLocation(compraVendaCompraDetalhePath(c.id))}
+                          tone="view"
+                          compact
+                        >
+                          <ViewActionIcon size={16} />
+                        </TableIconButton>
+                        {c.podeCancelar ? (
+                          <TableIconButton
+                            label="Cancelar compra"
+                            onClick={() => {
+                              setSubmitError(null);
+                              setCancelarId(c.id);
+                            }}
+                            tone="warning"
+                            compact
+                          >
+                            <InactivateActionIcon size={16} />
+                          </TableIconButton>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1980,6 +2032,16 @@ export function PurchasesPage() {
           </div>
         )}
       </div>
+      <CancelarVendaDialog
+        open={cancelarId != null}
+        onClose={() => setCancelarId(null)}
+        onConfirm={handleCancelar}
+        submitting={cancelarMut.isPending}
+        submitError={submitError}
+        title="Cancelar Compra"
+        description="Esta ação cancelará o registro comercial da compra. Os dados da operação serão preservados no histórico."
+        confirmLabel="Cancelar Compra"
+      />
     </AppLayout>
   );
 }

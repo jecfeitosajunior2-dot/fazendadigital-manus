@@ -7,6 +7,7 @@ import { clearAuthCookie } from "./_core/cookies";
 import { registerManusStorageProxy } from "./_core/manusStorageProxy";
 import { mountLocalManusStorage } from "./_core/localManusStorage";
 import { registerVendaDocumentosHttp } from "./vendaDocumentosHttp";
+import { registerCompraDocumentosHttp } from "./compraDocumentosHttp";
 import { createMysqlPool } from "./_core/mysqlPool";
 
 export function registerRoutes(app: Application, databaseAvailable: { value: boolean }) {
@@ -18,6 +19,7 @@ export function registerRoutes(app: Application, databaseAvailable: { value: boo
   }
 
   registerVendaDocumentosHttp(app);
+  registerCompraDocumentosHttp(app);
 
   app.get("/api/oauth/callback", handleOAuthCallback);
 

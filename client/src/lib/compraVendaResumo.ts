@@ -1,5 +1,7 @@
 /** Agregações da Visão Geral comercial — só usa campos já persistidos em compras/vendas. */
 
+import { operacaoComercialEntraNoTotal } from "@shared/compraCancelamento";
+
 export type OperacaoComercial = {
   id?: number;
   data?: string | null;
@@ -10,6 +12,7 @@ export type OperacaoComercial = {
   valorTotal?: string | number | null;
   valorTotalNumero?: string | number | null;
   pesoTotal?: string | number | null;
+  status?: string | null;
   createdAt?: Date | string | null;
 };
 
@@ -91,7 +94,9 @@ export function resumirOperacoes(
   parceiroCampo: "fornecedor" | "comprador",
   limiteRecentes = 5,
 ): ComercialResumo {
-  const noPeriodo = rows.filter(row => operacaoNoPeriodo(row.data, periodo.de, periodo.ate));
+  const noPeriodo = rows.filter(
+    row => operacaoComercialEntraNoTotal(row.status) && operacaoNoPeriodo(row.data, periodo.de, periodo.ate),
+  );
   const recentes = [...noPeriodo]
     .sort((a, b) => {
       const da = normalizeOperacaoData(a.data) ?? "";

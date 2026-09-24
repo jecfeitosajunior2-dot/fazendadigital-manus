@@ -933,6 +933,24 @@ export async function ensureSchema() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`compra_documentos\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`user_id\` int NOT NULL,
+        \`compra_id\` int NOT NULL,
+        \`tipo\` enum('gta','nota_fiscal') NOT NULL,
+        \`nome_original\` varchar(255) NOT NULL,
+        \`storage_path\` varchar(500) NOT NULL,
+        \`uploaded_at\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`uploaded_by_user_id\` int,
+        \`uploaded_by_nome\` varchar(200),
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`compra_documentos_compra_tipo_uq\` (\`compra_id\`, \`tipo\`),
+        INDEX \`compra_documentos_compra_idx\` (\`compra_id\`),
+        INDEX \`compra_documentos_user_idx\` (\`user_id\`)
+      )
+    `);
+
     if (await tableExists(pool, "compras")) {
       await ensureColumn(pool, "compras", "fazenda_id", "int");
       await ensureColumn(pool, "compras", "fornecedor_id", "int");
@@ -953,6 +971,10 @@ export async function ensureSchema() {
         "enum('nao_identificados','individuais')",
       );
       await ensureColumn(pool, "compras", "updated_at", "timestamp NULL");
+      await ensureColumn(pool, "compras", "cancelado_em", "timestamp NULL");
+      await ensureColumn(pool, "compras", "cancelado_por_user_id", "int");
+      await ensureColumn(pool, "compras", "cancelado_por_nome", "varchar(200)");
+      await ensureColumn(pool, "compras", "motivo_cancelamento", "varchar(255)");
 
       if (!(await columnHasIndex(pool, "compras", "user_id"))) {
         await pool.query("CREATE INDEX `compras_user_idx` ON `compras` (`user_id`)");
@@ -996,6 +1018,19 @@ export async function ensureSchema() {
           ON UPDATE RESTRICT
       `);
       console.log("[schema] FK adicionada: compra_grupos.compra_grupos_compra_fk");
+    }
+
+    if (await tableExists(pool, "animais")) {
+      await ensureColumn(pool, "animais", "compraId", "int");
+      await ensureColumn(pool, "animais", "compraGrupoId", "int");
+      if (!(await indexExists(pool, "animais", "animais_compra_idx"))) {
+        await pool.query("CREATE INDEX `animais_compra_idx` ON `animais` (`compraId`)");
+        console.log("[schema] Índice adicionado: animais.animais_compra_idx");
+      }
+      if (!(await indexExists(pool, "animais", "animais_compra_grupo_idx"))) {
+        await pool.query("CREATE INDEX `animais_compra_grupo_idx` ON `animais` (`compraGrupoId`)");
+        console.log("[schema] Índice adicionado: animais.animais_compra_grupo_idx");
+      }
     }
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);

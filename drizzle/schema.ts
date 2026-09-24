@@ -95,6 +95,9 @@ export const animais = mysqlTable("animais", {
   produtorOrigem: varchar("produtorOrigem", { length: 200 }),
   precoKg: decimal("precoKg", { precision: 10, scale: 2 }),
   frete: decimal("frete", { precision: 10, scale: 2 }),
+  /** Origem comercial. Null = animal legado / nascido na fazenda. Sem backfill. */
+  compraId: int("compraId"),
+  compraGrupoId: int("compraGrupoId"),
   // Rastreabilidade e registros oficiais
   sisbov: varchar("sisbov", { length: 50 }),
   dataRnd: date("dataRnd", { mode: "string" }),
@@ -558,6 +561,10 @@ export const compras = mysqlTable("compras", {
   pastoDestinoId: int("pasto_destino_id"),
   modoIdentificacao: mysqlEnum("modo_identificacao", ["nao_identificados", "individuais"]),
   updatedAt: timestamp("updated_at"),
+  canceladoEm: timestamp("cancelado_em"),
+  canceladoPorUserId: int("cancelado_por_user_id"),
+  canceladoPorNome: varchar("cancelado_por_nome", { length: 200 }),
+  motivoCancelamento: varchar("motivo_cancelamento", { length: 255 }),
 }, table => ({
   userIdx: index("compras_user_idx").on(table.userId),
   fazendaIdx: index("compras_fazenda_idx").on(table.fazendaId),
@@ -650,6 +657,27 @@ export const vendaDocumentos = mysqlTable(
     vendaTipoUq: uniqueIndex("venda_documentos_venda_tipo_uq").on(table.vendaId, table.tipo),
     vendaIdx: index("venda_documentos_venda_idx").on(table.vendaId),
     userIdx: index("venda_documentos_user_idx").on(table.userId),
+  }),
+);
+
+/** Anexos opcionais da compra (GTA / Nota Fiscal). Não entram na regra comercial. */
+export const compraDocumentos = mysqlTable(
+  "compra_documentos",
+  {
+    id: int("id").primaryKey().autoincrement(),
+    userId: int("user_id").notNull(),
+    compraId: int("compra_id").notNull(),
+    tipo: mysqlEnum("tipo", ["gta", "nota_fiscal"]).notNull(),
+    nomeOriginal: varchar("nome_original", { length: 255 }).notNull(),
+    storagePath: varchar("storage_path", { length: 500 }).notNull(),
+    uploadedAt: timestamp("uploaded_at").defaultNow(),
+    uploadedByUserId: int("uploaded_by_user_id"),
+    uploadedByNome: varchar("uploaded_by_nome", { length: 200 }),
+  },
+  table => ({
+    compraTipoUq: uniqueIndex("compra_documentos_compra_tipo_uq").on(table.compraId, table.tipo),
+    compraIdx: index("compra_documentos_compra_idx").on(table.compraId),
+    userIdx: index("compra_documentos_user_idx").on(table.userId),
   }),
 );
 

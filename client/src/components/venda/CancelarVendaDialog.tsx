@@ -13,6 +13,9 @@ type Props = {
   onConfirm: (motivo: string) => void | Promise<void>;
   submitting?: boolean;
   submitError?: string | null;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 };
 
 export default function CancelarVendaDialog({
@@ -21,6 +24,9 @@ export default function CancelarVendaDialog({
   onConfirm,
   submitting = false,
   submitError = null,
+  title = "Cancelar venda",
+  description = "O cancelamento devolverá os animais desta venda ao rebanho e manterá o histórico da operação.",
+  confirmLabel = "Confirmar cancelamento",
 }: Props) {
   const [motivo, setMotivo] = useState("");
   const [erroLocal, setErroLocal] = useState("");
@@ -49,14 +55,13 @@ export default function CancelarVendaDialog({
       <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden rounded-xl border-gray-100">
         <DialogHeader className="px-4 pt-4 pb-2 pr-11 space-y-0 text-left bg-white border-b border-gray-100">
           <DialogTitle className="text-[15px] font-semibold text-gray-900 leading-tight">
-            Cancelar venda
+            {title}
           </DialogTitle>
         </DialogHeader>
 
         <div className="px-4 py-3 space-y-3">
           <p className="text-[13px] text-gray-600 leading-relaxed">
-            O cancelamento devolverá os animais desta venda ao rebanho e manterá o histórico da
-            operação.
+            {description}
           </p>
 
           <div className="space-y-1">
@@ -99,7 +104,7 @@ export default function CancelarVendaDialog({
                 : "inline-flex items-center justify-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide border border-amber-100 bg-amber-50/50 text-amber-800/40 cursor-not-allowed"
             }
           >
-            {submitting ? "Cancelando..." : "Confirmar cancelamento"}
+            {submitting ? "Cancelando..." : confirmLabel}
           </button>
         </DialogFooter>
       </DialogContent>

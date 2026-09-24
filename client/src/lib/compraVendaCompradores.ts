@@ -10,6 +10,10 @@ export function compraVendaVendaDetalhePath(id: number): string {
   return `/compra-venda/vendas/${id}`;
 }
 
+export function compraVendaCompraDetalhePath(id: number): string {
+  return `/compra-venda/compras/${id}`;
+}
+
 export type PessoaCompradorOpcao = {
   id: number;
   nome: string;
