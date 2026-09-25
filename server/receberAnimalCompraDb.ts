@@ -1,5 +1,14 @@
 import { and, eq, sql } from "drizzle-orm";
-import { animalLoteMovimentacoes, animais, compraGrupos, compras, lotes, pastos, pesagens } from "../drizzle/schema";
+import {
+  animalLoteMovimentacoes,
+  animais,
+  compraGrupos,
+  compraRecebimentos,
+  compras,
+  lotes,
+  pastos,
+  pesagens,
+} from "../drizzle/schema";
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
 import { normalizeRfidKey } from "../shared/rfidUnicidade";
 import { dataCivilParaColunaDate } from "../shared/dataCivil";
@@ -157,6 +166,26 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
       return insertIdOf(result);
     },
 
+    async insertRecebimento(row) {
+      const result = await tx.insert(compraRecebimentos).values({
+        userId: row.userId,
+        compraId: row.compraId,
+        compraGrupoId: row.compraGrupoId,
+        animalId: row.animalId,
+        brincoVisual: row.brincoVisual,
+        rfid: row.rfid,
+        sexo: row.sexo,
+        categoria: row.categoria,
+        pesoRecebimento: row.pesoRecebimento,
+        loteDestinoId: row.loteDestinoId,
+        pastoDestinoId: row.pastoDestinoId,
+        status: row.status,
+        recebidoEm: row.recebidoEm,
+        recebidoPorUserId: row.recebidoPorUserId,
+      });
+      return insertIdOf(result);
+    },
+
     async insertPesagem(row) {
       const result = await tx.insert(pesagens).values({
         userId: row.userId,
@@ -164,6 +193,7 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
         peso: row.peso,
         data: dataCivilParaColunaDate(row.data),
         observacoes: row.observacoes,
+        compraRecebimentoId: row.compraRecebimentoId,
       });
       return insertIdOf(result);
     },
@@ -180,6 +210,7 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
         dataMovimentacao: row.dataMovimentacao,
         usuarioNome: row.usuarioNome,
         observacoes: row.observacoes,
+        compraRecebimentoId: row.compraRecebimentoId,
       });
       return insertIdOf(result);
     },

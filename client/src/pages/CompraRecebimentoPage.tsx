@@ -21,14 +21,12 @@ import { formatarMetricaQuantidade } from "@/lib/compraVendaResumo";
 import {
   deveAplicarRfidRecebimentoCompra,
   proximoCicloCapturaRecebimento,
-  rotuloStatusAt05Recebimento,
 } from "@/lib/compraRecebimentoAt05";
 import {
   aplicarEdicaoManualPesoRecebimento,
   aplicarLeituraPesoS3Recebimento,
   consumirPesoS3AposConfirmar,
   estadoInicialPesoS3Recebimento,
-  rotuloStatusS3Recebimento,
 } from "@/lib/compraRecebimentoS3";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -86,35 +84,6 @@ function SecaoRecebimento({ titulo, children }: { titulo: string; children: Reac
   );
 }
 
-/** Cabeçalho com vaga à direita para status real de equipamento. */
-function CampoRecebimento({
-  label,
-  required,
-  status,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  status?: ReactNode;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-1.5 flex min-h-[16px] items-center justify-between gap-2">
-        <FormLabel required={required} className="mb-0">
-          {label}
-        </FormLabel>
-        {status ? (
-          <span className="shrink-0 text-[10px] font-medium text-gray-500">{status}</span>
-        ) : null}
-      </div>
-      {children}
-      {hint ? <p className="mt-1 text-[10px] text-gray-400">{hint}</p> : null}
-    </div>
-  );
-}
 
 export default function CompraRecebimentoPage() {
   const params = useParams<{ id: string }>();
@@ -172,6 +141,7 @@ export default function CompraRecebimentoPage() {
   const grupos = data?.identificacao.grupos ?? [];
   const grupoSelecionado = grupos.find(g => g.id === grupoId) ?? null;
   const grupoAberto = Boolean(grupoSelecionado && grupoSelecionado.pendentes > 0);
+  const mostraEquipamentos = compraConcluida && !cancelada && (data?.identificacao.pendentes ?? 0) > 0;
   const podeReceber =
     Boolean(data) &&
     compraConcluida &&
@@ -328,6 +298,24 @@ export default function CompraRecebimentoPage() {
             <p className="mt-3 text-[12px] font-medium text-gray-800">{data.identificacao.situacaoLabel}</p>
           </div>
 
+          {mostraEquipamentos ? (
+            <div
+              id="recebimento-equipamentos"
+              className="bg-white rounded shadow-sm border border-gray-100 p-4 space-y-2"
+            >
+              <At05RfidReaderControl
+                session={at05}
+                currentValue={rfid}
+                mode="identificar"
+                continuous
+                variant="strip"
+                listeningHint="AT05 escutando · passe a tag"
+                onRfidRead={() => undefined}
+              />
+              <RecebimentoS3ReaderControl session={s3} />
+            </div>
+          ) : null}
+
           <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
             <h2 className="text-[13px] font-semibold text-gray-800 mb-3">Grupos da compra</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -433,13 +421,8 @@ export default function CompraRecebimentoPage() {
                       required
                     />
                   </div>
-                  <CampoRecebimento
-                    label="RFID"
-                    status={rotuloStatusAt05Recebimento({
-                      sessionActive: at05.sessionActive,
-                      connecting: at05.status === "connecting",
-                    })}
-                  >
+                  <div>
+                    <FormLabel>RFID</FormLabel>
                     <FormInput
                       id="recebimento-rfid"
                       variant="light"
@@ -447,30 +430,15 @@ export default function CompraRecebimentoPage() {
                       onChange={setRfid}
                       placeholder="Opcional"
                     />
-                    <At05RfidReaderControl
-                      session={at05}
-                      currentValue={rfid}
-                      mode="identificar"
-                      continuous
-                      variant="compact"
-                      className="mt-1.5"
-                      listeningHint="AT05 escutando · passe a tag"
-                      onRfidRead={() => undefined}
-                    />
-                  </CampoRecebimento>
+                  </div>
                 </div>
               </SecaoRecebimento>
 
               <div className="border-t border-gray-100 pt-4">
                 <SecaoRecebimento titulo="Entrada">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <CampoRecebimento
-                      label="Peso de entrada"
-                      status={rotuloStatusS3Recebimento({
-                        sessionActive: s3.sessionActive,
-                        connecting: s3.status === "connecting",
-                      })}
-                    >
+                    <div>
+                      <FormLabel>Peso de entrada</FormLabel>
                       <div className="flex items-center gap-2">
                         <FormInput
                           id="recebimento-peso"
@@ -492,8 +460,7 @@ export default function CompraRecebimentoPage() {
                         />
                         <span className="text-[12px] text-gray-500">kg</span>
                       </div>
-                      <RecebimentoS3ReaderControl session={s3} className="mt-1.5" />
-                    </CampoRecebimento>
+                    </div>
                     <div>
                       <FormLabel>Raça</FormLabel>
                       <FormSelect

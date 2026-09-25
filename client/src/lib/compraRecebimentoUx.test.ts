@@ -11,6 +11,10 @@ const router = readFileSync(resolve(here, "../../../server/routers.ts"), "utf8")
 const service = readFileSync(resolve(here, "../../../server/receberAnimalCompra.ts"), "utf8");
 const dbAdapter = readFileSync(resolve(here, "../../../server/receberAnimalCompraDb.ts"), "utf8");
 const serviceTest = readFileSync(resolve(here, "../../../server/receberAnimalCompra.test.ts"), "utf8");
+const transferencia = readFileSync(
+  resolve(here, "../../../server/transferirAnimaisEntreLotes.ts"),
+  "utf8",
+);
 
 describe("Recebimento manual da Compra — etapa 1", () => {
   it("rota própria vem antes do detalhe e não usa Curral", () => {
@@ -60,7 +64,17 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).toContain("Recebimento do animal");
     expect(page).toContain('titulo="Identificação"');
     expect(page).toContain('titulo="Entrada"');
-    expect(page).toContain("CampoRecebimento");
+    expect(page).toContain('id="recebimento-equipamentos"');
+    expect(page).toContain('variant="strip"');
+    expect(page).toMatch(
+      /mostraEquipamentos = compraConcluida && !cancelada && \(data\?\.identificacao\.pendentes/,
+    );
+    expect(page.match(/<At05RfidReaderControl/g)?.length).toBe(1);
+    expect(page.match(/<RecebimentoS3ReaderControl/g)?.length).toBe(1);
+    expect(page).not.toContain("CampoRecebimento");
+    expect(page).not.toContain("FaixaEquipamento");
+    expect(page).not.toContain("CurralEquipamentoCard");
+    expect(page).not.toContain('variant="hub"');
     expect(page).not.toContain("Complementar");
     expect(page).not.toContain("Observações");
     expect(page).not.toContain("setObservacoes");
@@ -84,6 +98,33 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).not.toContain("setDataRecebimento(");
     expect(page).toContain("formatPesoRecebido(ultimo.pesoKg)");
     expect(detalhe).toContain("Receber / Identificar animais");
+  });
+
+  it("novos recebimentos gravam vínculo estrutural; manejo posterior não", () => {
+    expect(service).toContain("insertRecebimento");
+    expect(service).toContain("compraRecebimentoId: recebimentoId");
+    expect(dbAdapter).toContain("compraRecebimentos");
+    expect(page).not.toContain("Desfazer");
+    expect(page).not.toContain("desfazerRecebimento");
+    expect(page).not.toContain("compra_recebimentos");
+    expect(page).not.toContain("compraRecebimentoId");
+    const estornoStart = router.indexOf("desfazerRecebimento: protectedProcedure");
+    expect(estornoStart).toBeGreaterThan(-1);
+    const estornoChunk = router.slice(
+      estornoStart,
+      router.indexOf("delete: protectedProcedure", estornoStart),
+    );
+    expect(estornoChunk).toContain("desfazerRecebimentoCompra");
+    expect(estornoChunk).not.toContain("assertAnimalPodeExcluir");
+    expect(estornoChunk).not.toContain("animais.delete");
+    const pesagemManejo = router.slice(
+      router.indexOf("const result = await db.insert(pesagens)"),
+      router.indexOf("await db.update(animais).set({ pesoAtual"),
+    );
+    expect(pesagemManejo).toContain("insert(pesagens)");
+    expect(pesagemManejo).not.toContain("compraRecebimentoId");
+    expect(transferencia).toContain("insert(animalLoteMovimentacoes)");
+    expect(transferencia).not.toContain("compraRecebimentoId");
   });
 
   it("testes de serviço usam fixtures isoladas, nunca a Compra 1", () => {

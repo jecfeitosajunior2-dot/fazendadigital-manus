@@ -198,7 +198,11 @@ export const animalLoteMovimentacoes = mysqlTable("animal_lote_movimentacoes", {
   usuarioNome: varchar("usuarioNome", { length: 200 }),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
-});
+  /** Vínculo estrutural com o recebimento da Compra. Null = movimentação posterior ou legado. */
+  compraRecebimentoId: int("compraRecebimentoId"),
+}, table => ({
+  compraRecebimentoIdx: index("animal_lote_mov_compra_recebimento_idx").on(table.compraRecebimentoId),
+}));
 
 // Histórico de movimentação lote ↔ pasto
 export const lotePastoMovimentacoes = mysqlTable("lote_pasto_movimentacoes", {
@@ -382,7 +386,11 @@ export const pesagens = mysqlTable("pesagens", {
   data: date("data", { mode: "string" }).notNull(),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow(),
-});
+  /** Vínculo estrutural com o recebimento da Compra. Null = pesagem normal ou legado. */
+  compraRecebimentoId: int("compraRecebimentoId"),
+}, table => ({
+  compraRecebimentoIdx: index("pesagens_compra_recebimento_idx").on(table.compraRecebimentoId),
+}));
 
 // Batidas table (nutrition records)
 export const batidas = mysqlTable("batidas", {
@@ -587,6 +595,40 @@ export const compraGrupos = mysqlTable(
   table => ({
     compraIdx: index("compra_grupos_compra_idx").on(table.compraId),
     userIdx: index("compra_grupos_user_idx").on(table.userId),
+  }),
+);
+
+/** Um recebimento individual confirmado. Snapshot sobrevive à futura remoção do animal. */
+export const compraRecebimentos = mysqlTable(
+  "compra_recebimentos",
+  {
+    id: int("id").primaryKey().autoincrement(),
+    userId: int("user_id").notNull(),
+    compraId: int("compra_id").notNull(),
+    compraGrupoId: int("compra_grupo_id").notNull(),
+    animalId: int("animal_id").notNull(),
+    brincoVisual: varchar("brinco_visual", { length: 50 }).notNull(),
+    rfid: varchar("rfid", { length: 80 }),
+    sexo: mysqlEnum("sexo", ["macho", "femea"]).notNull(),
+    categoria: varchar("categoria", { length: 50 }).notNull(),
+    pesoRecebimento: decimal("peso_recebimento", { precision: 8, scale: 2 }),
+    loteDestinoId: int("lote_destino_id"),
+    pastoDestinoId: int("pasto_destino_id"),
+    status: mysqlEnum("status", ["confirmado", "estornado"]).notNull().default("confirmado"),
+    recebidoEm: timestamp("recebido_em").defaultNow().notNull(),
+    recebidoPorUserId: int("recebido_por_user_id").notNull(),
+    motivoEstorno: varchar("motivo_estorno", { length: 80 }),
+    observacaoEstorno: text("observacao_estorno"),
+    estornadoPorUserId: int("estornado_por_user_id"),
+    estornadoEm: timestamp("estornado_em"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at"),
+  },
+  table => ({
+    userIdx: index("compra_recebimentos_user_idx").on(table.userId),
+    compraIdx: index("compra_recebimentos_compra_idx").on(table.compraId),
+    grupoIdx: index("compra_recebimentos_grupo_idx").on(table.compraGrupoId),
+    animalUq: uniqueIndex("compra_recebimentos_animal_uq").on(table.animalId),
   }),
 );
 

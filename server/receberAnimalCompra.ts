@@ -16,6 +16,7 @@ import {
   MSG_RECEBIMENTO_PASTO_FAZENDA,
   MSG_RECEBIMENTO_PASTO_NAO_ENCONTRADO,
   MSG_RECEBIMENTO_SEM_FAZENDA,
+  montarSnapshotRecebimentoCompra,
   normalizarRecebimentoAnimalInput,
   observacaoRecebimentoCompra,
 } from "../shared/compraRecebimento";
@@ -104,12 +105,29 @@ export type ReceberAnimalCompraTx = {
   findLote(userId: number, loteId: number): Promise<ReceberAnimalCompraLote | null>;
   findPasto(userId: number, pastoId: number): Promise<ReceberAnimalCompraPasto | null>;
   insertAnimal(row: ReceberAnimalInsertRow): Promise<number>;
+  insertRecebimento(row: {
+    userId: number;
+    compraId: number;
+    compraGrupoId: number;
+    animalId: number;
+    brincoVisual: string;
+    rfid: string | null;
+    sexo: "macho" | "femea";
+    categoria: string;
+    pesoRecebimento: string | null;
+    loteDestinoId: number | null;
+    pastoDestinoId: number | null;
+    status: "confirmado";
+    recebidoPorUserId: number;
+    recebidoEm: Date;
+  }): Promise<number>;
   insertPesagem(row: {
     userId: number;
     animalId: number;
     peso: string;
     data: string;
     observacoes: string;
+    compraRecebimentoId: number;
   }): Promise<number>;
   insertMovimentacao(row: {
     userId: number;
@@ -122,6 +140,7 @@ export type ReceberAnimalCompraTx = {
     dataMovimentacao: string;
     usuarioNome: string;
     observacoes: string;
+    compraRecebimentoId: number;
   }): Promise<number>;
 };
 
@@ -226,6 +245,27 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
       });
       if (!Number.isFinite(animalId) || animalId <= 0) toTrpc(MSG_RECEBIMENTO_FALHOU);
 
+      const recebidoEm = new Date();
+      const snapshot = montarSnapshotRecebimentoCompra({
+        userId,
+        compraId: parsed.compraId,
+        compraGrupoId: grupo.id,
+        animalId,
+        brincoVisual: parsed.brinco,
+        rfid: parsed.rfid,
+        sexo: grupo.sexo,
+        categoria: grupo.categoria,
+        pesoTexto: pesoTextoValor,
+        loteDestinoId: lote?.id ?? null,
+        pastoDestinoId: pasto?.id ?? null,
+        recebidoPorUserId: userId,
+      });
+      const recebimentoId = await tx.insertRecebimento({
+        ...snapshot,
+        recebidoEm,
+      });
+      if (!Number.isFinite(recebimentoId) || recebimentoId <= 0) toTrpc(MSG_RECEBIMENTO_FALHOU);
+
       if (pesoTextoValor) {
         const pesagemId = await tx.insertPesagem({
           userId,
@@ -233,6 +273,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
           peso: pesoTextoValor,
           data: parsed.dataRecebimento,
           observacoes: obsHistorico,
+          compraRecebimentoId: recebimentoId,
         });
         if (!Number.isFinite(pesagemId) || pesagemId <= 0) toTrpc(MSG_RECEBIMENTO_FALHOU);
       }
@@ -249,6 +290,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
           dataMovimentacao: parsed.dataRecebimento,
           usuarioNome,
           observacoes: obsHistorico,
+          compraRecebimentoId: recebimentoId,
         });
         if (!Number.isFinite(movId) || movId <= 0) toTrpc(MSG_RECEBIMENTO_FALHOU);
       }
@@ -256,6 +298,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
       return {
         success: true as const,
         animalId,
+        recebimentoId,
         brinco: parsed.brinco,
         sexo: grupo.sexo,
         sexoLabel: labelSexoCompra(grupo.sexo),
@@ -263,7 +306,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         pesoKg: parsed.pesoKg,
         loteNome: lote?.nome ?? null,
         pastoNome: pasto?.nome ?? null,
-        recebidoEm: new Date().toISOString(),
+        recebidoEm: recebidoEm.toISOString(),
         dataEntrada: parsed.dataRecebimento,
         compraId: parsed.compraId,
         compraGrupoId: grupo.id,

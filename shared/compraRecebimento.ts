@@ -27,9 +27,55 @@ export function observacaoRecebimentoCompra(compraId: number): string {
   return `Recebimento da Compra ${compraId}`;
 }
 
+export const COMPRA_RECEBIMENTO_STATUS_CONFIRMADO = "confirmado" as const;
+
+export function compraRecebimentoIdValido(value: unknown): number | null {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return id;
+}
+
+export function isPesagemVinculoRecebimento(pesagem: {
+  compraRecebimentoId?: number | null;
+}): boolean {
+  return compraRecebimentoIdValido(pesagem.compraRecebimentoId) != null;
+}
+
+export function montarSnapshotRecebimentoCompra(input: {
+  userId: number;
+  compraId: number;
+  compraGrupoId: number;
+  animalId: number;
+  brincoVisual: string;
+  rfid: string | null;
+  sexo: "macho" | "femea";
+  categoria: string;
+  pesoTexto: string | null;
+  loteDestinoId: number | null;
+  pastoDestinoId: number | null;
+  recebidoPorUserId: number;
+}) {
+  return {
+    userId: input.userId,
+    compraId: input.compraId,
+    compraGrupoId: input.compraGrupoId,
+    animalId: input.animalId,
+    brincoVisual: input.brincoVisual,
+    rfid: input.rfid,
+    sexo: input.sexo,
+    categoria: input.categoria,
+    pesoRecebimento: input.pesoTexto,
+    loteDestinoId: input.loteDestinoId,
+    pastoDestinoId: input.pastoDestinoId,
+    status: COMPRA_RECEBIMENTO_STATUS_CONFIRMADO,
+    recebidoPorUserId: input.recebidoPorUserId,
+  };
+}
+
 export type PesagemRecebimentoRef = {
   peso?: unknown;
   observacoes?: string | null;
+  compraRecebimentoId?: number | null;
 };
 
 export type ExibicaoPesoEntrada =
@@ -56,7 +102,11 @@ export function localizarPesagemRecebimentoCompra(
   compraId: number | null,
 ): { pesoKg: number; compraId: number } | null {
   if (compraId == null) return null;
-  const matches = pesagens.filter(p => isPesagemRecebimentoCompra(p, compraId));
+  const estruturadas = pesagens.filter(isPesagemVinculoRecebimento);
+  const matches =
+    estruturadas.length > 0
+      ? estruturadas
+      : pesagens.filter(p => isPesagemRecebimentoCompra(p, compraId));
   if (matches.length !== 1) return null;
   const pesoKg = parsePesoPositivo(matches[0]?.peso);
   if (pesoKg == null) return null;

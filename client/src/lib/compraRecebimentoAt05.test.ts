@@ -90,7 +90,11 @@ describe("AT05 no recebimento da Compra — só preenche RFID", () => {
   it("tela reusa o hook, não confirma no bip e remove a captura no unmount", () => {
     expect(page).toContain("useAt05Reader({");
     expect(page).toContain("onRead: rfidLido => aplicarRfidLidoRef.current(rfidLido)");
-    expect(page).toContain('variant="compact"');
+    expect(page).toContain('id="recebimento-equipamentos"');
+    expect(page.indexOf('id="recebimento-equipamentos"')).toBeLessThan(page.indexOf('id="recebimento-rfid"'));
+    expect(page).toContain('variant="strip"');
+    expect(page).not.toContain('variant="hub"');
+    expect(page).not.toContain("CurralEquipamentoCard");
     expect(page).toContain("continuous");
     expect(page).toContain('mode="identificar"');
     expect(page).toContain("onRfidRead={() => undefined}");

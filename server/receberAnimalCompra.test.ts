@@ -23,7 +23,14 @@ import {
 } from "./receberAnimalCompra";
 
 type AnimalMem = ReceberAnimalInsertRow & { id: number };
-type PesagemMem = { id: number; animalId: number; peso: string; data: string; observacoes: string };
+type PesagemMem = {
+  id: number;
+  animalId: number;
+  peso: string;
+  data: string;
+  observacoes: string;
+  compraRecebimentoId?: number;
+};
 type MovMem = {
   id: number;
   animalId: number;
@@ -32,6 +39,23 @@ type MovMem = {
   pastoOrigemId: null;
   pastoDestinoId: number | null;
   observacoes: string;
+  compraRecebimentoId?: number;
+};
+type RecebimentoMem = {
+  id: number;
+  userId: number;
+  compraId: number;
+  compraGrupoId: number;
+  animalId: number;
+  brincoVisual: string;
+  rfid: string | null;
+  sexo: "macho" | "femea";
+  categoria: string;
+  pesoRecebimento: string | null;
+  loteDestinoId: number | null;
+  pastoDestinoId: number | null;
+  status: "confirmado";
+  recebidoPorUserId: number;
 };
 
 function clone<T>(value: T): T {
@@ -45,10 +69,13 @@ function criarStore(seed?: {
   pastos?: ReceberAnimalCompraPasto[];
   animais?: AnimalMem[];
   falharPesagem?: boolean;
+  falharMovimentacao?: boolean;
+  falharRecebimento?: boolean;
 }): ReceberAnimalCompraStore & {
   animais: AnimalMem[];
   pesagens: PesagemMem[];
   movimentacoes: MovMem[];
+  recebimentos: RecebimentoMem[];
 } {
   const state = {
     compras: seed?.compras ?? [
@@ -69,9 +96,11 @@ function criarStore(seed?: {
     animais: seed?.animais ? clone(seed.animais) : ([] as AnimalMem[]),
     pesagens: [] as PesagemMem[],
     movimentacoes: [] as MovMem[],
+    recebimentos: [] as RecebimentoMem[],
     nextAnimal: (seed?.animais?.reduce((m, a) => Math.max(m, a.id), 800) ?? 800) + 1,
     nextPesagem: 1,
     nextMov: 1,
+    nextRecebimento: 1,
     lock: Promise.resolve(),
   };
 
@@ -120,6 +149,12 @@ function criarStore(seed?: {
       state.animais.push({ ...row, id });
       return id;
     },
+    async insertRecebimento(row) {
+      if (seed?.falharRecebimento) throw new Error("falha recebimento");
+      const id = state.nextRecebimento++;
+      state.recebimentos.push({ id, ...row });
+      return id;
+    },
     async insertPesagem(row) {
       if (seed?.falharPesagem) throw new Error("falha pesagem");
       const id = state.nextPesagem++;
@@ -127,6 +162,7 @@ function criarStore(seed?: {
       return id;
     },
     async insertMovimentacao(row) {
+      if (seed?.falharMovimentacao) throw new Error("falha movimentacao");
       const id = state.nextMov++;
       state.movimentacoes.push({ id, ...row });
       return id;
@@ -140,9 +176,11 @@ function criarStore(seed?: {
           animais: clone(state.animais),
           pesagens: clone(state.pesagens),
           movimentacoes: clone(state.movimentacoes),
+          recebimentos: clone(state.recebimentos),
           nextAnimal: state.nextAnimal,
           nextPesagem: state.nextPesagem,
           nextMov: state.nextMov,
+          nextRecebimento: state.nextRecebimento,
         };
         try {
           return await fn(tx);
@@ -150,9 +188,11 @@ function criarStore(seed?: {
           state.animais = snap.animais;
           state.pesagens = snap.pesagens;
           state.movimentacoes = snap.movimentacoes;
+          state.recebimentos = snap.recebimentos;
           state.nextAnimal = snap.nextAnimal;
           state.nextPesagem = snap.nextPesagem;
           state.nextMov = snap.nextMov;
+          state.nextRecebimento = snap.nextRecebimento;
           throw error;
         }
       });
@@ -175,6 +215,9 @@ function criarStore(seed?: {
     get movimentacoes() {
       return state.movimentacoes;
     },
+    get recebimentos() {
+      return state.recebimentos;
+    },
   };
 }
 
@@ -191,9 +234,21 @@ describe("receberAnimalCompra", () => {
     const receber = createReceberAnimalCompraService(store);
     const out = await receber(7, inputBase, { usuarioNome: "Pedro" });
     expect(out.animalId).toBeGreaterThan(800);
+    expect(out.recebimentoId).toBeGreaterThan(0);
     expect(out.brinco).toBe("805");
     expect(out.pesoKg).toBeNull();
     expect(store.pesagens).toHaveLength(0);
+    expect(store.movimentacoes).toHaveLength(0);
+    expect(store.recebimentos).toHaveLength(1);
+    expect(store.recebimentos[0]).toMatchObject({
+      animalId: out.animalId,
+      brincoVisual: "805",
+      rfid: null,
+      pesoRecebimento: null,
+      loteDestinoId: null,
+      pastoDestinoId: null,
+      status: "confirmado",
+    });
     expect(store.animais[0]?.pesoAtual).toBeNull();
     expect(store.animais[0]?.brincoEletronico).toBeNull();
   });
@@ -203,6 +258,7 @@ describe("receberAnimalCompra", () => {
     const receber = createReceberAnimalCompraService(store);
     await receber(7, { ...inputBase, rfid: "  RFID-805  " });
     expect(store.animais[0]?.brincoEletronico).toBe("RFID-805");
+    expect(store.recebimentos[0]?.rfid).toBe("RFID-805");
   });
 
   it("peso cria pesagem real e atualiza pesoAtual, sem ratear o grupo", async () => {
@@ -210,9 +266,12 @@ describe("receberAnimalCompra", () => {
     const receber = createReceberAnimalCompraService(store);
     const out = await receber(7, { ...inputBase, pesoEntrada: "218" });
     expect(out.pesoKg).toBe(218);
+    expect(store.recebimentos).toHaveLength(1);
+    expect(store.recebimentos[0]?.pesoRecebimento).toBe("218");
     expect(store.pesagens).toHaveLength(1);
     expect(store.pesagens[0]?.peso).toBe("218");
     expect(store.pesagens[0]?.observacoes).toBe(observacaoRecebimentoCompra(9001));
+    expect(store.pesagens[0]?.compraRecebimentoId).toBe(out.recebimentoId);
     expect(store.animais[0]?.pesoAtual).toBe("218");
     expect(store.animais[0]?.pesoAtual).not.toBe("220");
     expect(JSON.stringify(store.animais)).not.toContain("4400");
@@ -334,6 +393,9 @@ describe("receberAnimalCompra", () => {
       message: MSG_RECEBIMENTO_GRUPO_ESGOTADO,
     });
     expect(store.animais).toHaveLength(20);
+    expect(store.recebimentos).toHaveLength(0);
+    expect(store.pesagens).toHaveLength(0);
+    expect(store.movimentacoes).toHaveLength(0);
   });
 
   it("duas confirmações no último lugar: só uma passa", async () => {
@@ -374,7 +436,20 @@ describe("receberAnimalCompra", () => {
     const receber = createReceberAnimalCompraService(store);
     await expect(receber(7, { ...inputBase, pesoEntrada: "200" })).rejects.toThrow(/falha pesagem/);
     expect(store.animais).toHaveLength(0);
+    expect(store.recebimentos).toHaveLength(0);
     expect(store.pesagens).toHaveLength(0);
+  });
+
+  it("falha na movimentação faz rollback de animal, recebimento e pesagem", async () => {
+    const store = criarStore({ falharMovimentacao: true });
+    const receber = createReceberAnimalCompraService(store);
+    await expect(
+      receber(7, { ...inputBase, pesoEntrada: "200", loteId: 31, pastoId: 41 }),
+    ).rejects.toThrow(/falha movimentacao/);
+    expect(store.animais).toHaveLength(0);
+    expect(store.recebimentos).toHaveLength(0);
+    expect(store.pesagens).toHaveLength(0);
+    expect(store.movimentacoes).toHaveLength(0);
   });
 
   it("sem lote/pasto entra; com lote/pasto registra histórico de entrada", async () => {
@@ -382,7 +457,11 @@ describe("receberAnimalCompra", () => {
     const receber = createReceberAnimalCompraService(store);
     await receber(7, { ...inputBase, brincoVisual: "807" });
     expect(store.movimentacoes).toHaveLength(0);
-    await receber(7, { ...inputBase, brincoVisual: "808", loteId: 31, pastoId: 41 });
+    expect(store.recebimentos[0]).toMatchObject({
+      loteDestinoId: null,
+      pastoDestinoId: null,
+    });
+    const comLote = await receber(7, { ...inputBase, brincoVisual: "808", loteId: 31, pastoId: 41 });
     expect(store.movimentacoes).toHaveLength(1);
     expect(store.movimentacoes[0]).toMatchObject({
       loteOrigemId: null,
@@ -390,8 +469,27 @@ describe("receberAnimalCompra", () => {
       pastoOrigemId: null,
       pastoDestinoId: 41,
       observacoes: observacaoRecebimentoCompra(9001),
+      compraRecebimentoId: comLote.recebimentoId,
+    });
+    expect(store.recebimentos[1]).toMatchObject({
+      loteDestinoId: 31,
+      pastoDestinoId: 41,
     });
     expect(store.animais[1]).toMatchObject({ loteId: 31, pastoId: 41 });
+  });
+
+  it("pasto sem lote não inventa movimentação e o snapshot guarda o pasto", async () => {
+    const store = criarStore();
+    const receber = createReceberAnimalCompraService(store);
+    const out = await receber(7, { ...inputBase, brincoVisual: "809", pastoId: 41 });
+    expect(store.movimentacoes).toHaveLength(0);
+    expect(store.animais[0]).toMatchObject({ loteId: null, pastoId: 41 });
+    expect(store.recebimentos[0]).toMatchObject({
+      id: out.recebimentoId,
+      loteDestinoId: null,
+      pastoDestinoId: 41,
+      pesoRecebimento: null,
+    });
   });
 
   it("contadores derivados e status comercial intacto", async () => {

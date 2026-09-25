@@ -140,6 +140,8 @@ import {
 import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { compraDocumentosService } from "./compraDocumentosDb";
 import { receberAnimalCompra } from "./receberAnimalCompraDb";
+import { desfazerRecebimentoCompra } from "./desfazerRecebimentoCompraDb";
+import { MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA } from "../shared/compraRecebimentoEstorno";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
@@ -9658,6 +9660,17 @@ const comprasRouter = router({
     )
     .mutation(async ({ ctx, input }) =>
       receberAnimalCompra(ctx.user.id, input, { usuarioNome: ctx.user.name }),
+    ),
+  desfazerRecebimento: protectedProcedure
+    .input(
+      z.object({
+        recebimentoId: z.number().int().positive(),
+        motivo: z.enum(MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA),
+        observacao: z.string().optional().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      desfazerRecebimentoCompra(ctx.user.id, input, { estornadoPorUserId: ctx.user.id }),
     ),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))

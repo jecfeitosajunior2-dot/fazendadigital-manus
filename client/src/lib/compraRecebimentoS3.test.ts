@@ -170,6 +170,8 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
   it("J) AT05 continua independente da S3", () => {
     expect(page).toContain("useAt05Reader({");
     expect(page).toContain("useTruTestBleReader({");
+    expect(page).toContain('id="recebimento-equipamentos"');
+    expect(page.indexOf('id="recebimento-equipamentos"')).toBeLessThan(page.indexOf('id="recebimento-peso"'));
     expect(page).toContain("aplicarRfidLidoRef");
     expect(page).toContain("aplicarPesoS3Ref");
     expect(page).not.toContain("useScaleReader");
@@ -225,6 +227,9 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
     );
     expect(control).toContain("Balança desconectada");
     expect(control).toContain("Balança conectada");
+    expect(control).toContain("Tru-Test S3");
+    expect(control).toContain("SessaoEquipamentoLinha");
     expect(control).not.toContain("S3 escutando");
+    expect(control).not.toContain("CurralEquipamentoCard");
   });
 });

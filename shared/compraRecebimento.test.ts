@@ -5,7 +5,9 @@ import {
   MSG_RECEBIMENTO_PESO,
   MSG_RECEBIMENTO_RACA,
   formatarPesoEntradaExibicao,
+  isPesagemVinculoRecebimento,
   localizarPesagemRecebimentoCompra,
+  montarSnapshotRecebimentoCompra,
   normalizarRecebimentoAnimalInput,
   observacaoRecebimentoCompra,
   pesoEntradaNoUpdateAnimal,
@@ -127,6 +129,44 @@ describe("exibição do peso de entrada da Compra", () => {
         1,
       ),
     ).toBeNull();
+  });
+
+  it("vínculo estrutural prevalece sobre a observação", () => {
+    expect(
+      localizarPesagemRecebimentoCompra(
+        [
+          { peso: "199", observacoes: observacaoRecebimentoCompra(9001) },
+          { peso: "218", observacoes: "qualquer texto", compraRecebimentoId: 44 },
+        ],
+        9001,
+      ),
+    ).toEqual({ pesoKg: 218, compraId: 9001 });
+    expect(isPesagemVinculoRecebimento({ compraRecebimentoId: 44 })).toBe(true);
+    expect(isPesagemVinculoRecebimento({ compraRecebimentoId: null })).toBe(false);
+  });
+
+  it("snapshot do recebimento novo nasce confirmado", () => {
+    expect(
+      montarSnapshotRecebimentoCompra({
+        userId: 7,
+        compraId: 9001,
+        compraGrupoId: 9101,
+        animalId: 880,
+        brincoVisual: "810",
+        rfid: null,
+        sexo: "macho",
+        categoria: "Bezerro",
+        pesoTexto: null,
+        loteDestinoId: null,
+        pastoDestinoId: 41,
+        recebidoPorUserId: 7,
+      }),
+    ).toMatchObject({
+      status: "confirmado",
+      pesoRecebimento: null,
+      pastoDestinoId: 41,
+      loteDestinoId: null,
+    });
   });
 
   it("animal legado continua no peso cadastral editável", () => {

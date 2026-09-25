@@ -5,6 +5,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { useAt05Reader, type At05ReaderSession } from "@/hooks/useAt05Reader";
 import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import { CurralEquipamentoCard } from "@/components/curral/CurralEquipamentoCard";
+import { SessaoEquipamentoLinha } from "@/components/SessaoEquipamentoLinha";
 import {
   MSG_RFID_CONEXAO_FALHOU,
   MSG_RFID_SUBSTITUIR,
@@ -25,8 +26,8 @@ type At05RfidReaderControlProps = {
   continuous?: boolean;
   /** Texto quando continuous + identificar e o bastão está escutando. */
   listeningHint?: string;
-  /** compact: barra superior do curral · embedded: só conectar se necessário · hub: só conexão (pré-sessão). */
-  variant?: "default" | "compact" | "embedded" | "hub";
+  /** compact: barra do curral · strip: faixa da sessão · embedded: só conectar se necessário · hub: card de conexão. */
+  variant?: "default" | "compact" | "embedded" | "hub" | "strip";
   className?: string;
   /** Sessão serial compartilhada (ex.: Sessão no curral hub → operação). */
   session?: At05ReaderSession;
@@ -199,7 +200,22 @@ function At05RfidReaderControlInner({
     if (!sessionActive) void connect().catch(() => undefined);
   };
 
+  const btnSessao =
+    "inline-flex items-center justify-center px-3 py-2 rounded border text-[12px] font-semibold min-h-[36px] disabled:opacity-60 disabled:cursor-not-allowed";
+
   if (!supported) {
+    if (variant === "strip") {
+      return (
+        <SessaoEquipamentoLinha
+          titulo="Bastão RFID"
+          modelo={equipamentoLinha ?? "AT05"}
+          status="Indisponível"
+          conectado={false}
+          unsupported="Web Serial indisponível"
+          acao={null}
+        />
+      );
+    }
     return (
       <p
         className={cn(
@@ -237,6 +253,39 @@ function At05RfidReaderControlInner({
         <Bluetooth className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
         Conectar bastão
       </button>
+    );
+  }
+
+  if (variant === "strip") {
+    return (
+      <SessaoEquipamentoLinha
+        titulo="Bastão RFID"
+        modelo={equipamentoLinha ?? "AT05"}
+        status={statusOperacional ?? statusCompacto}
+        conectado={sessionActive}
+        erro={erroConexao}
+        acao={
+          !sessionActive ? (
+            <button
+              type="button"
+              disabled={disabled || status === "connecting"}
+              onClick={handleConectar}
+              className={cn(btnSessao, "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}
+            >
+              Conectar
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={disabled || status === "connecting"}
+              onClick={() => void disconnect().catch(() => undefined)}
+              className={cn(btnSessao, "border-gray-200 bg-white text-gray-600 hover:bg-gray-50")}
+            >
+              Desconectar
+            </button>
+          )
+        }
+      />
     );
   }
 
