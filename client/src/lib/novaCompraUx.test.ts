@@ -25,6 +25,6 @@ describe("Nova Compra — conferência do modal", () => {
     expect(page).not.toContain("Pasto de destino");
     expect(page).not.toContain("loteDestinoId");
     expect(page).not.toContain("pastoDestinoId");
-    expect(page).toContain("Observações");
+    expect(page).not.toContain("Observações");
   });
 });

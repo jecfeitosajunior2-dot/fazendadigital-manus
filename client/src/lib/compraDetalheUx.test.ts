@@ -17,7 +17,10 @@ describe("Compra detalhe — etapa de acompanhamento", () => {
     expect(page).not.toContain("TruTest");
     expect(page).not.toContain("useScaleReader");
     expect(page).not.toContain("curral");
-    expect(page).not.toContain("Identificar animais");
+    expect(page).toContain("Receber / Identificar animais");
+    expect(page).toContain("compraVendaCompraRecebimentoPath");
+    expect(app).toContain('path="/compra-venda/compras/:id/recebimento"');
+    expect(app).toContain("CompraRecebimentoPage");
   });
 
   it("não trata pendentes como animais cadastrados", () => {
@@ -46,7 +49,7 @@ describe("Compra detalhe — etapa de acompanhamento", () => {
     expect(page).toContain("podeCancelar");
     expect(page).toContain("Cancelamento");
     expect(page).toContain("data?.podeCancelar");
-    expect(page).not.toContain("Identificar animais");
+    expect(page).toContain("Receber / Identificar animais");
   });
 
   it("cabeçalho segue o esqueleto da venda, sem exportação incompleta", () => {

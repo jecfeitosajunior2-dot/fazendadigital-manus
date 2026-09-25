@@ -11,7 +11,6 @@ import {
   FormInput,
   FormLabel,
   FormNativeSelect,
-  FormTextarea,
   formControlFlatCls,
 } from "@/components/FormFields";
 import { FAZENDA_SELECT_PLACEHOLDER } from "@/components/ManejoPontualFormLayout";
@@ -54,7 +53,6 @@ type CompraDraft = {
   preco: string;
   frete: string;
   outros: string;
-  observacoes: string;
   modo: ModoIdentificacaoCompra;
   grupos: GrupoDraft[];
 };
@@ -93,7 +91,6 @@ export default function NovaCompraPage() {
   const [preco, setPreco] = useState("");
   const [frete, setFrete] = useState("");
   const [outros, setOutros] = useState("");
-  const [observacoes, setObservacoes] = useState("");
   const [modo, setModo] = useState<ModoIdentificacaoCompra>("nao_identificados");
   const [grupos, setGrupos] = useState<GrupoDraft[]>([novoGrupo()]);
 
@@ -116,7 +113,6 @@ export default function NovaCompraPage() {
         setPreco(draft.preco);
         setFrete(draft.frete);
         setOutros(draft.outros);
-        setObservacoes(draft.observacoes);
         setModo(draft.modo === "individuais" ? "individuais" : "nao_identificados");
         setGrupos(draft.grupos?.length ? draft.grupos : [novoGrupo()]);
       } catch {
@@ -148,7 +144,7 @@ export default function NovaCompraPage() {
       DRAFT_KEY,
       JSON.stringify({
         fazendaId, data, fornecedorId, referencia, forma, preco, frete, outros,
-        observacoes, modo, grupos,
+        modo, grupos,
       } satisfies CompraDraft),
     );
     const retorno = COMPRA_VENDA_COMPRA_NOVA_PATH;
@@ -219,7 +215,6 @@ export default function NovaCompraPage() {
       precoUnitario: calc.precoUnitario,
       frete: calc.frete,
       outrosCustos: calc.outrosCustos,
-      observacoes: observacoes.trim() || undefined,
       modoIdentificacao: "nao_identificados",
       grupos: calc.grupos.map((g: GrupoCompraValido) => ({
         categoria: g.categoria,
@@ -256,9 +251,6 @@ export default function NovaCompraPage() {
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
             Nova Compra
           </h1>
-          <p className="text-[12px] text-gray-500 mt-0.5">
-            Registre a aquisição e a entrada de animais na fazenda.
-          </p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
@@ -557,16 +549,6 @@ export default function NovaCompraPage() {
             </div>
           </>
         ) : null}
-
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Observações</h2>
-          </div>
-          <div className="p-5">
-            <FormLabel>Observações</FormLabel>
-            <FormTextarea variant="light" value={observacoes} onChange={setObservacoes} rows={2} />
-          </div>
-        </div>
 
         <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
           <button

@@ -126,6 +126,7 @@ import { getCompraDetalhe } from "./compraDetalhe";
 import { cancelarCompraComercial } from "./cancelarCompra";
 import { excluirCompraLegada } from "./excluirCompra";
 import { listarComprasDoUsuario } from "./comprasListagem";
+import { comprasListInputSchema } from "./comprasListFiltro";
 import { cancelarVendaComercial } from "./cancelarVenda";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
 import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
@@ -138,6 +139,7 @@ import {
 } from "../shared/pessoaDocumentoCliente";
 import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { compraDocumentosService } from "./compraDocumentosDb";
+import { receberAnimalCompra } from "./receberAnimalCompraDb";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 import { buildFimCarenciaPorAnimal, toDateOnlyISO } from "../shared/carenciaAnimal";
@@ -9550,7 +9552,9 @@ const dashboardRouter = router({
 
 // ─── COMPRAS ROUTER ─────────────────────────────────────────────────────────
 const comprasRouter = router({
-  list: protectedProcedure.query(({ ctx }) => listarComprasDoUsuario(ctx.user.id)),
+  list: protectedProcedure
+    .input(comprasListInputSchema)
+    .query(({ ctx, input }) => listarComprasDoUsuario(ctx.user.id, input)),
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => getCompraDetalhe(ctx.user.id, input.id)),
@@ -9636,6 +9640,24 @@ const comprasRouter = router({
         compraId: input.compraId,
         documentoId: input.documentoId,
       }),
+    ),
+  receberAnimal: protectedProcedure
+    .input(
+      z.object({
+        compraId: z.number().int().positive(),
+        compraGrupoId: z.number().int().positive(),
+        brincoVisual: z.string().min(1),
+        rfid: z.string().optional().nullable(),
+        pesoEntrada: z.string().optional().nullable(),
+        loteId: z.number().int().positive().optional().nullable(),
+        pastoId: z.number().int().positive().optional().nullable(),
+        raca: z.string().optional().nullable(),
+        observacoes: z.string().optional().nullable(),
+        dataRecebimento: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      receberAnimalCompra(ctx.user.id, input, { usuarioNome: ctx.user.name }),
     ),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))

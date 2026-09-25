@@ -5,7 +5,11 @@ import AppLayout from "@/components/AppLayout";
 import CancelarVendaDialog from "@/components/venda/CancelarVendaDialog";
 import { CompraDocumentosSection } from "@/components/venda/VendaDocumentosSection";
 import { formatDateBR } from "@/lib/date-utils";
-import { COMPRA_VENDA_COMPRAS_PATH } from "@/lib/compraVendaCompradores";
+import { FD_PRIMARY } from "@/components/FormFields";
+import {
+  COMPRA_VENDA_COMPRAS_PATH,
+  compraVendaCompraRecebimentoPath,
+} from "@/lib/compraVendaCompradores";
 import { formatarMetricaPeso, formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -195,6 +199,16 @@ export default function CompraDetalhePage() {
               <p className="text-[10px] uppercase text-gray-400">Situação</p>
               <p className="font-medium text-gray-800">{data.identificacao.situacaoLabel}</p>
             </div>
+            {!cancelada && data.status === "concluido" && data.identificacao.pendentes > 0 ? (
+              <button
+                type="button"
+                onClick={() => setLocation(compraVendaCompraRecebimentoPath(data.id))}
+                className="mt-4 inline-flex items-center px-4 min-h-[40px] rounded-lg text-[12px] font-semibold text-gray-800 hover:opacity-90"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                Receber / Identificar animais
+              </button>
+            ) : null}
           </div>
 
           <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">

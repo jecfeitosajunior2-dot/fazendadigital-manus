@@ -5,6 +5,7 @@ import {
   COMPRA_VENDA_VENDA_NOVA_PATH,
   COMPRA_VENDA_VENDAS_PATH,
   compraVendaCompraDetalhePath,
+  compraVendaCompraRecebimentoPath,
   compraVendaVendaDetalhePath,
   nomeCompradorPorId,
   opcoesComprador,
@@ -54,6 +55,7 @@ describe("Compra e Venda — compradores ficam dentro de Vendas", () => {
     expect(COMPRA_VENDA_COMPRA_NOVA_PATH).toBe("/compra-venda/compras/nova");
     expect(COMPRA_VENDA_COMPRA_NOVA_PATH.startsWith(`${COMPRA_VENDA_COMPRAS_PATH}/`)).toBe(true);
     expect(compraVendaCompraDetalhePath(1)).toBe("/compra-venda/compras/1");
+    expect(compraVendaCompraRecebimentoPath(1)).toBe("/compra-venda/compras/1/recebimento");
   });
 
   it("consulta da Nova Venda não pede compradores inativos", () => {

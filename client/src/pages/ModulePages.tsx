@@ -51,6 +51,16 @@ import {
   vendasParaTotaisRodape,
 } from "@/lib/vendasListagem";
 import {
+  filtrarComprasListagem,
+  filtrosSecundariosComprasVazios,
+  intervaloDatasListagemInvalido,
+  opcoesFornecedorCompra,
+  opcoesStatusCompra,
+  paginarComprasListagem,
+  statusQueryComprasListagem,
+  type FiltrosComprasTela,
+} from "@/lib/comprasListagem";
+import {
   COMPRA_VENDA_COMPRADORES_PATH,
   COMPRA_VENDA_COMPRA_NOVA_PATH,
   compraVendaCompraDetalhePath,
@@ -1853,16 +1863,103 @@ function CompraVendaCartEmptyIcon() {
 export function PurchasesPage() {
   const [, setLocation] = useLocation();
   const [busca, setBusca] = useState("");
+  const [filtros, setFiltros] = useState<FiltrosComprasTela>(filtrosSecundariosComprasVazios());
+  const [aplicados, setAplicados] = useState<FiltrosComprasTela>(filtrosSecundariosComprasVazios());
+  const [maisFiltros, setMaisFiltros] = useState(false);
+  const [fazendaId, setFazendaId] = useState("");
+  const [fazendaInitDone, setFazendaInitDone] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<TablePageSize>(10);
   const [cancelarId, setCancelarId] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const utils = trpc.useUtils();
-  const { data: compras, refetch, isLoading } = trpc.compras.list.useQuery();
-  const filtradas = (compras ?? []).filter(c => {
-    const q = busca.trim().toLowerCase();
-    if (!q) return true;
-    return [c.fornecedor, c.data, c.observacoes, c.status].some(campo => String(campo ?? "").toLowerCase().includes(q));
-  });
+  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const { data: fornecedores = [] } = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
+  const fazendaNum = fazendaId ? Number(fazendaId) : 0;
+  const statusQuery = statusQueryComprasListagem(aplicados.status);
+  const { data: compras, refetch, isLoading } = trpc.compras.list.useQuery(
+    { fazendaId: fazendaNum, status: statusQuery },
+    { enabled: fazendaNum > 0 },
+  );
   const cancelarMut = trpc.compras.cancelar.useMutation();
+
+  useEffect(() => {
+    if (fazendaInitDone || !fazendas.length) return;
+    const ids = fazendas.map(f => f.id);
+    const stored = readPersistedRebanhoFazendaId(ids);
+    const resolved = stored || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    if (resolved) {
+      setFazendaId(resolved);
+      persistRebanhoFazendaId(resolved);
+    }
+    setFazendaInitDone(true);
+  }, [fazendas, fazendaInitDone]);
+
+  const limparFiltrosSecundarios = () => {
+    const vazios = filtrosSecundariosComprasVazios();
+    setFiltros(vazios);
+    setAplicados(vazios);
+    setBusca("");
+    setMaisFiltros(false);
+    setPage(1);
+  };
+
+  const mudarFazenda = (value: string) => {
+    setFazendaId(value);
+    if (value) persistRebanhoFazendaId(value);
+    else persistRebanhoFazendaId("");
+    limparFiltrosSecundarios();
+  };
+
+  const aplicarFiltros = () => {
+    if (fazendaNum <= 0) return;
+    if (intervaloDatasListagemInvalido(filtros.periodoDe, filtros.periodoAte)) {
+      toast.error("Data inicial não pode ser maior que a data final.");
+      return;
+    }
+    setAplicados({ ...filtros });
+    setPage(1);
+  };
+
+  const filtradas = useMemo(
+    () =>
+      filtrarComprasListagem(compras ?? [], {
+        busca,
+        periodoDe: aplicados.periodoDe,
+        periodoAte: aplicados.periodoAte,
+        fornecedorId: aplicados.fornecedorId || FILTRO_TODOS,
+        status: aplicados.status || FILTRO_TODOS,
+        fazendaId: fazendaNum > 0 ? fazendaNum : null,
+      }),
+    [compras, busca, aplicados, fazendaNum],
+  );
+  const pageItems = paginarComprasListagem(filtradas, page, pageSize);
+  const opcoesFornecedor = useMemo(
+    () => opcoesFornecedorCompra(fornecedores).filter(o => o.value !== FILTRO_TODOS),
+    [fornecedores],
+  );
+  const opcoesStatus = useMemo(
+    () => opcoesStatusCompra().filter(o => o.value !== FILTRO_TODOS),
+    [],
+  );
+  const fazendaSelecionada = fazendaNum > 0;
+  const disabledHint = "Selecione uma fazenda para usar este filtro";
+  const totalPages = Math.max(1, Math.ceil(filtradas.length / pageSize));
+  const temFiltroSecundario = Boolean(
+    busca.trim()
+    || aplicados.fornecedorId
+    || aplicados.periodoDe
+    || aplicados.periodoAte
+    || statusQuery,
+  );
+  const emptySemFazenda = fazendaInitDone && !fazendaSelecionada;
+  const emptyTotal = !isLoading && fazendaSelecionada && (compras?.length ?? 0) === 0 && !temFiltroSecundario;
+  const emptyFiltro =
+    !isLoading && fazendaSelecionada && filtradas.length === 0 && (temFiltroSecundario || (compras?.length ?? 0) > 0);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const handleCancelar = async (motivo: string) => {
     if (cancelarId == null) return;
@@ -1916,27 +2013,139 @@ export function PurchasesPage() {
           </div>
         </div>
 
-        {compras && compras.length > 0 ? (
-          <div className="px-5 py-4 border-b border-gray-100">
-            <div className="relative max-w-sm">
-              <span className="material-icons absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
-                search
-              </span>
-              <input
-                value={busca}
-                onChange={e => setBusca(e.target.value)}
-                placeholder="Pesquisar por fornecedor ou data"
-                className="w-full min-h-[34px] pl-9 pr-3 text-[12px] border border-gray-200 rounded bg-white text-gray-700 placeholder:text-gray-400"
-              />
+        {fazendaInitDone && (
+          <div className="px-5 py-3 border-b border-gray-100 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <label className={vendaFiltroLabelCls}>Fazenda</label>
+                <VendaFilterSelect
+                  value={fazendaId}
+                  onChange={mudarFazenda}
+                  placeholder="Selecione uma fazenda"
+                  options={fazendas.map(f => ({ value: String(f.id), label: f.nome }))}
+                />
+              </div>
+              <div className="min-w-0">
+                <label className={vendaFiltroLabelCls}>Fornecedor</label>
+                <VendaFilterSelect
+                  value={filtros.fornecedorId}
+                  onChange={v => setFiltros(f => ({ ...f, fornecedorId: v }))}
+                  placeholder={fazendaSelecionada ? "Todos" : "Selecione primeiro uma Fazenda"}
+                  disabled={!fazendaSelecionada}
+                  options={opcoesFornecedor}
+                />
+              </div>
             </div>
-          </div>
-        ) : null}
 
-        {isLoading ? (
-          <div className="px-5 py-12 text-center">
-            <p className="text-[12px] text-gray-400">Carregando...</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data inicial</FormLabel>
+                <FormDatePicker
+                  value={filtros.periodoDe}
+                  onChange={v => setFiltros(f => ({ ...f, periodoDe: v }))}
+                />
+              </div>
+              <div
+                className={cn("min-w-0", !fazendaSelecionada && "opacity-60 pointer-events-none")}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+              >
+                <FormLabel>Data final</FormLabel>
+                <FormDatePicker
+                  value={filtros.periodoAte}
+                  onChange={v => setFiltros(f => ({ ...f, periodoAte: v }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={vendaFiltroLabelCls}>Buscar</label>
+              <div className="relative">
+                <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={e => {
+                    setBusca(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Buscar por fornecedor ou data"
+                  className={`${vendaFiltroInputCls} pl-8 pr-3`}
+                  disabled={!fazendaSelecionada}
+                  title={!fazendaSelecionada ? disabledHint : undefined}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMaisFiltros(o => !o)}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-600 min-h-[34px] px-2"
+              >
+                <span className="material-icons text-[16px]">
+                  {maisFiltros ? "expand_less" : "expand_more"}
+                </span>
+                Mais filtros
+              </button>
+              <button
+                type="button"
+                onClick={limparFiltrosSecundarios}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="px-4 py-1.5 rounded text-[12px] font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white min-h-[34px]"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={aplicarFiltros}
+                disabled={!fazendaSelecionada}
+                title={!fazendaSelecionada ? disabledHint : undefined}
+                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:brightness-95 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[34px]"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                Filtrar
+              </button>
+            </div>
+
+            {maisFiltros && fazendaSelecionada ? (
+              <div className="pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="min-w-0">
+                  <label className={vendaFiltroLabelCls}>Status</label>
+                  <VendaFilterSelect
+                    value={filtros.status === "pendente" ? "" : filtros.status}
+                    onChange={v => {
+                      setFiltros(f => ({ ...f, status: v }));
+                      setAplicados(f => ({ ...f, status: v }));
+                      setPage(1);
+                    }}
+                    placeholder="Todos"
+                    options={opcoesStatus}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : !compras?.length ? (
+        )}
+
+        {emptySemFazenda ? (
+          <div className="py-14 px-6 text-center">
+            <CompraVendaCartEmptyIcon />
+            <h2 className="text-[16px] font-semibold text-gray-900">
+              Selecione uma fazenda para visualizar as compras.
+            </h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Selecione uma fazenda no filtro acima para consultar e registrar compras.
+            </p>
+          </div>
+        ) : emptyTotal ? (
           <div className="py-14 px-6 text-center">
             <CompraVendaCartEmptyIcon />
             <h2 className="text-[16px] font-semibold text-gray-900">Nenhuma compra registrada</h2>
@@ -1944,9 +2153,28 @@ export function PurchasesPage() {
               Registre a primeira compra de animais informando fornecedor, quantidade e valor total.
             </p>
           </div>
-        ) : !filtradas.length ? (
+        ) : emptyFiltro ? (
+          <div className="py-14 px-6 text-center">
+            <span className="material-icons text-[40px] text-gray-300 block mb-3">search_off</span>
+            <h2 className="text-[16px] font-semibold text-gray-900">
+              Nenhuma compra encontrada com os filtros aplicados.
+            </h2>
+            <p className="text-[13px] text-gray-600 mt-2 max-w-md mx-auto">
+              Revise os filtros ou limpe a busca para visualizar outros registros.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={limparFiltrosSecundarios}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </div>
+        ) : isLoading ? (
           <div className="px-5 py-12 text-center">
-            <p className="text-[13px] text-gray-500">Nenhuma compra encontrada para essa pesquisa.</p>
+            <p className="text-[12px] text-gray-400">Carregando...</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1974,7 +2202,7 @@ export function PurchasesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtradas.map((c: { id: number; data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null; podeCancelar?: boolean }) => (
+                {pageItems.map((c: { id: number; data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null; podeCancelar?: boolean }) => (
                   <tr
                     key={c.id}
                     className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
@@ -2029,6 +2257,19 @@ export function PurchasesPage() {
                 ))}
               </tbody>
             </table>
+            {filtradas.length > 0 ? (
+              <TablePaginationFooter
+                pageSize={pageSize}
+                page={page}
+                totalItems={filtradas.length}
+                onPageChange={setPage}
+                onPageSizeChange={size => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
+                itemLabel="compras"
+              />
+            ) : null}
           </div>
         )}
       </div>

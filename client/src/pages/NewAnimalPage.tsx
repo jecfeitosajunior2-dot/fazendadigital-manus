@@ -49,6 +49,12 @@ import {
   MSG_PESO_ENTRADA_INVALIDO,
   isPesoEntradaFormValido,
 } from '@shared/pesoEntrada';
+import {
+  formatarPesoEntradaExibicao,
+  pesoEntradaNoUpdateAnimal,
+  resolverExibicaoPesoEntrada,
+  textoAuxiliarPesoEntrada,
+} from '@shared/compraRecebimento';
 import { deveExibirDataDesmamaNoFormularioAnimal } from '@shared/desmamaManejo';
 import {
   categoriaAposTrocaSexoNoFormulario,
@@ -280,6 +286,21 @@ const AnimalFormPage: React.FC = () => {
   const { data: saudeRegistros } = trpc.saude.list.useQuery(
     { animalId: animalId! },
     { enabled: isEditMode && !!animalId },
+  );
+  const compraIdAnimal = Number((animal as { compraId?: number | null } | undefined)?.compraId);
+  const animalDeCompra = Number.isInteger(compraIdAnimal) && compraIdAnimal > 0;
+  const { data: pesagensAnimal = [] } = trpc.pesagens.list.useQuery(
+    { animalId: animalId! },
+    { enabled: isEditMode && !!animalId && animalDeCompra },
+  );
+  const exibicaoPesoEntrada = useMemo(
+    () =>
+      resolverExibicaoPesoEntrada({
+        compraId: animalDeCompra ? compraIdAnimal : null,
+        pesoEntrada: (animal as { pesoEntrada?: unknown } | undefined)?.pesoEntrada ?? form.pesoEntrada,
+        pesagens: pesagensAnimal,
+      }),
+    [animal, animalDeCompra, compraIdAnimal, form.pesoEntrada, pesagensAnimal],
   );
 
   const sexoExibicaoCastrado =
@@ -531,7 +552,7 @@ const AnimalFormPage: React.FC = () => {
         raca: resolveStr(form.raca),
         pelagem: resolveStr(form.pelagem),
         marca: resolveStr(form.marca),
-        pesoEntrada: resolveStr(form.pesoEntrada),
+        pesoEntrada: pesoEntradaNoUpdateAnimal(exibicaoPesoEntrada, form.pesoEntrada),
         produtorOrigem: resolveStr(form.produtorOrigem),
         precoKg: resolveStr(form.precoKg),
         frete: resolveStr(form.frete),
@@ -900,18 +921,35 @@ const AnimalFormPage: React.FC = () => {
               </div>
               <div>
                 <FormLabel>Peso na Entrada (kg)</FormLabel>
-                <FieldInput
-                  value={form.pesoEntrada}
-                  onChange={v => set('pesoEntrada', v)}
-                  placeholder="ex: 320"
-                  type="number"
-                  min="0.01"
-                  step="0.1"
-                  error={!!errors.pesoEntrada}
-                />
-                <ManejoCampoHint>{HINT_PESO_ENTRADA}</ManejoCampoHint>
-                {errors.pesoEntrada && (
-                  <p className="mt-1 text-[11px] text-red-500">{errors.pesoEntrada}</p>
+                {exibicaoPesoEntrada.somenteLeitura ? (
+                  <>
+                    <FieldInput
+                      value={
+                        exibicaoPesoEntrada.pesoKg != null
+                          ? formatarPesoEntradaExibicao(exibicaoPesoEntrada.pesoKg)
+                          : '—'
+                      }
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <ManejoCampoHint>{textoAuxiliarPesoEntrada(exibicaoPesoEntrada)}</ManejoCampoHint>
+                  </>
+                ) : (
+                  <>
+                    <FieldInput
+                      value={form.pesoEntrada}
+                      onChange={v => set('pesoEntrada', v)}
+                      placeholder="ex: 320"
+                      type="number"
+                      min="0.01"
+                      step="0.1"
+                      error={!!errors.pesoEntrada}
+                    />
+                    <ManejoCampoHint>{HINT_PESO_ENTRADA}</ManejoCampoHint>
+                    {errors.pesoEntrada && (
+                      <p className="mt-1 text-[11px] text-red-500">{errors.pesoEntrada}</p>
+                    )}
+                  </>
                 )}
               </div>
               <div>

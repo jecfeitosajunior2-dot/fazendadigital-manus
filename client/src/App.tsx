@@ -27,6 +27,7 @@ import CompraVendaVisaoGeralPage from "./pages/CompraVendaVisaoGeralPage";
 import NovaVendaPage from "./pages/NovaVendaPage";
 import NovaCompraPage from "./pages/NovaCompraPage";
 import CompraDetalhePage from "./pages/CompraDetalhePage";
+import CompraRecebimentoPage from "./pages/CompraRecebimentoPage";
 import VendaDetalhePage from "./pages/VendaDetalhePage";
 import { NewAnimalPage } from "./pages/NewAnimalPage";
 import { EditAnimalPage } from "./pages/EditAnimalPage";
@@ -169,6 +170,7 @@ function ProtectedRoutes() {
       {/* Purchase and Sale */}
       <Route path="/compra-venda/visao-geral" component={CompraVendaVisaoGeralPage} />
       <Route path="/compra-venda/compras/nova" component={NovaCompraPage} />
+      <Route path="/compra-venda/compras/:id/recebimento" component={CompraRecebimentoPage} />
       <Route path="/compra-venda/compras/:id" component={CompraDetalhePage} />
       <Route path="/compra-venda/compras" component={PurchasesPage} />
       <Route path="/compra-venda/vendas/nova" component={NovaVendaPage} />
