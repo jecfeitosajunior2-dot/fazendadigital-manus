@@ -51,13 +51,29 @@ import {
   vendasParaTotaisRodape,
 } from "@/lib/vendasListagem";
 import {
+  COMPRAS_LISTAGEM_EXPORT_HEADERS,
+  comprasParaTotaisRodape,
+  custoMedioKgCompraListagem,
   filtrarComprasListagem,
   filtrosSecundariosComprasVazios,
+  formatarAnimaisCelulaCompras,
+  formatarDataCompraListagem,
+  formatarMoedaCelulaCompras,
+  formatarPesoCelulaCompras,
+  formatarPesoRodapeCompras,
+  formatarQuantidadeRodapeCompras,
+  formatarValorRodapeCompras,
   intervaloDatasListagemInvalido,
+  linhasExportComprasListagem,
+  modoTotaisRodapeCompras,
+  nomeArquivoExportComprasListagem,
   opcoesFornecedorCompra,
   opcoesStatusCompra,
+  ordenarComprasListagemPorData,
   paginarComprasListagem,
+  resumirComprasListagem,
   statusQueryComprasListagem,
+  valorComercialCompraListagem,
   type FiltrosComprasTela,
 } from "@/lib/comprasListagem";
 import {
@@ -1870,6 +1886,7 @@ export function PurchasesPage() {
   const [fazendaInitDone, setFazendaInitDone] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(10);
+  const [sortAsc, setSortAsc] = useState(false);
   const [cancelarId, setCancelarId] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const utils = trpc.useUtils();
@@ -1933,7 +1950,20 @@ export function PurchasesPage() {
       }),
     [compras, busca, aplicados, fazendaNum],
   );
-  const pageItems = paginarComprasListagem(filtradas, page, pageSize);
+  const ordenadas = useMemo(
+    () => ordenarComprasListagemPorData(filtradas, sortAsc),
+    [filtradas, sortAsc],
+  );
+  const pageItems = paginarComprasListagem(ordenadas, page, pageSize);
+  const totaisRodape = useMemo(() => {
+    const statusFiltro = aplicados.status || FILTRO_TODOS;
+    const linhas = comprasParaTotaisRodape(filtradas, statusFiltro);
+    return {
+      modo: modoTotaisRodapeCompras(statusFiltro),
+      resumo: resumirComprasListagem(linhas),
+      excluidas: filtradas.filter(compra => compra.status === "cancelado").length,
+    };
+  }, [filtradas, aplicados.status]);
   const opcoesFornecedor = useMemo(
     () => opcoesFornecedorCompra(fornecedores).filter(o => o.value !== FILTRO_TODOS),
     [fornecedores],
@@ -1943,6 +1973,23 @@ export function PurchasesPage() {
     [],
   );
   const fazendaSelecionada = fazendaNum > 0;
+  const fazendaSelecionadaNome = fazendas.find(f => String(f.id) === fazendaId)?.nome;
+  const exportDisabled = !fazendaSelecionada || filtradas.length === 0;
+  const exportFilenameBase = nomeArquivoExportComprasListagem(fazendaSelecionadaNome);
+  const tituloQuadro = fazendaSelecionadaNome ? `Compras — ${fazendaSelecionadaNome}` : "Compras";
+  const exportTitleLine = `${(fazendaSelecionadaNome || "").trim() || "Fazenda"} — Compras`;
+  const exportLinhas = fazendaSelecionada
+    ? linhasExportComprasListagem(ordenadas, aplicados.status || FILTRO_TODOS)
+    : [];
+  const exportAlinhamento = [
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+    "center",
+  ] as const;
   const disabledHint = "Selecione uma fazenda para usar este filtro";
   const totalPages = Math.max(1, Math.ceil(filtradas.length / pageSize));
   const temFiltroSecundario = Boolean(
@@ -1982,7 +2029,7 @@ export function PurchasesPage() {
             className="text-[20px] font-semibold text-gray-900 shrink-0"
             style={{ fontFamily: "Fraunces, serif" }}
           >
-            Compras
+            {tituloQuadro}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1996,18 +2043,31 @@ export function PurchasesPage() {
               <span className="sm:hidden">Nova</span>
             </button>
             <ListExportButtons
-              title="Compras"
-              filename="compras"
-              headers={["Data", "Fornecedor", "Quantidade", "Valor Total (R$)", "Status"]}
-              rows={filtradas.map((c: { data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null }) => [
-                c.data,
-                c.fornecedor,
-                c.quantidadeAnimais ?? 0,
-                Number(c.valorTotal).toFixed(2),
-                labelStatusComercialCompra(c.status),
-              ])}
-              alignRightFrom={2}
+              title={tituloQuadro}
+              filename={exportFilenameBase}
+              headers={[...COMPRAS_LISTAGEM_EXPORT_HEADERS]}
+              rows={exportLinhas}
+              pdfHeaders={[...COMPRAS_LISTAGEM_EXPORT_HEADERS]}
+              pdfRows={exportLinhas}
+              pdfColumnAligns={[...exportAlinhamento]}
+              fazendaNome={fazendaSelecionadaNome}
               variant="secondary"
+              disabled={exportDisabled}
+              disabledTitle={
+                !fazendaSelecionada
+                  ? "Selecione uma fazenda para exportar."
+                  : "Nenhuma compra disponível para exportação."
+              }
+              spreadsheetSheetName="Compras"
+              spreadsheetReportTitle={() => exportTitleLine}
+              spreadsheetBlankAfterMeta={false}
+              spreadsheetAutoFilter={false}
+              spreadsheetPlainHeader
+              spreadsheetTextCols={[0, 1, 2, 3, 4, 5, 6]}
+              spreadsheetColumnAligns={[...exportAlinhamento]}
+              spreadsheetFooterRowCount={exportLinhas.length > 0 ? 1 : 0}
+              pdfShowRegistrosSubtitle={false}
+              pdfIncludeSpreadsheetTitle={false}
               spreadsheetAllowEmpty
             />
           </div>
@@ -2177,44 +2237,129 @@ export function PurchasesPage() {
             <p className="text-[12px] text-gray-400">Carregando...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
+          <TableHorizontalScroll
+            fitWidth
+            footer={
+              filtradas.length > 0 ? (
+                <div className="border-t border-gray-100">
+                  <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-600 bg-gray-50/60">
+                    <span>
+                      {totaisRodape.modo === "canceladas"
+                        ? "Canceladas — "
+                        : totaisRodape.modo === "pendentes"
+                          ? "Pendentes — "
+                          : null}
+                      Compras:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatarQuantidadeRodapeCompras(totaisRodape.resumo.compras)}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      Animais:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatarQuantidadeRodapeCompras(totaisRodape.resumo.animais)}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      Peso:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatarPesoRodapeCompras(totaisRodape.resumo.peso)}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
+                      {totaisRodape.modo === "efetivo" ? "Valor total" : "Valor"}:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {formatarValorRodapeCompras(totaisRodape.resumo.valor)}
+                      </span>
+                    </span>
+                    {totaisRodape.modo === "efetivo" && totaisRodape.excluidas > 0 ? (
+                      <span className="text-[10px] text-gray-500">
+                        Canceladas não incluídas nos totais
+                      </span>
+                    ) : null}
+                  </div>
+                  <TablePaginationFooter
+                    pageSize={pageSize}
+                    page={page}
+                    totalItems={filtradas.length}
+                    onPageChange={setPage}
+                    onPageSizeChange={size => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                    itemLabel="compras"
+                  />
+                </div>
+              ) : null
+            }
+          >
+            <table className="w-full min-w-[860px] table-fixed text-[12px] border-collapse">
+              <colgroup>
+                <col style={{ width: "110px" }} />
+                <col />
+                <col style={{ width: "88px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "120px" }} />
+                <col style={{ width: "130px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "72px" }} />
+              </colgroup>
+              <thead className="bg-gray-100 border-b border-gray-200">
                 <tr>
-                  <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Data
+                  <th className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setSortAsc(a => !a)}
+                      className="inline-flex items-center justify-center gap-0.5 text-[10px] font-semibold text-gray-500 uppercase tracking-wide mx-auto"
+                    >
+                      Data
+                      <VendaSortIcon active asc={sortAsc} />
+                    </button>
                   </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Fornecedor
                   </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                    Qtd
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Animais
                   </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    Peso
+                  </th>
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    R$/kg médio
+                  </th>
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Valor Total
                   </th>
-                  <th className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Status
                   </th>
-                  <th className="px-5 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-24">
+                  <th className="px-3 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Ações
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {pageItems.map((c: { id: number; data: string; fornecedor: string; quantidadeAnimais?: number | null; valorTotal: string | number; status?: string | null; podeCancelar?: boolean }) => (
+                {pageItems.map(c => (
                   <tr
                     key={c.id}
                     className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
                     onClick={() => setLocation(compraVendaCompraDetalhePath(c.id))}
                   >
-                    <td className="px-5 py-2.5 text-gray-700 whitespace-nowrap">{c.data}</td>
-                    <td className="px-3 py-2.5 text-gray-800 font-medium">{c.fornecedor}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-700 tabular-nums">{c.quantidadeAnimais ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-800 font-medium tabular-nums whitespace-nowrap">
-                      {Number(c.valorTotal).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    <td className="px-4 py-2.5 text-center text-gray-700 whitespace-nowrap">
+                      {formatarDataCompraListagem(c.data)}
                     </td>
-                    <td className="px-3 py-2.5 text-center">
+                    <td className="px-4 py-2.5 text-gray-800 font-medium">{c.fornecedor || "—"}</td>
+                    <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums">
+                      {formatarAnimaisCelulaCompras(c)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
+                      {formatarPesoCelulaCompras(c)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
+                      {formatarMoedaCelulaCompras(custoMedioKgCompraListagem(c))}
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-gray-800 font-medium tabular-nums whitespace-nowrap">
+                      {formatarMoedaCelulaCompras(valorComercialCompraListagem(c))}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
                       <span
                         className={cn(
                           "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium",
@@ -2228,7 +2373,7 @@ export function PurchasesPage() {
                         {labelStatusComercialCompra(c.status)}
                       </span>
                     </td>
-                    <td className="px-5 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                    <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-0.5">
                         <TableIconButton
                           label="Ver detalhes"
@@ -2257,20 +2402,7 @@ export function PurchasesPage() {
                 ))}
               </tbody>
             </table>
-            {filtradas.length > 0 ? (
-              <TablePaginationFooter
-                pageSize={pageSize}
-                page={page}
-                totalItems={filtradas.length}
-                onPageChange={setPage}
-                onPageSizeChange={size => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                itemLabel="compras"
-              />
-            ) : null}
-          </div>
+          </TableHorizontalScroll>
         )}
       </div>
       <CancelarVendaDialog
@@ -2746,6 +2878,13 @@ export function SalesPage() {
                         : totaisRodape.modo === "pendentes"
                           ? "Pendentes — "
                           : null}
+                      Vendas:{" "}
+                      <span className="font-semibold text-gray-800 tabular-nums">
+                        {totaisRodape.resumo.vendas.kind === "known"
+                          ? totaisRodape.resumo.vendas.value.toLocaleString("pt-BR")
+                          : "—"}
+                      </span>
+                      <span className="text-gray-400 mx-1.5">·</span>
                       Animais:{" "}
                       <span className="font-semibold text-gray-800 tabular-nums">
                         {totaisRodape.resumo.animais.kind === "known"

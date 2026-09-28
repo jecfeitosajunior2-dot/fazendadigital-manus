@@ -1,8 +1,15 @@
 /** Apresentação da listagem de Compras — filtros no padrão de Vendas, domínio próprio. */
 
-import { FILTRO_TODOS } from "./vendasListagem";
-import { normalizeOperacaoData } from "./compraVendaResumo";
+import { formatDateBR } from "./date-utils";
+import { FILTRO_TODOS, modoTotaisRodapeVendas, type ModoTotaisRodapeVendas } from "./vendasListagem";
+import {
+  normalizeOperacaoData,
+  parseQuantidadeOperacao,
+  parseValorOperacao,
+  type CommercialMetric,
+} from "./compraVendaResumo";
 import { labelStatusComercialCompra } from "@shared/compraIdentificacao";
+import { calcularCustoMedioKg } from "@shared/compraComercial";
 
 export { FILTRO_TODOS };
 
@@ -18,6 +25,9 @@ export type CompraListagemRow = {
   fazendaId?: number | null;
   quantidadeAnimais?: number | null;
   valorTotal?: string | number | null;
+  custoTotal?: string | number | null;
+  /** Peso comercial/adquirido persistido na Compra — não é pesagem do Recebimento. */
+  pesoTotal?: string | number | null;
   status?: string | null;
   observacoes?: string | null;
   podeCancelar?: boolean;
@@ -121,4 +131,218 @@ export function paginarComprasListagem<T>(rows: ReadonlyArray<T>, page: number, 
   const tamanho = Math.max(1, pageSize);
   const inicio = (pagina - 1) * tamanho;
   return rows.slice(inicio, inicio + tamanho);
+}
+
+/** Mesma ordenação da coluna Data de Vendas: data civil, desempate por id. */
+export function ordenarComprasListagemPorData(
+  compras: ReadonlyArray<CompraListagemRow>,
+  sortAsc: boolean,
+): CompraListagemRow[] {
+  const list = [...compras];
+  list.sort((a, b) => {
+    const da = normalizeOperacaoData(a.data) ?? "";
+    const db = normalizeOperacaoData(b.data) ?? "";
+    let cmp = da.localeCompare(db);
+    if (cmp === 0) cmp = b.id - a.id;
+    return sortAsc ? cmp : -cmp;
+  });
+  return list;
+}
+
+export type ModoTotaisRodapeCompras = ModoTotaisRodapeVendas;
+
+/** Mesmo recorte do rodapé de Vendas: efetivo / canceladas / pendentes. */
+export function modoTotaisRodapeCompras(statusFiltro?: string | null): ModoTotaisRodapeCompras {
+  return modoTotaisRodapeVendas(statusFiltro);
+}
+
+/**
+ * Recorte do rodapé: efetivo só `concluido`.
+ * Cancelada/Pendente só entram quando o filtro de status pede explicitamente esse recorte.
+ */
+export function comprasParaTotaisRodape(
+  compras: ReadonlyArray<CompraListagemRow>,
+  statusFiltro?: string | null,
+): CompraListagemRow[] {
+  const modo = modoTotaisRodapeCompras(statusFiltro);
+  if (modo === "canceladas") return compras.filter(compra => compra.status === "cancelado");
+  if (modo === "pendentes") return compras.filter(compra => compra.status === "pendente");
+  return compras.filter(compra => compra.status === "concluido");
+}
+
+/** Só o peso comercial persistido na Compra. Ignora qualquer campo de pesagem zootécnica. */
+export function pesoComercialCompraListagem(compra: CompraListagemRow): number | null {
+  if (compra.pesoTotal == null || compra.pesoTotal === "") return null;
+  const n = Number(compra.pesoTotal);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Total comercial da Compra: custoTotal (animais + frete + outros) ou valorTotal persistido. */
+export function valorComercialCompraListagem(compra: CompraListagemRow): number | null {
+  const bruto =
+    compra.custoTotal != null && String(compra.custoTotal).trim() !== ""
+      ? compra.custoTotal
+      : compra.valorTotal;
+  return parseValorOperacao(bruto);
+}
+
+export function resumirComprasListagem(compras: ReadonlyArray<CompraListagemRow>): {
+  compras: CommercialMetric;
+  animais: CommercialMetric;
+  peso: CommercialMetric;
+  valor: CommercialMetric;
+} {
+  if (compras.length === 0) {
+    return {
+      compras: { kind: "known", value: 0 },
+      animais: { kind: "known", value: 0 },
+      peso: { kind: "known", value: 0 },
+      valor: { kind: "known", value: 0 },
+    };
+  }
+
+  const pesos = compras.map(pesoComercialCompraListagem).filter((n): n is number => n != null);
+  const animais = compras.map(compra => parseQuantidadeOperacao(compra));
+  const valores = compras.map(valorComercialCompraListagem);
+
+  return {
+    compras: { kind: "known", value: compras.length },
+    animais: animais.every((n): n is number => n != null)
+      ? { kind: "known", value: animais.reduce((acc, n) => acc + n, 0) }
+      : { kind: "unknown" },
+    peso: pesos.length
+      ? { kind: "known", value: Math.round(pesos.reduce((acc, n) => acc + n, 0) * 100) / 100 }
+      : { kind: "unknown" },
+    valor: valores.every((n): n is number => n != null)
+      ? { kind: "known", value: valores.reduce((acc, n) => acc + n, 0) }
+      : { kind: "unknown" },
+  };
+}
+
+export function formatarQuantidadeRodapeCompras(metrica: CommercialMetric): string {
+  return metrica.kind === "known" ? metrica.value.toLocaleString("pt-BR") : "—";
+}
+
+export function formatarPesoRodapeCompras(metrica: CommercialMetric): string {
+  return metrica.kind === "known" ? `${metrica.value.toLocaleString("pt-BR")} kg` : "—";
+}
+
+export function formatarValorRodapeCompras(metrica: CommercialMetric): string {
+  return metrica.kind === "known"
+    ? metrica.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : "—";
+}
+
+/** Apresentação civil dd/mm/aaaa — não altera o valor persistido. */
+export function formatarDataCompraListagem(data: unknown): string {
+  return formatDateBR(data);
+}
+
+export const COMPRAS_LISTAGEM_CABECALHOS = [
+  "Data",
+  "Fornecedor",
+  "Animais",
+  "Peso",
+  "R$/kg médio",
+  "Valor Total",
+  "Status",
+  "Ações",
+] as const;
+
+/**
+ * Custo efetivo médio por kg: custoTotal (animais + frete + outros) / peso comercial.
+ * Não usa preço negociado (`precoUnitario`). Sem peso válido, não divide.
+ */
+export function custoMedioKgCompraListagem(compra: CompraListagemRow): number | null {
+  const custo = valorComercialCompraListagem(compra);
+  const peso = pesoComercialCompraListagem(compra);
+  if (custo == null) return null;
+  return calcularCustoMedioKg(custo, peso);
+}
+
+export function formatarAnimaisCelulaCompras(compra: CompraListagemRow): string {
+  const qtd = parseQuantidadeOperacao(compra);
+  return qtd == null ? "—" : qtd.toLocaleString("pt-BR");
+}
+
+export function formatarPesoCelulaCompras(compra: CompraListagemRow): string {
+  const peso = pesoComercialCompraListagem(compra);
+  if (peso == null || peso <= 0) return "—";
+  return `${peso.toLocaleString("pt-BR")} kg`;
+}
+
+export function formatarMoedaCelulaCompras(valor: number | null): string {
+  if (valor == null) return "—";
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Nome-base do arquivo no padrão de Vendas: compras-nome-da-fazenda */
+export function nomeArquivoExportComprasListagem(fazendaNome?: string | null): string {
+  const slug = String(fazendaNome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug ? `compras-${slug}` : "compras";
+}
+
+export function linhaCelulasComprasListagem(compra: CompraListagemRow): string[] {
+  return [
+    formatarDataCompraListagem(compra.data),
+    String(compra.fornecedor ?? "").trim() || "—",
+    formatarAnimaisCelulaCompras(compra),
+    formatarPesoCelulaCompras(compra),
+    formatarMoedaCelulaCompras(custoMedioKgCompraListagem(compra)),
+    formatarMoedaCelulaCompras(valorComercialCompraListagem(compra)),
+    labelStatusComercialCompra(compra.status),
+  ];
+}
+
+/** Mesma sequência da tabela de Compras — sem a coluna Ações. */
+export const COMPRAS_LISTAGEM_EXPORT_HEADERS = [
+  "Data",
+  "Fornecedor",
+  "Animais",
+  "Peso",
+  "R$/kg médio",
+  "Valor Total",
+  "Status",
+] as const;
+
+function metricaOuTraco(
+  metrica: { kind: "known"; value: number } | { kind: "unknown" },
+  formatar: (valor: number) => string,
+): string {
+  return metrica.kind === "known" ? formatar(metrica.value) : "—";
+}
+
+/** Mesmo recorte do rodapé da listagem: efetivo só concluída; Cancelada soma o histórico. */
+export function linhaTotaisExportComprasListagem(
+  compras: ReadonlyArray<CompraListagemRow>,
+  statusFiltro?: string | null,
+): string[] {
+  const modo = modoTotaisRodapeCompras(statusFiltro);
+  const resumo = resumirComprasListagem(comprasParaTotaisRodape(compras, statusFiltro));
+  const excluidas = compras.filter(compra => compra.status === "cancelado").length;
+  const rotulo =
+    modo === "canceladas" ? "Totais (canceladas)" : modo === "pendentes" ? "Totais (pendentes)" : "Totais";
+  return [
+    rotulo,
+    "",
+    metricaOuTraco(resumo.animais, valor => valor.toLocaleString("pt-BR")),
+    metricaOuTraco(resumo.peso, valor => `${valor.toLocaleString("pt-BR")} kg`),
+    "",
+    metricaOuTraco(resumo.valor, formatarMoedaCelulaCompras),
+    modo === "efetivo" && excluidas > 0 ? "Canceladas não incluídas nos totais" : "",
+  ];
+}
+
+export function linhasExportComprasListagem(
+  compras: ReadonlyArray<CompraListagemRow>,
+  statusFiltro?: string | null,
+): string[][] {
+  const detalhe = compras.map(linhaCelulasComprasListagem);
+  if (detalhe.length === 0) return detalhe;
+  return [...detalhe, linhaTotaisExportComprasListagem(compras, statusFiltro)];
 }

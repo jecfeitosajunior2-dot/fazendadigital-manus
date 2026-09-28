@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { buildExportSpreadsheetBuffer } from "@shared/buildExportSpreadsheet";
@@ -18,6 +21,14 @@ import {
   vendasParaTotaisRodape,
   VENDA_STATUS,
 } from "./vendasListagem";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const modulePages = readFileSync(resolve(here, "../pages/ModulePages.tsx"), "utf8");
+const comprasPage = modulePages.slice(
+  modulePages.indexOf("export function PurchasesPage"),
+  modulePages.indexOf("const VENDA_FILTRO_SELECT_EMPTY"),
+);
+const vendasPage = modulePages.slice(modulePages.indexOf("export function SalesPage"));
 
 const vendaValidada = {
   id: 1,
@@ -307,5 +318,86 @@ describe("vendasListagem", () => {
       kind: "known",
       value: 4612.5,
     });
+  });
+
+  it("1) rodapé de Vendas apresenta Vendas: X no mesmo recorte de Animais/Peso/Valor", () => {
+    expect(vendasPage).toContain("Vendas:");
+    expect(vendasPage).toContain("totaisRodape.resumo.vendas");
+    expect(vendasPage.indexOf("Vendas:")).toBeLessThan(vendasPage.indexOf("Animais:"));
+    expect(vendasPage).toContain("vendasParaTotaisRodape(filtradas");
+    expect(vendasPage).toContain("resumirVendasListagem(linhas)");
+  });
+
+  it("2-4) a contagem usa o mesmo conjunto: concluída entra, cancelada sai no efetivo", () => {
+    const cancelada = { ...vendaValidada, id: 3, status: "cancelado", quantidadeAnimais: 8, pesoTotal: 200, valorTotalNumero: 900 };
+    const linhas = vendasParaTotaisRodape([vendaValidada, cancelada], FILTRO_TODOS);
+    const resumo = resumirVendasListagem(linhas);
+    expect(linhas).toHaveLength(resumo.vendas.kind === "known" ? resumo.vendas.value : -1);
+    expect(resumo.vendas).toEqual({ kind: "known", value: 1 });
+    expect(resumo.animais).toEqual({ kind: "known", value: 2 });
+    expect(resumo.peso).toEqual({ kind: "known", value: 450 });
+    expect(resumo.valor).toEqual({ kind: "known", value: 4612.5 });
+  });
+
+  it("5) aviso de canceladas permanece só no recorte efetivo", () => {
+    expect(vendasPage).toContain("Canceladas não incluídas nos totais");
+    expect(vendasPage).toContain('totaisRodape.modo === "efetivo" && totaisRodape.excluidas > 0');
+  });
+
+  it("6) filtro Cancelada resume o conjunto cancelado, inclusive Vendas: X", () => {
+    const canceladas = [
+      { ...vendaValidada, id: 10, status: "cancelado" },
+      { ...vendaValidada, id: 11, status: "cancelado", quantidadeAnimais: 4, pesoTotal: 100, valorTotalNumero: 500 },
+      { ...vendaValidada, id: 12, status: "cancelado", quantidadeAnimais: 1, pesoTotal: 50, valorTotalNumero: 200 },
+    ];
+    const resumo = resumirVendasListagem(vendasParaTotaisRodape(canceladas, "cancelado"));
+    expect(resumo.vendas).toEqual({ kind: "known", value: 3 });
+    expect(resumo.animais).toEqual({ kind: "known", value: 7 });
+  });
+
+  it("7-10) filtros de fazenda, comprador, período e busca atualizam a quantidade", () => {
+    const daJ = { ...vendaValidada, fazendaId: 1, comprador: "Frigorífico São Paulo", data: "2026-09-19" };
+    const daB = {
+      ...vendaValidada,
+      id: 2,
+      fazendaId: 2,
+      comprador: "Outro",
+      data: "2026-08-01",
+      quantidadeAnimais: 1,
+      valorTotalNumero: 100,
+    };
+    const lista = [daJ, daB];
+    const contar = (filtros: Parameters<typeof filtrarVendasListagem>[1]) =>
+      resumirVendasListagem(vendasParaTotaisRodape(filtrarVendasListagem(lista, filtros), FILTRO_TODOS)).vendas;
+
+    expect(contar({ fazendaId: 1 })).toEqual({ kind: "known", value: 1 });
+    expect(contar({ comprador: "Outro" })).toEqual({ kind: "known", value: 1 });
+    expect(contar({ periodoDe: "2026-09-01", periodoAte: "2026-09-30" })).toEqual({ kind: "known", value: 1 });
+    expect(contar({ busca: "frigor" })).toEqual({ kind: "known", value: 1 });
+    expect(contar({})).toEqual({ kind: "known", value: 2 });
+  });
+
+  it("11-13) paginação não muda o rodapé; Mostrando usa as linhas filtradas", () => {
+    const lista = [
+      { ...vendaValidada, id: 1, status: "concluido" },
+      { ...vendaValidada, id: 2, status: "cancelado" },
+      { ...vendaValidada, id: 3, status: "concluido", quantidadeAnimais: 3, pesoTotal: 100, valorTotalNumero: 300 },
+    ];
+    const filtradas = filtrarVendasListagem(lista, {});
+    const resumoPagina1 = resumirVendasListagem(vendasParaTotaisRodape(filtradas, FILTRO_TODOS));
+    const resumoPagina2 = resumirVendasListagem(vendasParaTotaisRodape(filtradas, FILTRO_TODOS));
+    expect(resumoPagina1).toEqual(resumoPagina2);
+    expect(resumoPagina1.vendas).toEqual({ kind: "known", value: 2 });
+    expect(filtradas).toHaveLength(3);
+    expect(vendasPage).toContain("totalItems={filtradas.length}");
+    expect(vendasPage).toContain('itemLabel="vendas"');
+    expect(vendasPage).not.toContain("vendasParaTotaisRodape(pageItems");
+  });
+
+  it("14) Compras permanece com Compras: X e não foi mexida nesta tarefa", () => {
+    expect(comprasPage).toContain("Compras:");
+    expect(comprasPage).toContain("comprasParaTotaisRodape(filtradas");
+    expect(comprasPage).not.toContain("totaisRodape.resumo.vendas");
+    expect(comprasPage.indexOf("Compras:")).toBeLessThan(comprasPage.indexOf("Animais:"));
   });
 });
