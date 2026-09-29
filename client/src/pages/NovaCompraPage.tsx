@@ -14,7 +14,6 @@ import {
   formControlFlatCls,
 } from "@/components/FormFields";
 import { FAZENDA_SELECT_PLACEHOLDER } from "@/components/ManejoPontualFormLayout";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   COMPRA_VENDA_COMPRAS_PATH,
@@ -27,9 +26,9 @@ import { CATEGORIAS_POR_SEXO, getCategoriasPorSexo } from "@shared/animal-types"
 import {
   avaliarConfirmacaoCompraNaoIdentificados,
   FORMA_PRECIFICACAO_COMPRA_LABEL,
+  MODO_IDENTIFICACAO_COMPRA_LEGADO,
   type FormaPrecificacaoCompra,
   type GrupoCompraValido,
-  type ModoIdentificacaoCompra,
   parsePrecoCompra,
 } from "@shared/compraComercial";
 import { trpc } from "@/lib/trpc";
@@ -53,7 +52,6 @@ type CompraDraft = {
   preco: string;
   frete: string;
   outros: string;
-  modo: ModoIdentificacaoCompra;
   grupos: GrupoDraft[];
 };
 
@@ -91,7 +89,6 @@ export default function NovaCompraPage() {
   const [preco, setPreco] = useState("");
   const [frete, setFrete] = useState("");
   const [outros, setOutros] = useState("");
-  const [modo, setModo] = useState<ModoIdentificacaoCompra>("nao_identificados");
   const [grupos, setGrupos] = useState<GrupoDraft[]>([novoGrupo()]);
 
   useEffect(() => {
@@ -113,7 +110,6 @@ export default function NovaCompraPage() {
         setPreco(draft.preco);
         setFrete(draft.frete);
         setOutros(draft.outros);
-        setModo(draft.modo === "individuais" ? "individuais" : "nao_identificados");
         setGrupos(draft.grupos?.length ? draft.grupos : [novoGrupo()]);
       } catch {
         /* rascunho inválido */
@@ -144,7 +140,7 @@ export default function NovaCompraPage() {
       DRAFT_KEY,
       JSON.stringify({
         fazendaId, data, fornecedorId, referencia, forma, preco, frete, outros,
-        modo, grupos,
+        grupos,
       } satisfies CompraDraft),
     );
     const retorno = COMPRA_VENDA_COMPRA_NOVA_PATH;
@@ -161,7 +157,7 @@ export default function NovaCompraPage() {
         precoUnitario: parsePrecoCompra(parseCurrencyBrl(preco)),
         frete: parseCurrencyBrl(frete) || 0,
         outrosCustos: parseCurrencyBrl(outros) || 0,
-        modoIdentificacao: modo,
+        modoIdentificacao: MODO_IDENTIFICACAO_COMPRA_LEGADO,
         grupos: grupos.map(g => ({
           categoria: g.categoria,
           sexo: g.sexo,
@@ -169,7 +165,7 @@ export default function NovaCompraPage() {
           pesoTotal: g.pesoTotal,
         })),
       }),
-    [fazendaNum, fornecedorId, data, forma, preco, frete, outros, modo, grupos],
+    [fazendaNum, fornecedorId, data, forma, preco, frete, outros, grupos],
   );
 
   const confirmarMut = trpc.compras.confirmarNaoIdentificados.useMutation({
@@ -177,10 +173,6 @@ export default function NovaCompraPage() {
   });
 
   const confirmar = async () => {
-    if (modo === "individuais") {
-      toast.error("A identificação individual ainda não está disponível nesta etapa.");
-      return;
-    }
     if (!avaliacao.ok) {
       toast.error(avaliacao.message);
       return;
@@ -215,7 +207,7 @@ export default function NovaCompraPage() {
       precoUnitario: calc.precoUnitario,
       frete: calc.frete,
       outrosCustos: calc.outrosCustos,
-      modoIdentificacao: "nao_identificados",
+      modoIdentificacao: MODO_IDENTIFICACAO_COMPRA_LEGADO,
       grupos: calc.grupos.map((g: GrupoCompraValido) => ({
         categoria: g.categoria,
         sexo: g.sexo,
@@ -327,46 +319,6 @@ export default function NovaCompraPage() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Identificação dos Animais</h2>
-          </div>
-          <div className="p-5 space-y-3">
-            <p className="text-[12px] text-gray-600">Como os animais desta compra serão registrados?</p>
-            <RadioGroup
-              value={modo}
-              onValueChange={v => setModo(v === "individuais" ? "individuais" : "nao_identificados")}
-              className="gap-3"
-            >
-              <label className="flex gap-3 items-start border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50">
-                <RadioGroupItem value="individuais" className="mt-0.5" />
-                <span>
-                  <span className="block text-[13px] font-medium text-gray-800">Animais identificados individualmente</span>
-                  <span className="block text-[11px] text-gray-500 mt-0.5">
-                    Informe individualmente os animais que estão entrando no rebanho. Poderá utilizar identificação visual, RFID e balança.
-                  </span>
-                </span>
-              </label>
-              <label className="flex gap-3 items-start border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50">
-                <RadioGroupItem value="nao_identificados" className="mt-0.5" />
-                <span>
-                  <span className="block text-[13px] font-medium text-gray-800">Animais ainda não identificados</span>
-                  <span className="block text-[11px] text-gray-500 mt-0.5">
-                    Registre a aquisição por quantidade. Os animais poderão ser identificados posteriormente no curral.
-                  </span>
-                </span>
-              </label>
-            </RadioGroup>
-            {modo === "individuais" ? (
-              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
-                A identificação individual ainda não está disponível. Use “Animais ainda não identificados” para registrar esta compra.
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        {modo === "nao_identificados" ? (
-          <>
-            <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
                 <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Composição dos Animais</h2>
                 <button
@@ -547,8 +499,6 @@ export default function NovaCompraPage() {
                 </div>
               </div>
             </div>
-          </>
-        ) : null}
 
         <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
           <button
@@ -561,7 +511,7 @@ export default function NovaCompraPage() {
           </button>
           <button
             type="button"
-            disabled={confirmarMut.isPending || modo !== "nao_identificados"}
+            disabled={confirmarMut.isPending}
             onClick={() => void confirmar()}
             className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
             style={{ backgroundColor: FD_PRIMARY }}

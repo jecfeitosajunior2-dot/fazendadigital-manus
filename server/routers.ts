@@ -141,6 +141,7 @@ import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { compraDocumentosService } from "./compraDocumentosDb";
 import { receberAnimalCompra } from "./receberAnimalCompraDb";
 import { desfazerRecebimentoCompra } from "./desfazerRecebimentoCompraDb";
+import { listarRecebimentosCompra } from "./listarRecebimentosCompra";
 import { MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA } from "../shared/compraRecebimentoEstorno";
 import { resumirItensVenda } from "../shared/vendaComercial";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
@@ -269,7 +270,7 @@ import {
   assertRfidNaoReutilizavel,
 } from "./manejoContexto";
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
-import { normalizeRfidKey } from "../shared/rfidUnicidade";
+import { escolherAnimalPorRfid, normalizeRfidKey } from "../shared/rfidUnicidade";
 import { buildObservacoesHistoricoIdentificacao } from "../shared/historicoIdentificacao";
 import {
   MSG_PESO_ENTRADA_INVALIDO,
@@ -985,6 +986,7 @@ const animaisRouter = router({
   /**
    * POC AT05 — busca animal por brinco eletrônico com igualdade exata (string).
    * Não usa LIKE. Não converte RFID para Number.
+   * Se o chip já foi reaproveitado, devolve o animal ativo.
    * Somente leitura — sem gravação.
    */
   getByBrincoEletronicoExact: protectedProcedure
@@ -1003,6 +1005,7 @@ const animaisRouter = router({
               sql`TRIM(${animais.brincoEletronico}) = ${rfid}`,
             ),
           )
+          .orderBy(sql`CASE WHEN LOWER(TRIM(${animais.status})) = 'ativo' THEN 0 ELSE 1 END`)
           .limit(1);
 
         if (!animal) return null;
@@ -1053,7 +1056,7 @@ const animaisRouter = router({
       }
 
       const lista = await listLocalAnimais(ctx.user.id);
-      const local = lista.find(a => (a.brincoEletronico ?? "").trim() === rfid) ?? null;
+      const local = escolherAnimalPorRfid(lista, rfid);
       if (!local) return null;
       const enriched = await enrichLocalAnimal(ctx.user.id, local);
 
@@ -9560,6 +9563,9 @@ const comprasRouter = router({
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => getCompraDetalhe(ctx.user.id, input.id)),
+  listarRecebimentos: protectedProcedure
+    .input(z.object({ compraId: z.number().int().positive() }))
+    .query(({ ctx, input }) => listarRecebimentosCompra(ctx.user.id, input.compraId)),
   cancelar: protectedProcedure
     .input(z.object({
       id: z.number().int().positive(),
@@ -9598,7 +9604,7 @@ const comprasRouter = router({
       loteDestinoId: z.number().nullable().optional(),
       pastoDestinoId: z.number().nullable().optional(),
       observacoes: z.string().optional(),
-      modoIdentificacao: z.literal("nao_identificados"),
+      modoIdentificacao: z.literal("nao_identificados").optional(),
       grupos: z.array(z.object({
         categoria: z.string(),
         sexo: z.string(),
@@ -9648,7 +9654,7 @@ const comprasRouter = router({
       z.object({
         compraId: z.number().int().positive(),
         compraGrupoId: z.number().int().positive(),
-        brincoVisual: z.string().min(1),
+        brincoVisual: z.string(),
         rfid: z.string().optional().nullable(),
         pesoEntrada: z.string().optional().nullable(),
         loteId: z.number().int().positive().optional().nullable(),

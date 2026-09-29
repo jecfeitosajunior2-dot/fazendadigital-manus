@@ -322,6 +322,8 @@ describe("vendasListagem", () => {
 
   it("1) rodapé de Vendas apresenta Vendas: X no mesmo recorte de Animais/Peso/Valor", () => {
     expect(vendasPage).toContain("Vendas:");
+    expect(vendasPage).toContain("parseRetornoCompraVendaVisaoGeral");
+    expect(vendasPage).toContain('aria-label="Voltar"');
     expect(vendasPage).toContain("totaisRodape.resumo.vendas");
     expect(vendasPage.indexOf("Vendas:")).toBeLessThan(vendasPage.indexOf("Animais:"));
     expect(vendasPage).toContain("vendasParaTotaisRodape(filtradas");

@@ -3,11 +3,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  INTERVALO_PEDIDO_VISOR_S3_RECEBIMENTO_MS,
   aplicarEdicaoManualPesoRecebimento,
   aplicarLeituraPesoS3Recebimento,
   consumirPesoS3AposConfirmar,
   estadoInicialPesoS3Recebimento,
   pesoRecebimentoParaPayload,
+  pesoS3IgualAoVisorAnterior,
   rotuloStatusS3Recebimento,
 } from "./compraRecebimentoS3";
 
@@ -66,6 +68,10 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
     expect(page).toContain('onClick={() => void handleConfirmar()}');
     expect(page).not.toContain("Ler Peso");
     expect(page).not.toContain("aplicarPesoS3Ref.current(kg); void handleConfirmar");
+    expect(page).toContain("readCurrentTruTestBleWeightKg");
+    expect(page).toContain("pedirPesoVisorBalanca");
+    expect(page).toContain("INTERVALO_PEDIDO_VISOR_S3_RECEBIMENTO_MS");
+    expect(INTERVALO_PEDIDO_VISOR_S3_RECEBIMENTO_MS).toBe(800);
   });
 
   it("D) correção manual 301 não volta para 300 no mesmo ciclo", () => {
@@ -99,15 +105,38 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
     const proximo = consumirPesoS3AposConfirmar(capturado.estado);
     expect(proximo.pesoCampo).toBe("");
     expect(proximo.origem).toBeNull();
-    expect(proximo.fase).toBe("aguardando_zero");
+    expect(proximo.fase).toBe("livre");
+    expect(proximo.kgTravadoAnterior).toBe(300);
+    expect(pesoS3IgualAoVisorAnterior(300, 300)).toBe(true);
+    expect(pesoS3IgualAoVisorAnterior(300.02, 300)).toBe(true);
+    expect(pesoS3IgualAoVisorAnterior(320, 300)).toBe(false);
 
     const residual = aplicarLeituraPesoS3Recebimento({
       kg: 300,
       aceitandoLeituras: true,
       estado: proximo,
     });
-    expect(residual).toMatchObject({ aplicar: false, motivo: "aguardando_zero" });
+    expect(residual).toMatchObject({ aplicar: false, motivo: "visor_anterior" });
     expect(residual.estado.pesoCampo).toBe("");
+    expect(residual.estado.fase).toBe("livre");
+  });
+
+  it("E2) fila contínua: visor muda para 320 sem zerar e preenche o próximo", () => {
+    const aposConfirmar = consumirPesoS3AposConfirmar(
+      aplicarLeituraPesoS3Recebimento({
+        kg: 300,
+        aceitandoLeituras: true,
+        estado: livre(),
+      }).estado,
+    );
+    const novo = aplicarLeituraPesoS3Recebimento({
+      kg: 320,
+      aceitandoLeituras: true,
+      estado: aposConfirmar,
+    });
+    expect(novo).toMatchObject({ aplicar: true, kg: 320, textoCampo: "320" });
+    if (!novo.aplicar) throw new Error("esperado aplicar");
+    expect(novo.estado.fase).toBe("capturado");
   });
 
   it("F) zero libera o ciclo; novo peso 320 preenche o próximo", () => {
@@ -133,6 +162,12 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
       estado: zero.estado,
     });
     expect(novo).toMatchObject({ aplicar: true, kg: 320, textoCampo: "320" });
+    const mesmoPesoNovoAnimal = aplicarLeituraPesoS3Recebimento({
+      kg: 300,
+      aceitandoLeituras: true,
+      estado: zero.estado,
+    });
+    expect(mesmoPesoNovoAnimal).toMatchObject({ aplicar: true, kg: 300, textoCampo: "300" });
   });
 
   it("G) modo manual continua disponível com S3 bloqueada ou desconectada", () => {
@@ -146,7 +181,7 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
     const digitado = aplicarEdicaoManualPesoRecebimento(bloqueada, "315");
     expect(digitado.pesoCampo).toBe("315");
     expect(digitado.origem).toBe("manual");
-    expect(digitado.fase).toBe("aguardando_zero");
+    expect(digitado.fase).toBe("livre");
     expect(page).toContain('id="recebimento-peso"');
     expect(page).toContain("onChange={valor => {");
     expect(page).not.toMatch(/id="recebimento-peso"[\s\S]{0,400}disabled=\{s3/);
@@ -218,15 +253,19 @@ describe("S3 no recebimento da Compra — só preenche o peso", () => {
   });
 
   it("status reflete conexão real, sem inventar equipamento", () => {
-    expect(rotuloStatusS3Recebimento({ sessionActive: false, connecting: false })).toBe("");
+    expect(rotuloStatusS3Recebimento({ sessionActive: false, connecting: false })).toBe(
+      "Desconectado",
+    );
     expect(rotuloStatusS3Recebimento({ sessionActive: false, connecting: true })).toBe(
-      "Conectando à balança...",
+      "Conectando…",
     );
     expect(rotuloStatusS3Recebimento({ sessionActive: true, connecting: false })).toBe(
-      "Balança conectada",
+      "Conectado",
     );
-    expect(control).toContain("Balança desconectada");
-    expect(control).toContain("Balança conectada");
+    expect(control).toContain("Desconectado");
+    expect(control).toContain("Conectado");
+    expect(control).not.toContain("Balança conectada");
+    expect(control).not.toContain("Balança desconectada");
     expect(control).toContain("Tru-Test S3");
     expect(control).toContain("SessaoEquipamentoLinha");
     expect(control).not.toContain("S3 escutando");

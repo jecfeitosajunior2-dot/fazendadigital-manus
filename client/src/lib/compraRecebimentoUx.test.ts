@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const page = readFileSync(resolve(here, "../pages/CompraRecebimentoPage.tsx"), "utf8");
+const dialog = readFileSync(
+  resolve(here, "../components/compra/DesfazerRecebimentoDialog.tsx"),
+  "utf8",
+);
 const detalhe = readFileSync(resolve(here, "../pages/CompraDetalhePage.tsx"), "utf8");
 const app = readFileSync(resolve(here, "../App.tsx"), "utf8");
 const router = readFileSync(resolve(here, "../../../server/routers.ts"), "utf8");
@@ -34,9 +38,14 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).not.toContain("curral");
     expect(page).not.toContain("animais.create");
     expect(detalhe).not.toContain("curral");
+    expect(page).toContain("parseRetornoCompraVendaVisaoGeral");
+    expect(page).toContain("retornoVisaoGeral");
+    expect(page).toContain("compraVendaCompraDetalhePath");
   });
 
   it("procedure recebe só o payload operacional, sem sexo/categoria/fazenda do frontend", () => {
+    expect(router).toContain("listarRecebimentos:");
+    expect(router).toContain("listarRecebimentosCompra");
     expect(router).toContain("receberAnimal:");
     expect(router).toContain("receberAnimalCompra(ctx.user.id, input");
     const start = router.indexOf("receberAnimal: protectedProcedure");
@@ -65,6 +74,10 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).toContain('titulo="Identificação"');
     expect(page).toContain('titulo="Entrada"');
     expect(page).toContain('id="recebimento-equipamentos"');
+    expect(page.indexOf("Grupos da compra")).toBeLessThan(page.indexOf('id="recebimento-equipamentos"'));
+    expect(page.indexOf('id="recebimento-equipamentos"')).toBeLessThan(page.indexOf("Recebimento do animal"));
+    expect(page.indexOf("Recebimento do animal")).toBeLessThan(page.indexOf('id="recebimento-animais-recebidos"'));
+    expect(page).toContain("grupos.find(g => g.pendentes > 0)");
     expect(page).toContain('variant="strip"');
     expect(page).toMatch(
       /mostraEquipamentos = compraConcluida && !cancelada && \(data\?\.identificacao\.pendentes/,
@@ -82,9 +95,24 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).not.toContain("Ler Peso");
     expect(page).toContain("RecebimentoS3ReaderControl");
     expect(page).toContain("consumirPesoS3AposConfirmar");
+    expect(page).toContain("readCurrentTruTestBleWeightKg");
+    expect(page).not.toContain("aguardando_zero");
     expect(page).toContain("Data do recebimento");
     expect(page).toContain("Confirmar entrada e próximo");
     expect(page).toContain("Último animal recebido");
+    expect(page).toContain("Animais recebidos");
+    expect(page).toContain("listarRecebimentos");
+    expect(page).toContain("recebimentosVisiveisNaSecao");
+    expect(page).toContain('id="recebimento-animais-recebidos"');
+    expect(page).toContain("DropdownMenu");
+    expect(page).toContain("more_vert");
+    expect(page).toContain("Desfazer recebimento");
+    expect(page).toContain("podeMostrarAcaoDesfazerRecebimento");
+    expect(page).toContain("DesfazerRecebimentoDialog");
+    expect(page).toContain("setDesfazerAlvo");
+    expect(page).toContain("onDesfazer");
+    expect(page).toContain("desfazerRecebimento.useMutation");
+    expect(page).not.toContain("desfazerRecebimento(");
     expect(page).toContain("id=\"recebimento-brinco\"");
     expect(page).toContain("id=\"recebimento-rfid\"");
     expect(page).toContain("id=\"recebimento-peso\"");
@@ -94,9 +122,14 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).not.toContain("setGrupoId(null)");
     expect(page).not.toContain("setLoteId(\"\")");
     expect(page).not.toContain("setPastoId(\"\")");
-    expect(page).not.toContain("setRaca(\"\")");
+    expect(page).toContain("setRaca(\"\")");
     expect(page).not.toContain("setDataRecebimento(");
     expect(page).toContain("formatPesoRecebido(ultimo.pesoKg)");
+    expect(page).toContain("rotuloUltimoAnimalRecebido");
+    expect(page).toContain("textoOuTracoRecebimento(item.brincoVisual)");
+    expect(page).not.toContain("Brinco {ultimo.brinco}");
+    expect(page).not.toContain("At05RecebimentoDiagCard");
+    expect(page).not.toContain("At05PortaPickerDialog");
     expect(detalhe).toContain("Receber / Identificar animais");
   });
 
@@ -104,8 +137,8 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(service).toContain("insertRecebimento");
     expect(service).toContain("compraRecebimentoId: recebimentoId");
     expect(dbAdapter).toContain("compraRecebimentos");
-    expect(page).not.toContain("Desfazer");
-    expect(page).not.toContain("desfazerRecebimento");
+    expect(page).toContain("Desfazer recebimento");
+    expect(page).toContain("desfazerRecebimento.useMutation");
     expect(page).not.toContain("compra_recebimentos");
     expect(page).not.toContain("compraRecebimentoId");
     const estornoStart = router.indexOf("desfazerRecebimento: protectedProcedure");
@@ -125,6 +158,30 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(pesagemManejo).not.toContain("compraRecebimentoId");
     expect(transferencia).toContain("insert(animalLoteMovimentacoes)");
     expect(transferencia).not.toContain("compraRecebimentoId");
+  });
+
+  it("modal valida o formulário e só a page dispara a mutation no clique", () => {
+    expect(page).toContain("onSelect={onDesfazer}");
+    expect(page).toContain("recebimentoId: item.recebimentoId");
+    expect(page).toContain("podeMostrarAcaoDesfazerRecebimento(item)");
+    expect(page).toContain("item.chaveLista");
+    expect(page).not.toContain("recebimentoId: item.id");
+    expect(page).toContain("trpc.compras.desfazerRecebimento.useMutation");
+    expect(page).toContain("desfazerMut.mutateAsync");
+    expect(page).toContain("onConfirm={handleDesfazerRecebimento}");
+    expect(dialog).toContain("Desfazer recebimento");
+    expect(dialog).toContain("AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA");
+    expect(dialog).toContain("validarFormularioDesfazerRecebimento");
+    expect(dialog).toContain("montarPayloadDesfazerRecebimento");
+    expect(dialog).toContain("alvo.recebimentoId");
+    expect(dialog).toContain("Cancelar");
+    expect(dialog).toContain("Brinco {alvo.brinco}");
+    expect(dialog).toContain("{alvo.grupoLabel}");
+    expect(dialog).not.toContain("trpc");
+    expect(dialog).not.toContain("useMutation");
+    expect(dialog).not.toContain("PESAGEM_POSTERIOR");
+    expect(dialog).not.toContain("VENDA_EXISTENTE");
+    expect(dialog).not.toContain("animalId");
   });
 
   it("testes de serviço usam fixtures isoladas, nunca a Compra 1", () => {

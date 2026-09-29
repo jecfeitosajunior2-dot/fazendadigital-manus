@@ -57,6 +57,9 @@
   --fd-navy-1: #164E63;
   --fd-navy-2: #155E75;
   --fd-navy-3: #0F172A;
+  --fd-serie-compra: var(--fd-navy-1);
+  --fd-serie-venda: var(--fd-turquesa-1);
+  --app-shell-bg: var(--fd-navy-3);
   /* Dourado Premium */
   --fd-gold: #D4AF37;
   /* Aliases */
@@ -102,6 +105,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+  #root {
+    display: flex;
+    flex-direction: column;
   }
   body {
     @apply bg-background text-foreground font-sans;

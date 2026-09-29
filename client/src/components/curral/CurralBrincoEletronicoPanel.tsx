@@ -6,7 +6,11 @@ import { cn } from "@/lib/utils";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
-import { normalizeRfidKey } from "@shared/rfidUnicidade";
+import {
+  MSG_RFID_ATIVO_CONFLITO,
+  normalizeRfidKey,
+  rfidOcupadoPorOutroAtivo,
+} from "@shared/rfidUnicidade";
 import { Tag } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -217,13 +221,8 @@ export function CurralBrincoEletronicoPanel({
           brincoEletronico: trimmed,
         });
 
-        if (linked && Number(linked.id) !== animalId) {
-          const status = (linked.status ?? "").toString().trim().toLowerCase();
-          const msg =
-            status === "ativo"
-              ? "Este RFID já está vinculado a outro animal ativo nesta fazenda."
-              : "Este RFID já foi vinculado a outro animal e não pode ser reutilizado.";
-          onBloqueioNegocio(msg);
+        if (rfidOcupadoPorOutroAtivo(linked, { excludeAnimalId: animalId })) {
+          onBloqueioNegocio(MSG_RFID_ATIVO_CONFLITO);
           return false;
         }
 

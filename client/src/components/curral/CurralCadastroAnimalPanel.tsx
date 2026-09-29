@@ -13,7 +13,11 @@ import {
   validarCadastroSuperficialCurral,
   type SexoCadastroCurral,
 } from "@shared/curralCadastroAnimal";
-import { normalizeRfidKey } from "@shared/rfidUnicidade";
+import {
+  MSG_RFID_ATIVO_CONFLITO,
+  normalizeRfidKey,
+  rfidOcupadoPorOutroAtivo,
+} from "@shared/rfidUnicidade";
 import type { At05ReaderSession } from "@/hooks/useAt05Reader";
 import { UserPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -103,13 +107,8 @@ export function CurralCadastroAnimalPanel({
           brincoEletronico: trimmed,
         });
 
-        if (linked) {
-          const status = (linked.status ?? "").toString().trim().toLowerCase();
-          toast.error(
-            status === "ativo"
-              ? "Este RFID já está vinculado a outro animal ativo."
-              : "Este RFID já foi vinculado a outro animal e não pode ser reutilizado.",
-          );
+        if (rfidOcupadoPorOutroAtivo(linked)) {
+          toast.error(MSG_RFID_ATIVO_CONFLITO);
           return false;
         }
 

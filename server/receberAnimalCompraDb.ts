@@ -109,7 +109,13 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
       const [row] = await tx
         .select({ id: animais.id, status: animais.status })
         .from(animais)
-        .where(and(eq(animais.userId, userId), sql`TRIM(${animais.brincoEletronico}) = ${key}`))
+        .where(
+          and(
+            eq(animais.userId, userId),
+            eq(animais.status, "ativo"),
+            sql`TRIM(${animais.brincoEletronico}) = ${key}`,
+          ),
+        )
         .limit(1);
       return row ?? null;
     },

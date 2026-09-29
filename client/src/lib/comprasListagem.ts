@@ -8,10 +8,14 @@ import {
   parseValorOperacao,
   type CommercialMetric,
 } from "./compraVendaResumo";
-import { labelStatusComercialCompra } from "@shared/compraIdentificacao";
+import { contarIdentificacao, labelStatusComercialCompra } from "@shared/compraIdentificacao";
 import { calcularCustoMedioKg } from "@shared/compraComercial";
+import { COMPRA_VENDA_COMPRAS_PATH } from "./compraVendaCompradores";
 
 export { FILTRO_TODOS };
+
+/** Recorte operacional — não é o status comercial Pendente. */
+export const FILTRO_IDENTIFICACAO_PENDENTE = "pendente";
 
 /** Enum real de `compras.status` no schema MySQL. */
 export const COMPRA_STATUS = ["pendente", "concluido", "cancelado"] as const;
@@ -31,6 +35,8 @@ export type CompraListagemRow = {
   status?: string | null;
   observacoes?: string | null;
   podeCancelar?: boolean;
+  /** Animais já vinculados à Compra — vem do `compras.list`, não é quantidade comercial. */
+  identificados?: number | null;
 };
 
 export type FiltrosComprasListagem = {
@@ -40,6 +46,7 @@ export type FiltrosComprasListagem = {
   fornecedorId?: number | string | null;
   status?: string;
   fazendaId?: number | null;
+  identificacao?: string;
 };
 
 export type FiltrosComprasTela = {
@@ -47,10 +54,57 @@ export type FiltrosComprasTela = {
   periodoAte: string;
   fornecedorId: string;
   status: string;
+  identificacao: string;
 };
 
 export function filtrosSecundariosComprasVazios(): FiltrosComprasTela {
-  return { periodoDe: "", periodoAte: "", fornecedorId: "", status: "" };
+  return { periodoDe: "", periodoAte: "", fornecedorId: "", status: "", identificacao: "" };
+}
+
+export function compraTemIdentificacaoPendente(compra: CompraListagemRow): boolean {
+  if (compra.status !== "concluido") return false;
+  const comprados = parseQuantidadeOperacao(compra) ?? 0;
+  const identificados = Math.max(0, Math.floor(Number(compra.identificados)) || 0);
+  return contarIdentificacao({ comprados, identificados }).pendentes > 0;
+}
+
+export function opcoesIdentificacaoCompra(): Array<{ value: string; label: string }> {
+  return [
+    { value: FILTRO_TODOS, label: "Todas" },
+    { value: FILTRO_IDENTIFICACAO_PENDENTE, label: "Identificação pendente" },
+  ];
+}
+
+export function filtrosComprasDaQuery(search: string): FiltrosComprasTela | null {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const params = new URLSearchParams(raw);
+  const identificacao = params.get("identificacao") === FILTRO_IDENTIFICACAO_PENDENTE
+    ? FILTRO_IDENTIFICACAO_PENDENTE
+    : "";
+  const periodoDe = params.get("de")?.trim() ?? "";
+  const periodoAte = params.get("ate")?.trim() ?? "";
+  if (!identificacao && !periodoDe && !periodoAte) return null;
+  return {
+    ...filtrosSecundariosComprasVazios(),
+    periodoDe,
+    periodoAte,
+    identificacao,
+  };
+}
+
+export function compraVendaComprasListagemPath(opts?: {
+  identificacao?: string;
+  de?: string;
+  ate?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (opts?.identificacao === FILTRO_IDENTIFICACAO_PENDENTE) {
+    params.set("identificacao", FILTRO_IDENTIFICACAO_PENDENTE);
+  }
+  if (opts?.de?.trim()) params.set("de", opts.de.trim());
+  if (opts?.ate?.trim()) params.set("ate", opts.ate.trim());
+  const qs = params.toString();
+  return qs ? `${COMPRA_VENDA_COMPRAS_PATH}?${qs}` : COMPRA_VENDA_COMPRAS_PATH;
 }
 
 export function isCompraStatus(value: unknown): value is CompraStatus {
@@ -119,6 +173,9 @@ export function filtrarComprasListagem(
     if (!noPeriodo(compra.data, filtros.periodoDe?.trim(), filtros.periodoAte?.trim())) return false;
     if (fornecedorId != null && Number(compra.fornecedorId) !== fornecedorId) return false;
     if (status && compra.status !== status) return false;
+    if (filtros.identificacao === FILTRO_IDENTIFICACAO_PENDENTE && !compraTemIdentificacaoPendente(compra)) {
+      return false;
+    }
     if (!busca) return true;
     return [compra.fornecedor, compra.data].some(campo =>
       String(campo ?? "").toLowerCase().includes(busca),

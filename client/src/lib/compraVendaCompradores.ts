@@ -17,6 +17,38 @@ export function compraVendaCompraRecebimentoPath(id: number): string {
   return `/compra-venda/compras/${id}/recebimento`;
 }
 
+export function buildCompraVendaVisaoGeralRetorno(fazendaId?: string): string {
+  const qs = new URLSearchParams();
+  if (fazendaId) qs.set("fazendaId", fazendaId);
+  const q = qs.toString();
+  return `${COMPRA_VENDA_VISAO_GERAL_PATH}${q ? `?${q}` : ""}`;
+}
+
+export function comRetornoCompraVendaVisaoGeral(path: string, fazendaId?: string): string {
+  const retorno = buildCompraVendaVisaoGeralRetorno(fazendaId);
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}retorno=${encodeURIComponent(retorno)}`;
+}
+
+export function isValidCompraVendaVisaoGeralRetorno(retorno: string): boolean {
+  try {
+    const url = new URL(retorno, "http://local");
+    return url.pathname === COMPRA_VENDA_VISAO_GERAL_PATH;
+  } catch {
+    return false;
+  }
+}
+
+export function parseRetornoCompraVendaVisaoGeral(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const decoded = decodeURIComponent(raw);
+    return isValidCompraVendaVisaoGeralRetorno(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
 export type PessoaCompradorOpcao = {
   id: number;
   nome: string;

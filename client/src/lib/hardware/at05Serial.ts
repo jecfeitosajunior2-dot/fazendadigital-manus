@@ -50,13 +50,16 @@ export const AT05_DEDUP_MS = 1000;
 export const AT05_RFID_MIN_LEN = 6;
 export const AT05_RFID_MAX_LEN = 24;
 
-const SERIAL_OPTIONS = {
+/** Mesmas opções do Diagnóstico validado em 17/08/2026. */
+export const AT05_SERIAL_OPTIONS = {
   baudRate: 9600,
   dataBits: 8 as const,
   stopBits: 1 as const,
   parity: "none" as const,
   flowControl: "none" as const,
 };
+
+const SERIAL_OPTIONS = AT05_SERIAL_OPTIONS;
 
 export function isWebSerialAvailable(): boolean {
   return typeof navigator !== "undefined" && Boolean(navigator.serial);
@@ -155,6 +158,31 @@ export async function safeCloseSerialSession(options: {
   }
 
   console.info("[AT05 PROD] cleanup complete");
+}
+
+/**
+ * Fecha a porta-alvo para o próximo open() ser fresco (Diagnóstico: nunca reusa stream).
+ * Não protege sessão AT05 anterior — o connect está reabrindo este canal SPP.
+ */
+export async function closeAt05PortForFreshOpen(target: SerialPort): Promise<void> {
+  if (isCurralScaleSerialPort(target)) return;
+  if (!isSerialPortOpen(target)) return;
+
+  await enqueueAt05Cleanup(async () => {
+    if (!isSerialPortOpen(target)) return;
+    if (isCurralScaleSerialPort(target)) return;
+    console.warn("[AT05 PROD] fechando porta antes de open() fresco");
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    if (target.readable && !target.readable.locked) {
+      try {
+        reader = target.readable.getReader();
+      } catch {
+        reader = null;
+      }
+    }
+    await safeCloseSerialSession({ reader, port: target });
+  });
+  await waitAt05CleanupIdle();
 }
 
 /**
@@ -352,7 +380,7 @@ export class At05SerialService {
     }
   }
 
-  /** Abre uma porta já obtida via requestPort. Nunca chama open() se já estiver aberta. */
+  /** Abre a porta escolhida com open() fresco (9600 8N1), como no Diagnóstico. */
   async openPort(port: SerialPort, onLog?: At05LogHandler): Promise<void> {
     if (this.port && this.port !== port) {
       throw new Error("Já existe outra porta aberta neste serviço. Desconecte antes.");
@@ -374,15 +402,16 @@ export class At05SerialService {
       `[AT05 PROD] BEFORE OPEN readable=${String(readable)} writable=${String(writable)}`,
     );
 
-    // Já aberta (mesma instância reutilizada pelo browser) — não chamar open() de novo.
+    // Diagnóstico: se a porta escolhida já está aberta, NÃO fecha/reabre (quebra SPP).
+    // open() só entra quando a COM está fechada. Bytes recebidos é que provam o canal.
     if (readable || writable) {
       if (isCurralScaleSerialPort(port)) {
         throw new Error(MSG_AT05_PORTA_E_BALANCA);
       }
-      console.info("[AT05 PROD] OPEN SKIP — porta já aberta nesta instância");
+      console.info("[AT05 PROD] PORT ALREADY OPEN — using selected streams (no close/reopen)");
       this.port = port;
       registerCurralAt05SerialPort(port);
-      onLog?.("Porta já estava aberta — reutilizando sem novo open()");
+      onLog?.("Porta escolhida já estava aberta — lendo sem fechar/reabrir");
       if (!this.disconnectHandler) {
         this.disconnectHandler = () => {
           console.warn("[AT05 PROD] browser disconnect event");
@@ -394,7 +423,6 @@ export class At05SerialService {
     }
 
     if (this.port === port) {
-      // Ref interna aponta para esta porta mas streams null = estado inconsistente.
       this.port = null;
     }
 
@@ -511,7 +539,7 @@ export async function openAt05PortWithRetry(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
       console.info(`[AT05 PROD] OPEN RETRY #${attempt + 1}`);
-      await releaseSerialPortBeforeAt05Open(port);
+      await closeAt05PortForFreshOpen(port);
       const delayMs = AT05_OPEN_RETRY_DELAYS_MS[attempt] ?? 500;
       await new Promise<void>(resolve => {
         window.setTimeout(resolve, delayMs);

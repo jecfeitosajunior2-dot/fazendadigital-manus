@@ -10,7 +10,7 @@ import {
   MSG_RECEBIMENTO_PASTO_FAZENDA,
   observacaoRecebimentoCompra,
 } from "../shared/compraRecebimento";
-import { buildRfidConflitoMessage } from "../shared/rfidUnicidade";
+import { buildRfidConflitoMessage, findRfidConflict } from "../shared/rfidUnicidade";
 import {
   createReceberAnimalCompraService,
   type ReceberAnimalCompraCompra,
@@ -22,7 +22,7 @@ import {
   type ReceberAnimalInsertRow,
 } from "./receberAnimalCompra";
 
-type AnimalMem = ReceberAnimalInsertRow & { id: number };
+type AnimalMem = Omit<ReceberAnimalInsertRow, "status"> & { id: number; status: string };
 type PesagemMem = {
   id: number;
   animalId: number;
@@ -120,23 +120,24 @@ function criarStore(seed?: {
       ).length;
     },
     async findBrincoAtivoConflito(userId, brinco, fazendaId) {
-      const key = brinco.trim().toLowerCase();
+      const key = (brinco ?? "").trim().toLowerCase();
+      if (!key) return null;
       return (
         state.animais.find(
           a =>
             a.userId === userId &&
             a.status === "ativo" &&
             a.fazendaId === fazendaId &&
-            a.brinco.trim().toLowerCase() === key,
+            String(a.brinco ?? "").trim().toLowerCase() === key,
         ) ?? null
       );
     },
     async findRfidConflito(userId, rfid) {
-      const key = rfid.trim();
-      const found = state.animais.find(
-        a => a.userId === userId && (a.brincoEletronico ?? "").trim() === key,
+      const conflito = findRfidConflict(
+        state.animais.filter(a => a.userId === userId),
+        rfid,
       );
-      return found ? { id: found.id, status: found.status } : null;
+      return conflito ? { id: conflito.id, status: conflito.status ?? null } : null;
     },
     async findLote(userId, loteId) {
       return state.lotes.find(l => l.id === loteId && l.userId === userId) ?? null;
@@ -253,6 +254,21 @@ describe("receberAnimalCompra", () => {
     expect(store.animais[0]?.brincoEletronico).toBeNull();
   });
 
+  it("recebe somente com RFID, sem inventar brinco visual", async () => {
+    const store = criarStore();
+    const receber = createReceberAnimalCompraService(store);
+    const out = await receber(7, {
+      ...inputBase,
+      brincoVisual: "",
+      rfid: "963000400650144",
+    });
+    expect(out.brinco).toBe("963000400650144");
+    expect(store.animais[0]?.brinco).toBeNull();
+    expect(store.animais[0]?.brincoEletronico).toBe("963000400650144");
+    expect(store.recebimentos[0]?.brincoVisual).toBe("");
+    expect(store.recebimentos[0]?.rfid).toBe("963000400650144");
+  });
+
   it("recebe com RFID", async () => {
     const store = criarStore();
     const receber = createReceberAnimalCompraService(store);
@@ -318,6 +334,39 @@ describe("receberAnimalCompra", () => {
     ).rejects.toMatchObject({
       message: buildRfidConflitoMessage({ id: 1, status: "ativo" }),
     });
+  });
+
+  it("permite reutilizar RFID de animal inativo", async () => {
+    const store = criarStore({
+      animais: [
+        {
+          id: 50,
+          userId: 7,
+          fazendaId: 1,
+          sexo: "macho",
+          categoria: "Bezerro",
+          brinco: "999",
+          nome: "999",
+          brincoEletronico: "TAG-MORTO",
+          raca: null,
+          status: "morto",
+          dataEntrada: "2026-08-01",
+          observacoes: null,
+          compraId: 9001,
+          compraGrupoId: 9102,
+          loteId: null,
+          pastoId: null,
+          pesoAtual: null,
+        },
+      ],
+    });
+    const receber = createReceberAnimalCompraService(store);
+    const out = await receber(7, { ...inputBase, rfid: "TAG-MORTO" });
+    expect(out.animalId).toBeGreaterThan(50);
+    expect(store.animais.filter(a => (a.brincoEletronico ?? "").trim() === "TAG-MORTO")).toHaveLength(
+      2,
+    );
+    expect(store.animais.find(a => a.id === out.animalId)?.status).toBe("ativo");
   });
 
   it("bloqueia lote de outra fazenda e pasto incompatível", async () => {

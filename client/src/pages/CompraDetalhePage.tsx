@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import ListExportButtons from "@/components/ListExportButtons";
 import CancelarVendaDialog from "@/components/venda/CancelarVendaDialog";
 import { CompraDocumentosSection } from "@/components/venda/VendaDocumentosSection";
 import { formatDateBR } from "@/lib/date-utils";
@@ -10,8 +11,24 @@ import {
   COMPRA_VENDA_COMPRAS_PATH,
   compraVendaCompraRecebimentoPath,
 } from "@/lib/compraVendaCompradores";
+import {
+  COMPRA_DETALHE_EXPORT_TITULO,
+  buildCompraDetalheExportHeaders,
+  buildCompraDetalheExportRows,
+  buildCompraDetalheExportSubtitlesExcel,
+  buildCompraDetalhePdfReportBlocks,
+  nomeAbaExcelCompraDetalhe,
+  nomeArquivoCompraDetalhe,
+  rotuloBrincoCompraDetalhe,
+  toCompraDetalheExportAnimal,
+} from "@/lib/compraDetalheExport";
 import { formatarMetricaPeso, formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
 import { cn } from "@/lib/utils";
+import {
+  exibirBotaoCancelarCompraFicha,
+  motivoBloqueioCancelarCompra,
+} from "@shared/compraCancelamento";
+import { recebimentosVisiveisNaSecao } from "@shared/compraRecebimentosListagem";
 import { trpc } from "@/lib/trpc";
 
 function money(value: number | null | undefined): string {
@@ -44,11 +61,39 @@ export default function CompraDetalhePage() {
     { id },
     { enabled: Number.isFinite(id) && id > 0 },
   );
+  const { data: recebimentos = [] } = trpc.compras.listarRecebimentos.useQuery(
+    { compraId: id },
+    { enabled: Number.isFinite(id) && id > 0 },
+  );
+  const animaisFicha = useMemo(() => recebimentosVisiveisNaSecao(recebimentos), [recebimentos]);
   const [dialogAberto, setDialogAberto] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const cancelarMut = trpc.compras.cancelar.useMutation();
   const cancelada = data?.status === "cancelado";
   const podeCancelar = Boolean(data?.podeCancelar);
+  const mostrarCancelar = exibirBotaoCancelarCompraFicha(data?.status);
+  const bloqueioCancelar = data
+    ? motivoBloqueioCancelarCompra({
+        status: data.status,
+        identificados: data.identificacao.identificados,
+      })
+    : null;
+  const exportacao = useMemo(() => {
+    if (!data) return null;
+    const payload = {
+      ...data,
+      animais: animaisFicha.map(toCompraDetalheExportAnimal),
+    };
+    return {
+      headers: buildCompraDetalheExportHeaders(),
+      rows: buildCompraDetalheExportRows(payload),
+      excelSubtitles: buildCompraDetalheExportSubtitlesExcel(payload),
+      pdfBlocks: buildCompraDetalhePdfReportBlocks(payload),
+      pdfName: nomeArquivoCompraDetalhe(payload, "pdf"),
+      xlsxName: nomeArquivoCompraDetalhe(payload, "xlsx"),
+      sheetName: nomeAbaExcelCompraDetalhe(data.id),
+    };
+  }, [data, animaisFicha]);
 
   const handleCancelar = async (motivo: string) => {
     setSubmitError(null);
@@ -102,18 +147,44 @@ export default function CompraDetalhePage() {
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {podeCancelar ? (
+                {mostrarCancelar ? (
                   <button
                     type="button"
                     onClick={() => {
+                      if (!podeCancelar) return;
                       setSubmitError(null);
                       setDialogAberto(true);
                     }}
-                    disabled={cancelarMut.isPending}
+                    disabled={!podeCancelar || cancelarMut.isPending}
+                    title={bloqueioCancelar ?? undefined}
                     className="inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-lg border border-amber-200 bg-amber-50 text-[12px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancelar Compra
                   </button>
+                ) : null}
+                {exportacao ? (
+                  <ListExportButtons
+                    variant="secondary"
+                    title={COMPRA_DETALHE_EXPORT_TITULO}
+                    filename={`Compra-${data.id}`}
+                    headers={exportacao.headers}
+                    rows={exportacao.rows}
+                    fazendaNome={data.fazendaNome || undefined}
+                    spreadsheetReportTitle={COMPRA_DETALHE_EXPORT_TITULO}
+                    spreadsheetReportSubtitles={exportacao.excelSubtitles}
+                    pdfReportBlocks={exportacao.pdfBlocks}
+                    spreadsheetSheetName={exportacao.sheetName}
+                    spreadsheetDownloadFilename={exportacao.xlsxName}
+                    pdfDownloadFilename={exportacao.pdfName}
+                    spreadsheetColumnAligns={["center", "center", "center"]}
+                    pdfColumnAligns={["center", "center", "center"]}
+                    spreadsheetTextCols={[0, 1, 2]}
+                    pdfShowRegistrosSubtitle={false}
+                    pdfIncludeSpreadsheetTitle={false}
+                    spreadsheetAllowEmpty
+                    spreadsheetAutoFilter={false}
+                    className="[&>button]:min-h-[36px] [&>button]:px-3"
+                  />
                 ) : null}
               </div>
             </div>
@@ -212,45 +283,35 @@ export default function CompraDetalhePage() {
           </div>
 
           <div className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-[13px] font-semibold text-gray-800">Composição da compra</h2>
+            <div className="px-3 py-2.5 border-b border-gray-100">
+              <h2 className="text-[13px] font-medium text-gray-800">Animais da Compra</h2>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
+            {animaisFicha.length === 0 ? (
+              <p className="p-6 text-center text-[12px] text-gray-400">
+                Nenhum animal recebido ainda.
+              </p>
+            ) : (
+              <table className="w-full text-[11px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Categoria</th>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Sexo</th>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Comprados</th>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Identificados</th>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Pendentes</th>
-                    <th className="px-4 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Peso adquirido</th>
+                    <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Brinco</th>
+                    <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Lote</th>
+                    <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Peso de entrada</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.identificacao.grupos.map(grupo => (
-                    <tr key={grupo.id} className="border-t border-gray-100">
-                      <td className="px-4 py-2 text-center text-gray-800">{grupo.categoria}</td>
-                      <td className="px-4 py-2 text-center text-gray-700">{grupo.sexoLabel}</td>
-                      <td className="px-4 py-2 text-center tabular-nums">{qtd(grupo.comprados)}</td>
-                      <td className="px-4 py-2 text-center tabular-nums">{qtd(grupo.identificados)}</td>
-                      <td className="px-4 py-2 text-center tabular-nums">{qtd(grupo.pendentes)}</td>
-                      <td className="px-4 py-2 text-center tabular-nums">{peso(grupo.pesoAdquirido)}</td>
+                  {animaisFicha.map(animal => (
+                    <tr key={animal.chaveLista} className="border-t border-gray-50">
+                      <td className="px-3 py-1.5 text-center font-medium text-gray-800">
+                        {rotuloBrincoCompraDetalhe(animal)}
+                      </td>
+                      <td className="px-3 py-1.5 text-center text-gray-600">{animal.loteNome || "—"}</td>
+                      <td className="px-3 py-1.5 text-center text-gray-700">{peso(animal.pesoKg)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr className="border-t border-gray-200 bg-gray-50 font-medium">
-                    <td className="px-4 py-2 text-center text-gray-800">Total</td>
-                    <td className="px-4 py-2" />
-                    <td className="px-4 py-2 text-center tabular-nums">{qtd(data.identificacao.comprados)}</td>
-                    <td className="px-4 py-2 text-center tabular-nums">{qtd(data.identificacao.identificados)}</td>
-                    <td className="px-4 py-2 text-center tabular-nums">{qtd(data.identificacao.pendentes)}</td>
-                    <td className="px-4 py-2 text-center tabular-nums">{peso(data.identificacao.pesoAdquirido)}</td>
-                  </tr>
-                </tfoot>
               </table>
-            </div>
+            )}
           </div>
 
           <div className="bg-white rounded shadow-sm border border-gray-100 p-4">

@@ -6,14 +6,20 @@ import {
   linhaModeloComCom,
   mensagemErroAberturaAt05,
   mensagemErroAberturaBalanca,
+  podeReutilizarPortaAt05Autorizada,
+  portaSerialJaAberta,
   resolveAt05PortForConnect,
   resolveScalePortForConnect,
   rotuloPortaSerial,
   serialPortIdentityKey,
 } from "./serialPortLabels";
 
-function mockPort(info: SerialPortInfo): SerialPort {
-  return { getInfo: () => info } as SerialPort;
+function mockPort(info: SerialPortInfo, open = false): SerialPort {
+  return {
+    getInfo: () => info,
+    readable: open ? ({} as ReadableStream<Uint8Array>) : null,
+    writable: open ? ({} as WritableStream<Uint8Array>) : null,
+  } as SerialPort;
 }
 
 describe("serialPortLabels", () => {
@@ -62,19 +68,21 @@ describe("serialPortLabels", () => {
     );
   });
 
-  it("reutiliza getPorts só quando existe um único candidato do equipamento", async () => {
-    const at05 = mockPort({});
+  it("connect do AT05 sempre pede requestPort — não reutiliza getPorts aberto", async () => {
+    const at05Aberto = mockPort({}, true);
     const scale = mockPort({ usbVendorId: 0x1234, usbProductId: 0x1 });
     const requested = mockPort({});
+    expect(portaSerialJaAberta(at05Aberto)).toBe(true);
+    expect(podeReutilizarPortaAt05Autorizada([at05Aberto, scale])).toBe(at05Aberto);
     const original = globalThis.navigator;
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,
-      value: { serial: { getPorts: async () => [at05, scale] } },
+      value: { serial: { getPorts: async () => [at05Aberto, scale] } },
     });
     try {
       await expect(resolveAt05PortForConnect(async () => requested)).resolves.toEqual({
-        port: at05,
-        source: "authorized",
+        port: requested,
+        source: "requested",
       });
       await expect(resolveScalePortForConnect(async () => requested)).resolves.toEqual({
         port: scale,
@@ -85,10 +93,31 @@ describe("serialPortLabels", () => {
     }
   });
 
-  it("não escolhe porta automaticamente se houver zero ou vários candidatos", async () => {
-    const a = mockPort({});
-    const b = mockPort({});
+  it("autorização histórica fechada também cai em requestPort", async () => {
+    const at05Fechado = mockPort({});
     const requested = mockPort({});
+    expect(portaSerialJaAberta(at05Fechado)).toBe(false);
+    expect(podeReutilizarPortaAt05Autorizada([at05Fechado])).toBeNull();
+    const original = globalThis.navigator;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { serial: { getPorts: async () => [at05Fechado] } },
+    });
+    try {
+      await expect(resolveAt05PortForConnect(async () => requested)).resolves.toEqual({
+        port: requested,
+        source: "requested",
+      });
+    } finally {
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: original });
+    }
+  });
+
+  it("vários candidatos Bluetooth não escolhem COM automaticamente", async () => {
+    const a = mockPort({}, true);
+    const b = mockPort({}, true);
+    const requested = mockPort({});
+    expect(podeReutilizarPortaAt05Autorizada([a, b])).toBeNull();
     const original = globalThis.navigator;
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,

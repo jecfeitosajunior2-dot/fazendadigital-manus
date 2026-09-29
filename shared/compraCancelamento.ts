@@ -30,6 +30,24 @@ export function podeCancelarCompraComercial(opts: {
   return opts.status === "concluido" && (opts.identificados ?? 0) <= 0;
 }
 
+/** Na ficha: some só depois de cancelada. Bloqueada continua visível. */
+export function exibirBotaoCancelarCompraFicha(status?: string | null): boolean {
+  return status !== "cancelado";
+}
+
+/** Texto do bloqueio — a regra de `podeCancelarCompraComercial` não muda. */
+export function motivoBloqueioCancelarCompra(opts: {
+  status?: string | null;
+  identificados: number;
+}): string | null {
+  if (podeCancelarCompraComercial(opts)) return null;
+  if (opts.status === "cancelado") return MSG_COMPRA_CANCELAR_JA_CANCELADA;
+  if ((opts.identificados ?? 0) > 0) {
+    return `${MSG_COMPRA_CANCELAR_COM_ANIMAIS} ${MSG_COMPRA_CANCELAR_COM_ANIMAIS_DETALHE}`;
+  }
+  return MSG_COMPRA_CANCELAR_NAO_CONCLUIDA;
+}
+
 export function podeExcluirCompraFisicamente(opts: {
   status?: string | null;
   temGrupos: boolean;

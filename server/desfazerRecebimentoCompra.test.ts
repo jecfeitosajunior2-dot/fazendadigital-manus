@@ -336,6 +336,19 @@ describe("desfazerRecebimentoCompra", () => {
     snapshotIntacto(store);
   });
 
+  it("classifica pesagem de manejo que atualizou pesoAtual como posterior, sem apagar", async () => {
+    const store = criarStore({
+      animais: [{ ...animalBase, pesoAtual: "310" }],
+      pesagens: [{ id: 53, animalId: 8801, compraRecebimentoId: null, peso: "310" }],
+    });
+    await expect(createDesfazerRecebimentoCompraService(store)(7, inputBase)).rejects.toMatchObject({
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.PESAGEM_POSTERIOR,
+    });
+    expect(store.pesagens).toHaveLength(1);
+    expect(store.animais[0]?.pesoAtual).toBe("310");
+    snapshotIntacto(store);
+  });
+
   it("bloqueia segunda movimentação sem apagar nada", async () => {
     const store = criarStore({
       animais: [{ ...animalBase, loteId: 31, pastoId: 41 }],

@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { menuItems, type MenuItem } from "@/lib/data";
 
+/** Folga só quando 2+ grupos estão abertos — um grupo sozinho não pode criar rolagem vazia. */
+const DESKTOP_MENU_PAGE_GROW_SLACK_PX = 48;
+
 const CUSTOM_SIDEBAR_ICONS = new Set([
   "fd_panel_chart",
   "fd_rocket",
@@ -441,7 +444,11 @@ function MenuItemComponent({ item, depth = 0, collapsed, currentPath }: { item: 
         )}
       </button>
       {hasChildren && open && !collapsed && (
-        <div className="bg-black/10">
+        <div
+          className="bg-black/10"
+          data-fd-submenu=""
+          {...(isChildActive ? { "data-fd-submenu-route": "" } : {})}
+        >
           {item.children!.map((child, i) => (
             <MenuItemComponent key={i} item={child} depth={depth + 1} collapsed={collapsed} currentPath={currentPath} />
           ))}
@@ -459,6 +466,8 @@ interface SidebarProps {
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const collapsed = false;
   const [location] = useLocation();
+  const asideRef = useRef<HTMLElement>(null);
+  const [desktopDonorH, setDesktopDonorH] = useState(0);
 
   // Fecha o menu mobile APENAS quando a rota muda (navegação).
   // IMPORTANTE: depender somente de `location`. Incluir `mobileOpen` aqui
@@ -477,84 +486,82 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     onMobileCloseRef.current = onMobileClose;
   }, [onMobileClose]);
 
+  useEffect(() => {
+    const aside = asideRef.current;
+    if (!aside) return;
+
+    const updateDonor = () => {
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        setDesktopDonorH(0);
+        return;
+      }
+      const headerH = document.querySelector("header")?.getBoundingClientRect().height ?? 48;
+      const footerH = document.querySelector("footer")?.getBoundingClientRect().height ?? 35;
+      const leftover = window.innerHeight - headerH - footerH;
+      const nav = aside.querySelector("nav");
+      const label = nav?.previousElementSibling as HTMLElement | null;
+      const contentH = (label?.offsetHeight ?? 0) + (nav?.scrollHeight ?? 0);
+      const openGroups = aside.querySelectorAll("[data-fd-submenu]").length;
+      const routeGroups = aside.querySelectorAll("[data-fd-submenu-route]").length;
+      const extraOpenGroups = Math.max(0, openGroups - routeGroups);
+      const shouldGrow =
+        extraOpenGroups >= 1 &&
+        openGroups >= 2 &&
+        contentH > leftover + DESKTOP_MENU_PAGE_GROW_SLACK_PX;
+      setDesktopDonorH(shouldGrow ? contentH : 0);
+    };
+
+    updateDonor();
+    const observer = new ResizeObserver(updateDonor);
+    observer.observe(aside);
+    for (const child of Array.from(aside.children)) observer.observe(child);
+    window.addEventListener("resize", updateDonor);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateDonor);
+    };
+  }, [location]);
+
   return (
     <>
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          style={{ touchAction: 'none' }}
+          className="fixed bottom-0 left-0 right-0 top-[52px] z-40 bg-black/50 sm:top-[48px] lg:hidden"
+          style={{ touchAction: "none" }}
           onClick={onMobileClose}
         />
       )}
 
-      {/* Sidebar */}
+      <div
+        className="hidden w-[220px] shrink-0 self-stretch lg:block"
+        style={desktopDonorH > 0 ? { minHeight: desktopDonorH } : undefined}
+        aria-hidden
+      />
       <aside
+        ref={asideRef}
         className={`
-          h-screen flex flex-col flex-shrink-0
-          max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50
-          lg:relative lg:z-auto
-          transition-[width,transform] duration-200 ease-out
+          flex w-[220px] shrink-0 flex-col
+          max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:top-[52px] max-lg:z-50
+          sm:max-lg:top-[48px]
+          lg:absolute lg:inset-y-0 lg:left-0 lg:z-auto lg:min-h-0 lg:overflow-hidden
+          transition-transform duration-200 ease-out
           ${mobileOpen ? "max-lg:translate-x-0 max-lg:pointer-events-auto" : "max-lg:-translate-x-full max-lg:pointer-events-none"}
           lg:translate-x-0 lg:pointer-events-auto
-          ${collapsed ? "w-[60px]" : "w-[220px]"}
         `}
-        style={{ backgroundColor: "#0F172A", backgroundImage: "linear-gradient(180deg, #0F172A 0%, #0D1B2A 100%)" }}
+        style={{ backgroundColor: "var(--app-shell-bg)" }}
       >
-        {/* Logo area */}
-        <div className="h-[58px] flex items-center px-4 border-b border-white/10">
-          {!collapsed && (
-            <div className="flex w-full items-center gap-1.5">
-              <div
-                className="grid place-items-center shrink-0"
-                style={{
-                  width: "44px",
-                  height: "44px",
-                }}
-              >
-                <img
-                  src="/assets/brand/fd-symbol-final-aligned.png"
-                  alt="Fazenda Digital"
-                  className="h-[44px] w-[44px] object-contain"
-                  style={{
-                    objectPosition: "center",
-                    filter: "saturate(0.74) contrast(1.01) brightness(0.97)",
-                  }}
-                />
-              </div>
-              <div className="flex flex-col min-w-0 items-center" style={{ lineHeight: 1, width: "118px" }}>
-                <span style={{ width: "100%", textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 820, fontSize: "15px", letterSpacing: "0.058em", color: "white", textShadow: "0 4px 18px rgba(0,0,0,0.18)" }}>FAZENDA</span>
-                <div style={{ width: "104px", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", marginTop: "5px" }}>
-                  <span style={{ width: "18px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(120,214,207,0.64))" }} />
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: "9px", letterSpacing: "0.255em", color: "#78D6CF", transform: "translateX(1px)" }}>DIGITAL</span>
-                  <span style={{ width: "18px", height: "1px", background: "linear-gradient(90deg, rgba(120,214,207,0.64), transparent)" }} />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Menu label */}
         {!collapsed && (
-          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+          <div className="shrink-0 px-4 pt-3 pb-1">
             <span className="text-[11px] text-white/50 font-medium">Menu</span>
           </div>
         )}
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto pb-2 scrollbar-thin">
+        <nav className="pb-2 max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto max-lg:scrollbar-thin">
           {menuItems.map((item, i) => (
             <MenuItemComponent key={i} item={item} collapsed={collapsed} currentPath={location} />
           ))}
         </nav>
-
-        {/* Footer */}
-        {!collapsed && (
-          <div className="px-3 py-3 border-t border-white/10 text-[10px] text-white/30 text-center leading-snug">
-            Fazenda Digital © {new Date().getFullYear()}<br />
-            Gestão Pecuária Inteligente
-          </div>
-        )}
       </aside>
     </>
   );

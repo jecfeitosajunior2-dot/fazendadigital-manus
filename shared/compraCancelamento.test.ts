@@ -3,12 +3,17 @@ import {
   enriquecerComprasListagem,
   mensagemBloqueioExclusaoCompra,
   MSG_COMPRA_CANCELAR_COM_ANIMAIS,
+  MSG_COMPRA_CANCELAR_COM_ANIMAIS_DETALHE,
+  MSG_COMPRA_CANCELAR_JA_CANCELADA,
   MSG_COMPRA_CANCELAR_MOTIVO,
+  MSG_COMPRA_CANCELAR_NAO_CONCLUIDA,
   MSG_COMPRA_EXCLUIR_COM_ANIMAIS,
   MSG_COMPRA_EXCLUIR_CONCLUIDA,
   MSG_COMPRA_IDENTIFICACAO_ENCERRADA,
   normalizarMotivoCancelamentoCompra,
   operacaoComercialEntraNoTotal,
+  exibirBotaoCancelarCompraFicha,
+  motivoBloqueioCancelarCompra,
   podeCancelarCompraComercial,
   podeExcluirCompraFisicamente,
 } from "./compraCancelamento";
@@ -25,6 +30,25 @@ describe("cancelamento comercial da compra", () => {
       "Compra lançada em duplicidade",
     );
     expect(MSG_COMPRA_CANCELAR_MOTIVO).toMatch(/motivo/i);
+  });
+
+  it("ficha mostra Cancelar bloqueado quando há identificados; some só se já cancelada", () => {
+    expect(exibirBotaoCancelarCompraFicha("concluido")).toBe(true);
+    expect(exibirBotaoCancelarCompraFicha("pendente")).toBe(true);
+    expect(exibirBotaoCancelarCompraFicha("cancelado")).toBe(false);
+    expect(motivoBloqueioCancelarCompra({ status: "concluido", identificados: 0 })).toBeNull();
+    expect(motivoBloqueioCancelarCompra({ status: "concluido", identificados: 2 })).toContain(
+      MSG_COMPRA_CANCELAR_COM_ANIMAIS,
+    );
+    expect(motivoBloqueioCancelarCompra({ status: "concluido", identificados: 2 })).toContain(
+      MSG_COMPRA_CANCELAR_COM_ANIMAIS_DETALHE,
+    );
+    expect(motivoBloqueioCancelarCompra({ status: "pendente", identificados: 0 })).toBe(
+      MSG_COMPRA_CANCELAR_NAO_CONCLUIDA,
+    );
+    expect(motivoBloqueioCancelarCompra({ status: "cancelado", identificados: 0 })).toBe(
+      MSG_COMPRA_CANCELAR_JA_CANCELADA,
+    );
   });
 
   it("1 ou vários vinculados bloqueiam cancelamento e exclusão", () => {

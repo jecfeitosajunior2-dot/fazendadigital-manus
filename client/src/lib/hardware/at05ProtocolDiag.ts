@@ -1,7 +1,11 @@
 /**
- * Helpers exclusivos da POC Diagnóstico AT05 (protocolo bruto).
- * Não usados pela integração de produção.
+ * Protocolo AT05 (RX bruto + interpretação ONLINE).
+ * O hook de produção e o Diagnóstico compartilham buffer/parser.
  */
+
+import { normalizeAt05Rfid } from "@/lib/hardware/at05Serial";
+
+export const AT05_RX_IDLE_FLUSH_MS = 80;
 
 export const AT05_RX_CAPTURE_MAX_BYTES = 5 * 1024;
 export const AT05_TX_HISTORY_MAX = 50;
@@ -463,7 +467,7 @@ export const AT05_STRATEGY_PATHS = {
   B: "Caminho B — descarga de trabalho: AT05 acumula → comando documentado → descarrega lote",
 } as const;
 
-/** ── Interpretação mínima ONLINE (camada sobre RX bruto; só CRLF) ───────── */
+/** ── Interpretação mínima ONLINE (camada sobre RX bruto; CR / LF / CRLF) ─ */
 
 export const AT05_ONLINE_EVENT_HISTORY_MAX = 80;
 
@@ -501,8 +505,10 @@ export type At05OnlineInterpretedEvent = {
 };
 
 /**
- * Buffer textual que só completa mensagem em \\r\\n.
- * Mantém resto incompleto (suporta chunks fragmentados).
+ * Buffer de linhas do AT05 — mesmo critério do createAt05LineParser
+ * validado no hardware (17/08/2026, RFID 963000400291061):
+ * completa em \\r\\n, \\n ou \\r. Mantém resto incompleto (chunks quebrados).
+ * AT+SPPDISC pode vir com \\r extras antes do terminador.
  */
 export function createAt05OnlineCrlfBuffer() {
   let buffer = "";
@@ -510,17 +516,12 @@ export function createAt05OnlineCrlfBuffer() {
     push(chunk: string): string[] {
       if (!chunk) return [];
       buffer += chunk;
+      const normalized = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const parts = normalized.split("\n");
+      buffer = parts.pop() ?? "";
       const lines: string[] = [];
-      while (true) {
-        const idx = buffer.indexOf("\r\n");
-        if (idx < 0) break;
-        let line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        // AT05 pode enviar \r extras antes do \r\n (ex.: AT+SPPDISC\r\r\n).
-        while (line.endsWith("\r")) {
-          line = line.slice(0, -1);
-        }
-        if (line.length > 0) lines.push(line);
+      for (const part of parts) {
+        if (part.length > 0) lines.push(part);
       }
       return lines;
     },
@@ -617,33 +618,54 @@ export function createAt05OnlineRxProcessor(options: At05OnlineRxProcessorOption
   let lastAcceptedAt = 0;
   let identificationCount = 0;
 
+  function emitIdentification(
+    ev: At05OnlineInterpretedEvent,
+    out: At05OnlineInterpretedEvent[],
+  ): void {
+    out.push(ev);
+    options.onEvent?.(ev);
+    if (ev.onlineMode) {
+      options.onObservedLink?.(ev.onlineMode);
+    }
+    if (ev.tipo !== "IDENTIFICAÇÃO RFID" || !ev.rfid) return;
+    const now = Date.now();
+    if (lastAcceptedRfid === ev.rfid && now - lastAcceptedAt < dedupeMs) return;
+    lastAcceptedRfid = ev.rfid;
+    lastAcceptedAt = now;
+    identificationCount += 1;
+    options.onIdentificationRfid(ev.rfid, ev);
+  }
+
   return {
     pushChunk(chunk: string): At05OnlineInterpretedEvent[] {
       if (!chunk) return [];
       const out: At05OnlineInterpretedEvent[] = [];
       for (const line of buffer.push(chunk)) {
-        const ev = interpretAt05OnlineLine(line);
-        out.push(ev);
-        options.onEvent?.(ev);
-        if (ev.onlineMode) {
-          options.onObservedLink?.(ev.onlineMode);
-        }
-        if (ev.tipo !== "IDENTIFICAÇÃO RFID" || !ev.rfid) {
-          continue;
-        }
-        const now = Date.now();
-        if (lastAcceptedRfid === ev.rfid && now - lastAcceptedAt < dedupeMs) {
-          continue;
-        }
-        lastAcceptedRfid = ev.rfid;
-        lastAcceptedAt = now;
-        identificationCount += 1;
-        options.onIdentificationRfid(ev.rfid, ev);
+        emitIdentification(interpretAt05OnlineLine(line), out);
       }
+      return out;
+    },
+    /**
+     * AT05 SPP às vezes entrega o RFID num único chunk, sem CR/LF.
+     * Só emite se o pendente já for identificação numérica válida.
+     */
+    flushPending(): At05OnlineInterpretedEvent[] {
+      const pending = buffer.getPending().trim();
+      if (!pending) return [];
+      const ev = interpretAt05OnlineLine(pending);
+      if (ev.tipo !== "IDENTIFICAÇÃO RFID" || !ev.rfid || !normalizeAt05Rfid(ev.rfid)) {
+        return [];
+      }
+      buffer.reset();
+      const out: At05OnlineInterpretedEvent[] = [];
+      emitIdentification(ev, out);
       return out;
     },
     getIdentificationCount() {
       return identificationCount;
+    },
+    getPending() {
+      return buffer.getPending();
     },
     reset() {
       buffer.reset();

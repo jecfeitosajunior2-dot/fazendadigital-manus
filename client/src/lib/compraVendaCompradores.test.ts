@@ -3,11 +3,15 @@ import { menuItems } from "./data";
 import {
   COMPRA_VENDA_VENDA_NOVA_PATH,
   COMPRA_VENDA_VENDAS_PATH,
+  COMPRA_VENDA_VISAO_GERAL_PATH,
+  buildCompraVendaVisaoGeralRetorno,
+  comRetornoCompraVendaVisaoGeral,
   compraVendaCompraDetalhePath,
   compraVendaCompraRecebimentoPath,
   compraVendaVendaDetalhePath,
   nomeCompradorPorId,
   opcoesComprador,
+  parseRetornoCompraVendaVisaoGeral,
 } from "./compraVendaCompradores";
 import { CONSULTA_COMPRADORES_NOVA_VENDA } from "./compradoresListagem";
 import { COMPRA_VENDA_COMPRADORES_LEGADO_PATH, FINANCEIRO_PESSOAS_PATH } from "./pessoasListagem";
@@ -56,6 +60,28 @@ describe("Compra e Venda — compradores ficam em Pessoas", () => {
     expect(COMPRA_VENDA_COMPRA_NOVA_PATH.startsWith(`${COMPRA_VENDA_COMPRAS_PATH}/`)).toBe(true);
     expect(compraVendaCompraDetalhePath(1)).toBe("/compra-venda/compras/1");
     expect(compraVendaCompraRecebimentoPath(1)).toBe("/compra-venda/compras/1/recebimento");
+  });
+
+  it("anexa retorno da Visão Geral na lista e no recebimento", () => {
+    expect(buildCompraVendaVisaoGeralRetorno("3")).toBe(`${COMPRA_VENDA_VISAO_GERAL_PATH}?fazendaId=3`);
+    const lista = comRetornoCompraVendaVisaoGeral(
+      "/compra-venda/compras?identificacao=pendente&de=2026-09-01&ate=2026-09-30",
+      "3",
+    );
+    expect(lista).toContain("retorno=");
+    expect(parseRetornoCompraVendaVisaoGeral(new URL(lista, "http://local").searchParams.get("retorno"))).toBe(
+      `${COMPRA_VENDA_VISAO_GERAL_PATH}?fazendaId=3`,
+    );
+    const rec = comRetornoCompraVendaVisaoGeral(compraVendaCompraRecebimentoPath(12), "3");
+    expect(parseRetornoCompraVendaVisaoGeral(new URL(rec, "http://local").searchParams.get("retorno"))).toBe(
+      `${COMPRA_VENDA_VISAO_GERAL_PATH}?fazendaId=3`,
+    );
+    const vendas = comRetornoCompraVendaVisaoGeral(COMPRA_VENDA_VENDAS_PATH, "3");
+    expect(parseRetornoCompraVendaVisaoGeral(new URL(vendas, "http://local").searchParams.get("retorno"))).toBe(
+      `${COMPRA_VENDA_VISAO_GERAL_PATH}?fazendaId=3`,
+    );
+    expect(parseRetornoCompraVendaVisaoGeral("/compra-venda/compras")).toBeNull();
+    expect(parseRetornoCompraVendaVisaoGeral(null)).toBeNull();
   });
 
   it("consulta da Nova Venda não pede compradores inativos", () => {

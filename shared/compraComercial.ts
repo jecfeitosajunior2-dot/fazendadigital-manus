@@ -6,6 +6,8 @@ export type FormaPrecificacaoCompra = (typeof FORMAS_PRECIFICACAO_COMPRA)[number
 
 export const MODOS_IDENTIFICACAO_COMPRA = ["nao_identificados", "individuais"] as const;
 export type ModoIdentificacaoCompra = (typeof MODOS_IDENTIFICACAO_COMPRA)[number];
+/** Compatibilidade legada: Nova Compra não escolhe mais o modo; o backend grava este valor. */
+export const MODO_IDENTIFICACAO_COMPRA_LEGADO = "nao_identificados" as const;
 
 export const FORMA_PRECIFICACAO_COMPRA_LABEL: Record<FormaPrecificacaoCompra, string> = {
   kg: "R$/kg vivo",
@@ -206,9 +208,9 @@ export function avaliarConfirmacaoCompraNaoIdentificados(input: {
   modoIdentificacao?: unknown;
   grupos?: ReadonlyArray<GrupoCompraInput>;
 }): { ok: true; calculado: CompraConfirmacaoCalculada } | { ok: false; message: string } {
-  const modo = input.modoIdentificacao;
+  const modo = input.modoIdentificacao ?? MODO_IDENTIFICACAO_COMPRA_LEGADO;
   if (modo === "individuais") return { ok: false, message: MSG_COMPRA_MODO_INDIVIDUAL };
-  if (modo !== "nao_identificados") return { ok: false, message: MSG_COMPRA_MODO_INVALIDO };
+  if (modo !== MODO_IDENTIFICACAO_COMPRA_LEGADO) return { ok: false, message: MSG_COMPRA_MODO_INVALIDO };
 
   const fazendaId = Number(input.fazendaId);
   if (!Number.isInteger(fazendaId) || fazendaId <= 0) {

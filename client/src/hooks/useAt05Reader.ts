@@ -3,7 +3,6 @@ import {
   At05SerialService,
   closeLingeringAuthorizedPorts,
   openAt05PortWithRetry,
-  releaseSerialPortBeforeAt05Open,
   waitAt05CleanupIdle,
   type At05ReaderStatus,
   formatSerialError,
@@ -27,6 +26,7 @@ import {
 } from "@/lib/hardware/serialPortLabels";
 import { registerCurralAt05SerialPort } from "@/lib/hardware/curralSerialPeers";
 import {
+  AT05_RX_IDLE_FLUSH_MS,
   createAt05OnlineRxProcessor,
   type At05OnlineMode,
 } from "@/lib/hardware/at05ProtocolDiag";
@@ -112,6 +112,10 @@ let sharedShutdownPromise: Promise<void> | null = null;
 
 /** Listener pagehide registrado enquanto há sessão (back/fechar aba). */
 let pageHideHandlerBound = false;
+
+/** Porta que de fato entregou bytes nesta sessão de página. Não usar getInfo() para achar. */
+let rxProvenPort: SerialPort | null = null;
+
 
 /**
  * onRead vive no módulo — o loop RX pode ter sido aberto por um hook que já desmontou
@@ -327,6 +331,7 @@ export function getAt05SharedSessionSnapshot() {
     shuttingDown: s.shuttingDown,
     serviceConnected: s.service.isConnected(),
     portOpen: s.service.getPort() != null && isSerialPortOpen(s.service.getPort()!),
+    rxProven: rxProvenPort != null && rxProvenPort === s.service.getPort(),
   };
 }
 
@@ -414,6 +419,16 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
         bindPageHideHandler();
       }
 
+      let idleFlush: ReturnType<typeof setTimeout> | null = null;
+      const scheduleIdleFlush = () => {
+        if (idleFlush != null) clearTimeout(idleFlush);
+        idleFlush = setTimeout(() => {
+          idleFlush = null;
+          if (s.stopReading || s.shuttingDown) return;
+          rxProcessor.flushPending();
+        }, AT05_RX_IDLE_FLUSH_MS);
+      };
+
       try {
         while (!s.stopReading && !s.shuttingDown) {
           readCall += 1;
@@ -425,10 +440,14 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
           }
           if (value == null || value.byteLength === 0) continue;
 
+          rxProvenPort = port;
           const chunk = decoder.decode(value, { stream: true });
           rxProcessor.pushChunk(chunk);
+          scheduleIdleFlush();
         }
       } finally {
+        if (idleFlush != null) clearTimeout(idleFlush);
+        rxProcessor.flushPending();
         try {
           log("RELEASE LOCK");
           reader.releaseLock();
@@ -464,7 +483,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     [],
   );
 
-  const connect = useCallback(async (preferredPort?: SerialPort) => {
+  const connect = useCallback(async () => {
     log("CONNECT CLICK");
     log(
       `CONNECT GUARD inFlight=${String(connectInFlight)} shuttingDown=${String(getShared().shuttingDown)} status=${getShared().status}`,
@@ -498,53 +517,34 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     const existing = s.service.getPort();
     if (
       existing &&
+      rxProvenPort === existing &&
       isSerialPortOpen(existing) &&
       (s.status === "listening" || s.status === "connected") &&
       s.rxLoopPromise &&
       !s.stopReading &&
       !s.shuttingDown
     ) {
-      log("CONNECT IGNORED — já conectado com porta/reader ativos");
+      log("CONNECT IGNORED — mesma porta já entregou RX nesta sessão");
       syncStatus("listening");
       return;
     }
 
+    // requestPort() exige gesto do usuário. Resolver a porta ANTES de qualquer await
+    // de cleanup — senão o Chrome recusa o seletor e o getPorts() histórico vira
+    // "Conectado" sem SPP vivo.
     connectInFlight = true;
-    const connectGen = ++s.connectGen;
     if (mountedRef.current) setError(null);
-    syncStatus("connecting");
-
-    connectInFlight = false;
-    try {
-      await waitAt05CleanupIdle();
-      await shutdownAt05SharedSession("pre-open-cleanup");
-    } catch (err) {
-      if (mountedRef.current) setError(formatSerialError(err));
-      syncStatus("error");
-      return;
-    }
-    connectInFlight = true;
-    if (s.connectGen !== connectGen) {
-      connectInFlight = false;
-      return;
-    }
 
     log("RESOLVE PORT START");
     let port: SerialPort;
     let portSource: "authorized" | "requested" = "requested";
     try {
-      if (preferredPort) {
-        port = preferredPort;
-        portSource = "authorized";
-        log("RESOLVE PORT OK source=preferred");
-      } else {
-        const resolved = await resolveAt05PortForConnect(() =>
-          s.service.requestPortFromUserGesture(),
-        );
-        port = resolved.port;
-        portSource = resolved.source;
-        log(`RESOLVE PORT OK source=${portSource}`);
-      }
+      const resolved = await resolveAt05PortForConnect(() =>
+        s.service.requestPortFromUserGesture(),
+      );
+      port = resolved.port;
+      portSource = resolved.source;
+      log(`RESOLVE PORT OK source=${portSource}`);
     } catch (err) {
       connectInFlight = false;
       if (isPortSelectionCancelled(err)) {
@@ -559,8 +559,37 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
       return;
     }
 
+    const atual = s.service.getPort();
+    if (
+      atual === port &&
+      s.rxLoopPromise &&
+      s.reader &&
+      !s.stopReading &&
+      !s.shuttingDown
+    ) {
+      connectInFlight = false;
+      log("CONNECT IGNORED — reader já ativo na porta escolhida");
+      syncStatus("listening");
+      return;
+    }
+
+    const connectGen = ++s.connectGen;
+    syncStatus("connecting");
+
+    connectInFlight = false;
+    try {
+      await waitAt05CleanupIdle();
+      const old = s.service.getPort();
+      if (old && old !== port) {
+        await shutdownAt05SharedSession("pre-open-other-port");
+      }
+    } catch (err) {
+      if (mountedRef.current) setError(formatSerialError(err));
+      syncStatus("error");
+      return;
+    }
+    connectInFlight = true;
     if (s.connectGen !== connectGen) {
-      log("CONNECT IGNORED — gen obsoleto após resolve port");
       connectInFlight = false;
       return;
     }
@@ -597,7 +626,6 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
     });
 
     try {
-      await releaseSerialPortBeforeAt05Open(port);
       await openAt05PortWithRetry(s.service, port);
       rememberSerialPortRole(port, "bastao");
       s.connectedCom = comFromSerialPort(port);
@@ -729,6 +757,7 @@ export function useAt05Reader(options: UseAt05ReaderOptions = {}) {
 
       // Só encerra quando nenhum hook montado (ex.: hub→operação no curral mantém a COM).
       if (hookAliveCount === 0) {
+        rxProvenPort = null;
         void shutdownAt05SharedSession("effect-cleanup");
       }
     };

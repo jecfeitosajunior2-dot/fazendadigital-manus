@@ -56,35 +56,57 @@ export const MSG_ESTORNO_RECEBIMENTO_FALHOU = "Não foi possível desfazer o rec
 export const MSG_ESTORNO_RECEBIMENTO_LEGADO =
   "Este animal pertence a um recebimento legado e não pode ser estornado por este fluxo.";
 
+export const AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA =
+  "Este animal e os registros criados exclusivamente durante o recebimento serão removidos. A quantidade pendente da Compra será atualizada.";
+export const AVISO_DESFAZER_RECEBIMENTO_IRREVERSIVEL = "Esta ação não poderá ser desfeita.";
+
+export function validarFormularioDesfazerRecebimento(input: {
+  motivo?: unknown;
+  observacao?: unknown;
+}):
+  | { ok: true; motivo: MotivoEstornoRecebimentoCompra; observacao: string | null }
+  | { ok: false; message: string } {
+  if (!isMotivoEstornoRecebimentoCompra(input.motivo)) {
+    return { ok: false, message: MSG_ESTORNO_RECEBIMENTO_MOTIVO };
+  }
+  const observacao = String(input.observacao ?? "").trim().slice(0, 1000) || null;
+  if (input.motivo === "outro" && !observacao) {
+    return { ok: false, message: MSG_ESTORNO_RECEBIMENTO_OBSERVACAO_OUTRO };
+  }
+  return { ok: true, motivo: input.motivo, observacao };
+}
+
 export const MSG_BLOQUEIO_ESTORNO_RECEBIMENTO: Record<
   CodigoBloqueioEstornoRecebimento,
   string
 > = {
   RECEBIMENTO_JA_ESTORNADO: "Este recebimento já foi estornado.",
   ANIMAL_NAO_ENCONTRADO: "O animal deste recebimento não foi encontrado.",
-  PESAGEM_POSTERIOR: "Há pesagem posterior ao recebimento. O estorno não é permitido.",
+  PESAGEM_POSTERIOR:
+    "Não é possível desfazer este recebimento. O animal possui uma pesagem registrada após o recebimento.",
   MOVIMENTACAO_POSTERIOR:
-    "Há movimentação posterior ao recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. O animal possui movimentação posterior ao recebimento.",
   IDENTIFICACAO_ALTERADA:
-    "A identificação do animal foi alterada depois do recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. A identificação do animal foi alterada depois do recebimento.",
   LOCALIZACAO_ALTERADA:
-    "O lote ou o pasto atuais não correspondem ao destino do recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. O lote ou o pasto atuais não correspondem ao destino do recebimento.",
   MANEJO_SANITARIO:
-    "Há manejo sanitário ou castração depois do recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. O animal possui manejo sanitário ou castração posterior ao recebimento.",
   MANEJO_REPRODUTIVO:
-    "Há manejo reprodutivo ou desmama depois do recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. O animal possui registro reprodutivo posterior ao recebimento.",
   VENDA_EXISTENTE:
-    "Este animal possui item de venda. O estorno do recebimento não é permitido.",
-  BAIXA_EXISTENTE: "Este animal possui baixa. O estorno do recebimento não é permitido.",
+    "Não é possível desfazer este recebimento. O animal já possui vínculo com uma venda.",
+  BAIXA_EXISTENTE:
+    "Não é possível desfazer este recebimento. O animal possui uma baixa registrada.",
   GENEALOGIA_EXISTENTE:
-    "Este animal participa da genealogia do rebanho. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento. O animal participa da genealogia do rebanho.",
   SEMEN_EXISTENTE:
-    "Este animal possui partida de sêmen. O estorno do recebimento não é permitido.",
+    "Não é possível desfazer este recebimento. O animal possui partida de sêmen.",
   STATUS_INCOMPATIVEL:
-    "O status atual do animal não permite desfazer o recebimento.",
+    "Não é possível desfazer este recebimento. O status atual do animal não permite esta operação.",
   RECEBIMENTO_LEGADO: MSG_ESTORNO_RECEBIMENTO_LEGADO,
   INCONSISTENCIA_DADOS:
-    "Os dados do animal não conferem com o recebimento. O estorno não é permitido.",
+    "Não é possível desfazer este recebimento porque o animal possui alterações ou registros posteriores ao recebimento.",
 };
 
 export function isMotivoEstornoRecebimentoCompra(
@@ -288,6 +310,14 @@ export function verificarElegibilidadeEstornoRecebimento(
   if ((animal.sexo ?? "") !== rec.sexo || (animal.categoria ?? "") !== rec.categoria) {
     return bloqueio("INCONSISTENCIA_DADOS");
   }
+
+  if (temVinculoPosterior(fatos.pesagens, rec.id)) {
+    return bloqueio("PESAGEM_POSTERIOR");
+  }
+  if (temVinculoPosterior(fatos.movimentacoes, rec.id)) {
+    return bloqueio("MOVIMENTACAO_POSTERIOR");
+  }
+
   if (!pesosEstornoIguais(animal.pesoAtual, rec.pesoRecebimento)) {
     return bloqueio("INCONSISTENCIA_DADOS");
   }
@@ -308,13 +338,6 @@ export function verificarElegibilidadeEstornoRecebimento(
 
   if ((animal.status ?? "").trim() !== "ativo") {
     return bloqueio("STATUS_INCOMPATIVEL");
-  }
-
-  if (temVinculoPosterior(fatos.pesagens, rec.id)) {
-    return bloqueio("PESAGEM_POSTERIOR");
-  }
-  if (temVinculoPosterior(fatos.movimentacoes, rec.id)) {
-    return bloqueio("MOVIMENTACAO_POSTERIOR");
   }
 
   if (

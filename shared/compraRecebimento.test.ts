@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MSG_RECEBIMENTO_BRINCO,
+  HINT_RECEBIMENTO_IDENTIFICACAO,
+  MSG_RECEBIMENTO_IDENTIFICACAO,
   MSG_RECEBIMENTO_DATA,
   MSG_RECEBIMENTO_PESO,
   MSG_RECEBIMENTO_RACA,
@@ -23,10 +24,18 @@ const base = {
 };
 
 describe("normalizarRecebimentoAnimalInput", () => {
-  it("exige brinco visual", () => {
+  it("aceita visual, RFID ou ambos e bloqueia os dois vazios", () => {
     expect(normalizarRecebimentoAnimalInput({ ...base, brincoVisual: "  " })).toMatchObject({
-      message: MSG_RECEBIMENTO_BRINCO,
+      message: MSG_RECEBIMENTO_IDENTIFICACAO,
     });
+    expect(
+      normalizarRecebimentoAnimalInput({ ...base, brincoVisual: "", rfid: "963000400650144" }),
+    ).toMatchObject({ ok: true, brinco: "", rfid: "963000400650144" });
+    expect(normalizarRecebimentoAnimalInput(base)).toMatchObject({ ok: true, brinco: "805", rfid: null });
+    expect(
+      normalizarRecebimentoAnimalInput({ ...base, rfid: "963000400650144" }),
+    ).toMatchObject({ ok: true, brinco: "805", rfid: "963000400650144" });
+    expect(HINT_RECEBIMENTO_IDENTIFICACAO).toContain("brinco visual ou RFID");
   });
 
   it("exige data válida e não inventa peso", () => {

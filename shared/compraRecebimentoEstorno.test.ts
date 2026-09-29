@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA,
+  AVISO_DESFAZER_RECEBIMENTO_IRREVERSIVEL,
   MSG_BLOQUEIO_ESTORNO_RECEBIMENTO,
   MSG_ESTORNO_RECEBIMENTO_MOTIVO,
   MSG_ESTORNO_RECEBIMENTO_OBSERVACAO_OUTRO,
   isRecebimentoLegado,
   normalizarEstornoRecebimentoCompraInput,
+  validarFormularioDesfazerRecebimento,
   verificarElegibilidadeEstornoRecebimento,
   type AnimalEstornoSnap,
   type FatosEstornoRecebimentoCompra,
@@ -93,6 +96,62 @@ describe("normalizarEstornoRecebimentoCompraInput", () => {
     });
   });
 
+  it("formulário da UI: motivo obrigatório e Outro exige observação", () => {
+    expect(validarFormularioDesfazerRecebimento({})).toEqual({
+      ok: false,
+      message: MSG_ESTORNO_RECEBIMENTO_MOTIVO,
+    });
+    expect(
+      validarFormularioDesfazerRecebimento({ motivo: "lancamento_incorreto" }),
+    ).toMatchObject({ ok: true, observacao: null });
+    expect(
+      validarFormularioDesfazerRecebimento({
+        motivo: "animal_identificado_incorretamente",
+        observacao: "   ",
+      }),
+    ).toMatchObject({ ok: true, observacao: null });
+    expect(validarFormularioDesfazerRecebimento({ motivo: "rfid_incorreto" })).toMatchObject({
+      ok: true,
+    });
+    expect(
+      validarFormularioDesfazerRecebimento({ motivo: "animal_nao_pertence_compra" }),
+    ).toMatchObject({ ok: true });
+    expect(validarFormularioDesfazerRecebimento({ motivo: "outro", observacao: "" })).toEqual({
+      ok: false,
+      message: MSG_ESTORNO_RECEBIMENTO_OBSERVACAO_OUTRO,
+    });
+    expect(
+      validarFormularioDesfazerRecebimento({
+        motivo: "outro",
+        observacao: "Digitou o brinco errado",
+      }),
+    ).toMatchObject({ ok: true, observacao: "Digitou o brinco errado" });
+  });
+
+  it("mensagens de bloqueio são operacionais e específicas", () => {
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.PESAGEM_POSTERIOR).toBe(
+      "Não é possível desfazer este recebimento. O animal possui uma pesagem registrada após o recebimento.",
+    );
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.MOVIMENTACAO_POSTERIOR).toContain(
+      "movimentação posterior",
+    );
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.MANEJO_SANITARIO).toContain("manejo sanitário");
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.MANEJO_REPRODUTIVO).toContain("reprodutivo");
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.VENDA_EXISTENTE).toContain("venda");
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.BAIXA_EXISTENTE).toContain("baixa");
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.INCONSISTENCIA_DADOS).toBe(
+      "Não é possível desfazer este recebimento porque o animal possui alterações ou registros posteriores ao recebimento.",
+    );
+    expect(MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.INCONSISTENCIA_DADOS).not.toContain("não conferem");
+  });
+
+  it("aviso do modal usa o texto aprovado", () => {
+    expect(AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA).toBe(
+      "Este animal e os registros criados exclusivamente durante o recebimento serão removidos. A quantidade pendente da Compra será atualizada.",
+    );
+    expect(AVISO_DESFAZER_RECEBIMENTO_IRREVERSIVEL).toBe("Esta ação não poderá ser desfeita.");
+  });
+
   it("rejeita motivo inválido", () => {
     expect(
       normalizarEstornoRecebimentoCompraInput({
@@ -134,12 +193,71 @@ describe("verificarElegibilidadeEstornoRecebimento", () => {
     });
   });
 
+  it("A. libera recebimento limpo", () => {
+    expect(verificarElegibilidadeEstornoRecebimento(fatos())).toEqual({ ok: true });
+  });
+
+  it("B. pesagem de entrada do próprio recebimento não bloqueia", () => {
+    expect(
+      verificarElegibilidadeEstornoRecebimento(
+        fatos({
+          recebimento: { ...rec, pesoRecebimento: "218" },
+          animal: { ...animal, pesoAtual: "218" },
+          pesagens: [{ compraRecebimentoId: 7701 }],
+        }),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("C. movimentação inicial do próprio recebimento não bloqueia", () => {
+    expect(
+      verificarElegibilidadeEstornoRecebimento(
+        fatos({
+          recebimento: { ...rec, loteDestinoId: 31, pastoDestinoId: 41 },
+          animal: { ...animal, loteId: 31, pastoId: 41 },
+          movimentacoes: [{ compraRecebimentoId: 7701 }],
+        }),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("D. pesagem posterior bloqueia com mensagem específica, mesmo com pesoAtual atualizado", () => {
+    const out = verificarElegibilidadeEstornoRecebimento(
+      fatos({
+        animal: { ...animal, pesoAtual: "310" },
+        pesagens: [{ compraRecebimentoId: null }],
+      }),
+    );
+    expect(out).toMatchObject({
+      ok: false,
+      codigo: "PESAGEM_POSTERIOR",
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.PESAGEM_POSTERIOR,
+    });
+    expect(out.ok ? "" : out.message).toContain("pesagem");
+    expect(out.ok ? "" : out.message).not.toContain("não conferem");
+  });
+
   it("bloqueia pesagem posterior", () => {
     expect(
       verificarElegibilidadeEstornoRecebimento(
         fatos({ pesagens: [{ compraRecebimentoId: null }] }),
       ),
     ).toMatchObject({ codigo: "PESAGEM_POSTERIOR" });
+  });
+
+  it("E. movimentação posterior bloqueia com mensagem específica", () => {
+    const out = verificarElegibilidadeEstornoRecebimento(
+      fatos({
+        recebimento: { ...rec, loteDestinoId: 31, pastoDestinoId: 41 },
+        animal: { ...animal, loteId: 31, pastoId: 41 },
+        movimentacoes: [{ compraRecebimentoId: 7701 }, { compraRecebimentoId: null }],
+      }),
+    );
+    expect(out).toMatchObject({
+      ok: false,
+      codigo: "MOVIMENTACAO_POSTERIOR",
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.MOVIMENTACAO_POSTERIOR,
+    });
   });
 
   it("bloqueia segunda movimentação", () => {
@@ -273,7 +391,28 @@ describe("verificarElegibilidadeEstornoRecebimento", () => {
     ).toMatchObject({ codigo: "INCONSISTENCIA_DADOS" });
   });
 
-  it("bloqueia pesagem ligada a outro recebimento", () => {
+  it("F. venda posterior bloqueia com mensagem específica", () => {
+    const out = verificarElegibilidadeEstornoRecebimento(fatos({ temVendaItem: true }));
+    expect(out).toMatchObject({
+      ok: false,
+      codigo: "VENDA_EXISTENTE",
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.VENDA_EXISTENTE,
+    });
+  });
+
+  it("G. motivo não classificável continua bloqueando com fallback", () => {
+    const out = verificarElegibilidadeEstornoRecebimento(
+      fatos({ animal: { ...animal, pesoAtual: "310" } }),
+    );
+    expect(out).toEqual({
+      ok: false,
+      codigo: "INCONSISTENCIA_DADOS",
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.INCONSISTENCIA_DADOS,
+    });
+    expect(out.ok).toBe(false);
+  });
+
+  it("bloqueia pesagem ligada a outro recebimento como posterior", () => {
     expect(
       verificarElegibilidadeEstornoRecebimento(
         fatos({
@@ -282,6 +421,9 @@ describe("verificarElegibilidadeEstornoRecebimento", () => {
           pesagens: [{ compraRecebimentoId: 7702 }],
         }),
       ),
-    ).toMatchObject({ codigo: "INCONSISTENCIA_DADOS" });
+    ).toMatchObject({
+      codigo: "PESAGEM_POSTERIOR",
+      message: MSG_BLOQUEIO_ESTORNO_RECEBIMENTO.PESAGEM_POSTERIOR,
+    });
   });
 });

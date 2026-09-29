@@ -132,7 +132,7 @@ export async function assertAnimalNaFazenda(
 }
 
 /**
- * RFID não reutilizável: bloqueia se OUTRO animal (ativo ou inativo) já tiver o RFID.
+ * RFID de manejo: único entre animais ativos. Morto/vendido/inativo libera o chip.
  * Exclui o próprio animal. Comparação exata como string (trim), sem Number/parseInt.
  * Escopo: todos os animais do usuário (unicidade global ≥ fazenda — não enfraquece).
  */
@@ -160,6 +160,7 @@ export async function assertRfidNaoReutilizavel(
   try {
     const conditions = [
       eq(animais.userId, userId),
+      eq(animais.status, "ativo"),
       sql`TRIM(${animais.brincoEletronico}) = ${key}`,
     ];
     if (excludeAnimalId != null) conditions.push(ne(animais.id, excludeAnimalId));
@@ -181,7 +182,7 @@ export async function assertRfidNaoReutilizavel(
   }
 }
 
-/** Alias histórico — agora aplica a regra definitiva (ativo + inativo). */
+/** Alias histórico — RFID único entre ativos (inativo libera o chip). */
 export const assertRfidUnicoEntreAtivos = assertRfidNaoReutilizavel;
 
 export { assertBrincoUnicoEntreAtivos };

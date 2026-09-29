@@ -74,8 +74,8 @@ export type ReceberAnimalInsertRow = {
   fazendaId: number;
   sexo: "macho" | "femea";
   categoria: string;
-  brinco: string;
-  nome: string;
+  brinco: string | null;
+  nome: string | null;
   brincoEletronico: string | null;
   raca: string | null;
   status: "ativo";
@@ -194,8 +194,10 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         toTrpc(MSG_RECEBIMENTO_GRUPO_ESGOTADO);
       }
 
-      const brincoConflito = await tx.findBrincoAtivoConflito(userId, parsed.brinco, fazendaId);
-      if (brincoConflito) toTrpc(buildBrincoAtivoConflitoMessage(parsed.brinco, brincoConflito));
+      if (parsed.brinco) {
+        const brincoConflito = await tx.findBrincoAtivoConflito(userId, parsed.brinco, fazendaId);
+        if (brincoConflito) toTrpc(buildBrincoAtivoConflitoMessage(parsed.brinco, brincoConflito));
+      }
 
       if (parsed.rfid) {
         const rfidKey = normalizeRfidKey(parsed.rfid);
@@ -230,8 +232,8 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         fazendaId,
         sexo: grupo.sexo,
         categoria: grupo.categoria,
-        brinco: parsed.brinco,
-        nome: parsed.brinco,
+        brinco: parsed.brinco || null,
+        nome: parsed.brinco || parsed.rfid,
         brincoEletronico: parsed.rfid,
         raca: parsed.raca,
         status: "ativo",
@@ -299,7 +301,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         success: true as const,
         animalId,
         recebimentoId,
-        brinco: parsed.brinco,
+        brinco: parsed.brinco || parsed.rfid,
         sexo: grupo.sexo,
         sexoLabel: labelSexoCompra(grupo.sexo),
         categoria: grupo.categoria,

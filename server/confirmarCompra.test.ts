@@ -115,6 +115,24 @@ describe("confirmarCompraNaoIdentificados", () => {
     expect(ops).toHaveLength(2);
   });
 
+  it("grava modo legado mesmo sem escolha na Nova Compra", async () => {
+    const ops: Op[] = [];
+    makeTransaction(
+      [
+        [{ id: 1 }],
+        [{ id: 9, nome: "Agro Central", tipo: "fornecedor", ativo: true }],
+      ],
+      ops,
+    );
+    const { modoIdentificacao: _omit, ...semModo } = inputBase;
+    const result = await confirmarCompraNaoIdentificados(1, semModo);
+    expect(result.success).toBe(true);
+    const compra = ops[0]?.values as { modoIdentificacao?: string; quantidadeAnimais?: number };
+    expect(compra.modoIdentificacao).toBe("nao_identificados");
+    expect(compra.quantidadeAnimais).toBe(40);
+    expect(ops).toHaveLength(2);
+  });
+
   it("fornecedor de outro tipo ou inativo é rejeitado", async () => {
     makeTransaction(
       [

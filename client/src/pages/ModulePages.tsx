@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
@@ -54,7 +54,9 @@ import {
   COMPRAS_LISTAGEM_EXPORT_HEADERS,
   comprasParaTotaisRodape,
   custoMedioKgCompraListagem,
+  FILTRO_IDENTIFICACAO_PENDENTE,
   filtrarComprasListagem,
+  filtrosComprasDaQuery,
   filtrosSecundariosComprasVazios,
   formatarAnimaisCelulaCompras,
   formatarDataCompraListagem,
@@ -68,6 +70,7 @@ import {
   modoTotaisRodapeCompras,
   nomeArquivoExportComprasListagem,
   opcoesFornecedorCompra,
+  opcoesIdentificacaoCompra,
   opcoesStatusCompra,
   ordenarComprasListagemPorData,
   paginarComprasListagem,
@@ -81,6 +84,7 @@ import {
   compraVendaCompraDetalhePath,
   COMPRA_VENDA_VENDA_NOVA_PATH,
   compraVendaVendaDetalhePath,
+  parseRetornoCompraVendaVisaoGeral,
 } from "@/lib/compraVendaCompradores";
 import { useDeleteFazenda } from "@/hooks/useDeleteFazenda";
 import FazendaDeleteBlockedDialog from "@/components/FazendaDeleteBlockedDialog";
@@ -265,6 +269,7 @@ export function FarmsOverviewPage() {
         </div>
 
         <TableHorizontalScroll
+          fitWidth
           footer={
             <TablePaginationFooter
               pageSize={pageSize}
@@ -278,14 +283,14 @@ export function FarmsOverviewPage() {
             />
           }
         >
-            <table className="text-[11px]">
+            <table className="w-full min-w-[720px] table-fixed text-[11px]">
               <colgroup>
-                <col className="w-[1%]" />
-                <col className="w-[1%]" />
-                <col className="w-[1%]" />
-                <col className="w-[1%]" />
-                <col className="w-[1%]" />
-                <col className="w-[1%]" />
+                <col style={{ width: "28%" }} />
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
               </colgroup>
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -316,18 +321,24 @@ export function FarmsOverviewPage() {
                     )}
                   >
                     <td className={cn(
-                      "relative pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap",
+                      "relative min-w-0 overflow-hidden pl-4 pr-2 py-2.5 text-left align-middle",
                       isSelected && "before:content-[''] before:absolute before:left-0 before:inset-y-0 before:w-[5px] before:bg-[#4ECDC4]",
                     )}>
                       <span
                         className={cn(
+                          "block truncate",
                           isSelected ? "font-bold text-[#0F3D44]" : "font-medium text-[#4ECDC4]",
                         )}
+                        title={f.nome}
                       >
                         {f.nome}
                       </span>
                     </td>
-                    <td className="pl-2 pr-3 py-2.5 text-left align-middle whitespace-nowrap text-gray-600">{formatFarmLocation(f.cidade, f.estado)}</td>
+                    <td className="min-w-0 overflow-hidden pl-2 pr-3 py-2.5 text-left align-middle text-gray-600">
+                      <span className="block truncate" title={formatFarmLocation(f.cidade, f.estado)}>
+                        {formatFarmLocation(f.cidade, f.estado)}
+                      </span>
+                    </td>
                     <td className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatAreaWithUnit(f.area, f.unidadeArea)}</td>
                     <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatAreaWithUnit(f.areaLiquida, f.unidadeArea)}</td>
                     <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{pastosPorFazenda[f.id] ?? 0}</td>
@@ -1877,6 +1888,7 @@ function CompraVendaCartEmptyIcon() {
 
 export function PurchasesPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [busca, setBusca] = useState("");
   const [filtros, setFiltros] = useState<FiltrosComprasTela>(filtrosSecundariosComprasVazios());
   const [aplicados, setAplicados] = useState<FiltrosComprasTela>(filtrosSecundariosComprasVazios());
@@ -1898,6 +1910,10 @@ export function PurchasesPage() {
     { enabled: fazendaNum > 0 },
   );
   const cancelarMut = trpc.compras.cancelar.useMutation();
+  const retornoVisaoGeral = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoCompraVendaVisaoGeral(params.get("retorno"));
+  }, [searchString]);
 
   useEffect(() => {
     if (fazendaInitDone || !fazendas.length) return;
@@ -1910,6 +1926,15 @@ export function PurchasesPage() {
     }
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone]);
+
+  useEffect(() => {
+    const daQuery = filtrosComprasDaQuery(searchString);
+    if (!daQuery) return;
+    setFiltros(daQuery);
+    setAplicados(daQuery);
+    setPage(1);
+    if (daQuery.identificacao === FILTRO_IDENTIFICACAO_PENDENTE) setMaisFiltros(true);
+  }, [searchString]);
 
   const limparFiltrosSecundarios = () => {
     const vazios = filtrosSecundariosComprasVazios();
@@ -1945,6 +1970,7 @@ export function PurchasesPage() {
         periodoAte: aplicados.periodoAte,
         fornecedorId: aplicados.fornecedorId || FILTRO_TODOS,
         status: aplicados.status || FILTRO_TODOS,
+        identificacao: aplicados.identificacao,
         fazendaId: fazendaNum > 0 ? fazendaNum : null,
       }),
     [compras, busca, aplicados, fazendaNum],
@@ -1969,6 +1995,10 @@ export function PurchasesPage() {
   );
   const opcoesStatus = useMemo(
     () => opcoesStatusCompra().filter(o => o.value !== FILTRO_TODOS),
+    [],
+  );
+  const opcoesIdentificacao = useMemo(
+    () => opcoesIdentificacaoCompra().filter(o => o.value !== FILTRO_TODOS),
     [],
   );
   const fazendaSelecionada = fazendaNum > 0;
@@ -1996,7 +2026,8 @@ export function PurchasesPage() {
     || aplicados.fornecedorId
     || aplicados.periodoDe
     || aplicados.periodoAte
-    || statusQuery,
+    || statusQuery
+    || aplicados.identificacao === FILTRO_IDENTIFICACAO_PENDENTE,
   );
   const emptySemFazenda = fazendaInitDone && !fazendaSelecionada;
   const emptyTotal = !isLoading && fazendaSelecionada && (compras?.length ?? 0) === 0 && !temFiltroSecundario;
@@ -2022,6 +2053,19 @@ export function PurchasesPage() {
 
   return (
     <AppLayout>
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1
@@ -2187,6 +2231,19 @@ export function PurchasesPage() {
                     }}
                     placeholder="Todos"
                     options={opcoesStatus}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <label className={vendaFiltroLabelCls}>Identificação</label>
+                  <VendaFilterSelect
+                    value={filtros.identificacao}
+                    onChange={v => {
+                      setFiltros(f => ({ ...f, identificacao: v }));
+                      setAplicados(f => ({ ...f, identificacao: v }));
+                      setPage(1);
+                    }}
+                    placeholder="Todas"
+                    options={opcoesIdentificacao}
                   />
                 </div>
               </div>
@@ -2507,6 +2564,7 @@ const FILTROS_VENDA_VAZIOS: FiltrosVendaTela = {
 
 export function SalesPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [busca, setBusca] = useState("");
   const [filtros, setFiltros] = useState<FiltrosVendaTela>(FILTROS_VENDA_VAZIOS);
   const [aplicados, setAplicados] = useState<FiltrosVendaTela>(FILTROS_VENDA_VAZIOS);
@@ -2523,6 +2581,10 @@ export function SalesPage() {
     { fazendaId: fazendaNum, status: statusQuery },
     { enabled: fazendaNum > 0 },
   );
+  const retornoVisaoGeral = useMemo(() => {
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoCompraVendaVisaoGeral(params.get("retorno"));
+  }, [searchString]);
 
   useEffect(() => {
     if (fazendaInitDone || !fazendas.length) return;
@@ -2647,6 +2709,19 @@ export function SalesPage() {
 
   return (
     <AppLayout>
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
           <h1

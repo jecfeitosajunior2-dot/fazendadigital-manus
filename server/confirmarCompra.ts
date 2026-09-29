@@ -4,6 +4,7 @@ import { compraGrupos, compras, fazendas, pessoas } from "../drizzle/schema";
 import { normalizarDataOperacional } from "../shared/animalBaixa";
 import {
   avaliarConfirmacaoCompraNaoIdentificados,
+  MODO_IDENTIFICACAO_COMPRA_LEGADO,
   MSG_COMPRA_DATA_INVALIDA,
   MSG_COMPRA_FORNECEDOR_INVALIDO,
   MSG_COMPRA_SEM_DATA,
@@ -31,7 +32,7 @@ export type ConfirmarCompraNaoIdentificadosInput = {
   loteDestinoId?: number | null;
   pastoDestinoId?: number | null;
   observacoes?: string | null;
-  modoIdentificacao: "nao_identificados";
+  modoIdentificacao?: "nao_identificados";
   grupos: ConfirmarCompraGrupoInput[];
 };
 
@@ -101,7 +102,7 @@ export async function confirmarCompraNaoIdentificados(
         pesoTotal: calc.pesoTotal != null ? String(calc.pesoTotal) : null,
         loteDestinoId: null,
         pastoDestinoId: null,
-        modoIdentificacao: "nao_identificados",
+        modoIdentificacao: MODO_IDENTIFICACAO_COMPRA_LEGADO,
         observacoes: input.observacoes?.trim() || null,
         status: "concluido",
         updatedAt: agora,

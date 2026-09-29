@@ -11,6 +11,17 @@ export const MSG_RECEBIMENTO_GRUPO_NAO_ENCONTRADO = "Grupo da compra não encont
 export const MSG_RECEBIMENTO_GRUPO_ESGOTADO =
   "Este grupo já atingiu a quantidade comprada.";
 export const MSG_RECEBIMENTO_BRINCO = "Informe o brinco visual.";
+export const MSG_RECEBIMENTO_IDENTIFICACAO =
+  "Informe o brinco visual ou o RFID para identificar o animal.";
+export const HINT_RECEBIMENTO_IDENTIFICACAO =
+  "Informe ao menos uma identificação: brinco visual ou RFID.";
+
+export function temIdentificacaoRecebimento(
+  brincoVisual: string | null | undefined,
+  rfid: string | null | undefined,
+): boolean {
+  return String(brincoVisual ?? "").trim().length > 0 || String(rfid ?? "").trim().length > 0;
+}
 export const MSG_RECEBIMENTO_DATA = "Informe uma data de recebimento válida.";
 export const MSG_RECEBIMENTO_DATA_FUTURA = "A data de recebimento não pode ser futura.";
 export const MSG_RECEBIMENTO_LOTE_FAZENDA = "O lote não pertence à fazenda desta compra.";
@@ -197,7 +208,10 @@ export function normalizarRecebimentoAnimalInput(input: {
   }
 
   const brinco = String(input.brincoVisual ?? "").trim();
-  if (!brinco) return { ok: false, message: MSG_RECEBIMENTO_BRINCO };
+  const rfid = String(input.rfid ?? "").trim() || null;
+  if (!temIdentificacaoRecebimento(brinco, rfid)) {
+    return { ok: false, message: MSG_RECEBIMENTO_IDENTIFICACAO };
+  }
 
   const dataRecebimento = parseDataCadastroISO(input.dataRecebimento);
   if (!dataRecebimento) return { ok: false, message: MSG_RECEBIMENTO_DATA };
@@ -228,7 +242,7 @@ export function normalizarRecebimentoAnimalInput(input: {
     compraId,
     compraGrupoId,
     brinco,
-    rfid: String(input.rfid ?? "").trim() || null,
+    rfid,
     pesoKg,
     loteId,
     pastoId,

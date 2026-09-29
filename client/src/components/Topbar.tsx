@@ -125,13 +125,12 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
 
   return (
     <header
-      className="h-[52px] sm:h-[48px] flex items-center justify-between px-3 sm:px-4 border-b relative z-[60]"
+      className="relative z-30 flex h-[52px] w-full shrink-0 items-stretch sm:h-[48px]"
       style={{
-        background: "linear-gradient(135deg, #0F172A 0%, #164E63 60%, #0891B2 100%)",
-        borderBottomColor: "rgba(27,197,189,0.15)",
+        backgroundColor: "var(--app-shell-bg)",
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2 px-3 sm:px-4 lg:w-[220px] lg:shrink-0 lg:px-4">
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
@@ -143,7 +142,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
             <span className="material-icons text-[26px]" style={{ pointerEvents: "none" }}>menu</span>
           </button>
         )}
-        <div className="lg:hidden flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <div className="grid h-[34px] w-[34px] place-items-center shrink-0">
             <img
               src="/assets/brand/fd-symbol-final-aligned.png"
@@ -166,7 +165,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
         </div>
       </div>
 
-      <div className="flex items-center gap-2" ref={userRef}>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-3 sm:px-4" ref={userRef}>
         <div className="text-white/70 hover:text-white">
           <NotificationCenter />
         </div>

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { At05RfidReaderControl } from "@/components/At05RfidReaderControl";
 import { RecebimentoS3ReaderControl } from "@/components/venda/RecebimentoS3ReaderControl";
+import DesfazerRecebimentoDialog, {
+  type AlvoDesfazerRecebimento,
+} from "@/components/compra/DesfazerRecebimentoDialog";
 import { useAt05Reader } from "@/hooks/useAt05Reader";
-import { useTruTestBleReader } from "@/hooks/useTruTestBleReader";
+import { readCurrentTruTestBleWeightKg, useTruTestBleReader } from "@/hooks/useTruTestBleReader";
 import {
   FD_PRIMARY,
   FormDatePicker,
@@ -15,28 +18,61 @@ import {
   FormSelect,
 } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { filtrarLotesPorFazenda } from "@/lib/loteFazendaFilter";
-import { compraVendaCompraDetalhePath } from "@/lib/compraVendaCompradores";
+import { compraVendaCompraDetalhePath, parseRetornoCompraVendaVisaoGeral } from "@/lib/compraVendaCompradores";
 import { formatarMetricaQuantidade } from "@/lib/compraVendaResumo";
 import {
   deveAplicarRfidRecebimentoCompra,
+  deveGuardarRfidPendenteRecebimento,
+  formularioRecebimentoAptoParaRfid,
   proximoCicloCapturaRecebimento,
 } from "@/lib/compraRecebimentoAt05";
+import {
+  HINT_RECEBIMENTO_IDENTIFICACAO,
+  MSG_RECEBIMENTO_IDENTIFICACAO,
+  temIdentificacaoRecebimento,
+} from "@shared/compraRecebimento";
+import { normalizeRfidKey } from "@shared/rfidUnicidade";
 import {
   aplicarEdicaoManualPesoRecebimento,
   aplicarLeituraPesoS3Recebimento,
   consumirPesoS3AposConfirmar,
   estadoInicialPesoS3Recebimento,
+  INTERVALO_PEDIDO_VISOR_S3_RECEBIMENTO_MS,
 } from "@/lib/compraRecebimentoS3";
+import {
+  TOAST_DESFAZER_RECEBIMENTO_SUCESSO,
+  deveAceitarCliqueDesfazerRecebimento,
+  deveLimparUltimoRecebidoAposDesfazer,
+  mensagemErroDesfazerRecebimento,
+  queriesParaInvalidarAposDesfazerRecebimento,
+  type PayloadDesfazerRecebimento,
+} from "@/lib/compraRecebimentoDesfazer";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import { RACAS } from "@shared/animal-types";
 import { hojeISODateLocal } from "@shared/transferirAnimaisEntreLotes";
+import {
+  TEXTO_VAZIO_RECEBIMENTO_LISTA,
+  formatarPesoRecebimentoLista,
+  formatarRecebidoEmLista,
+  podeMostrarAcaoDesfazerRecebimento,
+  recebimentosVisiveisNaSecao,
+  rotuloUltimoAnimalRecebido,
+  textoOuTracoRecebimento,
+} from "@shared/compraRecebimentosListagem";
 
 const VAZIO = "__none__";
 
 type UltimoRecebido = {
-  brinco: string;
+  brincoVisual: string;
+  rfid: string | null;
   categoria: string;
   sexoLabel: string;
   pesoKg: number | null;
@@ -65,9 +101,10 @@ function formatPesoRecebido(pesoKg: number | null): string | null {
   return Number.isInteger(pesoKg) ? `${pesoKg} kg` : `${pesoKg} kg`;
 }
 
-function focarBrinco() {
+function focarIdentificacao(preferirRfid: boolean) {
   window.requestAnimationFrame(() => {
-    document.getElementById("recebimento-brinco")?.focus();
+    const id = preferirRfid ? "recebimento-rfid" : "recebimento-brinco";
+    document.getElementById(id)?.focus();
   });
 }
 
@@ -75,10 +112,34 @@ function valorSelect(raw: string): string {
   return raw === VAZIO ? "" : raw;
 }
 
+function MenuAcoesRecebimentoConfirmado({ onDesfazer }: { onDesfazer: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="grid place-items-center h-7 w-6 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+          aria-label="Mais ações"
+          title="Mais ações"
+        >
+          <span className="material-icons text-[16px]" aria-hidden>
+            more_vert
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[180px] z-[100]">
+        <DropdownMenuItem className="text-[12px] cursor-pointer" onSelect={onDesfazer}>
+          Desfazer recebimento
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function SecaoRecebimento({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <div className="space-y-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{titulo}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{titulo}</p>
       {children}
     </div>
   );
@@ -88,11 +149,24 @@ function SecaoRecebimento({ titulo, children }: { titulo: string; children: Reac
 export default function CompraRecebimentoPage() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const retornoVisaoGeral = useMemo(() => {
+    const qs = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    return parseRetornoCompraVendaVisaoGeral(qs.get("retorno"));
+  }, [searchString]);
   const utils = trpc.useUtils();
   const id = Number(params.id);
   const { data, isLoading } = trpc.compras.get.useQuery(
     { id },
     { enabled: Number.isFinite(id) && id > 0 },
+  );
+  const { data: recebimentos = [] } = trpc.compras.listarRecebimentos.useQuery(
+    { compraId: id },
+    { enabled: Number.isFinite(id) && id > 0 },
+  );
+  const recebimentosVisiveis = useMemo(
+    () => recebimentosVisiveisNaSecao(recebimentos),
+    [recebimentos],
   );
 
   const [dataRecebimento, setDataRecebimento] = useState(hojeISODateLocal);
@@ -104,9 +178,13 @@ export default function CompraRecebimentoPage() {
   const [pastoId, setPastoId] = useState("");
   const [raca, setRaca] = useState("");
   const [ultimo, setUltimo] = useState<UltimoRecebido | null>(null);
+  const [desfazerAlvo, setDesfazerAlvo] = useState<AlvoDesfazerRecebimento | null>(null);
+  const [desfazerErro, setDesfazerErro] = useState<string | null>(null);
   const cicloCapturaRef = useRef(1);
   const aceitandoLeituraRef = useRef(false);
   const confirmandoRef = useRef(false);
+  const rfidPendenteRef = useRef<string | null>(null);
+  const desfazendoRef = useRef(false);
   const pesoS3Ref = useRef(estadoInicialPesoS3Recebimento());
 
   const fazendaId = data?.fazendaId ?? null;
@@ -136,28 +214,33 @@ export default function CompraRecebimentoPage() {
   );
 
   const receberMut = trpc.compras.receberAnimal.useMutation();
+  const desfazerMut = trpc.compras.desfazerRecebimento.useMutation();
   const cancelada = data?.status === "cancelado";
   const compraConcluida = data?.status === "concluido";
   const grupos = data?.identificacao.grupos ?? [];
   const grupoSelecionado = grupos.find(g => g.id === grupoId) ?? null;
   const grupoAberto = Boolean(grupoSelecionado && grupoSelecionado.pendentes > 0);
   const mostraEquipamentos = compraConcluida && !cancelada && (data?.identificacao.pendentes ?? 0) > 0;
+
+  useEffect(() => {
+    if (grupoId != null) return;
+    const aberto = grupos.find(g => g.pendentes > 0);
+    if (aberto) setGrupoId(aberto.id);
+  }, [grupoId, grupos]);
   const podeReceber =
     Boolean(data) &&
     compraConcluida &&
     !cancelada &&
     (data?.identificacao.pendentes ?? 0) > 0 &&
     grupoAberto &&
-    brincoVisual.trim().length > 0 &&
+    temIdentificacaoRecebimento(brincoVisual, rfid) &&
     !receberMut.isPending;
 
-  useEffect(() => {
-    if (grupoAberto) focarBrinco();
-  }, [grupoAberto, grupoId]);
-
-  useEffect(() => {
-    aceitandoLeituraRef.current = grupoAberto && !confirmandoRef.current;
-  }, [grupoAberto]);
+  aceitandoLeituraRef.current = formularioRecebimentoAptoParaRfid({
+    grupoSelecionado: grupoSelecionado != null,
+    pendentes: grupoSelecionado?.pendentes ?? 0,
+    confirmando: confirmandoRef.current,
+  });
 
   const aplicarRfidLido = useCallback((rfidLido: string) => {
     const cicloDaLeitura = cicloCapturaRef.current;
@@ -167,7 +250,18 @@ export default function CompraRecebimentoPage() {
       cicloAtual: cicloCapturaRef.current,
       cicloDaLeitura,
     });
-    if (!decisao.aplicar) return;
+    if (!decisao.aplicar) {
+      if (
+        deveGuardarRfidPendenteRecebimento({
+          motivo: decisao.motivo,
+          confirmando: confirmandoRef.current,
+        })
+      ) {
+        rfidPendenteRef.current = normalizeRfidKey(rfidLido) || null;
+      }
+      return;
+    }
+    rfidPendenteRef.current = null;
     setRfid(decisao.rfid);
   }, []);
 
@@ -177,6 +271,14 @@ export default function CompraRecebimentoPage() {
   const at05 = useAt05Reader({
     onRead: rfidLido => aplicarRfidLidoRef.current(rfidLido),
   });
+
+  useEffect(() => {
+    if (!grupoAberto) return;
+    const pendente = rfidPendenteRef.current;
+    if (!pendente) return;
+    rfidPendenteRef.current = null;
+    aplicarRfidLido(pendente);
+  }, [grupoAberto, aplicarRfidLido]);
 
   const aplicarPesoS3 = useCallback((kg: number) => {
     const decisao = aplicarLeituraPesoS3Recebimento({
@@ -191,14 +293,45 @@ export default function CompraRecebimentoPage() {
   const aplicarPesoS3Ref = useRef(aplicarPesoS3);
   aplicarPesoS3Ref.current = aplicarPesoS3;
 
+  const pedirPesoVisorBalanca = useCallback(() => {
+    if (confirmandoRef.current) return;
+    void readCurrentTruTestBleWeightKg().then(lido => {
+      if (lido == null) return;
+      aplicarPesoS3Ref.current(lido);
+    });
+  }, []);
+
   const s3 = useTruTestBleReader({
     onWeight: kg => aplicarPesoS3Ref.current(kg),
   });
 
+  useEffect(() => {
+    if (!mostraEquipamentos || !grupoAberto || !s3.sessionActive) return;
+    if (pesoEntrada.trim()) return;
+    pedirPesoVisorBalanca();
+    const timer = window.setInterval(
+      () => pedirPesoVisorBalanca(),
+      INTERVALO_PEDIDO_VISOR_S3_RECEBIMENTO_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [
+    mostraEquipamentos,
+    grupoAberto,
+    s3.sessionActive,
+    pesoEntrada,
+    pedirPesoVisorBalanca,
+  ]);
+
   const handleConfirmar = async () => {
     if (!data || grupoSelecionado == null) return;
+    if (!temIdentificacaoRecebimento(brincoVisual, rfid)) {
+      toast.error(MSG_RECEBIMENTO_IDENTIFICACAO);
+      return;
+    }
+    const identificouPorRfid = Boolean(normalizeRfidKey(rfid));
     confirmandoRef.current = true;
     aceitandoLeituraRef.current = false;
+    rfidPendenteRef.current = null;
     try {
       const out = await receberMut.mutateAsync({
         compraId: data.id,
@@ -211,9 +344,13 @@ export default function CompraRecebimentoPage() {
         raca: raca.trim() || null,
         dataRecebimento,
       });
-      await utils.compras.get.invalidate({ id: data.id });
+      await Promise.all([
+        utils.compras.get.invalidate({ id: data.id }),
+        utils.compras.listarRecebimentos.invalidate({ compraId: data.id }),
+      ]);
       setUltimo({
-        brinco: out.brinco,
+        brincoVisual: brincoVisual.trim(),
+        rfid: normalizeRfidKey(rfid) || null,
         categoria: out.categoria,
         sexoLabel: out.sexoLabel,
         pesoKg: out.pesoKg,
@@ -223,11 +360,12 @@ export default function CompraRecebimentoPage() {
       });
       setBrincoVisual("");
       setRfid("");
+      setRaca("");
       pesoS3Ref.current = consumirPesoS3AposConfirmar(pesoS3Ref.current);
       setPesoEntrada("");
       cicloCapturaRef.current = proximoCicloCapturaRecebimento(cicloCapturaRef.current);
       toast.success("Entrada confirmada.");
-      focarBrinco();
+      focarIdentificacao(identificouPorRfid);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível confirmar a entrada.");
     } finally {
@@ -236,7 +374,60 @@ export default function CompraRecebimentoPage() {
     }
   };
 
-  const voltar = () => setLocation(Number.isFinite(id) ? compraVendaCompraDetalhePath(id) : "/compra-venda/compras");
+  const handleDesfazerRecebimento = async (payload: PayloadDesfazerRecebimento) => {
+    if (
+      !deveAceitarCliqueDesfazerRecebimento({
+        formularioValido: true,
+        pending: desfazendoRef.current || desfazerMut.isPending,
+      })
+    ) {
+      return;
+    }
+    desfazendoRef.current = true;
+    setDesfazerErro(null);
+    try {
+      await desfazerMut.mutateAsync({
+        recebimentoId: payload.recebimentoId,
+        motivo: payload.motivo,
+        observacao: payload.observacao,
+      });
+      const compraId = data?.id ?? id;
+      const queries = queriesParaInvalidarAposDesfazerRecebimento(compraId);
+      await Promise.all([
+        utils.compras.get.invalidate(queries.get),
+        utils.compras.listarRecebimentos.invalidate(queries.listarRecebimentos),
+      ]);
+      if (
+        deveLimparUltimoRecebidoAposDesfazer({
+          ultimoBrinco: ultimo?.brincoVisual || ultimo?.rfid,
+          alvoBrinco: desfazerAlvo?.brinco,
+        })
+      ) {
+        setUltimo(null);
+      }
+      setDesfazerAlvo(null);
+      setDesfazerErro(null);
+      toast.success(TOAST_DESFAZER_RECEBIMENTO_SUCESSO);
+    } catch (error) {
+      setDesfazerErro(mensagemErroDesfazerRecebimento(error));
+    } finally {
+      desfazendoRef.current = false;
+    }
+  };
+
+  const fecharDesfazer = () => {
+    if (desfazerMut.isPending || desfazendoRef.current) return;
+    setDesfazerAlvo(null);
+    setDesfazerErro(null);
+  };
+
+  const voltar = () => {
+    if (retornoVisaoGeral) {
+      setLocation(retornoVisaoGeral);
+      return;
+    }
+    setLocation(Number.isFinite(id) ? compraVendaCompraDetalhePath(id) : "/compra-venda/compras");
+  };
 
   return (
     <AppLayout>
@@ -261,11 +452,11 @@ export default function CompraRecebimentoPage() {
             <h1 className="text-[15px] font-medium text-gray-800">Recebimento da Compra {data.id}</h1>
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px]">
               <div>
-                <p className="text-[10px] uppercase text-gray-400">Fornecedor</p>
+                <p className="text-[10px] uppercase text-gray-500">Fornecedor</p>
                 <p className="font-medium text-gray-800">{data.fornecedor}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase text-gray-400">Fazenda</p>
+                <p className="text-[10px] uppercase text-gray-500">Fazenda</p>
                 <p className="font-medium text-gray-800">{data.fazendaNome || "—"}</p>
               </div>
             </div>
@@ -290,31 +481,27 @@ export default function CompraRecebimentoPage() {
                 <p className="text-[10px] uppercase text-gray-500">Identificados</p>
                 <p className="text-[22px] font-bold text-gray-800 tabular-nums">{qtd(data.identificacao.identificados)}</p>
               </div>
-              <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
+              <div
+                className={cn(
+                  "rounded-lg border p-3",
+                  !cancelada && data.identificacao.pendentes > 0
+                    ? "bg-amber-50 border-amber-100"
+                    : "bg-gray-50 border-gray-100",
+                )}
+              >
                 <p className="text-[10px] uppercase text-gray-500">Pendentes</p>
-                <p className="text-[22px] font-bold text-gray-800 tabular-nums">{qtd(data.identificacao.pendentes)}</p>
+                <p
+                  className={cn(
+                    "text-[22px] font-bold tabular-nums",
+                    !cancelada && data.identificacao.pendentes > 0 ? "text-amber-800" : "text-gray-800",
+                  )}
+                >
+                  {qtd(data.identificacao.pendentes)}
+                </p>
               </div>
             </div>
             <p className="mt-3 text-[12px] font-medium text-gray-800">{data.identificacao.situacaoLabel}</p>
           </div>
-
-          {mostraEquipamentos ? (
-            <div
-              id="recebimento-equipamentos"
-              className="bg-white rounded shadow-sm border border-gray-100 p-4 space-y-2"
-            >
-              <At05RfidReaderControl
-                session={at05}
-                currentValue={rfid}
-                mode="identificar"
-                continuous
-                variant="strip"
-                listeningHint="AT05 escutando · passe a tag"
-                onRfidRead={() => undefined}
-              />
-              <RecebimentoS3ReaderControl session={s3} />
-            </div>
-          ) : null}
 
           <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
             <h2 className="text-[13px] font-semibold text-gray-800 mb-3">Grupos da compra</h2>
@@ -353,26 +540,21 @@ export default function CompraRecebimentoPage() {
             </div>
           </div>
 
-          {ultimo ? (
-            <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
-              <h2 className="text-[13px] font-semibold text-gray-800 mb-2">Último animal recebido</h2>
-              <p className="text-[13px] font-medium text-gray-800">Brinco {ultimo.brinco}</p>
-              <p className="text-[12px] text-gray-600">
-                {ultimo.categoria} • {ultimo.sexoLabel}
-              </p>
-              {formatPesoRecebido(ultimo.pesoKg) ? (
-                <p className="text-[12px] text-gray-600">{formatPesoRecebido(ultimo.pesoKg)}</p>
-              ) : null}
-              {ultimo.loteNome || ultimo.pastoNome ? (
-                <p className="text-[12px] text-gray-600">
-                  {[ultimo.loteNome ? `Lote ${ultimo.loteNome}` : null, ultimo.pastoNome ? `Pasto ${ultimo.pastoNome}` : null]
-                    .filter(Boolean)
-                    .join(" • ")}
-                </p>
-              ) : null}
-              {formatHoraRecebido(ultimo.recebidoEm) ? (
-                <p className="mt-1 text-[11px] text-gray-500">Recebido às {formatHoraRecebido(ultimo.recebidoEm)}</p>
-              ) : null}
+          {mostraEquipamentos ? (
+            <div
+              id="recebimento-equipamentos"
+              className="bg-white rounded shadow-sm border border-gray-100 px-3 py-2 space-y-1.5"
+            >
+              <At05RfidReaderControl
+                session={at05}
+                currentValue={rfid}
+                mode="identificar"
+                continuous
+                variant="strip"
+                listeningHint="AT05 escutando · passe a tag"
+                onRfidRead={aplicarRfidLido}
+              />
+              <RecebimentoS3ReaderControl session={s3} />
             </div>
           ) : null}
 
@@ -412,13 +594,13 @@ export default function CompraRecebimentoPage() {
               <SecaoRecebimento titulo="Identificação">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FormLabel required>Brinco visual</FormLabel>
+                    <FormLabel>Brinco visual</FormLabel>
                     <FormInput
                       id="recebimento-brinco"
                       variant="light"
                       value={brincoVisual}
                       onChange={setBrincoVisual}
-                      required
+                      placeholder="Opcional"
                     />
                   </div>
                   <div>
@@ -432,6 +614,7 @@ export default function CompraRecebimentoPage() {
                     />
                   </div>
                 </div>
+                <p className="mt-2 text-[11px] text-gray-500">{HINT_RECEBIMENTO_IDENTIFICACAO}</p>
               </SecaoRecebimento>
 
               <div className="border-t border-gray-100 pt-4">
@@ -541,8 +724,114 @@ export default function CompraRecebimentoPage() {
               </div>
             </div>
           )}
+
+          {ultimo ? (
+            <div className="bg-white rounded shadow-sm border border-gray-100 p-4">
+              <h2 className="text-[13px] font-semibold text-gray-800 mb-2">Último animal recebido</h2>
+              <p className="text-[13px] font-medium text-gray-800">
+                {rotuloUltimoAnimalRecebido({
+                  brincoVisual: ultimo.brincoVisual,
+                  rfid: ultimo.rfid,
+                })}
+              </p>
+              <p className="text-[12px] text-gray-600">
+                {ultimo.categoria} • {ultimo.sexoLabel}
+              </p>
+              {formatPesoRecebido(ultimo.pesoKg) ? (
+                <p className="text-[12px] text-gray-600">{formatPesoRecebido(ultimo.pesoKg)}</p>
+              ) : null}
+              {ultimo.loteNome || ultimo.pastoNome ? (
+                <p className="text-[12px] text-gray-600">
+                  {[ultimo.loteNome ? `Lote ${ultimo.loteNome}` : null, ultimo.pastoNome ? `Pasto ${ultimo.pastoNome}` : null]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </p>
+              ) : null}
+              {formatHoraRecebido(ultimo.recebidoEm) ? (
+                <p className="mt-1 text-[11px] text-gray-500">Recebido às {formatHoraRecebido(ultimo.recebidoEm)}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div
+            id="recebimento-animais-recebidos"
+            className="bg-white rounded shadow-sm border border-gray-100 overflow-hidden"
+          >
+            <div className="px-4 py-3 border-b border-gray-100">
+              <h2 className="text-[13px] font-semibold text-gray-800">Animais recebidos</h2>
+            </div>
+            {recebimentosVisiveis.length === 0 ? (
+              <p className="px-4 py-2.5 text-[12px] text-gray-500">
+                Nenhum animal recebido nesta compra.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Brinco</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Grupo</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">RFID</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Peso</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Destino</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Recebido em</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Status</th>
+                      <th className="px-2 py-2 w-10 text-right text-[10px] font-semibold text-gray-500 uppercase">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recebimentosVisiveis.map(item => (
+                      <tr key={item.chaveLista} className="border-t border-gray-100">
+                        <td className="px-4 py-2 font-medium text-gray-800">
+                          {textoOuTracoRecebimento(item.brincoVisual)}
+                        </td>
+                        <td className="px-4 py-2 text-gray-700">{item.grupoLabel}</td>
+                        <td className="px-4 py-2 text-gray-700">{textoOuTracoRecebimento(item.rfid)}</td>
+                        <td className="px-4 py-2 text-gray-700 tabular-nums">
+                          {formatarPesoRecebimentoLista(item.pesoKg)}
+                        </td>
+                        <td className="px-4 py-2 text-gray-700">{item.destinoLabel}</td>
+                        <td className="px-4 py-2 text-gray-700">
+                          {formatarRecebidoEmLista(item)}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
+                            {item.statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          {podeMostrarAcaoDesfazerRecebimento(item) && item.recebimentoId != null ? (
+                            <MenuAcoesRecebimentoConfirmado
+                              onDesfazer={() => {
+                                setDesfazerErro(null);
+                                setDesfazerAlvo({
+                                  recebimentoId: item.recebimentoId,
+                                  brinco: item.brincoVisual.trim() || item.rfid || "",
+                                  grupoLabel: item.grupoLabel,
+                                })
+                              }}
+                            />
+                          ) : (
+                            TEXTO_VAZIO_RECEBIMENTO_LISTA
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
+      <DesfazerRecebimentoDialog
+        open={desfazerAlvo != null}
+        alvo={desfazerAlvo}
+        submitting={desfazerMut.isPending}
+        submitError={desfazerErro}
+        onClose={fecharDesfazer}
+        onConfirm={handleDesfazerRecebimento}
+      />
     </AppLayout>
   );
 }

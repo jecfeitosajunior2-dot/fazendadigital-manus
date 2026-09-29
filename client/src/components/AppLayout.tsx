@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { getLocalAuthUser } from "@/lib/localAuth";
+import AppFooter from "./AppFooter";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
@@ -43,16 +44,30 @@ export function AuthGuard({ children }: AppLayoutProps) {
 export function AppShell({ children }: AppLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const html = document.documentElement;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    html.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [mobileOpen]);
+
   return (
     <LayoutShellContext.Provider value={true}>
-      <div className="flex h-screen" style={{ backgroundColor: "#F5F5F5" }}>
-        <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />
-          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+      <div className="flex min-h-dvh w-full flex-1 flex-col" style={{ backgroundColor: "#F5F5F5" }}>
+        <Topbar onMenuToggle={() => setMobileOpen(o => !o)} />
+        <div className="relative z-10 flex min-w-0 flex-1">
+          <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+          <main className="min-w-0 w-full flex-1 p-4">
             {children}
           </main>
         </div>
+        <AppFooter />
       </div>
     </LayoutShellContext.Provider>
   );

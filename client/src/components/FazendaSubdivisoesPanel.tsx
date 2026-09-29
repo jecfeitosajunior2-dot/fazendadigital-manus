@@ -622,6 +622,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
 
       {!showForm && (
       <TableHorizontalScroll
+        fitWidth
         footer={
           !isLoading && subdivisoes.length > 0 ? (
             <TablePaginationFooter
@@ -638,16 +639,16 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
           ) : undefined
         }
       >
-        <table className="text-[11px] min-w-[720px]">
+        <table className="w-full min-w-[860px] table-fixed text-[11px]">
           <colgroup>
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
-            <col className="w-[1%]" />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "14%" }} />
           </colgroup>
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -658,7 +659,7 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
               <th className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Divisão</th>
               <th className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Tipo de Pastagem</th>
               <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-              <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-20">Ações</th>
+              <th className="px-3 py-2.5 text-center align-middle whitespace-nowrap text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -680,12 +681,22 @@ export function FazendaSubdivisoesPanel({ fazenda }: { fazenda: Fazenda | null }
             )}
             {pageItems.map(s => (
               <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50/60">
-                <td className="pl-4 pr-2 py-2.5 text-left align-middle whitespace-nowrap font-medium text-gray-800">{s.nome}</td>
-                <td className="pl-2 pr-3 py-2.5 text-left align-middle whitespace-nowrap text-gray-600">{s.sigla || "-"}</td>
+                <td className="min-w-0 overflow-hidden pl-4 pr-2 py-2.5 text-left align-middle font-medium text-gray-800">
+                  <span className="block truncate" title={s.nome}>{s.nome}</span>
+                </td>
+                <td className="min-w-0 overflow-hidden pl-2 pr-3 py-2.5 text-left align-middle text-gray-600">
+                  <span className="block truncate">{s.sigla || "-"}</span>
+                </td>
                 <td className="pl-2 pr-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatArea(s.area, fazenda.unidadeArea)}</td>
                 <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap tabular-nums text-gray-700">{formatCapacidade(s.capacidade)}</td>
-                <td className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-gray-600">{s.tipo || "-"}</td>
-                <td className="px-3 py-2.5 text-left align-middle whitespace-nowrap text-gray-600">{s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}</td>
+                <td className="min-w-0 overflow-hidden px-3 py-2.5 text-left align-middle text-gray-600">
+                  <span className="block truncate" title={s.tipo || "-"}>{s.tipo || "-"}</span>
+                </td>
+                <td className="min-w-0 overflow-hidden px-3 py-2.5 text-left align-middle text-gray-600">
+                  <span className="block truncate" title={s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}>
+                    {s.tipoPastagem || (pastagemAplicavel(s.tipo) ? "-" : "Não aplicável")}
+                  </span>
+                </td>
                 <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
                   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusOperacionalClass(s.status)}`}>
                     {statusOperacionalLabel(s.status)}

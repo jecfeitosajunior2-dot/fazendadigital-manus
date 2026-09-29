@@ -44,15 +44,17 @@ describe("Compra detalhe — etapa de acompanhamento", () => {
     expect(chunk).not.toContain("compras.delete");
   });
 
-  it("detalhe mostra cancelamento e some o botão depois", () => {
+  it("detalhe mostra cancelamento e some o botão depois de cancelada", () => {
     expect(page).toContain("Cancelar Compra");
     expect(page).toContain("podeCancelar");
+    expect(page).toContain("exibirBotaoCancelarCompraFicha");
+    expect(page).toContain("motivoBloqueioCancelarCompra");
     expect(page).toContain("Cancelamento");
     expect(page).toContain("data?.podeCancelar");
     expect(page).toContain("Receber / Identificar animais");
   });
 
-  it("cabeçalho segue o esqueleto da venda, sem exportação incompleta", () => {
+  it("cabeçalho segue o esqueleto da venda, com exportação da ficha", () => {
     expect(page).toContain("Compra {data.id}");
     expect(page).toContain("Forma de precificação:");
     expect(page).toContain("Peso adquirido");
@@ -61,15 +63,22 @@ describe("Compra detalhe — etapa de acompanhamento", () => {
     expect(page).toContain("Valor total");
     expect(page).toContain("data.valores.custoMedioKg");
     expect(page).toContain("data.valores.custoTotal");
-    expect(page).not.toContain("ListExportButtons");
+    expect(page).toContain("ListExportButtons");
+    expect(page).toContain("COMPRA_DETALHE_EXPORT_TITULO");
+    expect(page).toContain("buildCompraDetalheExportRows");
     expect(page).not.toContain("Status comercial");
-    const situacao = page.slice(page.indexOf("Situação dos animais"), page.indexOf("Composição da compra"));
+    const situacao = page.slice(page.indexOf("Situação dos animais"), page.indexOf("Animais da Compra"));
     expect(situacao).toContain("Comprados");
     expect(situacao).toContain("Identificados");
     expect(situacao).toContain("Pendentes");
     expect(situacao).toContain("situacaoLabel");
     expect(situacao).not.toContain("Peso adquirido");
     expect(situacao).not.toContain("Aguardando identificação");
+    expect(page).toContain("Animais da Compra");
+    expect(page).toContain("Peso de entrada");
+    expect(page).toContain("listarRecebimentos");
+    expect(page).toContain("recebimentosVisiveisNaSecao");
+    expect(page).not.toContain("Composição da compra");
   });
 
   it("não mostra Destino planejado", () => {

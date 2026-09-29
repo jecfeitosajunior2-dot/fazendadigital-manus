@@ -10,7 +10,11 @@ import {
   COMPRAS_LISTAGEM_EXPORT_HEADERS,
   comprasParaTotaisRodape,
   custoMedioKgCompraListagem,
+  FILTRO_IDENTIFICACAO_PENDENTE,
+  compraTemIdentificacaoPendente,
+  compraVendaComprasListagemPath,
   filtrarComprasListagem,
+  filtrosComprasDaQuery,
   filtrosSecundariosComprasVazios,
   formatarAnimaisCelulaCompras,
   formatarDataCompraListagem,
@@ -149,6 +153,49 @@ describe("comprasListagem — filtros no padrão de Vendas", () => {
     expect(statusQueryComprasListagem("concluido")).toBe("concluido");
   });
 
+  it("identificação pendente recorta só compras concluídas com animal em aberto", () => {
+    const comPendente = { ...compraA, identificados: 0 };
+    const jaRecebida = { ...compraA, id: 9010, identificados: 20 };
+    const cancelada = { ...compraB, quantidadeAnimais: 8, identificados: 0 };
+    expect(compraTemIdentificacaoPendente(comPendente)).toBe(true);
+    expect(compraTemIdentificacaoPendente(jaRecebida)).toBe(false);
+    expect(compraTemIdentificacaoPendente(cancelada)).toBe(false);
+    expect(
+      filtrarComprasListagem([comPendente, jaRecebida, cancelada], {
+        fazendaId: fazendaJ,
+        identificacao: FILTRO_IDENTIFICACAO_PENDENTE,
+      }).map(c => c.id),
+    ).toEqual([9002]);
+    expect(filtrosComprasDaQuery("")).toBeNull();
+    expect(filtrosComprasDaQuery("?identificacao=pendente&de=2026-09-01&ate=2026-09-30")).toEqual({
+      periodoDe: "2026-09-01",
+      periodoAte: "2026-09-30",
+      fornecedorId: "",
+      status: "",
+      identificacao: FILTRO_IDENTIFICACAO_PENDENTE,
+    });
+    expect(
+      filtrosComprasDaQuery(
+        "?identificacao=pendente&de=2026-09-01&ate=2026-09-30&retorno=%2Fcompra-venda%2Fvisao-geral",
+      ),
+    ).toEqual({
+      periodoDe: "2026-09-01",
+      periodoAte: "2026-09-30",
+      fornecedorId: "",
+      status: "",
+      identificacao: FILTRO_IDENTIFICACAO_PENDENTE,
+    });
+    expect(
+      compraVendaComprasListagemPath({
+        identificacao: FILTRO_IDENTIFICACAO_PENDENTE,
+        de: "2026-09-01",
+        ate: "2026-09-30",
+      }),
+    ).toBe("/compra-venda/compras?identificacao=pendente&de=2026-09-01&ate=2026-09-30");
+    expect(comprasPage).toContain("parseRetornoCompraVendaVisaoGeral");
+    expect(comprasPage).toContain('aria-label="Voltar"');
+  });
+
   it("H) Fornecedor + datas + status combinam com AND", () => {
     expect(
       filtrarComprasListagem(lista, {
@@ -185,6 +232,7 @@ describe("comprasListagem — filtros no padrão de Vendas", () => {
       periodoAte: "",
       fornecedorId: "",
       status: "",
+      identificacao: "",
     });
     expect(comprasPage).toContain("limparFiltrosSecundarios");
     expect(comprasPage).toContain("setFazendaId");
@@ -234,6 +282,8 @@ describe("comprasListagem — filtros no padrão de Vendas", () => {
     expect(comprasPage).toContain("Data final");
     expect(comprasPage).toContain("Buscar por fornecedor ou data");
     expect(comprasPage).toContain("Mais filtros");
+    expect(comprasPage).toContain("Identificação");
+    expect(comprasPage).toContain("opcoesIdentificacaoCompra");
     expect(comprasPage).toContain("Limpar");
     expect(comprasPage).toContain("Filtrar");
     expect(comprasPage).toContain("VendaFilterSelect");

@@ -187,14 +187,32 @@ export function filterLikelyScaleSerialPorts(ports: readonly SerialPort[]): Seri
   return ports.filter(p => rotuloPortaSerial(p).papelSugerido === "balanca");
 }
 
+/** Web Serial: streams não-nulos = porta já aberta nesta página. */
+export function portaSerialJaAberta(port: SerialPort): boolean {
+  return port.readable != null || port.writable != null;
+}
+
+/**
+ * Autorização histórica (getPorts) não prova SPP Bluetooth vivo.
+ * Mantida só para testes/diagnóstico — o connect do AT05 NÃO reutiliza getPorts.
+ */
+export function podeReutilizarPortaAt05Autorizada(
+  ports: readonly SerialPort[],
+): SerialPort | null {
+  const candidates = filterLikelyAt05SerialPorts(ports);
+  if (candidates.length !== 1) return null;
+  const port = candidates[0]!;
+  return portaSerialJaAberta(port) ? port : null;
+}
+
+/**
+ * Mesmo caminho validado no Diagnóstico (17/08/2026):
+ * requestPort() → usuário escolhe SPP Dev (COM de dados) → open() fresco.
+ * getPorts() não distingue COM SPP de entrada vs saída (getInfo vazio no Bluetooth).
+ */
 export async function resolveAt05PortForConnect(
   requestNewPort: () => Promise<SerialPort>,
 ): Promise<{ port: SerialPort; source: "authorized" | "requested" }> {
-  const ports = await navigator.serial!.getPorts();
-  const candidates = filterLikelyAt05SerialPorts(ports);
-  if (candidates.length === 1) {
-    return { port: candidates[0]!, source: "authorized" };
-  }
   const port = await requestNewPort();
   return { port, source: "requested" };
 }

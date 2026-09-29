@@ -210,6 +210,20 @@ describe("compra comercial — não identificados", () => {
     expect(r).toEqual({ ok: false, message: MSG_COMPRA_MODO_INDIVIDUAL });
   });
 
+  it("sem modo de identificação usa o valor legado e confirma", () => {
+    const { modoIdentificacao: _omit, ...semModo } = base;
+    const r = avaliarConfirmacaoCompraNaoIdentificados({
+      ...semModo,
+      formaPrecificacao: "kg",
+      precoUnitario: 12.5,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.calculado.quantidadeTotal).toBe(40);
+      expect(r.calculado.grupos).toHaveLength(2);
+    }
+  });
+
   it("sem grupos ou sem forma", () => {
     expect(avaliarConfirmacaoCompraNaoIdentificados({
       ...base, grupos: [], formaPrecificacao: "kg", precoUnitario: 12.5,

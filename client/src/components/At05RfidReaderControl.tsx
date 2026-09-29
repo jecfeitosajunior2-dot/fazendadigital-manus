@@ -197,11 +197,11 @@ function At05RfidReaderControlInner({
     if (disabled || !supported) return;
     capturingRef.current = true;
     setCapturing(true);
-    if (!sessionActive) void connect().catch(() => undefined);
+    if (!sessionActive) handleConectar();
   };
 
   const btnSessao =
-    "inline-flex items-center justify-center px-3 py-2 rounded border text-[12px] font-semibold min-h-[36px] disabled:opacity-60 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center px-2.5 py-1.5 rounded border text-[12px] font-semibold min-h-[32px] disabled:opacity-60 disabled:cursor-not-allowed";
 
   if (!supported) {
     if (variant === "strip") {
