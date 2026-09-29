@@ -77,7 +77,6 @@ import {
   type FiltrosComprasTela,
 } from "@/lib/comprasListagem";
 import {
-  COMPRA_VENDA_COMPRADORES_PATH,
   COMPRA_VENDA_COMPRA_NOVA_PATH,
   compraVendaCompraDetalhePath,
   COMPRA_VENDA_VENDA_NOVA_PATH,
@@ -2667,13 +2666,6 @@ export function SalesPage() {
             >
               <span className="material-icons text-[16px]">add</span>
               Nova Venda
-            </button>
-            <button
-              type="button"
-              onClick={() => setLocation(COMPRA_VENDA_COMPRADORES_PATH)}
-              className="inline-flex items-center gap-1.5 px-4 rounded-lg border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 hover:bg-gray-50 active:scale-[0.97] transition shrink-0 min-h-[44px]"
-            >
-              Gerenciar Compradores
             </button>
             <ListExportButtons
               title={tituloQuadro}

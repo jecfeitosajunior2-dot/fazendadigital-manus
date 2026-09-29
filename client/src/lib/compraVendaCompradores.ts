@@ -4,7 +4,6 @@ export const COMPRA_VENDA_COMPRAS_PATH = "/compra-venda/compras";
 export const COMPRA_VENDA_COMPRA_NOVA_PATH = "/compra-venda/compras/nova";
 export const COMPRA_VENDA_VENDA_NOVA_PATH = "/compra-venda/vendas/nova";
 export const COMPRA_VENDA_VENDAS_PATH = "/compra-venda/vendas";
-export const COMPRA_VENDA_COMPRADORES_PATH = "/compra-venda/vendas/compradores";
 
 export function compraVendaVendaDetalhePath(id: number): string {
   return `/compra-venda/vendas/${id}`;

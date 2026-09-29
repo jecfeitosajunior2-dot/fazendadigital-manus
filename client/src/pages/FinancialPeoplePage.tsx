@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import { useConfirm } from "@/components/ConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +10,15 @@ import {
 import { CompradorCadastroCampos, CompradorFormAcoes } from "@/components/venda/CompradorCadastroCampos";
 import { FD_PRIMARY, FormInput, FormLabel, FormTextarea } from "@/components/FormFields";
 import { compradorFormFromPessoa, documentoPodeSalvarComprador, payloadPessoaCliente } from "@/lib/compradoresCadastro";
+import {
+  CONSULTA_PESSOAS_ADMIN,
+  acoesPessoaListagem,
+  filtrarPessoasPorStatus,
+  pessoaEstaAtiva,
+  tituloInativarPessoa,
+  tituloReativarPessoa,
+  type StatusFiltroPessoa,
+} from "@/lib/pessoasListagem";
 import { cn, formatCpfCnpj, formatPhoneBR } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
@@ -16,7 +26,7 @@ type PessoaTipo = "fornecedor" | "cliente" | "funcionario";
 
 const TIPO_LABEL: Record<PessoaTipo, string> = {
   fornecedor: "Fornecedor",
-  cliente: "Cliente",
+  cliente: "Cliente / Comprador",
   funcionario: "Funcionário",
 };
 
@@ -29,7 +39,7 @@ const TIPO_BADGE: Record<PessoaTipo, string> = {
 const FILTROS: { id: "todos" | PessoaTipo; label: string }[] = [
   { id: "todos", label: "Todos" },
   { id: "fornecedor", label: "Fornecedores" },
-  { id: "cliente", label: "Clientes" },
+  { id: "cliente", label: "Clientes (compradores)" },
   { id: "funcionario", label: "Funcionários" },
 ];
 
@@ -130,6 +140,7 @@ function limparQueryModal() {
 
 export default function FinancialPeoplePage() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const novoTipo = (params.get("novo") as PessoaTipo | null) ?? null;
   const retornoUrl = params.get("retorno") ? decodeURIComponent(params.get("retorno")!) : null;
@@ -140,18 +151,19 @@ export default function FinancialPeoplePage() {
   const [filtro, setFiltro] = useState<"todos" | PessoaTipo>(
     novoTipo === "fornecedor" ? "fornecedor" : novoTipo === "cliente" ? "cliente" : "todos",
   );
+  const [statusFiltro, setStatusFiltro] = useState<StatusFiltroPessoa>("todos");
   const [showForm, setShowForm] = useState(!!novoTipo);
   const [editId, setEditId] = useState<number | null>(null);
   const [documentoOriginal, setDocumentoOriginal] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm(novoTipo ?? "fornecedor"));
 
   const utils = trpc.useUtils();
-  const { data: todasPessoas = [], isLoading } = trpc.pessoas.list.useQuery(undefined);
+  const { data: todasPessoas = [], isLoading } = trpc.pessoas.list.useQuery(CONSULTA_PESSOAS_ADMIN);
 
-  const pessoas = useMemo(
-    () => (filtro === "todos" ? todasPessoas : todasPessoas.filter(p => p.tipo === filtro)),
-    [todasPessoas, filtro]
-  );
+  const pessoas = useMemo(() => {
+    const porTipo = filtro === "todos" ? todasPessoas : todasPessoas.filter(p => p.tipo === filtro);
+    return filtrarPessoasPorStatus(porTipo, statusFiltro);
+  }, [todasPessoas, filtro, statusFiltro]);
 
   const resetFormLocal = () => {
     setEditId(null);
@@ -202,11 +214,48 @@ export default function FinancialPeoplePage() {
 
   const deleteMutation = trpc.pessoas.delete.useMutation({
     onSuccess: async () => {
-      toast.success("Cadastro removido.");
+      toast.success("Cadastro inativado.");
       await utils.pessoas.list.invalidate();
     },
     onError: e => toast.error(e.message),
   });
+
+  const reativarMutation = trpc.pessoas.reativar.useMutation({
+    onSuccess: async () => {
+      toast.success("Cadastro reativado.");
+      await utils.pessoas.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const inativar = async (p: (typeof todasPessoas)[number]) => {
+    const ok = await confirm({
+      title: tituloInativarPessoa(p.tipo),
+      description:
+        "Ele deixa de aparecer nas novas compras, vendas e movimentações. Os registros já feitos continuam com o nome que foi salvo na época.",
+      confirmText: "Inativar",
+      variant: "warning",
+    });
+    if (!ok) return;
+    deleteMutation.mutate({ id: p.id });
+  };
+
+  const reativar = async (p: (typeof todasPessoas)[number]) => {
+    const ok = await confirm({
+      title: tituloReativarPessoa(p.tipo),
+      description: (
+        <>
+          <p>Reativar {p.nome}?</p>
+          <p className="mt-3">Este cadastro voltará a ficar disponível para novas compras, vendas e movimentações.</p>
+        </>
+      ),
+      confirmText: "Reativar",
+      cancelText: "Voltar",
+      variant: "success",
+    });
+    if (!ok) return;
+    reativarMutation.mutate({ id: p.id });
+  };
 
   const abrirNovo = (tipo: PessoaTipo = filtro === "todos" ? "fornecedor" : filtro) => {
     setEditId(null);
@@ -481,10 +530,10 @@ export default function FinancialPeoplePage() {
       <FinancialTabs active="Receita x Despesa" />
 
       <p className="text-[12px] text-gray-500 mb-3">
-        Cadastro central de fornecedores, clientes e funcionários. Usado em movimentações de insumos, compras e vendas.
+        Cadastro central de fornecedores, clientes (compradores) e funcionários. Inativar tira o nome das listas novas; o histórico de compras e vendas permanece.
       </p>
 
-      <div className="flex flex-wrap gap-1 mb-4">
+      <div className="flex flex-wrap gap-1 mb-2">
         {FILTROS.map(f => (
           <button
             key={f.id}
@@ -492,6 +541,25 @@ export default function FinancialPeoplePage() {
             onClick={() => setFiltro(f.id)}
             className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors ${
               filtro === f.id ? "bg-[#4ECDC4] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-1 mb-4">
+        <span className="text-[10px] font-medium text-gray-500 uppercase mr-1">Situação</span>
+        {([
+          { id: "todos", label: "Todos" },
+          { id: "ativos", label: "Ativos" },
+          { id: "inativos", label: "Inativos" },
+        ] as const).map(f => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setStatusFiltro(f.id)}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors ${
+              statusFiltro === f.id ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
             {f.label}
@@ -520,11 +588,15 @@ export default function FinancialPeoplePage() {
                 <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Tipo</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Função</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Contato</th>
-                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-20">Ações</th>
+                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-500 uppercase w-24">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {pessoas.map(p => (
+              {pessoas.map(p => {
+                const ativo = pessoaEstaAtiva(p);
+                const acoes = acoesPessoaListagem(ativo);
+                return (
                 <tr key={p.id} className="border-t border-gray-50 hover:bg-gray-50/50">
                   <td className="px-3 py-2 text-gray-800 font-medium">{p.nome}</td>
                   <td className="px-3 py-2">
@@ -537,29 +609,53 @@ export default function FinancialPeoplePage() {
                     {[p.telefone, p.email].filter(Boolean).join(" · ") || "—"}
                   </td>
                   <td className="px-3 py-2 text-center">
+                    <span
+                      className={
+                        ativo
+                          ? "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-green-100 text-green-700"
+                          : "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-gray-100 text-gray-600"
+                      }
+                    >
+                      {ativo ? "Ativo" : "Inativo"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => abrirEditar(p)}
-                        className="p-0.5 rounded hover:bg-gray-100 text-gray-500"
-                        title="Editar"
-                      >
-                        <span className="material-icons text-[16px]">edit</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Remover "${p.nome}" do cadastro?`)) deleteMutation.mutate({ id: p.id });
-                        }}
-                        className="p-0.5 rounded hover:bg-red-50 text-red-400"
-                        title="Excluir"
-                      >
-                        <span className="material-icons text-[16px]">delete</span>
-                      </button>
+                      {acoes.editar ? (
+                        <button
+                          type="button"
+                          onClick={() => abrirEditar(p)}
+                          className="p-0.5 rounded hover:bg-gray-100 text-gray-500"
+                          title="Editar"
+                        >
+                          <span className="material-icons text-[16px]">edit</span>
+                        </button>
+                      ) : null}
+                      {acoes.inativar ? (
+                        <button
+                          type="button"
+                          onClick={() => void inativar(p)}
+                          className="p-0.5 rounded hover:bg-amber-50 text-amber-600"
+                          title="Inativar"
+                        >
+                          <span className="material-icons text-[16px]">person_off</span>
+                        </button>
+                      ) : null}
+                      {acoes.reativar ? (
+                        <button
+                          type="button"
+                          onClick={() => void reativar(p)}
+                          className="p-0.5 rounded hover:bg-teal-50 text-teal-600"
+                          title="Reativar"
+                        >
+                          <span className="material-icons text-[16px]">person_add</span>
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

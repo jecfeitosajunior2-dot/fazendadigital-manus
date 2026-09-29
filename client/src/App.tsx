@@ -22,8 +22,8 @@ import {
   SimulationsFeedlotPage,
   SimulationsSemiFeedlotPage,
 } from "./pages/ModulePages";
-import VendasCompradoresPage from "./pages/VendasCompradoresPage";
 import CompraVendaVisaoGeralPage from "./pages/CompraVendaVisaoGeralPage";
+import { COMPRA_VENDA_COMPRADORES_LEGADO_PATH, FINANCEIRO_PESSOAS_PATH } from "./lib/pessoasListagem";
 import NovaVendaPage from "./pages/NovaVendaPage";
 import NovaCompraPage from "./pages/NovaCompraPage";
 import CompraDetalhePage from "./pages/CompraDetalhePage";
@@ -174,7 +174,7 @@ function ProtectedRoutes() {
       <Route path="/compra-venda/compras/:id" component={CompraDetalhePage} />
       <Route path="/compra-venda/compras" component={PurchasesPage} />
       <Route path="/compra-venda/vendas/nova" component={NovaVendaPage} />
-      <Route path="/compra-venda/vendas/compradores" component={VendasCompradoresPage} />
+      <Route path={COMPRA_VENDA_COMPRADORES_LEGADO_PATH} component={() => <RedirectTo to={FINANCEIRO_PESSOAS_PATH} />} />
       <Route path="/compra-venda/vendas/:id" component={VendaDetalhePage} />
       <Route path="/compra-venda/vendas" component={SalesPage} />
 

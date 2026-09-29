@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { menuItems } from "./data";
 import {
-  COMPRA_VENDA_COMPRADORES_PATH,
   COMPRA_VENDA_VENDA_NOVA_PATH,
   COMPRA_VENDA_VENDAS_PATH,
   compraVendaCompraDetalhePath,
@@ -11,16 +10,17 @@ import {
   opcoesComprador,
 } from "./compraVendaCompradores";
 import { CONSULTA_COMPRADORES_NOVA_VENDA } from "./compradoresListagem";
+import { COMPRA_VENDA_COMPRADORES_LEGADO_PATH, FINANCEIRO_PESSOAS_PATH } from "./pessoasListagem";
 
 const compraVenda = menuItems.find(item => item.label === "Compra e Venda");
 
-describe("Compra e Venda — compradores ficam dentro de Vendas", () => {
-  it("a rota de gerenciar compradores é interna de Vendas, não um item da sidebar", () => {
-    expect(COMPRA_VENDA_COMPRADORES_PATH.startsWith(`${COMPRA_VENDA_VENDAS_PATH}/`)).toBe(true);
+describe("Compra e Venda — compradores ficam em Pessoas", () => {
+  it("cadastro de comprador não é item da sidebar nem tela de Vendas", () => {
     const labels = compraVenda?.children?.map(c => c.label) ?? [];
     const paths = compraVenda?.children?.map(c => c.path) ?? [];
     expect(labels).not.toContain("Compradores");
-    expect(paths).not.toContain(COMPRA_VENDA_COMPRADORES_PATH);
+    expect(paths).not.toContain(COMPRA_VENDA_COMPRADORES_LEGADO_PATH);
+    expect(FINANCEIRO_PESSOAS_PATH).toBe("/financeiro/pessoas");
   });
 
   it("não coloca Compradores em Compras", () => {

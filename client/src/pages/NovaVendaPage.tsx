@@ -553,7 +553,7 @@ export default function NovaVendaPage() {
                   onClick={irCadastrarComprador}
                   className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
                 >
-                  Cadastrar novo comprador
+                  + Cadastrar comprador
                 </button>
               </div>
               <div className="min-w-[13rem]">
