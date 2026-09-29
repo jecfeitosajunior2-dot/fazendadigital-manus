@@ -45,12 +45,12 @@ type BenfeitoriaRow = {
 type ColAlign = "left" | "right" | "center";
 
 const TABLE_COLUMNS: { key: string; label: string; align: ColAlign; width: string }[] = [
-  { key: "nome", label: "Nome", align: "left", width: "20%" },
-  { key: "tipo", label: "Tipo", align: "left", width: "15%" },
-  { key: "anoConstrucao", label: "Ano de Construção", align: "center", width: "18%" },
+  { key: "nome", label: "Nome", align: "left", width: "26%" },
+  { key: "tipo", label: "Tipo", align: "left", width: "16%" },
+  { key: "anoConstrucao", label: "Ano de Construção", align: "center", width: "16%" },
   { key: "vidaUtil", label: "Vida Útil", align: "center", width: "12%" },
-  { key: "estado", label: "Estado", align: "center", width: "14%" },
-  { key: "valor", label: "Valor", align: "center", width: "13%" },
+  { key: "estado", label: "Estado", align: "center", width: "12%" },
+  { key: "valor", label: "Valor", align: "center", width: "10%" },
   { key: "acoes", label: "Ações", align: "center", width: "8%" },
 ];
 
@@ -149,14 +149,14 @@ function renderBenfeitoriaCell(b: BenfeitoriaRow, colKey: string) {
   switch (colKey) {
     case "nome":
       return (
-        <td key={colKey} data-col-key={colKey} className="px-3 py-2.5 align-middle font-medium text-gray-800 truncate" title={b.nome}>
-          {b.nome}
+        <td key={colKey} data-col-key={colKey} className="min-w-0 overflow-hidden px-3 py-2.5 align-middle font-medium text-gray-800" title={b.nome}>
+          <span className="block truncate">{b.nome}</span>
         </td>
       );
     case "tipo":
       return (
-        <td key={colKey} data-col-key={colKey} className="px-3 py-2.5 align-middle text-gray-700 truncate" title={b.tipo || ""}>
-          {b.tipo || "—"}
+        <td key={colKey} data-col-key={colKey} className="min-w-0 overflow-hidden px-3 py-2.5 align-middle text-gray-700" title={b.tipo || ""}>
+          <span className="block truncate">{b.tipo || "—"}</span>
         </td>
       );
     case "anoConstrucao":
@@ -167,14 +167,14 @@ function renderBenfeitoriaCell(b: BenfeitoriaRow, colKey: string) {
       );
     case "vidaUtil":
       return (
-        <td key={colKey} data-col-key={colKey} className="px-3 py-2.5 align-middle text-center text-gray-700 truncate" title={formatVidaUtil(b.vidaUtil)}>
-          {formatVidaUtil(b.vidaUtil)}
+        <td key={colKey} data-col-key={colKey} className="min-w-0 overflow-hidden px-3 py-2.5 align-middle text-center text-gray-700" title={formatVidaUtil(b.vidaUtil)}>
+          <span className="block truncate">{formatVidaUtil(b.vidaUtil)}</span>
         </td>
       );
     case "estado":
       return (
-        <td key={colKey} data-col-key={colKey} className="px-3 py-2.5 align-middle text-center text-gray-700 truncate" title={b.estado || ""}>
-          {b.estado || "—"}
+        <td key={colKey} data-col-key={colKey} className="min-w-0 overflow-hidden px-3 py-2.5 align-middle text-center text-gray-700" title={b.estado || ""}>
+          <span className="block truncate">{b.estado || "—"}</span>
         </td>
       );
     case "valor":
@@ -522,6 +522,7 @@ export default function BenfeitoriasListPage() {
         )}
 
         <TableHorizontalScroll
+          fitWidth
           footer={
             !isEmpty && hasFazendaFilter && displayed.length > 0 ? (
               <div className="border-t border-gray-100">
@@ -559,7 +560,7 @@ export default function BenfeitoriasListPage() {
             ) : null
           }
         >
-          <table className="w-full min-w-[760px] text-[11px] border-collapse" data-benfeitorias-table>
+          <table className="w-full min-w-[760px] table-fixed text-[11px] border-collapse" data-benfeitorias-table>
             <colgroup>
               {TABLE_COLUMNS.map(col => (
                 <col key={col.key} style={col.width === "auto" ? undefined : { width: col.width }} />
