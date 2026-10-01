@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { quantidadeEstoqueParaKg } from "@shared/estoqueConversaoKg";
 import {
   converterUnidade,
   unidadesCompativeis,
@@ -9,6 +10,8 @@ import {
   validarUnidadeDoseSanitariaParaProduto,
   listarUnidadesDoseSanitariaUiParaProduto,
   produtoEstoqueContagemSemEmbalagem,
+  quantidadeNaUnidadeBase,
+  EMBALAGEM_UNIDADE_PREFIX,
 } from "./produto-types";
 
 describe("converterUnidade — lançamento → unidade base", () => {
@@ -224,5 +227,85 @@ describe("mensagemErroConversaoDoseSanitaria", () => {
     expect(msg).toContain("não combina com estoque em kg");
     expect(msg).toContain("Use kg");
     expect(msg).toContain("mesma unidade do estoque");
+  });
+});
+
+describe("quantidadeNaUnidadeBase — movimentação comercial vs massa física", () => {
+  const saco30Real = [{
+    nome: "Saco (sc) de 30 Quilograma (kg)",
+    volume: 30,
+    unidade: "kg",
+  }];
+  const saco25 = [{ nome: "Saco 25 kg", volume: 25, unidade: "kg" }];
+  const saco30Kg = [{ nome: "Saco 30 kg", volume: 30, unidade: "kg" }];
+  const galao20 = [{ nome: "Galão 20 L", volume: 20, unidade: "L" }];
+  const frasco500 = [{ nome: "Frasco 500 ml", volume: 500, unidade: "ml" }];
+
+  function emb(nome: string) {
+    return `${EMBALAGEM_UNIDADE_PREFIX}${nome}`;
+  }
+
+  it("A: base sc + Saco 30 kg, 50 embalagens = +50 sc (não 1.500 sc)", () => {
+    const qtd = quantidadeNaUnidadeBase(50, emb("Saco (sc) de 30 Quilograma (kg)"), {
+      unidade: "sc",
+      embalagens: saco30Real,
+    });
+    expect(qtd).toBe(50);
+    expect(qtd).not.toBe(1500);
+  });
+
+  it("B: base sc + Saco 25 kg, 50 embalagens = +50 sc", () => {
+    expect(quantidadeNaUnidadeBase(50, emb("Saco 25 kg"), {
+      unidade: "sc",
+      embalagens: saco25,
+    })).toBe(50);
+  });
+
+  it("C: base kg + Saco 30 kg, 50 embalagens = +1.500 kg", () => {
+    expect(quantidadeNaUnidadeBase(50, emb("Saco 30 kg"), {
+      unidade: "kg",
+      embalagens: saco30Kg,
+    })).toBe(1500);
+  });
+
+  it("D: base L + Galão 20 L, 10 embalagens = +200 L", () => {
+    expect(quantidadeNaUnidadeBase(10, emb("Galão 20 L"), {
+      unidade: "L",
+      embalagens: galao20,
+    })).toBe(200);
+  });
+
+  it("E: base ml + Frasco 500 ml, 10 embalagens = +5.000 ml", () => {
+    expect(quantidadeNaUnidadeBase(10, emb("Frasco 500 ml"), {
+      unidade: "ml",
+      embalagens: frasco500,
+    })).toBe(5000);
+  });
+
+  it("F: 50 sacos × R$ 119,37 = R$ 5.968,50 e custo oficial R$ 119,37/sc", () => {
+    const qtdBase = quantidadeNaUnidadeBase(50, emb("Saco (sc) de 30 Quilograma (kg)"), {
+      unidade: "sc",
+      embalagens: saco30Real,
+    });
+    expect(qtdBase).toBe(50);
+    const valorTotal = 50 * 119.37;
+    expect(valorTotal).toBeCloseTo(5968.5, 2);
+    expect(valorTotal / qtdBase!).toBeCloseTo(119.37, 2);
+  });
+
+  it("G: Nutrição deriva 50 sc × 30 kg/sc = 1.500 kg sem mudar o saldo", () => {
+    const qtdBase = quantidadeNaUnidadeBase(50, emb("Saco (sc) de 30 Quilograma (kg)"), {
+      unidade: "sc",
+      embalagens: saco30Real,
+    });
+    expect(qtdBase).toBe(50);
+    expect(quantidadeEstoqueParaKg(qtdBase!, "sc", saco30Real)).toBe(1500);
+  });
+
+  it("não converte embalagem de volume para base sc", () => {
+    expect(quantidadeNaUnidadeBase(10, emb("Galão 20 L"), {
+      unidade: "sc",
+      embalagens: galao20,
+    })).toBeNull();
   });
 });

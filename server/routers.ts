@@ -39,7 +39,7 @@ import {
 } from "./custoMedioEstoque";
 import { calcularQuantidadeEstoquePorDose } from "../client/src/lib/produto-types";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
-import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser, animalCompativelComFazendaLote, buildPastoFazendaMap, resolveAnimalLocalizacaoFromLote } from "./animaisPorFazenda";
+import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
   createLocalPasto,
@@ -80,6 +80,7 @@ import {
   updateLocalLote,
   excluirLocalLote,
   incluirAnimaisLocalLote,
+  registrarLocalEntradaInicialLote,
   movimentarAnimaisLocalLote,
   createLocalPesagem,
   deleteLocalPesagem,
@@ -111,6 +112,12 @@ import {
   listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
 import { transferirAnimaisEntreLotesDb } from "./transferirAnimaisEntreLotes";
+import { incluirAnimaisNoLoteDb } from "./incluirAnimaisNoLote";
+import { hojeISODateLocal } from "../shared/transferirAnimaisEntreLotes";
+import {
+  buildEntradaInicialLoteMovimentacao,
+  loteIdEfetivoParaHistorico,
+} from "../shared/animalLoteMovimentacaoEntrada";
 import { registrarCastracao } from "./castracaoManejo";
 import { assertAlteracaoSexoAnimal } from "./assertAlteracaoSexoAnimal";
 import { registrarDesmama } from "./desmamaManejo";
@@ -1132,6 +1139,9 @@ const animaisRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: MSG_PESO_ENTRADA_INVALIDO });
       }
       const row = buildAnimalInsertRow(ctx.user.id, input);
+      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
+      const dataMovimentacao = hojeISODateLocal();
+      const loteDestinoId = loteIdEfetivoParaHistorico(row.loteId);
       try {
         await assertBrincoUnicoEntreAtivosDb(
           ctx.user.id,
@@ -1143,11 +1153,43 @@ const animaisRouter = router({
         if (row.brincoEletronico) {
           await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico);
         }
-        const result = await db.insert(animais).values(row);
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+        const id = await db.transaction(async tx => {
+          const result = await tx.insert(animais).values(row);
+          const insertedId = Number((result as any)[0]?.insertId ?? (result as any).insertId);
+          if (!Number.isFinite(insertedId) || insertedId <= 0) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao cadastrar animal." });
+          }
+          if (loteDestinoId != null) {
+            await tx.insert(animalLoteMovimentacoes).values(
+              buildEntradaInicialLoteMovimentacao({
+                userId: ctx.user.id,
+                animalId: insertedId,
+                loteDestinoId,
+                pastoOrigemId: null,
+                pastoDestinoId: row.pastoId ?? null,
+                fazendaId: row.fazendaId ?? null,
+                dataMovimentacao,
+                usuarioNome,
+              }),
+            );
+          }
+          return insertedId;
+        });
         if (Number.isFinite(id) && id > 0) {
           try {
             await updateLocalAnimal(ctx.user.id, id, row);
+            if (loteDestinoId != null) {
+              await registrarLocalEntradaInicialLote({
+                userId: ctx.user.id,
+                animalId: id,
+                loteDestinoId,
+                pastoOrigemId: null,
+                pastoDestinoId: row.pastoId ?? null,
+                fazendaId: row.fazendaId ?? null,
+                dataMovimentacao,
+                usuarioNome,
+              });
+            }
           } catch (mirrorError) {
             console.warn("[animais.create] Espelho local não gravado:", mirrorError);
           }
@@ -1168,6 +1210,23 @@ const animaisRouter = router({
             await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico, undefined, true);
           }
           const result = await createLocalAnimal(ctx.user.id, row);
+          try {
+            if (loteDestinoId != null) {
+              await registrarLocalEntradaInicialLote({
+                userId: ctx.user.id,
+                animalId: result.id,
+                loteDestinoId,
+                pastoOrigemId: null,
+                pastoDestinoId: row.pastoId ?? null,
+                fazendaId: row.fazendaId ?? null,
+                dataMovimentacao,
+                usuarioNome,
+              });
+            }
+          } catch (histError) {
+            await deleteLocalAnimal(ctx.user.id, result.id);
+            throw histError;
+          }
           return { success: true, id: result.id, localFallback: true };
         }
         console.error("[animais.create]", err);
@@ -2642,114 +2701,15 @@ const lotesRouter = router({
       animalIds: z.array(z.number()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
+      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
+      const dataMovimentacao = hojeISODateLocal();
       try {
-        const [lote] = await db.select({
-          id: lotes.id,
-          fazendaId: lotes.fazendaId,
-          pastoAtualId: lotes.pastoAtualId,
-          ativo: lotes.ativo,
-        })
-          .from(lotes)
-          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
-          .limit(1);
-        if (!lote) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
-        }
-        if (lote.ativo === false) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Este Lote está inativo e não aceita novos animais.",
-          });
-        }
-        if (!lote.fazendaId && !lote.pastoAtualId) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.",
-          });
-        }
-
-        const pastoFazendaMap = new Map<number, number>();
-        if (lote.pastoAtualId) {
-          const [pasto] = await db.select({ id: pastos.id, fazendaId: pastos.fazendaId })
-            .from(pastos)
-            .where(and(eq(pastos.id, lote.pastoAtualId), eq(pastos.userId, ctx.user.id)))
-            .limit(1);
-          if (pasto?.fazendaId) pastoFazendaMap.set(pasto.id, pasto.fazendaId);
-        }
-        const { fazendaId: fazendaIdLote, pastoId: pastoIdLote } = resolveAnimalLocalizacaoFromLote(lote, pastoFazendaMap);
-        if (!fazendaIdLote) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Este lote não possui fazenda vinculada. Defina a fazenda do lote antes de adicionar animais.",
-          });
-        }
-
-        const animaisRows = await db.select({
-          id: animais.id,
-          fazendaId: animais.fazendaId,
-          loteId: animais.loteId,
-          status: animais.status,
-        })
-          .from(animais)
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            inArray(animais.id, input.animalIds),
-          ));
-
-        if (animaisRows.length === 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Nenhum animal válido foi encontrado para inclusão.",
-          });
-        }
-
-        const validos: number[] = [];
-        let erroAmigavel: string | null = null;
-        for (const animal of animaisRows) {
-          if (animal.status !== "ativo") {
-            if (!erroAmigavel) erroAmigavel = "Só é possível adicionar animais ativos ao lote.";
-            continue;
-          }
-          if (!animalCompativelComFazendaLote(animal, fazendaIdLote)) {
-            if (!erroAmigavel) {
-              erroAmigavel = "Este animal pertence a outra fazenda e não pode ser incluído neste lote.";
-            }
-            continue;
-          }
-          if (animal.loteId != null) {
-            if (!erroAmigavel) {
-              erroAmigavel = "Este animal já pertence a outro lote. Use a transferência entre lotes para movimentá-lo.";
-            }
-            continue;
-          }
-          validos.push(animal.id);
-        }
-
-        if (validos.length === 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: erroAmigavel || "Nenhum animal válido para inclusão neste lote.",
-          });
-        }
-
-        // Sincroniza fazenda, lote e subdivisão operacional do animal.
-        await db.update(animais)
-          .set({
-            loteId: input.loteId,
-            pastoId: pastoIdLote,
-            fazendaId: fazendaIdLote,
-          })
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            inArray(animais.id, validos),
-          ));
-
-        return { success: true, count: validos.length };
+        return await incluirAnimaisNoLoteDb(ctx.user.id, input, { usuarioNome, dataMovimentacao });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
         try {
-          return await incluirAnimaisLocalLote(ctx.user.id, input);
+          return await incluirAnimaisLocalLote(ctx.user.id, input, { usuarioNome, dataMovimentacao });
         } catch (localError) {
           const message = localError instanceof Error ? localError.message : "Não foi possível incluir os animais.";
           throw new TRPCError({
@@ -10834,6 +10794,13 @@ const manejoRouter = router({
 });
 
 import { semenRouter } from "./semenRouter";
+import { nutricaoDietasRouter } from "./nutricaoDietasRouter";
+import { nutricaoPlanejamentoRouter } from "./nutricaoPlanejamentoRouter";
+import { nutricaoFornecimentosRouter } from "./nutricaoFornecimentosRouter";
+import { nutricaoCochosRouter } from "./nutricaoCochosRouter";
+import { nutricaoBatidasRouter } from "./nutricaoBatidasRouter";
+import { nutricaoCochoLeiturasRouter } from "./nutricaoCochoLeiturasRouter";
+import { nutricaoVisaoGeralRouter } from "./nutricaoVisaoGeralRouter";
 export const appRouter = router({
   auth: authRouter,
   animais: animaisRouter,
@@ -10845,6 +10812,13 @@ export const appRouter = router({
   manutencoes: manutencoesRouter,
   pesagens: pesagensRouter,
   nutricao: nutricaoRouter,
+  nutricaoDietas: nutricaoDietasRouter,
+  nutricaoPlanejamento: nutricaoPlanejamentoRouter,
+  nutricaoFornecimentos: nutricaoFornecimentosRouter,
+  nutricaoCochos: nutricaoCochosRouter,
+  nutricaoBatidas: nutricaoBatidasRouter,
+  nutricaoCochoLeituras: nutricaoCochoLeiturasRouter,
+  nutricaoVisaoGeral: nutricaoVisaoGeralRouter,
   benfeitorias: benfeitoriasRouter,
   estoque: estoqueRouter,
   financeiro: financeiroRouter,

@@ -64,8 +64,12 @@ export const menuItems: MenuItem[] = [
     icon: "fd_nutrition_grass",
     children: [
       { label: "Visão Geral", icon: "", path: "/nutricao/visao-geral" },
+      { label: "Planejamento", icon: "", path: "/nutricao/planejamento" },
       { label: "Dietas", icon: "", path: "/nutricao/dietas" },
+      { label: "Fornecimentos", icon: "", path: "/nutricao/fornecimentos" },
+      { label: "Batidas", icon: "", path: "/nutricao/batidas" },
       { label: "Cochos", icon: "", path: "/nutricao/cochos" },
+      { label: "Leituras de Cocho", icon: "", path: "/nutricao/cochos/leituras" },
     ],
   },
   {

@@ -15,12 +15,13 @@ import {
   normalizarUnidade,
   nomeUnidadeExibicao,
   rotuloUnidade,
-  converterUnidade,
   formatQuantidadeMov,
   formatDataBr,
   toDateInput,
   parseEmbalagens,
-  extrairVolumeEmbalagem,
+  isEmbalagemUnidadeMovimentacao,
+  quantidadeNaUnidadeBase,
+  EMBALAGEM_UNIDADE_PREFIX,
   type EmbalagemProduto,
   produtoControlaSaldo,
 } from "@/lib/produto-types";
@@ -85,20 +86,19 @@ function FormCard({
   );
 }
 
-const EMB_PREFIX = "emb:";
 const FAZENDA_HELPER =
   "Fazenda definida na tela de Movimentações. Para outra fazenda, volte e selecione-a lá.";
 
 function isEmbalagemUnidade(value: string): boolean {
-  return value.startsWith(EMB_PREFIX);
+  return isEmbalagemUnidadeMovimentacao(value);
 }
 
 function embalagemNomeFromValue(value: string): string {
-  return value.slice(EMB_PREFIX.length);
+  return value.slice(EMBALAGEM_UNIDADE_PREFIX.length);
 }
 
 function embalagemValueFromNome(nome: string): string {
-  return `${EMB_PREFIX}${nome}`;
+  return `${EMBALAGEM_UNIDADE_PREFIX}${nome}`;
 }
 
 function parseEmbalagensProduto(raw: unknown): EmbalagemProduto[] {
@@ -111,32 +111,6 @@ function rotuloUnidadeMovimentacao(value: string): string {
   if (!value) return "—";
   if (isEmbalagemUnidade(value)) return embalagemNomeFromValue(value);
   return nomeUnidadeExibicao(value) || rotuloUnidade(value) || value;
-}
-
-/** Converte quantidade da unidade/embalagem escolhida para a unidade-base do estoque. */
-function quantidadeNaUnidadeBase(
-  qtd: number,
-  unidadeMov: string,
-  prod: { unidade?: string | null; embalagens?: unknown }
-): number | null {
-  const base = normalizarUnidade(prod.unidade);
-  if (!unidadeMov || !Number.isFinite(qtd)) return null;
-
-  if (!isEmbalagemUnidade(unidadeMov)) {
-    if (!base) return qtd;
-    if (normalizarUnidade(unidadeMov) === base) return qtd;
-    return converterUnidade(qtd, unidadeMov, base);
-  }
-
-  const nome = embalagemNomeFromValue(unidadeMov);
-  const emb = parseEmbalagensProduto(prod.embalagens).find(e => e.nome === nome);
-  const extracted = extrairVolumeEmbalagem(nome);
-  const volume = emb?.volume ?? extracted.volume;
-  const unEmb = normalizarUnidade(emb?.unidade ?? extracted.unidade ?? base);
-  if (volume == null || volume <= 0) return null;
-  const totalNaUnEmb = qtd * volume;
-  if (!base || unEmb === base) return totalNaUnEmb;
-  return converterUnidade(totalNaUnEmb, unEmb, base);
 }
 
 function opcoesUnidadeDoProduto(prod: {

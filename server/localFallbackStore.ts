@@ -1884,10 +1884,32 @@ export async function movimentarAnimaisLocalLote(
   };
 }
 
+export async function registrarLocalEntradaInicialLote(input: {
+  userId: number;
+  animalId: number;
+  loteDestinoId: number;
+  dataMovimentacao: string;
+  usuarioNome: string;
+  pastoOrigemId?: number | null;
+  pastoDestinoId?: number | null;
+  fazendaId?: number | null;
+  observacoes?: string | null;
+}): Promise<void> {
+  const { buildEntradaInicialLoteMovimentacao } = await import("../shared/animalLoteMovimentacaoEntrada");
+  const historico = await readAnimalLoteMovimentacoes();
+  historico.push({
+    id: historico.reduce((max, row) => Math.max(max, row.id), 0) + 1,
+    createdAt: new Date().toISOString(),
+    ...buildEntradaInicialLoteMovimentacao(input),
+  });
+  await writeAnimalLoteMovimentacoes(historico);
+}
+
 /** Associa animais sem lote a um lote da mesma fazenda (MySQL offline). */
 export async function incluirAnimaisLocalLote(
   userId: number,
   input: { loteId: number; animalIds: number[] },
+  opts?: { usuarioNome?: string; dataMovimentacao?: string },
 ): Promise<{ success: true; count: number; localFallback: true }> {
   const lote = await getLocalLote(userId, input.loteId);
   if (!lote) throw new Error("Lote não encontrado.");
@@ -1940,6 +1962,14 @@ export async function incluirAnimaisLocalLote(
 
   const validIds = new Set(validos);
   const now = new Date().toISOString();
+  const { hojeISODateLocal } = await import("../shared/transferirAnimaisEntreLotes");
+  const { buildEntradaInicialLoteMovimentacao } = await import("../shared/animalLoteMovimentacaoEntrada");
+  const dataMovimentacao = opts?.dataMovimentacao ?? hojeISODateLocal();
+  const usuarioNome = (opts?.usuarioNome ?? "").trim() || "Usuário";
+  const snapshot = rows.map(row => ({ ...row }));
+  const pastoOrigemPorId = new Map(
+    found.filter(a => validIds.has(a.id)).map(a => [a.id, a.pastoId ?? null]),
+  );
   for (let i = 0; i < rows.length; i++) {
     if (!validIds.has(rows[i].id)) continue;
     rows[i] = {
@@ -1951,6 +1981,30 @@ export async function incluirAnimaisLocalLote(
     };
   }
   await writeAnimais(rows);
+  try {
+    const historico = await readAnimalLoteMovimentacoes();
+    let nextId = historico.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+    for (const animalId of validos) {
+      historico.push({
+        id: nextId++,
+        createdAt: now,
+        ...buildEntradaInicialLoteMovimentacao({
+          userId,
+          animalId,
+          loteDestinoId: input.loteId,
+          pastoOrigemId: pastoOrigemPorId.get(animalId) ?? null,
+          pastoDestinoId: pastoIdLote,
+          fazendaId: fazendaIdLote,
+          dataMovimentacao,
+          usuarioNome,
+        }),
+      });
+    }
+    await writeAnimalLoteMovimentacoes(historico);
+  } catch (error) {
+    await writeAnimais(snapshot);
+    throw error;
+  }
   return { success: true, count: validos.length, localFallback: true };
 }
 

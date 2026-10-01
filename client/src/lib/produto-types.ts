@@ -431,6 +431,97 @@ export function converterUnidade(
   return (quantidade * fde.fator) / fpara.fator;
 }
 
+/** Prefixo da unidade de movimentação quando o usuário escolhe uma embalagem cadastrada. */
+export const EMBALAGEM_UNIDADE_PREFIX = "emb:";
+
+export function isEmbalagemUnidadeMovimentacao(value: string): boolean {
+  return value.startsWith(EMBALAGEM_UNIDADE_PREFIX);
+}
+
+function parseEmbalagensFlex(raw: unknown): EmbalagemProduto[] {
+  if (raw == null || raw === "") return [];
+  if (typeof raw === "string") return parseEmbalagens(raw);
+  if (Array.isArray(raw)) return parseEmbalagens(JSON.stringify(raw));
+  return [];
+}
+
+function familiaUnidadeEstoque(unidade: string): string | null {
+  return FATOR_UNIDADE[unidade]?.familia ?? null;
+}
+
+/** sc / un / fr / dose: cada uma é uma família isolada de contagem. */
+function ehUnidadeContagemComercial(unidade: string): boolean {
+  const fam = familiaUnidadeEstoque(unidade);
+  return fam === "sc" || fam === "un" || fam === "fr" || fam === "dose";
+}
+
+/**
+ * A embalagem é a apresentação comercial da unidade-base?
+ * Ex.: "Saco (sc) de 30 Quilograma (kg)" corresponde a sc — não a kg.
+ */
+export function embalagemIdentificaUnidadeBase(
+  nome: string | null | undefined,
+  unidadeBase: string | null | undefined,
+): boolean {
+  const base = normalizarUnidade(unidadeBase);
+  if (!base || !nome) return false;
+  const opt = UNIDADES_OPCOES.find(u => u.sigla === base);
+  if (!opt) return false;
+  const texto = nome.toLowerCase();
+  if (texto.includes(`(${opt.sigla.toLowerCase()})`)) return true;
+  const legenda = opt.legenda.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (new RegExp(`\\b${legenda}\\b`, "i").test(nome)) return true;
+  const primeiro = nome.trim().split(/[\s(/]/)[0] ?? "";
+  return Boolean(primeiro) && normalizarUnidade(primeiro) === base;
+}
+
+/**
+ * Quantas unidades-base entram no estoque a partir da unidade/embalagem da movimentação.
+ *
+ * Pergunta comercial (A), não nutricional (B):
+ * - base sc + Saco 30 kg → 50 embalagens = +50 sc
+ * - base kg + Saco 30 kg → 50 embalagens = +1.500 kg
+ *
+ * Não substitui o resolvedor de kg da Nutrição.
+ */
+export function quantidadeNaUnidadeBase(
+  qtd: number,
+  unidadeMov: string,
+  prod: { unidade?: string | null; embalagens?: unknown },
+): number | null {
+  const base = normalizarUnidade(prod.unidade);
+  if (!unidadeMov || !Number.isFinite(qtd)) return null;
+
+  if (!isEmbalagemUnidadeMovimentacao(unidadeMov)) {
+    if (!base) return qtd;
+    if (normalizarUnidade(unidadeMov) === base) return qtd;
+    return converterUnidade(qtd, unidadeMov, base);
+  }
+
+  const nome = unidadeMov.slice(EMBALAGEM_UNIDADE_PREFIX.length);
+  const emb = parseEmbalagensFlex(prod.embalagens).find(e => e.nome === nome);
+  const extracted = extrairVolumeEmbalagem(nome);
+  const volume = emb?.volume ?? extracted.volume;
+  const unEmb = normalizarUnidade(emb?.unidade ?? extracted.unidade ?? "");
+  if (volume == null || !(volume > 0)) return null;
+
+  if (base && unEmb && (unEmb === base || unidadesCompativeis(unEmb, base))) {
+    const totalNaUnEmb = qtd * volume;
+    if (unEmb === base) return totalNaUnEmb;
+    return converterUnidade(totalNaUnEmb, unEmb, base);
+  }
+
+  if (
+    base &&
+    ehUnidadeContagemComercial(base) &&
+    embalagemIdentificaUnidadeBase(nome || emb?.nome, base)
+  ) {
+    return qtd;
+  }
+
+  return null;
+}
+
 export type ModoQuantidadeMov = "direto" | "unidades";
 
 /** Calcula quantidade final na unidade base do produto. */

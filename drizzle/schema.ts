@@ -492,6 +492,10 @@ export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   estoqueId: int("estoque_id").notNull(),
   /** Abastecimento que gerou esta saída (quando aplicável). */
   abastecimentoId: int("abastecimento_id"),
+  /** Fornecimento nutricional que gerou esta saída/estorno (quando aplicável). */
+  nutricaoFornecimentoId: int("nutricao_fornecimento_id"),
+  /** Batida nutricional que gerou esta saída/estorno de ingredientes (quando aplicável). */
+  nutricaoBatidaId: int("nutricao_batida_id"),
   fazendaId: int("fazenda_id"),
   /** Usuário que criou (createdByUserId). */
   userId: int("user_id"),
@@ -507,6 +511,16 @@ export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   fornecedor: varchar("fornecedor", { length: 150 }),
   valor: decimal("valor", { precision: 12, scale: 2 }),
   observacoes: text("observacoes"),
+  /** Unidade oficial do saldo no momento da movimentação (ex.: sc). */
+  unidadeEstoqueSnapshot: varchar("unidade_estoque_snapshot", { length: 20 }),
+  /** Conteúdo por unidade de estoque usado na conversão (ex.: 30). */
+  conteudoPorUnidadeSnapshot: decimal("conteudo_por_unidade_snapshot", { precision: 12, scale: 4 }),
+  /** Unidade do conteúdo (ex.: kg). */
+  unidadeConteudoSnapshot: varchar("unidade_conteudo_snapshot", { length: 20 }),
+  /** Quantidade física derivada, com o mesmo sinal do lançamento (ex.: -45). */
+  quantidadeFisicaSnapshot: decimal("quantidade_fisica_snapshot", { precision: 12, scale: 3 }),
+  /** Unidade física do snapshot (kg). */
+  unidadeFisicaSnapshot: varchar("unidade_fisica_snapshot", { length: 20 }),
   /** ativa | estornada | estorno */
   status: varchar("status", { length: 20 }).default("ativa"),
   /** grupoId da movimentação original (quando status = estorno). */
@@ -796,3 +810,245 @@ export const pessoas = mysqlTable("pessoas", {
   ativo: boolean("ativo").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+/** Formulação nutricional reutilizável por fazenda. Não movimenta estoque. */
+export const nutricaoDietas = mysqlTable("nutricao_dietas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  descricao: text("descricao"),
+  tipo: varchar("tipo", { length: 40 }).notNull(),
+  categoriaAnimal: varchar("categoriaAnimal", { length: 50 }),
+  objetivo: varchar("objetivo", { length: 40 }),
+  status: varchar("status", { length: 20 }).notNull().default("ativa"),
+  dataInicio: date("dataInicio", { mode: "string" }),
+  dataFim: date("dataFim", { mode: "string" }),
+  /** Base da receita em kg. Percentuais são derivados. */
+  baseQuantidade: decimal("baseQuantidade", { precision: 12, scale: 3 }).notNull(),
+  baseUnidade: varchar("baseUnidade", { length: 8 }).notNull().default("kg"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_dietas_user_fazenda_idx").on(table.userId, table.fazendaId),
+  fazendaIdx: index("nutricao_dietas_fazenda_idx").on(table.fazendaId),
+}));
+
+/** Ingredientes da formulação — referenciam produtos_catalogo. Sem snapshot de custo. */
+export const nutricaoDietaIngredientes = mysqlTable("nutricao_dieta_ingredientes", {
+  id: int("id").primaryKey().autoincrement(),
+  dietaId: int("dietaId").notNull(),
+  produtoId: int("produtoId").notNull(),
+  /** Quantidade na base da formulação (kg). */
+  quantidade: decimal("quantidade", { precision: 12, scale: 3 }).notNull(),
+  ordem: int("ordem").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow(),
+}, table => ({
+  dietaProdutoUnq: uniqueIndex("nutricao_dieta_ingredientes_dieta_produto_unq").on(table.dietaId, table.produtoId),
+  dietaIdx: index("nutricao_dieta_ingredientes_dieta_idx").on(table.dietaId),
+  produtoIdx: index("nutricao_dieta_ingredientes_produto_idx").on(table.produtoId),
+}));
+
+/** Prescrição nutricional temporal de um lote. Não movimenta estoque. */
+export const nutricaoPlanejamentos = mysqlTable("nutricao_planejamentos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  loteId: int("loteId").notNull(),
+  tipoOrigem: varchar("tipoOrigem", { length: 20 }).notNull(),
+  produtoId: int("produtoId"),
+  dietaId: int("dietaId"),
+  modalidadeMeta: varchar("modalidadeMeta", { length: 20 }).notNull(),
+  valorMeta: decimal("valorMeta", { precision: 12, scale: 4 }),
+  frequencia: varchar("frequencia", { length: 30 }).notNull(),
+  tratosPorDia: int("tratosPorDia"),
+  frequenciaIntervaloDias: int("frequenciaIntervaloDias"),
+  frequenciaDiasSemana: varchar("frequenciaDiasSemana", { length: 20 }),
+  nome: varchar("nome", { length: 100 }),
+  observacoes: text("observacoes"),
+  dataInicio: date("dataInicio", { mode: "string" }).notNull(),
+  dataFim: date("dataFim", { mode: "string" }),
+  /** ativo | encerrado | cancelado — situação temporal deriva das datas. */
+  status: varchar("status", { length: 20 }).notNull().default("ativo"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_planejamentos_user_fazenda_idx").on(table.userId, table.fazendaId),
+  loteIdx: index("nutricao_planejamentos_lote_idx").on(table.loteId),
+  produtoIdx: index("nutricao_planejamentos_produto_idx").on(table.produtoId),
+  dietaIdx: index("nutricao_planejamentos_dieta_idx").on(table.dietaId),
+}));
+
+/** Fato operacional: quantidade efetivamente oferecida ao lote. */
+export const nutricaoFornecimentos = mysqlTable("nutricao_fornecimentos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  loteId: int("loteId").notNull(),
+  planejamentoId: int("planejamentoId"),
+  cochoId: int("cochoId"),
+  cochoNomeSnapshot: varchar("cochoNomeSnapshot", { length: 160 }),
+  tipoOrigem: varchar("tipoOrigem", { length: 20 }).notNull(),
+  produtoId: int("produtoId"),
+  dietaId: int("dietaId"),
+  origemOperacional: varchar("origemOperacional", { length: 20 }).notNull().default("direta"),
+  /** Batida de origem quando origemOperacional = batida. Null no fornecimento direto. */
+  batidaId: int("batidaId"),
+  data: date("data", { mode: "string" }).notNull(),
+  hora: varchar("hora", { length: 5 }),
+  quantidadeFornecidaKg: decimal("quantidadeFornecidaKg", { precision: 12, scale: 3 }).notNull(),
+  populacaoSnapshot: int("populacaoSnapshot").notNull().default(0),
+  origemNomeSnapshot: varchar("origemNomeSnapshot", { length: 120 }),
+  custoUnitarioSnapshot: decimal("custoUnitarioSnapshot", { precision: 12, scale: 4 }),
+  custoTotalSnapshot: decimal("custoTotalSnapshot", { precision: 12, scale: 2 }),
+  custoPorKgSnapshot: decimal("custoPorKgSnapshot", { precision: 12, scale: 4 }),
+  custoCompleto: boolean("custoCompleto").notNull().default(false),
+  planejamentoMetaSnapshot: varchar("planejamentoMetaSnapshot", { length: 80 }),
+  planejamentoModalidadeSnapshot: varchar("planejamentoModalidadeSnapshot", { length: 20 }),
+  planejamentoNecessidadeKgSnapshot: decimal("planejamentoNecessidadeKgSnapshot", { precision: 12, scale: 3 }),
+  observacoes: text("observacoes"),
+  status: varchar("status", { length: 20 }).notNull().default("confirmado"),
+  motivoEstorno: varchar("motivoEstorno", { length: 255 }),
+  observacaoEstorno: text("observacaoEstorno"),
+  estornadoPorUserId: int("estornadoPorUserId"),
+  estornadoEm: timestamp("estornadoEm"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_fornecimentos_user_fazenda_idx").on(table.userId, table.fazendaId),
+  loteIdx: index("nutricao_fornecimentos_lote_idx").on(table.loteId),
+  dataIdx: index("nutricao_fornecimentos_data_idx").on(table.data),
+  planIdx: index("nutricao_fornecimentos_planejamento_idx").on(table.planejamentoId),
+  cochoIdx: index("nutricao_fornecimentos_cocho_idx").on(table.cochoId),
+  batidaIdx: index("nutricao_fornecimentos_batida_idx").on(table.batidaId),
+}));
+
+/** Infraestrutura física de oferta de alimento. Sem lote/dieta fixos. */
+export const nutricaoCochos = mysqlTable("nutricao_cochos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  codigo: varchar("codigo", { length: 30 }),
+  tipo: varchar("tipo", { length: 30 }).notNull(),
+  pastoId: int("pastoId"),
+  localizacaoDescricao: varchar("localizacaoDescricao", { length: 200 }),
+  comprimentoMetros: decimal("comprimentoMetros", { precision: 10, scale: 2 }),
+  larguraMetros: decimal("larguraMetros", { precision: 10, scale: 2 }),
+  capacidadeKg: decimal("capacidadeKg", { precision: 12, scale: 3 }),
+  ladosAcesso: int("ladosAcesso"),
+  coberto: boolean("coberto").notNull().default(false),
+  observacoes: text("observacoes"),
+  status: varchar("status", { length: 20 }).notNull().default("ativo"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_cochos_user_fazenda_idx").on(table.userId, table.fazendaId),
+  pastoIdx: index("nutricao_cochos_pasto_idx").on(table.pastoId),
+  codigoIdx: index("nutricao_cochos_codigo_idx").on(table.fazendaId, table.codigo),
+}));
+
+/** Composição/custo congelados no momento do fornecimento de dieta. */
+export const nutricaoFornecimentoIngredientes = mysqlTable("nutricao_fornecimento_ingredientes", {
+  id: int("id").primaryKey().autoincrement(),
+  fornecimentoId: int("fornecimentoId").notNull(),
+  produtoId: int("produtoId").notNull(),
+  produtoNomeSnapshot: varchar("produtoNomeSnapshot", { length: 120 }),
+  quantidadeKg: decimal("quantidadeKg", { precision: 12, scale: 3 }).notNull(),
+  quantidadeUnidade: decimal("quantidadeUnidade", { precision: 12, scale: 3 }).notNull(),
+  unidadeSnapshot: varchar("unidadeSnapshot", { length: 20 }),
+  proporcaoSnapshot: decimal("proporcaoSnapshot", { precision: 8, scale: 4 }),
+  custoUnitarioSnapshot: decimal("custoUnitarioSnapshot", { precision: 12, scale: 4 }),
+  custoTotalSnapshot: decimal("custoTotalSnapshot", { precision: 12, scale: 2 }),
+  custoConhecido: boolean("custoConhecido").notNull().default(false),
+  ordem: int("ordem").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow(),
+}, table => ({
+  fornIdx: index("nutricao_fornecimento_ings_forn_idx").on(table.fornecimentoId),
+  produtoIdx: index("nutricao_fornecimento_ings_produto_idx").on(table.produtoId),
+}));
+
+/**
+ * Preparação física de uma Dieta (Etapa 5).
+ * Não possui loteId/cochoId fixos — a distribuição é Fornecimento.
+ * Coexiste com a tabela legacy `batidas` (não reutilizada).
+ *
+ * Custo incorrido = desta tabela. Custo alocado ao lote = Fornecimento da batida.
+ */
+export const nutricaoBatidas = mysqlTable("nutricao_batidas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  dietaId: int("dietaId").notNull(),
+  data: date("data", { mode: "string" }).notNull(),
+  hora: varchar("hora", { length: 5 }),
+  quantidadePreparadaKg: decimal("quantidadePreparadaKg", { precision: 12, scale: 3 }).notNull(),
+  dietaNomeSnapshot: varchar("dietaNomeSnapshot", { length: 120 }),
+  custoTotalSnapshot: decimal("custoTotalSnapshot", { precision: 12, scale: 2 }),
+  custoKgSnapshot: decimal("custoKgSnapshot", { precision: 12, scale: 4 }),
+  custoCompleto: boolean("custoCompleto").notNull().default(false),
+  observacoes: text("observacoes"),
+  status: varchar("status", { length: 20 }).notNull().default("confirmado"),
+  motivoEstorno: varchar("motivoEstorno", { length: 255 }),
+  observacaoEstorno: text("observacaoEstorno"),
+  estornadoPorUserId: int("estornadoPorUserId"),
+  estornadoEm: timestamp("estornadoEm"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_batidas_user_fazenda_idx").on(table.userId, table.fazendaId),
+  dietaIdx: index("nutricao_batidas_dieta_idx").on(table.dietaId),
+  dataIdx: index("nutricao_batidas_data_idx").on(table.data),
+}));
+
+/** Composição/custo congelados no momento da confirmação da Batida. */
+export const nutricaoBatidaIngredientes = mysqlTable("nutricao_batida_ingredientes", {
+  id: int("id").primaryKey().autoincrement(),
+  batidaId: int("batidaId").notNull(),
+  produtoId: int("produtoId").notNull(),
+  produtoNomeSnapshot: varchar("produtoNomeSnapshot", { length: 120 }),
+  proporcaoSnapshot: decimal("proporcaoSnapshot", { precision: 8, scale: 4 }),
+  quantidadeKg: decimal("quantidadeKg", { precision: 12, scale: 3 }).notNull(),
+  quantidadeUnidade: decimal("quantidadeUnidade", { precision: 12, scale: 3 }).notNull(),
+  unidadeSnapshot: varchar("unidadeSnapshot", { length: 20 }),
+  custoUnitarioSnapshot: decimal("custoUnitarioSnapshot", { precision: 12, scale: 4 }),
+  custoTotalSnapshot: decimal("custoTotalSnapshot", { precision: 12, scale: 2 }),
+  custoConhecido: boolean("custoConhecido").notNull().default(false),
+  ordem: int("ordem").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow(),
+}, table => ({
+  batidaIdx: index("nutricao_batida_ings_batida_idx").on(table.batidaId),
+  produtoIdx: index("nutricao_batida_ings_produto_idx").on(table.produtoId),
+}));
+
+/**
+ * Observação física de um Cocho (Etapa 6).
+ * Pertence ao Cocho, não à Batida. fornecimentoId é opcional.
+ * Consumo aparente é sempre derivado — não persistido.
+ * escore é texto operacional: o projeto não possui escala oficial de cocho.
+ */
+export const nutricaoCochoLeituras = mysqlTable("nutricao_cocho_leituras", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  cochoId: int("cochoId").notNull(),
+  loteId: int("loteId"),
+  fornecimentoId: int("fornecimentoId"),
+  data: date("data", { mode: "string" }).notNull(),
+  hora: varchar("hora", { length: 5 }),
+  sobraKg: decimal("sobraKg", { precision: 12, scale: 3 }),
+  escore: varchar("escore", { length: 40 }),
+  observacoes: text("observacoes"),
+  cochoNomeSnapshot: varchar("cochoNomeSnapshot", { length: 160 }),
+  loteNomeSnapshot: varchar("loteNomeSnapshot", { length: 120 }),
+  alimentoNomeSnapshot: varchar("alimentoNomeSnapshot", { length: 120 }),
+  status: varchar("status", { length: 20 }).notNull().default("ativa"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+}, table => ({
+  userFazendaIdx: index("nutricao_cocho_leituras_user_fazenda_idx").on(table.userId, table.fazendaId),
+  cochoIdx: index("nutricao_cocho_leituras_cocho_idx").on(table.cochoId),
+  loteIdx: index("nutricao_cocho_leituras_lote_idx").on(table.loteId),
+  fornIdx: index("nutricao_cocho_leituras_forn_idx").on(table.fornecimentoId),
+  dataIdx: index("nutricao_cocho_leituras_data_idx").on(table.data),
+}));

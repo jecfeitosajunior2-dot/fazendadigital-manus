@@ -631,6 +631,11 @@ export async function ensureSchema() {
     await ensureColumn(pool, "estoque_movimentacoes", "updated_at", "timestamp NULL");
     await ensureColumn(pool, "estoque_movimentacoes", "updated_by_user_id", "int");
     await ensureColumn(pool, "estoque_movimentacoes", "updated_by_nome", "varchar(150)");
+    await ensureColumn(pool, "estoque_movimentacoes", "unidade_estoque_snapshot", "varchar(20) NULL");
+    await ensureColumn(pool, "estoque_movimentacoes", "conteudo_por_unidade_snapshot", "decimal(12,4) NULL");
+    await ensureColumn(pool, "estoque_movimentacoes", "unidade_conteudo_snapshot", "varchar(20) NULL");
+    await ensureColumn(pool, "estoque_movimentacoes", "quantidade_fisica_snapshot", "decimal(12,3) NULL");
+    await ensureColumn(pool, "estoque_movimentacoes", "unidade_fisica_snapshot", "varchar(20) NULL");
 
     const [abastecimentosTable] = await pool.query(`SHOW TABLES LIKE 'abastecimentos'`);
     if ((abastecimentosTable as unknown[]).length > 0) {
@@ -1144,6 +1149,254 @@ export async function ensureSchema() {
       await ensureColumn(pool, "compra_recebimentos", "estornado_por_user_id", "int NULL");
       await ensureColumn(pool, "compra_recebimentos", "estornado_em", "timestamp NULL");
     }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_dietas\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`nome\` varchar(100) NOT NULL,
+        \`descricao\` text,
+        \`tipo\` varchar(40) NOT NULL,
+        \`categoriaAnimal\` varchar(50),
+        \`objetivo\` varchar(40),
+        \`status\` varchar(20) NOT NULL DEFAULT 'ativa',
+        \`dataInicio\` date,
+        \`dataFim\` date,
+        \`baseQuantidade\` decimal(12,3) NOT NULL,
+        \`baseUnidade\` varchar(8) NOT NULL DEFAULT 'kg',
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_dietas_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_dietas_fazenda_idx\` (\`fazendaId\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_dieta_ingredientes\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`dietaId\` int NOT NULL,
+        \`produtoId\` int NOT NULL,
+        \`quantidade\` decimal(12,3) NOT NULL,
+        \`ordem\` int NOT NULL DEFAULT 0,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`nutricao_dieta_ingredientes_dieta_produto_unq\` (\`dietaId\`, \`produtoId\`),
+        KEY \`nutricao_dieta_ingredientes_dieta_idx\` (\`dietaId\`),
+        KEY \`nutricao_dieta_ingredientes_produto_idx\` (\`produtoId\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_planejamentos\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`loteId\` int NOT NULL,
+        \`tipoOrigem\` varchar(20) NOT NULL,
+        \`produtoId\` int DEFAULT NULL,
+        \`dietaId\` int DEFAULT NULL,
+        \`modalidadeMeta\` varchar(20) NOT NULL,
+        \`valorMeta\` decimal(12,4) DEFAULT NULL,
+        \`frequencia\` varchar(30) NOT NULL,
+        \`tratosPorDia\` int DEFAULT NULL,
+        \`frequenciaIntervaloDias\` int DEFAULT NULL,
+        \`frequenciaDiasSemana\` varchar(20) DEFAULT NULL,
+        \`nome\` varchar(100) DEFAULT NULL,
+        \`observacoes\` text,
+        \`dataInicio\` date NOT NULL,
+        \`dataFim\` date DEFAULT NULL,
+        \`status\` varchar(20) NOT NULL DEFAULT 'ativo',
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_planejamentos_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_planejamentos_lote_idx\` (\`loteId\`),
+        KEY \`nutricao_planejamentos_produto_idx\` (\`produtoId\`),
+        KEY \`nutricao_planejamentos_dieta_idx\` (\`dietaId\`)
+      )
+    `);
+
+    if (await tableExists(pool, "estoque_movimentacoes")) {
+      await ensureColumn(pool, "estoque_movimentacoes", "nutricao_fornecimento_id", "int NULL");
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_fornecimentos\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`loteId\` int NOT NULL,
+        \`planejamentoId\` int DEFAULT NULL,
+        \`tipoOrigem\` varchar(20) NOT NULL,
+        \`produtoId\` int DEFAULT NULL,
+        \`dietaId\` int DEFAULT NULL,
+        \`origemOperacional\` varchar(20) NOT NULL DEFAULT 'direta',
+        \`data\` date NOT NULL,
+        \`hora\` varchar(5) DEFAULT NULL,
+        \`quantidadeFornecidaKg\` decimal(12,3) NOT NULL,
+        \`populacaoSnapshot\` int NOT NULL DEFAULT 0,
+        \`origemNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`custoUnitarioSnapshot\` decimal(12,4) DEFAULT NULL,
+        \`custoTotalSnapshot\` decimal(12,2) DEFAULT NULL,
+        \`custoPorKgSnapshot\` decimal(12,4) DEFAULT NULL,
+        \`custoCompleto\` tinyint(1) NOT NULL DEFAULT 0,
+        \`planejamentoMetaSnapshot\` varchar(80) DEFAULT NULL,
+        \`planejamentoModalidadeSnapshot\` varchar(20) DEFAULT NULL,
+        \`planejamentoNecessidadeKgSnapshot\` decimal(12,3) DEFAULT NULL,
+        \`observacoes\` text,
+        \`status\` varchar(20) NOT NULL DEFAULT 'confirmado',
+        \`motivoEstorno\` varchar(255) DEFAULT NULL,
+        \`observacaoEstorno\` text,
+        \`estornadoPorUserId\` int DEFAULT NULL,
+        \`estornadoEm\` timestamp NULL DEFAULT NULL,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_fornecimentos_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_fornecimentos_lote_idx\` (\`loteId\`),
+        KEY \`nutricao_fornecimentos_data_idx\` (\`data\`),
+        KEY \`nutricao_fornecimentos_planejamento_idx\` (\`planejamentoId\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_fornecimento_ingredientes\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`fornecimentoId\` int NOT NULL,
+        \`produtoId\` int NOT NULL,
+        \`produtoNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`quantidadeKg\` decimal(12,3) NOT NULL,
+        \`quantidadeUnidade\` decimal(12,3) NOT NULL,
+        \`unidadeSnapshot\` varchar(20) DEFAULT NULL,
+        \`proporcaoSnapshot\` decimal(8,4) DEFAULT NULL,
+        \`custoUnitarioSnapshot\` decimal(12,4) DEFAULT NULL,
+        \`custoTotalSnapshot\` decimal(12,2) DEFAULT NULL,
+        \`custoConhecido\` tinyint(1) NOT NULL DEFAULT 0,
+        \`ordem\` int NOT NULL DEFAULT 0,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_fornecimento_ings_forn_idx\` (\`fornecimentoId\`),
+        KEY \`nutricao_fornecimento_ings_produto_idx\` (\`produtoId\`)
+      )
+    `);
+
+    if (await tableExists(pool, "nutricao_fornecimentos")) {
+      await ensureColumn(pool, "nutricao_fornecimentos", "cochoId", "int NULL");
+      await ensureColumn(pool, "nutricao_fornecimentos", "cochoNomeSnapshot", "varchar(160) NULL");
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_cochos\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`nome\` varchar(100) NOT NULL,
+        \`codigo\` varchar(30) DEFAULT NULL,
+        \`tipo\` varchar(30) NOT NULL,
+        \`pastoId\` int DEFAULT NULL,
+        \`localizacaoDescricao\` varchar(200) DEFAULT NULL,
+        \`comprimentoMetros\` decimal(10,2) DEFAULT NULL,
+        \`larguraMetros\` decimal(10,2) DEFAULT NULL,
+        \`capacidadeKg\` decimal(12,3) DEFAULT NULL,
+        \`ladosAcesso\` int DEFAULT NULL,
+        \`coberto\` tinyint(1) NOT NULL DEFAULT 0,
+        \`observacoes\` text,
+        \`status\` varchar(20) NOT NULL DEFAULT 'ativo',
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_cochos_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_cochos_pasto_idx\` (\`pastoId\`),
+        KEY \`nutricao_cochos_codigo_idx\` (\`fazendaId\`, \`codigo\`)
+      )
+    `);
+
+    if (await tableExists(pool, "estoque_movimentacoes")) {
+      await ensureColumn(pool, "estoque_movimentacoes", "nutricao_batida_id", "int NULL");
+    }
+
+    if (await tableExists(pool, "nutricao_fornecimentos")) {
+      await ensureColumn(pool, "nutricao_fornecimentos", "batidaId", "int NULL");
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_batidas\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`dietaId\` int NOT NULL,
+        \`data\` date NOT NULL,
+        \`hora\` varchar(5) DEFAULT NULL,
+        \`quantidadePreparadaKg\` decimal(12,3) NOT NULL,
+        \`dietaNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`custoTotalSnapshot\` decimal(12,2) DEFAULT NULL,
+        \`custoKgSnapshot\` decimal(12,4) DEFAULT NULL,
+        \`custoCompleto\` tinyint(1) NOT NULL DEFAULT 0,
+        \`observacoes\` text,
+        \`status\` varchar(20) NOT NULL DEFAULT 'confirmado',
+        \`motivoEstorno\` varchar(255) DEFAULT NULL,
+        \`observacaoEstorno\` text,
+        \`estornadoPorUserId\` int DEFAULT NULL,
+        \`estornadoEm\` timestamp NULL DEFAULT NULL,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_batidas_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_batidas_dieta_idx\` (\`dietaId\`),
+        KEY \`nutricao_batidas_data_idx\` (\`data\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_batida_ingredientes\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`batidaId\` int NOT NULL,
+        \`produtoId\` int NOT NULL,
+        \`produtoNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`proporcaoSnapshot\` decimal(8,4) DEFAULT NULL,
+        \`quantidadeKg\` decimal(12,3) NOT NULL,
+        \`quantidadeUnidade\` decimal(12,3) NOT NULL,
+        \`unidadeSnapshot\` varchar(20) DEFAULT NULL,
+        \`custoUnitarioSnapshot\` decimal(12,4) DEFAULT NULL,
+        \`custoTotalSnapshot\` decimal(12,2) DEFAULT NULL,
+        \`custoConhecido\` tinyint(1) NOT NULL DEFAULT 0,
+        \`ordem\` int NOT NULL DEFAULT 0,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_batida_ings_batida_idx\` (\`batidaId\`),
+        KEY \`nutricao_batida_ings_produto_idx\` (\`produtoId\`)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`nutricao_cocho_leituras\` (
+        \`id\` int NOT NULL AUTO_INCREMENT,
+        \`userId\` int NOT NULL,
+        \`fazendaId\` int NOT NULL,
+        \`cochoId\` int NOT NULL,
+        \`loteId\` int DEFAULT NULL,
+        \`fornecimentoId\` int DEFAULT NULL,
+        \`data\` date NOT NULL,
+        \`hora\` varchar(5) DEFAULT NULL,
+        \`sobraKg\` decimal(12,3) DEFAULT NULL,
+        \`escore\` varchar(40) DEFAULT NULL,
+        \`observacoes\` text,
+        \`cochoNomeSnapshot\` varchar(160) DEFAULT NULL,
+        \`loteNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`alimentoNomeSnapshot\` varchar(120) DEFAULT NULL,
+        \`status\` varchar(20) NOT NULL DEFAULT 'ativa',
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`nutricao_cocho_leituras_user_fazenda_idx\` (\`userId\`, \`fazendaId\`),
+        KEY \`nutricao_cocho_leituras_cocho_idx\` (\`cochoId\`),
+        KEY \`nutricao_cocho_leituras_lote_idx\` (\`loteId\`),
+        KEY \`nutricao_cocho_leituras_forn_idx\` (\`fornecimentoId\`),
+        KEY \`nutricao_cocho_leituras_data_idx\` (\`data\`)
+      )
+    `);
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

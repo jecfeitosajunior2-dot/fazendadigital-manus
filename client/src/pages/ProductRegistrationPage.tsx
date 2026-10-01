@@ -548,7 +548,7 @@ export default function ProductRegistrationPage() {
       toast.error("Informe a quantidade por embalagem");
       return;
     }
-    if (!unidade) { toast.error("Selecione a unidade da embalagem"); return; }
+    if (!unidade) { toast.error("Selecione a unidade do conteúdo"); return; }
 
     const item: EmbalagemProduto = {
       nome: tipo,
@@ -1132,8 +1132,8 @@ export default function ProductRegistrationPage() {
                     placeholder="Ex: 30"
                   />
                 </div>
-                <div className="w-36">
-                  <FormLabel>Unidade</FormLabel>
+                <div className="w-44">
+                  <FormLabel>Unidade do conteúdo</FormLabel>
                   <FormSelect
                     variant="light"
                     key={embalagemUnidadeKey}

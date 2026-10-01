@@ -41,7 +41,25 @@ import { SaudePage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
-import SuppliesManagementPage from "./pages/SuppliesManagementPage";
+import NutricaoVisaoGeralPage from "./pages/NutricaoVisaoGeralPage";
+import NutricaoDietasListPage from "./pages/NutricaoDietasListPage";
+import NutricaoDietaFormPage from "./pages/NutricaoDietaFormPage";
+import NutricaoDietaDetalhePage from "./pages/NutricaoDietaDetalhePage";
+import NutricaoPlanejamentoListPage from "./pages/NutricaoPlanejamentoListPage";
+import NutricaoPlanejamentoFormPage from "./pages/NutricaoPlanejamentoFormPage";
+import NutricaoPlanejamentoDetalhePage from "./pages/NutricaoPlanejamentoDetalhePage";
+import NutricaoFornecimentosListPage from "./pages/NutricaoFornecimentosListPage";
+import NutricaoFornecimentoFormPage from "./pages/NutricaoFornecimentoFormPage";
+import NutricaoFornecimentoDetalhePage from "./pages/NutricaoFornecimentoDetalhePage";
+import NutricaoCochosListPage from "./pages/NutricaoCochosListPage";
+import NutricaoCochoFormPage from "./pages/NutricaoCochoFormPage";
+import NutricaoCochoDetalhePage from "./pages/NutricaoCochoDetalhePage";
+import NutricaoCochoLeiturasListPage from "./pages/NutricaoCochoLeiturasListPage";
+import NutricaoCochoLeituraFormPage from "./pages/NutricaoCochoLeituraFormPage";
+import NutricaoCochoLeituraDetalhePage from "./pages/NutricaoCochoLeituraDetalhePage";
+import NutricaoBatidasListPage from "./pages/NutricaoBatidasListPage";
+import NutricaoBatidaFormPage from "./pages/NutricaoBatidaFormPage";
+import NutricaoBatidaDetalhePage from "./pages/NutricaoBatidaDetalhePage";
 import {
   ManejoRegistrosPage,
   ManejoFormPage,
@@ -162,10 +180,29 @@ function ProtectedRoutes() {
       <Route path="/saude/registros" component={SaudePage} />
 
       {/* Nutrition */}
-      <Route path="/nutricao/visao-geral" component={SuppliesManagementPage} />
-      <Route path="/nutricao/dietas" component={SuppliesManagementPage} />
-      <Route path="/nutricao/cochos" component={SuppliesManagementPage} />
-      <Route path="/nutricao/batidas" component={SuppliesManagementPage} />
+      <Route path="/nutricao/visao-geral" component={NutricaoVisaoGeralPage} />
+      <Route path="/nutricao/planejamento/novo" component={NutricaoPlanejamentoFormPage} />
+      <Route path="/nutricao/planejamento/:id/editar" component={NutricaoPlanejamentoFormPage} />
+      <Route path="/nutricao/planejamento/:id" component={NutricaoPlanejamentoDetalhePage} />
+      <Route path="/nutricao/planejamento" component={NutricaoPlanejamentoListPage} />
+      <Route path="/nutricao/dietas/nova" component={NutricaoDietaFormPage} />
+      <Route path="/nutricao/dietas/:id/editar" component={NutricaoDietaFormPage} />
+      <Route path="/nutricao/dietas/:id" component={NutricaoDietaDetalhePage} />
+      <Route path="/nutricao/dietas" component={NutricaoDietasListPage} />
+      <Route path="/nutricao/fornecimentos/novo" component={NutricaoFornecimentoFormPage} />
+      <Route path="/nutricao/fornecimentos/:id" component={NutricaoFornecimentoDetalhePage} />
+      <Route path="/nutricao/fornecimentos" component={NutricaoFornecimentosListPage} />
+      <Route path="/nutricao/cochos/leituras/nova" component={NutricaoCochoLeituraFormPage} />
+      <Route path="/nutricao/cochos/leituras/:id/editar" component={NutricaoCochoLeituraFormPage} />
+      <Route path="/nutricao/cochos/leituras/:id" component={NutricaoCochoLeituraDetalhePage} />
+      <Route path="/nutricao/cochos/leituras" component={NutricaoCochoLeiturasListPage} />
+      <Route path="/nutricao/cochos/novo" component={NutricaoCochoFormPage} />
+      <Route path="/nutricao/cochos/:id/editar" component={NutricaoCochoFormPage} />
+      <Route path="/nutricao/cochos/:id" component={NutricaoCochoDetalhePage} />
+      <Route path="/nutricao/cochos" component={NutricaoCochosListPage} />
+      <Route path="/nutricao/batidas/nova" component={NutricaoBatidaFormPage} />
+      <Route path="/nutricao/batidas/:id" component={NutricaoBatidaDetalhePage} />
+      <Route path="/nutricao/batidas" component={NutricaoBatidasListPage} />
 
       {/* Purchase and Sale */}
       <Route path="/compra-venda/visao-geral" component={CompraVendaVisaoGeralPage} />

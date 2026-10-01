@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { resolveGenealogiaDisplay } from "../shared/genealogiaDisplay";
-import { animais, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
+import { animais, animalLoteMovimentacoes, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
 
 const mockValidatePreconditions = vi.fn();
 const mockAssertBrincoDb = vi.fn();
@@ -113,6 +113,7 @@ const { executeRegistrarPartoComCrias } = await import("./registrarPartoComCrias
 function tableLabel(table: unknown): string {
   if (table === reproducaoRegistros) return "reproducaoRegistros";
   if (table === animais) return "animais";
+  if (table === animalLoteMovimentacoes) return "animalLoteMovimentacoes";
   if (table === partoCrias) return "partoCrias";
   if (table === pesagens) return "pesagens";
   return "unknown";
@@ -165,6 +166,49 @@ describe("executeRegistrarPartoComCrias — transação MySQL (mock)", () => {
     expect(animalRow?.dataNascimento).toBe("2025-08-24");
     expect(animalRow?.paiId).toBe(77);
     expect(transactionCommitted).toBe(true);
+  });
+
+  it("cria herdando lote da matriz grava uma entrada histórica (origem nula)", async () => {
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2025-08-24",
+      resultado: "Normal",
+      responsavel: "Pedro",
+      crias: [{ brinco: "58", sexo: "macho", categoria: "Bezerro" }],
+    });
+
+    const movs = inserts(animalLoteMovimentacoes);
+    expect(movs).toHaveLength(1);
+    expect(movs[0]?.values).toMatchObject({
+      userId: 1,
+      loteOrigemId: null,
+      loteDestinoId: 5,
+      pastoOrigemId: null,
+      pastoDestinoId: 9,
+      fazendaId: 1,
+      dataMovimentacao: "2025-08-24",
+      usuarioNome: "Pedro",
+    });
+  });
+
+  it("cria sem lote da matriz não inventa movimentação", async () => {
+    mockValidatePreconditions.mockImplementation(async (_userId, input) => ({
+      animal: { sexo: "femea", loteId: null, pastoId: null, categoria: "Vaca" },
+      dataISO: String(input.dataCobertura).trim().slice(0, 10),
+      fazendaId: 1,
+    }));
+
+    await executeRegistrarPartoComCrias(1, {
+      femeaId: 15,
+      fazendaId: 1,
+      dataParto: "2025-08-24",
+      resultado: "Normal",
+      crias: [{ brinco: "59", sexo: "femea", categoria: "Bezerra" }],
+    });
+
+    expect(inserts(animais)).toHaveLength(1);
+    expect(inserts(animalLoteMovimentacoes)).toHaveLength(0);
   });
 
   it("natimorto: Parto sim, sem animal, parto_crias ou pesagem", async () => {
@@ -345,6 +389,7 @@ describe("executeRegistrarPartoComCrias — transação MySQL (mock)", () => {
       "reproducaoRegistros",
       "updatePrevisao",
       "animais",
+      "animalLoteMovimentacoes",
       "partoCrias",
       "pesagens",
     ]);

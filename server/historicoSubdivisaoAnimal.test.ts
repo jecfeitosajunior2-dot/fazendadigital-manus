@@ -12,6 +12,20 @@ describe("buildLotePeriodsForAnimal", () => {
     ]);
   });
 
+  it("entrada inicial sem origem abre o período na data da movimentação", () => {
+    const periods = buildLotePeriodsForAnimal(10, [
+      {
+        id: 1,
+        loteOrigemId: null,
+        loteDestinoId: 10,
+        dataMovimentacao: "2026-10-01",
+      },
+    ]);
+    expect(periods).toEqual([
+      { loteId: 10, fromInclusive: "2026-10-01", toExclusive: null },
+    ]);
+  });
+
   it("com transferência divide períodos", () => {
     const periods = buildLotePeriodsForAnimal(20, [
       {

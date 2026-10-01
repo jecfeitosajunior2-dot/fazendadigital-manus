@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
-import { animais, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
+import { animais, animalLoteMovimentacoes, partoCrias, pesagens, reproducaoRegistros } from "../drizzle/schema";
+import {
+  buildEntradaInicialLoteMovimentacao,
+  loteIdEfetivoParaHistorico,
+} from "../shared/animalLoteMovimentacaoEntrada";
 import {
   getReproFemeaSameDayStagePriority,
   packReproObservacoes,
@@ -28,9 +32,11 @@ import {
   createLocalPartoCriasBatch,
   createLocalPesagem,
   createLocalReproducaoRegistro,
+  deleteLocalAnimal,
   fecharPrevisoesPartoLocal,
   isDatabaseUnavailable,
   listLocalReproducaoRegistros,
+  registrarLocalEntradaInicialLote,
   updateLocalAnimal,
 } from "./localFallbackStore";
 
@@ -383,6 +389,22 @@ export async function executeRegistrarPartoComCrias(
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao cadastrar cria." });
         }
 
+        const loteDestinoId = loteIdEfetivoParaHistorico(row.loteId);
+        if (loteDestinoId != null) {
+          await tx.insert(animalLoteMovimentacoes).values(
+            buildEntradaInicialLoteMovimentacao({
+              userId,
+              animalId: criaAnimalId,
+              loteDestinoId,
+              pastoOrigemId: null,
+              pastoDestinoId: row.pastoId ?? null,
+              fazendaId,
+              dataMovimentacao: dataISO,
+              usuarioNome: input.responsavel?.trim() || "Usuário",
+            }),
+          );
+        }
+
         await tx.insert(partoCrias).values({
           userId,
           partoRegistroId,
@@ -413,6 +435,19 @@ export async function executeRegistrarPartoComCrias(
     for (const { animalId, row } of result.espelhoLocal) {
       try {
         await updateLocalAnimal(userId, animalId, row);
+        const loteDestinoId = loteIdEfetivoParaHistorico(row.loteId);
+        if (loteDestinoId != null) {
+          await registrarLocalEntradaInicialLote({
+            userId,
+            animalId,
+            loteDestinoId,
+            pastoOrigemId: null,
+            pastoDestinoId: row.pastoId ?? null,
+            fazendaId,
+            dataMovimentacao: dataISO,
+            usuarioNome: input.responsavel?.trim() || "Usuário",
+          });
+        }
       } catch {
         /* espelho local best-effort após commit MySQL */
       }
@@ -467,6 +502,24 @@ export async function executeRegistrarPartoComCrias(
         }
 
         const { id: animalId } = await createLocalAnimal(userId, row);
+        const loteDestinoId = loteIdEfetivoParaHistorico(row.loteId);
+        try {
+          if (loteDestinoId != null) {
+            await registrarLocalEntradaInicialLote({
+              userId,
+              animalId,
+              loteDestinoId,
+              pastoOrigemId: null,
+              pastoDestinoId: row.pastoId ?? null,
+              fazendaId,
+              dataMovimentacao: dataISO,
+              usuarioNome: input.responsavel?.trim() || "Usuário",
+            });
+          }
+        } catch (histError) {
+          await deleteLocalAnimal(userId, animalId);
+          throw histError;
+        }
         criasCriadas.push({ animalId, ordem });
 
         if (cria.pesoNascimento?.trim()) {
