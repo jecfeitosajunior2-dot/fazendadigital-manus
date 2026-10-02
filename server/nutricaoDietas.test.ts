@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createNutricaoDietasService, type NutricaoDietasStore } from "./nutricaoDietas";
-import type { NutricaoDietaInput } from "../shared/nutricaoDietas";
+import { calcularCustoEstimadoDieta, type NutricaoDietaInput } from "../shared/nutricaoDietas";
 
 type DietaMem = {
   id: number;
@@ -39,6 +39,7 @@ function criarStore(seed?: {
     nome: string;
     unidade: string;
     valorUnitario: string | null;
+    embalagens?: unknown;
   }>;
   falharIngredientes?: boolean;
 }): NutricaoDietasStore & {
@@ -299,6 +300,60 @@ describe("nutricaoDietas service", () => {
     ).rejects.toMatchObject({ message: /data final/i });
   });
 
+  it("10/11/12: prévia do formulário e detalhe compartilham custo/kg; dieta não mexe estoque", async () => {
+    const embalagens = [{ nome: "Saco", volume: 30, unidade: "kg" }];
+    const store = criarStore({
+      produtos: [{
+        produtoId: 16,
+        fazendaId: 1,
+        nome: "Sal Nitrogenado 40 Flex LA",
+        unidade: "sc",
+        valorUnitario: "129.37",
+        embalagens,
+      }],
+    });
+    const svc = createNutricaoDietasService(store);
+    const created = await svc.criar(10, payloadValido({
+      nome: "Sal 100",
+      baseQuantidade: 30,
+      ingredientes: [{ produtoId: 16, quantidade: 30 }],
+    }));
+    const catalogo = await svc.listarProdutosFormulacao(10, 1);
+    const produto = catalogo.find(p => p.produtoId === 16);
+    expect(produto?.embalagens).toEqual(embalagens);
+    const previa = calcularCustoEstimadoDieta({
+      baseQuantidade: 30,
+      ingredientes: [{
+        produtoId: 16,
+        quantidade: 30,
+        unidade: produto?.unidade,
+        valorUnitario: produto?.valorUnitario,
+        embalagens: produto?.embalagens,
+      }],
+    });
+    const detalhe = await svc.obter(10, created.id);
+    expect(previa.ingredientes[0]?.custoMedioPorKg).toBe(detalhe.custo.ingredientes[0]?.custoMedioPorKg);
+    expect(previa.custoTotal).toBe(detalhe.custo.custoTotal);
+    expect(previa.custoPorKg).toBe(detalhe.custo.custoPorKg);
+    expect(detalhe.custo.completo).toBe(true);
+    expect(detalhe.custo.formulacaoFechada).toBe(true);
+    expect(detalhe.custo.custoPorKg).toBe(4.31);
+    const previaIncompleta = calcularCustoEstimadoDieta({
+      baseQuantidade: 1000,
+      ingredientes: [{
+        produtoId: 16,
+        quantidade: 30,
+        unidade: produto?.unidade,
+        valorUnitario: produto?.valorUnitario,
+        embalagens: produto?.embalagens,
+      }],
+    });
+    expect(previaIncompleta.custoTotal).toBe(129.37);
+    expect(previaIncompleta.custoPorKg).toBeNull();
+    expect(previaIncompleta.formulacaoFechada).toBe(false);
+    expect(store.estoqueMutacoes).toBe(0);
+  });
+
   it("usuário sem fazenda é bloqueado", async () => {
     const store = criarStore();
     const svc = createNutricaoDietasService(store);
@@ -315,6 +370,16 @@ describe("nutricaoDietas — sem estoque e rota nova", () => {
     expect(src).not.toMatch(/estoque\.quantidade/);
     expect(src).not.toMatch(/createMovimentacao/);
     expect(src).toContain("listProdutosFazenda");
+  });
+
+  it("11/12: cadastro da dieta não cria movimento de estoque", () => {
+    const src = readFileSync(new URL("./nutricaoDietas.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/estoqueMovimentacoes|insert\(estoque|createMovimentacao/);
+    const form = readFileSync(new URL("../client/src/pages/NutricaoDietaFormPage.tsx", import.meta.url), "utf8");
+    expect(form).toMatch(/embalagens:\s*produto\.embalagens/);
+    expect(form).toMatch(/rotuloEquivalenciaEmbalagemMassa/);
+    expect(form).toContain("rotuloCustoMedioAtualLinhaDieta");
+    expect(form).not.toContain("formatarCustoEstimadoDieta(linhaCusto.custoMedioPorKg");
   });
 
   it("20: /nutricao/dietas não usa mais a tela antiga de Batidas", () => {

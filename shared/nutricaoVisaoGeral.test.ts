@@ -11,8 +11,10 @@ import {
   intersecaoPeriodo,
   montarPainelNutricao,
   MSG_VG_CONSUMO_APARENTE,
+  MSG_VG_FORNECIDO_CAB_DIA,
   MSG_VG_NAO_REAL,
   MSG_VG_SEM_MOVIMENTO,
+  rotuloCoberturaFornecidoCabDia,
   periodoRapido,
   planejadoNoPeriodo,
   planejamentoAplicaNoDia,
@@ -355,6 +357,24 @@ describe("nutricaoVisaoGeral — população e animal-dia", () => {
     expect(p.cards.fornecidoCabDia).toBeNull();
     expect(p.cards.populacaoObservada).toBeNull();
     expect(p.cards.populacaoIncompleta).toBe(true);
+    expect(p.cards.coberturaAnimalDia).toBeNull();
+  });
+
+  it("explica fornecido/cab/dia sem jargão de animal-dia", () => {
+    expect(rotuloCoberturaFornecidoCabDia(1, 1, true)).toBe(MSG_VG_FORNECIDO_CAB_DIA);
+    expect(rotuloCoberturaFornecidoCabDia(0, 1, true)).toBe(
+      "Média calculada nos dias com fornecimento registrado · 0 de 1 lote com dados válidos.",
+    );
+    expect(rotuloCoberturaFornecidoCabDia(1, 2, true)).toBe(
+      "Média calculada nos dias com fornecimento registrado · 1 de 2 lotes com dados válidos.",
+    );
+    expect(rotuloCoberturaFornecidoCabDia(1, 1, false)).toBeNull();
+    const p = painel({
+      fornecimentos: [forn({ id: 1, data: "2026-10-01", populacaoSnapshot: 6, quantidadeFornecidaKg: 46.2 })],
+    });
+    expect(p.cards.fornecidoCabDia).toBe(7.7);
+    expect(p.cards.coberturaAnimalDia).toBe(MSG_VG_FORNECIDO_CAB_DIA);
+    expect(p.cards.coberturaAnimalDia).not.toMatch(/animal-dia/);
   });
 });
 

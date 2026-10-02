@@ -242,7 +242,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         const lote = await store.getLote(userId, row.loteId);
         out.push({
           ...row,
-          loteNome: lote?.nome ?? `Lote #${row.loteId}`,
+          loteNome: lote?.nome ?? `Lote ${row.loteId}`,
           oferecidoPorCabeca: oferecidoPorCabeca(Number(row.quantidadeFornecidaKg), row.populacaoSnapshot),
         });
       }
@@ -260,12 +260,12 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       const nomePorEstoque = new Map(produtos.map(p => [p.estoqueId, p.nome]));
       return {
         ...row,
-        loteNome: lote?.nome ?? `Lote #${row.loteId}`,
+        loteNome: lote?.nome ?? `Lote ${row.loteId}`,
         oferecidoPorCabeca: oferecidoPorCabeca(Number(row.quantidadeFornecidaKg), row.populacaoSnapshot),
         ingredientes,
         movimentacoes: movimentacoes.map(m => ({
           ...m,
-          produtoNome: m.produtoNome ?? nomePorEstoque.get(m.estoqueId) ?? `Estoque #${m.estoqueId}`,
+          produtoNome: m.produtoNome ?? nomePorEstoque.get(m.estoqueId) ?? `Estoque ${m.estoqueId}`,
         })),
       };
     },

@@ -77,3 +77,15 @@ describe("menu lateral — Compra e Venda", () => {
     expect(childPaths("Compra e Venda").join(" ")).not.toMatch(/curral|rfid|at05/i);
   });
 });
+
+describe("menu lateral — Nutrição", () => {
+  it("é o grupo com mais atalhos — precisa caber na rolagem da tela", () => {
+    const tamanhos = menuItems.map(item => ({
+      label: item.label,
+      filhos: item.children?.length ?? 0,
+    }));
+    const maior = Math.max(...tamanhos.map(t => t.filhos));
+    expect(childLabels("Nutrição")).toHaveLength(maior);
+    expect(maior).toBeGreaterThanOrEqual(7);
+  });
+});

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   calcularPesoReferenciaLote,
@@ -11,8 +12,11 @@ import {
   mudouCampoMaterial,
   normalizarDataCivil,
   periodosSobrepostos,
+  metaPorTratoNaUnidadeNatural,
   podeEditarMaterialmente,
   situacaoTemporal,
+  textoAjudaTratosPorDia,
+  textoEstimativaPorTrato,
   validarPlanejamentoInput,
   type NutricaoPlanInput,
 } from "./nutricaoPlanejamento";
@@ -422,5 +426,66 @@ describe("conflito e histórico", () => {
     expect(situacaoTemporal({ status: "ativo", dataInicio: "2026-09-01", dataFim: null, hojeISO: "2026-10-01" })).toBe("vigente");
     expect(situacaoTemporal({ status: "ativo", dataInicio: "2026-08-01", dataFim: "2026-09-30", hojeISO: "2026-10-01" })).toBe("encerrado");
     expect(situacaoTemporal({ status: "cancelado", dataInicio: "2026-09-01", dataFim: null, hojeISO: "2026-10-01" })).toBe("cancelado");
+  });
+});
+
+describe("ajuda de tratos por dia — unidade da modalidade", () => {
+  it("A: 100 g/cab/dia, 2 tratos → 50 g/cab/trato", () => {
+    const input = { modalidadeMeta: "g_cab_dia", valorMeta: 100, tratosPorDia: 2 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBe(50);
+    expect(textoAjudaTratosPorDia(input)).toBe(
+      "Os 2 tratos dividem a meta diária de 100 g/cabeça/dia: 50 g/cabeça por trato. A meta diária não é multiplicada pelo número de tratos.",
+    );
+    expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 50 g/cab/trato.");
+  });
+
+  it("B: 100 g/cab/dia, 1 trato → 100 g/cab/trato", () => {
+    const input = { modalidadeMeta: "g_cab_dia", valorMeta: 100, tratosPorDia: 1 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBe(100);
+    expect(textoAjudaTratosPorDia(input)).toBe(
+      "O 1 trato divide a meta diária de 100 g/cabeça/dia: 100 g/cabeça por trato. A meta diária não é multiplicada pelo número de tratos.",
+    );
+    expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 100 g/cab/trato.");
+  });
+
+  it("C: 2 kg/cab/dia, 2 tratos → 1 kg/cab/trato", () => {
+    const input = { modalidadeMeta: "kg_cab_dia", valorMeta: 2, tratosPorDia: 2 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBe(1);
+    expect(textoAjudaTratosPorDia(input)).toBe(
+      "Os 2 tratos dividem a meta diária de 2 kg/cabeça/dia: 1 kg/cabeça por trato. A meta diária não é multiplicada pelo número de tratos.",
+    );
+    expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 1 kg/cab/trato.");
+  });
+
+  it("D: decimal sem formatação estranha", () => {
+    const input = { modalidadeMeta: "kg_cab_dia", valorMeta: "2,5", tratosPorDia: 2 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBe(1.25);
+    expect(textoAjudaTratosPorDia(input)).toContain("2,5 kg/cabeça/dia");
+    expect(textoAjudaTratosPorDia(input)).toContain("1,25 kg/cabeça por trato");
+    expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 1,25 kg/cab/trato.");
+  });
+
+  it("E: ad libitum não inventa quantidade por trato", () => {
+    const input = { modalidadeMeta: "ad_libitum", valorMeta: 100, tratosPorDia: 2 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBeNull();
+    expect(textoEstimativaPorTrato(input)).toBeNull();
+    expect(textoAjudaTratosPorDia(input)).toMatch(/não dividem uma meta numérica/i);
+    expect(textoAjudaTratosPorDia(input)).not.toMatch(/\d+\s*g\/cabeça/);
+    expect(textoAjudaTratosPorDia(input)).not.toMatch(/2,0 kg/);
+  });
+
+  it("F: criação e edição usam a mesma regra no mesmo formulário", () => {
+    const form = readFileSync(new URL("../client/src/pages/NutricaoPlanejamentoFormPage.tsx", import.meta.url), "utf8");
+    expect(form).toContain("textoAjudaTratosPorDia");
+    expect(form).toContain("textoEstimativaPorTrato");
+    expect(form).not.toContain("2,0 kg/cab/dia");
+    expect(form).not.toContain("kgPorCabecaPorTrato.toLocaleString");
+    expect(form).toContain("isEdit ? \"Editar Planejamento\" : \"Novo Planejamento\"");
+  });
+
+  it("% PV/dia também divide a meta, sem virar kg", () => {
+    const input = { modalidadeMeta: "pct_pv_dia", valorMeta: 1, tratosPorDia: 2 };
+    expect(metaPorTratoNaUnidadeNatural(input)).toBe(0.5);
+    expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 0,5% PV/trato.");
   });
 });

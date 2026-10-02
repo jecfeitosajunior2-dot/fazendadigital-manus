@@ -29,6 +29,21 @@ export const MSG_VG_POPULACAO =
   "População observada: soma das populações estáveis dos lotes atendidos. Um lote só entra se todos os fornecimentos confirmados do período tiverem o mesmo snapshot. Não é contagem de brincos únicos.";
 export const MSG_VG_ANIMAL_DIA =
   "Animal-dia só é usado quando o lote tem população estável no período. Não reconstruímos ocupação diária nem usamos a população atual.";
+export const MSG_VG_FORNECIDO_CAB_DIA =
+  "Média calculada nos dias com fornecimento registrado.";
+export const MSG_VG_FORNECIDO_CAB_DIA_AJUDA =
+  "Calculado a partir dos animais registrados nos fornecimentos e somente dos dias em que houve fornecimento. Dias sem registro não são estimados.";
+
+export function rotuloCoberturaFornecidoCabDia(
+  lotesComDados: number,
+  lotesAtendidos: number,
+  temIndicador: boolean,
+): string | null {
+  if (lotesAtendidos <= 0 || !temIndicador) return null;
+  if (lotesComDados === lotesAtendidos) return MSG_VG_FORNECIDO_CAB_DIA;
+  const palavraLote = lotesAtendidos === 1 ? "lote" : "lotes";
+  return `${MSG_VG_FORNECIDO_CAB_DIA.replace(/\.$/, "")} · ${lotesComDados} de ${lotesAtendidos} ${palavraLote} com dados válidos.`;
+}
 export const MSG_VG_CUSTO_INCOMPLETO = "Custo incompleto";
 export const MSG_VG_SEM_MOVIMENTO = "Ainda não há movimentação nutricional no período selecionado.";
 export const MSG_VG_CONSUMO_APARENTE = "Consumo aparente";
@@ -58,6 +73,7 @@ export type VgForn = {
   custoCompleto: boolean;
   status: string;
   planejamentoMetaSnapshot: string | null;
+  createdAt?: Date | string | number | null;
 };
 
 export type VgPlan = {
@@ -411,7 +427,7 @@ export function consumoAparenteDoPainel(input: {
     linhas.push({
       leituraId: leitura.id,
       cochoId: leitura.cochoId,
-      cochoNome: leitura.cochoNomeSnapshot ?? `Cocho #${leitura.cochoId}`,
+      cochoNome: leitura.cochoNomeSnapshot ?? `Cocho ${leitura.cochoId}`,
       loteNome: leitura.loteNomeSnapshot ?? null,
       data: leitura.data,
       hora: leitura.hora,
@@ -478,7 +494,7 @@ export function montarPainelNutricao(input: {
     if (loteFiltro && p.loteId !== loteFiltro) return false;
     return intersecaoPeriodo(input.periodo, { de: p.dataInicio, ate: p.dataFim }) != null;
   });
-  const nomeLote = (id: number) => input.lotes.find(l => l.id === id)?.nome ?? `Lote #${id}`;
+  const nomeLote = (id: number) => input.lotes.find(l => l.id === id)?.nome ?? `Lote ${id}`;
 
   const porLote = new Map<number, VgForn[]>();
   for (const f of forns) {
@@ -542,6 +558,7 @@ export function montarPainelNutricao(input: {
       populacaoSnapshot: f.populacaoSnapshot,
       batidaId: f.batidaId,
       planejamentoId: f.planejamentoId,
+      createdAt: f.createdAt ?? null,
     }));
 
   const consumo = consumoAparenteDoPainel({
@@ -569,7 +586,7 @@ export function montarPainelNutricao(input: {
       planejamentoId: plan.id,
       loteId: plan.loteId,
       loteNome: nomeLote(plan.loteId),
-      fonte: plan.origemNome ?? (plan.tipoOrigem === "dieta" ? `Dieta #${plan.dietaId}` : `Produto #${plan.produtoId}`),
+      fonte: plan.origemNome ?? (plan.tipoOrigem === "dieta" ? `Dieta ${plan.dietaId}` : `Produto ${plan.produtoId}`),
       meta: formatarMetaPlan(plan.modalidadeMeta, plan.valorMeta),
       planejadoKg: calc.planejadoKg,
       fornecidoKg: fornecido,
@@ -625,7 +642,7 @@ export function montarPainelNutricao(input: {
       if (proj.necessidadeKgDia != null && plan.produtoId) {
         const atual = necessidadePorProduto.get(plan.produtoId);
         necessidadePorProduto.set(plan.produtoId, {
-          nome: produto?.nome ?? plan.origemNome ?? `Produto #${plan.produtoId}`,
+          nome: produto?.nome ?? plan.origemNome ?? `Produto ${plan.produtoId}`,
           necessidadeKgDia: arredondarKg((atual?.necessidadeKgDia ?? 0) + proj.necessidadeKgDia),
         });
       }
@@ -647,7 +664,7 @@ export function montarPainelNutricao(input: {
             const p = produtosPorId.get(ing.produtoId);
             const atual = necessidadePorProduto.get(ing.produtoId);
             necessidadePorProduto.set(ing.produtoId, {
-              nome: p?.nome ?? `Produto #${ing.produtoId}`,
+              nome: p?.nome ?? `Produto ${ing.produtoId}`,
               necessidadeKgDia: arredondarKg((atual?.necessidadeKgDia ?? 0) + need),
             });
           }
@@ -682,7 +699,7 @@ export function montarPainelNutricao(input: {
     const kg = arredondarKg(arr.reduce((s, f) => s + f.quantidadeFornecidaKg, 0));
     const cLote = agregarCustoFornecimentos(arr);
     const fontesVig = vigentes.filter(p => p.loteId === loteId);
-    const fontesNomes = [...new Set(fontesVig.map(p => p.origemNome ?? (p.tipoOrigem === "dieta" ? `Dieta #${p.dietaId}` : `Produto #${p.produtoId}`)))];
+    const fontesNomes = [...new Set(fontesVig.map(p => p.origemNome ?? (p.tipoOrigem === "dieta" ? `Dieta ${p.dietaId}` : `Produto ${p.produtoId}`)))];
     const metas = [...new Set(fontesVig.map(p => formatarMetaPlan(p.modalidadeMeta, p.valorMeta)))];
     const consLote = consumo.linhas.filter(l => arr.some(f => f.loteId === loteId) && l.loteNome === nomeLote(loteId) && l.calculavel);
     const consFallback = consumo.linhas.filter(l => l.calculavel && input.leituras.find(x => x.id === l.leituraId)?.loteId === loteId);
@@ -716,7 +733,7 @@ export function montarPainelNutricao(input: {
       const saldo = calcularSaldoBatida(b.quantidadePreparadaKg, dist);
       return {
         id: b.id,
-        dietaNome: b.dietaNomeSnapshot ?? `Dieta #${b.dietaId}`,
+        dietaNome: b.dietaNomeSnapshot ?? `Dieta ${b.dietaId}`,
         data: b.data,
         preparadaKg: b.quantidadePreparadaKg,
         distribuidaKg: dist,
@@ -751,7 +768,7 @@ export function montarPainelNutricao(input: {
       id: l.id,
       data: l.data,
       hora: l.hora,
-      cochoNome: l.cochoNomeSnapshot ?? `Cocho #${l.cochoId}`,
+      cochoNome: l.cochoNomeSnapshot ?? `Cocho ${l.cochoId}`,
       loteNome: l.loteNomeSnapshot ?? null,
       sobraKg: l.sobraKg,
       escore: l.escore ?? null,
@@ -835,9 +852,11 @@ export function montarPainelNutricao(input: {
       coberturaCusto: forns.length > 0
         ? `${custo.kgComCusto.toLocaleString("pt-BR")} kg com custo conhecido de ${kgFornecido.toLocaleString("pt-BR")} kg fornecidos.`
         : null,
-      coberturaAnimalDia: lotesAtendidos.length > 0
-        ? `${lotesComAnimalDia} de ${lotesAtendidos.length} lote(s) com animal-dia válido.`
-        : null,
+      coberturaAnimalDia: rotuloCoberturaFornecidoCabDia(
+        lotesComAnimalDia,
+        lotesAtendidos.length,
+        fornecidoCabDia != null,
+      ),
     },
     planejado: planejadoLinhas,
     evolucao: agregarEvolucao(forns, input.periodo),

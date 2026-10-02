@@ -120,9 +120,6 @@ export default function NutricaoCochoLeiturasListPage() {
                     <FazendaLandIcon className="mx-auto mb-3 h-12 w-12 text-[#B0BEC5]" />
                     <p className="text-[14px] font-medium text-gray-800">Nenhuma leitura de cocho registrada.</p>
                     <p className="text-[12px] text-gray-500 mt-2">Registre a observação física do cocho. Isso não é fornecimento nem consumo real.</p>
-                    <button type="button" onClick={goNova} className="mt-4 inline-flex items-center gap-1.5 px-4 min-h-[40px] rounded-lg text-white text-[12px] font-semibold" style={{ backgroundColor: FD_PRIMARY }}>
-                      <span className="material-icons text-[16px]">add</span>Registrar leitura
-                    </button>
                   </div>
                 </td></tr>
               )}

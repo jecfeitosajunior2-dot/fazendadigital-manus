@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
   formatarCustoEstimadoDieta,
+  formatarCustoEstimadoPorKgDieta,
   labelObjetivoDieta,
   labelTipoDieta,
 } from "@shared/nutricaoDietas";
@@ -185,7 +186,7 @@ export default function NutricaoDietaDetalhePage() {
               <div>
                 <div className="text-[10px] uppercase text-gray-500">Custo estimado/kg</div>
                 <div className={cn("font-semibold", !data.custo.completo && "text-amber-700")}>
-                  {formatarCustoEstimadoDieta(data.custo.custoPorKg, data.custo.completo)}
+                  {formatarCustoEstimadoPorKgDieta(data.custo)}
                 </div>
               </div>
             </section>

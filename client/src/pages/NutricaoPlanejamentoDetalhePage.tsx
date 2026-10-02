@@ -198,7 +198,7 @@ export default function NutricaoPlanejamentoDetalhePage() {
                     {p.autonomiaDieta.limitanteNome
                       ? ` · ingrediente limitante: ${p.autonomiaDieta.limitanteNome}`
                       : p.autonomiaDieta.limitanteProdutoId
-                        ? ` · ingrediente limitante: produto #${p.autonomiaDieta.limitanteProdutoId}`
+                        ? ` · ingrediente limitante: produto ${p.autonomiaDieta.limitanteProdutoId}`
                         : ""}
                   </p>
                 )}

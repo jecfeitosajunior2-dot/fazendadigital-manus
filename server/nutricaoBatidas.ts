@@ -244,7 +244,7 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       const nomePorEstoque = new Map(produtos.map(p => [p.estoqueId, p.nome]));
       const fornsComLote = [];
       for (const f of fornecimentos) {
-        const loteNome = f.loteNome ?? (await store.getLoteNome(userId, f.loteId)) ?? `Lote #${f.loteId}`;
+        const loteNome = f.loteNome ?? (await store.getLoteNome(userId, f.loteId)) ?? `Lote ${f.loteId}`;
         fornsComLote.push({ ...f, loteNome });
       }
       return {
@@ -252,7 +252,7 @@ export function createNutricaoBatidasService(store: BatidaStore) {
         ingredientes,
         movimentacoes: movimentacoes.map(m => ({
           ...m,
-          produtoNome: m.produtoNome ?? nomePorEstoque.get(m.estoqueId) ?? `Estoque #${m.estoqueId}`,
+          produtoNome: m.produtoNome ?? nomePorEstoque.get(m.estoqueId) ?? `Estoque ${m.estoqueId}`,
         })),
         fornecimentos: fornsComLote,
         custoAlocadoAosLotes: fornsComLote

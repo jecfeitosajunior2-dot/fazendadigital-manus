@@ -1,6 +1,6 @@
 import { arredondarKg } from "./nutricaoDietas";
 import { type NutricaoCochoRef } from "./nutricaoCochos";
-import { normalizarHoraFornecimento } from "./nutricaoFornecimentos";
+import { formatarDataHoraFornecimento, normalizarHoraFornecimento } from "./nutricaoFornecimentos";
 import {
   diasCivisEntre,
   normalizarDataCivil,
@@ -49,6 +49,9 @@ export const MSG_CONS_SO_ESCORE = "Leitura possui apenas escore visual.";
 export const MSG_CONS_AVULSA = "Não há fornecimento quantitativo de referência.";
 export const MSG_CONS_CANCELADA = "Leitura cancelada não fecha ciclo quantitativo.";
 export const MSG_CONS_ANTES = "A leitura é anterior ao fornecimento de referência.";
+export const CODIGO_CONS_FORN_CICLO_FECHADO = "FORNECIMENTO_JA_FECHADO_POR_LEITURA";
+export const MSG_CONS_FORN_CICLO_FECHADO =
+  "Este fornecimento já foi considerado em uma leitura anterior deste cocho. A última leitura fechou esse ciclo e não houve novo fornecimento depois dela.";
 
 export type NutricaoLeituraInput = {
   fazendaId: number;
@@ -79,6 +82,7 @@ export type NutricaoLeituraFornRef = {
   populacaoSnapshot: number;
   batidaId: number | null;
   planejamentoId: number | null;
+  createdAt?: Date | string | number | null;
 };
 
 export type LeituraCicloRef = {
@@ -90,6 +94,15 @@ export type LeituraCicloRef = {
   hora: string | null;
   sobraKg: number | null;
   status: string;
+  createdAt?: Date | string | number | null;
+};
+
+export type MomentoOperacional = {
+  data: string;
+  hora?: string | null;
+  id?: number | null;
+  createdAt?: Date | string | number | null;
+  tipo?: "leitura" | "fornecimento";
 };
 
 export type RelacaoTemporal = "antes" | "depois" | "igual" | "ambiguo";
@@ -134,6 +147,60 @@ export function compararMomentos(
   }
   if (!ha && !hb) return "igual";
   return "ambiguo";
+}
+
+function instantePersistido(value: Date | string | number | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function ehRascunhoOperacional(item: MomentoOperacional): boolean {
+  return !(Number(item.id) > 0) && instantePersistido(item.createdAt) == null;
+}
+
+/**
+ * Desempate quando a data civil é a mesma e nenhuma hora foi informada.
+ * Usa a ordem persistida (createdAt / id), sem inventar 00:00.
+ */
+function desempatarMesmoDiaSemHora(a: MomentoOperacional, b: MomentoOperacional): RelacaoTemporal {
+  const rascunhoA = ehRascunhoOperacional(a);
+  const rascunhoB = ehRascunhoOperacional(b);
+  if (rascunhoA && !rascunhoB) return "depois";
+  if (!rascunhoA && rascunhoB) return "antes";
+
+  const ta = instantePersistido(a.createdAt);
+  const tb = instantePersistido(b.createdAt);
+  if (ta != null && tb != null && ta !== tb) return ta < tb ? "antes" : "depois";
+
+  const ia = Number(a.id);
+  const ib = Number(b.id);
+  if (ia > 0 && ib > 0 && ia !== ib && (!a.tipo || !b.tipo || a.tipo === b.tipo)) {
+    return ia < ib ? "antes" : "depois";
+  }
+  return "igual";
+}
+
+/**
+ * Ordem operacional do ciclo: data civil + hora, se houver.
+ * No mesmo dia sem hora, desempata pela sequência gravada — nunca por 00:00.
+ */
+export function relacaoOperacional(a: MomentoOperacional, b: MomentoOperacional): RelacaoTemporal {
+  const rel = compararMomentos(a, b);
+  if (rel !== "igual") return rel;
+  const ha = normalizarHoraFornecimento(a.hora ?? null);
+  const hb = normalizarHoraFornecimento(b.hora ?? null);
+  if (ha || hb) return "igual";
+  return desempatarMesmoDiaSemHora(a, b);
+}
+
+function momentoLeitura(l: LeituraCicloRef): MomentoOperacional {
+  return { data: l.data, hora: l.hora, id: l.id, createdAt: l.createdAt, tipo: "leitura" };
+}
+
+function momentoFornecimento(f: NutricaoLeituraFornRef): MomentoOperacional {
+  return { data: f.data, hora: f.hora, id: f.id, createdAt: f.createdAt, tipo: "fornecimento" };
 }
 
 export function chaveAlimento(forn: Pick<NutricaoLeituraFornRef, "tipoOrigem" | "produtoId" | "dietaId">): string {
@@ -200,9 +267,19 @@ export function validarLeituraInput(
   return { ok: true };
 }
 
+export type CicloFechadoLeitura = {
+  leituraId: number;
+  data: string;
+  hora: string | null;
+  sobraKg: number | null;
+  consumoAparenteKg: number | null;
+};
+
 export type ConsumoAparente = {
   calculavel: boolean;
   motivo: string | null;
+  codigo?: string | null;
+  cicloFechado?: CicloFechadoLeitura | null;
   sobraInicialKg: number | null;
   fornecidoKg: number | null;
   sobraFinalKg: number | null;
@@ -239,12 +316,12 @@ function fornConfirmadoNoCocho(f: NutricaoLeituraFornRef, cochoId: number): bool
 }
 
 function posicionarNoIntervalo(
-  item: { data: string; hora?: string | null },
-  inicio: { data: string; hora?: string | null },
-  fim: { data: string; hora?: string | null },
+  item: MomentoOperacional,
+  inicio: MomentoOperacional,
+  fim: MomentoOperacional,
 ): "dentro" | "fora" | "ambiguo" {
-  const vsIni = compararMomentos(item, inicio);
-  const vsFim = compararMomentos(item, fim);
+  const vsIni = relacaoOperacional(item, inicio);
+  const vsFim = relacaoOperacional(item, fim);
   if (vsIni === "ambiguo" || vsFim === "ambiguo") return "ambiguo";
   if (vsIni === "depois" && (vsFim === "antes" || vsFim === "igual")) return "dentro";
   return "fora";
@@ -319,9 +396,12 @@ function montarConsumo(input: {
   const kgCabDia = kgCab != null && dur.dias != null && dur.dias > 0
     ? arredondarKg(consumo / pop! / dur.dias)
     : null;
-  const iniTxt = input.sobraInicialKg != null
-    ? `${input.sobraInicialKg.toLocaleString("pt-BR")} kg`
-    : "0 kg (sem sobra inicial determinada — ciclo vinculado)";
+  const fornTxt = arredondarKg(input.fornecidoKg).toLocaleString("pt-BR");
+  const sobraTxt = arredondarKg(input.sobraFinalKg).toLocaleString("pt-BR");
+  const consTxt = consumo.toLocaleString("pt-BR");
+  const formula = input.sobraInicialKg != null
+    ? `${input.sobraInicialKg.toLocaleString("pt-BR")} kg + ${fornTxt} kg − ${sobraTxt} kg = ${consTxt} kg`
+    : `Estimativa do primeiro ciclo: ${fornTxt} kg fornecidos − ${sobraTxt} kg de sobra = ${consTxt} kg. Como não existe uma leitura anterior, a sobra inicial é desconhecida.`;
   return {
     calculavel: true,
     motivo: null,
@@ -335,7 +415,127 @@ function montarConsumo(input: {
     kgPorCabeca: kgCab,
     kgPorCabecaDia: kgCabDia,
     fornecimentoIds: input.forns.map(f => f.id),
-    formula: `${iniTxt} + ${arredondarKg(input.fornecidoKg).toLocaleString("pt-BR")} kg − ${arredondarKg(input.sobraFinalKg).toLocaleString("pt-BR")} kg = ${consumo.toLocaleString("pt-BR")} kg`,
+    formula,
+  };
+}
+
+/** Texto da sobra inicial: zero medido ≠ ausência de informação. */
+export function rotuloSobraInicialBalanco(sobraInicialKg: number | null | undefined): string {
+  if (sobraInicialKg != null) return `${sobraInicialKg.toLocaleString("pt-BR")} kg`;
+  return "não determinada (primeiro ciclo)";
+}
+
+export function rotuloConsumoAparenteBalanco(sobraInicialKg: number | null | undefined): string {
+  return sobraInicialKg == null ? "Consumo aparente estimado" : "Consumo aparente";
+}
+
+export function consumoFornCicloJaFechado(consumo?: { codigo?: string | null } | null): boolean {
+  return consumo?.codigo === CODIGO_CONS_FORN_CICLO_FECHADO;
+}
+
+export function deveExibirMensagemPreviewLeitura(
+  mensagemPreview?: string | null,
+  consumo?: { codigo?: string | null } | null,
+): boolean {
+  return Boolean(mensagemPreview) && !consumoFornCicloJaFechado(consumo);
+}
+
+export function mensagemFornCicloJaFechado(leitura: {
+  data: string;
+  hora?: string | null;
+  sobraKg?: number | null;
+}): string {
+  const quando = formatarDataHoraFornecimento(leitura.data, leitura.hora);
+  if (leitura.sobraKg != null && Number.isFinite(Number(leitura.sobraKg))) {
+    const sobra = Number(leitura.sobraKg).toLocaleString("pt-BR");
+    return `Este fornecimento já foi considerado na leitura de ${quando}, com sobra registrada de ${sobra} kg. Não houve novo fornecimento depois dessa leitura.`;
+  }
+  return MSG_CONS_FORN_CICLO_FECHADO;
+}
+
+function resolverVinculoLeitura(
+  atual: LeituraCicloRef,
+  fornsCocho: NutricaoLeituraFornRef[],
+  fornecimentoVinculado?: NutricaoLeituraFornRef | null,
+): NutricaoLeituraFornRef | null {
+  if (fornecimentoVinculado && fornecimentoVinculado.id === atual.fornecimentoId) {
+    return fornecimentoVinculado;
+  }
+  return atual.fornecimentoId
+    ? fornsCocho.find(f => f.id === atual.fornecimentoId) ?? null
+    : null;
+}
+
+function leiturasAnterioresQuant(
+  atual: LeituraCicloRef,
+  leiturasCocho: LeituraCicloRef[],
+): LeituraCicloRef[] {
+  const atualOp = momentoLeitura(atual);
+  return leiturasCocho
+    .filter(l => l.cochoId === atual.cochoId && l.status === "ativa" && l.id !== atual.id)
+    .filter(l => l.sobraKg != null)
+    .filter(l => relacaoOperacional(momentoLeitura(l), atualOp) === "antes")
+    .sort((a, b) => {
+      const r = relacaoOperacional(momentoLeitura(a), momentoLeitura(b));
+      if (r === "depois") return -1;
+      if (r === "antes") return 1;
+      return b.id - a.id;
+    });
+}
+
+/** Só identificação. Não recalcula nem reabre o ciclo. */
+export function identificarFornCicloFechado(input: {
+  leitura: LeituraCicloRef;
+  leiturasCocho: LeituraCicloRef[];
+  fornecimentosCocho: NutricaoLeituraFornRef[];
+  fornecimentoVinculado?: NutricaoLeituraFornRef | null;
+}): { leitura: LeituraCicloRef; fornecimento: NutricaoLeituraFornRef } | null {
+  const atual = input.leitura;
+  if (!(Number(atual.fornecimentoId) > 0) || atual.status === "cancelada") return null;
+
+  const prev = leiturasAnterioresQuant(atual, input.leiturasCocho)[0];
+  if (!prev) return null;
+
+  const fornsCocho = input.fornecimentosCocho.filter(f => fornConfirmadoNoCocho(f, atual.cochoId));
+  const vinculo = resolverVinculoLeitura(atual, fornsCocho, input.fornecimentoVinculado);
+  if (!vinculo || vinculo.status !== "confirmado" || vinculo.cochoId !== atual.cochoId) return null;
+
+  const vsPrev = relacaoOperacional(momentoFornecimento(vinculo), momentoLeitura(prev));
+  if (vsPrev === "depois" || vsPrev === "ambiguo") return null;
+
+  const atualOp = momentoLeitura(atual);
+  const prevOp = momentoLeitura(prev);
+  for (const f of fornsCocho) {
+    const pos = posicionarNoIntervalo(momentoFornecimento(f), prevOp, atualOp);
+    if (pos === "dentro" || pos === "ambiguo") return null;
+  }
+  return { leitura: prev, fornecimento: vinculo };
+}
+
+function resultadoFornCicloFechado(
+  fechado: { leitura: LeituraCicloRef; fornecimento: NutricaoLeituraFornRef },
+  input: {
+    leiturasCocho: LeituraCicloRef[];
+    fornecimentosCocho: NutricaoLeituraFornRef[];
+    fornecimentoVinculado?: NutricaoLeituraFornRef | null;
+  },
+): ConsumoAparente {
+  const consumoFechado = calcularConsumoAparente({
+    leitura: fechado.leitura,
+    leiturasCocho: input.leiturasCocho,
+    fornecimentosCocho: input.fornecimentosCocho,
+    fornecimentoVinculado: input.fornecimentosCocho.find(f => f.id === fechado.leitura.fornecimentoId) ?? null,
+  });
+  return {
+    ...indisponivel(mensagemFornCicloJaFechado(fechado.leitura)),
+    codigo: CODIGO_CONS_FORN_CICLO_FECHADO,
+    cicloFechado: {
+      leituraId: fechado.leitura.id,
+      data: fechado.leitura.data,
+      hora: fechado.leitura.hora,
+      sobraKg: fechado.leitura.sobraKg,
+      consumoAparenteKg: consumoFechado.calculavel ? consumoFechado.consumoAparenteKg : null,
+    },
   };
 }
 
@@ -347,21 +547,21 @@ export function calcularConsumoAparente(input: {
 }): ConsumoAparente {
   const atual = input.leitura;
   if (atual.status === "cancelada") return indisponivel(MSG_CONS_CANCELADA);
+  const cicloFechado = identificarFornCicloFechado(input);
+  if (cicloFechado) return resultadoFornCicloFechado(cicloFechado, input);
   if (atual.sobraKg == null) {
     return indisponivel(MSG_CONS_SO_ESCORE);
   }
 
+  const atualOp = momentoLeitura(atual);
   const ativas = input.leiturasCocho.filter(
     l => l.cochoId === atual.cochoId && l.status === "ativa" && l.id !== atual.id,
   );
   const anterioresQuant = ativas
     .filter(l => l.sobraKg != null)
-    .filter(l => {
-      const rel = compararMomentos(l, atual);
-      return rel === "antes";
-    })
+    .filter(l => relacaoOperacional(momentoLeitura(l), atualOp) === "antes")
     .sort((a, b) => {
-      const r = compararMomentos(a, b);
+      const r = relacaoOperacional(momentoLeitura(a), momentoLeitura(b));
       if (r === "depois") return -1;
       if (r === "antes") return 1;
       return b.id - a.id;
@@ -374,9 +574,10 @@ export function calcularConsumoAparente(input: {
   const fornsCocho = input.fornecimentosCocho.filter(f => fornConfirmadoNoCocho(f, atual.cochoId));
 
   if (prev) {
+    const prevOp = momentoLeitura(prev);
     const noIntervalo: NutricaoLeituraFornRef[] = [];
     for (const f of fornsCocho) {
-      const pos = posicionarNoIntervalo(f, prev, atual);
+      const pos = posicionarNoIntervalo(momentoFornecimento(f), prevOp, atualOp);
       if (pos === "ambiguo") return indisponivel(MSG_CONS_ORDEM);
       if (pos === "dentro") noIntervalo.push(f);
     }
@@ -384,6 +585,12 @@ export function calcularConsumoAparente(input: {
     if (lotesDoCiclo(prev, atual, noIntervalo).length > 1) return indisponivel(MSG_CONS_TROCA_LOTE);
     const alimentos = new Set(noIntervalo.map(chaveAlimento));
     if (alimentos.size > 1) return indisponivel(MSG_CONS_TROCA_ALIMENTO);
+    if (prev.fornecimentoId) {
+      const fornPrev = input.fornecimentosCocho.find(f => f.id === prev.fornecimentoId);
+      if (fornPrev && !alimentos.has(chaveAlimento(fornPrev))) {
+        return indisponivel(MSG_CONS_TROCA_ALIMENTO);
+      }
+    }
     const fornecido = noIntervalo.reduce((acc, f) => acc + f.quantidadeFornecidaKg, 0);
     return montarConsumo({
       sobraInicialKg: prev.sobraKg,
@@ -431,7 +638,7 @@ export function calcularConsumoAparente(input: {
       noCiclo.push(f);
       continue;
     }
-    const pos = posicionarNoIntervalo(f, vinculo, atual);
+    const pos = posicionarNoIntervalo(momentoFornecimento(f), momentoFornecimento(vinculo), atualOp);
     if (pos === "ambiguo") return indisponivel(MSG_CONS_ORDEM);
     if (pos === "dentro") noCiclo.push(f);
   }

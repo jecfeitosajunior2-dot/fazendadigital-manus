@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 import {
   NUTRICAO_FORN_MOTIVOS_ESTORNO,
   formatarDataHoraFornecimento,
+  formatarOferecidoPorCabeca,
   labelMotivoEstornoForn,
-  oferecidoPorCabeca,
+  rotuloVinculoPlanejamentoForn,
 } from "@shared/nutricaoFornecimentos";
 
 export default function NutricaoFornecimentoDetalhePage() {
@@ -45,7 +46,12 @@ export default function NutricaoFornecimentoDetalhePage() {
   }
 
   const fazendaNome = fazendas.find(f => f.id === data.fazendaId)?.nome ?? "—";
-  const porCabeca = oferecidoPorCabeca(Number(data.quantidadeFornecidaKg), data.populacaoSnapshot);
+  const oferecidoCabecaTexto = formatarOferecidoPorCabeca({
+    quantidadeKg: Number(data.quantidadeFornecidaKg),
+    populacao: data.populacaoSnapshot,
+    planejamentoId: data.planejamentoId,
+    modalidadeSnapshot: data.planejamentoModalidadeSnapshot,
+  });
   const diferencaKg = data.planejamentoNecessidadeKgSnapshot != null
     ? Number(data.quantidadeFornecidaKg) - Number(data.planejamentoNecessidadeKgSnapshot)
     : null;
@@ -56,7 +62,7 @@ export default function NutricaoFornecimentoDetalhePage() {
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-              Fornecimento #{data.id}
+              Detalhe do Fornecimento
             </h1>
             <p className="text-[12px] text-gray-500 mt-0.5">
               {formatarDataHoraFornecimento(data.data, data.hora)} · {fazendaNome} · {data.loteNome}
@@ -103,7 +109,7 @@ export default function NutricaoFornecimentoDetalhePage() {
               </div>
               <div>
                 <div className="text-[10px] uppercase text-gray-500">Origem operacional</div>
-                <div className="font-medium">{data.origemOperacional === "batida" ? `Batida${data.batidaId ? ` #${data.batidaId}` : ""}` : "Direto"}</div>
+                <div className="font-medium">{data.origemOperacional === "batida" ? `Batida${data.batidaId ? ` ${data.batidaId}` : ""}` : "Direto"}</div>
               </div>
               {data.cochoNomeSnapshot && (
                 <div>
@@ -128,20 +134,43 @@ export default function NutricaoFornecimentoDetalhePage() {
               <p>
                 Animais no momento: <strong>{data.populacaoSnapshot}</strong>
                 {" · "}Oferecido/cabeça:{" "}
-                <strong>{porCabeca?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} kg</strong>
+                <strong>{oferecidoCabecaTexto}</strong>
               </p>
             ) : (
               <p className="text-amber-800">Sem animais ativos no lote no momento do fornecimento. Quantidade/cabeça: —</p>
             )}
           </section>
 
-          {data.planejamentoId && (
-            <section>
-              <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Planejamento</h2>
-              <p className="text-gray-700">
+          <section>
+            <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Planejamento</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase",
+                  Number(data.planejamentoId) > 0
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-gray-100 text-gray-500",
+                )}
+              >
+                {rotuloVinculoPlanejamentoForn(data.planejamentoId)}
+              </span>
+              {Number(data.planejamentoId) > 0 ? (
+                <button
+                  type="button"
+                  className="text-[12px] text-gray-600 underline"
+                  onClick={() => setLocation(`/nutricao/planejamento/${data.planejamentoId}`)}
+                >
+                  Ver planejamento
+                </button>
+              ) : null}
+            </div>
+            {Number(data.planejamentoId) > 0 ? (
+              <p className="text-gray-700 mt-2">
+                {data.loteNome}
+                {data.planejamentoMetaSnapshot ? ` · ${data.planejamentoMetaSnapshot}` : ""}
                 {data.planejamentoModalidadeSnapshot === "ad_libitum"
-                  ? "Ad libitum — sem desvio de meta. Quantidade registrada como oferecida."
-                  : `Meta: ${data.planejamentoMetaSnapshot ?? "—"} · Necessidade projetada: ${
+                  ? " · Ad libitum — sem desvio de meta. Quantidade registrada como oferecida."
+                  : ` · Necessidade projetada: ${
                     data.planejamentoNecessidadeKgSnapshot != null
                       ? `${Number(data.planejamentoNecessidadeKgSnapshot).toLocaleString("pt-BR")} kg`
                       : "—"
@@ -151,8 +180,8 @@ export default function NutricaoFornecimentoDetalhePage() {
                       : "—"
                   }`}
               </p>
-            </section>
-          )}
+            ) : null}
+          </section>
 
           {data.custoPorKgSnapshot != null && data.custoCompleto && (
             <p className="text-[12px] text-gray-600">
@@ -162,7 +191,7 @@ export default function NutricaoFornecimentoDetalhePage() {
 
           {data.origemOperacional === "batida" && data.batidaId && (
             <p className="text-[12px] text-gray-600">
-              Custo alocado da Batida #{data.batidaId} — não é nova despesa nem nova baixa.
+              Custo alocado da Batida {data.batidaId} — não é nova despesa nem nova baixa.
               {" "}
               <button type="button" className="underline" onClick={() => setLocation(`/nutricao/batidas/${data.batidaId}`)}>Ver batida</button>
             </p>
@@ -238,7 +267,7 @@ export default function NutricaoFornecimentoDetalhePage() {
                 <tbody>
                   {data.movimentacoes.map(m => (
                     <tr key={m.id} className="border-t">
-                      <td className="px-3 py-1.5">{m.produtoNome ?? `Estoque #${m.estoqueId}`}</td>
+                      <td className="px-3 py-1.5">{m.produtoNome ?? `Estoque ${m.estoqueId}`}</td>
                       <td className="px-3 py-1.5 text-center">{Number(m.quantidade).toLocaleString("pt-BR")}</td>
                       <td className="px-3 py-1.5 text-center">{m.tipo}</td>
                       <td className="px-3 py-1.5 text-center">{m.status}</td>

@@ -819,3 +819,85 @@ export function formatarMetaPlan(modalidade: string, valor?: number | null): str
   if (modalidade === "pct_pv_dia") return `${n.toLocaleString("pt-BR")}% PV/dia`;
   return String(valor);
 }
+
+function parseNumeroMetaPlan(value: string | number | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatarNumeroMetaPlan(valor: number): string {
+  return valor.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+
+function modalidadeComMetaPorTrato(modalidade: string): boolean {
+  return modalidade === "g_cab_dia" || modalidade === "kg_cab_dia" || modalidade === "pct_pv_dia";
+}
+
+/** Meta diária ÷ tratos, na unidade da modalidade. Não converte para kg. */
+export function metaPorTratoNaUnidadeNatural(input: {
+  modalidadeMeta: string;
+  valorMeta?: string | number | null;
+  tratosPorDia?: string | number | null;
+}): number | null {
+  if (input.modalidadeMeta === "ad_libitum" || !modalidadeComMetaPorTrato(input.modalidadeMeta)) {
+    return null;
+  }
+  const meta = parseNumeroMetaPlan(input.valorMeta);
+  const tratos = parseNumeroMetaPlan(input.tratosPorDia);
+  if (meta == null || !(meta >= 0) || tratos == null || !(tratos >= 1)) return null;
+  return meta / tratos;
+}
+
+function rotuloMetaDiariaAjuda(modalidade: string, valor: number): string {
+  const n = formatarNumeroMetaPlan(valor);
+  if (modalidade === "g_cab_dia") return `${n} g/cabeça/dia`;
+  if (modalidade === "kg_cab_dia") return `${n} kg/cabeça/dia`;
+  if (modalidade === "pct_pv_dia") return `${n}% do peso vivo/dia`;
+  return n;
+}
+
+function rotuloPorTratoAjuda(modalidade: string, valor: number): string {
+  const n = formatarNumeroMetaPlan(valor);
+  if (modalidade === "g_cab_dia") return `${n} g/cabeça`;
+  if (modalidade === "kg_cab_dia") return `${n} kg/cabeça`;
+  if (modalidade === "pct_pv_dia") return `${n}% do peso vivo`;
+  return n;
+}
+
+function rotuloEstimativaPorTrato(modalidade: string, valor: number): string {
+  const n = formatarNumeroMetaPlan(valor);
+  if (modalidade === "g_cab_dia") return `${n} g/cab/trato`;
+  if (modalidade === "kg_cab_dia") return `${n} kg/cab/trato`;
+  if (modalidade === "pct_pv_dia") return `${n}% PV/trato`;
+  return n;
+}
+
+export function textoAjudaTratosPorDia(input: {
+  modalidadeMeta: string;
+  valorMeta?: string | number | null;
+  tratosPorDia?: string | number | null;
+}): string {
+  if (input.modalidadeMeta === "ad_libitum") {
+    return "Ad libitum não tem quantidade diária fixa — os tratos não dividem uma meta numérica.";
+  }
+  const porTrato = metaPorTratoNaUnidadeNatural(input);
+  const meta = parseNumeroMetaPlan(input.valorMeta);
+  const tratos = parseNumeroMetaPlan(input.tratosPorDia);
+  if (porTrato == null || meta == null || tratos == null) {
+    return "Tratos dividem a meta do dia. A meta diária não é multiplicada pelo número de tratos.";
+  }
+  const qtdTratos = formatarNumeroMetaPlan(tratos);
+  const inicio = tratos === 1 ? "O 1 trato divide" : `Os ${qtdTratos} tratos dividem`;
+  return `${inicio} a meta diária de ${rotuloMetaDiariaAjuda(input.modalidadeMeta, meta)}: ${rotuloPorTratoAjuda(input.modalidadeMeta, porTrato)} por trato. A meta diária não é multiplicada pelo número de tratos.`;
+}
+
+export function textoEstimativaPorTrato(input: {
+  modalidadeMeta: string;
+  valorMeta?: string | number | null;
+  tratosPorDia?: string | number | null;
+}): string | null {
+  const porTrato = metaPorTratoNaUnidadeNatural(input);
+  if (porTrato == null) return null;
+  return `Estimativa por trato: ${rotuloEstimativaPorTrato(input.modalidadeMeta, porTrato)}.`;
+}

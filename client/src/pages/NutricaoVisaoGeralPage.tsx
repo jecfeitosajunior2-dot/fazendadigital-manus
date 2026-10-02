@@ -23,6 +23,7 @@ import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 import {
   formatarIndicadorNumero,
   formatarMoedaIndicador,
+  MSG_VG_FORNECIDO_CAB_DIA_AJUDA,
   periodoRapido,
 } from "@shared/nutricaoVisaoGeral";
 import { trpc } from "@/lib/trpc";
@@ -66,12 +67,14 @@ function MetricCard({
   hint,
   cor,
   extra,
+  extraNeutro,
 }: {
   label: string;
   value: string;
   hint?: string;
   cor: string;
   extra?: string | null;
+  extraNeutro?: boolean;
 }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 min-h-[64px] min-w-0 h-full overflow-hidden flex flex-col">
@@ -84,7 +87,11 @@ function MetricCard({
         <p className="text-[17px] sm:text-[20px] font-bold text-gray-800 leading-tight mt-0.5 tabular-nums break-words">
           {value}
         </p>
-        {extra ? <p className="text-[10px] text-amber-700 mt-0.5 leading-snug">{extra}</p> : null}
+        {extra ? (
+          <p className={`text-[10px] mt-0.5 leading-snug ${extraNeutro ? "text-gray-500" : "text-amber-700"}`}>
+            {extra}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -274,8 +281,9 @@ export default function NutricaoVisaoGeralPage() {
               <MetricCard
                 label="Fornecido / cab / dia"
                 value={formatarIndicadorNumero(cards?.fornecidoCabDia ?? null, { sufixo: "kg" })}
-                hint={cards?.fornecidoCabDiaMotivo ?? "kg oferecidos ÷ animal-dia dos lotes com população estável."}
+                hint={cards?.fornecidoCabDiaMotivo ?? MSG_VG_FORNECIDO_CAB_DIA_AJUDA}
                 extra={cards?.coberturaAnimalDia}
+                extraNeutro
                 cor={COR_QTD}
               />
               <MetricCard

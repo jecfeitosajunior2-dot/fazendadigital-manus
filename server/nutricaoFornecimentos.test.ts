@@ -373,6 +373,23 @@ describe("nutricaoFornecimentos service", () => {
     await expect(svc.confirmar(10, "Pedro", produtoInput({ loteId: 2 }), "2026-10-01")).rejects.toBeTruthy();
     const lista = await svc.listar(10, { fazendaId: 1 });
     expect(lista).toHaveLength(1);
+    expect(lista[0]?.planejamentoId).toBeNull();
+    expect(lista[0]?.origemOperacional).toBe("direta");
+  });
+
+  it("vínculo histórico do planejamentoId na lista e no estorno", async () => {
+    const store = criarStore();
+    const svc = createNutricaoFornecimentosService(store);
+    await svc.confirmar(10, "Pedro", produtoInput({ planejamentoId: 7 }), "2026-10-01");
+    const comVinculo = await svc.listar(10, { fazendaId: 1 });
+    expect(comVinculo[0]?.planejamentoId).toBe(7);
+    expect(comVinculo[0]?.origemOperacional).toBe("direta");
+    await svc.estornar(10, "Pedro", { id: 1, motivo: "erro_lancamento" }, "2026-10-02");
+    expect(store.rows[0]?.planejamentoId).toBe(7);
+    expect(store.rows[0]?.status).toBe("estornado");
+    const depois = await svc.listar(10, { fazendaId: 1 });
+    expect(depois[0]?.planejamentoId).toBe(7);
+    expect(depois[0]?.status).toBe("estornado");
   });
 
   it("27/30/31: estorno de produto, segundo bloqueado, motivo obrigatório", async () => {
@@ -625,6 +642,36 @@ describe("nutricaoFornecimentos — rota e estoque oficial", () => {
     expect(src).toContain("ingredientes");
     expect(src).toContain("produtoNomeSnapshot");
     expect(src).not.toMatch(/nutricaoDietas\.get/);
+  });
+
+  it("detalhe formata oferecido/cabeça pelo helper compartilhado", () => {
+    const src = readFileSync(new URL("../client/src/pages/NutricaoFornecimentoDetalhePage.tsx", import.meta.url), "utf8");
+    expect(src).toContain("formatarOferecidoPorCabeca");
+    expect(src).toContain("planejamentoModalidadeSnapshot");
+    expect(src).toContain("Quantidade fornecida");
+    expect(src).not.toMatch(/porCabeca\?\.toLocaleString/);
+    expect(src).not.toContain("g/cabeça/dia");
+  });
+
+  it("lista e detalhe separam vínculo de planejamento da origem operacional", () => {
+    const lista = readFileSync(new URL("../client/src/pages/NutricaoFornecimentosListPage.tsx", import.meta.url), "utf8");
+    const detalhe = readFileSync(new URL("../client/src/pages/NutricaoFornecimentoDetalhePage.tsx", import.meta.url), "utf8");
+    const svc = readFileSync(new URL("./nutricaoFornecimentos.ts", import.meta.url), "utf8");
+    expect(lista).toContain('label: "Planejamento"');
+    expect(lista).toContain("rotuloVinculoPlanejamentoForn(row.planejamentoId)");
+    expect(lista).toContain("labelOrigemOperacionalForn(row.origemOperacional)");
+    expect(lista).not.toContain("Não planejado");
+    expect(lista).not.toMatch(/["']Planejado["']/);
+    expect(detalhe).toContain("rotuloVinculoPlanejamentoForn(data.planejamentoId)");
+    expect(detalhe).toContain("Ver planejamento");
+    const listarFn = svc.slice(svc.indexOf("async listar"), svc.indexOf("async obter"));
+    expect(listarFn).toContain("...row");
+    expect(listarFn).toContain("getLote");
+    expect(listarFn).not.toContain("getPlanejamento");
+    expect(listarFn).not.toContain("listPlanejamentos");
+    const setEstornadoFn = svc.slice(svc.indexOf("async setEstornado"), svc.indexOf("async lockBatida"));
+    expect(setEstornadoFn).toContain('status: "estornado"');
+    expect(setEstornadoFn).not.toContain("planejamentoId");
   });
 });
 

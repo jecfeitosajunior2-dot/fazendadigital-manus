@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   calcularConsumoAparente,
   compararMomentos,
+  consumoFornCicloJaFechado,
+  deveExibirMensagemPreviewLeitura,
+  relacaoOperacional,
   formatarConsumoLista,
   formatarDataHoraLeitura,
+  rotuloConsumoAparenteBalanco,
+  rotuloSobraInicialBalanco,
   leituraTemConteudo,
+  CODIGO_CONS_FORN_CICLO_FECHADO,
   MSG_CONS_ANTES,
   MSG_CONS_AVULSA,
   MSG_CONS_CANCELADA,
@@ -239,6 +245,26 @@ describe("nutricaoCochoLeituras — consumo aparente derivado", () => {
     expect(out.sobraFinalKg).toBe(20);
     expect(out.intervaloLabel).toBe("9 hora(s)");
     expect(out.formula).toContain("80");
+    expect(out.formula).toMatch(/Estimativa do primeiro ciclo/);
+    expect(out.formula).not.toMatch(/^0 kg/);
+    expect(out.formula).not.toContain("0 kg (sem sobra inicial");
+    expect(rotuloSobraInicialBalanco(out.sobraInicialKg)).toBe("não determinada (primeiro ciclo)");
+    expect(rotuloConsumoAparenteBalanco(out.sobraInicialKg)).toBe("Consumo aparente estimado");
+  });
+
+  it("apresenta 0 kg quando a sobra inicial foi medida como zero", () => {
+    const prev = leitura({ id: 9, hora: "07:00", sobraKg: 0, fornecimentoId: null });
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 10, hora: "17:00", sobraKg: 0.2, fornecimentoId: null }),
+      leiturasCocho: [prev],
+      fornecimentosCocho: [forn({ hora: "08:00", quantidadeFornecidaKg: 0.6 })],
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0);
+    expect(out.consumoAparenteKg).toBe(0.4);
+    expect(rotuloSobraInicialBalanco(out.sobraInicialKg)).toBe("0 kg");
+    expect(rotuloConsumoAparenteBalanco(out.sobraInicialKg)).toBe("Consumo aparente");
+    expect(out.formula).toMatch(/^0 kg \+/);
   });
 
   it("20/21: sobra inicial 10 + fornecimentos 150 − sobra 20 = 140", () => {
@@ -434,5 +460,415 @@ describe("nutricaoCochoLeituras — consumo aparente derivado", () => {
     });
     expect(a.consumoAparenteKg).toBe(80);
     expect(b.consumoAparenteKg).toBe(90);
+  });
+});
+
+describe("nutricaoCochoLeituras — encadeamento do segundo ciclo", () => {
+  const DIA = "2026-10-02";
+  const tLeitura1 = "2026-10-02T11:00:00.000Z";
+  const tForn2 = "2026-10-02T12:00:00.000Z";
+  const tLeitura2 = "2026-10-02T13:00:00.000Z";
+
+  it("A: homologação — sobra anterior 0,2 + 0,6 − 0,3 = 0,5", () => {
+    const prev = leitura({
+      id: 11,
+      data: DIA,
+      hora: null,
+      sobraKg: 0.2,
+      fornecimentoId: 1,
+      createdAt: tLeitura1,
+    });
+    const f1 = forn({
+      id: 1,
+      data: "2026-10-01",
+      hora: null,
+      quantidadeFornecidaKg: 0.6,
+      createdAt: "2026-10-01T10:00:00.000Z",
+    });
+    const f2 = forn({
+      id: 2,
+      data: DIA,
+      hora: null,
+      quantidadeFornecidaKg: 0.6,
+      createdAt: tForn2,
+    });
+    const atual = leitura({
+      id: 0,
+      data: DIA,
+      hora: null,
+      sobraKg: 0.3,
+      fornecimentoId: 2,
+    });
+    expect(compararMomentos(prev, atual)).toBe("igual");
+    const out = calcularConsumoAparente({
+      leitura: atual,
+      leiturasCocho: [prev],
+      fornecimentosCocho: [f1, f2],
+      fornecimentoVinculado: f2,
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0.2);
+    expect(out.fornecidoKg).toBe(0.6);
+    expect(out.sobraFinalKg).toBe(0.3);
+    expect(out.consumoAparenteKg).toBe(0.5);
+    expect(out.fornecimentoIds).toEqual([2]);
+    expect(out.formula).not.toMatch(/00:00|23:59/);
+  });
+
+  it("B: primeiro ciclo sem saldo inicial conhecido permanece conservador", () => {
+    const unico = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.2, fornecimentoId: 2 }),
+      leiturasCocho: [],
+      fornecimentosCocho: [forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 })],
+      fornecimentoVinculado: forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+    });
+    expect(unico.calculavel).toBe(true);
+    expect(unico.sobraInicialKg).toBeNull();
+    expect(unico.consumoAparenteKg).toBe(0.4);
+    expect(rotuloSobraInicialBalanco(unico.sobraInicialKg)).toBe("não determinada (primeiro ciclo)");
+
+    const comAnterior = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.2, fornecimentoId: 2 }),
+      leiturasCocho: [],
+      fornecimentosCocho: [
+        forn({ id: 1, data: "2026-10-01", hora: null, quantidadeFornecidaKg: 0.6 }),
+        forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+      ],
+      fornecimentoVinculado: forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+    });
+    expect(comAnterior.calculavel).toBe(false);
+    expect(comAnterior.motivo).toBe(MSG_CONS_SOBRA_INICIAL);
+    expect(comAnterior.consumoAparenteKg).toBeNull();
+  });
+
+  it("C: sobra anterior zero é valor conhecido, não ausência", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.1, fornecimentoId: 2 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0, fornecimentoId: 1, createdAt: tLeitura1,
+      })],
+      fornecimentosCocho: [forn({
+        id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2,
+      })],
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0);
+    expect(out.consumoAparenteKg).toBe(0.5);
+    expect(rotuloSobraInicialBalanco(out.sobraInicialKg)).toBe("0 kg");
+  });
+
+  it("D: soma múltiplos fornecimentos confirmados do ciclo", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.3 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0.2, createdAt: tLeitura1, fornecimentoId: null,
+      })],
+      fornecimentosCocho: [
+        forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+        forn({ id: 3, data: DIA, hora: null, quantidadeFornecidaKg: 0.4, createdAt: "2026-10-02T12:30:00.000Z" }),
+      ],
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.consumoAparenteKg).toBe(0.9);
+    expect(out.fornecidoKg).toBe(1);
+  });
+
+  it("E: fornecimento estornado fica de fora do ciclo", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.3 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0.2, createdAt: tLeitura1, fornecimentoId: null,
+      })],
+      fornecimentosCocho: [
+        forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+        forn({
+          id: 3,
+          data: DIA,
+          hora: null,
+          quantidadeFornecidaKg: 0.4,
+          status: "estornado",
+          createdAt: "2026-10-02T12:30:00.000Z",
+        }),
+      ],
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.consumoAparenteKg).toBe(0.5);
+    expect(out.fornecimentoIds).toEqual([2]);
+  });
+
+  it("F: leitura anterior cancelada não estabelece saldo inicial", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.3, fornecimentoId: 2 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0.2, status: "cancelada", createdAt: tLeitura1,
+      })],
+      fornecimentosCocho: [
+        forn({ id: 1, data: "2026-10-01", hora: null, quantidadeFornecidaKg: 0.6 }),
+        forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+      ],
+      fornecimentoVinculado: forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.motivo).toBe(MSG_CONS_SOBRA_INICIAL);
+    expect(out.sobraInicialKg).toBeNull();
+  });
+
+  it("G: leitura de outro cocho nunca vira saldo inicial", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.3, fornecimentoId: 2, cochoId: 1 }),
+      leiturasCocho: [leitura({
+        id: 11, cochoId: 9, data: DIA, hora: null, sobraKg: 0.2, createdAt: tLeitura1,
+      })],
+      fornecimentosCocho: [
+        forn({ id: 1, data: "2026-10-01", hora: null, quantidadeFornecidaKg: 0.6 }),
+        forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+      ],
+      fornecimentoVinculado: forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.motivo).toBe(MSG_CONS_SOBRA_INICIAL);
+  });
+
+  it("H: alimento diferente não combina saldo automaticamente", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: null, sobraKg: 0.3, fornecimentoId: 2 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0.2, fornecimentoId: 1, createdAt: tLeitura1,
+      })],
+      fornecimentosCocho: [
+        forn({
+          id: 1,
+          data: "2026-10-01",
+          hora: null,
+          produtoId: 10,
+          origemNomeSnapshot: "Sal Nitrogenado 40 Flex LA",
+          quantidadeFornecidaKg: 0.6,
+        }),
+        forn({
+          id: 2,
+          data: DIA,
+          hora: null,
+          produtoId: 99,
+          origemNomeSnapshot: "Sal mineral",
+          quantidadeFornecidaKg: 0.6,
+          createdAt: tForn2,
+        }),
+      ],
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.motivo).toBe(MSG_CONS_TROCA_ALIMENTO);
+  });
+
+  it("I: mesmo dia sem hora usa sequência persistida, sem inventar 00:00", () => {
+    const prev = leitura({
+      id: 11, data: DIA, hora: null, sobraKg: 0.2, createdAt: tLeitura1, fornecimentoId: null,
+    });
+    const fornCiclo = forn({
+      id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2,
+    });
+    const atual = leitura({
+      id: 12, data: DIA, hora: null, sobraKg: 0.3, createdAt: tLeitura2, fornecimentoId: 2,
+    });
+
+    expect(compararMomentos(prev, fornCiclo)).toBe("igual");
+    expect(compararMomentos(fornCiclo, atual)).toBe("igual");
+    expect(relacaoOperacional(
+      { ...prev, tipo: "leitura" },
+      { ...atual, tipo: "leitura" },
+    )).toBe("antes");
+    expect(relacaoOperacional(
+      { data: fornCiclo.data, hora: fornCiclo.hora, id: fornCiclo.id, createdAt: fornCiclo.createdAt, tipo: "fornecimento" },
+      { ...prev, tipo: "leitura" },
+    )).toBe("depois");
+
+    const out = calcularConsumoAparente({
+      leitura: atual,
+      leiturasCocho: [prev],
+      fornecimentosCocho: [fornCiclo],
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.consumoAparenteKg).toBe(0.5);
+    expect(out.formula).not.toMatch(/00:00|23:59/);
+    expect(prev.hora).toBeNull();
+    expect(fornCiclo.hora).toBeNull();
+    expect(atual.hora).toBeNull();
+  });
+
+  it("mesma data com só uma hora continua ambígua", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA, hora: "17:00", sobraKg: 0.3, fornecimentoId: 2 }),
+      leiturasCocho: [leitura({
+        id: 11, data: DIA, hora: null, sobraKg: 0.2, createdAt: tLeitura1,
+      })],
+      fornecimentosCocho: [forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 })],
+      fornecimentoVinculado: forn({ id: 2, data: DIA, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2 }),
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.motivo).toBe(MSG_CONS_ORDEM);
+  });
+});
+
+describe("nutricaoCochoLeituras — fornecimento com ciclo já fechado", () => {
+  const DIA1 = "2026-10-01";
+  const DIA2 = "2026-10-02";
+  const tForn2 = "2026-10-01T16:59:53.000Z";
+  const tLeitura1 = "2026-10-02T09:16:59.000Z";
+  const tForn3 = "2026-10-02T09:21:02.000Z";
+  const tLeitura2 = "2026-10-02T09:39:40.000Z";
+  const tForn4 = "2026-10-02T14:00:00.000Z";
+
+  const f2 = () => forn({
+    id: 2, data: DIA1, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn2, populacaoSnapshot: 6,
+  });
+  const f3 = () => forn({
+    id: 3, data: DIA2, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn3, populacaoSnapshot: 6,
+  });
+  const l1 = () => leitura({
+    id: 1, data: DIA2, hora: null, sobraKg: 0.2, fornecimentoId: 2, createdAt: tLeitura1,
+  });
+  const l2 = () => leitura({
+    id: 2, data: DIA2, hora: null, sobraKg: 0.3, fornecimentoId: 3, createdAt: tLeitura2,
+  });
+
+  it("A: primeiro fornecimento + primeira leitura continua calculando", () => {
+    const out = calcularConsumoAparente({
+      leitura: l1(),
+      leiturasCocho: [],
+      fornecimentosCocho: [f2()],
+      fornecimentoVinculado: f2(),
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.consumoAparenteKg).toBe(0.4);
+    expect(out.codigo).not.toBe(CODIGO_CONS_FORN_CICLO_FECHADO);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+
+  it("B: sobra anterior + novo fornecimento + nova leitura continua o ciclo", () => {
+    const out = calcularConsumoAparente({
+      leitura: l2(),
+      leiturasCocho: [l1()],
+      fornecimentosCocho: [f2(), f3()],
+      fornecimentoVinculado: f3(),
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0.2);
+    expect(out.fornecidoKg).toBe(0.6);
+    expect(out.consumoAparenteKg).toBe(0.5);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+
+  it("C/D/F: reabrir o fornecimento 3 já fechado não recalcula", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.2, fornecimentoId: 3 }),
+      leiturasCocho: [l1(), l2()],
+      fornecimentosCocho: [f2(), f3()],
+      fornecimentoVinculado: f3(),
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.codigo).toBe(CODIGO_CONS_FORN_CICLO_FECHADO);
+    expect(consumoFornCicloJaFechado(out)).toBe(true);
+    expect(out.cicloFechado?.leituraId).toBe(2);
+    expect(out.cicloFechado?.sobraKg).toBe(0.3);
+    expect(out.cicloFechado?.consumoAparenteKg).toBe(0.5);
+    expect(out.consumoAparenteKg).toBeNull();
+    expect(out.fornecidoKg).toBeNull();
+    expect(out.motivo).toContain("02/10/2026");
+    expect(out.motivo).toContain("0,3 kg");
+    expect(out.motivo).not.toBe(MSG_CONS_SEM_FORN);
+    expect(out.fornecimentoIds).toEqual([]);
+  });
+
+  it("G: novo fornecimento depois da última leitura continua calculável", () => {
+    const f4 = forn({
+      id: 4, data: DIA2, hora: null, quantidadeFornecidaKg: 0.6, createdAt: tForn4, populacaoSnapshot: 6,
+    });
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.1, fornecimentoId: 4 }),
+      leiturasCocho: [l1(), l2()],
+      fornecimentosCocho: [f2(), f3(), f4],
+      fornecimentoVinculado: f4,
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0.3);
+    expect(out.fornecidoKg).toBe(0.6);
+    expect(out.consumoAparenteKg).toBe(0.8);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+
+  it("H: fornecimento estornado continua fora do cálculo", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.1, fornecimentoId: 4 }),
+      leiturasCocho: [l1(), l2()],
+      fornecimentosCocho: [
+        f2(),
+        f3(),
+        forn({
+          id: 4, data: DIA2, hora: null, quantidadeFornecidaKg: 0.6,
+          status: "estornado", createdAt: tForn4,
+        }),
+      ],
+      fornecimentoVinculado: forn({
+        id: 4, data: DIA2, hora: null, quantidadeFornecidaKg: 0.6,
+        status: "estornado", createdAt: tForn4,
+      }),
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.motivo).toBe(MSG_CONS_SEM_FORN);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+
+  it("I: leitura cancelada não fecha o ciclo", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.2, fornecimentoId: 3 }),
+      leiturasCocho: [l1(), leitura({ ...l2(), status: "cancelada" })],
+      fornecimentosCocho: [f2(), f3()],
+      fornecimentoVinculado: f3(),
+    });
+    expect(out.calculavel).toBe(true);
+    expect(out.sobraInicialKg).toBe(0.2);
+    expect(out.consumoAparenteKg).toBe(0.6);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+
+  it("J: mesmo dia sem hora preserva a ordem por createdAt", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.2, fornecimentoId: 3 }),
+      leiturasCocho: [l1(), l2()],
+      fornecimentosCocho: [f2(), f3()],
+      fornecimentoVinculado: f3(),
+    });
+    expect(out.cicloFechado?.leituraId).toBe(2);
+    expect(out.motivo).not.toMatch(/00:00|23:59/);
+    expect(compararMomentos(l2(), { data: DIA2, hora: null })).toBe("igual");
+  });
+
+  it("1: leitura normal vazia continua pedindo sobra, escore ou observação", () => {
+    expect(deveExibirMensagemPreviewLeitura(MSG_LEITURA_VAZIA, null)).toBe(true);
+    expect(deveExibirMensagemPreviewLeitura(MSG_LEITURA_VAZIA, { codigo: null })).toBe(true);
+  });
+
+  it("2-5: ciclo fechado esconde a obrigatoriedade e mantém o aviso específico", () => {
+    expect(deveExibirMensagemPreviewLeitura(MSG_LEITURA_VAZIA, {
+      codigo: CODIGO_CONS_FORN_CICLO_FECHADO,
+    })).toBe(false);
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: null, sobraKg: 0.2, fornecimentoId: 3 }),
+      leiturasCocho: [l1(), l2()],
+      fornecimentosCocho: [f2(), f3()],
+      fornecimentoVinculado: f3(),
+    });
+    expect(consumoFornCicloJaFechado(out)).toBe(true);
+    expect(out.motivo).toContain("02/10/2026");
+    expect(out.cicloFechado?.leituraId).toBe(2);
+  });
+
+  it("ausência real de fornecimento no período não vira ciclo fechado", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ id: 0, data: DIA2, hora: "17:00", sobraKg: 0.2, fornecimentoId: null }),
+      leiturasCocho: [leitura({ id: 9, hora: "16:00", sobraKg: 0.3 })],
+      fornecimentosCocho: [forn({ hora: "08:00" })],
+    });
+    expect(out.motivo).toBe(MSG_CONS_SEM_FORN);
+    expect(consumoFornCicloJaFechado(out)).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ import FazendaLandIcon from "@/components/icons/FazendaLandIcon";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
-  formatarCustoEstimadoDieta,
+  formatarCustoEstimadoPorKgDieta,
   labelTipoDieta,
 } from "@shared/nutricaoDietas";
 
@@ -241,15 +241,6 @@ export default function NutricaoDietasListPage() {
                       <p className="text-[12px] text-gray-500 mt-2 leading-relaxed">
                         Cadastre uma formulação nutricional para utilizar futuramente no planejamento e fornecimento.
                       </p>
-                      <button
-                        type="button"
-                        onClick={goNova}
-                        className="mt-4 inline-flex items-center gap-1.5 px-4 min-h-[40px] rounded-lg text-white text-[12px] font-semibold"
-                        style={{ backgroundColor: FD_PRIMARY }}
-                      >
-                        <span className="material-icons text-[16px]">add</span>
-                        Nova Dieta
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -264,7 +255,7 @@ export default function NutricaoDietasListPage() {
                       {Number(dieta.baseQuantidade).toLocaleString("pt-BR")} {dieta.baseUnidade}
                     </td>
                     <td className="px-3 py-2.5 text-center text-gray-700 tabular-nums">
-                      {formatarCustoEstimadoDieta(dieta.custo.custoPorKg, dieta.custo.completo)}
+                      {formatarCustoEstimadoPorKgDieta(dieta.custo)}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <span

@@ -54,7 +54,7 @@ export default function NutricaoBatidaDetalhePage() {
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-              Batida #{data.id}
+              Detalhe da Batida
             </h1>
             <p className="text-[12px] text-gray-500 mt-0.5">
               {formatarDataHoraBatida(data.data, data.hora)} · {fazendaNome} · {data.dietaNomeSnapshot}
@@ -130,7 +130,7 @@ export default function NutricaoBatidaDetalhePage() {
                 <tbody>
                   {data.movimentacoes.map(m => (
                     <tr key={m.id} className="border-t">
-                      <td className="px-3 py-1.5">{m.produtoNome ?? `Estoque #${m.estoqueId}`}</td>
+                      <td className="px-3 py-1.5">{m.produtoNome ?? `Estoque ${m.estoqueId}`}</td>
                       <td className="px-3 py-1.5 text-center">{Number(m.quantidade).toLocaleString("pt-BR")}</td>
                       <td className="px-3 py-1.5 text-center">{m.tipo}</td>
                       <td className="px-3 py-1.5 text-center">{m.status}</td>
@@ -178,7 +178,7 @@ export default function NutricaoBatidaDetalhePage() {
                           {formatarDataHoraFornecimento(f.data, f.hora)}
                         </button>
                       </td>
-                      <td className="px-3 py-1.5 text-center">{f.loteNome ?? `Lote #${f.loteId}`}</td>
+                      <td className="px-3 py-1.5 text-center">{f.loteNome ?? `Lote ${f.loteId}`}</td>
                       <td className="px-3 py-1.5 text-center">{f.cochoNomeSnapshot ?? "—"}</td>
                       <td className="px-3 py-1.5 text-center">{Number(f.quantidadeFornecidaKg).toLocaleString("pt-BR")} kg</td>
                       <td className="px-3 py-1.5 text-center">{f.status === "confirmado" ? "Confirmado" : "Estornado"}</td>

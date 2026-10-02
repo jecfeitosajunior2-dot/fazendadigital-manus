@@ -137,6 +137,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
       custoCompleto: Boolean(row.custoCompleto),
       status: row.status,
       planejamentoMetaSnapshot: row.planejamentoMetaSnapshot ?? null,
+      createdAt: row.createdAt ?? null,
     }));
   },
   async listPlanejamentos(userId, fazendaId) {
@@ -170,8 +171,8 @@ export const nutricaoVisaoGeralStore: VgStore = {
       dataFim: row.dataFim ?? null,
       status: row.status,
       origemNome: row.tipoOrigem === "dieta"
-        ? (nomeDieta.get(row.dietaId ?? 0) ?? row.nome ?? `Dieta #${row.dietaId}`)
-        : (nomeProduto.get(row.produtoId ?? 0) ?? row.nome ?? `Produto #${row.produtoId}`),
+        ? (nomeDieta.get(row.dietaId ?? 0) ?? row.nome ?? `Dieta ${row.dietaId}`)
+        : (nomeProduto.get(row.produtoId ?? 0) ?? row.nome ?? `Produto ${row.produtoId}`),
     }));
   },
   async listLeituras(userId, fazendaId) {
@@ -189,6 +190,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
       hora: row.hora ?? null,
       sobraKg: row.sobraKg == null ? null : Number(row.sobraKg),
       status: row.status,
+      createdAt: row.createdAt ?? null,
       escore: row.escore ?? null,
       cochoNomeSnapshot: row.cochoNomeSnapshot ?? null,
       loteNomeSnapshot: row.loteNomeSnapshot ?? null,

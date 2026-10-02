@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { formatarDataHoraLeitura, labelStatusLeitura } from "@shared/nutricaoCochoLeituras";
+import { formatarDataHoraLeitura, labelStatusLeitura, rotuloConsumoAparenteBalanco, rotuloSobraInicialBalanco } from "@shared/nutricaoCochoLeituras";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 
 export default function NutricaoCochoLeituraDetalhePage() {
@@ -41,7 +41,7 @@ export default function NutricaoCochoLeituraDetalhePage() {
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
-              Leitura #{data.id}
+              Detalhe da Leitura
             </h1>
             <p className="text-[12px] text-gray-500 mt-0.5">
               {formatarDataHoraLeitura(data.data, data.hora)} · {fazendaNome} · {data.cochoNomeSnapshot}
@@ -76,10 +76,10 @@ export default function NutricaoCochoLeituraDetalhePage() {
             <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Balanço</h2>
             {consumo.calculavel ? (
               <div className="bg-gray-50 rounded px-3 py-3 space-y-1">
-                <p>Sobra inicial: <strong>{consumo.sobraInicialKg != null ? `${consumo.sobraInicialKg.toLocaleString("pt-BR")} kg` : "não determinada (ciclo vinculado)"}</strong></p>
-                <p>+ Fornecido no período: <strong>{consumo.fornecidoKg?.toLocaleString("pt-BR")} kg</strong></p>
-                <p>− Sobra final: <strong>{consumo.sobraFinalKg?.toLocaleString("pt-BR")} kg</strong></p>
-                <p>= Consumo aparente: <strong>{consumo.consumoAparenteKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>Sobra inicial: <strong>{rotuloSobraInicialBalanco(consumo.sobraInicialKg)}</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "+ Fornecido no período" : "Fornecido"}: <strong>{consumo.fornecidoKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "− Sobra final" : "Sobra final"}: <strong>{consumo.sobraFinalKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "= " : ""}{rotuloConsumoAparenteBalanco(consumo.sobraInicialKg)}: <strong>{consumo.consumoAparenteKg?.toLocaleString("pt-BR")} kg</strong></p>
                 {consumo.formula && <p className="text-[12px] text-gray-500">{consumo.formula}</p>}
                 {consumo.intervaloLabel && <p className="text-[12px] text-gray-500">Intervalo: {consumo.intervaloLabel}</p>}
                 <p className="text-[12px] text-gray-500">
@@ -99,7 +99,7 @@ export default function NutricaoCochoLeituraDetalhePage() {
               <p>
                 Fornecimento{" "}
                 <button type="button" className="underline" onClick={() => setLocation(`/nutricao/fornecimentos/${data.fornecimento!.id}`)}>
-                  #{data.fornecimento.id}
+                  {data.fornecimento.id}
                 </button>
                 {" · "}{formatarDataHoraFornecimento(data.fornecimento.data, data.fornecimento.hora)}
                 {" · "}{data.fornecimento.origemNomeSnapshot}
@@ -108,11 +108,11 @@ export default function NutricaoCochoLeituraDetalhePage() {
                   <>
                     {" · "}Batida{" "}
                     <button type="button" className="underline" onClick={() => setLocation(`/nutricao/batidas/${data.fornecimento!.batidaId}`)}>
-                      #{data.fornecimento.batidaId}
+                      {data.fornecimento.batidaId}
                     </button>
                   </>
                 ) : null}
-                {data.fornecimento.planejamentoId ? ` · Planejamento #${data.fornecimento.planejamentoId}` : ""}
+                {data.fornecimento.planejamentoId ? ` · Planejamento ${data.fornecimento.planejamentoId}` : ""}
               </p>
             ) : (
               <p className="text-gray-500">Leitura avulsa — sem fornecimento vinculado. Sem consumo aparente inventado.</p>

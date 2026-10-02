@@ -8,6 +8,7 @@ import {
 import type { NutricaoCochoRef } from "../shared/nutricaoCochos";
 import type { NutricaoLeituraFornRef, NutricaoLeituraInput } from "../shared/nutricaoCochoLeituras";
 import {
+  CODIGO_CONS_FORN_CICLO_FECHADO,
   MSG_CONS_AVULSA,
   MSG_CONS_SO_ESCORE,
   MSG_LEITURA_COCHO,
@@ -513,6 +514,103 @@ describe("nutricaoCochoLeituras service", () => {
     await expect(svc.criar(10, input({ cochoId: 3, observacoes: "x", sobraKg: null }), HOJE))
       .rejects.toMatchObject({ message: MSG_LEITURA_COCHO_INATIVO });
   });
+
+  it("preview do segundo ciclo no mesmo dia sem hora usa a sobra anterior", async () => {
+    const store = criarStore({
+      forns: [
+        forn({
+          id: 1,
+          data: "2026-10-01",
+          hora: null,
+          quantidadeFornecidaKg: 0.6,
+          origemNomeSnapshot: "Sal Nitrogenado 40 Flex LA",
+          createdAt: "2026-10-01T10:00:00.000Z",
+        }),
+        forn({
+          id: 2,
+          data: "2026-10-02",
+          hora: null,
+          quantidadeFornecidaKg: 0.6,
+          origemNomeSnapshot: "Sal Nitrogenado 40 Flex LA",
+          createdAt: "2026-10-02T12:00:00.000Z",
+        }),
+      ],
+      leituras: [{
+        id: 11,
+        userId: 10,
+        fazendaId: 1,
+        cochoId: 1,
+        loteId: 1,
+        fornecimentoId: 1,
+        data: "2026-10-02",
+        hora: null,
+        sobraKg: "0.2",
+        escore: null,
+        observacoes: null,
+        cochoNomeSnapshot: "Cocho Teste B01",
+        loteNomeSnapshot: "B01",
+        alimentoNomeSnapshot: "Sal Nitrogenado 40 Flex LA",
+        status: "ativa",
+        createdAt: "2026-10-02T11:00:00.000Z",
+      }],
+    });
+    const svc = createNutricaoCochoLeiturasService(store);
+    const prev = await svc.preview(10, {
+      fazendaId: 1,
+      cochoId: 1,
+      loteId: 1,
+      fornecimentoId: 2,
+      data: "2026-10-02",
+      hora: null,
+      sobraKg: 0.3,
+    }, "2026-10-02");
+    expect(prev.ok).toBe(true);
+    expect(prev.consumo?.calculavel).toBe(true);
+    expect(prev.consumo?.sobraInicialKg).toBe(0.2);
+    expect(prev.consumo?.fornecidoKg).toBe(0.6);
+    expect(prev.consumo?.sobraFinalKg).toBe(0.3);
+    expect(prev.consumo?.consumoAparenteKg).toBe(0.5);
+    expect(prev.consumo?.formula).not.toMatch(/00:00|23:59/);
+  });
+
+  it("preview de fornecimento já fechado identifica a leitura existente", async () => {
+    const store = criarStore({
+      forns: [
+        forn({
+          id: 2, data: "2026-10-01", hora: null, quantidadeFornecidaKg: 0.6,
+          createdAt: "2026-10-01T16:59:53.000Z",
+        }),
+        forn({
+          id: 3, data: "2026-10-02", hora: null, quantidadeFornecidaKg: 0.6,
+          createdAt: "2026-10-02T09:21:02.000Z",
+        }),
+      ],
+      leituras: [
+        {
+          id: 1, userId: 10, fazendaId: 1, cochoId: 1, loteId: 1, fornecimentoId: 2,
+          data: "2026-10-02", hora: null, sobraKg: "0.2", escore: null, observacoes: null,
+          cochoNomeSnapshot: "Cocho Teste B01", loteNomeSnapshot: "B01",
+          alimentoNomeSnapshot: "Sal", status: "ativa", createdAt: "2026-10-02T09:16:59.000Z",
+        },
+        {
+          id: 2, userId: 10, fazendaId: 1, cochoId: 1, loteId: 1, fornecimentoId: 3,
+          data: "2026-10-02", hora: null, sobraKg: "0.3", escore: null, observacoes: null,
+          cochoNomeSnapshot: "Cocho Teste B01", loteNomeSnapshot: "B01",
+          alimentoNomeSnapshot: "Sal", status: "ativa", createdAt: "2026-10-02T09:39:40.000Z",
+        },
+      ],
+    });
+    const svc = createNutricaoCochoLeiturasService(store);
+    const prev = await svc.preview(10, {
+      fazendaId: 1, cochoId: 1, loteId: 1, fornecimentoId: 3,
+      data: "2026-10-02", hora: null, sobraKg: 0.2,
+    }, "2026-10-02", true);
+    expect(prev.ok).toBe(true);
+    expect(prev.consumo?.calculavel).toBe(false);
+    expect(prev.consumo?.codigo).toBe(CODIGO_CONS_FORN_CICLO_FECHADO);
+    expect(prev.consumo?.cicloFechado?.leituraId).toBe(2);
+    expect(prev.consumo?.consumoAparenteKg).toBeNull();
+  });
 });
 
 describe("nutricaoCochoLeituras — contrato estático", () => {
@@ -557,6 +655,19 @@ describe("nutricaoCochoLeituras — contrato estático", () => {
     expect(page).toMatch(/Leituras recentes/);
     expect(page).toMatch(/Registrar leitura/);
     expect(page).toMatch(/nutricaoCochoLeituras\.listPorCocho/);
+  });
+
+  it("formulario oferece ver leitura existente no ciclo já fechado", () => {
+    const src = readFileSync(new URL("../client/src/pages/NutricaoCochoLeituraFormPage.tsx", import.meta.url), "utf8");
+    expect(src).toContain("consumoFornCicloJaFechado");
+    expect(src).toContain("Ver leitura existente");
+    expect(src).toContain("/nutricao/cochos/leituras/${leituraExistenteId}");
+    expect(src).toContain("Para iniciar um novo ciclo, registre um novo fornecimento.");
+    expect(src).toContain("cicloFechado");
+    expect(src).toContain("deveExibirMensagemPreviewLeitura(previewPack?.message, consumo)");
+    expect(src).toContain("disabled={!payload || previewPack?.ok === false || pending || cicloFechado}");
+    expect(src).not.toContain("consumo.motivo === ");
+    expect(src).not.toContain("previewPack.message === ");
   });
 
   it("47/48: fornecimento com cocho inicia leitura; sem cocho não inventa", () => {

@@ -9,7 +9,12 @@ import { TableIconButton, ViewActionIcon } from "@/components/icons/FarmActionIc
 import FazendaLandIcon from "@/components/icons/FazendaLandIcon";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
+import {
+  formatarDataHoraFornecimento,
+  labelOrigemOperacionalForn,
+  rotuloVinculoPlanejamentoForn,
+  tooltipVinculoPlanejamentoForn,
+} from "@shared/nutricaoFornecimentos";
 
 const LIST_ROUTE = "/nutricao/fornecimentos";
 const FAZENDA_KEY = "fd-nutricao-forn-fazenda-id";
@@ -20,10 +25,11 @@ const COLS = [
   { key: "origem", label: "Produto / Dieta", width: "16%" },
   { key: "qtd", label: "Quantidade", width: "12%" },
   { key: "animais", label: "Animais", width: "10%" },
-  { key: "custo", label: "Custo", width: "12%" },
-  { key: "op", label: "Origem", width: "10%" },
-  { key: "status", label: "Status", width: "10%" },
-  { key: "acoes", label: "Ações", width: "6%" },
+  { key: "custo", label: "Custo", width: "11%" },
+  { key: "plan", label: "Planejamento", width: "13%" },
+  { key: "op", label: "Origem", width: "8%" },
+  { key: "status", label: "Status", width: "8%" },
+  { key: "acoes", label: "Ações", width: "5%" },
 ];
 
 const listControlClass =
@@ -98,7 +104,7 @@ export default function NutricaoFornecimentosListPage() {
           </div>
         )}
         <TableHorizontalScroll fitWidth>
-          <table className="w-full min-w-[920px] table-fixed text-[11px] border-collapse">
+          <table className="w-full min-w-[1040px] table-fixed text-[11px] border-collapse">
             <colgroup>{COLS.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>{COLS.map(c => <th key={c.key} className="px-3 py-2.5 text-center text-[10px] font-semibold text-gray-500 uppercase">{c.label}</th>)}</tr>
@@ -114,9 +120,6 @@ export default function NutricaoFornecimentosListPage() {
                     <FazendaLandIcon className="mx-auto mb-3 h-12 w-12 text-[#B0BEC5]" />
                     <p className="text-[14px] font-medium text-gray-800">Nenhum fornecimento registrado.</p>
                     <p className="text-[12px] text-gray-500 mt-2">Registre a quantidade efetivamente oferecida a um lote. Isso não é consumo.</p>
-                    <button type="button" onClick={goNovo} className="mt-4 inline-flex items-center gap-1.5 px-4 min-h-[40px] rounded-lg text-white text-[12px] font-semibold" style={{ backgroundColor: FD_PRIMARY }}>
-                      <span className="material-icons text-[16px]">add</span>Novo Fornecimento
-                    </button>
                   </div>
                 </td></tr>
               )}
@@ -128,7 +131,24 @@ export default function NutricaoFornecimentosListPage() {
                   <td className="px-3 py-2.5 text-center tabular-nums">{Number(row.quantidadeFornecidaKg).toLocaleString("pt-BR")} kg</td>
                   <td className="px-3 py-2.5 text-center tabular-nums">{row.populacaoSnapshot}</td>
                   <td className="px-3 py-2.5 text-center tabular-nums">{row.custoCompleto && row.custoTotalSnapshot != null ? Number(row.custoTotalSnapshot).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "Custo incompleto"}</td>
-                  <td className="px-3 py-2.5 text-center">{row.origemOperacional === "batida" ? "Batida" : "Direto"}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span
+                      title={tooltipVinculoPlanejamentoForn({
+                        planejamentoId: row.planejamentoId,
+                        loteNome: row.loteNome,
+                        planejamentoMetaSnapshot: row.planejamentoMetaSnapshot,
+                      })}
+                      className={cn(
+                        "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase",
+                        Number(row.planejamentoId) > 0
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-gray-100 text-gray-500",
+                      )}
+                    >
+                      {rotuloVinculoPlanejamentoForn(row.planejamentoId)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-center">{labelOrigemOperacionalForn(row.origemOperacional)}</td>
                   <td className="px-3 py-2.5 text-center">
                     <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase", row.status === "confirmado" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800")}>
                       {row.status === "confirmado" ? "Confirmado" : "Estornado"}

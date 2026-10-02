@@ -118,9 +118,6 @@ export default function NutricaoCochosListPage() {
                     <FazendaLandIcon className="mx-auto mb-3 h-12 w-12 text-[#B0BEC5]" />
                     <p className="text-[14px] font-medium text-gray-800">Nenhum cocho cadastrado.</p>
                     <p className="text-[12px] text-gray-500 mt-2">Cadastre os cochos utilizados na suplementação e alimentação do rebanho.</p>
-                    <button type="button" onClick={goNovo} className="mt-4 inline-flex items-center gap-1.5 px-4 min-h-[40px] rounded-lg text-white text-[12px] font-semibold" style={{ backgroundColor: FD_PRIMARY }}>
-                      <span className="material-icons text-[16px]">add</span>Novo Cocho
-                    </button>
                   </div>
                 </td></tr>
               )}

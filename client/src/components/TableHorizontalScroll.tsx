@@ -42,10 +42,12 @@ export default function TableHorizontalScroll({
     const content =
       (tableWrap.querySelector("table") as HTMLElement | null) ??
       (tableWrap.firstElementChild as HTMLElement | null);
-    const nextContentWidth = content
-      ? Math.max(content.scrollWidth, content.offsetWidth, content.getBoundingClientRect().width)
-      : tableWrap.scrollWidth;
-    const nextViewportWidth = tableWrap.clientWidth;
+    const nextContentWidth = Math.round(
+      content
+        ? Math.max(content.scrollWidth, content.offsetWidth, content.getBoundingClientRect().width)
+        : tableWrap.scrollWidth,
+    );
+    const nextViewportWidth = Math.round(tableWrap.clientWidth);
 
     setContentWidth(prev => (prev === nextContentWidth ? prev : nextContentWidth));
     setViewportWidth(prev => (prev === nextViewportWidth ? prev : nextViewportWidth));
@@ -98,8 +100,26 @@ export default function TableHorizontalScroll({
     if (inner) ro.observe(inner);
 
     window.addEventListener("resize", measure);
+
+    const onWheel = (event: WheelEvent) => {
+      if (fillHeight || event.ctrlKey) return;
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const overflowY = getComputedStyle(tableWrap).overflowY;
+      if (overflowY !== "hidden" && overflowY !== "clip") return;
+      const root = document.scrollingElement;
+      if (!root) return;
+      const dy = event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * window.innerHeight
+          : event.deltaY;
+      root.scrollTop += dy;
+    };
+    tableWrap.addEventListener("wheel", onWheel, { passive: true });
+
     return () => {
       tableWrap.removeEventListener("scroll", syncFromTable);
+      tableWrap.removeEventListener("wheel", onWheel);
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };

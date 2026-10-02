@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { menuItems, type MenuItem } from "@/lib/data";
-
-/** Folga só quando 2+ grupos estão abertos — um grupo sozinho não pode criar rolagem vazia. */
-const DESKTOP_MENU_PAGE_GROW_SLACK_PX = 48;
+import { deveEsticarPaginaPeloMenu } from "@/lib/sidebarScroll";
 
 const CUSTOM_SIDEBAR_ICONS = new Set([
   "fd_panel_chart",
@@ -502,12 +500,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       const label = nav?.previousElementSibling as HTMLElement | null;
       const contentH = (label?.offsetHeight ?? 0) + (nav?.scrollHeight ?? 0);
       const openGroups = aside.querySelectorAll("[data-fd-submenu]").length;
-      const routeGroups = aside.querySelectorAll("[data-fd-submenu-route]").length;
-      const extraOpenGroups = Math.max(0, openGroups - routeGroups);
-      const shouldGrow =
-        extraOpenGroups >= 1 &&
-        openGroups >= 2 &&
-        contentH > leftover + DESKTOP_MENU_PAGE_GROW_SLACK_PX;
+      const shouldGrow = deveEsticarPaginaPeloMenu({ contentH, leftover, openGroups });
       setDesktopDonorH(shouldGrow ? contentH : 0);
     };
 
@@ -557,7 +550,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           </div>
         )}
 
-        <nav className="pb-2 max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto max-lg:scrollbar-thin">
+        <nav className="min-h-0 flex-1 overflow-y-auto pb-2 scrollbar-thin">
           {menuItems.map((item, i) => (
             <MenuItemComponent key={i} item={item} collapsed={collapsed} currentPath={location} />
           ))}

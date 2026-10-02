@@ -156,7 +156,7 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
             const linha = custo.ingredientes.find(i => i.produtoId === ing.produtoId);
             return {
               ...ing,
-              produtoNome: produto?.nome ?? `Produto #${ing.produtoId}`,
+              produtoNome: produto?.nome ?? `Produto ${ing.produtoId}`,
               produtoUnidade: produto?.unidade ?? null,
               produtoCategoria: produto?.categoria ?? null,
               custoMedioPorKg: linha?.custoMedioPorKg ?? null,

@@ -19,6 +19,8 @@ import { unidadeCompativelFormulacaoKg } from "@shared/nutricaoDietas";
 import {
   formatarCustoProjetado,
   MSG_PLAN_LOTE_VAZIO,
+  textoAjudaTratosPorDia,
+  textoEstimativaPorTrato,
   MSG_PLAN_MATERIAL_INICIADO,
   NUTRICAO_PLAN_DIAS_SEMANA,
   NUTRICAO_PLAN_FREQUENCIAS,
@@ -154,6 +156,17 @@ export default function NutricaoPlanejamentoFormPage() {
     else if (isEdit) updateMut.mutate({ id: planId!, ...payloadPronto });
     else createMut.mutate(payloadPronto);
   };
+
+  const ajudaTratos = textoAjudaTratosPorDia({
+    modalidadeMeta: modalidade,
+    valorMeta,
+    tratosPorDia,
+  });
+  const estimativaPorTrato = textoEstimativaPorTrato({
+    modalidadeMeta: modalidade,
+    valorMeta,
+    tratosPorDia,
+  });
 
   return (
     <AppLayout>
@@ -301,7 +314,7 @@ export default function NutricaoPlanejamentoFormPage() {
                 ))}
               </div>
             )}
-            <p className="text-[11px] text-gray-500">Tratos dividem a meta do dia. 2,0 kg/cab/dia em 2 tratos = 1,0 kg/cab/trato — a meta diária não dobra.</p>
+            <p className="text-[11px] text-gray-500">{ajudaTratos}</p>
           </section>
 
           <section className="space-y-3">
@@ -356,9 +369,9 @@ export default function NutricaoPlanejamentoFormPage() {
                 {preview.peso.avisoAtualidade ? ` · ${preview.peso.avisoAtualidade}` : ""}
               </p>
             )}
-            {preview?.kgPorCabecaPorTrato != null && (
-              <p className="text-[11px] text-gray-500">Estimativa por trato: {preview.kgPorCabecaPorTrato.toLocaleString("pt-BR")} kg/cab/trato.</p>
-            )}
+            {estimativaPorTrato ? (
+              <p className="text-[11px] text-gray-500">{estimativaPorTrato}</p>
+            ) : null}
             <p className="text-[11px] text-gray-500">
               Projeção com população e custo atuais. Não é fornecimento, consumo nem despesa realizada. Não reserva estoque.
             </p>

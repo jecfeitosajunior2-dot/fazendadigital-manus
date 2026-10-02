@@ -6,6 +6,12 @@ import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import {
+  consumoFornCicloJaFechado,
+  deveExibirMensagemPreviewLeitura,
+  rotuloConsumoAparenteBalanco,
+  rotuloSobraInicialBalanco,
+} from "@shared/nutricaoCochoLeituras";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 
 function hojeISO() {
@@ -104,6 +110,10 @@ export default function NutricaoCochoLeituraFormPage() {
   });
 
   const consumo = previewPack?.consumo;
+  const cicloFechado = !editId && consumoFornCicloJaFechado(consumo);
+  const leituraExistenteId = Number(consumo?.cicloFechado?.leituraId) > 0
+    ? Number(consumo?.cicloFechado?.leituraId)
+    : 0;
   const pending = criar.isPending || editar.isPending;
 
   return (
@@ -151,7 +161,7 @@ export default function NutricaoCochoLeituraFormPage() {
                   <SelectItem value="__empty__" className="text-[12px] text-gray-400">Leitura avulsa</SelectItem>
                   {fornsRef.map(f => (
                     <SelectItem key={f.id} value={String(f.id)} className="text-[12px]">
-                      #{f.id} · {formatarDataHoraFornecimento(f.data, f.hora)} · {f.origemNomeSnapshot} · {f.quantidadeFornecidaKg.toLocaleString("pt-BR")} kg
+                      {formatarDataHoraFornecimento(f.data, f.hora)} · {f.origemNomeSnapshot} · {f.quantidadeFornecidaKg.toLocaleString("pt-BR")} kg
                     </SelectItem>
                   ))}
                 </FormSelect>
@@ -190,15 +200,31 @@ export default function NutricaoCochoLeituraFormPage() {
 
           <section className="space-y-3">
             <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-500">Balanço do período</h2>
-            {previewPack?.message && <p className="text-[12px] text-red-600">{previewPack.message}</p>}
+            {deveExibirMensagemPreviewLeitura(previewPack?.message, consumo) && (
+              <p className="text-[12px] text-red-600">{previewPack?.message}</p>
+            )}
             {consumo?.calculavel ? (
               <div className="bg-gray-50 rounded px-3 py-3 text-[12px] space-y-1">
-                <p>Sobra inicial: <strong>{consumo.sobraInicialKg != null ? `${consumo.sobraInicialKg.toLocaleString("pt-BR")} kg` : "não determinada (ciclo vinculado)"}</strong></p>
-                <p>+ Fornecido no período: <strong>{consumo.fornecidoKg?.toLocaleString("pt-BR")} kg</strong></p>
-                <p>− Sobra final: <strong>{consumo.sobraFinalKg?.toLocaleString("pt-BR")} kg</strong></p>
-                <p>= Consumo aparente: <strong>{consumo.consumoAparenteKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>Sobra inicial: <strong>{rotuloSobraInicialBalanco(consumo.sobraInicialKg)}</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "+ Fornecido no período" : "Fornecido"}: <strong>{consumo.fornecidoKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "− Sobra final" : "Sobra final"}: <strong>{consumo.sobraFinalKg?.toLocaleString("pt-BR")} kg</strong></p>
+                <p>{consumo.sobraInicialKg != null ? "= " : ""}{rotuloConsumoAparenteBalanco(consumo.sobraInicialKg)}: <strong>{consumo.consumoAparenteKg?.toLocaleString("pt-BR")} kg</strong></p>
                 {consumo.formula && <p className="text-gray-500">{consumo.formula}</p>}
                 <p className="text-gray-500">Isso é consumo aparente, não consumo real. A prévia não grava a leitura.</p>
+              </div>
+            ) : cicloFechado ? (
+              <div className="bg-gray-50 rounded px-3 py-3 text-[12px] space-y-2">
+                <p className="text-gray-700">{consumo?.motivo}</p>
+                <p className="text-gray-600">Para iniciar um novo ciclo, registre um novo fornecimento.</p>
+                {leituraExistenteId > 0 ? (
+                  <button
+                    type="button"
+                    className="text-[12px] text-gray-600 underline"
+                    onClick={() => setLocation(`/nutricao/cochos/leituras/${leituraExistenteId}`)}
+                  >
+                    Ver leitura existente
+                  </button>
+                ) : null}
               </div>
             ) : consumo ? (
               <p className="text-[12px] text-gray-600">Consumo aparente indisponível: {consumo.motivo}</p>
@@ -211,7 +237,7 @@ export default function NutricaoCochoLeituraFormPage() {
             <button type="button" className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase bg-[#F0F0F0]" onClick={voltar}>Cancelar</button>
             <button
               type="button"
-              disabled={!payload || previewPack?.ok === false || pending}
+              disabled={!payload || previewPack?.ok === false || pending || cicloFechado}
               onClick={() => payload && (editId ? editar.mutate({ id: editId, ...payload }) : criar.mutate(payload))}
               className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50"
               style={{ backgroundColor: FD_PRIMARY }}

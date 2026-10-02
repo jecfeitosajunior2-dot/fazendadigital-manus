@@ -148,6 +148,31 @@ export function oferecidoPorCabeca(quantidadeKg: number, populacao: number): num
   return arredondarKg(quantidadeKg / populacao);
 }
 
+function formatarNumeroOferecidoCabeca(valor: number): string {
+  return valor.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+
+/**
+ * Só apresentação. Usa o planejamentoId e a modalidade gravados no fornecimento.
+ * Não busca planejamento vigente e não converte o total do lote.
+ */
+export function formatarOferecidoPorCabeca(input: {
+  quantidadeKg: number;
+  populacao: number;
+  planejamentoId?: number | null;
+  modalidadeSnapshot?: string | null;
+}): string {
+  const kgCab = oferecidoPorCabeca(input.quantidadeKg, input.populacao);
+  if (kgCab == null) return "—";
+  const mostrarGramas =
+    fornecimentoTemVinculoPlanejamento(input.planejamentoId)
+    && input.modalidadeSnapshot === "g_cab_dia";
+  if (mostrarGramas) {
+    return `${formatarNumeroOferecidoCabeca(arredondarKg(kgCab * 1000))} g`;
+  }
+  return `${formatarNumeroOferecidoCabeca(kgCab)} kg`;
+}
+
 export function validarFornecimentoInput(
   input: NutricaoFornInput,
   ctx: {
@@ -302,7 +327,7 @@ export function montarBaixasDieta(
       return {
         produtoId: ing.produtoId,
         estoqueId: 0,
-        nome: `Produto #${ing.produtoId}`,
+        nome: `Produto ${ing.produtoId}`,
         unidade: null,
         quantidadeKg: needKg,
         quantidadeUnidade: 0,
@@ -459,6 +484,36 @@ export function calcularPreviewFornecimento(input: {
 
 export function labelMotivoEstornoForn(value: string | null | undefined): string {
   return NUTRICAO_FORN_MOTIVOS_ESTORNO.find(m => m.value === value)?.label ?? value ?? "—";
+}
+
+export const ROTULO_FORN_PLAN_VINCULADO = "Vinculado";
+export const ROTULO_FORN_PLAN_SEM = "Sem planejamento";
+
+/** Só o planejamentoId gravado no fornecimento. Não infere lote/produto/data. */
+export function fornecimentoTemVinculoPlanejamento(planejamentoId?: number | null): boolean {
+  return Number(planejamentoId) > 0;
+}
+
+export function rotuloVinculoPlanejamentoForn(planejamentoId?: number | null): string {
+  return fornecimentoTemVinculoPlanejamento(planejamentoId)
+    ? ROTULO_FORN_PLAN_VINCULADO
+    : ROTULO_FORN_PLAN_SEM;
+}
+
+export function labelOrigemOperacionalForn(origem?: string | null): "Batida" | "Direto" {
+  return origem === "batida" ? "Batida" : "Direto";
+}
+
+export function tooltipVinculoPlanejamentoForn(input: {
+  planejamentoId?: number | null;
+  loteNome?: string | null;
+  planejamentoMetaSnapshot?: string | null;
+}): string | undefined {
+  if (!fornecimentoTemVinculoPlanejamento(input.planejamentoId)) return undefined;
+  const partes: string[] = [];
+  if (input.loteNome) partes.push(`Planejamento do lote ${input.loteNome}`);
+  if (input.planejamentoMetaSnapshot) partes.push(`Meta: ${input.planejamentoMetaSnapshot}`);
+  return partes.length ? partes.join(" · ") : undefined;
 }
 
 export function planejamentoVigenteNaData(

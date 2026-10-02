@@ -201,7 +201,7 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       ...plan,
       valorMeta: plan.valorMeta == null ? null : Number(plan.valorMeta),
       frequenciaDiasSemana: parseDiasSemana(plan.frequenciaDiasSemana),
-      loteNome: lote?.nome ?? `Lote #${plan.loteId}`,
+      loteNome: lote?.nome ?? `Lote ${plan.loteId}`,
       origemNome,
       metaLabel: formatarMetaPlan(plan.modalidadeMeta, plan.valorMeta == null ? null : Number(plan.valorMeta)),
       situacao,

@@ -18,10 +18,13 @@ import {
   calcularCustoEstimadoDieta,
   categoriasAnimalDieta,
   formatarCustoEstimadoDieta,
+  formatarCustoEstimadoPorKgDieta,
   MSG_DIETA_INSUMOS,
   NUTRICAO_DIETA_OBJETIVOS,
   NUTRICAO_DIETA_TIPOS,
   parseQuantidadeDieta,
+  rotuloCustoMedioAtualLinhaDieta,
+  rotuloEquivalenciaEmbalagemMassa,
   unidadeCompativelFormulacaoKg,
 } from "@shared/nutricaoDietas";
 
@@ -106,6 +109,7 @@ export default function NutricaoDietaFormPage() {
           quantidade: qtd,
           unidade: produto.unidade,
           valorUnitario: produto.valorUnitario,
+          embalagens: produto.embalagens,
         };
       })
       .filter((v): v is NonNullable<typeof v> => v != null);
@@ -254,6 +258,9 @@ export default function NutricaoDietaFormPage() {
                     const qtd = parseQuantidadeDieta(linha.quantidade) ?? 0;
                     const linhaCusto = preview.ingredientes.find(i => i.produtoId === Number(linha.produtoId));
                     const usados = new Set(linhas.filter(l => l.key !== linha.key).map(l => l.produtoId));
+                    const equivalencia = produto
+                      ? rotuloEquivalenciaEmbalagemMassa(produto.unidade, produto.embalagens)
+                      : null;
                     return (
                       <tr key={linha.key} className="border-b border-gray-100">
                         <td className="px-2 py-1.5">
@@ -275,6 +282,9 @@ export default function NutricaoDietaFormPage() {
                               </SelectItem>
                             ))}
                           </FormSelect>
+                          {equivalencia ? (
+                            <p className="text-[10px] text-gray-500 mt-1 leading-snug">{equivalencia}</p>
+                          ) : null}
                         </td>
                         <td className="px-2 py-1.5">
                           <FormInput
@@ -288,11 +298,7 @@ export default function NutricaoDietaFormPage() {
                           {linhaCusto?.percentual != null ? `${linhaCusto.percentual.toLocaleString("pt-BR")}%` : "—"}
                         </td>
                         <td className="px-3 py-1.5 text-center tabular-nums text-gray-600">
-                          {produto
-                            ? (linhaCusto?.custoConhecido
-                              ? formatarCustoEstimadoDieta(linhaCusto.custoMedioPorKg, true)
-                              : "Sem custo")
-                            : "—"}
+                          {rotuloCustoMedioAtualLinhaDieta(produto)}
                         </td>
                         <td className="px-3 py-1.5 text-center tabular-nums text-gray-600">
                           {linhaCusto?.custoConhecido
@@ -340,7 +346,7 @@ export default function NutricaoDietaFormPage() {
               </div>
               <div>
                 <div className="text-[10px] uppercase text-gray-500">Custo estimado/kg</div>
-                <div className="font-semibold">{formatarCustoEstimadoDieta(preview.custoPorKg, preview.completo)}</div>
+                <div className="font-semibold">{formatarCustoEstimadoPorKgDieta(preview)}</div>
               </div>
             </div>
             <p className="text-[11px] text-gray-500">

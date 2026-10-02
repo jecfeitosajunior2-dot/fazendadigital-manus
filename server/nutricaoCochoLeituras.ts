@@ -9,6 +9,7 @@ import {
 import { formatarIdentificacaoCocho, type NutricaoCochoRef } from "../shared/nutricaoCochos";
 import {
   calcularConsumoAparente,
+  consumoFornCicloJaFechado,
   MSG_LEITURA_CANCELADA,
   MSG_LEITURA_NAO_EDITAR,
   MSG_LEITURA_NAO_ENCONTRADA,
@@ -77,6 +78,7 @@ function toCiclo(row: LeituraPersistida): LeituraCicloRef {
     hora: row.hora,
     sobraKg: row.sobraKg == null ? null : Number(row.sobraKg),
     status: row.status,
+    createdAt: row.createdAt ?? null,
   };
 }
 
@@ -128,7 +130,7 @@ export function createNutricaoCochoLeiturasService(store: LeituraStore) {
         ? atual.cochoNomeSnapshot
         : formatarIdentificacaoCocho(ctx.cocho.nome, ctx.cocho.codigo),
       loteNomeSnapshot: loteId
-        ? (atual && atual.loteId === loteId ? atual.loteNomeSnapshot : (ctx.lote?.nome ?? `Lote #${loteId}`))
+        ? (atual && atual.loteId === loteId ? atual.loteNomeSnapshot : (ctx.lote?.nome ?? `Lote ${loteId}`))
         : null,
       alimentoNomeSnapshot: ctx.fornecimento?.origemNomeSnapshot
         ?? (atual && atual.fornecimentoId === Number(input.fornecimentoId) ? atual.alimentoNomeSnapshot : null),
@@ -216,9 +218,13 @@ export function createNutricaoCochoLeiturasService(store: LeituraStore) {
         }),
         status: "ativa",
       };
-      const consumo = check.ok
+      let consumo = check.ok
         ? await consumoDe(userId, draft, ctx.fornecimento)
         : null;
+      if (!consumo && novaLeitura && Number(input.fornecimentoId) > 0) {
+        const tentativa = await consumoDe(userId, draft, ctx.fornecimento);
+        if (consumoFornCicloJaFechado(tentativa)) consumo = tentativa;
+      }
       return { ok: check.ok, message: check.ok ? null : check.message, consumo };
     },
 
@@ -301,6 +307,7 @@ function toFornRef(row: typeof nutricaoFornecimentos.$inferSelect): NutricaoLeit
     populacaoSnapshot: row.populacaoSnapshot,
     batidaId: row.batidaId ?? null,
     planejamentoId: row.planejamentoId ?? null,
+    createdAt: row.createdAt ?? null,
   };
 }
 

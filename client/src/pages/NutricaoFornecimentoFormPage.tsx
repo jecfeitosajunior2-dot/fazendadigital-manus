@@ -159,7 +159,7 @@ export default function NutricaoFornecimentoFormPage() {
                   <SelectItem value="__empty__" className="text-[12px] text-gray-400">Selecione</SelectItem>
                   {batidasDisp.map(b => (
                     <SelectItem key={b.id} value={String(b.id)} className="text-[12px]">
-                      #{b.id} · {b.dietaNomeSnapshot} · saldo {b.saldoDisponivelKg.toLocaleString("pt-BR")} kg
+                      Batida {b.id} · {b.dietaNomeSnapshot} · saldo {b.saldoDisponivelKg.toLocaleString("pt-BR")} kg
                     </SelectItem>
                   ))}
                 </FormSelect>
@@ -188,8 +188,8 @@ export default function NutricaoFornecimentoFormPage() {
                     <SelectItem value="__empty__" className="text-[12px] text-gray-400">Selecione</SelectItem>
                     {planosCompativeis.map(p => {
                       const nome = p.tipoOrigem === "dieta"
-                        ? (dietas.find(d => d.id === p.dietaId)?.nome ?? `Dieta #${p.dietaId}`)
-                        : (produtos.find(x => x.produtoId === p.produtoId)?.nome ?? `Produto #${p.produtoId}`);
+                        ? (dietas.find(d => d.id === p.dietaId)?.nome ?? `Dieta ${p.dietaId}`)
+                        : (produtos.find(x => x.produtoId === p.produtoId)?.nome ?? `Produto ${p.produtoId}`);
                       return (
                         <SelectItem key={p.id} value={String(p.id)} className="text-[12px]">
                           {nome} · {formatarMetaPlan(p.modalidadeMeta, p.valorMeta)}

@@ -247,15 +247,6 @@ export default function NutricaoPlanejamentoListPage() {
                       <p className="text-[12px] text-gray-500 mt-2 leading-relaxed">
                         Crie um planejamento para definir a estratégia nutricional de um lote ao longo de um período.
                       </p>
-                      <button
-                        type="button"
-                        onClick={goNovo}
-                        className="mt-4 inline-flex items-center gap-1.5 px-4 min-h-[40px] rounded-lg text-white text-[12px] font-semibold"
-                        style={{ backgroundColor: FD_PRIMARY }}
-                      >
-                        <span className="material-icons text-[16px]">add</span>
-                        Novo Planejamento
-                      </button>
                     </div>
                   </td>
                 </tr>

@@ -110,7 +110,7 @@ export function createNutricaoCochosService(store: CochosStore) {
     const ultimo = forns[0] ?? null;
     if (!ultimo) return null;
     const loteNome = await store.getLoteNome(userId, ultimo.loteId);
-    return { ...ultimo, loteNome: loteNome ?? `Lote #${ultimo.loteId}` };
+    return { ...ultimo, loteNome: loteNome ?? `Lote ${ultimo.loteId}` };
   }
 
   return {
@@ -150,7 +150,7 @@ export function createNutricaoCochosService(store: CochosStore) {
       const historico = [];
       for (const f of forns) {
         const loteNome = await store.getLoteNome(userId, f.loteId);
-        historico.push({ ...f, loteNome: loteNome ?? `Lote #${f.loteId}` });
+        historico.push({ ...f, loteNome: loteNome ?? `Lote ${f.loteId}` });
       }
       return {
         ...loc,

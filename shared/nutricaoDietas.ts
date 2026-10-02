@@ -142,6 +142,17 @@ export function custoMedioVigentePorKg(
   return custoEstoqueParaCustoKg(valorUnitario, unidadeProduto, embalagens);
 }
 
+/** Só embalagem de massa (ex.: sc). kg/g/L não ganham equivalência artificial. */
+export function rotuloEquivalenciaEmbalagemMassa(
+  unidade: string | null | undefined,
+  embalagens?: unknown,
+): string | null {
+  const resolucao = resolverConversaoParaKg(unidade, embalagens);
+  if (!resolucao.ok) return null;
+  if (resolucao.unidadeEstoque === "kg" || resolucao.unidadeEstoque === "g") return null;
+  return `Equivalência: 1 ${resolucao.unidadeEstoque} = ${resolucao.kgPorUnidadeEstoque.toLocaleString("pt-BR")} kg`;
+}
+
 export function percentualSobreBase(quantidadeKg: number, baseKg: number): number | null {
   if (!(baseKg > 0)) return null;
   return Math.round((quantidadeKg / baseKg) * 10000) / 100;
@@ -163,8 +174,41 @@ export type CustoDietaEstimado = {
   custoTotal: number | null;
   custoPorKg: number | null;
   completo: boolean;
+  formulacaoFechada: boolean;
   ingredientes: CustoIngredienteEstimado[];
 };
+
+/** Mesma tolerância da validação e da “Diferença da base”: kg com 3 casas. */
+export function formulacaoDietaFechadaNaBase(totalKg: number, baseKg: number): boolean {
+  const total = arredondarKg(totalKg);
+  const base = arredondarKg(baseKg);
+  return base > 0 && arredondarKg(total - base) === 0;
+}
+
+/** Custo/kg da dieta só existe com fórmula fechada e custo conhecido de todos. */
+export function podeApresentarCustoEstimadoPorKgDieta(custo: {
+  completo: boolean;
+  totalKg: number;
+  baseKg: number;
+  custoTotal: number | null;
+}): boolean {
+  return custo.completo
+    && custo.custoTotal != null
+    && formulacaoDietaFechadaNaBase(custo.totalKg, custo.baseKg);
+}
+
+export function formatarCustoEstimadoPorKgDieta(custo: {
+  completo: boolean;
+  totalKg: number;
+  baseKg: number;
+  custoTotal: number | null;
+  custoPorKg: number | null;
+}): string {
+  if (!podeApresentarCustoEstimadoPorKgDieta(custo) || custo.custoPorKg == null) {
+    return "Custo incompleto";
+  }
+  return formatarCustoEstimadoDieta(custo.custoPorKg, true);
+}
 
 export function calcularCustoEstimadoDieta(input: {
   baseQuantidade: number;
@@ -199,13 +243,23 @@ export function calcularCustoEstimadoDieta(input: {
   const custoTotal = completo
     ? arredondarMoeda(ingredientes.reduce((acc, i) => acc + (i.custoEstimado ?? 0), 0))
     : null;
+  const formulacaoFechada = formulacaoDietaFechadaNaBase(totalKg, baseKg);
+  const podeCustoPorKg = podeApresentarCustoEstimadoPorKgDieta({
+    completo,
+    totalKg,
+    baseKg,
+    custoTotal,
+  });
   return {
     baseKg,
     totalKg,
     diferencaKg: arredondarKg(totalKg - baseKg),
     custoTotal,
-    custoPorKg: completo && baseKg > 0 && custoTotal != null ? arredondarMoeda(custoTotal / baseKg) : null,
+    custoPorKg: podeCustoPorKg && custoTotal != null
+      ? arredondarMoeda(custoTotal / baseKg)
+      : null,
     completo,
+    formulacaoFechada,
     ingredientes,
   };
 }
@@ -220,6 +274,32 @@ export function formatarCustoEstimadoDieta(
 ): string {
   if (!completo || valor == null) return "Custo incompleto";
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Custo/kg do produto selecionado. Não usa a quantidade da formulação. */
+export function custoMedioAtualLinhaDieta(produto?: {
+  valorUnitario?: string | number | null;
+  unidade?: string | null;
+  embalagens?: unknown;
+} | null): number | null {
+  if (!produto) return null;
+  return custoMedioVigentePorKg(
+    produto.valorUnitario ?? null,
+    produto.unidade,
+    produto.embalagens,
+  );
+}
+
+/** Rótulo da coluna “Custo médio atual” na Nova Dieta / edição. */
+export function rotuloCustoMedioAtualLinhaDieta(produto?: {
+  valorUnitario?: string | number | null;
+  unidade?: string | null;
+  embalagens?: unknown;
+} | null): string {
+  if (!produto) return "—";
+  const custo = custoMedioAtualLinhaDieta(produto);
+  if (custo == null) return "Sem custo";
+  return formatarCustoEstimadoDieta(custo, true);
 }
 
 export function validarDietaInput(
