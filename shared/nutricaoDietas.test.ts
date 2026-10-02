@@ -18,6 +18,22 @@ import {
   rotuloEquivalenciaEmbalagemMassa,
   unidadeCompativelFormulacaoKg,
   validarDietaInput,
+  validarFormaUsoDietaFormulario,
+  estadoDietasParaBatida,
+  MSG_BATIDA_SEM_DIETA_PREPARO,
+  MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO,
+  erroSalvarDietaEhFormaUso,
+  erroSalvarDietaEhTecnicoBruto,
+  formaUsoDietaEfetiva,
+  MSG_DIETA_CAMPOS_OBRIGATORIOS,
+  MSG_DIETA_FORMA_USO,
+  MSG_DIETA_FORMA_USO_CAMPO,
+  MSG_DIETA_FORMA_USO_LEGADO,
+  MSG_DIETA_FORMA_USO_LISTA_LEGADO,
+  podeDietaGerarBatida,
+  podeDietaSerFornecidaDiretamente,
+  rotuloFormaUsoDieta,
+  rotuloFormaUsoDietaLista,
   type NutricaoDietaInput,
   type NutricaoDietaProdutoRef,
 } from "./nutricaoDietas";
@@ -28,6 +44,7 @@ function inputBase(over: Partial<NutricaoDietaInput> = {}): NutricaoDietaInput {
     fazendaId: 1,
     nome: "Mineral 90",
     tipo: "mineral",
+    formaUso: "preparo_opcional",
     baseQuantidade: 1000,
     ingredientes: [
       { produtoId: 10, quantidade: 600 },
@@ -546,5 +563,155 @@ describe("custo estimado vigente", () => {
     expect(lista).toContain("formatarCustoEstimadoPorKgDieta(dieta.custo)");
     expect(form).not.toContain("formatarCustoEstimadoDieta(preview.custoPorKg");
     expect(detalhe).not.toContain("formatarCustoEstimadoDieta(data.custo.custoPorKg");
+  });
+});
+
+describe("forma de uso da dieta", () => {
+  it("1: nova dieta exige formaUso", () => {
+    expect(validarDietaInput(inputBase({ formaUso: "" }), produtos())).toMatchObject({
+      ok: false,
+      message: MSG_DIETA_FORMA_USO,
+    });
+  });
+
+  it("2/3/4: aceita as três formas de uso", () => {
+    expect(validarDietaInput(inputBase({ formaUso: "pronta_fornecer" }), produtos())).toEqual({ ok: true });
+    expect(validarDietaInput(inputBase({ formaUso: "preparo_opcional" }), produtos())).toEqual({ ok: true });
+    expect(validarDietaInput(inputBase({ formaUso: "preparo_obrigatorio" }), produtos())).toEqual({ ok: true });
+  });
+
+  it("5: rejeita valor inválido", () => {
+    expect(validarDietaInput(inputBase({ formaUso: "saco" }), produtos())).toMatchObject({
+      ok: false,
+      message: MSG_DIETA_FORMA_USO,
+    });
+    expect(validarDietaInput(inputBase({ formaUso: "mineral" }), produtos())).toMatchObject({
+      ok: false,
+      message: MSG_DIETA_FORMA_USO,
+    });
+  });
+
+  it("7: label do legado é Não definida", () => {
+    expect(rotuloFormaUsoDieta(null)).toBe(MSG_DIETA_FORMA_USO_LEGADO);
+    expect(rotuloFormaUsoDieta(undefined)).toBe(MSG_DIETA_FORMA_USO_LEGADO);
+    expect(rotuloFormaUsoDieta("")).toBe(MSG_DIETA_FORMA_USO_LEGADO);
+    expect(rotuloFormaUsoDietaLista(null)).toBe(MSG_DIETA_FORMA_USO_LISTA_LEGADO);
+    expect(rotuloFormaUsoDieta("preparo_opcional")).toBe("Preparo opcional");
+    expect(rotuloFormaUsoDietaLista("pronta_fornecer")).toBe("Pronta");
+  });
+
+  it("legado operacional equivale a opcional, sem mentir no rótulo", () => {
+    expect(formaUsoDietaEfetiva(null)).toBe("preparo_opcional");
+    expect(podeDietaGerarBatida(null)).toBe(true);
+    expect(podeDietaSerFornecidaDiretamente(null)).toBe(true);
+    expect(rotuloFormaUsoDieta(null)).not.toBe("Preparo opcional");
+  });
+
+  it("9: a regra não depende da quantidade de ingredientes", () => {
+    const umIngObrigatorio = inputBase({
+      formaUso: "preparo_obrigatorio",
+      ingredientes: [{ produtoId: 10, quantidade: 1000 }],
+    });
+    const doisIngPronta = inputBase({
+      formaUso: "pronta_fornecer",
+      ingredientes: [
+        { produtoId: 10, quantidade: 600 },
+        { produtoId: 11, quantidade: 400 },
+      ],
+    });
+    expect(validarDietaInput(umIngObrigatorio, produtos())).toEqual({ ok: true });
+    expect(validarDietaInput(doisIngPronta, produtos())).toEqual({ ok: true });
+    expect(podeDietaGerarBatida("preparo_obrigatorio")).toBe(true);
+    expect(podeDietaGerarBatida("pronta_fornecer")).toBe(false);
+    expect(podeDietaSerFornecidaDiretamente("preparo_obrigatorio")).toBe(false);
+    expect(podeDietaSerFornecidaDiretamente("pronta_fornecer")).toBe(true);
+    expect(podeDietaGerarBatida("preparo_opcional")).toBe(true);
+    expect(podeDietaSerFornecidaDiretamente("preparo_opcional")).toBe(true);
+  });
+
+  it("formulário: sem formaUso não envia e pede seleção", () => {
+    expect(validarFormaUsoDietaFormulario(null)).toEqual({
+      ok: false,
+      message: MSG_DIETA_FORMA_USO_CAMPO,
+    });
+    expect(validarFormaUsoDietaFormulario("")).toEqual({
+      ok: false,
+      message: MSG_DIETA_FORMA_USO_CAMPO,
+    });
+    expect(validarFormaUsoDietaFormulario("pronta_fornecer")).toEqual({ ok: true });
+    expect(validarFormaUsoDietaFormulario("preparo_opcional")).toEqual({ ok: true });
+    expect(validarFormaUsoDietaFormulario("preparo_obrigatorio")).toEqual({ ok: true });
+  });
+
+  it("erro Zod/JSON de formaUso vira mensagem amigável, sem invalid_value na UI", () => {
+    const zod = JSON.stringify([{
+      code: "invalid_value",
+      values: ["pronta_fornecer", "preparo_opcional", "preparo_obrigatorio"],
+      path: ["formaUso"],
+      message: "Invalid option: expected one of \"pronta_fornecer\"|\"preparo_opcional\"|\"preparo_obrigatorio\"",
+    }]);
+    expect(erroSalvarDietaEhFormaUso(zod)).toBe(true);
+    expect(erroSalvarDietaEhTecnicoBruto(zod)).toBe(true);
+    expect(erroSalvarDietaEhFormaUso(MSG_DIETA_FORMA_USO)).toBe(true);
+    expect(MSG_DIETA_FORMA_USO_CAMPO).not.toMatch(/invalid_value/);
+    expect(MSG_DIETA_CAMPOS_OBRIGATORIOS).toBe("Preencha os campos obrigatórios destacados.");
+    expect(erroSalvarDietaEhFormaUso("A fazenda da dieta não pode ser alterada.")).toBe(false);
+    expect(erroSalvarDietaEhTecnicoBruto("A fazenda da dieta não pode ser alterada.")).toBe(false);
+  });
+});
+
+describe("Nova Batida — estado do seletor de dietas", () => {
+  it("1: loading não mostra lista vazia", () => {
+    expect(estadoDietasParaBatida({
+      fazendaSelecionada: true,
+      isLoading: true,
+      isError: false,
+      isSuccess: false,
+      quantidade: 0,
+    })).toBe("carregando");
+  });
+
+  it("2: lista com dietas fica pronta e não é vazia", () => {
+    expect(estadoDietasParaBatida({
+      fazendaSelecionada: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      quantidade: 2,
+    })).toBe("pronto");
+  });
+
+  it("3/4: lista vazia após sucesso mostra o estado informativo", () => {
+    expect(estadoDietasParaBatida({
+      fazendaSelecionada: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      quantidade: 0,
+    })).toBe("vazio");
+    expect(MSG_BATIDA_SEM_DIETA_PREPARO).toBe("Não há dietas disponíveis para preparo nesta fazenda.");
+    expect(MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO).toBe(
+      "Formulações prontas devem ser registradas diretamente em Fornecimentos.",
+    );
+  });
+
+  it("5: com dieta elegível não entra no vazio", () => {
+    expect(estadoDietasParaBatida({
+      fazendaSelecionada: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      quantidade: 1,
+    })).not.toBe("vazio");
+  });
+
+  it("erro de carregamento não usa o estado vazio", () => {
+    expect(estadoDietasParaBatida({
+      fazendaSelecionada: true,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+      quantidade: 0,
+    })).toBe("erro");
   });
 });

@@ -16,19 +16,22 @@ import { cn } from "@/lib/utils";
 import {
   formatarCustoEstimadoPorKgDieta,
   labelTipoDieta,
+  rotuloFormaUsoDieta,
+  rotuloFormaUsoDietaLista,
 } from "@shared/nutricaoDietas";
 
 const LIST_ROUTE = "/nutricao/dietas";
 const FAZENDA_KEY = "fd-nutricao-dietas-fazenda-id";
 
 const TABLE_COLUMNS = [
-  { key: "nome", label: "Dieta", align: "left" as const, width: "24%" },
-  { key: "tipo", label: "Tipo", align: "left" as const, width: "16%" },
-  { key: "categoria", label: "Categoria", align: "center" as const, width: "14%" },
-  { key: "base", label: "Base da formulação", align: "center" as const, width: "16%" },
-  { key: "custo", label: "Custo estimado/kg", align: "center" as const, width: "16%" },
+  { key: "nome", label: "Dieta", align: "left" as const, width: "20%" },
+  { key: "tipo", label: "Tipo", align: "left" as const, width: "12%" },
+  { key: "formaUso", label: "Forma de uso", align: "left" as const, width: "12%" },
+  { key: "categoria", label: "Categoria", align: "center" as const, width: "12%" },
+  { key: "base", label: "Base da formulação", align: "center" as const, width: "14%" },
+  { key: "custo", label: "Custo estimado/kg", align: "center" as const, width: "14%" },
   { key: "status", label: "Status", align: "center" as const, width: "8%" },
-  { key: "acoes", label: "Ações", align: "center" as const, width: "6%" },
+  { key: "acoes", label: "Ações", align: "center" as const, width: "8%" },
 ];
 
 const listControlClass =
@@ -250,6 +253,12 @@ export default function NutricaoDietasListPage() {
                   <tr key={dieta.id} className="group border-b border-gray-100 hover:bg-gray-50/60">
                     <td className="px-3 py-2.5 text-gray-800 font-medium truncate">{dieta.nome}</td>
                     <td className="px-3 py-2.5 text-gray-600 truncate">{labelTipoDieta(dieta.tipo)}</td>
+                    <td
+                      className="px-3 py-2.5 text-gray-600 truncate"
+                      title={rotuloFormaUsoDieta(dieta.formaUso)}
+                    >
+                      {rotuloFormaUsoDietaLista(dieta.formaUso)}
+                    </td>
                     <td className="px-3 py-2.5 text-center text-gray-600">{dieta.categoriaAnimal || "—"}</td>
                     <td className="px-3 py-2.5 text-center text-gray-600 tabular-nums">
                       {Number(dieta.baseQuantidade).toLocaleString("pt-BR")} {dieta.baseUnidade}

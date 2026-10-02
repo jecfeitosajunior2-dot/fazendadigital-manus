@@ -1,21 +1,30 @@
 import { describe, expect, it } from "vitest";
+import { arredondarKg } from "./nutricaoDietas";
 import {
   animalDiaLote,
   agregarCustoFornecimentos,
+  chaveFonteLote,
+  consolidarPlanejadoFornecido,
   consumoAparenteDoPainel,
   custoPorKgFornecido,
+  dataReferenciaPeriodo,
   enumerarDiasCivis,
   fornsConfirmados,
   formatarIndicadorNumero,
   formatarMoedaIndicador,
   intersecaoPeriodo,
+  invarianteFornecidoSemDuplicar,
   montarPainelNutricao,
   MSG_VG_CONSUMO_APARENTE,
   MSG_VG_FORNECIDO_CAB_DIA,
+  MSG_VG_METAS_VARIAVEIS,
   MSG_VG_NAO_REAL,
+  MSG_VG_PLANEJADO_ACUMULADO,
+  MSG_VG_PLANEJADO_PERIODO,
   MSG_VG_SEM_MOVIMENTO,
   rotuloCoberturaFornecidoCabDia,
   periodoRapido,
+  periodoRealizadoAteReferencia,
   planejadoNoPeriodo,
   planejamentoAplicaNoDia,
   populacaoEstavelLote,
@@ -254,8 +263,10 @@ describe("nutricaoVisaoGeral — planejamento", () => {
       planejamentos: [a, b],
       fornecimentos: [forn({ data: "2026-10-05", populacaoSnapshot: 50, quantidadeFornecidaKg: 100 })],
     });
-    const soma = painelOut.planejado.reduce((s, l) => s + (l.planejadoKg ?? 0), 0);
+    expect(painelOut.planejado).toHaveLength(1);
+    const soma = painelOut.planejado.reduce((s, l) => s + (l.planejadoPeriodoKg ?? 0), 0);
     expect(soma).toBe(100);
+    expect(painelOut.planejado[0]!.planejadoAteReferenciaKg).toBe(100);
   });
 });
 
@@ -444,6 +455,7 @@ describe("datas civis", () => {
       .toEqual({ de: "2026-10-10", ate: "2026-10-15" });
     expect(periodoRapido("hoje", "2026-10-10")).toEqual({ de: "2026-10-10", ate: "2026-10-10" });
     expect(periodoRapido("7d", "2026-10-10")).toEqual({ de: "2026-10-04", ate: "2026-10-10" });
+    expect(periodoRapido("mes", "2026-10-02")).toEqual({ de: "2026-10-01", ate: "2026-10-31" });
   });
 });
 
@@ -455,5 +467,435 @@ describe("estado vazio e rótulos", () => {
     expect(p.cards.kgFornecido).toBe(0);
     expect(p.cards.custoConhecido).toBe(0);
     expect(p.consumo.totalAparenteKg).toBeNull();
+  });
+});
+
+describe("nutricaoVisaoGeral — vigência histórica", () => {
+  it("A: encerrado 01/10–05/10 entra só nesses dias", () => {
+    const calc = planejadoNoPeriodo({
+      plan: plan({ status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-05", valorMeta: 2 }),
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      populacao: 50,
+      todosPlanos: [plan({ status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-05", valorMeta: 2 })],
+    });
+    expect(calc.diasAplicaveis).toBe(5);
+    expect(calc.planejadoKg).toBe(500);
+  });
+
+  it("B: cancelado futuro não gera histórico planejado", () => {
+    const calc = planejadoNoPeriodo({
+      plan: plan({ status: "cancelado", dataInicio: "2026-10-10", dataFim: null }),
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      populacao: 50,
+      todosPlanos: [plan({ status: "cancelado", dataInicio: "2026-10-10", dataFim: null })],
+    });
+    expect(calc.planejadoKg).toBeNull();
+    expect(calc.diasAplicaveis).toBe(0);
+  });
+
+  it("C: ativo a partir de 06/10 não projeta antes", () => {
+    const calc = planejadoNoPeriodo({
+      plan: plan({ dataInicio: "2026-10-06", dataFim: "2026-10-10", valorMeta: 2 }),
+      periodo: { de: "2026-10-01", ate: "2026-10-10" },
+      populacao: 50,
+      todosPlanos: [plan({ dataInicio: "2026-10-06", dataFim: "2026-10-10", valorMeta: 2 })],
+    });
+    expect(calc.diasAplicaveis).toBe(5);
+    expect(calc.planejadoKg).toBe(500);
+  });
+
+  it("D: cancelado legado com fornecimento carrega sem corrigir dados", () => {
+    const p = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [plan({ id: 1, status: "cancelado", dataInicio: "2026-10-01", dataFim: null, tratosPorDia: 2 })],
+      fornecimentos: [
+        forn({ id: 1, planejamentoId: 1, data: "2026-10-01", quantidadeFornecidaKg: 0.6, populacaoSnapshot: 6 }),
+        forn({ id: 2, planejamentoId: 1, data: "2026-10-02", quantidadeFornecidaKg: 0.6, populacaoSnapshot: 6 }),
+      ],
+    });
+    expect(p.planejado).toHaveLength(1);
+    expect(p.planejado[0]!.planejamentoIds).toEqual([]);
+    expect(p.planejado[0]!.planejadoAteReferenciaKg).toBeNull();
+    expect(p.planejado[0]!.planejadoPeriodoKg).toBeNull();
+    expect(p.planejado[0]!.fornecidoKg).toBe(1.2);
+    expect(p.planejado[0]!.desvioAteReferenciaKg).toBeNull();
+    expect(p.planejado[0]!.desvioAteReferenciaPercentual).toBeNull();
+    expect(p.planejado[0]!.meta).toBe("—");
+    expect(p.cards.kgFornecido).toBe(1.2);
+    expect(p.vazio).toBe(false);
+  });
+
+  it("substituição 01–04 + 05 em diante não duplica dia nem multiplica trato", () => {
+    const antigo = plan({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-04", valorMeta: 2, tratosPorDia: 2 });
+    const novo = plan({ id: 2, dataInicio: "2026-10-05", dataFim: "2026-10-05", valorMeta: 2, tratosPorDia: 2 });
+    const periodo = { de: "2026-10-01", ate: "2026-10-05" };
+    const out = painel({
+      periodo,
+      planejamentos: [antigo, novo],
+      fornecimentos: [forn({ data: "2026-10-01", populacaoSnapshot: 50, quantidadeFornecidaKg: 100 })],
+    });
+    expect(out.planejado).toHaveLength(1);
+    expect(out.planejado[0]!.planejamentoIds).toEqual([1, 2]);
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBe(500);
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(500);
+    expect(out.planejado[0]!.fornecidoKg).toBe(100);
+    expect(planejadoNoPeriodo({ plan: antigo, periodo, populacao: 50, todosPlanos: [antigo, novo] }).diasAplicaveis).toBe(4);
+    expect(planejadoNoPeriodo({ plan: novo, periodo, populacao: 50, todosPlanos: [antigo, novo] }).diasAplicaveis).toBe(1);
+  });
+});
+
+function planB01(over: Partial<VgPlan> = {}): VgPlan {
+  return plan({
+    tipoOrigem: "produto",
+    produtoId: 22,
+    modalidadeMeta: "g_cab_dia",
+    valorMeta: 100,
+    frequencia: "diaria",
+    tratosPorDia: 2,
+    origemNome: "Sal Nitrogenado 40 Flex LA",
+    ...over,
+  });
+}
+
+function fornB01(over: Partial<VgForn> = {}): VgForn {
+  return forn({
+    tipoOrigem: "produto",
+    produtoId: 22,
+    origemNomeSnapshot: "Sal Nitrogenado 40 Flex LA",
+    populacaoSnapshot: 6,
+    quantidadeFornecidaKg: 0.6,
+    ...over,
+  });
+}
+
+describe("nutricaoVisaoGeral — data de referência", () => {
+  it("período passado usa o fim do filtro", () => {
+    expect(dataReferenciaPeriodo({ de: "2026-09-01", ate: "2026-09-30" }, "2026-10-02")).toBe("2026-09-30");
+    expect(periodoRealizadoAteReferencia({ de: "2026-09-01", ate: "2026-09-30" }, "2026-10-02"))
+      .toEqual({ de: "2026-09-01", ate: "2026-09-30" });
+  });
+
+  it("período atual e período que termina hoje usam hoje", () => {
+    expect(dataReferenciaPeriodo({ de: "2026-10-01", ate: "2026-10-31" }, "2026-10-02")).toBe("2026-10-02");
+    expect(periodoRealizadoAteReferencia({ de: "2026-10-01", ate: "2026-10-31" }, "2026-10-02"))
+      .toEqual({ de: "2026-10-01", ate: "2026-10-02" });
+    expect(dataReferenciaPeriodo({ de: "2026-09-25", ate: "2026-10-02" }, "2026-10-02")).toBe("2026-10-02");
+  });
+
+  it("período totalmente futuro não tem intervalo realizado", () => {
+    expect(dataReferenciaPeriodo({ de: "2026-10-10", ate: "2026-10-31" }, "2026-10-02")).toBe("2026-10-02");
+    expect(periodoRealizadoAteReferencia({ de: "2026-10-10", ate: "2026-10-31" }, "2026-10-02")).toBeNull();
+  });
+});
+
+describe("nutricaoVisaoGeral — consolidação planejado × fornecido", () => {
+  it("B01: uma linha, acumulado 1,2 kg, período 18,6 kg, desvio 0", () => {
+    const p1 = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01" });
+    const p2 = planB01({ id: 2, status: "ativo", dataInicio: "2026-10-02", dataFim: null });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [p1, p2],
+      fornecimentos: [
+        fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+        fornB01({ id: 3, planejamentoId: 2, data: "2026-10-02" }),
+      ],
+    });
+    expect(out.planejado).toHaveLength(1);
+    const row = out.planejado[0]!;
+    expect(row.loteNome).toBe("B01");
+    expect(row.fonte).toBe("Sal Nitrogenado 40 Flex LA");
+    expect(row.meta).toBe("100 g/cab/dia");
+    expect(row.planejadoAteReferenciaKg).toBe(1.2);
+    expect(row.planejadoPeriodoKg).toBe(18.6);
+    expect(row.fornecidoKg).toBe(1.2);
+    expect(row.desvioAteReferenciaKg).toBe(0);
+    expect(row.desvioAteReferenciaPercentual).toBe(0);
+    expect(row.planejamentoIds).toEqual([1, 2]);
+    expect(row.fornecimentoIds).toEqual([2, 3]);
+    expect(invarianteFornecidoSemDuplicar(out.planejado)).toBe(true);
+    expect(out.cards.kgFornecido).toBe(1.2);
+    expect(out.cards.fornecidoCabDia).toBe(0.1);
+  });
+
+  it("meta variável não escolhe uma das metas", () => {
+    const p1 = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01", valorMeta: 100 });
+    const p2 = planB01({ id: 2, status: "ativo", dataInicio: "2026-10-02", dataFim: null, valorMeta: 120 });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [p1, p2],
+      fornecimentos: [
+        fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+        fornB01({ id: 3, planejamentoId: 2, data: "2026-10-02" }),
+      ],
+    });
+    expect(out.planejado).toHaveLength(1);
+    expect(out.planejado[0]!.meta).toBe(MSG_VG_METAS_VARIAVEIS);
+    expect(out.planejado[0]!.meta).not.toBe("100 g/cab/dia");
+    expect(out.planejado[0]!.meta).not.toBe("120 g/cab/dia");
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(1.32);
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBe(22.2);
+    expect(out.planejado[0]!.fornecidoKg).toBe(1.2);
+  });
+
+  it("produto e dieta, ou produtos distintos, não consolidam pelo nome", () => {
+    const produtoA = planB01({ id: 1, produtoId: 22, origemNome: "Sal" });
+    const produtoB = planB01({ id: 2, produtoId: 23, origemNome: "Sal" });
+    const dieta = planB01({
+      id: 3,
+      tipoOrigem: "dieta",
+      produtoId: null,
+      dietaId: 5,
+      origemNome: "Sal",
+    });
+    expect(chaveFonteLote(produtoA)).not.toBe(chaveFonteLote(produtoB));
+    expect(chaveFonteLote(produtoA)).not.toBe(chaveFonteLote(dieta));
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [produtoA, produtoB, dieta],
+      fornecimentos: [
+        fornB01({ id: 10, planejamentoId: 1, produtoId: 22 }),
+        fornB01({ id: 11, planejamentoId: 2, produtoId: 23, origemNomeSnapshot: "Sal" }),
+        fornB01({
+          id: 12,
+          planejamentoId: 3,
+          tipoOrigem: "dieta",
+          produtoId: null,
+          dietaId: 5,
+          origemNomeSnapshot: "Sal",
+        }),
+      ],
+    });
+    expect(out.planejado).toHaveLength(3);
+    expect(new Set(out.planejado.map(l => l.chave)).size).toBe(3);
+    expect(invarianteFornecidoSemDuplicar(out.planejado)).toBe(true);
+    expect(arredondarKg(out.planejado.reduce((s, l) => s + l.fornecidoKg, 0))).toBe(1.8);
+  });
+
+  it("fornecimento sem plano entra uma vez, sem meta inventada", () => {
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [],
+      fornecimentos: [fornB01({ id: 9, planejamentoId: null, data: "2026-10-01" })],
+    });
+    expect(out.planejado).toHaveLength(1);
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBeNull();
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBeNull();
+    expect(out.planejado[0]!.desvioAteReferenciaKg).toBeNull();
+    expect(out.planejado[0]!.meta).toBe("—");
+    expect(out.planejado[0]!.fornecidoKg).toBe(0.6);
+    expect(out.planejado[0]!.planejamentoIds).toEqual([]);
+  });
+
+  it("período futuro projeta sem desvio nem acumulado", () => {
+    const p1 = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01" });
+    const p2 = planB01({ id: 2, status: "ativo", dataInicio: "2026-10-02", dataFim: null });
+    const fornsPop = [
+      fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+      fornB01({ id: 3, planejamentoId: 2, data: "2026-10-02" }),
+    ];
+    const linhas = consolidarPlanejadoFornecido({
+      periodo: { de: "2026-10-10", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planos: [p2],
+      todosPlanos: [p1, p2],
+      forns: [],
+      porLote: new Map([[1, fornsPop]]),
+      nomeLote: () => "B01",
+    });
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]!.periodoRealizado).toBe(false);
+    expect(linhas[0]!.planejadoAteReferenciaKg).toBeNull();
+    expect(linhas[0]!.desvioAteReferenciaKg).toBeNull();
+    expect(linhas[0]!.desvioAteReferenciaPercentual).toBeNull();
+    expect(linhas[0]!.planejadoPeriodoKg).toBe(13.2);
+  });
+
+  it("período passado: acumulado coincide com o período", () => {
+    const encerrado = planB01({
+      id: 1,
+      status: "encerrado",
+      dataInicio: "2026-09-01",
+      dataFim: "2026-09-30",
+    });
+    const out = painel({
+      periodo: { de: "2026-09-01", ate: "2026-09-30" },
+      hojeISO: "2026-10-02",
+      planejamentos: [encerrado],
+      fornecimentos: [
+        fornB01({ id: 4, planejamentoId: 1, data: "2026-09-01" }),
+        fornB01({ id: 5, planejamentoId: 1, data: "2026-09-02" }),
+      ],
+    });
+    expect(out.planejado).toHaveLength(1);
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(out.planejado[0]!.planejadoPeriodoKg);
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBe(18);
+  });
+
+  it("frequências usam as mesmas regras no acumulado e no período", () => {
+    const semana = planB01({ frequencia: "dias_semana", frequenciaDiasSemana: [3] });
+    const intervalo = planB01({
+      id: 2,
+      produtoId: 23,
+      origemNome: "Outro",
+      frequencia: "a_cada_x_dias",
+      frequenciaIntervaloDias: 2,
+    });
+    const necessidade = planB01({
+      id: 3,
+      produtoId: 24,
+      origemNome: "Livre",
+      frequencia: "conforme_necessidade",
+    });
+    const forns = [
+      fornB01({ id: 20, planejamentoId: 1, data: "2026-10-01" }),
+      fornB01({ id: 21, planejamentoId: 2, produtoId: 23, origemNomeSnapshot: "Outro", data: "2026-10-01" }),
+      fornB01({ id: 22, planejamentoId: 3, produtoId: 24, origemNomeSnapshot: "Livre", data: "2026-10-01" }),
+    ];
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [semana, intervalo, necessidade],
+      fornecimentos: forns,
+    });
+    const rowSemana = out.planejado.find(l => l.produtoId === 22)!;
+    const rowIntervalo = out.planejado.find(l => l.produtoId === 23)!;
+    const rowNecessidade = out.planejado.find(l => l.produtoId === 24)!;
+    expect(rowSemana.planejadoAteReferenciaKg).toBe(0);
+    expect(rowSemana.planejadoPeriodoKg).toBe(2.4);
+    expect(rowIntervalo.planejadoAteReferenciaKg).toBe(0.6);
+    expect(rowIntervalo.planejadoPeriodoKg).toBe(9.6);
+    expect(rowNecessidade.planejadoAteReferenciaKg).toBeNull();
+    expect(rowNecessidade.planejadoPeriodoKg).toBeNull();
+    expect(rowNecessidade.desvioAteReferenciaKg).toBeNull();
+    expect(rowNecessidade.fornecidoKg).toBe(0.6);
+  });
+
+  it("2 tratos não dobram a consolidação", () => {
+    const p1 = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01", tratosPorDia: 2 });
+    const p2 = planB01({ id: 2, dataInicio: "2026-10-02", dataFim: "2026-10-02", tratosPorDia: 2 });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-02" },
+      hojeISO: "2026-10-02",
+      planejamentos: [p1, p2],
+      fornecimentos: [
+        fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+        fornB01({ id: 3, planejamentoId: 2, data: "2026-10-02" }),
+      ],
+    });
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(1.2);
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBe(1.2);
+    expect(out.planejado[0]!.fornecidoKg).toBe(1.2);
+  });
+
+  it("encerrado só na vigência; cancelado não entra; ativo futuro só na projeção", () => {
+    const encerrado = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01" });
+    const cancelado = planB01({ id: 3, status: "cancelado", dataInicio: "2026-10-03", dataFim: null, valorMeta: 200 });
+    const futuro = planB01({ id: 2, status: "ativo", dataInicio: "2026-10-10", dataFim: null });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [encerrado, cancelado, futuro],
+      fornecimentos: [fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" })],
+    });
+    expect(out.planejado).toHaveLength(1);
+    expect(out.planejado[0]!.planejamentoIds).toEqual([1, 2]);
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(0.6);
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBe(13.8);
+    expect(out.planejado[0]!.meta).toBe("100 g/cab/dia");
+  });
+
+  it("população instável não inventa planejado consolidado", () => {
+    const p1 = planB01({ id: 1, dataInicio: "2026-10-01", dataFim: null });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [p1],
+      fornecimentos: [
+        fornB01({ id: 2, data: "2026-10-01", populacaoSnapshot: 6 }),
+        fornB01({ id: 3, data: "2026-10-02", populacaoSnapshot: 8 }),
+      ],
+    });
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBeNull();
+    expect(out.planejado[0]!.planejadoPeriodoKg).toBeNull();
+    expect(out.planejado[0]!.desvioAteReferenciaKg).toBeNull();
+    expect(out.planejado[0]!.motivo).toMatch(/População histórica/);
+    expect(out.planejado[0]!.fornecidoKg).toBe(1.2);
+  });
+
+  it("ad libitum e %PV não viram 0 kg", () => {
+    const adlib = planB01({ id: 1, modalidadeMeta: "ad_libitum", valorMeta: null });
+    const pv = planB01({
+      id: 2,
+      produtoId: 23,
+      origemNome: "Ração",
+      modalidadeMeta: "pct_pv_dia",
+      valorMeta: 2,
+    });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [adlib, pv],
+      fornecimentos: [
+        fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+        fornB01({ id: 3, planejamentoId: 2, produtoId: 23, origemNomeSnapshot: "Ração", data: "2026-10-02" }),
+      ],
+    });
+    const rowAdlib = out.planejado.find(l => l.produtoId === 22)!;
+    const rowPv = out.planejado.find(l => l.produtoId === 23)!;
+    expect(rowAdlib.meta).toBe("Ad libitum");
+    expect(rowAdlib.adLibitum).toBe(true);
+    expect(rowAdlib.planejadoAteReferenciaKg).toBeNull();
+    expect(rowAdlib.planejadoPeriodoKg).toBeNull();
+    expect(rowAdlib.desvioAteReferenciaKg).toBeNull();
+    expect(rowAdlib.fornecidoKg).toBe(0.6);
+    expect(rowPv.meta).toBe("2% PV/dia");
+    expect(rowPv.planejadoAteReferenciaKg).toBeNull();
+    expect(rowPv.planejadoPeriodoKg).toBeNull();
+    expect(rowPv.desvioAteReferenciaKg).toBeNull();
+    expect(formatarIndicadorNumero(rowPv.planejadoAteReferenciaKg, { sufixo: "kg" })).toBe("—");
+  });
+
+  it("invariante: cada fornecimento confirmado aparece no máximo uma vez", () => {
+    const p1 = planB01({ id: 1, status: "encerrado", dataInicio: "2026-10-01", dataFim: "2026-10-01" });
+    const p2 = planB01({ id: 2, dataInicio: "2026-10-02", dataFim: null });
+    const outro = planB01({ id: 3, produtoId: 23, origemNome: "Outro", dataInicio: "2026-10-01", dataFim: null });
+    const forns = [
+      fornB01({ id: 2, planejamentoId: 1, data: "2026-10-01" }),
+      fornB01({ id: 3, planejamentoId: 2, data: "2026-10-02" }),
+      fornB01({ id: 4, planejamentoId: 3, produtoId: 23, origemNomeSnapshot: "Outro", data: "2026-10-02", quantidadeFornecidaKg: 1 }),
+    ];
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [p1, p2, outro],
+      fornecimentos: forns,
+    });
+    expect(invarianteFornecidoSemDuplicar(out.planejado)).toBe(true);
+    expect(out.planejado.reduce((s, l) => s + l.fornecidoKg, 0)).toBe(2.2);
+    expect(out.planejado.flatMap(l => l.fornecimentoIds).sort((a, b) => a - b)).toEqual([2, 3, 4]);
+  });
+
+  it("planejado acumulado 0 não gera percentual infinito", () => {
+    const semana = planB01({ frequencia: "dias_semana", frequenciaDiasSemana: [3] });
+    const out = painel({
+      periodo: { de: "2026-10-01", ate: "2026-10-31" },
+      hojeISO: "2026-10-02",
+      planejamentos: [semana],
+      fornecimentos: [fornB01({ id: 2, data: "2026-10-01" })],
+    });
+    expect(out.planejado[0]!.planejadoAteReferenciaKg).toBe(0);
+    expect(out.planejado[0]!.desvioAteReferenciaKg).toBe(0.6);
+    expect(out.planejado[0]!.desvioAteReferenciaPercentual).toBeNull();
+    expect(Number.isFinite(out.planejado[0]!.desvioAteReferenciaPercentual ?? 0)).toBe(true);
+  });
+
+  it("mensagens da tabela distinguem acumulado e projeção", () => {
+    expect(MSG_VG_PLANEJADO_ACUMULADO).toMatch(/dias já alcançados/);
+    expect(MSG_VG_PLANEJADO_PERIODO).toMatch(/todo o período selecionado/);
   });
 });

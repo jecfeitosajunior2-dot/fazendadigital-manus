@@ -76,6 +76,28 @@ export const MSG_PLAN_NAO_ENCONTRADO = "Planejamento não encontrado.";
 export const MSG_PLAN_MATERIAL_INICIADO =
   "Este planejamento já começou. Troca de lote, origem, meta ou data inicial cria um novo período — o anterior é encerrado. O histórico não é reescrito.";
 export const MSG_PLAN_LOTE_VAZIO = "Este lote não possui animais ativos no momento.";
+export const MSG_PLAN_CANCELAR_STATUS = "Só é possível cancelar um planejamento ativo que ainda não começou.";
+export const MSG_PLAN_CANCELAR_JA_INICIOU =
+  "Este planejamento já entrou em vigor e não pode ser cancelado. Encerre o planejamento para preservar o histórico.";
+export const MSG_PLAN_CANCELAR_COM_EXECUCAO =
+  "Este planejamento já possui execução registrada e não pode ser cancelado. Encerre o planejamento para preservar o histórico.";
+export const MSG_PLAN_CANCELAR_TITULO = "Cancelar este planejamento?";
+export const MSG_PLAN_CANCELAR_TEXTO =
+  "O cancelamento indica que o planejamento não entrou em vigor. O registro permanece salvo no histórico.";
+export const MSG_PLAN_ENCERRAR_STATUS = "Só é possível encerrar um planejamento ativo.";
+export const MSG_PLAN_ENCERRAR_FUTURO =
+  "Planejamento que ainda não começou não pode ser encerrado. Cancele se ele não deve entrar em vigor.";
+export const MSG_PLAN_ENCERRAR_JA = "Este planejamento já está encerrado.";
+export const MSG_PLAN_ENCERRAR_TITULO = "Encerrar este planejamento?";
+export const MSG_PLAN_ENCERRAR_TEXTO =
+  "O planejamento permanecerá no histórico até hoje. A partir de amanhã ele não será mais considerado vigente.";
+export const MSG_PLAN_SUBSTITUIR_STATUS = "Só é possível substituir um planejamento ativo.";
+export const MSG_PLAN_SUBSTITUIR_MESMO_DIA =
+  "O sucessor precisa começar no dia seguinte ao início deste planejamento. Não é possível encerrar e iniciar outro no mesmo dia.";
+export const MSG_PLAN_LEGADO_CANCELADO_COM_EXECUCAO = "Cancelado com execução registrada";
+export const MSG_PLAN_LEGADO_CANCELADO_APOS_INICIO =
+  "Cancelado após a data de início — legado inconsistente.";
+export const MSG_PLAN_SOMENTE_HISTORICO = "Este planejamento é somente histórico e não pode ser alterado.";
 
 export type NutricaoPlanInput = {
   fazendaId: number;
@@ -120,6 +142,7 @@ export type NutricaoPlanDietaRef = {
   fazendaId: number;
   nome: string;
   status: string;
+  formaUso?: string | null;
   dataInicio?: string | null;
   dataFim?: string | null;
   baseQuantidade: number;
@@ -324,6 +347,103 @@ export function podeEditarMaterialmente(dataInicio: string, hojeISO: string): bo
   const hoje = normalizarDataCivil(hojeISO);
   if (!inicio || !hoje) return false;
   return inicio >= hoje;
+}
+
+/** True quando a data civil de início já chegou (o dia pertence ao planejamento). */
+export function planejamentoJaIniciou(dataInicio: string, hojeISO: string): boolean {
+  const inicio = normalizarDataCivil(dataInicio);
+  const hoje = normalizarDataCivil(hojeISO);
+  if (!inicio || !hoje) return true;
+  return inicio <= hoje;
+}
+
+export function podeCancelarPlanejamento(input: {
+  status: string;
+  dataInicio: string;
+  hojeISO: string;
+  temFornecimentoConfirmado?: boolean;
+}): { ok: boolean; message: string | null } {
+  if (input.status !== "ativo") {
+    return { ok: false, message: MSG_PLAN_CANCELAR_STATUS };
+  }
+  if (input.temFornecimentoConfirmado) {
+    return { ok: false, message: MSG_PLAN_CANCELAR_COM_EXECUCAO };
+  }
+  if (planejamentoJaIniciou(input.dataInicio, input.hojeISO)) {
+    return { ok: false, message: MSG_PLAN_CANCELAR_JA_INICIOU };
+  }
+  return { ok: true, message: null };
+}
+
+export function podeEncerrarPlanejamento(input: {
+  status: string;
+  dataInicio: string;
+  hojeISO: string;
+}): { ok: boolean; message: string | null } {
+  if (input.status === "encerrado") {
+    return { ok: false, message: MSG_PLAN_ENCERRAR_JA };
+  }
+  if (input.status !== "ativo") {
+    return { ok: false, message: MSG_PLAN_ENCERRAR_STATUS };
+  }
+  if (!planejamentoJaIniciou(input.dataInicio, input.hojeISO)) {
+    return { ok: false, message: MSG_PLAN_ENCERRAR_FUTURO };
+  }
+  return { ok: true, message: null };
+}
+
+export function dataFimEncerramentoManual(hojeISO: string): string {
+  return normalizarDataCivil(hojeISO) ?? hojeISO;
+}
+
+export function dataFimAoSubstituir(
+  dataInicioAnterior: string,
+  dataInicioSucessor: string,
+): { ok: true; dataFim: string } | { ok: false; message: string } {
+  const ini = normalizarDataCivil(dataInicioAnterior);
+  const suc = normalizarDataCivil(dataInicioSucessor);
+  if (!ini || !suc) return { ok: false, message: MSG_PLAN_INICIO };
+  const fim = diaAnteriorCivil(suc);
+  if (!fim || fim < ini) return { ok: false, message: MSG_PLAN_SUBSTITUIR_MESMO_DIA };
+  return { ok: true, dataFim: fim };
+}
+
+export function textoConfirmacaoSubstituir(dataInicioSucessor: string): string {
+  const suc = normalizarDataCivil(dataInicioSucessor);
+  const fim = suc ? diaAnteriorCivil(suc) : null;
+  return `O planejamento atual será encerrado em ${formatarDataCivilBR(fim)}. O novo período começa em ${formatarDataCivilBR(suc)}.`;
+}
+
+export function diagnosticoLegadoCancelado(input: {
+  status: string;
+  dataInicio: string;
+  hojeISO: string;
+  temFornecimentoConfirmado?: boolean;
+}): string | null {
+  if (input.status !== "cancelado") return null;
+  if (input.temFornecimentoConfirmado) return MSG_PLAN_LEGADO_CANCELADO_COM_EXECUCAO;
+  if (planejamentoJaIniciou(input.dataInicio, input.hojeISO)) return MSG_PLAN_LEGADO_CANCELADO_APOS_INICIO;
+  return null;
+}
+
+export function acoesPlanejamento(input: {
+  status: string;
+  dataInicio: string;
+  hojeISO: string;
+}): {
+  podeEditar: boolean;
+  podeCancelar: boolean;
+  podeEncerrar: boolean;
+  podeSubstituir: boolean;
+} {
+  const ativo = input.status === "ativo";
+  const iniciado = planejamentoJaIniciou(input.dataInicio, input.hojeISO);
+  return {
+    podeEditar: ativo,
+    podeCancelar: ativo && !iniciado,
+    podeEncerrar: ativo && iniciado,
+    podeSubstituir: ativo && iniciado,
+  };
 }
 
 export function dietaCabeNoPeriodo(

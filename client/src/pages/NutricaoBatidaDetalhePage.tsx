@@ -1,9 +1,14 @@
 import { useState } from "react";
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { FD_PRIMARY, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import {
+  destinoVoltarNutricaoDetalhe,
+  NUTRICAO_BATIDAS_PATH,
+  retornoNutricaoDaQuery,
+} from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -18,6 +23,7 @@ import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 export default function NutricaoBatidaDetalhePage() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const origem = retornoNutricaoDaQuery(useSearch());
   const id = Number(params.id);
   const { data, isLoading } = trpc.nutricaoBatidas.get.useQuery({ id }, { enabled: id > 0 });
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
@@ -36,9 +42,27 @@ export default function NutricaoBatidaDetalhePage() {
     onError: e => toast.error(e.message),
   });
 
+  const voltar = () =>
+    setLocation(destinoVoltarNutricaoDetalhe({
+      retorno: origem,
+      listaPath: NUTRICAO_BATIDAS_PATH,
+      fazendaId: data?.fazendaId,
+    }));
+
   if (isLoading || !data) {
     return (
       <AppLayout>
+        <button
+          type="button"
+          onClick={voltar}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
         <div className="bg-white rounded border border-gray-200 p-8 text-center text-gray-400">
           {isLoading ? "Carregando..." : "Batida não encontrada."}
         </div>
@@ -50,6 +74,17 @@ export default function NutricaoBatidaDetalhePage() {
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltar}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -67,9 +102,6 @@ export default function NutricaoBatidaDetalhePage() {
             )}>
               {labelStatusBatida(data.status)}
             </span>
-            <button type="button" className="text-[12px] text-gray-600 underline" onClick={() => setLocation(`/nutricao/batidas?fazendaId=${data.fazendaId}`)}>
-              Voltar
-            </button>
           </div>
         </div>
 

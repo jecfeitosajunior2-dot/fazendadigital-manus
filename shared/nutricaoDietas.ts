@@ -32,6 +32,31 @@ export const NUTRICAO_DIETA_OBJETIVOS = [
 ] as const;
 export type NutricaoDietaObjetivo = (typeof NUTRICAO_DIETA_OBJETIVOS)[number]["value"];
 
+export const NUTRICAO_DIETA_FORMAS_USO = [
+  { value: "pronta_fornecer", label: "Pronta para fornecer", labelLista: "Pronta" },
+  { value: "preparo_opcional", label: "Preparo opcional", labelLista: "Opcional" },
+  { value: "preparo_obrigatorio", label: "Preparo obrigatório", labelLista: "Obrigatório" },
+] as const;
+export type NutricaoDietaFormaUso = (typeof NUTRICAO_DIETA_FORMAS_USO)[number]["value"];
+
+export const MSG_DIETA_FORMA_USO_LEGADO = "Não definida (cadastro anterior)";
+export const MSG_DIETA_FORMA_USO_LISTA_LEGADO = "Não definida";
+export const MSG_DIETA_FORMA_USO_AJUDA =
+  "Define se esta formulação pode ser fornecida diretamente ou se precisa passar por preparo/batida. Não altera o tipo nutricional.";
+export const MSG_DIETA_FORMA_USO = "Informe a forma de uso da dieta.";
+export const MSG_DIETA_FORMA_USO_CAMPO = "Selecione a forma de uso da dieta.";
+export const MSG_DIETA_CAMPOS_OBRIGATORIOS = "Preencha os campos obrigatórios destacados.";
+export const MSG_BATIDA_DIETA_PRONTA =
+  "Esta dieta está configurada como pronta para fornecer e não pode gerar uma batida.";
+export const MSG_FORN_DIETA_EXIGE_PREPARO =
+  "Esta dieta exige preparo antes do fornecimento. Registre uma batida e distribua a partir dela.";
+export const MSG_FORN_DIETA_EXIGE_PREPARO_UI =
+  "Esta dieta exige preparo. Registre uma batida para realizar o fornecimento.";
+export const MSG_BATIDA_SEM_DIETA_PREPARO =
+  "Não há dietas disponíveis para preparo nesta fazenda.";
+export const MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO =
+  "Formulações prontas devem ser registradas diretamente em Fornecimentos.";
+
 export const NUTRICAO_DIETA_BASE_UNIDADE = "kg";
 
 export const MSG_DIETA_FAZENDA = "Selecione a fazenda da dieta.";
@@ -65,6 +90,7 @@ export type NutricaoDietaInput = {
   fazendaId: number;
   nome: string;
   tipo: string;
+  formaUso: string;
   descricao?: string | null;
   categoriaAnimal?: string | null;
   objetivo?: string | null;
@@ -89,6 +115,78 @@ export function labelTipoDieta(tipo: string | null | undefined): string {
 export function labelObjetivoDieta(objetivo: string | null | undefined): string {
   if (!objetivo) return "—";
   return NUTRICAO_DIETA_OBJETIVOS.find(t => t.value === objetivo)?.label ?? objetivo;
+}
+
+export function isNutricaoDietaFormaUso(value: string | null | undefined): value is NutricaoDietaFormaUso {
+  return NUTRICAO_DIETA_FORMAS_USO.some(f => f.value === value);
+}
+
+export const formaUsoDietaValida = isNutricaoDietaFormaUso;
+
+/** Compatibilidade operacional do legado: null age como preparo_opcional. */
+export function formaUsoDietaEfetiva(
+  formaUso: string | null | undefined,
+): NutricaoDietaFormaUso {
+  return isNutricaoDietaFormaUso(formaUso) ? formaUso : "preparo_opcional";
+}
+
+export function rotuloFormaUsoDieta(formaUso: string | null | undefined): string {
+  if (!isNutricaoDietaFormaUso(formaUso)) return MSG_DIETA_FORMA_USO_LEGADO;
+  return NUTRICAO_DIETA_FORMAS_USO.find(f => f.value === formaUso)!.label;
+}
+
+export function rotuloFormaUsoDietaLista(formaUso: string | null | undefined): string {
+  if (!isNutricaoDietaFormaUso(formaUso)) return MSG_DIETA_FORMA_USO_LISTA_LEGADO;
+  return NUTRICAO_DIETA_FORMAS_USO.find(f => f.value === formaUso)!.labelLista;
+}
+
+export function podeDietaGerarBatida(formaUso: string | null | undefined): boolean {
+  return formaUsoDietaEfetiva(formaUso) !== "pronta_fornecer";
+}
+
+export function podeDietaSerFornecidaDiretamente(formaUso: string | null | undefined): boolean {
+  return formaUsoDietaEfetiva(formaUso) !== "preparo_obrigatorio";
+}
+
+export function dietaElegivelParaNovaBatida(dieta: {
+  status?: string | null;
+  formaUso?: string | null;
+}): boolean {
+  return dieta.status === "ativa" && podeDietaGerarBatida(dieta.formaUso);
+}
+
+export type EstadoDietasParaBatida = "inativo" | "carregando" | "erro" | "vazio" | "pronto";
+
+export function estadoDietasParaBatida(input: {
+  fazendaSelecionada: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+  quantidade: number;
+}): EstadoDietasParaBatida {
+  if (!input.fazendaSelecionada) return "inativo";
+  if (input.isError) return "erro";
+  if (input.isLoading || !input.isSuccess) return "carregando";
+  if (input.quantidade === 0) return "vazio";
+  return "pronto";
+}
+
+export function validarFormaUsoDietaFormulario(
+  formaUso: string | null | undefined,
+): { ok: true } | { ok: false; message: string } {
+  if (isNutricaoDietaFormaUso(formaUso)) return { ok: true };
+  return { ok: false, message: MSG_DIETA_FORMA_USO_CAMPO };
+}
+
+export function erroSalvarDietaEhFormaUso(message: string): boolean {
+  const t = message ?? "";
+  if (t === MSG_DIETA_FORMA_USO || t === MSG_DIETA_FORMA_USO_CAMPO) return true;
+  return /formaUso/.test(t) && /invalid_value|invalid_enum|ZodError/i.test(t);
+}
+
+export function erroSalvarDietaEhTecnicoBruto(message: string): boolean {
+  const t = (message ?? "").trim();
+  return /^[\[\{]/.test(t) || /invalid_value|invalid_enum_value|ZodError/i.test(t);
 }
 
 export function categoriasAnimalDieta(): string[] {
@@ -313,6 +411,9 @@ export function validarDietaInput(
   if (!nome) return { ok: false, message: MSG_DIETA_NOME };
   if (!NUTRICAO_DIETA_TIPOS.some(t => t.value === input.tipo)) {
     return { ok: false, message: MSG_DIETA_TIPO };
+  }
+  if (!isNutricaoDietaFormaUso(input.formaUso)) {
+    return { ok: false, message: MSG_DIETA_FORMA_USO };
   }
   if (input.categoriaAnimal) {
     if (!categoriasAnimalDieta().includes(input.categoriaAnimal)) {

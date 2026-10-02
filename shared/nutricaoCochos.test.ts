@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatarIdentificacaoCocho,
   formatarLocalizacaoCocho,
+  textoSecundarioPastoCochoDetalhe,
   MSG_COCHO_CAPACIDADE,
   MSG_COCHO_COMPRIMENTO,
   MSG_COCHO_FAZENDA,
@@ -85,5 +86,22 @@ describe("nutricaoCochos — fornecimento", () => {
   it("snapshot mínimo identifica o cocho", () => {
     expect(formatarIdentificacaoCocho("Cocho Pasto 444", "C01")).toBe("Cocho Pasto 444 (C01)");
     expect(formatarLocalizacaoCocho("Pasto 444", "bebedouro norte")).toBe("Pasto 444 — bebedouro norte");
+  });
+});
+
+describe("detalhe do Cocho — Pasto sem duplicidade visual", () => {
+  it("1: nome e secundário iguais renderizam uma única vez", () => {
+    expect(textoSecundarioPastoCochoDetalhe("444", "444")).toBeNull();
+    expect(textoSecundarioPastoCochoDetalhe(" 444 ", "444")).toBeNull();
+  });
+
+  it("2: nome e secundário diferentes renderizam os dois", () => {
+    expect(textoSecundarioPastoCochoDetalhe("Pasto Sede", "444")).toBe("444");
+  });
+
+  it("3: secundário vazio/null renderiza somente o nome", () => {
+    expect(textoSecundarioPastoCochoDetalhe("Pasto Sede", null)).toBeNull();
+    expect(textoSecundarioPastoCochoDetalhe("Pasto Sede", "")).toBeNull();
+    expect(textoSecundarioPastoCochoDetalhe("Pasto Sede", "   ")).toBeNull();
   });
 });

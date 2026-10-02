@@ -1,31 +1,40 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import {
   animais,
   estoque,
   lotes,
   nutricaoDietaIngredientes,
   nutricaoDietas,
+  nutricaoFornecimentos,
   nutricaoPlanejamentos,
   pesagens,
 } from "../drizzle/schema";
 import {
+  acoesPlanejamento,
   calcularProjecaoPlanejamento,
-  diaAnteriorCivil,
+  dataFimAoSubstituir,
+  dataFimEncerramentoManual,
+  diagnosticoLegadoCancelado,
   formatarMetaPlan,
   hojeISODateLocal,
   mesmaOrigemNutricional,
+  MSG_PLAN_CANCELAR_STATUS,
   MSG_PLAN_CONFLITO,
-  MSG_PLAN_DIETA,
+  MSG_PLAN_ENCERRAR_STATUS,
   MSG_PLAN_MATERIAL_INICIADO,
   MSG_PLAN_NAO_ENCONTRADO,
   MSG_PLAN_OWNERSHIP,
+  MSG_PLAN_SUBSTITUIR_STATUS,
+  planejamentoJaIniciou,
   mudouCampoMaterial,
   normalizarDataCivil,
   origemNormalizada,
   parseDiasSemana,
   periodosSobrepostos,
+  podeCancelarPlanejamento,
   podeEditarMaterialmente,
+  podeEncerrarPlanejamento,
   serializarDiasSemana,
   situacaoTemporal,
   validarPlanejamentoInput,
@@ -77,6 +86,7 @@ export type NutricaoPlanStore = {
   listPesagensAnimais(userId: number, animalIds: number[]): Promise<NutricaoPlanPesagemRef[]>;
   find(userId: number, id: number): Promise<NutricaoPlanPersistido | null>;
   list(userId: number, fazendaId: number): Promise<NutricaoPlanPersistido[]>;
+  contarFornecimentosConfirmados(userId: number, planejamentoId: number): Promise<number>;
   transaction<T>(fn: (tx: NutricaoPlanTx) => Promise<T>): Promise<T>;
 };
 
@@ -184,7 +194,12 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
     });
   }
 
-  async function hidratar(userId: number, plan: NutricaoPlanPersistido, hojeISO: string) {
+  async function hidratar(
+    userId: number,
+    plan: NutricaoPlanPersistido,
+    hojeISO: string,
+    temFornecimentoConfirmado = false,
+  ) {
     const lote = await store.getLote(userId, plan.loteId);
     const produtos = await store.listProdutosFazenda(plan.fazendaId);
     const produto = plan.produtoId ? produtos.find(p => p.produtoId === plan.produtoId) ?? null : null;
@@ -205,6 +220,13 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       origemNome,
       metaLabel: formatarMetaPlan(plan.modalidadeMeta, plan.valorMeta == null ? null : Number(plan.valorMeta)),
       situacao,
+      acoes: acoesPlanejamento({ status: plan.status, dataInicio: plan.dataInicio, hojeISO }),
+      diagnosticoLegado: diagnosticoLegadoCancelado({
+        status: plan.status,
+        dataInicio: plan.dataInicio,
+        hojeISO,
+        temFornecimentoConfirmado,
+      }),
       projecao: {
         ...projecao,
         autonomiaDieta: projecao.autonomiaDieta
@@ -246,7 +268,8 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       const row = await store.find(userId, id);
       if (!row) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, row.fazendaId);
-      return hidratar(userId, row, hojeISO);
+      const execucoes = await store.contarFornecimentosConfirmados(userId, row.id);
+      return hidratar(userId, row, hojeISO, execucoes > 0);
     },
 
     async listarLotes(userId: number, fazendaId: number) {
@@ -316,43 +339,55 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
-      if (atual.status !== "ativo") toTrpc("Só é possível substituir planejamento ativo.");
-      if (podeEditarMaterialmente(atual.dataInicio, hojeISO)) {
-        return this.editar(userId, id, input, hojeISO);
+      if (atual.status !== "ativo") toTrpc(MSG_PLAN_SUBSTITUIR_STATUS);
+      if (!planejamentoJaIniciou(atual.dataInicio, hojeISO)) {
+        const edited = await this.editar(userId, id, input, hojeISO);
+        return { success: true as const, id: edited.id, encerradoId: null, dataFimAnterior: null };
       }
       const novoInicio = normalizarDataCivil(input.dataInicio) ?? hojeISO;
-      const fimAnterior = diaAnteriorCivil(novoInicio);
-      if (!fimAnterior || fimAnterior < atual.dataInicio) {
-        toTrpc(MSG_PLAN_MATERIAL_INICIADO);
-      }
+      const corte = dataFimAoSubstituir(atual.dataInicio, novoInicio);
+      if (!corte.ok) toTrpc(corte.message);
       const novoInput: NutricaoPlanInput = { ...input, fazendaId: atual.fazendaId, dataInicio: novoInicio };
       const ctx = await contextoValidacao(userId, novoInput);
       const check = validarPlanejamentoInput(novoInput, ctx);
       if (!check.ok) toTrpc(check.message);
+      await assertSemConflito(userId, novoInput, id);
       const novoId = await store.transaction(async tx => {
-        await tx.update(id, userId, { status: "encerrado", dataFim: fimAnterior });
+        await tx.update(id, userId, { status: "encerrado", dataFim: corte.dataFim });
         return tx.insert(toRowInput(userId, novoInput, "ativo"));
       });
-      return { success: true as const, id: novoId, encerradoId: id, dataFimAnterior: fimAnterior };
+      return { success: true as const, id: novoId, encerradoId: id, dataFimAnterior: corte.dataFim };
     },
 
     async encerrar(userId: number, id: number, hojeISO = hojeISODateLocal()) {
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
-      const dataFim = hojeISO < atual.dataInicio
-        ? atual.dataInicio
-        : (atual.dataFim && atual.dataFim < hojeISO ? atual.dataFim : hojeISO);
+      const check = podeEncerrarPlanejamento({
+        status: atual.status,
+        dataInicio: atual.dataInicio,
+        hojeISO,
+      });
+      if (!check.ok) toTrpc(check.message ?? MSG_PLAN_ENCERRAR_STATUS);
+      const dataFim = dataFimEncerramentoManual(hojeISO);
       await store.transaction(async tx => {
         await tx.update(id, userId, { status: "encerrado", dataFim });
       });
       return { success: true as const, status: "encerrado" as const, dataFim };
     },
 
-    async cancelar(userId: number, id: number) {
+    async cancelar(userId: number, id: number, hojeISO = hojeISODateLocal()) {
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
+      const execucoes = await store.contarFornecimentosConfirmados(userId, atual.id);
+      const check = podeCancelarPlanejamento({
+        status: atual.status,
+        dataInicio: atual.dataInicio,
+        hojeISO,
+        temFornecimentoConfirmado: execucoes > 0,
+      });
+      if (!check.ok) toTrpc(check.message ?? MSG_PLAN_CANCELAR_STATUS);
       await store.transaction(async tx => {
         await tx.update(id, userId, { status: "cancelado" });
       });
@@ -404,6 +439,7 @@ async function dietaComIngredientes(
     fazendaId: dieta.fazendaId,
     nome: dieta.nome,
     status: dieta.status,
+    formaUso: dieta.formaUso ?? null,
     dataInicio: dieta.dataInicio ?? null,
     dataFim: dieta.dataFim ?? null,
     baseQuantidade: Number(dieta.baseQuantidade),
@@ -540,6 +576,18 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
       .where(and(eq(nutricaoPlanejamentos.userId, userId), eq(nutricaoPlanejamentos.fazendaId, fazendaId)))
       .orderBy(desc(nutricaoPlanejamentos.dataInicio), desc(nutricaoPlanejamentos.id));
     return rows.map(toPlanRow);
+  },
+
+  async contarFornecimentosConfirmados(userId, planejamentoId) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(nutricaoFornecimentos)
+      .where(and(
+        eq(nutricaoFornecimentos.userId, userId),
+        eq(nutricaoFornecimentos.planejamentoId, planejamentoId),
+        eq(nutricaoFornecimentos.status, "confirmado"),
+      ));
+    return Number(row?.n ?? 0);
   },
 
   transaction(fn) {

@@ -13,7 +13,14 @@ import {
   normalizarDataCivil,
   periodosSobrepostos,
   metaPorTratoNaUnidadeNatural,
+  acoesPlanejamento,
+  dataFimAoSubstituir,
+  diagnosticoLegadoCancelado,
+  MSG_PLAN_LEGADO_CANCELADO_COM_EXECUCAO,
+  MSG_PLAN_SUBSTITUIR_MESMO_DIA,
+  podeCancelarPlanejamento,
   podeEditarMaterialmente,
+  podeEncerrarPlanejamento,
   situacaoTemporal,
   textoAjudaTratosPorDia,
   textoEstimativaPorTrato,
@@ -427,6 +434,41 @@ describe("conflito e histórico", () => {
     expect(situacaoTemporal({ status: "ativo", dataInicio: "2026-08-01", dataFim: "2026-09-30", hojeISO: "2026-10-01" })).toBe("encerrado");
     expect(situacaoTemporal({ status: "cancelado", dataInicio: "2026-09-01", dataFim: null, hojeISO: "2026-10-01" })).toBe("cancelado");
   });
+
+  it("ciclo de vida: cancelar só no futuro, encerrar só depois do início", () => {
+    expect(podeCancelarPlanejamento({ status: "ativo", dataInicio: "2026-10-10", hojeISO: "2026-10-02" }).ok).toBe(true);
+    expect(podeCancelarPlanejamento({ status: "ativo", dataInicio: "2026-10-02", hojeISO: "2026-10-02" }).ok).toBe(false);
+    expect(podeCancelarPlanejamento({ status: "ativo", dataInicio: "2026-10-01", hojeISO: "2026-10-02" }).ok).toBe(false);
+    expect(podeEncerrarPlanejamento({ status: "ativo", dataInicio: "2026-10-01", hojeISO: "2026-10-02" }).ok).toBe(true);
+    expect(podeEncerrarPlanejamento({ status: "ativo", dataInicio: "2026-10-02", hojeISO: "2026-10-02" }).ok).toBe(true);
+    expect(podeEncerrarPlanejamento({ status: "ativo", dataInicio: "2026-10-10", hojeISO: "2026-10-02" }).ok).toBe(false);
+    expect(acoesPlanejamento({ status: "ativo", dataInicio: "2026-10-10", hojeISO: "2026-10-02" })).toMatchObject({
+      podeCancelar: true, podeEncerrar: false, podeSubstituir: false, podeEditar: true,
+    });
+    expect(acoesPlanejamento({ status: "ativo", dataInicio: "2026-10-01", hojeISO: "2026-10-02" })).toMatchObject({
+      podeCancelar: false, podeEncerrar: true, podeSubstituir: true, podeEditar: true,
+    });
+    expect(acoesPlanejamento({ status: "encerrado", dataInicio: "2026-10-01", hojeISO: "2026-10-02" })).toMatchObject({
+      podeEditar: false, podeCancelar: false, podeEncerrar: false, podeSubstituir: false,
+    });
+  });
+
+  it("substituição usa data civil e dataFim inclusiva do dia anterior", () => {
+    expect(dataFimAoSubstituir("2026-10-01", "2026-10-05")).toEqual({ ok: true, dataFim: "2026-10-04" });
+    expect(dataFimAoSubstituir("2026-10-02", "2026-10-03")).toEqual({ ok: true, dataFim: "2026-10-02" });
+    expect(dataFimAoSubstituir("2026-10-02", "2026-10-02")).toEqual({ ok: false, message: MSG_PLAN_SUBSTITUIR_MESMO_DIA });
+    expect(diaAnteriorCivil("2026-10-01")).toBe("2026-09-30");
+    expect(normalizarDataCivil("2026-10-02")).toBe("2026-10-02");
+  });
+
+  it("diagnóstico de legado não altera dados", () => {
+    expect(diagnosticoLegadoCancelado({
+      status: "cancelado", dataInicio: "2026-10-01", hojeISO: "2026-10-02", temFornecimentoConfirmado: true,
+    })).toBe(MSG_PLAN_LEGADO_CANCELADO_COM_EXECUCAO);
+    expect(diagnosticoLegadoCancelado({
+      status: "ativo", dataInicio: "2026-10-01", hojeISO: "2026-10-02", temFornecimentoConfirmado: true,
+    })).toBeNull();
+  });
 });
 
 describe("ajuda de tratos por dia — unidade da modalidade", () => {
@@ -487,5 +529,27 @@ describe("ajuda de tratos por dia — unidade da modalidade", () => {
     const input = { modalidadeMeta: "pct_pv_dia", valorMeta: 1, tratosPorDia: 2 };
     expect(metaPorTratoNaUnidadeNatural(input)).toBe(0.5);
     expect(textoEstimativaPorTrato(input)).toBe("Estimativa por trato: 0,5% PV/trato.");
+  });
+});
+
+describe("forma de uso — planejamento aceita todas as dietas", () => {
+  const planDieta = {
+    fazendaId: 1,
+    loteId: 1,
+    tipoOrigem: "dieta" as const,
+    dietaId: 5,
+    modalidadeMeta: "g_cab_dia" as const,
+    valorMeta: 100,
+    frequencia: "diaria" as const,
+    dataInicio: "2026-10-01",
+  };
+
+  it("pronta, opcional, obrigatória e legado null continuam selecionáveis", () => {
+    for (const formaUso of ["pronta_fornecer", "preparo_opcional", "preparo_obrigatorio", null] as const) {
+      expect(validarPlanejamentoInput(planDieta, {
+        lote,
+        dieta: { ...dieta, formaUso },
+      })).toEqual({ ok: true });
+    }
   });
 });

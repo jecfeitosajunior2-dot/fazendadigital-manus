@@ -5,9 +5,14 @@ import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { listaNutricaoComFazenda } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { unidadeCompativelFormulacaoKg } from "@shared/nutricaoDietas";
+import {
+  MSG_FORN_DIETA_EXIGE_PREPARO_UI,
+  podeDietaSerFornecidaDiretamente,
+  unidadeCompativelFormulacaoKg,
+} from "@shared/nutricaoDietas";
 import { formatarMetaPlan } from "@shared/nutricaoPlanejamento";
 import { MSG_FORN_LOTE_VAZIO, MSG_FORN_SEM_PLAN } from "@shared/nutricaoFornecimentos";
 
@@ -73,6 +78,12 @@ export default function NutricaoFornecimentoFormPage() {
   const planosCompativeis = origemOp === "batida" && batidaSel
     ? planos.filter(p => p.tipoOrigem === "dieta" && Number(p.dietaId) === Number(batidaSel.dietaId))
     : planos;
+  const dietaSel = dietas.find(d => String(d.id) === String(dietaEfetiva));
+  const exigePreparoDireto =
+    origemOp === "direta"
+    && origemEfetiva === "dieta"
+    && Boolean(dietaSel)
+    && !podeDietaSerFornecidaDiretamente(dietaSel?.formaUso);
 
   const payload = useMemo(() => {
     const qtd = Number(String(quantidade).replace(",", "."));
@@ -111,12 +122,24 @@ export default function NutricaoFornecimentoFormPage() {
     onError: e => toast.error(e.message),
   });
 
+  const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/fornecimentos", fazendaId));
+
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltarLista}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>Novo Fornecimento</h1>
-          <button type="button" className="text-[12px] text-gray-600 underline" onClick={() => setLocation(fazendaId ? `/nutricao/fornecimentos?fazendaId=${fazendaId}` : "/nutricao/fornecimentos")}>Voltar</button>
         </div>
         <div className="px-4 py-5 space-y-6">
           <section className="space-y-3">
@@ -233,6 +256,18 @@ export default function NutricaoFornecimentoFormPage() {
                   <SelectItem value="__empty__" className="text-[12px] text-gray-400">Selecione</SelectItem>
                   {dietas.map(d => <SelectItem key={d.id} value={String(d.id)} className="text-[12px]">{d.nome}</SelectItem>)}
                 </FormSelect>
+                {exigePreparoDireto && (
+                  <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 space-y-2">
+                    <p>{MSG_FORN_DIETA_EXIGE_PREPARO_UI}</p>
+                    <button
+                      type="button"
+                      className="underline font-semibold"
+                      onClick={() => { setOrigemOp("batida"); setTipoOrigem("dieta"); setProdutoId(""); }}
+                    >
+                      Usar uma Batida
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             <div className="max-w-[220px]">
@@ -308,7 +343,7 @@ export default function NutricaoFornecimentoFormPage() {
             <button type="button" className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase bg-[#F0F0F0]" onClick={() => setLocation(`/nutricao/fornecimentos?fazendaId=${fazendaId}`)}>Cancelar</button>
             <button
               type="button"
-              disabled={!payload || previewPack?.ok === false || !preview?.podeConfirmar || confirmar.isPending}
+              disabled={!payload || exigePreparoDireto || previewPack?.ok === false || !preview?.podeConfirmar || confirmar.isPending}
               onClick={() => payload && confirmar.mutate(payload)}
               className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50"
               style={{ backgroundColor: FD_PRIMARY }}

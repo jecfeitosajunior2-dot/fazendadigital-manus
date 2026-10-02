@@ -28,6 +28,10 @@ export const nutricaoBatidasRouter = router({
     .input(z.object({ fazendaId: z.number().int().positive() }))
     .query(({ ctx, input }) => nutricaoBatidasService.listarDisponiveis(ctx.user.id, input.fazendaId)),
 
+  listDietasParaBatida: protectedProcedure
+    .input(z.object({ fazendaId: z.number().int().positive() }))
+    .query(({ ctx, input }) => nutricaoBatidasService.listarDietasParaBatida(ctx.user.id, input.fazendaId)),
+
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ ctx, input }) => nutricaoBatidasService.obter(ctx.user.id, input.id)),

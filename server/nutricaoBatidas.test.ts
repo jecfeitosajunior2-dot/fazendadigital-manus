@@ -18,6 +18,7 @@ import {
   MSG_BATIDA_QTD,
   MSG_BATIDA_SALDO,
 } from "../shared/nutricaoBatidas";
+import { MSG_BATIDA_DIETA_PRONTA } from "../shared/nutricaoDietas";
 import type { NutricaoPlanDietaRef } from "../shared/nutricaoPlanejamento";
 
 function clone<T>(v: T): T {
@@ -73,6 +74,9 @@ function criarStore(seed?: {
       throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta Fazenda." });
     },
     async listProdutosFazenda() { return state.produtos; },
+    async listDietasFazenda(userId, fazendaId) {
+      return state.dietas.filter(d => d.userId === userId && d.fazendaId === fazendaId && d.status === "ativa");
+    },
     async getDieta(userId, dietaId) {
       return state.dietas.find(d => d.id === dietaId && d.userId === userId) ?? null;
     },
@@ -447,5 +451,119 @@ describe("conversão operacional por embalagem — batida", () => {
     const estorno = store.movs.find(m => m.status === "estorno");
     expect(Number(estorno?.quantidade)).toBe(1.5);
     expect(Number(estorno?.conteudoPorUnidadeSnapshot)).toBe(30);
+  });
+});
+
+describe("nutricaoBatidas — forma de uso", () => {
+  function dietaRef(over: Partial<NutricaoPlanDietaRef> = {}): NutricaoPlanDietaRef {
+    return {
+      id: 5, userId: 10, fazendaId: 1, nome: "Engorda 1", status: "ativa",
+      dataInicio: null, dataFim: null, baseQuantidade: 500,
+      ingredientes: [
+        { produtoId: 10, quantidadeKg: 300 },
+        { produtoId: 11, quantidadeKg: 150 },
+        { produtoId: 12, quantidadeKg: 50 },
+      ],
+      ...over,
+    };
+  }
+
+  it("A: pronta não aparece no seletor; B/C/D: opcional, obrigatória e legado aparecem", async () => {
+    const store = criarStore({
+      dietas: [
+        dietaRef({ id: 1, nome: "Pronta", formaUso: "pronta_fornecer" }),
+        dietaRef({ id: 2, nome: "Opcional", formaUso: "preparo_opcional" }),
+        dietaRef({ id: 3, nome: "Obrigatória", formaUso: "preparo_obrigatorio" }),
+        dietaRef({ id: 4, nome: "Legada", formaUso: null }),
+      ],
+    });
+    const svc = createNutricaoBatidasService(store);
+    const lista = await svc.listarDietasParaBatida(10, 1);
+    expect(lista.map(d => d.nome)).toEqual(["Opcional", "Obrigatória", "Legada"]);
+  });
+
+  it("E: API recebe dieta pronta e o backend bloqueia", async () => {
+    const store = criarStore({
+      dietas: [dietaRef({ formaUso: "pronta_fornecer" })],
+    });
+    const svc = createNutricaoBatidasService(store);
+    await expect(svc.confirmar(10, "Pedro", inputOk(), "2026-10-01"))
+      .rejects.toMatchObject({ message: MSG_BATIDA_DIETA_PRONTA });
+    expect(store.rows).toHaveLength(0);
+    expect(store.movs).toHaveLength(0);
+    expect(Number(store.produtos[0]?.quantidade)).toBe(1000);
+  });
+
+  it("F: 1 ingrediente + obrigatório confirma batida", async () => {
+    const store = criarStore({
+      dietas: [dietaRef({
+        formaUso: "preparo_obrigatorio",
+        baseQuantidade: 30,
+        ingredientes: [{ produtoId: 10, quantidadeKg: 30 }],
+      })],
+    });
+    const svc = createNutricaoBatidasService(store);
+    const out = await svc.confirmar(10, "Pedro", inputOk({ quantidadePreparadaKg: 30 }), "2026-10-01");
+    expect(out.id).toBe(1);
+    expect(Number(store.produtos[0]?.quantidade)).toBe(970);
+  });
+
+  it("G: 2 ingredientes + pronta é bloqueada", async () => {
+    const store = criarStore({
+      dietas: [dietaRef({
+        formaUso: "pronta_fornecer",
+        baseQuantidade: 100,
+        ingredientes: [
+          { produtoId: 10, quantidadeKg: 60 },
+          { produtoId: 11, quantidadeKg: 40 },
+        ],
+      })],
+    });
+    const svc = createNutricaoBatidasService(store);
+    await expect(svc.confirmar(10, "Pedro", inputOk({ quantidadePreparadaKg: 100 }), "2026-10-01"))
+      .rejects.toMatchObject({ message: MSG_BATIDA_DIETA_PRONTA });
+  });
+
+  it("I/J: estoque baixa uma vez e estorno continua correto", async () => {
+    const store = criarStore({
+      dietas: [dietaRef({ formaUso: "preparo_opcional" })],
+    });
+    const svc = createNutricaoBatidasService(store);
+    await svc.confirmar(10, "Pedro", inputOk({ quantidadePreparadaKg: 500 }), "2026-10-01");
+    expect(Number(store.produtos[0]?.quantidade)).toBe(700);
+    expect(Number(store.produtos[1]?.quantidade)).toBe(650);
+    expect(Number(store.produtos[2]?.quantidade)).toBe(350);
+    store.dietas[0]!.formaUso = "pronta_fornecer";
+    await svc.estornar(10, "Pedro", { id: 1, motivo: "erro_lancamento" }, "2026-10-02");
+    expect(Number(store.produtos[0]?.quantidade)).toBe(1000);
+    expect(Number(store.produtos[1]?.quantidade)).toBe(800);
+    expect(Number(store.produtos[2]?.quantidade)).toBe(400);
+  });
+
+  it("Nova Batida usa listDietasParaBatida e não filtra o planejamento", () => {
+    const form = readFileSync(new URL("../client/src/pages/NutricaoBatidaFormPage.tsx", import.meta.url), "utf8");
+    const router = readFileSync(new URL("./nutricaoBatidasRouter.ts", import.meta.url), "utf8");
+    const planRouter = readFileSync(new URL("./nutricaoPlanejamentoRouter.ts", import.meta.url), "utf8");
+    expect(form).toContain("listDietasParaBatida");
+    expect(form).not.toContain("nutricaoPlanejamento.listDietas");
+    expect(form).toContain("MSG_BATIDA_SEM_DIETA_PREPARO");
+    expect(router).toContain("listDietasParaBatida");
+    expect(planRouter).not.toContain("podeDietaGerarBatida");
+    expect(planRouter).not.toContain("formaUso");
+  });
+
+  it("Nova Batida: vazio só após sucesso, seletor desabilitado e sem tratar como erro", () => {
+    const form = readFileSync(new URL("../client/src/pages/NutricaoBatidaFormPage.tsx", import.meta.url), "utf8");
+    expect(form).toContain("estadoDietasParaBatida");
+    expect(form).toContain("estadoDietas === \"carregando\"");
+    expect(form).toContain("estadoDietas === \"vazio\"");
+    expect(form).toContain("MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO");
+    expect(form).toContain("disabled={seletorDietaDesabilitado}");
+    expect(form).toContain("text-[12px] text-gray-500");
+    const blocoVazio = form.slice(form.indexOf("estadoDietas === \"vazio\""), form.indexOf("estadoDietas === \"vazio\"") + 420);
+    expect(blocoVazio).toContain("MSG_BATIDA_SEM_DIETA_PREPARO");
+    expect(blocoVazio).not.toContain("text-red");
+    expect(form).not.toContain("toast.error(MSG_BATIDA_SEM_DIETA_PREPARO)");
+    expect(form).toContain("!payload");
   });
 });

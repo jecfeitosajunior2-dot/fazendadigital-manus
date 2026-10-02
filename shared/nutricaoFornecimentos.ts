@@ -3,6 +3,8 @@ import {
   arredondarMoeda,
   custoMedioVigentePorKg,
   kgParaQuantidadeUnidade,
+  MSG_FORN_DIETA_EXIGE_PREPARO,
+  podeDietaSerFornecidaDiretamente,
   quantidadeParaKg,
 } from "./nutricaoDietas";
 import {
@@ -229,6 +231,9 @@ export function validarFornecimentoInput(
       if (!ctx.dieta || ctx.dieta.fazendaId !== input.fazendaId || ctx.dieta.status !== "ativa") {
         return { ok: false, message: MSG_FORN_DIETA };
       }
+      if (!podeDietaSerFornecidaDiretamente(ctx.dieta.formaUso)) {
+        return { ok: false, message: MSG_FORN_DIETA_EXIGE_PREPARO };
+      }
     }
   }
 
@@ -426,11 +431,15 @@ export function calcularPreviewFornecimento(input: {
       }
     }
   } else {
-    const out = input.dieta
-      ? montarBaixasDieta(input.dieta, input.produtosPorId ?? new Map(), input.quantidadeKg)
-      : { baixas: [], bloqueado: true, motivo: MSG_FORN_DIETA };
-    baixas = out.baixas;
-    if (out.bloqueado) motivoBloqueio = out.motivo;
+    if (input.dieta && !podeDietaSerFornecidaDiretamente(input.dieta.formaUso)) {
+      motivoBloqueio = MSG_FORN_DIETA_EXIGE_PREPARO;
+    } else {
+      const out = input.dieta
+        ? montarBaixasDieta(input.dieta, input.produtosPorId ?? new Map(), input.quantidadeKg)
+        : { baixas: [], bloqueado: true, motivo: MSG_FORN_DIETA };
+      baixas = out.baixas;
+      if (out.bloqueado) motivoBloqueio = out.motivo;
+    }
   }
 
   if (op !== "batida") {
@@ -520,13 +529,14 @@ export function planejamentoVigenteNaData(
   plan: Pick<NutricaoFornPlanejamentoRef, "status" | "dataInicio" | "dataFim">,
   dataISO: string,
 ): boolean {
-  if (plan.status === "cancelado" || plan.status === "encerrado") return false;
+  if (plan.status === "cancelado") return false;
   const data = normalizarDataCivil(dataISO);
   const ini = normalizarDataCivil(plan.dataInicio);
   const fim = normalizarDataCivil(plan.dataFim ?? null);
   if (!data || !ini) return false;
   if (data < ini) return false;
   if (fim && data > fim) return false;
+  if (plan.status === "encerrado" && !fim) return false;
   return true;
 }
 

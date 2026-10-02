@@ -48,6 +48,12 @@ export const MSG_VG_CUSTO_INCOMPLETO = "Custo incompleto";
 export const MSG_VG_SEM_MOVIMENTO = "Ainda não há movimentação nutricional no período selecionado.";
 export const MSG_VG_CONSUMO_APARENTE = "Consumo aparente";
 export const MSG_VG_NAO_REAL = "Não é consumo real.";
+export const MSG_VG_PLANEJADO_ACUMULADO =
+  "Considera somente os dias já alcançados dentro do período selecionado. Em períodos encerrados, coincide com o planejado do período.";
+export const MSG_VG_PLANEJADO_PERIODO =
+  "Projeção para todo o período selecionado, respeitando a vigência e a frequência dos planejamentos.";
+export const MSG_VG_METAS_VARIAVEIS = "Metas variáveis";
+export const MSG_VG_SEM_COMPARACAO = "Nenhum planejamento nem fornecimento confirmado para comparar no período.";
 
 export type PeriodoCivil = { de: string; ate: string };
 
@@ -275,8 +281,32 @@ export function custoPorKgFornecido(custo: ReturnType<typeof agregarCustoForneci
   return arredondarMoeda(custo.custoConhecido / custo.kgComCusto);
 }
 
-function origemChave(item: { tipoOrigem: string; produtoId?: number | null; dietaId?: number | null }): string {
+export function origemChave(item: { tipoOrigem: string; produtoId?: number | null; dietaId?: number | null }): string {
   return item.tipoOrigem === "dieta" ? `dieta:${item.dietaId ?? 0}` : `produto:${item.produtoId ?? 0}`;
+}
+
+export function chaveFonteLote(item: {
+  fazendaId?: number;
+  loteId: number;
+  tipoOrigem: string;
+  produtoId?: number | null;
+  dietaId?: number | null;
+}): string {
+  return `${Number(item.fazendaId) || 0}:${item.loteId}:${origemChave(item)}`;
+}
+
+export function dataReferenciaPeriodo(periodo: PeriodoCivil, hojeISO: string): string | null {
+  const ate = normalizarDataCivil(periodo.ate);
+  const hoje = normalizarDataCivil(hojeISO);
+  if (!ate || !hoje) return null;
+  return ate < hoje ? ate : hoje;
+}
+
+export function periodoRealizadoAteReferencia(periodo: PeriodoCivil, hojeISO: string): PeriodoCivil | null {
+  const de = normalizarDataCivil(periodo.de);
+  const ref = dataReferenciaPeriodo(periodo, hojeISO);
+  if (!de || !ref || de > ref) return null;
+  return { de, ate: ref };
 }
 
 export function planosVigentesNoDia(planos: VgPlan[], dia: string, loteId: number, origem: string): VgPlan[] {
@@ -333,6 +363,164 @@ export function planejadoNoPeriodo(input: {
     motivo: null,
     adLibitum: false,
   };
+}
+
+export type VgLinhaPlanejadoFonte = {
+  chave: string;
+  loteId: number;
+  loteNome: string;
+  fonte: string;
+  tipoOrigem: string;
+  produtoId: number | null;
+  dietaId: number | null;
+  meta: string;
+  planejadoAteReferenciaKg: number | null;
+  planejadoPeriodoKg: number | null;
+  fornecidoKg: number;
+  desvioAteReferenciaKg: number | null;
+  desvioAteReferenciaPercentual: number | null;
+  adLibitum: boolean;
+  motivo: string | null;
+  planejamentoIds: number[];
+  fornecimentoIds: number[];
+  periodoRealizado: boolean;
+};
+
+function somarSegmentosPlanejados(
+  calcs: Array<ReturnType<typeof planejadoNoPeriodo>>,
+): { kg: number | null; adLibitum: boolean; motivo: string | null } {
+  const bloqueio = calcs.find(c =>
+    c.planejadoKg == null
+    && (c.motivo === "População histórica do lote não determinada."
+      || c.motivo === "Meta quantitativa não determinada."),
+  );
+  if (bloqueio) return { kg: null, adLibitum: false, motivo: bloqueio.motivo };
+  const relevantes = calcs.filter(c => c.adLibitum || c.planejadoKg != null);
+  if (relevantes.length > 0 && relevantes.every(c => c.adLibitum)) {
+    return { kg: null, adLibitum: true, motivo: relevantes[0]?.motivo ?? null };
+  }
+  const comKg = calcs.filter(c => c.planejadoKg != null);
+  if (comKg.length === 0) {
+    return { kg: null, adLibitum: false, motivo: calcs.find(c => c.motivo)?.motivo ?? null };
+  }
+  return {
+    kg: arredondarKg(comKg.reduce((s, c) => s + (c.planejadoKg ?? 0), 0)),
+    adLibitum: false,
+    motivo: null,
+  };
+}
+
+function rotuloMetaConsolidada(planos: VgPlan[]): string {
+  if (planos.length === 0) return "—";
+  const chaves = [...new Set(planos.map(p => `${p.modalidadeMeta}:${p.valorMeta ?? ""}`))];
+  if (chaves.length > 1) return MSG_VG_METAS_VARIAVEIS;
+  return formatarMetaPlan(planos[0]!.modalidadeMeta, planos[0]!.valorMeta);
+}
+
+function desvioAcumulado(fornecidoKg: number, planejadoAte: number | null, periodoRealizado: boolean): {
+  desvioAteReferenciaKg: number | null;
+  desvioAteReferenciaPercentual: number | null;
+} {
+  if (!periodoRealizado || planejadoAte == null) {
+    return { desvioAteReferenciaKg: null, desvioAteReferenciaPercentual: null };
+  }
+  const desvioAteReferenciaKg = arredondarKg(fornecidoKg - planejadoAte);
+  if (!(planejadoAte > 0)) {
+    return { desvioAteReferenciaKg, desvioAteReferenciaPercentual: null };
+  }
+  return {
+    desvioAteReferenciaKg,
+    desvioAteReferenciaPercentual: Math.round((desvioAteReferenciaKg / planejadoAte) * 1000) / 10,
+  };
+}
+
+export function consolidarPlanejadoFornecido(input: {
+  periodo: PeriodoCivil;
+  hojeISO: string;
+  planos: VgPlan[];
+  todosPlanos: VgPlan[];
+  forns: VgForn[];
+  porLote: Map<number, VgForn[]>;
+  nomeLote: (id: number) => string;
+}): VgLinhaPlanejadoFonte[] {
+  const realizado = periodoRealizadoAteReferencia(input.periodo, input.hojeISO);
+  const grupos = new Map<string, { planos: VgPlan[]; forns: VgForn[] }>();
+  const garantir = (chave: string) => {
+    const atual = grupos.get(chave) ?? { planos: [], forns: [] };
+    grupos.set(chave, atual);
+    return atual;
+  };
+  for (const plan of input.planos) {
+    garantir(chaveFonteLote(plan)).planos.push(plan);
+  }
+  for (const forn of input.forns) {
+    garantir(chaveFonteLote(forn)).forns.push(forn);
+  }
+
+  const linhas: VgLinhaPlanejadoFonte[] = [];
+  for (const [chave, grupo] of grupos) {
+    const amostra = grupo.planos[0] ?? grupo.forns[0];
+    if (!amostra) continue;
+    const vistos = new Set<number>();
+    const fornsUnicos = grupo.forns.filter(f => {
+      if (vistos.has(f.id)) return false;
+      vistos.add(f.id);
+      return true;
+    });
+    const fornsLote = input.porLote.get(amostra.loteId) ?? [];
+    const pop = populacaoEstavelLote(fornsLote.length ? fornsLote : fornsUnicos);
+    const populacao = pop.estavel ? pop.populacao : null;
+    const calcsPeriodo = grupo.planos.map(plan => planejadoNoPeriodo({
+      plan,
+      periodo: input.periodo,
+      populacao,
+      todosPlanos: input.todosPlanos,
+    }));
+    const calcsAcum = realizado
+      ? grupo.planos.map(plan => planejadoNoPeriodo({
+        plan,
+        periodo: realizado,
+        populacao,
+        todosPlanos: input.todosPlanos,
+      }))
+      : [];
+    const periodo = somarSegmentosPlanejados(calcsPeriodo);
+    const acum = realizado ? somarSegmentosPlanejados(calcsAcum) : { kg: null, adLibitum: periodo.adLibitum, motivo: null };
+    const fornecidoKg = arredondarKg(fornsUnicos.reduce((s, f) => s + f.quantidadeFornecidaKg, 0));
+    const desvio = desvioAcumulado(fornecidoKg, acum.kg, realizado != null);
+    const fonte = grupo.planos[0]?.origemNome
+      ?? fornsUnicos[0]?.origemNomeSnapshot
+      ?? (amostra.tipoOrigem === "dieta" ? `Dieta ${amostra.dietaId}` : `Produto ${amostra.produtoId}`);
+    linhas.push({
+      chave,
+      loteId: amostra.loteId,
+      loteNome: input.nomeLote(amostra.loteId),
+      fonte,
+      tipoOrigem: amostra.tipoOrigem,
+      produtoId: amostra.produtoId ?? null,
+      dietaId: amostra.dietaId ?? null,
+      meta: rotuloMetaConsolidada(grupo.planos),
+      planejadoAteReferenciaKg: acum.kg,
+      planejadoPeriodoKg: periodo.kg,
+      fornecidoKg,
+      desvioAteReferenciaKg: desvio.desvioAteReferenciaKg,
+      desvioAteReferenciaPercentual: desvio.desvioAteReferenciaPercentual,
+      adLibitum: periodo.adLibitum,
+      motivo: acum.motivo ?? periodo.motivo,
+      planejamentoIds: grupo.planos.map(p => p.id),
+      fornecimentoIds: fornsUnicos.map(f => f.id),
+      periodoRealizado: realizado != null,
+    });
+  }
+  return linhas.sort((a, b) => {
+    if (a.loteNome !== b.loteNome) return a.loteNome.localeCompare(b.loteNome, "pt-BR");
+    return a.fonte.localeCompare(b.fonte, "pt-BR");
+  });
+}
+
+export function invarianteFornecidoSemDuplicar(linhas: VgLinhaPlanejadoFonte[]): boolean {
+  const ids = linhas.flatMap(l => l.fornecimentoIds);
+  return ids.length === new Set(ids).size;
 }
 
 export type PontoEvolucao = {
@@ -567,35 +755,14 @@ export function montarPainelNutricao(input: {
     fornecimentosCocho: fornRefs,
   });
 
-  const planejadoLinhas = planos.map(plan => {
-    const fornsLote = porLote.get(plan.loteId) ?? [];
-    const fornsFonte = fornsLote.filter(f => origemChave(f) === origemChave(plan));
-    const pop = populacaoEstavelLote(fornsLote.length ? fornsLote : fornsFonte);
-    const calc = planejadoNoPeriodo({
-      plan,
-      periodo: input.periodo,
-      populacao: pop.estavel ? pop.populacao : null,
-      todosPlanos: input.planejamentos.filter(p => p.status !== "cancelado"),
-    });
-    const fornecido = arredondarKg(fornsFonte.reduce((s, f) => s + f.quantidadeFornecidaKg, 0));
-    const desvioKg = calc.planejadoKg != null ? arredondarKg(fornecido - calc.planejadoKg) : null;
-    const desvioPct = calc.planejadoKg != null && calc.planejadoKg > 0
-      ? Math.round((desvioKg! / calc.planejadoKg) * 1000) / 10
-      : null;
-    return {
-      planejamentoId: plan.id,
-      loteId: plan.loteId,
-      loteNome: nomeLote(plan.loteId),
-      fonte: plan.origemNome ?? (plan.tipoOrigem === "dieta" ? `Dieta ${plan.dietaId}` : `Produto ${plan.produtoId}`),
-      meta: formatarMetaPlan(plan.modalidadeMeta, plan.valorMeta),
-      planejadoKg: calc.planejadoKg,
-      fornecidoKg: fornecido,
-      desvioKg,
-      desvioPct,
-      adLibitum: calc.adLibitum,
-      motivo: calc.motivo,
-      diasAplicaveis: calc.diasAplicaveis,
-    };
+  const planejadoLinhas = consolidarPlanejadoFornecido({
+    periodo: input.periodo,
+    hojeISO: input.hojeISO,
+    planos,
+    todosPlanos: input.planejamentos.filter(p => p.status !== "cancelado"),
+    forns,
+    porLote,
+    nomeLote,
   });
 
   const produtosPorId = new Map(input.produtos.map(p => [p.produtoId, p]));

@@ -34,6 +34,7 @@ import {
   type NutricaoBatidaSituacao,
 } from "../shared/nutricaoBatidas";
 import type { NutricaoFornEstoqueRef } from "../shared/nutricaoFornecimentos";
+import { dietaElegivelParaNovaBatida } from "../shared/nutricaoDietas";
 import {
   hojeISODateLocal,
   normalizarDataCivil,
@@ -149,6 +150,7 @@ export type BatidaTx = {
 export type BatidaStore = {
   assertFazenda(userId: number, fazendaId: number): Promise<void>;
   listProdutosFazenda(fazendaId: number): Promise<NutricaoFornEstoqueRef[]>;
+  listDietasFazenda(userId: number, fazendaId: number): Promise<NutricaoPlanDietaRef[]>;
   getDieta(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null>;
   find(userId: number, id: number): Promise<BatidaPersistida | null>;
   list(userId: number, fazendaId: number): Promise<BatidaPersistida[]>;
@@ -231,6 +233,12 @@ export function createNutricaoBatidasService(store: BatidaStore) {
     async listarDisponiveis(userId: number, fazendaId: number) {
       const rows = await this.listar(userId, { fazendaId, status: "confirmado" });
       return rows.filter(r => r.disponivelDistribuicao);
+    },
+
+    async listarDietasParaBatida(userId: number, fazendaId: number) {
+      await store.assertFazenda(userId, fazendaId);
+      const dietas = await store.listDietasFazenda(userId, fazendaId);
+      return dietas.filter(dietaElegivelParaNovaBatida);
     },
 
     async obter(userId: number, id: number) {
@@ -415,6 +423,7 @@ async function dietaComIngredientes(userId: number, dietaId: number): Promise<Nu
     fazendaId: dieta.fazendaId,
     nome: dieta.nome,
     status: dieta.status,
+    formaUso: dieta.formaUso ?? null,
     dataInicio: dieta.dataInicio ?? null,
     dataFim: dieta.dataFim ?? null,
     baseQuantidade: Number(dieta.baseQuantidade),
@@ -462,6 +471,23 @@ export const nutricaoBatidasStore: BatidaStore = {
         embalagens: r.embalagens ?? null,
         vinculadoFazenda: true,
       }));
+  },
+  async listDietasFazenda(userId, fazendaId) {
+    const rows = await db
+      .select()
+      .from(nutricaoDietas)
+      .where(and(
+        eq(nutricaoDietas.userId, userId),
+        eq(nutricaoDietas.fazendaId, fazendaId),
+        eq(nutricaoDietas.status, "ativa"),
+      ))
+      .orderBy(desc(nutricaoDietas.updatedAt));
+    const out: NutricaoPlanDietaRef[] = [];
+    for (const dieta of rows) {
+      const full = await dietaComIngredientes(userId, dieta.id);
+      if (full) out.push(full);
+    }
+    return out;
   },
   async getDieta(userId, dietaId) {
     return dietaComIngredientes(userId, dietaId);

@@ -5,8 +5,14 @@ import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { listaNutricaoComFazenda } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import {
+  estadoDietasParaBatida,
+  MSG_BATIDA_SEM_DIETA_PREPARO,
+  MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO,
+} from "@shared/nutricaoDietas";
 
 function hojeISO() {
   const n = new Date();
@@ -26,10 +32,23 @@ export default function NutricaoBatidaFormPage() {
   const fazendaNum = Number(fazendaId);
   const fazendaOk = fazendaNum > 0;
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
-  const { data: dietas = [] } = trpc.nutricaoPlanejamento.listDietas.useQuery(
+  const {
+    data: dietas = [],
+    isLoading: dietasLoading,
+    isError: dietasErro,
+    isSuccess: dietasOk,
+  } = trpc.nutricaoBatidas.listDietasParaBatida.useQuery(
     { fazendaId: fazendaNum },
     { enabled: fazendaOk },
   );
+  const estadoDietas = estadoDietasParaBatida({
+    fazendaSelecionada: fazendaOk,
+    isLoading: dietasLoading,
+    isError: dietasErro,
+    isSuccess: dietasOk,
+    quantidade: dietas.length,
+  });
+  const seletorDietaDesabilitado = estadoDietas !== "pronto";
 
   const payload = useMemo(() => {
     const qtd = Number(String(quantidade).replace(",", "."));
@@ -56,12 +75,24 @@ export default function NutricaoBatidaFormPage() {
     onError: e => toast.error(e.message),
   });
 
+  const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/batidas", fazendaId));
+
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltarLista}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>Nova Batida</h1>
-          <button type="button" className="text-[12px] text-gray-600 underline" onClick={() => setLocation(fazendaId ? `/nutricao/batidas?fazendaId=${fazendaId}` : "/nutricao/batidas")}>Voltar</button>
         </div>
         <div className="px-4 py-5 space-y-6">
           <section className="space-y-3">
@@ -81,10 +112,26 @@ export default function NutricaoBatidaFormPage() {
               </div>
               <div>
                 <FormLabel required>Dieta</FormLabel>
-                <FormSelect variant="light" required placeholder="Selecione" value={dietaId || "__empty__"} onChange={v => setDietaId(v === "__empty__" ? "" : v)}>
+                <FormSelect
+                  variant="light"
+                  required
+                  disabled={seletorDietaDesabilitado}
+                  placeholder="Selecione"
+                  value={dietaId || "__empty__"}
+                  onChange={v => setDietaId(v === "__empty__" ? "" : v)}
+                >
                   <SelectItem value="__empty__" className="text-[12px] text-gray-400">Selecione</SelectItem>
                   {dietas.map(d => <SelectItem key={d.id} value={String(d.id)} className="text-[12px]">{d.nome}</SelectItem>)}
                 </FormSelect>
+                {estadoDietas === "carregando" && (
+                  <p className="text-[12px] text-gray-500 mt-1">Carregando...</p>
+                )}
+                {estadoDietas === "vazio" && (
+                  <div className="mt-1 space-y-1">
+                    <p className="text-[12px] text-gray-500">{MSG_BATIDA_SEM_DIETA_PREPARO}</p>
+                    <p className="text-[12px] text-gray-500">{MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO}</p>
+                  </div>
+                )}
               </div>
             </div>
           </section>

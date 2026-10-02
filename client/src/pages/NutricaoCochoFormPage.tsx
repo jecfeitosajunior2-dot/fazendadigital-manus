@@ -5,6 +5,7 @@ import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { listaNutricaoComFazenda } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { NUTRICAO_COCHO_TIPOS, parseMedidaOpcional, type NutricaoCochoTipo } from "@shared/nutricaoCochos";
@@ -52,7 +53,7 @@ export default function NutricaoCochoFormPage() {
   }, [existente]);
 
   const utils = trpc.useUtils();
-  const voltar = () => setLocation(fazendaId ? `/nutricao/cochos?fazendaId=${fazendaId}` : "/nutricao/cochos");
+  const voltar = () => setLocation(listaNutricaoComFazenda("/nutricao/cochos", fazendaId));
   const createMut = trpc.nutricaoCochos.create.useMutation({
     onSuccess: () => { toast.success("Cocho cadastrado."); utils.nutricaoCochos.list.invalidate(); voltar(); },
     onError: e => toast.error(e.message),
@@ -90,10 +91,20 @@ export default function NutricaoCochoFormPage() {
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltar}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>{isEdit ? "Editar Cocho" : "Novo Cocho"}</h1>
-          <button type="button" className="text-[12px] text-gray-600 underline" onClick={voltar}>Voltar</button>
         </div>
         <div className="px-4 py-5 space-y-6">
           <section className="space-y-3">

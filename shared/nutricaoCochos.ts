@@ -82,6 +82,18 @@ export function formatarLocalizacaoCocho(
   return pasto || ref || "—";
 }
 
+/** Detalhe do Cocho: linha cinza do Pasto só se o secundário for diferente do nome. */
+export function textoSecundarioPastoCochoDetalhe(
+  nome?: string | null,
+  secundario?: string | null,
+): string | null {
+  const principal = String(nome ?? "").trim();
+  const extra = String(secundario ?? "").trim();
+  if (!extra) return null;
+  if (principal && extra === principal) return null;
+  return extra;
+}
+
 export function parseMedidaOpcional(value: string | number | null | undefined): number | null {
   if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number(String(value).replace(",", "."));

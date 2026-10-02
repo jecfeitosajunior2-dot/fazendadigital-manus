@@ -1160,6 +1160,7 @@ export async function ensureSchema() {
         \`tipo\` varchar(40) NOT NULL,
         \`categoriaAnimal\` varchar(50),
         \`objetivo\` varchar(40),
+        \`formaUso\` varchar(30),
         \`status\` varchar(20) NOT NULL DEFAULT 'ativa',
         \`dataInicio\` date,
         \`dataFim\` date,
@@ -1172,6 +1173,9 @@ export async function ensureSchema() {
         KEY \`nutricao_dietas_fazenda_idx\` (\`fazendaId\`)
       )
     `);
+    if (await tableExists(pool, "nutricao_dietas")) {
+      await ensureColumn(pool, "nutricao_dietas", "formaUso", "varchar(30) NULL");
+    }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`nutricao_dieta_ingredientes\` (

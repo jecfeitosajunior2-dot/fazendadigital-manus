@@ -1,7 +1,12 @@
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
-import { FD_PRIMARY } from "@/components/FormFields";
+import { useConfirm } from "@/components/ConfirmDialog";
+import {
+  destinoVoltarNutricaoDetalhe,
+  NUTRICAO_PLANEJAMENTO_PATH,
+  retornoNutricaoDaQuery,
+} from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
@@ -10,6 +15,10 @@ import {
   labelFrequenciaPlan,
   labelModalidadePlan,
   labelSituacaoPlan,
+  MSG_PLAN_CANCELAR_TEXTO,
+  MSG_PLAN_CANCELAR_TITULO,
+  MSG_PLAN_ENCERRAR_TEXTO,
+  MSG_PLAN_ENCERRAR_TITULO,
 } from "@shared/nutricaoPlanejamento";
 
 function Info({ label, value }: { label: string; value: string }) {
@@ -25,7 +34,9 @@ export default function NutricaoPlanejamentoDetalhePage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
+  const origem = retornoNutricaoDaQuery(useSearch());
   const utils = trpc.useUtils();
+  const confirm = useConfirm();
 
   const { data, isLoading } = trpc.nutricaoPlanejamento.get.useQuery(
     { id },
@@ -53,8 +64,26 @@ export default function NutricaoPlanejamentoDetalhePage() {
 
   const p = data?.projecao;
 
+  const voltar = () =>
+    setLocation(destinoVoltarNutricaoDetalhe({
+      retorno: origem,
+      listaPath: NUTRICAO_PLANEJAMENTO_PATH,
+      fazendaId: data?.fazendaId,
+    }));
+
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltar}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -67,39 +96,52 @@ export default function NutricaoPlanejamentoDetalhePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setLocation(data ? `/nutricao/planejamento?fazendaId=${data.fazendaId}` : "/nutricao/planejamento")}
-              className="text-[12px] text-gray-600 underline"
-            >
-              Voltar
-            </button>
-            {data?.status === "ativo" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setLocation(`/nutricao/planejamento/${data.id}/editar`)}
-                  className="px-4 min-h-[40px] rounded-lg border border-gray-200 text-[12px] font-semibold"
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  disabled={encerrar.isPending}
-                  onClick={() => encerrar.mutate({ id: data.id })}
-                  className="px-4 min-h-[40px] rounded-lg border border-amber-200 text-amber-800 text-[12px] font-semibold"
-                >
-                  Encerrar
-                </button>
-                <button
-                  type="button"
-                  disabled={cancelar.isPending}
-                  onClick={() => cancelar.mutate({ id: data.id })}
-                  className="px-4 min-h-[40px] rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600"
-                >
-                  Cancelar
-                </button>
-              </>
+            {data?.acoes.podeEditar && (
+              <button
+                type="button"
+                onClick={() => setLocation(`/nutricao/planejamento/${data.id}/editar`)}
+                className="px-4 min-h-[40px] rounded-lg border border-gray-200 text-[12px] font-semibold"
+              >
+                Editar
+              </button>
+            )}
+            {data?.acoes.podeEncerrar && (
+              <button
+                type="button"
+                disabled={encerrar.isPending}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: MSG_PLAN_ENCERRAR_TITULO,
+                    description: MSG_PLAN_ENCERRAR_TEXTO,
+                    confirmText: "Encerrar",
+                    cancelText: "Voltar",
+                    variant: "warning",
+                  });
+                  if (ok) encerrar.mutate({ id: data.id });
+                }}
+                className="px-4 min-h-[40px] rounded-lg border border-amber-200 text-amber-800 text-[12px] font-semibold"
+              >
+                Encerrar
+              </button>
+            )}
+            {data?.acoes.podeCancelar && (
+              <button
+                type="button"
+                disabled={cancelar.isPending}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: MSG_PLAN_CANCELAR_TITULO,
+                    description: MSG_PLAN_CANCELAR_TEXTO,
+                    confirmText: "Cancelar planejamento",
+                    cancelText: "Voltar",
+                    variant: "warning",
+                  });
+                  if (ok) cancelar.mutate({ id: data.id });
+                }}
+                className="px-4 min-h-[40px] rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600"
+              >
+                Cancelar
+              </button>
             )}
           </div>
         </div>
@@ -110,6 +152,11 @@ export default function NutricaoPlanejamentoDetalhePage() {
           </div>
         ) : (
           <div className="px-4 py-5 space-y-6">
+            {data.diagnosticoLegado && (
+              <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
+                {data.diagnosticoLegado}. O registro não foi alterado automaticamente.
+              </p>
+            )}
             <section className="space-y-3">
               <h2 className="text-[12px] font-semibold uppercase tracking-wide text-gray-500">Estratégia</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -5,6 +5,7 @@ import {
   formatarOferecidoPorCabeca,
   labelOrigemOperacionalForn,
   oferecidoPorCabeca,
+  planejamentoVigenteNaData,
   rotuloVinculoPlanejamentoForn,
   tooltipVinculoPlanejamentoForn,
   validarFornecimentoInput,
@@ -12,7 +13,7 @@ import {
   MSG_FORN_SALDO,
   MSG_FORN_SALDO_DIETA,
 } from "./nutricaoFornecimentos";
-import { kgParaQuantidadeUnidade } from "./nutricaoDietas";
+import { kgParaQuantidadeUnidade, MSG_FORN_DIETA_EXIGE_PREPARO } from "./nutricaoDietas";
 
 const lote = { id: 1, fazendaId: 1 };
 const produto = {
@@ -295,5 +296,87 @@ describe("formatarOferecidoPorCabeca — unidade da apresentação", () => {
     expect(texto).toBe("100 g");
     expect(texto).not.toContain("/dia");
     expect(texto).not.toContain("0,10");
+  });
+});
+
+describe("forma de uso — fornecimento direto", () => {
+  const ctx = { lote, dieta, hojeISO: "2026-10-01" };
+  const direto = {
+    fazendaId: 1, loteId: 1, tipoOrigem: "dieta" as const, dietaId: 5,
+    data: "2026-10-01", quantidadeFornecidaKg: 10, origemOperacional: "direta" as const,
+  };
+
+  it("A: dieta pronta + direto é permitido", () => {
+    expect(validarFornecimentoInput(direto, { ...ctx, dieta: { ...dieta, formaUso: "pronta_fornecer" } }))
+      .toEqual({ ok: true });
+  });
+
+  it("B: dieta opcional + direto é permitido", () => {
+    expect(validarFornecimentoInput(direto, { ...ctx, dieta: { ...dieta, formaUso: "preparo_opcional" } }))
+      .toEqual({ ok: true });
+  });
+
+  it("C: dieta obrigatória + direto é bloqueado", () => {
+    expect(validarFornecimentoInput(direto, { ...ctx, dieta: { ...dieta, formaUso: "preparo_obrigatorio" } }))
+      .toMatchObject({ ok: false, message: MSG_FORN_DIETA_EXIGE_PREPARO });
+    const prev = calcularPreviewFornecimento({
+      quantidadeKg: 10,
+      tipoOrigem: "dieta",
+      animalIds: [1],
+      dieta: { ...dieta, formaUso: "preparo_obrigatorio" },
+    });
+    expect(prev.podeConfirmar).toBe(false);
+    expect(prev.motivoBloqueio).toBe(MSG_FORN_DIETA_EXIGE_PREPARO);
+    expect(prev.baixas).toHaveLength(0);
+  });
+
+  it("E: legado null + direto é permitido", () => {
+    expect(validarFornecimentoInput(direto, { ...ctx, dieta: { ...dieta, formaUso: null } }))
+      .toEqual({ ok: true });
+  });
+
+  it("D: dieta obrigatória + via batida é permitido", () => {
+    const out = validarFornecimentoInput(
+      { ...direto, origemOperacional: "batida", batidaId: 10 },
+      {
+        ...ctx,
+        dieta: { ...dieta, formaUso: "preparo_obrigatorio" },
+        batida: {
+          id: 10, userId: 10, fazendaId: 1, dietaId: 5, dietaNomeSnapshot: "Mineral 90",
+          quantidadePreparadaKg: 100, quantidadeDistribuidaKg: 0, saldoDisponivelKg: 100,
+          status: "confirmado", custoCompleto: true, custoPorKgSnapshot: 1.5, custoTotalSnapshot: 150,
+        },
+      },
+    );
+    expect(out).toEqual({ ok: true });
+  });
+
+  it("F: produto pronto direto permanece inalterado", () => {
+    expect(validarFornecimentoInput(
+      {
+        fazendaId: 1, loteId: 1, tipoOrigem: "produto", produtoId: 10,
+        data: "2026-10-01", quantidadeFornecidaKg: 10,
+      },
+      { lote, produto, hojeISO: "2026-10-01" },
+    )).toEqual({ ok: true });
+  });
+});
+
+describe("fornecimento × vigência do planejamento", () => {
+  it("encerrado aceita data dentro da vigência e recusa fora", () => {
+    const encerrado = {
+      status: "encerrado",
+      dataInicio: "2026-10-01",
+      dataFim: "2026-10-05",
+    };
+    expect(planejamentoVigenteNaData(encerrado, "2026-10-01")).toBe(true);
+    expect(planejamentoVigenteNaData(encerrado, "2026-10-05")).toBe(true);
+    expect(planejamentoVigenteNaData(encerrado, "2026-10-06")).toBe(false);
+  });
+
+  it("cancelado nunca aceita novo vínculo", () => {
+    expect(planejamentoVigenteNaData({
+      status: "cancelado", dataInicio: "2026-10-10", dataFim: null,
+    }, "2026-10-10")).toBe(false);
   });
 });

@@ -1,14 +1,20 @@
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import {
+  destinoVoltarNutricaoDetalhe,
+  NUTRICAO_LEITURAS_PATH,
+  retornoNutricaoDaQuery,
+} from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { formatarDataHoraLeitura, labelStatusLeitura, rotuloConsumoAparenteBalanco, rotuloSobraInicialBalanco } from "@shared/nutricaoCochoLeituras";
+import { formatarConsumoAparentePorCabeca, formatarDataHoraLeitura, labelStatusLeitura, rotuloConsumoAparenteBalanco, rotuloSobraInicialBalanco } from "@shared/nutricaoCochoLeituras";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 
 export default function NutricaoCochoLeituraDetalhePage() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const origem = retornoNutricaoDaQuery(useSearch());
   const id = Number(params.id);
   const { data, isLoading } = trpc.nutricaoCochoLeituras.get.useQuery({ id }, { enabled: id > 0 });
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
@@ -22,9 +28,27 @@ export default function NutricaoCochoLeituraDetalhePage() {
     onError: e => toast.error(e.message),
   });
 
+  const voltar = () =>
+    setLocation(destinoVoltarNutricaoDetalhe({
+      retorno: origem,
+      listaPath: NUTRICAO_LEITURAS_PATH,
+      fazendaId: data?.fazendaId,
+    }));
+
   if (isLoading || !data) {
     return (
       <AppLayout>
+        <button
+          type="button"
+          onClick={voltar}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
         <div className="bg-white rounded border border-gray-200 p-8 text-center text-gray-400">
           {isLoading ? "Carregando..." : "Leitura não encontrada."}
         </div>
@@ -37,6 +61,17 @@ export default function NutricaoCochoLeituraDetalhePage() {
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltar}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -54,9 +89,6 @@ export default function NutricaoCochoLeituraDetalhePage() {
             )}>
               {labelStatusLeitura(data.status)}
             </span>
-            <button type="button" className="text-[12px] text-gray-600 underline" onClick={() => setLocation(`/nutricao/cochos/leituras?fazendaId=${data.fazendaId}`)}>
-              Voltar
-            </button>
           </div>
         </div>
 
@@ -83,7 +115,7 @@ export default function NutricaoCochoLeituraDetalhePage() {
                 {consumo.formula && <p className="text-[12px] text-gray-500">{consumo.formula}</p>}
                 {consumo.intervaloLabel && <p className="text-[12px] text-gray-500">Intervalo: {consumo.intervaloLabel}</p>}
                 <p className="text-[12px] text-gray-500">
-                  kg/cabeça: {consumo.kgPorCabeca != null ? `${consumo.kgPorCabeca.toLocaleString("pt-BR")} kg` : "—"}
+                  Consumo aparente/cabeça: {formatarConsumoAparentePorCabeca(consumo.kgPorCabeca)}
                   {" · "}kg/cabeça/dia: {consumo.kgPorCabecaDia != null ? `${consumo.kgPorCabecaDia.toLocaleString("pt-BR")} kg` : "—"}
                 </p>
                 <p className="text-[11px] text-gray-500">Consumo aparente derivado dos fatos. Não é consumo real e não é despesa nova.</p>

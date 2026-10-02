@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { nutricaoDietasService } from "./nutricaoDietas";
-import { NUTRICAO_DIETA_STATUS } from "../shared/nutricaoDietas";
+import { NUTRICAO_DIETA_FORMAS_USO, NUTRICAO_DIETA_STATUS } from "../shared/nutricaoDietas";
 
 const ingredienteInput = z.object({
   produtoId: z.number().int().positive(),
@@ -12,6 +12,7 @@ const dietaInput = z.object({
   fazendaId: z.number().int().positive(),
   nome: z.string().min(1).max(100),
   tipo: z.string().min(1),
+  formaUso: z.enum(NUTRICAO_DIETA_FORMAS_USO.map(f => f.value) as [string, ...string[]]),
   descricao: z.string().max(2000).optional().nullable(),
   categoriaAnimal: z.string().max(50).optional().nullable(),
   objetivo: z.string().max(40).optional().nullable(),

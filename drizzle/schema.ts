@@ -821,6 +821,8 @@ export const nutricaoDietas = mysqlTable("nutricao_dietas", {
   tipo: varchar("tipo", { length: 40 }).notNull(),
   categoriaAnimal: varchar("categoriaAnimal", { length: 50 }),
   objetivo: varchar("objetivo", { length: 40 }),
+  /** pronta_fornecer | preparo_opcional | preparo_obrigatorio. Null = cadastro anterior. */
+  formaUso: varchar("formaUso", { length: 30 }),
   status: varchar("status", { length: 20 }).notNull().default("ativa"),
   dataInicio: date("dataInicio", { mode: "string" }),
   dataFim: date("dataFim", { mode: "string" }),

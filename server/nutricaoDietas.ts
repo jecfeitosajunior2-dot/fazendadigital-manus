@@ -29,6 +29,7 @@ export type NutricaoDietaPersistida = {
   tipo: string;
   categoriaAnimal: string | null;
   objetivo: string | null;
+  formaUso: string | null;
   status: NutricaoDietaStatus;
   dataInicio: string | null;
   dataFim: string | null;
@@ -186,6 +187,7 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
           tipo: input.tipo,
           categoriaAnimal: input.categoriaAnimal?.trim() || null,
           objetivo: input.objetivo?.trim() || null,
+          formaUso: input.formaUso,
           status: "ativa",
           dataInicio: input.dataInicio?.trim() || null,
           dataFim: input.dataFim?.trim() || null,
@@ -223,6 +225,7 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
           tipo: input.tipo,
           categoriaAnimal: input.categoriaAnimal?.trim() || null,
           objetivo: input.objetivo?.trim() || null,
+          formaUso: input.formaUso,
           status: atual.status,
           dataInicio: input.dataInicio?.trim() || null,
           dataFim: input.dataFim?.trim() || null,
@@ -274,6 +277,7 @@ function toDietaRow(row: typeof nutricaoDietas.$inferSelect): NutricaoDietaPersi
     tipo: row.tipo,
     categoriaAnimal: row.categoriaAnimal ?? null,
     objetivo: row.objetivo ?? null,
+    formaUso: row.formaUso ?? null,
     status: toStatus(row.status),
     dataInicio: row.dataInicio ?? null,
     dataFim: row.dataFim ?? null,

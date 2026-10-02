@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   calcularConsumoAparente,
   compararMomentos,
   consumoFornCicloJaFechado,
   deveExibirMensagemPreviewLeitura,
   relacaoOperacional,
+  formatarConsumoAparentePorCabeca,
   formatarConsumoLista,
   formatarDataHoraLeitura,
   rotuloConsumoAparenteBalanco,
@@ -870,5 +872,79 @@ describe("nutricaoCochoLeituras — fornecimento com ciclo já fechado", () => {
     });
     expect(out.motivo).toBe(MSG_CONS_SEM_FORN);
     expect(consumoFornCicloJaFechado(out)).toBe(false);
+  });
+});
+
+describe("formatarConsumoAparentePorCabeca — só apresentação", () => {
+  it("A: 0,5 kg / 6 animais → 83 g", () => {
+    expect(formatarConsumoAparentePorCabeca(0.5 / 6)).toBe("83 g");
+  });
+
+  it("B: 0,3 kg / 6 → 50 g", () => {
+    expect(formatarConsumoAparentePorCabeca(0.3 / 6)).toBe("50 g");
+  });
+
+  it("C: 0,75 kg / 6 → 125 g", () => {
+    expect(formatarConsumoAparentePorCabeca(0.75 / 6)).toBe("125 g");
+  });
+
+  it("D: 6 kg / 6 → 1 kg", () => {
+    expect(formatarConsumoAparentePorCabeca(6 / 6)).toBe("1 kg");
+  });
+
+  it("E: 7,5 kg / 6 → 1,25 kg", () => {
+    expect(formatarConsumoAparentePorCabeca(7.5 / 6)).toBe("1,25 kg");
+  });
+
+  it("F: população zero/indisponível → —", () => {
+    expect(formatarConsumoAparentePorCabeca(null)).toBe("—");
+    expect(formatarConsumoAparentePorCabeca(undefined)).toBe("—");
+  });
+
+  it("G: consumo aparente indisponível → —", () => {
+    const out = calcularConsumoAparente({
+      leitura: leitura({ fornecimentoId: null, sobraKg: 0.2 }),
+      leiturasCocho: [],
+      fornecimentosCocho: [],
+    });
+    expect(out.calculavel).toBe(false);
+    expect(out.kgPorCabeca).toBeNull();
+    expect(formatarConsumoAparentePorCabeca(out.kgPorCabeca)).toBe("—");
+  });
+
+  it("H: kg/cabeça/dia não muda e o texto por cabeça não leva /dia", () => {
+    const comHora = calcularConsumoAparente({
+      leitura: leitura(),
+      leiturasCocho: [],
+      fornecimentosCocho: [forn()],
+      fornecimentoVinculado: forn(),
+    });
+    expect(comHora.kgPorCabeca).toBe(1.6);
+    expect(comHora.kgPorCabecaDia).not.toBeNull();
+
+    const semHora = calcularConsumoAparente({
+      leitura: leitura({ hora: null }),
+      leiturasCocho: [],
+      fornecimentosCocho: [forn({ hora: null })],
+      fornecimentoVinculado: forn({ hora: null }),
+    });
+    expect(semHora.kgPorCabeca).toBe(1.6);
+    expect(semHora.kgPorCabecaDia).toBeNull();
+
+    const texto = formatarConsumoAparentePorCabeca(0.5 / 6);
+    expect(texto).toBe("83 g");
+    expect(texto).not.toContain("/dia");
+    expect(texto).not.toMatch(/83[,.]3/);
+  });
+
+  it("detalhe da leitura usa o helper e mantém kg/cabeça/dia separado", () => {
+    const detalhe = readFileSync(
+      new URL("../client/src/pages/NutricaoCochoLeituraDetalhePage.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(detalhe).toContain("formatarConsumoAparentePorCabeca");
+    expect(detalhe).toContain("Consumo aparente/cabeça:");
+    expect(detalhe).toContain("kg/cabeça/dia:");
+    expect(detalhe).not.toContain("kg/cabeça: {");
   });
 });

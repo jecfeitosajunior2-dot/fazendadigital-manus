@@ -664,3 +664,16 @@ export function formatarConsumoLista(consumo: ConsumoAparente): string {
   if (!consumo.calculavel || consumo.consumoAparenteKg == null) return "—";
   return `${consumo.consumoAparenteKg.toLocaleString("pt-BR")} kg`;
 }
+
+/**
+ * Só apresentação do kg/cabeça já calculado pelo motor.
+ * Não consulta banco, não recalcula o ciclo e não busca população.
+ */
+export function formatarConsumoAparentePorCabeca(kgPorCabeca: number | null | undefined): string {
+  if (kgPorCabeca == null || !Number.isFinite(kgPorCabeca)) return "—";
+  if (kgPorCabeca < 1) {
+    const gramas = Math.round(kgPorCabeca * 1000);
+    return `${gramas.toLocaleString("pt-BR")} g`;
+  }
+  return `${kgPorCabeca.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} kg`;
+}

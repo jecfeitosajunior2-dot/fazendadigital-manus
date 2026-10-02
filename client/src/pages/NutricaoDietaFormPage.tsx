@@ -12,6 +12,7 @@ import {
   FormTextarea,
 } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { listaNutricaoComFazenda } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -19,14 +20,33 @@ import {
   categoriasAnimalDieta,
   formatarCustoEstimadoDieta,
   formatarCustoEstimadoPorKgDieta,
+  erroSalvarDietaEhFormaUso,
+  erroSalvarDietaEhTecnicoBruto,
+  MSG_DIETA_CAMPOS_OBRIGATORIOS,
+  MSG_DIETA_FORMA_USO_AJUDA,
+  MSG_DIETA_FORMA_USO_CAMPO,
+  MSG_DIETA_FORMA_USO_LEGADO,
   MSG_DIETA_INSUMOS,
+  NUTRICAO_DIETA_FORMAS_USO,
   NUTRICAO_DIETA_OBJETIVOS,
   NUTRICAO_DIETA_TIPOS,
   parseQuantidadeDieta,
   rotuloCustoMedioAtualLinhaDieta,
   rotuloEquivalenciaEmbalagemMassa,
   unidadeCompativelFormulacaoKg,
+  validarFormaUsoDietaFormulario,
 } from "@shared/nutricaoDietas";
+
+const TOAST_ID_OBRIGATORIOS = "nutricao-dieta-obrigatorios";
+
+function FieldErrorMsg({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1 text-[11px] text-red-600" role="alert">
+      {message}
+    </p>
+  );
+}
 
 type LinhaIngrediente = {
   key: string;
@@ -48,6 +68,7 @@ export default function NutricaoDietaFormPage() {
   const [fazendaId, setFazendaId] = useState(fazendaFromUrl);
   const [nome, setNome] = useState("");
   const [tipo, setTipo] = useState("");
+  const [formaUso, setFormaUso] = useState("");
   const [categoriaAnimal, setCategoriaAnimal] = useState("");
   const [objetivo, setObjetivo] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -55,6 +76,7 @@ export default function NutricaoDietaFormPage() {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [linhas, setLinhas] = useState<LinhaIngrediente[]>([novaLinha()]);
+  const [erroFormaUso, setErroFormaUso] = useState<string | null>(null);
 
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const fazendaNum = Number(fazendaId);
@@ -74,6 +96,7 @@ export default function NutricaoDietaFormPage() {
     setFazendaId(String(existente.fazendaId));
     setNome(existente.nome);
     setTipo(existente.tipo);
+    setFormaUso(existente.formaUso ?? "");
     setCategoriaAnimal(existente.categoriaAnimal ?? "");
     setObjetivo(existente.objetivo ?? "");
     setDescricao(existente.descricao ?? "");
@@ -116,6 +139,32 @@ export default function NutricaoDietaFormPage() {
     return calcularCustoEstimadoDieta({ baseQuantidade: base, ingredientes });
   }, [baseQuantidade, linhas, produtoById]);
 
+  const focarCampoFormaUso = () => {
+    requestAnimationFrame(() => {
+      const el = document.getElementById("dieta-field-formaUso");
+      if (el instanceof HTMLElement) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  };
+
+  const tratarErroSalvar = (message: string) => {
+    if (erroSalvarDietaEhFormaUso(message)) {
+      console.error(message);
+      setErroFormaUso(MSG_DIETA_FORMA_USO_CAMPO);
+      toast.error(MSG_DIETA_CAMPOS_OBRIGATORIOS, { id: TOAST_ID_OBRIGATORIOS });
+      focarCampoFormaUso();
+      return;
+    }
+    if (erroSalvarDietaEhTecnicoBruto(message)) {
+      console.error(message);
+      toast.error("Não foi possível salvar a dieta. Tente novamente.");
+      return;
+    }
+    toast.error(message || "Não foi possível salvar a dieta. Tente novamente.");
+  };
+
   const utils = trpc.useUtils();
   const createMutation = trpc.nutricaoDietas.create.useMutation({
     onSuccess: () => {
@@ -123,7 +172,7 @@ export default function NutricaoDietaFormPage() {
       utils.nutricaoDietas.list.invalidate();
       setLocation(`/nutricao/dietas?fazendaId=${fazendaId}`);
     },
-    onError: e => toast.error(e.message),
+    onError: e => tratarErroSalvar(e.message),
   });
   const updateMutation = trpc.nutricaoDietas.update.useMutation({
     onSuccess: () => {
@@ -132,12 +181,21 @@ export default function NutricaoDietaFormPage() {
       utils.nutricaoDietas.get.invalidate({ id: dietaId! });
       setLocation(`/nutricao/dietas/${dietaId}`);
     },
-    onError: e => toast.error(e.message),
+    onError: e => tratarErroSalvar(e.message),
   });
 
   const pending = createMutation.isPending || updateMutation.isPending;
 
   const salvar = () => {
+    if (pending) return;
+    const formaUsoCheck = validarFormaUsoDietaFormulario(formaUso);
+    if (!formaUsoCheck.ok) {
+      setErroFormaUso(formaUsoCheck.message);
+      toast.error(MSG_DIETA_CAMPOS_OBRIGATORIOS, { id: TOAST_ID_OBRIGATORIOS });
+      focarCampoFormaUso();
+      return;
+    }
+    setErroFormaUso(null);
     const base = parseQuantidadeDieta(baseQuantidade);
     const ingredientes = linhas
       .map(l => ({
@@ -149,6 +207,7 @@ export default function NutricaoDietaFormPage() {
       fazendaId: fazendaNum,
       nome,
       tipo,
+      formaUso,
       descricao: descricao || null,
       categoriaAnimal: categoriaAnimal || null,
       objetivo: objetivo || null,
@@ -161,20 +220,26 @@ export default function NutricaoDietaFormPage() {
     else createMutation.mutate(payload);
   };
 
+  const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/dietas", fazendaId));
+
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltarLista}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
             {isEdit ? "Editar Dieta" : "Nova Dieta"}
           </h1>
-          <button
-            type="button"
-            onClick={() => setLocation(fazendaId ? `/nutricao/dietas?fazendaId=${fazendaId}` : "/nutricao/dietas")}
-            className="text-[12px] text-gray-600 underline"
-          >
-            Voltar
-          </button>
         </div>
 
         <div className="px-4 py-5 space-y-6">
@@ -203,6 +268,34 @@ export default function NutricaoDietaFormPage() {
                     <SelectItem key={t.value} value={t.value} className="text-[12px]">{t.label}</SelectItem>
                   ))}
                 </FormSelect>
+              </div>
+              <div>
+                <FormLabel required>Forma de uso</FormLabel>
+                <FormSelect
+                  id="dieta-field-formaUso"
+                  variant="light"
+                  required
+                  placeholder="Selecione"
+                  value={formaUso || "__empty__"}
+                  invalid={!!erroFormaUso}
+                  aria-describedby={erroFormaUso ? "dieta-err-formaUso" : undefined}
+                  onChange={v => {
+                    const next = v === "__empty__" ? "" : v;
+                    setFormaUso(next);
+                    if (validarFormaUsoDietaFormulario(next).ok) setErroFormaUso(null);
+                  }}
+                >
+                  <SelectItem value="__empty__" className="text-[12px] text-gray-400">
+                    {isEdit && existente && !existente.formaUso && !formaUso
+                      ? MSG_DIETA_FORMA_USO_LEGADO
+                      : "Selecione"}
+                  </SelectItem>
+                  {NUTRICAO_DIETA_FORMAS_USO.map(f => (
+                    <SelectItem key={f.value} value={f.value} className="text-[12px]">{f.label}</SelectItem>
+                  ))}
+                </FormSelect>
+                <FieldErrorMsg id="dieta-err-formaUso" message={erroFormaUso ?? undefined} />
+                <p className="text-[11px] text-gray-500 mt-1">{MSG_DIETA_FORMA_USO_AJUDA}</p>
               </div>
               <div>
                 <FormLabel>Categoria animal</FormLabel>

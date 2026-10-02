@@ -16,7 +16,7 @@ import {
 } from "./nutricaoBatidas";
 import { type NutricaoFornEstoqueRef } from "./nutricaoFornecimentos";
 import { MSG_CONVERSAO_KG_INDISPONIVEL } from "./estoqueConversaoKg";
-import { MSG_DIETA_PRODUTO_FAZENDA } from "./nutricaoDietas";
+import { MSG_BATIDA_DIETA_PRONTA, MSG_DIETA_PRODUTO_FAZENDA } from "./nutricaoDietas";
 
 const dieta = {
   id: 5, userId: 10, fazendaId: 1, nome: "Engorda 1", status: "ativa" as const,
@@ -158,5 +158,53 @@ describe("regras derivadas", () => {
     const out = alocarCustoBatidaNoFornecimento({ custoCompleto: false, custoPorKgSnapshot: null }, 600);
     expect(out.completo).toBe(false);
     expect(out.custoTotal).toBeNull();
+  });
+});
+
+describe("forma de uso — batida", () => {
+  it("E: dieta pronta para fornecer é bloqueada", () => {
+    const out = validarBatidaInput(
+      { fazendaId: 1, dietaId: 5, data: "2026-10-01", quantidadePreparadaKg: 100 },
+      { dieta: { ...dieta, formaUso: "pronta_fornecer" }, produtosPorId, hojeISO: "2026-10-01" },
+    );
+    expect(out).toMatchObject({ ok: false, message: MSG_BATIDA_DIETA_PRONTA });
+  });
+
+  it("F: 1 ingrediente + preparo obrigatório pode gerar batida", () => {
+    const uma = {
+      ...dieta,
+      formaUso: "preparo_obrigatorio",
+      baseQuantidade: 30,
+      ingredientes: [{ produtoId: 10, quantidadeKg: 30 }],
+    };
+    expect(validarBatidaInput(
+      { fazendaId: 1, dietaId: 5, data: "2026-10-01", quantidadePreparadaKg: 30 },
+      { dieta: uma, produtosPorId, hojeISO: "2026-10-01" },
+    )).toEqual({ ok: true });
+  });
+
+  it("G: 2 ingredientes + pronta para fornecer é bloqueada", () => {
+    const duas = {
+      ...dieta,
+      formaUso: "pronta_fornecer",
+      baseQuantidade: 100,
+      ingredientes: [
+        { produtoId: 10, quantidadeKg: 60 },
+        { produtoId: 11, quantidadeKg: 40 },
+      ],
+    };
+    expect(validarBatidaInput(
+      { fazendaId: 1, dietaId: 5, data: "2026-10-01", quantidadePreparadaKg: 100 },
+      { dieta: duas, produtosPorId, hojeISO: "2026-10-01" },
+    )).toMatchObject({ ok: false, message: MSG_BATIDA_DIETA_PRONTA });
+  });
+
+  it("C/D: opcional, obrigatório e legado null podem gerar batida", () => {
+    for (const formaUso of ["preparo_opcional", "preparo_obrigatorio", null, undefined] as const) {
+      expect(validarBatidaInput(
+        { fazendaId: 1, dietaId: 5, data: "2026-10-01", quantidadePreparadaKg: 100 },
+        { dieta: { ...dieta, formaUso }, produtosPorId, hojeISO: "2026-10-01" },
+      )).toEqual({ ok: true });
+    }
   });
 });

@@ -10,6 +10,7 @@ import {
 import type { NutricaoFornEstoqueRef, NutricaoFornInput, NutricaoFornPlanejamentoRef } from "../shared/nutricaoFornecimentos";
 import type { NutricaoCochoRef } from "../shared/nutricaoCochos";
 import { MSG_FORN_JA_ESTORNADO, MSG_FORN_MOTIVO, MSG_FORN_NAO_EDITAR, MSG_FORN_SALDO } from "../shared/nutricaoFornecimentos";
+import { MSG_FORN_DIETA_EXIGE_PREPARO } from "../shared/nutricaoDietas";
 import { MSG_CONVERSAO_KG_AMBIGUA, MSG_CONVERSAO_KG_INDISPONIVEL } from "../shared/estoqueConversaoKg";
 import type { NutricaoPlanDietaRef, NutricaoPlanLoteRef } from "../shared/nutricaoPlanejamento";
 
@@ -790,5 +791,140 @@ describe("conversão operacional por embalagem — fornecimento", () => {
     expect(schema).toContain("unidadeEstoqueSnapshot");
     expect(schema).toContain("conteudoPorUnidadeSnapshot");
     expect(schema).toContain("quantidadeFisicaSnapshot");
+  });
+});
+
+describe("nutricaoFornecimentos — forma de uso", () => {
+  it("A/B/E: pronta, opcional e legado permitem direto", async () => {
+    for (const formaUso of ["pronta_fornecer", "preparo_opcional", null] as const) {
+      const store = criarStore({
+        dietas: [{
+          id: 5, userId: 10, fazendaId: 1, nome: "Dieta 90", status: "ativa",
+          formaUso, dataInicio: null, dataFim: null, baseQuantidade: 1000,
+          ingredientes: [
+            { produtoId: 10, quantidadeKg: 600 },
+            { produtoId: 11, quantidadeKg: 250 },
+            { produtoId: 12, quantidadeKg: 150 },
+          ],
+        }],
+      });
+      const svc = createNutricaoFornecimentosService(store);
+      const out = await svc.confirmar(10, "Pedro", dietaInput({ quantidadeFornecidaKg: 10 }), "2026-10-01");
+      expect(out.id).toBe(1);
+      expect(store.movs.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("C: obrigatória + direto é bloqueada", async () => {
+    const store = criarStore({
+      dietas: [{
+        id: 5, userId: 10, fazendaId: 1, nome: "Dieta 90", status: "ativa",
+        formaUso: "preparo_obrigatorio", dataInicio: null, dataFim: null, baseQuantidade: 1000,
+        ingredientes: [
+          { produtoId: 10, quantidadeKg: 600 },
+          { produtoId: 11, quantidadeKg: 250 },
+          { produtoId: 12, quantidadeKg: 150 },
+        ],
+      }],
+    });
+    const svc = createNutricaoFornecimentosService(store);
+    await expect(svc.confirmar(10, "Pedro", dietaInput(), "2026-10-01"))
+      .rejects.toMatchObject({ message: MSG_FORN_DIETA_EXIGE_PREPARO });
+    expect(store.rows).toHaveLength(0);
+    expect(store.movs).toHaveLength(0);
+  });
+
+  it("D: obrigatória + via batida é permitida", async () => {
+    const store = criarStore({
+      dietas: [{
+        id: 5, userId: 10, fazendaId: 1, nome: "Dieta 90", status: "ativa",
+        formaUso: "preparo_obrigatorio", dataInicio: null, dataFim: null, baseQuantidade: 1000,
+        ingredientes: [
+          { produtoId: 10, quantidadeKg: 600 },
+          { produtoId: 11, quantidadeKg: 250 },
+          { produtoId: 12, quantidadeKg: 150 },
+        ],
+      }],
+      batidas: [{
+        id: 10, userId: 10, fazendaId: 1, dietaId: 5, dietaNomeSnapshot: "Dieta 90",
+        quantidadePreparadaKg: 500, quantidadeDistribuidaKg: 0, saldoDisponivelKg: 500,
+        status: "confirmado", custoCompleto: true, custoPorKgSnapshot: 1.5, custoTotalSnapshot: 750,
+      }],
+    });
+    const svc = createNutricaoFornecimentosService(store);
+    const saldosAntes = store.produtos.map(p => p.quantidade);
+    await svc.confirmar(10, "Pedro", dietaInput({
+      origemOperacional: "batida", batidaId: 10, quantidadeFornecidaKg: 200,
+    }), "2026-10-01");
+    expect(store.rows[0]?.origemOperacional).toBe("batida");
+    expect(store.movs).toHaveLength(0);
+    expect(store.produtos.map(p => p.quantidade)).toEqual(saldosAntes);
+  });
+
+  it("H: alterar a dieta depois da batida confirmada não invalida o saldo", async () => {
+    const store = criarStore({
+      dietas: [{
+        id: 5, userId: 10, fazendaId: 1, nome: "Dieta 90", status: "ativa",
+        formaUso: "preparo_opcional", dataInicio: null, dataFim: null, baseQuantidade: 1000,
+        ingredientes: [
+          { produtoId: 10, quantidadeKg: 600 },
+          { produtoId: 11, quantidadeKg: 250 },
+          { produtoId: 12, quantidadeKg: 150 },
+        ],
+      }],
+      batidas: [{
+        id: 10, userId: 10, fazendaId: 1, dietaId: 5, dietaNomeSnapshot: "Dieta 90",
+        quantidadePreparadaKg: 500, quantidadeDistribuidaKg: 300, saldoDisponivelKg: 200,
+        status: "confirmado", custoCompleto: true, custoPorKgSnapshot: 1.5, custoTotalSnapshot: 750,
+      }],
+    });
+    store.dietas[0]!.formaUso = "pronta_fornecer";
+    const svc = createNutricaoFornecimentosService(store);
+    const saldosAntes = store.produtos.map(p => p.quantidade);
+    await svc.confirmar(10, "Pedro", dietaInput({
+      origemOperacional: "batida", batidaId: 10, quantidadeFornecidaKg: 200,
+    }), "2026-10-01");
+    expect(store.rows).toHaveLength(1);
+    expect(store.movs).toHaveLength(0);
+    expect(store.produtos.map(p => p.quantidade)).toEqual(saldosAntes);
+  });
+
+  it("G: alteração posterior não reinterpreta fornecimento histórico", async () => {
+    const store = criarStore({
+      dietas: [{
+        id: 5, userId: 10, fazendaId: 1, nome: "Dieta 90", status: "ativa",
+        formaUso: "preparo_opcional", dataInicio: null, dataFim: null, baseQuantidade: 1000,
+        ingredientes: [
+          { produtoId: 10, quantidadeKg: 600 },
+          { produtoId: 11, quantidadeKg: 250 },
+          { produtoId: 12, quantidadeKg: 150 },
+        ],
+      }],
+    });
+    const svc = createNutricaoFornecimentosService(store);
+    await svc.confirmar(10, "Pedro", dietaInput({ quantidadeFornecidaKg: 10 }), "2026-10-01");
+    const qtdApos = store.produtos.map(p => p.quantidade);
+    store.dietas[0]!.formaUso = "preparo_obrigatorio";
+    expect(store.rows[0]?.status).toBe("confirmado");
+    expect(store.rows[0]?.origemOperacional ?? "direta").not.toBe("batida");
+    await svc.estornar(10, "Pedro", { id: 1, motivo: "erro_lancamento" }, "2026-10-02");
+    expect(store.rows[0]?.status).toBe("estornado");
+    expect(Number(store.produtos[0]?.quantidade)).toBeGreaterThan(Number(qtdApos[0]));
+  });
+
+  it("F: produto pronto direto permanece inalterado", async () => {
+    const store = criarStore();
+    const svc = createNutricaoFornecimentosService(store);
+    await svc.confirmar(10, "Pedro", produtoInput(), "2026-10-01");
+    expect(Number(store.produtos[0]?.quantidade)).toBe(80);
+    expect(store.movs).toHaveLength(1);
+  });
+
+  it("frontend orienta preparo obrigatório sem criar fluxo paralelo", () => {
+    const src = readFileSync(new URL("../client/src/pages/NutricaoFornecimentoFormPage.tsx", import.meta.url), "utf8");
+    expect(src).toContain("MSG_FORN_DIETA_EXIGE_PREPARO_UI");
+    expect(src).toContain("Usar uma Batida");
+    expect(src).toContain("podeDietaSerFornecidaDiretamente");
+    expect(src).toContain("Produto pronto");
   });
 });

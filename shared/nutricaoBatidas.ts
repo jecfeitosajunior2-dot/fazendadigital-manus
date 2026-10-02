@@ -1,7 +1,9 @@
 import {
   arredondarKg,
   arredondarMoeda,
+  MSG_BATIDA_DIETA_PRONTA,
   MSG_DIETA_PRODUTO_FAZENDA,
+  podeDietaGerarBatida,
 } from "./nutricaoDietas";
 import { mensagemConversaoKg, resolverConversaoParaKg } from "./estoqueConversaoKg";
 import {
@@ -150,6 +152,9 @@ export function validarFormulacaoDietaParaBatida(
 ): { ok: true } | { ok: false; message: string } {
   if (!dieta || dieta.status !== "ativa") return { ok: false, message: MSG_BATIDA_DIETA };
   if (dieta.fazendaId !== fazendaId) return { ok: false, message: MSG_BATIDA_DIETA_FAZENDA };
+  if (!podeDietaGerarBatida(dieta.formaUso)) {
+    return { ok: false, message: MSG_BATIDA_DIETA_PRONTA };
+  }
   if (!(dieta.baseQuantidade > 0) || dieta.ingredientes.length === 0) {
     return { ok: false, message: MSG_BATIDA_FORMULACAO };
   }

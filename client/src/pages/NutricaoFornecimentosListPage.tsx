@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { FD_PRIMARY, FormDatePicker, FormSelect } from "@/components/FormFields";
@@ -7,6 +7,7 @@ import { SelectItem } from "@/components/ui/select";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import { TableIconButton, ViewActionIcon } from "@/components/icons/FarmActionIcons";
 import FazendaLandIcon from "@/components/icons/FazendaLandIcon";
+import { listUrlNutricaoPreservandoRetorno, parseRetornoNutricaoVisaoGeral } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -35,13 +36,19 @@ const COLS = [
 const listControlClass =
   "h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white text-gray-700 shrink-0 focus:outline-none focus:border-[#4ECDC4]";
 
-function listUrl(fazendaId?: string) {
-  return fazendaId ? `${LIST_ROUTE}?fazendaId=${encodeURIComponent(fazendaId)}` : LIST_ROUTE;
-}
-
 export default function NutricaoFornecimentosListPage() {
   const [, setLocation] = useLocation();
-  const fazendaFromUrl = new URLSearchParams(window.location.search).get("fazendaId") ?? "";
+  const searchString = useSearch();
+  const searchParams = useMemo(
+    () => new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString),
+    [searchString],
+  );
+  const fazendaFromUrl = searchParams.get("fazendaId") ?? "";
+  const retornoVisaoGeral = useMemo(
+    () => parseRetornoNutricaoVisaoGeral(searchParams.get("retorno")),
+    [searchParams],
+  );
+  const listUrl = (fazendaId?: string) => listUrlNutricaoPreservandoRetorno(LIST_ROUTE, fazendaId, searchString);
   const [fazendaFilter, setFazendaFilter] = useState(fazendaFromUrl);
   const [loteFilter, setLoteFilter] = useState("");
   const [origemFilter, setOrigemFilter] = useState("");
@@ -76,7 +83,7 @@ export default function NutricaoFornecimentosListPage() {
       setLocation(listUrl(id), { replace: true });
     }
     setFazendaInitDone(true);
-  }, [fazendasData, fazendaFilter, fazendaInitDone, setLocation]);
+  }, [fazendasData, fazendaFilter, fazendaInitDone, setLocation, searchString]);
 
   const displayed = useMemo(() => rows, [rows]);
   const empty = fazendaInitDone && !isLoading && fazendaOk && displayed.length === 0;
@@ -85,6 +92,19 @@ export default function NutricaoFornecimentosListPage() {
 
   return (
     <AppLayout>
+      {retornoVisaoGeral ? (
+        <button
+          type="button"
+          onClick={() => setLocation(retornoVisaoGeral)}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+      ) : null}
       <div className="bg-white rounded border border-gray-200 shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>Fornecimentos</h1>

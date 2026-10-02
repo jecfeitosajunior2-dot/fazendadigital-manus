@@ -191,6 +191,12 @@ describe("nutricaoVisaoGeral — contrato estático", () => {
     expect(page).toMatch(/População observada/);
     expect(page).toMatch(/Quantidade fornecida/);
     expect(page).toMatch(/Consumo aparente/);
+    expect(page).toMatch(/Planejado acumulado/);
+    expect(page).toMatch(/Planejado no período/);
+    expect(page).toMatch(/Desvio acumulado/);
+    expect(page).toMatch(/MSG_VG_PLANEJADO_ACUMULADO/);
+    expect(page).toMatch(/MSG_VG_PLANEJADO_PERIODO/);
+    expect(page).not.toMatch(/row\.planejadoKg|row\.desvioKg|row\.planejamentoId/);
     expect(page).not.toMatch(/GMD|custo\/kg de ganho|consumo real/i);
     expect(page).not.toMatch(/SuppliesManagementPage/);
   });

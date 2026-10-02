@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createNutricaoDietasService, type NutricaoDietasStore } from "./nutricaoDietas";
-import { calcularCustoEstimadoDieta, type NutricaoDietaInput } from "../shared/nutricaoDietas";
+import { calcularCustoEstimadoDieta, MSG_DIETA_FORMA_USO, MSG_DIETA_FORMA_USO_LEGADO, rotuloFormaUsoDieta, type NutricaoDietaInput } from "../shared/nutricaoDietas";
 
 type DietaMem = {
   id: number;
@@ -12,6 +12,7 @@ type DietaMem = {
   tipo: string;
   categoriaAnimal: string | null;
   objetivo: string | null;
+  formaUso: string | null;
   status: "ativa" | "inativa";
   dataInicio: string | null;
   dataFim: string | null;
@@ -155,6 +156,7 @@ function payloadValido(over: Partial<NutricaoDietaInput> = {}): NutricaoDietaInp
     fazendaId: 1,
     nome: "Mineral 90",
     tipo: "mineral",
+    formaUso: "preparo_opcional",
     baseQuantidade: 1000,
     ingredientes: [
       { produtoId: 10, quantidade: 600 },
@@ -389,5 +391,102 @@ describe("nutricaoDietas — sem estoque e rota nova", () => {
     expect(app).toMatch(/path="\/nutricao\/visao-geral"\s+component=\{NutricaoVisaoGeralPage\}/);
     expect(app).toMatch(/path="\/nutricao\/cochos".*NutricaoCochosListPage|NutricaoCochosListPage[\s\S]*\/nutricao\/cochos/);
     expect(app).not.toMatch(/path="\/nutricao\/cochos"\s+component=\{SuppliesManagementPage\}/);
+  });
+});
+
+describe("nutricaoDietas — forma de uso", () => {
+  it("aceita as três formas e persiste o valor", async () => {
+    const store = criarStore();
+    const svc = createNutricaoDietasService(store);
+    const a = await svc.criar(10, payloadValido({ nome: "Pronta", formaUso: "pronta_fornecer" }));
+    const b = await svc.criar(10, payloadValido({ nome: "Opcional", formaUso: "preparo_opcional" }));
+    const c = await svc.criar(10, payloadValido({ nome: "Obrigatória", formaUso: "preparo_obrigatorio" }));
+    expect((await svc.obter(10, a.id)).formaUso).toBe("pronta_fornecer");
+    expect((await svc.obter(10, b.id)).formaUso).toBe("preparo_opcional");
+    expect((await svc.obter(10, c.id)).formaUso).toBe("preparo_obrigatorio");
+  });
+
+  it("6: dieta legada com formaUso null continua carregando", async () => {
+    const store = criarStore();
+    const svc = createNutricaoDietasService(store);
+    store.dietas.push({
+      id: 1,
+      userId: 10,
+      fazendaId: 1,
+      nome: "Sal Nitrogenado 40 Flex LA",
+      descricao: null,
+      tipo: "mineral",
+      categoriaAnimal: null,
+      objetivo: null,
+      formaUso: null,
+      status: "ativa",
+      dataInicio: null,
+      dataFim: null,
+      baseQuantidade: "30",
+      baseUnidade: "kg",
+    });
+    const got = await svc.obter(10, 1);
+    expect(got.formaUso).toBeNull();
+    expect(rotuloFormaUsoDieta(got.formaUso)).toBe(MSG_DIETA_FORMA_USO_LEGADO);
+    const lista = await svc.listar(10, { fazendaId: 1 });
+    expect(lista).toHaveLength(1);
+    expect(lista[0]?.formaUso).toBeNull();
+  });
+
+  it("8: edição de legado exige escolha para salvar", async () => {
+    const store = criarStore();
+    const svc = createNutricaoDietasService(store);
+    store.dietas.push({
+      id: 1,
+      userId: 10,
+      fazendaId: 1,
+      nome: "Legada",
+      descricao: null,
+      tipo: "mineral",
+      categoriaAnimal: null,
+      objetivo: null,
+      formaUso: null,
+      status: "ativa",
+      dataInicio: null,
+      dataFim: null,
+      baseQuantidade: "1000",
+      baseUnidade: "kg",
+    });
+    store.ingredientes.push({ id: 1, dietaId: 1, produtoId: 10, quantidade: "600", ordem: 0 });
+    store.ingredientes.push({ id: 2, dietaId: 1, produtoId: 11, quantidade: "400", ordem: 1 });
+    await expect(svc.editar(10, 1, payloadValido({ formaUso: "" }))).rejects.toMatchObject({
+      message: MSG_DIETA_FORMA_USO,
+    });
+    await svc.editar(10, 1, payloadValido({ formaUso: "pronta_fornecer" }));
+    expect((await svc.obter(10, 1)).formaUso).toBe("pronta_fornecer");
+  });
+
+  it("formulário, detalhe e lista apresentam a forma de uso", () => {
+    const form = readFileSync(new URL("../client/src/pages/NutricaoDietaFormPage.tsx", import.meta.url), "utf8");
+    const detalhe = readFileSync(new URL("../client/src/pages/NutricaoDietaDetalhePage.tsx", import.meta.url), "utf8");
+    const lista = readFileSync(new URL("../client/src/pages/NutricaoDietasListPage.tsx", import.meta.url), "utf8");
+    expect(form).toContain("Forma de uso");
+    expect(form).toContain("MSG_DIETA_FORMA_USO_AJUDA");
+    expect(form).toContain("MSG_DIETA_FORMA_USO_LEGADO");
+    expect(detalhe).toContain("rotuloFormaUsoDieta");
+    expect(lista).toContain("rotuloFormaUsoDietaLista");
+  });
+
+  it("editar/nova: formaUso inválida não chama mutation e usa o padrão de obrigatórios", () => {
+    const form = readFileSync(new URL("../client/src/pages/NutricaoDietaFormPage.tsx", import.meta.url), "utf8");
+    expect(form).toContain("validarFormaUsoDietaFormulario");
+    expect(form).toContain("if (!formaUsoCheck.ok)");
+    expect(form).toContain("return;");
+    expect(form).toContain("MSG_DIETA_FORMA_USO_CAMPO");
+    expect(form).toContain("MSG_DIETA_CAMPOS_OBRIGATORIOS");
+    expect(form).toContain("FieldErrorMsg");
+    expect(form).toContain("invalid={!!erroFormaUso}");
+    expect(form).toContain("scrollIntoView");
+    expect(form).toContain("el.focus({ preventScroll: true })");
+    expect(form).not.toContain("toast.error(e.message)");
+    expect(form).not.toMatch(/toast\.error\(e\.message\)/);
+    expect(form).toContain("tratarErroSalvar");
+    expect(form).toContain("console.error(message)");
+    expect(form).not.toContain("invalid_value");
   });
 });

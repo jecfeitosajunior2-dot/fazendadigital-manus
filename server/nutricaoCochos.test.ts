@@ -164,4 +164,17 @@ describe("nutricaoCochos service", () => {
     expect(schema).toContain('export const batidas = mysqlTable("batidas"');
     expect(schema).toContain('export const nutricaoCochos = mysqlTable("nutricao_cochos"');
   });
+
+  it("detalhe do Cocho: Pasto sem duplicar e demais campos preservados", () => {
+    const detalhe = readFileSync(new URL("../client/src/pages/NutricaoCochoDetalhePage.tsx", import.meta.url), "utf8");
+    expect(detalhe).toContain("textoSecundarioPastoCochoDetalhe");
+    expect(detalhe).toContain("label=\"Pasto\"");
+    expect(detalhe).toContain("label=\"Referência\"");
+    expect(detalhe).toContain("label=\"Tipo\"");
+    expect(detalhe).toContain("label=\"Comprimento\"");
+    expect(detalhe).toContain("label=\"Capacidade\"");
+    expect(detalhe).toContain("Leituras recentes");
+    expect(detalhe).toContain("Fornecimentos recentes");
+    expect(detalhe).not.toContain("formatarLocalizacaoCocho(");
+  });
 });

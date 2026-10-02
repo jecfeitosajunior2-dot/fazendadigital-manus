@@ -482,6 +482,7 @@ async function dietaComIngredientes(userId: number, dietaId: number): Promise<Nu
     fazendaId: dieta.fazendaId,
     nome: dieta.nome,
     status: dieta.status,
+    formaUso: dieta.formaUso ?? null,
     dataInicio: dieta.dataInicio ?? null,
     dataFim: dieta.dataFim ?? null,
     baseQuantidade: Number(dieta.baseQuantidade),

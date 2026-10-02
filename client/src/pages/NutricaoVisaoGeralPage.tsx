@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Info } from "lucide-react";
 import {
   Bar,
@@ -18,14 +18,23 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import { useIsMobile } from "@/hooks/useMobile";
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
-import { formatarDataCivilBR, hojeISODateLocal } from "@shared/nutricaoPlanejamento";
+import { formatarDataCivilBR, hojeISODateLocal, normalizarDataCivil } from "@shared/nutricaoPlanejamento";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
 import {
   formatarIndicadorNumero,
   formatarMoedaIndicador,
   MSG_VG_FORNECIDO_CAB_DIA_AJUDA,
+  MSG_VG_PLANEJADO_ACUMULADO,
+  MSG_VG_PLANEJADO_PERIODO,
+  MSG_VG_SEM_COMPARACAO,
   periodoRapido,
 } from "@shared/nutricaoVisaoGeral";
+import {
+  comRetornoNutricaoVisaoGeral,
+  filtrosNutricaoVisaoGeralDaQuery,
+  listaFornecimentosComRetornoVisaoGeral,
+  listaLeiturasComRetornoVisaoGeral,
+} from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -122,8 +131,17 @@ const RAPIDOS = [
   { id: "personalizado" as const, label: "Personalizado" },
 ];
 
+function rapidoDoPeriodo(deISO: string, ateISO: string, hojeISO: string): (typeof RAPIDOS)[number]["id"] {
+  for (const id of ["hoje", "7d", "30d", "mes"] as const) {
+    const p = periodoRapido(id, hojeISO);
+    if (p.de === deISO && p.ate === ateISO) return id;
+  }
+  return "personalizado";
+}
+
 export default function NutricaoVisaoGeralPage() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const isMobile = useIsMobile();
   const hoje = hojeISODateLocal();
   const padrao = periodoRapido("mes", hoje);
@@ -150,14 +168,26 @@ export default function NutricaoVisaoGeralPage() {
       return;
     }
     const ids = fazendas.map(f => f.id);
+    const daQuery = filtrosNutricaoVisaoGeralDaQuery(searchString);
+    const fromUrl = daQuery?.fazendaId ?? "";
+    const urlOk = fromUrl && ids.some(id => String(id) === fromUrl) ? fromUrl : "";
     const stored = readPersistedRebanhoFazendaId(ids);
-    const resolved = stored || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
+    const resolved = urlOk || stored || (fazendas.length === 1 ? String(fazendas[0]!.id) : "");
     if (resolved) {
       setFazendaId(resolved);
       persistRebanhoFazendaId(resolved);
     }
+    const loteUrl = daQuery?.loteId ?? "";
+    if (/^\d+$/.test(loteUrl) && Number(loteUrl) > 0) setLoteId(loteUrl);
+    const deUrl = normalizarDataCivil(daQuery?.de ?? "");
+    const ateUrl = normalizarDataCivil(daQuery?.ate ?? "");
+    if (deUrl && ateUrl && deUrl <= ateUrl) {
+      setDe(deUrl);
+      setAte(ateUrl);
+      setRapido(rapidoDoPeriodo(deUrl, ateUrl, hoje));
+    }
     setFazendaInitDone(true);
-  }, [fazendas, fazendaInitDone, loadingFazendas]);
+  }, [fazendas, fazendaInitDone, loadingFazendas, searchString, hoje]);
 
   const { data, isLoading } = trpc.nutricaoVisaoGeral.carregar.useQuery({
     fazendaId: fazendaNum,
@@ -344,29 +374,49 @@ export default function NutricaoVisaoGeralPage() {
             <SectionTitle>Planejado × fornecido</SectionTitle>
             <div className="bg-white rounded-lg border border-gray-100 mb-4 overflow-hidden">
               {data.planejado.length === 0 ? (
-                <p className="px-3 py-4 text-[12px] text-gray-400">Nenhum planejamento válido no período.</p>
+                <p className="px-3 py-4 text-[12px] text-gray-400">{MSG_VG_SEM_COMPARACAO}</p>
               ) : (
                 <TableHorizontalScroll>
-                  <table className="w-full min-w-[820px] text-[11px]">
+                  <table className="w-full min-w-[980px] text-[11px]">
                     <thead className="bg-gray-50">
                       <tr>
-                        {["Lote", "Fonte", "Meta", "Planejado", "Fornecido", "Desvio", "Situação"].map(h => (
-                          <th key={h} className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">{h}</th>
-                        ))}
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">Lote</th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">Fonte</th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">Meta</th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">
+                          <span className="inline-flex items-center justify-center gap-0.5">
+                            Planejado acumulado
+                            <MetricHint label="Planejado acumulado" hint={MSG_VG_PLANEJADO_ACUMULADO} />
+                          </span>
+                        </th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">
+                          <span className="inline-flex items-center justify-center gap-0.5">
+                            Planejado no período
+                            <MetricHint label="Planejado no período" hint={MSG_VG_PLANEJADO_PERIODO} />
+                          </span>
+                        </th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">Fornecido</th>
+                        <th className="px-3 py-2 text-center text-[10px] uppercase text-gray-500">Desvio acumulado</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.planejado.map(row => (
-                        <tr key={row.planejamentoId} className="border-t">
+                        <tr key={row.chave} className="border-t">
                           <td className="px-3 py-2 text-center">{row.loteNome}</td>
                           <td className="px-3 py-2 text-center">{row.fonte}</td>
-                          <td className="px-3 py-2 text-center">{row.meta}</td>
-                          <td className="px-3 py-2 text-center tabular-nums">{row.adLibitum ? "Ad libitum" : formatarIndicadorNumero(row.planejadoKg, { sufixo: "kg" })}</td>
+                          <td className="px-3 py-2 text-center" title={row.motivo ?? undefined}>{row.meta}</td>
+                          <td className="px-3 py-2 text-center tabular-nums" title={row.motivo ?? undefined}>
+                            {formatarIndicadorNumero(row.planejadoAteReferenciaKg, { sufixo: "kg" })}
+                          </td>
+                          <td className="px-3 py-2 text-center tabular-nums" title={row.motivo ?? undefined}>
+                            {formatarIndicadorNumero(row.planejadoPeriodoKg, { sufixo: "kg" })}
+                          </td>
                           <td className="px-3 py-2 text-center tabular-nums">{formatarIndicadorNumero(row.fornecidoKg, { sufixo: "kg" })}</td>
                           <td className="px-3 py-2 text-center tabular-nums">
-                            {row.desvioKg == null ? "—" : `${row.desvioKg > 0 ? "+" : ""}${row.desvioKg.toLocaleString("pt-BR")} kg${row.desvioPct != null ? ` (${row.desvioPct > 0 ? "+" : ""}${row.desvioPct}%)` : ""}`}
+                            {row.desvioAteReferenciaKg == null
+                              ? "—"
+                              : `${row.desvioAteReferenciaKg > 0 ? "+" : ""}${row.desvioAteReferenciaKg.toLocaleString("pt-BR")} kg${row.desvioAteReferenciaPercentual != null ? ` (${row.desvioAteReferenciaPercentual > 0 ? "+" : ""}${row.desvioAteReferenciaPercentual}%)` : ""}`}
                           </td>
-                          <td className="px-3 py-2 text-center text-gray-500">{row.motivo ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -433,7 +483,7 @@ export default function NutricaoVisaoGeralPage() {
                       {data.consumo.linhas.map(row => (
                         <tr key={row.leituraId} className="border-t">
                           <td className="px-3 py-2 text-center">
-                            <button type="button" className="underline" onClick={() => setLocation(`/nutricao/cochos/leituras/${row.leituraId}`)}>{row.cochoNome}</button>
+                            <button type="button" className="underline" onClick={() => setLocation(comRetornoNutricaoVisaoGeral(`/nutricao/cochos/leituras/${row.leituraId}`, { fazendaId, loteId, de, ate }))}>{row.cochoNome}</button>
                           </td>
                           <td className="px-3 py-2 text-center">{row.loteNome ?? "—"}</td>
                           <td className="px-3 py-2 text-center">{row.intervaloLabel ?? "—"}</td>
@@ -532,7 +582,7 @@ export default function NutricaoVisaoGeralPage() {
                         {data.batidasSaldo.map(b => (
                           <tr key={b.id} className="border-t">
                             <td className="px-3 py-2 text-center">
-                              <button type="button" className="underline" onClick={() => setLocation(`/nutricao/batidas/${b.id}`)}>{b.dietaNome}</button>
+                              <button type="button" className="underline" onClick={() => setLocation(comRetornoNutricaoVisaoGeral(`/nutricao/batidas/${b.id}`, { fazendaId, loteId, de, ate }))}>{b.dietaNome}</button>
                             </td>
                             <td className="px-3 py-2 text-center">{formatarDataCivilBR(b.data)}</td>
                             <td className="px-3 py-2 text-center">{b.preparadaKg.toLocaleString("pt-BR")} kg</td>
@@ -552,13 +602,13 @@ export default function NutricaoVisaoGeralPage() {
               <div className="bg-white rounded-lg border border-gray-100 overflow-hidden min-w-0">
                 <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-[13px] font-medium text-gray-800">Fornecimentos recentes</h3>
-                  <button type="button" className="text-[12px] text-gray-500 underline" onClick={() => setLocation(`/nutricao/fornecimentos?fazendaId=${fazendaId}`)}>Ver todos</button>
+                  <button type="button" className="text-[12px] text-gray-500 underline" onClick={() => setLocation(listaFornecimentosComRetornoVisaoGeral({ fazendaId, loteId, de, ate }))}>Ver todos</button>
                 </div>
                 {data.recentesForns.length === 0 ? (
                   <p className="p-4 text-center text-[12px] text-gray-400">Nenhum fornecimento no período.</p>
                 ) : (
                   data.recentesForns.map(f => (
-                    <button key={f.id} type="button" className="w-full text-left px-3 py-2.5 border-t border-gray-50 first:border-t-0" onClick={() => setLocation(`/nutricao/fornecimentos/${f.id}`)}>
+                    <button key={f.id} type="button" className="w-full text-left px-3 py-2.5 border-t border-gray-50 first:border-t-0" onClick={() => setLocation(comRetornoNutricaoVisaoGeral(`/nutricao/fornecimentos/${f.id}`, { fazendaId, loteId, de, ate }))}>
                       <p className="text-[11px] text-gray-500">{formatarDataHoraFornecimento(f.data, f.hora)} · {f.loteNome}</p>
                       <p className="text-[13px] text-gray-800">{f.origemNome} · {f.origemOperacional}{f.cochoNome ? ` · ${f.cochoNome}` : ""}</p>
                       <p className="text-[12px] font-semibold tabular-nums">{f.quantidadeKg.toLocaleString("pt-BR")} kg · {f.custoIncompleto ? "Custo incompleto" : formatarMoedaIndicador(f.custo)}</p>
@@ -569,13 +619,13 @@ export default function NutricaoVisaoGeralPage() {
               <div className="bg-white rounded-lg border border-gray-100 overflow-hidden min-w-0">
                 <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-[13px] font-medium text-gray-800">Leituras recentes</h3>
-                  <button type="button" className="text-[12px] text-gray-500 underline" onClick={() => setLocation(`/nutricao/cochos/leituras?fazendaId=${fazendaId}`)}>Ver todas</button>
+                  <button type="button" className="text-[12px] text-gray-500 underline" onClick={() => setLocation(listaLeiturasComRetornoVisaoGeral({ fazendaId, loteId, de, ate }))}>Ver todas</button>
                 </div>
                 {data.recentesLeituras.length === 0 ? (
                   <p className="p-4 text-center text-[12px] text-gray-400">Nenhuma leitura no período.</p>
                 ) : (
                   data.recentesLeituras.map(l => (
-                    <button key={l.id} type="button" className="w-full text-left px-3 py-2.5 border-t border-gray-50 first:border-t-0" onClick={() => setLocation(`/nutricao/cochos/leituras/${l.id}`)}>
+                    <button key={l.id} type="button" className="w-full text-left px-3 py-2.5 border-t border-gray-50 first:border-t-0" onClick={() => setLocation(comRetornoNutricaoVisaoGeral(`/nutricao/cochos/leituras/${l.id}`, { fazendaId, loteId, de, ate }))}>
                       <p className="text-[11px] text-gray-500">{formatarDataHoraFornecimento(l.data, l.hora)} · {l.cochoNome}</p>
                       <p className="text-[13px] text-gray-800">{l.loteNome ?? "Sem lote"} · Sobra {formatarIndicadorNumero(l.sobraKg, { sufixo: "kg" })} · Escore {l.escore || "—"}</p>
                       <p className="text-[12px] font-semibold">Consumo aparente {formatarIndicadorNumero(l.consumoAparenteKg, { sufixo: "kg" })}</p>

@@ -1,11 +1,17 @@
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { FD_PRIMARY } from "@/components/FormFields";
+import {
+  comRetornoNutricao,
+  destinoVoltarNutricaoDetalhe,
+  NUTRICAO_COCHOS_PATH,
+  retornoNutricaoDaQuery,
+} from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
-import { formatarIdentificacaoCocho, formatarLocalizacaoCocho, labelTipoCocho } from "@shared/nutricaoCochos";
+import { formatarIdentificacaoCocho, labelTipoCocho, textoSecundarioPastoCochoDetalhe } from "@shared/nutricaoCochos";
 import { formatarConsumoLista, formatarDataHoraLeitura } from "@shared/nutricaoCochoLeituras";
 
 function LeiturasRecentesTabela({ cochoId }: { cochoId: number }) {
@@ -30,7 +36,7 @@ function LeiturasRecentesTabela({ cochoId }: { cochoId: number }) {
           {leituras.map(l => (
             <tr key={l.id} className="border-t">
               <td className="px-3 py-1.5">
-                <button type="button" className="underline" onClick={() => setLocation(`/nutricao/cochos/leituras/${l.id}`)}>
+                <button type="button" className="underline" onClick={() => setLocation(comRetornoNutricao(`/nutricao/cochos/leituras/${l.id}`, `/nutricao/cochos/${cochoId}`))}>
                   {formatarDataHoraLeitura(l.data, l.hora)}
                 </button>
               </td>
@@ -59,6 +65,7 @@ export default function NutricaoCochoDetalhePage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
+  const origem = retornoNutricaoDaQuery(useSearch());
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.nutricaoCochos.get.useQuery({ id }, { enabled: id > 0 });
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
@@ -73,14 +80,50 @@ export default function NutricaoCochoDetalhePage() {
     onError: e => toast.error(e.message),
   });
 
+  const voltar = () =>
+    setLocation(destinoVoltarNutricaoDetalhe({
+      retorno: origem,
+      listaPath: NUTRICAO_COCHOS_PATH,
+      fazendaId: data?.fazendaId,
+    }));
+
   if (isLoading || !data) {
-    return <AppLayout><div className="bg-white rounded border border-gray-200 p-8 text-center text-gray-400">{isLoading ? "Carregando..." : "Cocho não encontrado."}</div></AppLayout>;
+    return (
+      <AppLayout>
+        <button
+          type="button"
+          onClick={voltar}
+          className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+          aria-label="Voltar"
+        >
+          <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+            arrow_back
+          </span>
+          <span className="text-[13px]">Voltar</span>
+        </button>
+        <div className="bg-white rounded border border-gray-200 p-8 text-center text-gray-400">
+          {isLoading ? "Carregando..." : "Cocho não encontrado."}
+        </div>
+      </AppLayout>
+    );
   }
 
   const ultimo = data.ultimoFornecimento;
+  const pastoSecundario = textoSecundarioPastoCochoDetalhe(data.pastoNome, data.localizacaoDescricao);
 
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltar}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -90,7 +133,6 @@ export default function NutricaoCochoDetalhePage() {
             <p className="text-[12px] text-gray-500 mt-0.5">{fazendaNome} · {data.status === "ativo" ? "Ativo" : "Inativo"}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="text-[12px] text-gray-600 underline" onClick={() => setLocation(`/nutricao/cochos?fazendaId=${data.fazendaId}`)}>Voltar</button>
             <button type="button" className="px-4 min-h-[40px] rounded-lg border border-gray-200 text-[12px] font-semibold" onClick={() => setLocation(`/nutricao/cochos/${data.id}/editar`)}>Editar</button>
             {data.status === "ativo" ? (
               <button type="button" disabled={inativar.isPending} onClick={() => inativar.mutate({ id: data.id })} className="px-4 min-h-[40px] rounded-lg border border-amber-200 text-amber-800 text-[12px] font-semibold">Inativar</button>
@@ -107,7 +149,9 @@ export default function NutricaoCochoDetalhePage() {
               <Info label="Pasto" value={data.pastoNome ?? "—"} />
               <Info label="Referência" value={data.localizacaoDescricao ?? "—"} />
             </div>
-            <p className="text-[11px] text-gray-500 mt-2">{formatarLocalizacaoCocho(data.pastoNome, data.localizacaoDescricao)}</p>
+            {pastoSecundario && (
+              <p className="text-[11px] text-gray-500 mt-2">{pastoSecundario}</p>
+            )}
           </section>
 
           <section>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
+import { useConfirm } from "@/components/ConfirmDialog";
 import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import {
   FD_PRIMARY,
@@ -12,6 +13,7 @@ import {
   FormTextarea,
 } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { listaNutricaoComFazenda } from "@/lib/nutricaoRoutes";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { formatDateBR } from "@/lib/date-utils";
@@ -19,8 +21,12 @@ import { unidadeCompativelFormulacaoKg } from "@shared/nutricaoDietas";
 import {
   formatarCustoProjetado,
   MSG_PLAN_LOTE_VAZIO,
+  MSG_PLAN_SOMENTE_HISTORICO,
+  MSG_PLAN_SUBSTITUIR_MESMO_DIA,
   textoAjudaTratosPorDia,
   textoEstimativaPorTrato,
+  textoConfirmacaoSubstituir,
+  dataFimAoSubstituir,
   MSG_PLAN_MATERIAL_INICIADO,
   NUTRICAO_PLAN_DIAS_SEMANA,
   NUTRICAO_PLAN_FREQUENCIAS,
@@ -38,6 +44,7 @@ export default function NutricaoPlanejamentoFormPage() {
   const planId = params.id ? Number(params.id) : null;
   const isEdit = Number.isFinite(planId) && (planId ?? 0) > 0;
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const fazendaFromUrl = new URLSearchParams(window.location.search).get("fazendaId") ?? "";
 
   const [fazendaId, setFazendaId] = useState(fazendaFromUrl);
@@ -147,13 +154,36 @@ export default function NutricaoPlanejamentoFormPage() {
 
   const pending = createMut.isPending || updateMut.isPending || substituirMut.isPending;
 
-  const salvar = (substituir = false) => {
+  const somenteHistorico = Boolean(isEdit && existente && !existente.acoes.podeEditar);
+  const podeSubstituir = Boolean(isEdit && existente?.acoes.podeSubstituir);
+
+  const salvar = async (substituir = false) => {
     if (!payloadPronto) {
       toast.error("Preencha fazenda, lote e data inicial.");
       return;
     }
-    if (isEdit && substituir) substituirMut.mutate({ id: planId!, ...payloadPronto });
-    else if (isEdit) updateMut.mutate({ id: planId!, ...payloadPronto });
+    if (somenteHistorico) {
+      toast.error(MSG_PLAN_SOMENTE_HISTORICO);
+      return;
+    }
+    if (isEdit && substituir) {
+      const corte = existente ? dataFimAoSubstituir(existente.dataInicio, payloadPronto.dataInicio) : { ok: false as const, message: MSG_PLAN_SUBSTITUIR_MESMO_DIA };
+      if (!corte.ok) {
+        toast.error(corte.message);
+        return;
+      }
+      const ok = await confirm({
+        title: "Substituir este planejamento?",
+        description: textoConfirmacaoSubstituir(payloadPronto.dataInicio),
+        confirmText: "Substituir",
+        cancelText: "Voltar",
+        variant: "warning",
+      });
+      if (!ok) return;
+      substituirMut.mutate({ id: planId!, ...payloadPronto });
+      return;
+    }
+    if (isEdit) updateMut.mutate({ id: planId!, ...payloadPronto });
     else createMut.mutate(payloadPronto);
   };
 
@@ -168,20 +198,35 @@ export default function NutricaoPlanejamentoFormPage() {
     tratosPorDia,
   });
 
+  const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/planejamento", fazendaId));
+
   return (
     <AppLayout>
+      <button
+        type="button"
+        onClick={voltarLista}
+        className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
+        aria-label="Voltar"
+      >
+        <span className="material-icons text-[18px] group-hover:-translate-x-0.5 transition-transform">
+          arrow_back
+        </span>
+        <span className="text-[13px]">Voltar</span>
+      </button>
       <div className="bg-white rounded border border-gray-200 shadow-sm max-w-5xl">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
           <h1 className="text-[20px] font-semibold text-gray-900" style={{ fontFamily: "Fraunces, serif" }}>
             {isEdit ? "Editar Planejamento" : "Novo Planejamento"}
           </h1>
-          <button type="button" onClick={() => setLocation(fazendaId ? `/nutricao/planejamento?fazendaId=${fazendaId}` : "/nutricao/planejamento")} className="text-[12px] text-gray-600 underline">
-            Voltar
-          </button>
         </div>
 
         <div className="px-4 py-5 space-y-6">
-          {materialTravado && (
+          {somenteHistorico && (
+            <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
+              {MSG_PLAN_SOMENTE_HISTORICO}
+            </p>
+          )}
+          {materialTravado && !somenteHistorico && (
             <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
               {MSG_PLAN_MATERIAL_INICIADO}
             </p>
@@ -384,11 +429,18 @@ export default function NutricaoPlanejamentoFormPage() {
 
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             <button type="button" disabled={pending} onClick={() => setLocation(fazendaId ? `/nutricao/planejamento?fazendaId=${fazendaId}` : "/nutricao/planejamento")} className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase bg-[#F0F0F0] text-gray-700">
-              Cancelar
+              Voltar
             </button>
-            <button type="button" disabled={pending} onClick={() => salvar(false)} className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900" style={{ backgroundColor: FD_PRIMARY }}>
-              {pending ? "Salvando..." : "Salvar Planejamento"}
-            </button>
+            {!somenteHistorico && (
+              <button type="button" disabled={pending} onClick={() => void salvar(false)} className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900" style={{ backgroundColor: FD_PRIMARY }}>
+                {pending ? "Salvando..." : "Salvar Planejamento"}
+              </button>
+            )}
+            {podeSubstituir && (
+              <button type="button" disabled={pending} onClick={() => void salvar(true)} className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase border border-amber-200 text-amber-800 bg-white">
+                {substituirMut.isPending ? "Substituindo..." : "Substituir planejamento"}
+              </button>
+            )}
           </div>
         </div>
       </div>
