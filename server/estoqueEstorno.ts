@@ -86,6 +86,7 @@ export function isEstornoBusinessError(error: unknown): boolean {
     /Informe o motivo do estorno/i.test(msg) ||
     /Usuário autenticado inválido/i.test(msg) ||
     /Produto não encontrado/i.test(msg) ||
-    /Não é possível estornar/i.test(msg)
+    /Não é possível estornar/i.test(msg) ||
+    /anterior ao controle de capital/i.test(msg)
   );
 }

@@ -44,6 +44,7 @@ import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import { FormLabel, FormDatePicker } from "@/components/FormFields";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listaProdutosComRetornoVisaoGeral, movimentacaoComRetornoVisaoGeral } from "@/lib/insumosRoutes";
+import { capitalEstaInicializado, valorPatrimonialExibicao } from "@shared/estoqueCapital";
 import {
   agruparMovimentacoes,
   formatDataResumo,
@@ -355,6 +356,19 @@ export default function InsumosVisaoGeralDashboard({
   const precoEfetivo = (produtoId: number, valorUnitario: unknown) =>
     numVal(valorUnitario) || (precoMedioImplicit.get(produtoId) ?? 0);
 
+  const valorPatrimonialProduto = (p: {
+    id: number;
+    quantidade?: string | number | null;
+    valorUnitario?: string | number | null;
+    valorTotalEstoque?: string | number | null;
+    capitalInicializadoEm?: Date | string | null;
+  }) => {
+    if (capitalEstaInicializado(p) && p.valorTotalEstoque != null && p.valorTotalEstoque !== "") {
+      return valorPatrimonialExibicao(p);
+    }
+    return numVal(p.quantidade) * precoEfetivo(p.id, p.valorUnitario);
+  };
+
   const isSaida = (mv: { tipo: string | null; quantidade: string | number }) =>
     mv.tipo ? sinalDoTipo(mv.tipo) === "saida" : numVal(mv.quantidade) < 0;
 
@@ -378,7 +392,7 @@ export default function InsumosVisaoGeralDashboard({
     );
 
     const valorTotal = comValor.reduce(
-      (s, p) => s + numVal(p.quantidade) * precoEfetivo(p.id, p.valorUnitario),
+      (s, p) => s + valorPatrimonialProduto(p),
       0,
     );
 
@@ -403,7 +417,7 @@ export default function InsumosVisaoGeralDashboard({
       const cat = p.categoria?.trim() || "Sem categoria";
       categorias.set(
         cat,
-        (categorias.get(cat) ?? 0) + numVal(p.quantidade) * precoEfetivo(p.id, p.valorUnitario),
+        (categorias.get(cat) ?? 0) + valorPatrimonialProduto(p),
       );
     });
     const porCategoria = [...categorias.entries()]
@@ -415,7 +429,7 @@ export default function InsumosVisaoGeralDashboard({
       .map(p => ({
         id: p.id,
         nome: p.nome,
-        valor: numVal(p.quantidade) * precoEfetivo(p.id, p.valorUnitario),
+        valor: valorPatrimonialProduto(p),
       }))
       .filter(p => p.valor > 0)
       .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome, "pt-BR"))

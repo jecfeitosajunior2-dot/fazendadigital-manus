@@ -6,7 +6,7 @@ import { db } from "./db";
 import {
   users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
-  benfeitorias, estoque, estoqueMovimentacoes, contasFinanceiras, movimentacoes,
+  benfeitorias, estoque, estoqueMovimentacoes, estoqueOperacoes, contasFinanceiras, movimentacoes,
   compras, compraGrupos, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
@@ -39,6 +39,22 @@ import {
 } from "./custoMedioEstoque";
 import { calcularQuantidadeEstoquePorDose } from "../client/src/lib/produto-types";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
+import {
+  capitalEstaInicializado,
+  custoMedioFonteTecnica,
+  EstoqueCapitalError,
+  MSG_ESTOQUE_EDICAO_CAPITAL,
+  MSG_ESTOQUE_EXCLUSAO_CAPITAL,
+  MSG_ESTOQUE_VALOR_UNITARIO_DERIVADO,
+  MSG_ESTOQUE_ZERAR_CAPITAL,
+  MSG_MANUT_CAPITAL_REVERSAO,
+} from "../shared/estoqueCapital";
+import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
+import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
+import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA } from "../shared/compraInsumos";
+import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
+import { compraInsumosService } from "./compraInsumosMysql";
+import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
 import { filterAnimaisPorFazenda, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
@@ -3567,6 +3583,8 @@ const saudeRouter = router({
           quantidade: string | number | null;
           unidade: string | null;
           valorUnitario: string | number | null;
+          valorTotalEstoque?: string | number | null;
+          capitalInicializadoEm?: Date | string | null;
           fazendaId: number | null;
           categoria: string | null;
           situacao: string | null;
@@ -3582,6 +3600,8 @@ const saudeRouter = router({
               quantidade: estoque.quantidade,
               unidade: estoque.unidade,
               valorUnitario: estoque.valorUnitario,
+              valorTotalEstoque: estoque.valorTotalEstoque,
+              capitalInicializadoEm: estoque.capitalInicializadoEm,
               fazendaId: estoque.fazendaId,
               categoria: estoque.categoria,
               situacao: estoque.situacao,
@@ -3636,7 +3656,7 @@ const saudeRouter = router({
           });
         }
 
-        const custoMedio = parseCustoMedio(item.valorUnitario);
+        const custoMedio = custoMedioFonteTecnica(item) ?? parseCustoMedio(item.valorUnitario);
         if (custoMedio == null) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -3706,18 +3726,13 @@ const saudeRouter = router({
                 message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
               });
             }
-            const atual = parseFloat(String(row.quantidade ?? 0));
-            const saldo = atual - qtd;
-            if (!Number.isFinite(saldo) || saldo < -1e-9) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: MSG_ESTOQUE_INSUFICIENTE,
-              });
+            const patchSaida = await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
+              tipoOp: "saida",
+              quantidade: qtd,
+            });
+            if (patchSaida.usaCapital && patchSaida.valorEstoqueMovimentado != null) {
+              payload.custo = patchSaida.valorEstoqueMovimentado;
             }
-            await tx
-              .update(estoque)
-              .set({ quantidade: String(Math.max(0, Math.round(saldo * 100) / 100)) })
-              .where(eq(estoque.id, estoqueId));
 
             const result = await tx.insert(saudeRegistros).values({
               userId: ctx.user.id,
@@ -3739,6 +3754,9 @@ const saudeRouter = router({
           });
           return { success: true as const, id: insertId };
         } catch (error) {
+          if (error instanceof EstoqueCapitalError) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+          }
           if (error instanceof TRPCError) throw error;
           if (!isDatabaseUnavailable(error)) throw error;
           const result = await createLocalSaudeRegistro(ctx.user.id, payload);
@@ -6526,6 +6544,8 @@ export async function resolverPecasComCustoMedioEstoque(
     quantidade: string | number | null;
     unidade: string | null;
     valorUnitario: string | number | null;
+    valorTotalEstoque?: string | number | null;
+    capitalInicializadoEm?: Date | string | null;
     controlarSaldo: boolean | null;
   };
   const mapEstoque = new Map<number, ItemEstoque>();
@@ -6538,6 +6558,8 @@ export async function resolverPecasComCustoMedioEstoque(
         quantidade: estoque.quantidade,
         unidade: estoque.unidade,
         valorUnitario: estoque.valorUnitario,
+        valorTotalEstoque: estoque.valorTotalEstoque,
+        capitalInicializadoEm: estoque.capitalInicializadoEm,
         controlarSaldo: estoque.controlarSaldo,
       })
       .from(estoque)
@@ -6585,7 +6607,7 @@ export async function resolverPecasComCustoMedioEstoque(
     const custo =
       custoCongelado != null && custoCongelado > 0
         ? custoCongelado
-        : parseCustoMedio(item.valorUnitario);
+        : (custoMedioFonteTecnica(item) ?? parseCustoMedio(item.valorUnitario));
     if (custo == null) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -6609,7 +6631,7 @@ export async function resolverPecasComCustoMedioEstoque(
     const custo =
       custoCongelado != null && custoCongelado > 0
         ? custoCongelado
-        : parseCustoMedio(item.valorUnitario)!;
+        : (custoMedioFonteTecnica(item) ?? parseCustoMedio(item.valorUnitario))!;
     return {
       nome: item.nome || p.nome,
       quantidade: p.quantidade,
@@ -6642,13 +6664,26 @@ function montarDeltasBaixaEstoque(
   return deltas;
 }
 
+async function assertPecasSemCapitalInicializado(estoqueIds: number[]) {
+  const ids = [...new Set(estoqueIds.filter(id => Number.isFinite(id) && id > 0))];
+  if (ids.length === 0) return;
+  const rows = await db
+    .select({ capitalInicializadoEm: estoque.capitalInicializadoEm })
+    .from(estoque)
+    .where(inArray(estoque.id, ids));
+  if (rows.some(r => capitalEstaInicializado(r))) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_CAPITAL_REVERSAO });
+  }
+}
+
 async function aplicarBaixaEstoquePecasManutencao(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   pecasNovas: PecaManutencaoResolvida[],
   pecasAntigas?: { estoqueId: number | null; quantidade: string | number }[],
-) {
+): Promise<{ pendenteLocal: Map<number, number>; snapshots: Map<number, string | null> }> {
   const deltas = montarDeltasBaixaEstoque(pecasNovas, pecasAntigas);
   const pendenteLocal = new Map<number, number>();
+  const snapshots = new Map<number, string | null>();
 
   for (const [estoqueId, delta] of deltas.entries()) {
     let appliedOnDb = false;
@@ -6665,28 +6700,24 @@ async function aplicarBaixaEstoquePecasManutencao(
         .for("update");
       const item = rows[0];
       if (item) {
-        const atual = parseFloat(String(item.quantidade ?? 0));
-        const saldo = atual - delta;
-        if (!Number.isFinite(saldo) || saldo < -1e-9) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: MSG_MANUT_SALDO_ALTERADO,
-          });
-        }
-        await tx
-          .update(estoque)
-          .set({ quantidade: String(Math.max(0, Math.round(saldo * 100) / 100)) })
-          .where(eq(estoque.id, estoqueId));
+        const op = delta > 0
+          ? { tipoOp: "saida" as const, quantidade: delta }
+          : { tipoOp: "entrada" as const, quantidade: Math.abs(delta), valorInformado: 0, tipoMov: "Ajuste de entrada" };
+        const patch = await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, op);
+        snapshots.set(estoqueId, patch.valorEstoqueMovimentado);
         appliedOnDb = true;
       }
     } catch (error) {
+      if (error instanceof EstoqueCapitalError) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+      }
       if (error instanceof TRPCError) throw error;
       if (!isDatabaseUnavailable(error)) throw error;
     }
     if (!appliedOnDb) pendenteLocal.set(estoqueId, delta);
   }
 
-  return pendenteLocal;
+  return { pendenteLocal, snapshots };
 }
 
 function aplicarBaixaEstoqueLocalPendente(pendenteLocal: Map<number, number>) {
@@ -6910,18 +6941,29 @@ const manutencoesRouter = router({
             custo: totais.valorTotal.toFixed(2),
           });
           const id = Number((result as any)[0]?.insertId);
+          const baixa = pecasResolvidas.length > 0
+            ? await aplicarBaixaEstoquePecasManutencao(tx, pecasResolvidas)
+            : { pendenteLocal: new Map<number, number>(), snapshots: new Map<number, string | null>() };
+          pendenteLocal = baixa.pendenteLocal;
           if (pecasResolvidas.length > 0) {
+            const linhasPorEstoque = new Map<number, number>();
+            for (const p of pecasResolvidas) {
+              linhasPorEstoque.set(p.estoqueId, (linhasPorEstoque.get(p.estoqueId) ?? 0) + 1);
+            }
             await tx.insert(manutencaoPecas).values(
-              pecasResolvidas.map(p => ({
-                manutencaoId: id,
-                estoqueId: p.estoqueId,
-                nome: p.nome,
-                quantidade: p.quantidade.toFixed(2),
-                valorUnitario: p.valorUnitario.toFixed(2),
-                valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
-              })),
+              pecasResolvidas.map(p => {
+                const snap = baixa.snapshots.get(p.estoqueId);
+                const usaSnap = snap != null && linhasPorEstoque.get(p.estoqueId) === 1;
+                return {
+                  manutencaoId: id,
+                  estoqueId: p.estoqueId,
+                  nome: p.nome,
+                  quantidade: p.quantidade.toFixed(2),
+                  valorUnitario: p.valorUnitario.toFixed(2),
+                  valorTotal: usaSnap ? snap : (p.quantidade * p.valorUnitario).toFixed(2),
+                };
+              }),
             );
-            pendenteLocal = await aplicarBaixaEstoquePecasManutencao(tx, pecasResolvidas);
           }
           return id;
         });
@@ -7017,6 +7059,11 @@ const manutencoesRouter = router({
         });
       }
 
+      await assertPecasSemCapitalInicializado([
+        ...pecasAntigas.map(p => Number(p.estoqueId)),
+        ...(pecas ?? []).map(p => Number(p.estoqueId)),
+      ]);
+
       await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
         allowSameInactiveId: anterior.maquinaId,
       });
@@ -7096,11 +7143,12 @@ const manutencoesRouter = router({
               })),
             );
           }
-          pendenteLocal = await aplicarBaixaEstoquePecasManutencao(
+          const baixa = await aplicarBaixaEstoquePecasManutencao(
             tx,
             pecasResolvidas,
             pecasAntigas,
           );
+          pendenteLocal = baixa.pendenteLocal;
         });
         aplicarBaixaEstoqueLocalPendente(pendenteLocal);
         // Mantém espelho local em sincronia (evita edição “sumir” ao reabrir).
@@ -7259,6 +7307,8 @@ const manutencoesRouter = router({
         });
       }
 
+      await assertPecasSemCapitalInicializado(pecasAntigas.map(p => Number(p.estoqueId)));
+
       if (fromLocal) {
         aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
         await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
@@ -7268,7 +7318,8 @@ const manutencoesRouter = router({
       try {
         let pendenteLocal = new Map<number, number>();
         await db.transaction(async tx => {
-          pendenteLocal = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
+          const baixa = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
+          pendenteLocal = baixa.pendenteLocal;
           await tx
             .update(manutencoes)
             .set({ status: "estornado" })
@@ -8219,6 +8270,16 @@ const estoqueRouter = router({
         const [existing] = await db.select().from(estoque).where(eq(estoque.id, id));
 
         if (existing) {
+          if (
+            capitalEstaInicializado({ capitalInicializadoEm: existing.capitalInicializadoEm }) &&
+            fields.valorUnitario != null &&
+            String(fields.valorUnitario) !== String(existing.valorUnitario ?? "")
+          ) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: MSG_ESTOQUE_VALOR_UNITARIO_DERIVADO,
+            });
+          }
           let produtoId = existing.produtoId;
           if (produtoId) {
             await db
@@ -8229,7 +8290,9 @@ const estoqueRouter = router({
               .update(estoque)
               .set({
                 ...syncValues,
-                valorUnitario: fields.valorUnitario ?? existing.valorUnitario,
+                valorUnitario: capitalEstaInicializado({ capitalInicializadoEm: existing.capitalInicializadoEm })
+                  ? existing.valorUnitario
+                  : fields.valorUnitario ?? existing.valorUnitario,
                 localizacao: fields.localizacao ?? existing.localizacao,
               })
               .where(eq(estoque.produtoId, produtoId));
@@ -8324,6 +8387,11 @@ const estoqueRouter = router({
                   quantidadeMaxima: cfg.quantidadeMaxima ?? undefined,
                 }),
                 quantidade: existing.quantidade,
+                valorUnitario: capitalEstaInicializado({ capitalInicializadoEm: existing.capitalInicializadoEm })
+                  ? existing.valorUnitario
+                  : fields.valorUnitario ?? existing.valorUnitario,
+                valorTotalEstoque: existing.valorTotalEstoque,
+                capitalInicializadoEm: existing.capitalInicializadoEm,
               })
               .where(eq(estoque.id, id));
 
@@ -8683,6 +8751,7 @@ const estoqueRouter = router({
         .select({
           id: estoqueMovimentacoes.id,
           grupoId: estoqueMovimentacoes.grupoId,
+          operacaoId: estoqueMovimentacoes.operacaoId,
           estoqueId: estoqueMovimentacoes.estoqueId,
           abastecimentoId: estoqueMovimentacoes.abastecimentoId,
           fazendaId: estoqueMovimentacoes.fazendaId,
@@ -8737,6 +8806,7 @@ const estoqueRouter = router({
           .select({
             id: estoqueMovimentacoes.id,
             grupoId: estoqueMovimentacoes.grupoId,
+            operacaoId: estoqueMovimentacoes.operacaoId,
             estoqueId: estoqueMovimentacoes.estoqueId,
             abastecimentoId: estoqueMovimentacoes.abastecimentoId,
             fazendaId: estoqueMovimentacoes.fazendaId,
@@ -8831,72 +8901,44 @@ const estoqueRouter = router({
           return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
         }
 
-        const atual = Number(item.quantidade ?? 0);
-        const controlaSaldo = produtoControlaSaldo(item.controlarSaldo);
-        if (!controlaSaldo && qty < 0) {
-          throw new Error(
-            "Este produto é de uso imediato e não possui saldo controlado. Registre uma compra para lançar custo; saídas, transferências e ajustes de saída não se aplicam.",
-          );
-        }
-        const novo = controlaSaldo ? atual + qty : atual;
-        if (controlaSaldo && novo < 0) {
-          throw new Error("Quantidade em estoque insuficiente para esta saída.");
-        }
-
-        let observacoes = input.observacoes;
-        if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
-          observacoes = JSON.stringify({
-            modo: input.modo,
-            sinal: input.sinal,
-            unidades: input.quantidadeUnidades,
-            porUnidade: input.quantidadePorUnidade,
-            unidade: input.unidadeLancamento,
-            total: qty,
-          });
-        }
-
-        const result = await db.insert(estoqueMovimentacoes).values({
-          grupoId: input.grupoId || undefined,
-          estoqueId: input.estoqueId,
-          fazendaId: input.fazendaId ?? item.fazendaId ?? undefined,
+        const criado = await criarMovimentacaoEstoqueNoTx({
+          async findEstoque(id) {
+            const [row] = await db.select().from(estoque).where(eq(estoque.id, id));
+            return row
+              ? {
+                  id: row.id,
+                  fazendaId: row.fazendaId ?? null,
+                  quantidade: row.quantidade,
+                  controlarSaldo: row.controlarSaldo ?? null,
+                  valorUnitario: row.valorUnitario,
+                  valorTotalEstoque: row.valorTotalEstoque,
+                  capitalInicializadoEm: row.capitalInicializadoEm,
+                  nome: row.nome,
+                }
+              : null;
+          },
+          async insertMovimentacao(values) {
+            const result = await db.insert(estoqueMovimentacoes).values(values as typeof estoqueMovimentacoes.$inferInsert);
+            return Number((result as { insertId?: number }[])[0]?.insertId ?? 0);
+          },
+          async updateEstoque(id, patch) {
+            await db.update(estoque).set(patch).where(eq(estoque.id, id));
+          },
+        }, {
+          ...input,
           userId,
           registradoPor,
-          tipo: input.tipo || undefined,
-          dataMovimentacao: input.dataMovimentacao,
-          quantidade: String(qty),
-          dataValidade: input.dataValidade || undefined,
-          destino: input.destino || undefined,
-          manejo: input.manejo || undefined,
-          notaFiscal: input.notaFiscal || undefined,
-          frete: input.frete || undefined,
-          fornecedor: input.fornecedor || undefined,
-          valor: input.valor || undefined,
-          observacoes,
-          status: "ativa",
         });
-
-        // Entrada com valor → custo médio ponderado (mesmo em consumo direto, para histórico de preço).
-        const patch: { quantidade: string; valorUnitario?: string } = { quantidade: String(novo) };
-        if (qty > 0) {
-          const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
-          if (Number.isFinite(valorTotalEntrada) && valorTotalEntrada > 0) {
-            const medio = calcularCustoMedioPonderado({
-              quantidadeAnterior: atual,
-              custoMedioAnterior: parseCustoMedio(item.valorUnitario),
-              quantidadeEntrada: qty,
-              valorTotalEntrada,
-            });
-            if (medio != null) patch.valorUnitario = formatCustoMedio(medio);
-          }
-        }
-        await db.update(estoque).set(patch).where(eq(estoque.id, input.estoqueId));
 
         return {
           success: true,
-          id: (result as any)[0]?.insertId,
-          grupoId: input.grupoId ?? null,
+          id: criado.id,
+          grupoId: criado.grupoId,
         };
       } catch (error) {
+        if (error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (error instanceof Error && /estoque insuficiente|quantidade válida|usuário autenticado/i.test(error.message)) {
           throw error;
         }
@@ -8904,6 +8946,50 @@ const estoqueRouter = router({
         const result = devLocalStore.createMovimentacao(localInput);
         return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
       }
+    }),
+
+  confirmarCompraInsumos: protectedProcedure
+    .input(z.object({
+      idempotencyKey: z.string().min(8).max(80),
+      fazendaId: z.number(),
+      dataOperacao: z.string(),
+      fornecedorId: z.number(),
+      numeroNf: z.string().max(60).optional().nullable(),
+      referencia: z.string().max(120).optional().nullable(),
+      valorFrete: z.number().nonnegative(),
+      freteCredorId: z.number().int().positive().optional().nullable(),
+      itens: z.array(z.object({
+        estoqueId: z.number(),
+        quantidade: z.string(),
+        valorMercadoria: z.number().nonnegative(),
+        dataValidade: z.string().optional().nullable(),
+      })).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "";
+      if (!ctx.user.id || !registradoPor) {
+        throw new Error("Usuário autenticado inválido para registrar movimentação.");
+      }
+      return compraInsumosService.confirmarCompraInsumos(ctx.user.id, registradoPor, input);
+    }),
+
+  confirmarTransferenciaInsumos: protectedProcedure
+    .input(z.object({
+      idempotencyKey: z.string().min(8).max(80),
+      fazendaOrigemId: z.number(),
+      fazendaDestinoId: z.number(),
+      dataOperacao: z.string(),
+      itens: z.array(z.object({
+        estoqueOrigemId: z.number(),
+        quantidade: z.string(),
+      })).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "";
+      if (!ctx.user.id || !registradoPor) {
+        throw new Error("Usuário autenticado inválido para registrar movimentação.");
+      }
+      return transferenciaInsumosService.confirmar(ctx.user.id, registradoPor, input);
     }),
 
   updateMovimentacao: protectedProcedure
@@ -8963,26 +9049,45 @@ const estoqueRouter = router({
             message: MSG_MOV_VINCULADA_EDITAR,
           });
         }
+        if (mov.operacaoId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_COMPRA_EDITAR_INTEGRADA,
+          });
+        }
 
         const oldQty = Number(mov.quantidade);
         const oldEstoqueId = mov.estoqueId;
+        const execPatch = executorPatchDrizzle(db);
+
+        const [itemAlvo] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+        if (!itemAlvo) throw new Error("Produto não encontrado.");
+        if (capitalEstaInicializado({ capitalInicializadoEm: itemAlvo.capitalInicializadoEm })) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_ESTOQUE_EDICAO_CAPITAL });
+        }
+        if (oldEstoqueId !== input.estoqueId) {
+          const [oldItem] = await db.select().from(estoque).where(eq(estoque.id, oldEstoqueId));
+          if (oldItem && capitalEstaInicializado({ capitalInicializadoEm: oldItem.capitalInicializadoEm })) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: MSG_ESTOQUE_EDICAO_CAPITAL });
+          }
+        }
 
         if (oldEstoqueId === input.estoqueId) {
-          const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-          if (!item) throw new Error("Produto não encontrado.");
-          const base = Number(item.quantidade ?? 0) - oldQty;
-          const novo = base + qty;
-          if (novo < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
-          await db.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, input.estoqueId));
+          await aplicarPatchSaldoNoTx(execPatch, input.estoqueId, {
+            tipoOp: "estorno",
+            quantidadeOriginal: oldQty,
+          });
+          await aplicarPatchSaldoNoTx(execPatch, input.estoqueId, qty > 0
+            ? { tipoOp: "entrada", quantidade: qty, valorInformado: input.valor, tipoMov: input.tipo }
+            : { tipoOp: "saida", quantidade: Math.abs(qty) });
         } else {
-          const [oldItem] = await db.select().from(estoque).where(eq(estoque.id, oldEstoqueId));
-          const [newItem] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-          if (!oldItem || !newItem) throw new Error("Produto não encontrado.");
-          const oldStock = Number(oldItem.quantidade ?? 0) - oldQty;
-          const newStock = Number(newItem.quantidade ?? 0) + qty;
-          if (newStock < 0) throw new Error("Quantidade em estoque insuficiente para esta saída.");
-          await db.update(estoque).set({ quantidade: String(oldStock) }).where(eq(estoque.id, oldEstoqueId));
-          await db.update(estoque).set({ quantidade: String(newStock) }).where(eq(estoque.id, input.estoqueId));
+          await aplicarPatchSaldoNoTx(execPatch, oldEstoqueId, {
+            tipoOp: "estorno",
+            quantidadeOriginal: oldQty,
+          });
+          await aplicarPatchSaldoNoTx(execPatch, input.estoqueId, qty > 0
+            ? { tipoOp: "entrada", quantidade: qty, valorInformado: input.valor, tipoMov: input.tipo }
+            : { tipoOp: "saida", quantidade: Math.abs(qty) });
         }
 
         let observacoes = input.observacoes;
@@ -9018,6 +9123,9 @@ const estoqueRouter = router({
 
         return { success: true };
       } catch (error) {
+        if (error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (
           error instanceof Error &&
           /insuficiente|quantidade válida|estornada|usuário autenticado|produto não encontrado/i.test(error.message)
@@ -9035,12 +9143,13 @@ const estoqueRouter = router({
 
   validarEstorno: protectedProcedure
     .input(z.object({ itemIds: z.array(z.number()).min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const seeds = await db
           .select({
             id: estoqueMovimentacoes.id,
             grupoId: estoqueMovimentacoes.grupoId,
+            operacaoId: estoqueMovimentacoes.operacaoId,
             estoqueId: estoqueMovimentacoes.estoqueId,
             quantidade: estoqueMovimentacoes.quantidade,
             status: estoqueMovimentacoes.status,
@@ -9055,6 +9164,40 @@ const estoqueRouter = router({
         if (!seeds.length) {
           const local = devLocalStore.validarEstorno(input.itemIds);
           return local;
+        }
+
+        const operacaoId = seeds.map(s => s.operacaoId).find(id => id != null);
+        if (operacaoId) {
+          const ids = [...new Set(seeds.map(s => s.operacaoId).filter((id): id is number => id != null))];
+          if (ids.length > 1) {
+            return {
+              podeEstornar: false,
+              jaEstornada: false,
+              insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+              mensagem: MSG_COMPRA_LINHA_ISOLADA,
+            };
+          }
+          const [opHead] = await db.select({
+            tipo: estoqueOperacoes.tipo,
+            motivo: estoqueOperacoes.motivo,
+            status: estoqueOperacoes.status,
+          }).from(estoqueOperacoes).where(eq(estoqueOperacoes.id, operacaoId)).limit(1);
+          if (opHead && isOperacaoTransferenciaInsumos(opHead)) {
+            const ja = opHead.status === "estornada";
+            return {
+              podeEstornar: !ja,
+              jaEstornada: ja,
+              insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+              mensagem: ja ? "Esta transferência já foi estornada." : null,
+            };
+          }
+          const v = await compraInsumosService.validarEstornoOperacao(ctx.user.id, operacaoId);
+          return {
+            podeEstornar: v.podeEstornar,
+            jaEstornada: Boolean(v.jaEstornada),
+            insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+            mensagem: v.mensagem,
+          };
         }
 
         const grupoId = seeds[0]!.grupoId?.trim() || null;
@@ -9167,6 +9310,27 @@ const estoqueRouter = router({
           });
         }
 
+        const operacaoIds = [...new Set(seeds.map(s => s.operacaoId).filter((id): id is number => id != null))];
+        if (operacaoIds.length > 1) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_COMPRA_LINHA_ISOLADA });
+        }
+        if (operacaoIds.length === 1) {
+          if (seeds.some(s => s.operacaoId == null)) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: MSG_COMPRA_LINHA_ISOLADA });
+          }
+          if (isOperacaoTransferenciaInsumos({ tipo: seeds[0]?.tipo, motivo: seeds[0]?.tipo })) {
+            return transferenciaInsumosService.estornar(ctx.user.id, registradoPor, operacaoIds[0]!, motivo);
+          }
+          const [opHead] = await db.select({
+            tipo: estoqueOperacoes.tipo,
+            motivo: estoqueOperacoes.motivo,
+          }).from(estoqueOperacoes).where(eq(estoqueOperacoes.id, operacaoIds[0]!)).limit(1);
+          if (opHead && isOperacaoTransferenciaInsumos(opHead)) {
+            return transferenciaInsumosService.estornar(ctx.user.id, registradoPor, operacaoIds[0]!, motivo);
+          }
+          return compraInsumosService.estornarOperacao(ctx.user.id, operacaoIds[0]!, motivo, registradoPor);
+        }
+
         const grupoId = seeds[0]!.grupoId?.trim() || null;
         const originais = grupoId
           ? await db.select().from(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.grupoId, grupoId))
@@ -9230,18 +9394,11 @@ const estoqueRouter = router({
           for (const mov of originais) {
             const qty = Number(mov.quantidade);
             const qtyInversa = -qty;
-            const [item] = await tx.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
-            if (!item) throw new Error("Produto não encontrado.");
-            const atual = Number(item.quantidade ?? 0);
-            const novo = atual + qtyInversa;
-            if (novo < 0) {
-              throw new TRPCError({
-                code: "PRECONDITION_FAILED",
-                message:
-                  "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
-              });
-            }
-            await tx.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, mov.estoqueId));
+            const patchEstorno = await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), mov.estoqueId, {
+              tipoOp: "estorno",
+              quantidadeOriginal: qty,
+              valorSnapshot: mov.valorEstoqueMovimentado,
+            });
 
             const insertResult = await tx.insert(estoqueMovimentacoes).values({
               grupoId: estornoGrupoId,
@@ -9259,6 +9416,7 @@ const estoqueRouter = router({
               frete: mov.frete != null ? String(mov.frete) : undefined,
               fornecedor: mov.fornecedor || undefined,
               valor: mov.valor != null ? String(mov.valor) : undefined,
+              valorEstoqueMovimentado: patchEstorno.valorEstoqueMovimentado ?? undefined,
               observacoes: mov.observacoes || undefined,
               status: "estorno",
               originalGrupoId,
@@ -9284,6 +9442,9 @@ const estoqueRouter = router({
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        if (error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         // Não usar /estorno/ solto: mensagens SQL com coluna motivo_estorno batem no regex.
         if (isEstornoBusinessError(error)) throw error;
         if (!isDatabaseUnavailable(error)) {
@@ -9317,19 +9478,23 @@ const estoqueRouter = router({
             message: MSG_MOV_VINCULADA_EXCLUIR,
           });
         }
+        if (mov.operacaoId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: MSG_COMPRA_LINHA_ISOLADA,
+          });
+        }
 
         const [item] = await db.select().from(estoque).where(eq(estoque.id, mov.estoqueId));
         if (item) {
-          const atual = Number(item.quantidade ?? 0);
-          const qtyMov = Number(mov.quantidade);
-          const revertido = atual - qtyMov;
-          // Entrada (qtd > 0): remover o item exige retirar do estoque — não permite negativo.
-          if (qtyMov > 0 && revertido < 0) {
-            throw new Error(
-              `Não é possível remover este item: o estoque atual de "${item.nome ?? "produto"}" é insuficiente para reverter a entrada (necessário ${qtyMov}, saldo ${atual}). Estorne a movimentação ou ajuste o estoque antes.`,
-            );
+          if (capitalEstaInicializado({ capitalInicializadoEm: item.capitalInicializadoEm })) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: MSG_ESTOQUE_EXCLUSAO_CAPITAL });
           }
-          await db.update(estoque).set({ quantidade: String(revertido) }).where(eq(estoque.id, mov.estoqueId));
+          const qtyMov = Number(mov.quantidade);
+          await aplicarPatchSaldoNoTx(executorPatchDrizzle(db), mov.estoqueId, {
+            tipoOp: "estorno",
+            quantidadeOriginal: qtyMov,
+          });
         }
 
         await db.delete(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.id, input.id));
@@ -9373,13 +9538,22 @@ const estoqueRouter = router({
   deleteAllMovimentacoesByProduto: protectedProcedure
     .input(z.object({ estoqueId: z.number() }))
     .mutation(async ({ input }) => {
+      const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+      if (item && capitalEstaInicializado({ capitalInicializadoEm: item.capitalInicializadoEm })) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_ESTOQUE_ZERAR_CAPITAL });
+      }
       await db
         .delete(estoqueMovimentacoes)
         .where(eq(estoqueMovimentacoes.estoqueId, input.estoqueId));
-      await db
-        .update(estoque)
-        .set({ quantidade: "0" })
-        .where(eq(estoque.id, input.estoqueId));
+      if (item) {
+        const qtd = Number(item.quantidade ?? 0);
+        if (qtd > 0) {
+          await aplicarPatchSaldoNoTx(executorPatchDrizzle(db), input.estoqueId, {
+            tipoOp: "saida",
+            quantidade: qtd,
+          });
+        }
+      }
       return { success: true };
     }),
 
@@ -10801,6 +10975,7 @@ import { nutricaoCochosRouter } from "./nutricaoCochosRouter";
 import { nutricaoBatidasRouter } from "./nutricaoBatidasRouter";
 import { nutricaoCochoLeiturasRouter } from "./nutricaoCochoLeiturasRouter";
 import { nutricaoVisaoGeralRouter } from "./nutricaoVisaoGeralRouter";
+import { financeiroV2Router } from "./financeiroV2Router";
 export const appRouter = router({
   auth: authRouter,
   animais: animaisRouter,
@@ -10822,6 +10997,7 @@ export const appRouter = router({
   benfeitorias: benfeitoriasRouter,
   estoque: estoqueRouter,
   financeiro: financeiroRouter,
+  financeiroV2: financeiroV2Router,
   dashboard: dashboardRouter,
   compras: comprasRouter,
   vendas: vendasRouter,

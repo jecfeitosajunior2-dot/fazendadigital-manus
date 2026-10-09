@@ -22,6 +22,7 @@ import { trpc } from '@/lib/trpc';
 import { normalizarUnidade, formatQtdComSigla, formatDataBr, produtoControlaSaldo } from '@/lib/produto-types';
 import { brl, diasAte } from '@/lib/dashboard-utils';
 import { parseRetornoVisaoGeral } from '@/lib/insumosRoutes';
+import { capitalEstaInicializado, valorPatrimonialExibicao } from "@shared/estoqueCapital";
 import { parseRetornoRebanhoVisaoGeral } from '@/lib/rebanhoRoutes';
 import { useDebounce } from '@/hooks/useDebounce';
 import { cn } from '@/lib/utils';
@@ -690,6 +691,8 @@ type EstoqueItem = {
   quantidadeMinima?: string | number | null;
   quantidadeMaxima?: string | number | null;
   valorUnitario?: string | number | null;
+  valorTotalEstoque?: string | number | null;
+  capitalInicializadoEm?: Date | string | null;
   controlarSaldo?: boolean | null;
   monitorarEstoque?: boolean | null;
   situacao?: string | null;
@@ -1125,8 +1128,12 @@ export function EstoquePage() {
   const precoEfetivo = (item: EstoqueItem) =>
     numEstoque(item.valorUnitario) || (precoMedioImplicit.get(item.id) ?? 0);
 
-  const valorEmEstoque = (item: EstoqueItem) =>
-    numEstoque(item.quantidade) * precoEfetivo(item);
+  const valorEmEstoque = (item: EstoqueItem) => {
+    if (capitalEstaInicializado(item) && item.valorTotalEstoque != null && item.valorTotalEstoque !== "") {
+      return valorPatrimonialExibicao(item);
+    }
+    return numEstoque(item.quantidade) * precoEfetivo(item);
+  };
 
   const novoProdutoPath = fazendaSelecionada
     ? `/insumos/cadastro?fazendaId=${estoqueFiltro}`

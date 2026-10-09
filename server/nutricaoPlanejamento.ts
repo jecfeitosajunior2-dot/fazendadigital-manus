@@ -46,6 +46,7 @@ import {
   type NutricaoPlanSituacao,
   type NutricaoPlanStatusAdmin,
 } from "../shared/nutricaoPlanejamento";
+import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
 import { db } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 
@@ -459,6 +460,8 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
         nome: estoque.nome,
         unidade: estoque.unidade,
         valorUnitario: estoque.valorUnitario,
+        valorTotalEstoque: estoque.valorTotalEstoque,
+        capitalInicializadoEm: estoque.capitalInicializadoEm,
         quantidade: estoque.quantidade,
         controlarSaldo: estoque.controlarSaldo,
         embalagens: estoque.embalagens,
@@ -472,7 +475,12 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
         produtoId: Number(r.produtoId),
         nome: r.nome,
         unidade: r.unidade ?? null,
-        valorUnitario: r.valorUnitario ?? null,
+        valorUnitario: custoMedioFonteTecnica({
+          quantidade: r.quantidade,
+          valorUnitario: r.valorUnitario,
+          valorTotalEstoque: r.valorTotalEstoque,
+          capitalInicializadoEm: r.capitalInicializadoEm,
+        }) ?? r.valorUnitario ?? null,
         quantidade: r.quantidade ?? null,
         controlarSaldo: r.controlarSaldo !== false,
         embalagens: r.embalagens ?? null,

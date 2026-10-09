@@ -21,6 +21,7 @@ export type StatusMovimentacao = "ativa" | "estornada" | "estorno";
 export type MovimentacaoItemRaw = {
   id: number;
   grupoId?: string | null;
+  operacaoId?: number | null;
   estoqueId?: number | null;
   fazendaId?: number | null;
   produtoFazendaId?: number | null;
@@ -157,6 +158,9 @@ export function tipoExibicaoMov(mov: {
 }
 
 export function chaveGrupoMovimentacao(m: MovimentacaoItemRaw): string {
+  const operacaoId = Number(m.operacaoId);
+  if (Number.isFinite(operacaoId) && operacaoId > 0) return `op:${operacaoId}`;
+
   const g = m.grupoId?.trim();
   if (g) return `g:${g}`;
 
@@ -324,25 +328,32 @@ export function formatDataHoraEstorno(raw: string | Date | null | undefined): st
 /**
  * Texto quantitativo do efeito no estoque, baseado na quantidade efetivamente revertida
  * (itens do lançamento inverso), não na quantidade original da movimentação.
+ *
+ * A direção vem da operação original (Entrada/Saída), não do sinal da quantidade inversa.
  */
 export function textoResultadoEstornoNoEstoque(
   itensRevertidos: ItemEstornoRevertido[],
+  direcaoOriginal: "entrada" | "saida" = "saida",
 ): string {
-  if (!itensRevertidos.length) {
-    return "devolução registrada ao estoque da Fazenda.";
-  }
-
   const partes = itensRevertidos.map(it => {
     const qtd = Number.isFinite(it.quantidade) ? Math.abs(it.quantidade) : 0;
     const sigla = siglaUnidade(it.unidade) || "un";
     return `${formatQuantidadeMov(qtd)} ${sigla}`;
   });
+  const quantidade = partes.length <= 1 ? partes[0] : partes.join(" + ");
 
-  // Frase neutra evita erro de concordância por unidade (L/un/kg).
-  if (partes.length === 1) {
-    return `devolução de ${partes[0]} ao estoque da Fazenda.`;
+  if (direcaoOriginal === "entrada") {
+    if (!itensRevertidos.length) return "retirada registrada do estoque da Fazenda.";
+    return `retirada de ${quantidade} do estoque da Fazenda.`;
   }
+
+  if (!itensRevertidos.length) return "devolução registrada ao estoque da Fazenda.";
+  if (partes.length === 1) return `devolução de ${partes[0]} ao estoque da Fazenda.`;
   return `devolução de ${partes.join(" + ")} ao estoque da Fazenda.`;
+}
+
+export function rotuloMovimentacaoEstorno(id: number): string {
+  return `Movimentação de estorno: Nº ${id}`;
 }
 
 /** Texto do estorno quando a movimentação não altera saldo (consumo direto). */
@@ -540,7 +551,10 @@ function montarInfoEstorno(
     idInverso: referenciaDevolucao === "ok" ? idInverso : null,
     referenciaDevolucao,
     itensRevertidos,
-    resultado: textoResultadoEstornoNoEstoque(itensRevertidos),
+    resultado: textoResultadoEstornoNoEstoque(
+      itensRevertidos,
+      sinalResumoMovimentacao(tipoExibicaoMov(headOriginal ?? {})),
+    ),
   };
 }
 

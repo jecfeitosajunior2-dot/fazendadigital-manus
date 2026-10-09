@@ -1,3 +1,5 @@
+import { custoMedioFonteTecnica } from "@shared/estoqueCapital";
+
 type EstoqueItem = {
   id?: number | null;
   produtoId?: number | null;
@@ -6,6 +8,8 @@ type EstoqueItem = {
   categoria?: string | null;
   quantidade?: string | number | null;
   valorUnitario?: string | number | null;
+  valorTotalEstoque?: string | number | null;
+  capitalInicializadoEm?: Date | string | null;
   situacao?: string | null;
   controlarSaldo?: boolean | null;
 };
@@ -226,7 +230,7 @@ export function getValorLitroEstoque(
   let totalValor = 0;
   for (const item of itens) {
     const qtd = parseFloat(String(item.quantidade ?? 0));
-    const preco = parseFloat(String(item.valorUnitario ?? 0));
+    const preco = custoMedioFonteTecnica(item) ?? parseFloat(String(item.valorUnitario ?? 0));
     if (qtd > 0 && preco > 0) {
       totalQtd += qtd;
       totalValor += qtd * preco;

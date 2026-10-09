@@ -160,6 +160,7 @@ function criarStore(seed?: {
             const atual = Number(p.quantidade ?? 0);
             if (atual < qtd) throw new Error("saldo");
             p.quantidade = String(atual - qtd);
+            return { valorEstoqueMovimentado: null, usaCapital: false };
           },
           async insertSaida(row) {
             if (seed?.falharNaSegundaSaida && state.movs.length >= 1) throw new Error("falha segunda saida");

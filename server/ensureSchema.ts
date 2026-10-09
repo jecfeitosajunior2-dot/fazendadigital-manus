@@ -1,5 +1,8 @@
 import mysql from "mysql2/promise";
 import { createMysqlPool } from "./_core/mysqlPool";
+import { ensureFinanceiroNucleoSchema } from "./ensureFinanceiroNucleoSchema";
+import { ensureEstoqueOperacoesSchema } from "./ensureEstoqueOperacoesSchema";
+import { ensureEstoqueCapitalSchema } from "./ensureEstoqueCapitalSchema";
 
 async function ensureColumn(
   pool: mysql.Pool,
@@ -506,8 +509,9 @@ export async function ensureSchema() {
       await ensureColumn(pool, "estoque", "observacoes_carencia", "text");
       await ensureColumn(pool, "estoque", "fazenda_id", "int");
       await ensureColumn(pool, "estoque", "produto_id", "int");
-      await ensureColumn(pool, "estoque", "valor_unitario", "decimal(10,2)");
+      await ensureColumn(pool, "estoque", "valor_unitario", "decimal(18,6)");
       await ensureColumn(pool, "estoque", "localizacao", "varchar(200)");
+      await ensureEstoqueCapitalSchema(pool);
       await ensureColumn(pool, "estoque", "observacoes", "text");
     }
 
@@ -636,6 +640,8 @@ export async function ensureSchema() {
     await ensureColumn(pool, "estoque_movimentacoes", "unidade_conteudo_snapshot", "varchar(20) NULL");
     await ensureColumn(pool, "estoque_movimentacoes", "quantidade_fisica_snapshot", "decimal(12,3) NULL");
     await ensureColumn(pool, "estoque_movimentacoes", "unidade_fisica_snapshot", "varchar(20) NULL");
+    await ensureEstoqueOperacoesSchema(pool);
+    await ensureEstoqueCapitalSchema(pool);
 
     const [abastecimentosTable] = await pool.query(`SHOW TABLES LIKE 'abastecimentos'`);
     if ((abastecimentosTable as unknown[]).length > 0) {
@@ -1401,6 +1407,8 @@ export async function ensureSchema() {
         KEY \`nutricao_cocho_leituras_data_idx\` (\`data\`)
       )
     `);
+
+    await ensureFinanceiroNucleoSchema(pool);
   } catch (err) {
     console.error("[schema] Falha ao garantir schema:", err);
     throw err;

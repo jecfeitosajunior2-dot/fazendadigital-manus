@@ -478,17 +478,55 @@ export const estoque = mysqlTable("estoque", {
   carenciaAbateUnidade: varchar("carencia_abate_unidade", { length: 8 }).default("d"),
   carenciaLeiteDias: int("carencia_leite_dias"),
   observacoesCarencia: text("observacoes_carencia"),
-  valorUnitario: decimal("valor_unitario", { precision: 10, scale: 2 }),
+  /** Cache técnico. Nunca reconstruir capital por quantidade × este campo. */
+  valorUnitario: decimal("valor_unitario", { precision: 18, scale: 6 }),
+  /** Capital oficial. NULL = ainda não inicializado no novo modelo. */
+  valorTotalEstoque: decimal("valor_total_estoque", { precision: 14, scale: 2 }),
+  /** Distingue capital 0,00 de capital a definir. */
+  capitalInicializadoEm: timestamp("capital_inicializado_em"),
   localizacao: varchar("localizacao", { length: 200 }),
   observacoes: text("observacoes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
 
+export const estoqueOperacoes = mysqlTable("estoque_operacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  fazendaId: int("fazenda_id").notNull(),
+  /** Só preenchido em Transferência. Compra permanece NULL. */
+  fazendaDestinoId: int("fazenda_destino_id"),
+  tipo: varchar("tipo", { length: 40 }).notNull(),
+  motivo: varchar("motivo", { length: 40 }).notNull(),
+  dataOperacao: date("data_operacao", { mode: "string" }).notNull(),
+  fornecedorId: int("fornecedor_id"),
+  fornecedorNomeSnapshot: varchar("fornecedor_nome_snapshot", { length: 255 }),
+  numeroNf: varchar("numero_nf", { length: 60 }),
+  referencia: varchar("referencia", { length: 120 }),
+  valorMercadorias: decimal("valor_mercadorias", { precision: 12, scale: 2 }).notNull(),
+  valorFrete: decimal("valor_frete", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  valorTotal: decimal("valor_total", { precision: 12, scale: 2 }).notNull(),
+  freteCredorId: int("frete_credor_id"),
+  freteCredorNomeSnapshot: varchar("frete_credor_nome_snapshot", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull().default("confirmada"),
+  estornadaEm: timestamp("estornada_em"),
+  motivoEstorno: varchar("motivo_estorno", { length: 255 }),
+  idempotencyKey: varchar("idempotency_key", { length: 80 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("estoque_operacoes_user_idx").on(table.userId),
+  fazendaIdx: index("estoque_operacoes_fazenda_idx").on(table.fazendaId),
+  fornecedorIdx: index("estoque_operacoes_fornecedor_idx").on(table.fornecedorId),
+  idemUq: uniqueIndex("estoque_operacoes_idem_uq").on(table.userId, table.idempotencyKey),
+}));
+
 export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   id: int("id").primaryKey().autoincrement(),
   /** Agrupa vários itens (produtos) da mesma movimentação administrativa. */
   grupoId: varchar("grupo_id", { length: 40 }),
+  /** Identidade comercial da operação nova (NULL no histórico). */
+  operacaoId: int("operacao_id"),
   estoqueId: int("estoque_id").notNull(),
   /** Abastecimento que gerou esta saída (quando aplicável). */
   abastecimentoId: int("abastecimento_id"),
@@ -510,6 +548,8 @@ export const estoqueMovimentacoes = mysqlTable("estoque_movimentacoes", {
   frete: decimal("frete", { precision: 12, scale: 2 }),
   fornecedor: varchar("fornecedor", { length: 150 }),
   valor: decimal("valor", { precision: 12, scale: 2 }),
+  /** Capital efetivamente adicionado/retirado. NULL no histórico. */
+  valorEstoqueMovimentado: decimal("valor_estoque_movimentado", { precision: 14, scale: 2 }),
   observacoes: text("observacoes"),
   /** Unidade oficial do saldo no momento da movimentação (ex.: sc). */
   unidadeEstoqueSnapshot: varchar("unidade_estoque_snapshot", { length: 20 }),
@@ -1053,4 +1093,199 @@ export const nutricaoCochoLeituras = mysqlTable("nutricao_cocho_leituras", {
   loteIdx: index("nutricao_cocho_leituras_lote_idx").on(table.loteId),
   fornIdx: index("nutricao_cocho_leituras_forn_idx").on(table.fornecimentoId),
   dataIdx: index("nutricao_cocho_leituras_data_idx").on(table.data),
+}));
+
+/** Novo núcleo financeiro (Fase 1). Convivência com contas_financeiras/movimentacoes legadas. Sem saldo_atual. */
+export const financeiroContas = mysqlTable("financeiro_contas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  tipo: varchar("tipo", { length: 30 }).notNull(),
+  banco: varchar("banco", { length: 100 }),
+  agencia: varchar("agencia", { length: 20 }),
+  numeroConta: varchar("numero_conta", { length: 30 }),
+  saldoAbertura: decimal("saldo_abertura", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  dataSaldoAbertura: date("data_saldo_abertura", { mode: "string" }).notNull(),
+  ativa: boolean("ativa").notNull().default(true),
+  inativadaEm: timestamp("inativada_em"),
+  motivoInativacao: varchar("motivo_inativacao", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("financeiro_contas_user_idx").on(table.userId),
+  userAtivaIdx: index("financeiro_contas_user_ativa_idx").on(table.userId, table.ativa),
+  userTipoIdx: index("financeiro_contas_user_tipo_idx").on(table.userId, table.tipo),
+}));
+
+export const financeiroCategorias = mysqlTable("financeiro_categorias", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  tipo: varchar("tipo", { length: 20 }).notNull(),
+  categoriaPaiId: int("categoria_pai_id"),
+  chaveSistema: varchar("chave_sistema", { length: 60 }),
+  ativa: boolean("ativa").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("financeiro_categorias_user_idx").on(table.userId),
+  chaveUq: uniqueIndex("financeiro_categorias_chave_uq").on(table.userId, table.chaveSistema),
+}));
+
+export const financeiroCentrosCusto = mysqlTable("financeiro_centros_custo", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  fazendaId: int("fazenda_id"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("financeiro_centros_custo_user_idx").on(table.userId),
+  fazendaIdx: index("financeiro_centros_custo_fazenda_idx").on(table.fazendaId),
+}));
+
+export const financeiroTitulos = mysqlTable("financeiro_titulos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  tipo: varchar("tipo", { length: 20 }).notNull(),
+  estado: varchar("estado", { length: 20 }).notNull().default("ativo"),
+  condicaoStatus: varchar("condicao_status", { length: 20 }).notNull().default("a_definir"),
+  pessoaId: int("pessoa_id").notNull(),
+  contraparteNomeSnapshot: varchar("contraparte_nome_snapshot", { length: 255 }).notNull(),
+  fazendaOrigemId: int("fazenda_origem_id"),
+  origemTipo: varchar("origem_tipo", { length: 40 }).notNull(),
+  origemId: int("origem_id"),
+  origemItemChave: varchar("origem_item_chave", { length: 80 }),
+  descricao: varchar("descricao", { length: 255 }).notNull(),
+  dataCompetencia: date("data_competencia", { mode: "string" }).notNull(),
+  valorOriginal: decimal("valor_original", { precision: 12, scale: 2 }).notNull(),
+  documentoReferencia: varchar("documento_referencia", { length: 80 }),
+  observacoes: text("observacoes"),
+  canceladoEm: timestamp("cancelado_em"),
+  motivoCancelamento: varchar("motivo_cancelamento", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("financeiro_titulos_user_idx").on(table.userId),
+  pessoaIdx: index("financeiro_titulos_pessoa_idx").on(table.pessoaId),
+  origemUq: uniqueIndex("financeiro_titulos_origem_uq").on(
+    table.userId,
+    table.origemTipo,
+    table.origemId,
+    table.origemItemChave,
+  ),
+}));
+
+export const financeiroParcelas = mysqlTable("financeiro_parcelas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  tituloId: int("titulo_id").notNull(),
+  numero: int("numero").notNull(),
+  vencimento: date("vencimento", { mode: "string" }).notNull(),
+  valorOriginal: decimal("valor_original", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  tituloNumeroUq: uniqueIndex("financeiro_parcelas_titulo_numero_uq").on(table.tituloId, table.numero),
+  userIdx: index("financeiro_parcelas_user_idx").on(table.userId),
+  tituloIdx: index("financeiro_parcelas_titulo_idx").on(table.tituloId),
+}));
+
+export const financeiroLiquidacoes = mysqlTable("financeiro_liquidacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  tipo: varchar("tipo", { length: 30 }).notNull(),
+  contaId: int("conta_id").notNull(),
+  dataLiquidacao: date("data_liquidacao", { mode: "string" }).notNull(),
+  valorMovimentado: decimal("valor_movimentado", { precision: 12, scale: 2 }).notNull(),
+  formaPagamento: varchar("forma_pagamento", { length: 40 }),
+  referencia: varchar("referencia", { length: 80 }),
+  observacoes: text("observacoes"),
+  liquidacaoOriginalId: int("liquidacao_original_id"),
+  idempotencyKey: varchar("idempotency_key", { length: 80 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, table => ({
+  userIdx: index("financeiro_liquidacoes_user_idx").on(table.userId),
+  contaIdx: index("financeiro_liquidacoes_conta_idx").on(table.contaId),
+  idemUq: uniqueIndex("financeiro_liquidacoes_idem_uq").on(table.userId, table.idempotencyKey),
+  originalUq: uniqueIndex("financeiro_liquidacoes_original_uq").on(table.liquidacaoOriginalId),
+}));
+
+export const financeiroLiquidacaoAlocacoes = mysqlTable("financeiro_liquidacao_alocacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  liquidacaoId: int("liquidacao_id").notNull(),
+  parcelaId: int("parcela_id").notNull(),
+  principalLiquidado: decimal("principal_liquidado", { precision: 12, scale: 2 }).notNull(),
+  desconto: decimal("desconto", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  juros: decimal("juros", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  multa: decimal("multa", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, table => ({
+  userIdx: index("financeiro_alocacoes_user_idx").on(table.userId),
+  liquidacaoIdx: index("financeiro_alocacoes_liquidacao_idx").on(table.liquidacaoId),
+  parcelaIdx: index("financeiro_alocacoes_parcela_idx").on(table.parcelaId),
+}));
+
+export const financeiroTransferencias = mysqlTable("financeiro_transferencias", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  contaOrigemId: int("conta_origem_id").notNull(),
+  contaDestinoId: int("conta_destino_id").notNull(),
+  dataTransferencia: date("data_transferencia", { mode: "string" }).notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  descricao: varchar("descricao", { length: 255 }),
+  referencia: varchar("referencia", { length: 80 }),
+  observacoes: text("observacoes"),
+  estado: varchar("estado", { length: 20 }).notNull().default("confirmada"),
+  transferenciaOriginalId: int("transferencia_original_id"),
+  idempotencyKey: varchar("idempotency_key", { length: 80 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, table => ({
+  userIdx: index("financeiro_transferencias_user_idx").on(table.userId),
+  idemUq: uniqueIndex("financeiro_transferencias_idem_uq").on(table.userId, table.idempotencyKey),
+  originalUq: uniqueIndex("financeiro_transferencias_original_uq").on(table.transferenciaOriginalId),
+}));
+
+export const financeiroMovimentos = mysqlTable("financeiro_movimentos", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  contaId: int("conta_id").notNull(),
+  dataMovimento: date("data_movimento", { mode: "string" }).notNull(),
+  direcao: varchar("direcao", { length: 10 }).notNull(),
+  natureza: varchar("natureza", { length: 40 }).notNull(),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  liquidacaoId: int("liquidacao_id"),
+  transferenciaId: int("transferencia_id"),
+  contrapartePessoaId: int("contraparte_pessoa_id"),
+  descricao: varchar("descricao", { length: 255 }).notNull(),
+  referencia: varchar("referencia", { length: 80 }),
+  movimentoOriginalId: int("movimento_original_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, table => ({
+  extratoIdx: index("financeiro_movimentos_extrato_idx").on(table.contaId, table.dataMovimento, table.id),
+  userDataIdx: index("financeiro_movimentos_user_data_idx").on(table.userId, table.dataMovimento),
+  liquidacaoUq: uniqueIndex("financeiro_movimentos_liquidacao_uq").on(table.liquidacaoId),
+  transferenciaIdx: index("financeiro_movimentos_transf_idx").on(table.transferenciaId),
+  transfDirUq: uniqueIndex("financeiro_movimentos_transf_dir_uq").on(table.transferenciaId, table.direcao),
+  pessoaIdx: index("financeiro_movimentos_pessoa_idx").on(table.contrapartePessoaId),
+}));
+
+export const financeiroApropriacoes = mysqlTable("financeiro_apropriacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("user_id").notNull(),
+  tituloId: int("titulo_id").notNull(),
+  fazendaId: int("fazenda_id"),
+  categoriaId: int("categoria_id"),
+  centroCustoId: int("centro_custo_id"),
+  valor: decimal("valor", { precision: 12, scale: 2 }).notNull(),
+  origemDetalheTipo: varchar("origem_detalhe_tipo", { length: 40 }),
+  origemDetalheId: int("origem_detalhe_id"),
+  observacoes: text("observacoes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
+}, table => ({
+  userIdx: index("financeiro_apropriacoes_user_idx").on(table.userId),
+  tituloIdx: index("financeiro_apropriacoes_titulo_idx").on(table.tituloId),
 }));

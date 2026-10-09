@@ -18,6 +18,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { getFichaAnimalPath } from "@/lib/fichaAnimalRoute";
 import { produtoControlaSaldo } from "@/lib/produto-types";
+import { valorPatrimonialExibicao } from "@shared/estoqueCapital";
 import {
   SectionCard,
   KpiCard,
@@ -136,7 +137,7 @@ export default function DashboardPage() {
     const valorTotal = produtos.reduce(
       (s, p) =>
         produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo)
-          ? s + (Number(p.quantidade) || 0) * (Number(p.valorUnitario) || 0)
+          ? s + valorPatrimonialExibicao(p)
           : s,
       0,
     );

@@ -10,6 +10,7 @@ import {
 } from "../shared/estoqueEstornoMotivos";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
 import { db, abastecimentos, estoque, estoqueMovimentacoes, maquinas } from "./db";
+import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { devLocalStore } from "./devLocalStore";
 import { getLocalMaquina, updateLocalAbastecimento } from "./localFallbackStore";
 
@@ -155,76 +156,80 @@ export async function syncSaidaAbastecimento(
   if (existente) {
     const oldLitros = Math.abs(parseFloat(String(existente.quantidade ?? 0)));
     const sameProduct = existente.estoqueId === item.id;
-    const saldoAtual = parseFloat(String(item.quantidade ?? 0));
 
-    if (sameProduct) {
+    const execPatch = executorPatchDrizzle(executor);
+    const [itemAtual] = await executor.select().from(estoque).where(eq(estoque.id, item.id)).limit(1);
+    const capitalAtivo = itemAtual && (itemAtual as { capitalInicializadoEm?: Date | null }).capitalInicializadoEm != null;
+
+    if (capitalAtivo) {
+      await aplicarPatchSaldoNoTx(execPatch, existente.estoqueId, {
+        tipoOp: "estorno",
+        quantidadeOriginal: -oldLitros,
+        valorSnapshot: existente.valorEstoqueMovimentado,
+      });
+      const nova = await aplicarPatchSaldoNoTx(execPatch, item.id, {
+        tipoOp: "saida",
+        quantidade: litros,
+      });
+      await executor
+        .update(estoqueMovimentacoes)
+        .set({
+          estoqueId: item.id,
+          fazendaId: input.fazendaId,
+          grupoId,
+          tipo: TIPO_SAIDA_ABASTECIMENTO,
+          dataMovimentacao: input.dataISO,
+          quantidade: String(-litros),
+          destino: DESTINO_ABASTECIMENTO_MAQUINA,
+          manejo: maquinaNome,
+          registradoPor: registradoPor ?? undefined,
+          valor: nova.valorEstoqueMovimentado ?? valor ?? undefined,
+          valorEstoqueMovimentado: nova.valorEstoqueMovimentado ?? undefined,
+          observacoes,
+          abastecimentoId: input.abastecimentoId,
+          status: "ativa",
+          userId: input.userId ?? undefined,
+        })
+        .where(eq(estoqueMovimentacoes.id, existente.id));
+    } else if (sameProduct) {
       const delta = litros - oldLitros;
-      if (delta > 1e-9 && delta > saldoAtual + 1e-9) {
-        const saldoFmt = saldoAtual.toLocaleString("pt-BR", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-        friendlyStockError(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
+      if (Math.abs(delta) > 1e-9) {
+        await aplicarPatchSaldoNoTx(execPatch, item.id, delta > 0
+          ? { tipoOp: "saida", quantidade: delta }
+          : { tipoOp: "entrada", quantidade: Math.abs(delta), valorInformado: 0, tipoMov: "Ajuste de entrada" });
       }
-      const novoSaldo = saldoAtual - delta;
-      await executor
-        .update(estoque)
-        .set({ quantidade: String(Math.max(0, novoSaldo)) })
-        .where(eq(estoque.id, item.id));
     } else {
-      // Produto/fazenda mudou: devolve o antigo e baixa o novo
-      const [oldItem] = await executor
-        .select()
-        .from(estoque)
-        .where(eq(estoque.id, existente.estoqueId))
-        .limit(1);
-      if (oldItem) {
-        const oldSaldo = parseFloat(String(oldItem.quantidade ?? 0));
-        await executor
-          .update(estoque)
-          .set({ quantidade: String(oldSaldo + oldLitros) })
-          .where(eq(estoque.id, oldItem.id));
-      }
-      const saldoNovo = parseFloat(String(item.quantidade ?? 0));
-      // Re-read after possible concurrent changes — item.quantidade was before restore
-      const [fresh] = await executor
-        .select({ quantidade: estoque.quantidade })
-        .from(estoque)
-        .where(eq(estoque.id, item.id))
-        .limit(1);
-      const disponivel = parseFloat(String(fresh?.quantidade ?? saldoNovo));
-      if (litros > disponivel + 1e-9) {
-        const saldoFmt = disponivel.toLocaleString("pt-BR", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-        friendlyStockError(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
-      }
-      await executor
-        .update(estoque)
-        .set({ quantidade: String(Math.max(0, disponivel - litros)) })
-        .where(eq(estoque.id, item.id));
+      await aplicarPatchSaldoNoTx(execPatch, existente.estoqueId, {
+        tipoOp: "estorno",
+        quantidadeOriginal: -oldLitros,
+      });
+      await aplicarPatchSaldoNoTx(execPatch, item.id, {
+        tipoOp: "saida",
+        quantidade: litros,
+      });
     }
 
-    await executor
-      .update(estoqueMovimentacoes)
-      .set({
-        estoqueId: item.id,
-        fazendaId: input.fazendaId,
-        grupoId,
-        tipo: TIPO_SAIDA_ABASTECIMENTO,
-        dataMovimentacao: input.dataISO,
-        quantidade: String(-litros),
-        destino: DESTINO_ABASTECIMENTO_MAQUINA,
-        manejo: maquinaNome,
-        registradoPor: registradoPor ?? undefined,
-        valor: valor ?? undefined,
-        observacoes,
-        abastecimentoId: input.abastecimentoId,
-        status: "ativa",
-        userId: input.userId ?? undefined,
-      })
-      .where(eq(estoqueMovimentacoes.id, existente.id));
+    if (!capitalAtivo) {
+      await executor
+        .update(estoqueMovimentacoes)
+        .set({
+          estoqueId: item.id,
+          fazendaId: input.fazendaId,
+          grupoId,
+          tipo: TIPO_SAIDA_ABASTECIMENTO,
+          dataMovimentacao: input.dataISO,
+          quantidade: String(-litros),
+          destino: DESTINO_ABASTECIMENTO_MAQUINA,
+          manejo: maquinaNome,
+          registradoPor: registradoPor ?? undefined,
+          valor: valor ?? undefined,
+          observacoes,
+          abastecimentoId: input.abastecimentoId,
+          status: "ativa",
+          userId: input.userId ?? undefined,
+        })
+        .where(eq(estoqueMovimentacoes.id, existente.id));
+    }
 
     await executor
       .update(abastecimentos)
@@ -234,15 +239,10 @@ export async function syncSaidaAbastecimento(
     return existente.id;
   }
 
-  // Nova saída
-  const atual = parseFloat(String(item.quantidade ?? 0));
-  if (litros > atual + 1e-9) {
-    const saldoFmt = atual.toLocaleString("pt-BR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    friendlyStockError(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
-  }
+  const patchNovo = await aplicarPatchSaldoNoTx(executorPatchDrizzle(executor), item.id, {
+    tipoOp: "saida",
+    quantidade: litros,
+  });
 
   const result = await executor.insert(estoqueMovimentacoes).values({
     estoqueId: item.id,
@@ -256,16 +256,13 @@ export async function syncSaidaAbastecimento(
     quantidade: String(-litros),
     destino: DESTINO_ABASTECIMENTO_MAQUINA,
     manejo: maquinaNome,
-    valor: valor ?? undefined,
+    valor: patchNovo.valorEstoqueMovimentado ?? valor ?? undefined,
+    valorEstoqueMovimentado: patchNovo.valorEstoqueMovimentado ?? undefined,
     observacoes,
     status: "ativa",
   });
 
   const movId = Number((result as { [0]?: { insertId?: number } })[0]?.insertId ?? 0);
-  await executor
-    .update(estoque)
-    .set({ quantidade: String(Math.max(0, atual - litros)) })
-    .where(eq(estoque.id, item.id));
 
   if (movId) {
     await executor
@@ -302,11 +299,11 @@ export async function estornarSaidaAbastecimento(
     .where(eq(estoque.id, ativa.estoqueId))
     .limit(1);
   if (item && litros > 0) {
-    const atual = parseFloat(String(item.quantidade ?? 0));
-    await executor
-      .update(estoque)
-      .set({ quantidade: String(atual + litros) })
-      .where(eq(estoque.id, item.id));
+    await aplicarPatchSaldoNoTx(executorPatchDrizzle(executor), item.id, {
+      tipoOp: "estorno",
+      quantidadeOriginal: -litros,
+      valorSnapshot: ativa.valorEstoqueMovimentado,
+    });
   }
 
   const grupoOriginal = ativa.grupoId?.trim() || grupoIdAbastecimento(abastecimentoId);
@@ -325,6 +322,7 @@ export async function estornarSaidaAbastecimento(
     destino: ativa.destino || DESTINO_ABASTECIMENTO_MAQUINA,
     manejo: ativa.manejo || undefined,
     valor: ativa.valor != null ? String(ativa.valor) : undefined,
+    valorEstoqueMovimentado: ativa.valorEstoqueMovimentado != null ? String(ativa.valorEstoqueMovimentado) : undefined,
     observacoes: `Estorno do abastecimento #${abastecimentoId}`,
     status: "estorno",
     originalGrupoId: grupoOriginal,

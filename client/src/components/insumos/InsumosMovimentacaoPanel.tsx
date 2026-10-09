@@ -27,6 +27,7 @@ import {
   movimentacaoResumoAlteraSaldo,
   MOTIVO_ESTORNO_ABASTECIMENTO,
   MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
+  rotuloMovimentacaoEstorno,
   rotuloStatusMov,
   sinalResumoMovimentacao,
   statusBadgeClassMov,
@@ -1784,9 +1785,8 @@ export default function InsumosMovimentacaoPanel() {
                                       {resumo.infoEstorno.referenciaDevolucao === "ok" &&
                                       resumo.infoEstorno.idInverso != null ? (
                                         <>
-                                          Movimentação de devolução:{" "}
                                           <span className="font-medium text-gray-800">
-                                            Nº {resumo.infoEstorno.idInverso}
+                                            {rotuloMovimentacaoEstorno(resumo.infoEstorno.idInverso)}
                                           </span>
                                         </>
                                       ) : resumo.infoEstorno.referenciaDevolucao === "nao_localizada" ? (

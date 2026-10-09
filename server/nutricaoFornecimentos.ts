@@ -49,7 +49,9 @@ import {
   type NutricaoPlanDietaRef,
   type NutricaoPlanLoteRef,
 } from "../shared/nutricaoPlanejamento";
+import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
 import { db } from "./db";
+import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 
 export type FornPersistido = {
@@ -103,6 +105,7 @@ export type FornMovPersistido = {
   fornecimentoId: number;
   estoqueId: number;
   quantidade: string;
+  valorEstoqueMovimentado?: string | null;
   tipo: string | null;
   status: string;
   produtoNome?: string | null;
@@ -116,7 +119,7 @@ export type FornMovPersistido = {
 export type FornTx = {
   insertFornecimento(row: Omit<FornPersistido, "id">): Promise<number>;
   insertIngredientes(rows: FornIngPersistido[]): Promise<void>;
-  debitarEstoque(estoqueId: number, quantidadeUnidade: number): Promise<void>;
+  debitarEstoque(estoqueId: number, quantidadeUnidade: number): Promise<{ valorEstoqueMovimentado: string | null; usaCapital: boolean }>;
   insertSaida(row: {
     fornecimentoId: number;
     grupoId: string;
@@ -127,6 +130,7 @@ export type FornTx = {
     data: string;
     quantidadeUnidade: number;
     valorTotal?: number | null;
+    valorEstoqueMovimentado?: string | null;
     destino?: string | null;
     unidadeEstoqueSnapshot?: string | null;
     conteudoPorUnidadeSnapshot?: string | number | null;
@@ -153,7 +157,7 @@ export type FornTx = {
     quantidadeFisicaSnapshot?: string | number | null;
     unidadeFisicaSnapshot?: string | null;
   }): Promise<void>;
-  creditarEstoque(estoqueId: number, quantidadeUnidade: number): Promise<void>;
+  creditarEstoque(estoqueId: number, quantidadeUnidade: number, valorSnapshot?: string | null): Promise<void>;
   setEstornado(id: number, patch: { motivoEstorno: string; observacaoEstorno: string | null; estornadoPorUserId: number }): Promise<void>;
   lockBatida(id: number): Promise<NutricaoFornBatidaRef | null>;
 };
@@ -377,7 +381,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
             throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_FORN_SALDO_DIETA });
           }
-          await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade);
+          const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade);
           await tx.insertSaida({
             fornecimentoId: fornId,
             grupoId,
@@ -387,7 +391,10 @@ export function createNutricaoFornecimentosService(store: FornStore) {
             registradoPor,
             data: normalizarDataCivil(input.data)!,
             quantidadeUnidade: baixa.quantidadeUnidade,
-            valorTotal: baixa.custoTotal,
+            valorTotal: saldo.usaCapital
+              ? (saldo.valorEstoqueMovimentado != null ? Number(saldo.valorEstoqueMovimentado) : baixa.custoTotal)
+              : baixa.custoTotal,
+            valorEstoqueMovimentado: saldo.valorEstoqueMovimentado,
             destino: ctx.lote?.nome ?? null,
             unidadeEstoqueSnapshot: baixa.snapshotConversao?.unidadeEstoqueSnapshot ?? null,
             conteudoPorUnidadeSnapshot: baixa.snapshotConversao?.conteudoPorUnidadeSnapshot ?? null,
@@ -432,7 +439,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         const originalGrupoId = `forn-${atual.id}`;
         for (const mov of movs) {
           const qtd = Math.abs(Number(mov.quantidade));
-          await tx.creditarEstoque(mov.estoqueId, qtd);
+          await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado);
           const fisicaOrig = mov.quantidadeFisicaSnapshot == null ? null : Number(mov.quantidadeFisicaSnapshot);
           await tx.insertEstorno({
             fornecimentoId: atual.id,
@@ -578,7 +585,12 @@ export const nutricaoFornecimentosStore: FornStore = {
         produtoId: Number(r.produtoId),
         nome: r.nome,
         unidade: r.unidade ?? null,
-        valorUnitario: r.valorUnitario ?? null,
+        valorUnitario: custoMedioFonteTecnica({
+          quantidade: r.quantidade,
+          valorUnitario: r.valorUnitario,
+          valorTotalEstoque: r.valorTotalEstoque,
+          capitalInicializadoEm: r.capitalInicializadoEm,
+        }) ?? r.valorUnitario ?? null,
         quantidade: r.quantidade ?? null,
         controlarSaldo: produtoControlaSaldo(r.controlarSaldo),
         embalagens: r.embalagens ?? null,
@@ -683,6 +695,7 @@ export const nutricaoFornecimentosStore: FornStore = {
       fornecimentoId,
       estoqueId: r.estoqueId,
       quantidade: String(r.quantidade),
+      valorEstoqueMovimentado: r.valorEstoqueMovimentado != null ? String(r.valorEstoqueMovimentado) : null,
       tipo: r.tipo ?? null,
       status: r.status ?? "ativa",
     }));
@@ -732,13 +745,14 @@ export const nutricaoFornecimentosStore: FornStore = {
       async debitarEstoque(estoqueId, quantidadeUnidade) {
         const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId));
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
-        const atual = Number(item.quantidade ?? 0);
         if (!produtoControlaSaldo(item.controlarSaldo)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
         }
-        const novo = atual - quantidadeUnidade;
-        if (novo < -1e-9) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
-        await tx.update(estoque).set({ quantidade: String(novo) }).where(eq(estoque.id, estoqueId));
+        const patch = await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
+          tipoOp: "saida",
+          quantidade: quantidadeUnidade,
+        });
+        return { valorEstoqueMovimentado: patch.valorEstoqueMovimentado, usaCapital: patch.usaCapital };
       },
       async insertSaida(row) {
         const result = await tx.insert(estoqueMovimentacoes).values({
@@ -753,6 +767,7 @@ export const nutricaoFornecimentosStore: FornStore = {
           destino: row.destino ?? undefined,
           manejo: NUTRICAO_FORN_MANEJO,
           valor: row.valorTotal != null ? String(row.valorTotal) : undefined,
+          valorEstoqueMovimentado: row.valorEstoqueMovimentado ?? undefined,
           status: "ativa",
           nutricaoFornecimentoId: row.fornecimentoId,
           unidadeEstoqueSnapshot: row.unidadeEstoqueSnapshot ?? undefined,
@@ -775,6 +790,7 @@ export const nutricaoFornecimentosStore: FornStore = {
           fornecimentoId,
           estoqueId: r.estoqueId,
           quantidade: String(r.quantidade),
+          valorEstoqueMovimentado: r.valorEstoqueMovimentado != null ? String(r.valorEstoqueMovimentado) : null,
           tipo: r.tipo ?? null,
           status: r.status ?? "ativa",
           unidadeEstoqueSnapshot: r.unidadeEstoqueSnapshot ?? null,
@@ -812,11 +828,12 @@ export const nutricaoFornecimentosStore: FornStore = {
           unidadeFisicaSnapshot: row.unidadeFisicaSnapshot ?? undefined,
         });
       },
-      async creditarEstoque(estoqueId, quantidadeUnidade) {
-        const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId));
-        if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: "Produto não encontrado." });
-        const atual = Number(item.quantidade ?? 0);
-        await tx.update(estoque).set({ quantidade: String(atual + quantidadeUnidade) }).where(eq(estoque.id, estoqueId));
+      async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot) {
+        await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
+          tipoOp: "estorno",
+          quantidadeOriginal: -Math.abs(quantidadeUnidade),
+          valorSnapshot,
+        });
       },
       async setEstornado(id, patch) {
         await tx.update(nutricaoFornecimentos).set({

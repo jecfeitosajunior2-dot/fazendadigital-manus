@@ -11,6 +11,7 @@ import {
   type NutricaoDietaStatus,
   validarDietaInput,
 } from "../shared/nutricaoDietas";
+import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
 import { db } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 
@@ -299,6 +300,9 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
         nome: estoque.nome,
         unidade: estoque.unidade,
         valorUnitario: estoque.valorUnitario,
+        valorTotalEstoque: estoque.valorTotalEstoque,
+        capitalInicializadoEm: estoque.capitalInicializadoEm,
+        quantidade: estoque.quantidade,
         embalagens: estoque.embalagens,
         situacao: estoque.situacao,
         categoria: estoque.categoria,
@@ -312,7 +316,12 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
         produtoId: Number(r.produtoId),
         nome: r.nome,
         unidade: r.unidade ?? null,
-        valorUnitario: r.valorUnitario ?? null,
+        valorUnitario: custoMedioFonteTecnica({
+          quantidade: r.quantidade,
+          valorUnitario: r.valorUnitario,
+          valorTotalEstoque: r.valorTotalEstoque,
+          capitalInicializadoEm: r.capitalInicializadoEm,
+        }) ?? r.valorUnitario ?? null,
         embalagens: r.embalagens ?? null,
         categoria: r.categoria ?? null,
         vinculadoFazenda: true,

@@ -9,6 +9,8 @@ import {
   parseCustoMedio,
 } from "./custoMedioEstoque";
 import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelCombustivel, produtoControlaSaldo } from "../shared/estoqueControle";
+import { decidirPatchSaldo } from "../shared/estoqueSaldo";
+import { capitalEstaInicializado, MSG_ESTOQUE_EDICAO_CAPITAL, MSG_ESTOQUE_EXCLUSAO_CAPITAL, MSG_ESTOQUE_ZERAR_CAPITAL } from "../shared/estoqueCapital";
 import { pessoaVisivelNaListagem } from "./pessoasListFiltro";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
@@ -684,6 +686,25 @@ function aplicarDeltaSaldoMovimentacao(item: DevEstoque, qty: number, atual: num
   return novo;
 }
 
+function aplicarPatchSaldoLocal(
+  item: DevEstoque,
+  op: Parameters<typeof decidirPatchSaldo>[1],
+) {
+  const patch = decidirPatchSaldo({
+    quantidade: item.quantidade,
+    controlarSaldo: item.controlarSaldo,
+    valorUnitario: item.valorUnitario,
+    valorTotalEstoque: (item as { valorTotalEstoque?: string | null }).valorTotalEstoque,
+    capitalInicializadoEm: (item as { capitalInicializadoEm?: Date | string | null }).capitalInicializadoEm,
+  }, op);
+  item.quantidade = patch.quantidade;
+  if (patch.valorUnitario) item.valorUnitario = patch.valorUnitario;
+  if (patch.valorTotalEstoque != null) {
+    (item as { valorTotalEstoque?: string }).valorTotalEstoque = patch.valorTotalEstoque;
+  }
+  return patch;
+}
+
 function joinMov(data: StoreData, mov: DevMovimentacao) {
   const item = getItem(data, mov.estoqueId);
   return {
@@ -764,12 +785,13 @@ export const devLocalStore = {
       if (!itemControlaSaldoLocal(item)) {
         return { ok: false as const, reason: "no_stock_control" as const };
       }
-      const atual = Number(item.quantidade ?? 0);
-      const novo = atual + delta;
-      if (!Number.isFinite(novo) || novo < -1e-9) {
-        return { ok: false as const, reason: "insufficient" as const, disponivel: atual };
+      try {
+        aplicarPatchSaldoLocal(item, delta >= 0
+          ? { tipoOp: "entrada", quantidade: delta, valorInformado: 0, tipoMov: "Ajuste de entrada" }
+          : { tipoOp: "saida", quantidade: Math.abs(delta) });
+      } catch {
+        return { ok: false as const, reason: "insufficient" as const, disponivel: Number(item.quantidade ?? 0) };
       }
-      item.quantidade = String(Math.max(0, Math.round(novo * 100) / 100));
       item.updatedAt = now();
       return { ok: true as const, quantidade: item.quantidade };
     });
@@ -1426,8 +1448,10 @@ export const devLocalStore = {
       const qty = parseFloat(String(input.quantidade).replace(",", "."));
       if (Number.isNaN(qty) || qty === 0) throw new Error("Informe uma quantidade válida.");
 
-      const atual = Number(item.quantidade ?? 0);
-      const novo = aplicarDeltaSaldoMovimentacao(item, qty, atual);
+      aplicarDeltaSaldoMovimentacao(item, qty, Number(item.quantidade ?? 0));
+      const patchLocal = aplicarPatchSaldoLocal(item, qty > 0
+        ? { tipoOp: "entrada", quantidade: qty, valorInformado: input.valor as string | undefined, tipoMov: input.tipo as string | undefined }
+        : { tipoOp: "saida", quantidade: Math.abs(qty) });
 
       let observacoes = input.observacoes as string | undefined;
       if (input.modo === "unidades" && input.quantidadeUnidades && input.quantidadePorUnidade) {
@@ -1469,20 +1493,6 @@ export const devLocalStore = {
         updatedByUserId: null,
         updatedByNome: null,
       });
-      item.quantidade = String(novo);
-      // Entrada com valor → custo médio ponderado (mesmo em consumo direto, para histórico de preço).
-      if (qty > 0) {
-        const valorTotalEntrada = parseFloat(String(input.valor ?? "").replace(",", "."));
-        if (Number.isFinite(valorTotalEntrada) && valorTotalEntrada > 0) {
-          const medio = calcularCustoMedioPonderado({
-            quantidadeAnterior: atual,
-            custoMedioAnterior: parseCustoMedio(item.valorUnitario),
-            quantidadeEntrada: qty,
-            valorTotalEntrada,
-          });
-          if (medio != null) item.valorUnitario = formatCustoMedio(medio);
-        }
-      }
       item.updatedAt = now();
       return { success: true, id };
     });
@@ -1509,25 +1519,33 @@ export const devLocalStore = {
       const oldEstoqueId = mov.estoqueId;
       const newEstoqueId = input.estoqueId as number;
 
+      const itemAlvo = getItem(data, newEstoqueId);
+      if (!itemAlvo) throw new Error("Produto não encontrado");
+      if (capitalEstaInicializado({ capitalInicializadoEm: (itemAlvo as { capitalInicializadoEm?: Date | string | null }).capitalInicializadoEm })) {
+        throw new Error(MSG_ESTOQUE_EDICAO_CAPITAL);
+      }
+      if (oldEstoqueId !== newEstoqueId) {
+        const oldItemCheck = getItem(data, oldEstoqueId);
+        if (oldItemCheck && capitalEstaInicializado({ capitalInicializadoEm: (oldItemCheck as { capitalInicializadoEm?: Date | string | null }).capitalInicializadoEm })) {
+          throw new Error(MSG_ESTOQUE_EDICAO_CAPITAL);
+        }
+      }
+
       if (oldEstoqueId === newEstoqueId) {
-        const item = getItem(data, newEstoqueId);
-        if (!item) throw new Error("Produto não encontrado");
-        const base = Number(item.quantidade ?? 0) - (itemControlaSaldoLocal(item) ? oldQty : 0);
-        const novo = aplicarDeltaSaldoMovimentacao(item, qty, base);
-        item.quantidade = String(novo);
-        item.updatedAt = now();
+        aplicarPatchSaldoLocal(itemAlvo, { tipoOp: "estorno", quantidadeOriginal: oldQty });
+        aplicarPatchSaldoLocal(itemAlvo, qty > 0
+          ? { tipoOp: "entrada", quantidade: qty, valorInformado: input.valor as string | undefined, tipoMov: input.tipo as string | undefined }
+          : { tipoOp: "saida", quantidade: Math.abs(qty) });
+        itemAlvo.updatedAt = now();
       } else {
         const oldItem = getItem(data, oldEstoqueId);
-        const newItem = getItem(data, newEstoqueId);
-        if (!oldItem || !newItem) throw new Error("Produto não encontrado");
-        const oldStock =
-          Number(oldItem.quantidade ?? 0) - (itemControlaSaldoLocal(oldItem) ? oldQty : 0);
-        const newBase = Number(newItem.quantidade ?? 0);
-        const newStock = aplicarDeltaSaldoMovimentacao(newItem, qty, newBase);
-        oldItem.quantidade = String(oldStock);
-        newItem.quantidade = String(newStock);
+        if (!oldItem) throw new Error("Produto não encontrado");
+        aplicarPatchSaldoLocal(oldItem, { tipoOp: "estorno", quantidadeOriginal: oldQty });
+        aplicarPatchSaldoLocal(itemAlvo, qty > 0
+          ? { tipoOp: "entrada", quantidade: qty, valorInformado: input.valor as string | undefined, tipoMov: input.tipo as string | undefined }
+          : { tipoOp: "saida", quantidade: Math.abs(qty) });
         oldItem.updatedAt = now();
-        newItem.updatedAt = now();
+        itemAlvo.updatedAt = now();
       }
 
       Object.assign(mov, {
@@ -1721,14 +1739,11 @@ export const devLocalStore = {
         const item = getItem(data, mov.estoqueId);
         if (!item) throw new Error("Produto não encontrado.");
         if (itemControlaSaldoLocal(item)) {
-          const atual = Number(item.quantidade ?? 0);
-          const novo = atual + qtyInversa;
-          if (novo < 0) {
-            throw new Error(
-              "Não é possível estornar esta movimentação porque o estoque atual de um ou mais produtos é insuficiente para realizar a reversão.",
-            );
-          }
-          item.quantidade = String(novo);
+          aplicarPatchSaldoLocal(item, {
+            tipoOp: "estorno",
+            quantidadeOriginal: qty,
+            valorSnapshot: (mov as { valorEstoqueMovimentado?: string | null }).valorEstoqueMovimentado,
+          });
           item.updatedAt = now();
         }
 
@@ -1794,15 +1809,13 @@ export const devLocalStore = {
       }
       const item = getItem(data, mov.estoqueId);
       if (item) {
-        const atual = Number(item.quantidade ?? 0);
-        const qtyMov = Number(mov.quantidade);
-        const revertido = atual - qtyMov;
-        if (qtyMov > 0 && revertido < 0) {
-          throw new Error(
-            `Não é possível remover este item: o estoque atual de "${item.nome}" é insuficiente para reverter a entrada (necessário ${qtyMov}, saldo ${atual}). Estorne a movimentação ou ajuste o estoque antes.`,
-          );
+        if (capitalEstaInicializado({ capitalInicializadoEm: (item as { capitalInicializadoEm?: Date | string | null }).capitalInicializadoEm })) {
+          throw new Error(MSG_ESTOQUE_EXCLUSAO_CAPITAL);
         }
-        item.quantidade = String(revertido);
+        aplicarPatchSaldoLocal(item, {
+          tipoOp: "estorno",
+          quantidadeOriginal: Number(mov.quantidade),
+        });
         item.updatedAt = now();
       }
       data.movimentacoes = data.movimentacoes.filter(m => m.id !== id);
@@ -1826,7 +1839,13 @@ export const devLocalStore = {
       data.movimentacoes = data.movimentacoes.filter(m => m.estoqueId !== estoqueId);
       const item = getItem(data, estoqueId);
       if (item) {
-        item.quantidade = "0";
+        if (capitalEstaInicializado({ capitalInicializadoEm: (item as { capitalInicializadoEm?: Date | string | null }).capitalInicializadoEm })) {
+          throw new Error(MSG_ESTOQUE_ZERAR_CAPITAL);
+        }
+        const qtd = Number(item.quantidade ?? 0);
+        if (qtd > 0) {
+          aplicarPatchSaldoLocal(item, { tipoOp: "saida", quantidade: qtd });
+        }
         item.updatedAt = now();
       }
       return { success: true };
@@ -2199,37 +2218,27 @@ export const devLocalStore = {
       if (existente) {
         const oldLitros = Math.abs(parseFloat(String(existente.quantidade ?? 0)));
         const sameProduct = existente.estoqueId === item.id;
-        const saldoAtual = Number(item.quantidade ?? 0);
 
         if (sameProduct) {
-          const delta = litros - oldLitros;
-          if (delta > 1e-9 && delta > saldoAtual + 1e-9) {
-            const saldoFmt = saldoAtual.toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            });
-            throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
-          }
-          item.quantidade = String(Math.max(0, saldoAtual - delta));
-          item.updatedAt = now();
+          aplicarPatchSaldoLocal(item, {
+            tipoOp: "estorno",
+            quantidadeOriginal: -oldLitros,
+            valorSnapshot: (existente as { valorEstoqueMovimentado?: string | null }).valorEstoqueMovimentado,
+          });
+          aplicarPatchSaldoLocal(item, { tipoOp: "saida", quantidade: litros });
         } else {
           const oldItem = getItem(data, existente.estoqueId);
           if (oldItem) {
-            const oldSaldo = Number(oldItem.quantidade ?? 0);
-            oldItem.quantidade = String(oldSaldo + oldLitros);
+            aplicarPatchSaldoLocal(oldItem, {
+              tipoOp: "estorno",
+              quantidadeOriginal: -oldLitros,
+              valorSnapshot: (existente as { valorEstoqueMovimentado?: string | null }).valorEstoqueMovimentado,
+            });
             oldItem.updatedAt = now();
           }
-          const disponivel = Number(item.quantidade ?? 0);
-          if (litros > disponivel + 1e-9) {
-            const saldoFmt = disponivel.toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            });
-            throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
-          }
-          item.quantidade = String(Math.max(0, disponivel - litros));
-          item.updatedAt = now();
+          aplicarPatchSaldoLocal(item, { tipoOp: "saida", quantidade: litros });
         }
+        item.updatedAt = now();
 
         existente.estoqueId = item.id;
         existente.fazendaId = input.fazendaId;
@@ -2249,14 +2258,7 @@ export const devLocalStore = {
         return existente.id;
       }
 
-      const atual = Number(item.quantidade ?? 0);
-      if (litros > atual + 1e-9) {
-        const saldoFmt = atual.toLocaleString("pt-BR", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-        throw new Error(`Quantidade maior que o estoque disponível (${saldoFmt} L).`);
-      }
+      aplicarPatchSaldoLocal(item, { tipoOp: "saida", quantidade: litros });
 
       const id = data.nextMovId++;
       data.movimentacoes.push({
@@ -2286,7 +2288,6 @@ export const devLocalStore = {
         updatedByUserId: null,
         updatedByNome: null,
       });
-      item.quantidade = String(Math.max(0, atual - litros));
       item.updatedAt = now();
       return id;
     });
@@ -2310,7 +2311,11 @@ export const devLocalStore = {
       const litros = Math.abs(parseFloat(String(ativa.quantidade ?? 0)));
       const item = getItem(data, ativa.estoqueId);
       if (item && litros > 0) {
-        item.quantidade = String(Number(item.quantidade ?? 0) + litros);
+        aplicarPatchSaldoLocal(item, {
+          tipoOp: "estorno",
+          quantidadeOriginal: -litros,
+          valorSnapshot: (ativa as { valorEstoqueMovimentado?: string | null }).valorEstoqueMovimentado,
+        });
         item.updatedAt = now();
       }
 

@@ -31,6 +31,11 @@ import {
   getCombustivelLabel,
   isProdutoCombustivel,
 } from "@/lib/combustivel-estoque";
+import {
+  MSG_COMPRA_EDITAR_INTEGRADA,
+  MSG_COMPRA_FORNECEDOR_OBRIGATORIO,
+  MSG_COMPRA_FRETE_CREDOR,
+} from "@shared/compraInsumos";
 
 function buildRetornoUrl(retorno: string, produtoId?: number) {
   const url = new URL(retorno, window.location.origin);
@@ -265,7 +270,9 @@ type CampoErroMov =
   | "itens"
   | "produto"
   | "unidade"
-  | "quantidade";
+  | "quantidade"
+  | "fornecedor"
+  | "freteCredor";
 
 const fmtMoeda = (v: string) => {
   if (!v.trim()) return "R$ 0,00";
@@ -436,6 +443,7 @@ function isMesmaNota(
   atual: {
     id: number;
     grupoId?: string | null;
+    operacaoId?: number | null;
     fazendaId?: number | null;
     dataMovimentacao?: string | Date | null;
     fornecedor?: string | null;
@@ -445,6 +453,14 @@ function isMesmaNota(
   outra: typeof atual
 ): boolean {
   if (atual.id === outra.id) return false;
+  const opA = Number(atual.operacaoId);
+  const opB = Number(outra.operacaoId);
+  if (Number.isFinite(opA) && opA > 0 && Number.isFinite(opB) && opB > 0) {
+    return opA === opB;
+  }
+  if ((Number.isFinite(opA) && opA > 0) || (Number.isFinite(opB) && opB > 0)) {
+    return false;
+  }
   const gA = atual.grupoId?.trim();
   const gB = outra.grupoId?.trim();
   if (gA || gB) return Boolean(gA && gB && gA === gB);
@@ -548,6 +564,13 @@ export default function InsumosNovaMovimentacaoPage() {
   const [notaFiscal, setNotaFiscal] = useState("");
   const [dataMovimentacao, setDataMovimentacao] = useState(() => new Date().toISOString().slice(0, 10));
   const [frete, setFrete] = useState("");
+  const [freteCredorModo, setFreteCredorModo] = useState<"mesmo" | "outro">("mesmo");
+  const [freteCredorId, setFreteCredorId] = useState("");
+  const compraIdempotencyRef = useRef(
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `compra-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  );
   const [fiscalExpanded, setFiscalExpanded] = useState(false);
 
   // Mini-formulário de produto (linha sendo preenchida)
@@ -1231,6 +1254,17 @@ export default function InsumosNovaMovimentacaoPage() {
   const createMutation = trpc.estoque.createMovimentacao.useMutation({
     onError: e => definirErroItens(e.message),
   });
+  const confirmarCompraMutation = trpc.estoque.confirmarCompraInsumos.useMutation({
+    onError: e => definirErroItens(e.message),
+  });
+  const confirmarTransferenciaMutation = trpc.estoque.confirmarTransferenciaInsumos.useMutation({
+    onError: e => definirErroItens(e.message),
+  });
+  const transferenciaIdempotencyRef = useRef(
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID().replace(/-/g, "")
+      : `tr${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`,
+  );
   const updateMutation = trpc.estoque.updateMovimentacao.useMutation({
     onError: e => definirErroItens(e.message),
   });
@@ -1238,7 +1272,15 @@ export default function InsumosNovaMovimentacaoPage() {
     onError: e => toast.error(e.message),
   });
 
-  const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  const isBusy =
+    createMutation.isPending
+    || confirmarCompraMutation.isPending
+    || confirmarTransferenciaMutation.isPending
+    || updateMutation.isPending
+    || deleteMutation.isPending;
+  const isCompraNova = isEntrada && tipoMov === "Compra" && !isEdit;
+  const operacaoIdEdit = Number((movimentacao as { operacaoId?: number | null } | undefined)?.operacaoId);
+  const compraIntegrada = isEdit && Number.isFinite(operacaoIdEdit) && operacaoIdEdit > 0;
 
   /** Garante que estoque e movimentações reflitam edições antes de sair da tela. */
   const sincronizarResumoMovimentacoes = async (idsAfetados: number[] = []) => {
@@ -1424,6 +1466,52 @@ export default function InsumosNovaMovimentacaoPage() {
     }
 
     try {
+      if (isCompraNova) {
+        const itens = linhas.map(p => {
+          const total = valorTotalLinha(p);
+          const convertida = prepararPayload(p, sinal).quantidade;
+          return {
+            estoqueId: Number(p.estoqueId),
+            quantidade: convertida,
+            valorMercadoria: total ?? 0,
+            dataValidade: exibirValorValidade && p.dataValidade ? p.dataValidade : null,
+          };
+        });
+        await confirmarCompraMutation.mutateAsync({
+          idempotencyKey: compraIdempotencyRef.current,
+          fazendaId: Number(fazendaId),
+          dataOperacao: dataMovimentacao,
+          fornecedorId: Number(fornecedorId),
+          numeroNf: notaFiscal.trim() || null,
+          valorFrete: freteNumero,
+          freteCredorId: freteNumero > 0
+            ? (freteCredorModo === "outro" ? Number(freteCredorId) : Number(fornecedorId))
+            : null,
+          itens,
+        });
+        toast.success("Compra registrada e Conta a Pagar criada no Financeiro.");
+        await sincronizarResumoMovimentacoes();
+        voltarParaOrigem(produtoIdParaRetorno(linhas));
+        return;
+      }
+
+      if (isTransferencia && !isEdit) {
+        await confirmarTransferenciaMutation.mutateAsync({
+          idempotencyKey: transferenciaIdempotencyRef.current,
+          fazendaOrigemId: Number(fazendaId),
+          fazendaDestinoId: Number(fazendaDestinoId),
+          dataOperacao: dataMovimentacao,
+          itens: linhas.map(p => ({
+            estoqueOrigemId: Number(p.estoqueId),
+            quantidade: String(Math.abs(Number(prepararPayload(p, "saida").quantidade))),
+          })),
+        });
+        toast.success("Transferência registrada nas duas fazendas.");
+        await sincronizarResumoMovimentacoes();
+        voltarParaOrigem(produtoIdParaRetorno(linhas));
+        return;
+      }
+
       for (const p of linhas) {
         await createMutation.mutateAsync(prepararPayload(p, sinal, rateio, grupoId));
       }
@@ -1464,6 +1552,11 @@ export default function InsumosNovaMovimentacaoPage() {
   };
 
   const salvar = async () => {
+    if (compraIntegrada) {
+      toast.error(MSG_COMPRA_EDITAR_INTEGRADA);
+      return;
+    }
+
     const next: Partial<Record<CampoErroMov, string>> = {};
 
     if (!tipoMov) next.tipoMov = "Selecione o motivo / tipo da operação.";
@@ -1474,6 +1567,12 @@ export default function InsumosNovaMovimentacaoPage() {
       next.fazendaDestino = "Selecione o estoque destino da transferência.";
     }
     if (!dataMovimentacao.trim()) next.data = "Informe a data da movimentação.";
+    if (isCompraNova && !fornecedorId) {
+      next.fornecedor = MSG_COMPRA_FORNECEDOR_OBRIGATORIO;
+    }
+    if (isCompraNova && freteNumero > 0 && freteCredorModo === "outro" && !freteCredorId) {
+      next.freteCredor = MSG_COMPRA_FRETE_CREDOR;
+    }
 
     if (miniFormPreenchido) {
       next.itens = MSG_ITEM_NAO_ADICIONADO;
@@ -1494,6 +1593,8 @@ export default function InsumosNovaMovimentacaoPage() {
         "fazenda",
         "fazendaDestino",
         "data",
+        "fornecedor",
+        "freteCredor",
         "produto",
         "unidade",
         "quantidade",
@@ -1591,7 +1692,7 @@ export default function InsumosNovaMovimentacaoPage() {
       <button
         type="button"
         onClick={salvar}
-        disabled={isBusy || produtos.length === 0}
+        disabled={isBusy || produtos.length === 0 || compraIntegrada}
         title={
           produtos.length === 0
             ? miniFormPreenchido
@@ -1753,14 +1854,21 @@ export default function InsumosNovaMovimentacaoPage() {
           <FormCard title="Dados da Nota Fiscal">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <FormLabel>Fornecedor</FormLabel>
+                    <FormLabel required={isCompraNova}>Fornecedor</FormLabel>
                     <FormNativeSelect
+                      id="mov-field-fornecedor"
                       value={fornecedorId}
-                      onChange={setFornecedorId}
+                      onChange={v => {
+                        setFornecedorId(v);
+                        limparErro("fornecedor");
+                      }}
                       placeholder="Selecione o fornecedor"
                       options={fornecedorOpcoes}
                       variant="light"
+                      required={isCompraNova}
+                      invalid={!!erros.fornecedor}
                     />
+                    <FieldErrorMsg id="mov-err-fornecedor" message={erros.fornecedor} />
                     <button
                       type="button"
                       onClick={irCadastrarFornecedor}
@@ -1804,7 +1912,61 @@ export default function InsumosNovaMovimentacaoPage() {
                       inputMode="decimal"
                     />
                   </div>
+                  {isCompraNova && freteNumero > 0 ? (
+                    <div className="sm:col-span-2 space-y-3">
+                      <div>
+                        <FormLabel required>Credor do frete</FormLabel>
+                        <FormNativeSelect
+                          id="mov-field-freteCredor"
+                          value={freteCredorModo}
+                          onChange={v => {
+                            setFreteCredorModo(v === "outro" ? "outro" : "mesmo");
+                            if (v !== "outro") setFreteCredorId("");
+                            limparErro("freteCredor");
+                          }}
+                          placeholder="Selecione o credor do frete"
+                          options={[
+                            { value: "mesmo", label: "Mesmo fornecedor da compra" },
+                            { value: "outro", label: "Outro fornecedor / transportador" },
+                          ]}
+                          variant="light"
+                          required
+                          invalid={!!erros.freteCredor}
+                        />
+                      </div>
+                      {freteCredorModo === "outro" ? (
+                        <div>
+                          <FormLabel required>Transportador / credor</FormLabel>
+                          <FormNativeSelect
+                            value={freteCredorId}
+                            onChange={v => {
+                              setFreteCredorId(v);
+                              limparErro("freteCredor");
+                            }}
+                            placeholder="Selecione a pessoa"
+                            options={fornecedorOpcoes}
+                            variant="light"
+                            required
+                            invalid={!!erros.freteCredor}
+                          />
+                          <button
+                            type="button"
+                            onClick={irCadastrarFornecedor}
+                            className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
+                          >
+                            Cadastrar novo fornecedor
+                          </button>
+                        </div>
+                      ) : null}
+                      <FieldErrorMsg id="mov-err-freteCredor" message={erros.freteCredor} />
+                    </div>
+                  ) : null}
                 </div>
+                {isCompraNova ? (
+                  <p className="mt-3 text-[11px] text-gray-500">
+                    O Financeiro será vinculado automaticamente após a confirmação da compra.
+                  </p>
+                ) : null}
           </FormCard>
         ) : null}
 
