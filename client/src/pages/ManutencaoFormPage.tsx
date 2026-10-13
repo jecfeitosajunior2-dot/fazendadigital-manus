@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { formatDateInputLocal } from "@/lib/date-utils";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
@@ -57,7 +58,7 @@ type FormState = {
 const emptyForm = (): FormState => ({
   maquinaId: "",
   tipo: "Preventiva",
-  data: new Date().toISOString().slice(0, 10),
+  data: formatDateInputLocal(),
   proximaManutencao: "",
   horimetro: "",
   descricao: "",

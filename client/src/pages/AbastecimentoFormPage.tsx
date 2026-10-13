@@ -4,6 +4,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { formatDateInputLocal } from "@/lib/date-utils";
 import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
 import {
   fazendaControlaEstoqueCombustivel,
@@ -103,7 +104,7 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
-  data: new Date().toISOString().slice(0, 10),
+  data: formatDateInputLocal(),
   fazendaMaquinaId: "",
   maquinaId: "",
   combustivel: "",
@@ -680,7 +681,7 @@ export default function AbastecimentoFormPage() {
 
   const pending = createMutation.isPending || updateMutation.isPending;
 
-  const hojeISO = new Date().toISOString().slice(0, 10);
+  const hojeISO = formatDateInputLocal();
   const litrosNumForm = parseFloat(form.litros.replace(",", "."));
   const litrosValidos =
     form.litros.trim() !== "" && !Number.isNaN(litrosNumForm) && litrosNumForm > 0;

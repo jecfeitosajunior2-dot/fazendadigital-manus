@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatDateBR, parseLocalDate } from "./date-utils";
+import { formatDateBR, formatDateInputLocal, parseLocalDate, toLocalDateISO } from "./date-utils";
 
 describe("formatDateBR", () => {
   it("formata string YYYY-MM-DD sem regressão de timezone", () => {
@@ -30,6 +30,45 @@ describe("formatDateBR", () => {
 
   it("retorna — para string inválida", () => {
     expect(formatDateBR("nao-e-data")).toBe("—");
+  });
+});
+
+describe("formatDateInputLocal", () => {
+  it("formata 01/01/2026 com zero-padding", () => {
+    expect(formatDateInputLocal(new Date(2026, 0, 1))).toBe("2026-01-01");
+  });
+
+  it("formata 09/10/2026 com zero-padding de mês e dia", () => {
+    expect(formatDateInputLocal(new Date(2026, 8, 9))).toBe("2026-09-09");
+    expect(formatDateInputLocal(new Date(2026, 9, 9))).toBe("2026-10-09");
+  });
+
+  it("mantém 12/10/2026 às 22:30 no dia civil local", () => {
+    const local2230 = new Date(2026, 9, 12, 22, 30, 0);
+    expect(formatDateInputLocal(local2230)).toBe("2026-10-12");
+  });
+
+  it("mantém 31/12/2026 às 23:59 no dia civil local", () => {
+    const local2359 = new Date(2026, 11, 31, 23, 59, 0);
+    expect(formatDateInputLocal(local2359)).toBe("2026-12-31");
+  });
+
+  it("não usa toISOString para obter a data civil (regressão 12/10 22:30 UTC-3)", () => {
+    // Em Brasília (UTC-3) já é 13/10 01:30 UTC, mas o calendário local ainda é 12/10.
+    const utcJaDia13 = new Date("2026-10-13T01:30:00.000Z");
+    expect(utcJaDia13.toISOString().slice(0, 10)).toBe("2026-10-13");
+    const y = utcJaDia13.getFullYear();
+    const m = String(utcJaDia13.getMonth() + 1).padStart(2, "0");
+    const d = String(utcJaDia13.getDate()).padStart(2, "0");
+    expect(formatDateInputLocal(utcJaDia13)).toBe(`${y}-${m}-${d}`);
+    if (utcJaDia13.getTimezoneOffset() > 90) {
+      expect(formatDateInputLocal(utcJaDia13)).toBe("2026-10-12");
+    }
+  });
+
+  it("toLocalDateISO reutiliza o mesmo helper local", () => {
+    const d = new Date(2026, 9, 12, 22, 30);
+    expect(toLocalDateISO(d)).toBe(formatDateInputLocal(d));
   });
 });
 

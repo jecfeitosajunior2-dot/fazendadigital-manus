@@ -53,12 +53,21 @@ export function parseLocalDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Formata Date local como "YYYY-MM-DD" sem deslocamento UTC. */
-export function toLocalDateISO(date: Date): string {
+/**
+ * DATA CIVIL para `input type="date"` e defaults de formulário.
+ * Usa ano/mês/dia LOCAIS. Não usar `toISOString().slice(0, 10)`:
+ * depois das 21h no Brasil isso vira o dia seguinte.
+ */
+export function formatDateInputLocal(date: Date = new Date()): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/** Formata Date local como "YYYY-MM-DD" sem deslocamento UTC. */
+export function toLocalDateISO(date: Date): string {
+  return formatDateInputLocal(date);
 }
 
 /** Retorna o 1º e o último dia do mês de referência (YYYY-MM-DD, horário local). */

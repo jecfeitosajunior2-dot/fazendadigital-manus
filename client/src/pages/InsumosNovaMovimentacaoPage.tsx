@@ -36,6 +36,13 @@ import {
   MSG_COMPRA_FORNECEDOR_OBRIGATORIO,
   MSG_COMPRA_FRETE_CREDOR,
 } from "@shared/compraInsumos";
+import { dataInicialNovaMovimentacao } from "./insumosNovaMovimentacaoData";
+import {
+  limparDestinoSeIgualOrigem,
+  MSG_TRANSFERENCIA_MESMA_FAZENDA,
+  opcoesEstoqueDestinoTransferencia,
+  transferenciaPodeSalvarDestino,
+} from "@shared/estoqueTransferencia";
 
 function buildRetornoUrl(retorno: string, produtoId?: number) {
   const url = new URL(retorno, window.location.origin);
@@ -562,7 +569,7 @@ export default function InsumosNovaMovimentacaoPage() {
   const [fornecedorId, setFornecedorId] = useState("");
   const [fornecedorLegado, setFornecedorLegado] = useState("");
   const [notaFiscal, setNotaFiscal] = useState("");
-  const [dataMovimentacao, setDataMovimentacao] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dataMovimentacao, setDataMovimentacao] = useState(() => dataInicialNovaMovimentacao());
   const [frete, setFrete] = useState("");
   const [freteCredorModo, setFreteCredorModo] = useState<"mesmo" | "outro">("mesmo");
   const [freteCredorId, setFreteCredorId] = useState("");
@@ -693,6 +700,19 @@ export default function InsumosNovaMovimentacaoPage() {
     () => fazendas.map(f => ({ value: String(f.id), label: f.nome })),
     [fazendas]
   );
+
+  const fazendaDestinoOpcoes = useMemo(
+    () => opcoesEstoqueDestinoTransferencia(fazendaOpcoes, fazendaId),
+    [fazendaOpcoes, fazendaId]
+  );
+
+  useEffect(() => {
+    if (!isTransferencia) return;
+    const destinoLimpo = limparDestinoSeIgualOrigem(fazendaId, fazendaDestinoId);
+    if (destinoLimpo !== fazendaDestinoId) {
+      setFazendaDestinoId(destinoLimpo);
+    }
+  }, [isTransferencia, fazendaId, fazendaDestinoId]);
 
   const produtoOpcoes = useMemo(() => {
     if (!fazendaId) return [];
@@ -1563,8 +1583,10 @@ export default function InsumosNovaMovimentacaoPage() {
     if (!fazendaId || !Number(fazendaId)) {
       next.fazenda = "Selecione uma fazenda na tela de Movimentações antes de registrar.";
     }
-    if (isTransferencia && !fazendaDestinoId) {
-      next.fazendaDestino = "Selecione o estoque destino da transferência.";
+    if (isTransferencia && !transferenciaPodeSalvarDestino(fazendaId, fazendaDestinoId)) {
+      next.fazendaDestino = fazendaDestinoId && fazendaDestinoId === fazendaId
+        ? MSG_TRANSFERENCIA_MESMA_FAZENDA
+        : "Selecione o estoque destino da transferência.";
     }
     if (!dataMovimentacao.trim()) next.data = "Informe a data da movimentação.";
     if (isCompraNova && !fornecedorId) {
@@ -1819,7 +1841,7 @@ export default function InsumosNovaMovimentacaoPage() {
                         limparErro("fazendaDestino");
                       }}
                       placeholder="Selecione o estoque destino"
-                      options={fazendaOpcoes}
+                      options={fazendaDestinoOpcoes}
                       variant="light"
                       required
                       invalid={!!erros.fazendaDestino}

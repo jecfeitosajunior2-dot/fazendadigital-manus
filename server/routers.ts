@@ -49,6 +49,7 @@ import {
   MSG_ESTOQUE_ZERAR_CAPITAL,
   MSG_MANUT_CAPITAL_REVERSAO,
 } from "../shared/estoqueCapital";
+import { resolverLeituraEstoqueList } from "../shared/estoqueListFonte";
 import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA } from "../shared/compraInsumos";
@@ -267,7 +268,8 @@ import {
 } from "../shared/reproPipelineConfig";
 import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
-import { tryDevLoginFallback } from "./_core/devLoginFallback";
+import { tryDevLoginFallback, tryDevPreviewSession } from "./_core/devLoginFallback";
+import { isProductionDeploy } from "./_core/isProductionDeploy";
 import { devLocalStore } from "./devLocalStore";
 import {
   configParaFazenda,
@@ -336,7 +338,11 @@ const authRouter = router({
       const [user] = await db.select().from(users).where(
         or(eq(users.openId, input.username), eq(users.email, input.username))
       ).limit(1);
-      if (!user) throw new Error("Usuário não encontrado");
+      if (!user) {
+        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res);
+        if (fallback) return fallback;
+        throw new Error("Usuário não encontrado");
+      }
       // Check password: use passwordHash if available, otherwise fallback to admin123
       let valid = false;
       if (user.passwordHash) {
@@ -362,6 +368,14 @@ const authRouter = router({
     clearAuthCookie(ctx.res);
     return { success: true };
   }),
+
+  ensureLocalPreviewSession: publicProcedure
+    .input(z.object({ email: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const session = await tryDevPreviewSession(input.email, ctx.res);
+      if (!session) return { success: false as const };
+      return session;
+    }),
 });
 
 // ─── ANIMAIS ROUTER ───────────────────────────────────────────────────────────
@@ -8062,12 +8076,13 @@ const estoqueRouter = router({
   list: protectedProcedure.query(async () => {
     try {
       const rows = await db.select().from(estoque).orderBy(desc(estoque.createdAt));
-      const localRows = devLocalStore.listEstoque();
-      if (localRows.length === 0) return rows;
-      return mergeEstoqueListPreferLocal(rows, localRows);
+      return resolverLeituraEstoqueList({ ok: true, rows }, () => devLocalStore.listEstoque(), isDatabaseUnavailable);
     } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-      return devLocalStore.listEstoque();
+      return resolverLeituraEstoqueList(
+        { ok: false, error },
+        () => devLocalStore.listEstoque(),
+        isDatabaseUnavailable,
+      );
     }
   }),
 
@@ -10127,7 +10142,10 @@ function mergeFazendaData<T extends Record<string, any>>(row: T, localRow?: Reco
 const fazendasRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const rows = await db.select().from(fazendas).where(eq(fazendas.userId, ctx.user.id)).orderBy(desc(fazendas.createdAt));
+      let rows = await db.select().from(fazendas).where(eq(fazendas.userId, ctx.user.id)).orderBy(desc(fazendas.createdAt));
+      if (rows.length === 0 && !isProductionDeploy()) {
+        rows = await db.select().from(fazendas).orderBy(desc(fazendas.createdAt));
+      }
       const localRows = await listLocalFazendas(ctx.user.id);
       const localMap = new Map(localRows.map(row => [row.id, row]));
       const dbIds = new Set(rows.map(row => row.id));

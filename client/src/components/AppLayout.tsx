@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { getLocalAuthUser } from "@/lib/localAuth";
@@ -15,9 +15,26 @@ interface AppLayoutProps {
 export function AuthGuard({ children }: AppLayoutProps) {
   const [, setLocation] = useLocation();
   const localUser = getLocalAuthUser();
+  const utils = trpc.useUtils();
+  const triedPreviewSession = useRef(false);
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });
+  const ensurePreviewSession = trpc.auth.ensureLocalPreviewSession.useMutation({
+    onSuccess: async result => {
+      if (!result.success) return;
+      await Promise.all([
+        utils.auth.me.invalidate(),
+        utils.fazendas.list.invalidate(),
+      ]);
+    },
+  });
+
+  useEffect(() => {
+    if (isLoading || user || !localUser || triedPreviewSession.current) return;
+    triedPreviewSession.current = true;
+    ensurePreviewSession.mutate({ email: localUser.email });
+  }, [isLoading, user, localUser, ensurePreviewSession]);
 
   useEffect(() => {
     if (!isLoading && !user && !localUser) {

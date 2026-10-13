@@ -10,14 +10,14 @@ import { toast } from "sonner";
 import { FormLabel, FormDatePicker, FormNativeSelect } from "@/components/FormFields";
 import SelecionarAnimaisAlocacaoDialog from "@/components/rebanho/SelecionarAnimaisAlocacaoDialog";
 import type { AnimalAlocacaoRow } from "@/components/rebanho/alocacao-types";
-import { formatDateBR } from "@/lib/date-utils";
+import { formatDateBR, formatDateInputLocal } from "@/lib/date-utils";
 
 const IRANCHO_BTN_GREEN = "#8ab83d";
 const IRANCHO_PETROL = "#2D5A5A";
 const IRANCHO_BTN_GREY = "#C0C0C0";
 
 function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
+  return formatDateInputLocal();
 }
 
 function displaySexo(sexo: AnimalAlocacaoRow["sexo"]) {

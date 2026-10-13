@@ -15,7 +15,7 @@ import {
   FormInput,
   inputClassCompact,
 } from '@/components/FormFields';
-import { formatDateBR, parseLocalDate } from '@/lib/date-utils';
+import { formatDateBR, formatDateInputLocal, parseLocalDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import {
   formatTempoNoPastoMovimentacaoLote,
@@ -437,7 +437,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
   const [showPesagemForm, setShowPesagemForm] = useState(false);
   const [pesagemForm, setPesagemForm] = useState({
     peso: '',
-    data: new Date().toISOString().split('T')[0],
+    data: formatDateInputLocal(),
     observacoes: '',
   });
 
@@ -445,7 +445,7 @@ export const CattleDetailPageExpanded: React.FC = () => {
     onSuccess: () => {
       toast.success('Pesagem registrada!');
       setShowPesagemForm(false);
-      setPesagemForm({ peso: '', data: new Date().toISOString().split('T')[0], observacoes: '' });
+      setPesagemForm({ peso: '', data: formatDateInputLocal(), observacoes: '' });
       utils.pesagens.list.invalidate({ animalId: animalId! });
       utils.animais.getById.invalidate({ id: animalId! });
       utils.animais.list.invalidate();

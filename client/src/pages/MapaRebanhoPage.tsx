@@ -21,6 +21,7 @@ import { SelectItem } from "@/components/ui/select";
 import { DeleteActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { parseRetornoRebanhoVisaoGeral } from "@/lib/rebanhoRoutes";
+import { formatDateInputLocal } from "@/lib/date-utils";
 
 const FILTERS_KEY = "fd:mapa-rebanho-v2-filtros";
 const FILTER_SELECT_EMPTY = "__empty__";
@@ -29,7 +30,7 @@ const FILTER_FIELD_WIDTH = "w-[220px]";
 type FiltersState = { fazendaId: string; pastoId: string; search: string };
 const INITIAL_FILTERS: FiltersState = { fazendaId: "", pastoId: "", search: "" };
 
-function hojeStr() { return new Date().toISOString().slice(0, 10); }
+function hojeStr() { return formatDateInputLocal(); }
 // ISO (AAAA-MM-DD) -> BR (DD/MM/AAAA)
 function isoToBr(iso: string) {
   if (!iso) return "";

@@ -9,19 +9,21 @@ const DEV_USERS = [
   { email: "admin@fazendadigital.local", password: "admin123", name: "Administrador", id: 1 },
 ] as const;
 
-export async function tryDevLoginFallback(
-  username: string,
-  password: string,
-  res: Response
-): Promise<{ success: true; user: { id: number; openId: string; name: string; email: string; role: "admin" }; localFallback: true } | null> {
-  if (isProductionDeploy()) return null;
+export type DevPreviewSession = {
+  success: true;
+  user: { id: number; openId: string; name: string; email: string; role: "admin" };
+  localFallback: true;
+};
 
+function findDevUserByEmail(username: string) {
   const normalizedUsername = username.trim().toLowerCase();
-  const matchedDevUser = DEV_USERS.find(
-    user => user.email.toLowerCase() === normalizedUsername && user.password === password
-  );
-  if (!matchedDevUser) return null;
+  return DEV_USERS.find(user => user.email.toLowerCase() === normalizedUsername) ?? null;
+}
 
+async function openDevPreviewSession(
+  matchedDevUser: (typeof DEV_USERS)[number],
+  res: Response,
+): Promise<DevPreviewSession> {
   const fallbackUser = {
     id: matchedDevUser.id,
     openId: `local:${matchedDevUser.email}`,
@@ -32,4 +34,30 @@ export async function tryDevLoginFallback(
   const token = await createSession(fallbackUser);
   setAuthCookie(res, token);
   return { success: true, user: fallbackUser, localFallback: true };
+}
+
+export async function tryDevLoginFallback(
+  username: string,
+  password: string,
+  res: Response
+): Promise<DevPreviewSession | null> {
+  if (isProductionDeploy()) return null;
+
+  const matchedDevUser = findDevUserByEmail(username);
+  if (!matchedDevUser || matchedDevUser.password !== password) return null;
+
+  return openDevPreviewSession(matchedDevUser, res);
+}
+
+/** Religa cookie da sessão local quando o login no banco não rolou, mas o e-mail já é conhecido. */
+export async function tryDevPreviewSession(
+  email: string,
+  res: Response,
+): Promise<DevPreviewSession | null> {
+  if (isProductionDeploy()) return null;
+
+  const matchedDevUser = findDevUserByEmail(email);
+  if (!matchedDevUser) return null;
+
+  return openDevPreviewSession(matchedDevUser, res);
 }

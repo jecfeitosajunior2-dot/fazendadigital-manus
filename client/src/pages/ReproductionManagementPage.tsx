@@ -4,12 +4,12 @@ import ListExportButtons from "@/components/ListExportButtons";
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { FormLabel, FieldBox, inputClassCompact } from '@/components/FormFields';
-import { formatDateBR } from '@/lib/date-utils';
+import { formatDateBR, formatDateInputLocal } from '@/lib/date-utils';
 
 // Saúde Page
 export function SaudePage() {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ animalId: 0, tipo: "vacinacao" as "vacinacao"|"tratamento"|"exame"|"cirurgia"|"outro", descricao: "", medicamento: "", veterinario: "", custo: "", dataRegistro: new Date().toISOString().split('T')[0], observacoes: "" });
+  const [form, setForm] = useState({ animalId: 0, tipo: "vacinacao" as "vacinacao"|"tratamento"|"exame"|"cirurgia"|"outro", descricao: "", medicamento: "", veterinario: "", custo: "", dataRegistro: formatDateInputLocal(), observacoes: "" });
 
   const { data: registros, isLoading, refetch } = trpc.saude.list.useQuery();
   const createMutation = trpc.saude.create.useMutation({ onSuccess: () => { toast.success("Registro criado!"); setShowForm(false); refetch(); } });
@@ -159,7 +159,7 @@ export function SaudePage() {
 // Reproduction Page
 export function ReproductionManagementPage() {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ femeaId: 0, machoId: 0, tipo: "inseminacao" as "monta_natural"|"inseminacao"|"transferencia_embriao", dataCobertura: new Date().toISOString().split('T')[0], observacoes: "" });
+  const [form, setForm] = useState({ femeaId: 0, machoId: 0, tipo: "inseminacao" as "monta_natural"|"inseminacao"|"transferencia_embriao", dataCobertura: formatDateInputLocal(), observacoes: "" });
 
   const { data: registros, isLoading, refetch } = trpc.reproducao.list.useQuery();
   const createMutation = trpc.reproducao.create.useMutation({ onSuccess: () => { toast.success("Registro criado!"); setShowForm(false); refetch(); } });

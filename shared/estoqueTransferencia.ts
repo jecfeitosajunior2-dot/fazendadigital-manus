@@ -1,5 +1,40 @@
+import { MSG_TRANSFERENCIA_MESMA_FAZENDA } from "./estoqueCapital";
+
 export const ESTOQUE_OPERACAO_TIPO_TRANSFERENCIA = "Transferência";
 export const ESTOQUE_OPERACAO_MOTIVO_TRANSFERENCIA = "Transferência";
+export { MSG_TRANSFERENCIA_MESMA_FAZENDA };
+
+export type EstoqueDestinoOpcao = { value: string; label: string };
+
+/** Destino da transferência: remove a fazenda de origem da lista. */
+export function opcoesEstoqueDestinoTransferencia(
+  fazendas: readonly EstoqueDestinoOpcao[],
+  fazendaOrigemId: string | number | null | undefined,
+): EstoqueDestinoOpcao[] {
+  const origem = String(fazendaOrigemId ?? "").trim();
+  if (!origem) return [...fazendas];
+  return fazendas.filter(f => String(f.value) !== origem);
+}
+
+/** Se a origem mudar e o destino ficar igual a ela, limpa o destino. */
+export function limparDestinoSeIgualOrigem(
+  fazendaOrigemId: string | number | null | undefined,
+  fazendaDestinoId: string | number | null | undefined,
+): string {
+  const origem = String(fazendaOrigemId ?? "").trim();
+  const dest = String(fazendaDestinoId ?? "").trim();
+  if (!dest) return "";
+  if (origem && dest === origem) return "";
+  return dest;
+}
+
+export function transferenciaPodeSalvarDestino(
+  fazendaOrigemId: string | number | null | undefined,
+  fazendaDestinoId: string | number | null | undefined,
+): boolean {
+  const dest = String(fazendaDestinoId ?? "").trim();
+  return Boolean(dest) && limparDestinoSeIgualOrigem(fazendaOrigemId, dest) === dest;
+}
 
 export function isOperacaoTransferenciaInsumos(op: {
   tipo?: string | null;
@@ -30,7 +65,7 @@ export function validarTransferenciaInsumosInput(input: {
     return "Informe a fazenda de destino.";
   }
   if (input.fazendaOrigemId === input.fazendaDestinoId) {
-    return "A fazenda de destino precisa ser diferente da origem.";
+    return MSG_TRANSFERENCIA_MESMA_FAZENDA;
   }
   if (!input.dataOperacao || !/^\d{4}-\d{2}-\d{2}$/.test(input.dataOperacao.slice(0, 10))) {
     return "Informe a data da transferência.";
