@@ -2171,6 +2171,10 @@ export type LocalSaudeRegistro = {
   dataRegistro: string;
   proximaData?: string | null;
   observacoes?: string | null;
+  estoqueMovimentacaoId?: number | null;
+  status?: string | null;
+  estornadoEm?: string | null;
+  motivoEstorno?: string | null;
   createdAt: string;
 };
 
@@ -2263,6 +2267,10 @@ export async function createLocalSaudeRegistro(
     dataRegistro: dataISO,
     proximaData: input.proximaData ? normalizeLocalDateField(input.proximaData) : null,
     observacoes: input.observacoes ?? null,
+    estoqueMovimentacaoId: null,
+    status: "ativo",
+    estornadoEm: null,
+    motivoEstorno: null,
     createdAt: now,
   });
   await writeSaudeRegistros(rows);
@@ -2270,13 +2278,27 @@ export async function createLocalSaudeRegistro(
 }
 
 export async function deleteLocalSaudeRegistro(userId: number, id: number): Promise<void> {
+  const { decidirEstornoSaude, MSG_SAUDE_ESTORNO_DUPLO, MSG_SAUDE_ESTORNO_LEGADO, MSG_SAUDE_NAO_ENCONTRADO, MOTIVO_ESTORNO_SAUDE_PADRAO } = await import("../shared/saudeEstoque");
   const rows = await readSaudeRegistros();
-  const remaining = rows.filter(row => !(row.userId === userId && row.id === id));
-  if (remaining.length === rows.length) {
-    await writeSaudeRegistros(rows.filter(row => row.id !== id));
-    return;
+  const idx = rows.findIndex(row => row.id === id && (row.userId === userId || rows.every(r => r.userId !== userId)));
+  if (idx < 0) {
+    throw new Error(MSG_SAUDE_NAO_ENCONTRADO);
   }
-  await writeSaudeRegistros(remaining);
+  const row = rows[idx];
+  const decisao = decidirEstornoSaude(row);
+  if (decisao.kind === "ja_estornado") {
+    throw new Error(MSG_SAUDE_ESTORNO_DUPLO);
+  }
+  if (decisao.kind === "legado_bloqueado" || decisao.kind === "com_estoque") {
+    throw new Error(MSG_SAUDE_ESTORNO_LEGADO);
+  }
+  rows[idx] = {
+    ...row,
+    status: "estornado",
+    estornadoEm: new Date().toISOString(),
+    motivoEstorno: MOTIVO_ESTORNO_SAUDE_PADRAO,
+  };
+  await writeSaudeRegistros(rows);
 }
 
 function buildLocalPesagensPorAnimal(

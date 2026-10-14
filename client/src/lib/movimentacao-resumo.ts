@@ -1,4 +1,7 @@
 import { formatDataBr, formatQuantidadeMov, produtoControlaSaldo, siglaUnidade, sinalDoTipo } from "@/lib/produto-types";
+import { formatRelogioCivilEstorno } from "@shared/relogioCivil";
+import { origemMovimentacaoESanitaria } from "@shared/saudeEstoque";
+import { origemMovimentacaoEManutencao } from "@shared/manutencaoEstoque";
 import { formatCurrencyBrl } from "@/lib/utils";
 import {
   classificarMotivoEstornoAbastecimento,
@@ -46,6 +49,8 @@ export type MovimentacaoItemRaw = {
   unidade?: string | null;
   situacao?: string | null;
   createdAt?: string | Date | null;
+  /** Relógio civil da sessão MySQL: YYYY-MM-DD HH:mm:ss. Sem Date JS. */
+  createdAtCivil?: string | null;
   updatedAt?: string | Date | null;
   updatedByNome?: string | null;
   [key: string]: unknown;
@@ -215,6 +220,31 @@ export function isMovimentacaoDeAbastecimento(m: MovimentacaoItemRaw | Movimenta
     return m.itens.some(i => i.abastecimentoId != null);
   }
   return false;
+}
+
+export function resumoDeOrigemSanitaria(resumo: MovimentacaoResumo | MovimentacaoItemRaw): boolean {
+  if ("itens" in resumo && Array.isArray(resumo.itens)) {
+    return resumo.itens.some(origemMovimentacaoESanitaria)
+      || origemMovimentacaoESanitaria({ grupoId: resumo.grupoId, manejo: null });
+  }
+  return origemMovimentacaoESanitaria(resumo);
+}
+
+export function resumoDeOrigemManutencao(resumo: MovimentacaoResumo | MovimentacaoItemRaw): boolean {
+  if ("itens" in resumo && Array.isArray(resumo.itens)) {
+    return resumo.itens.some(origemMovimentacaoEManutencao)
+      || origemMovimentacaoEManutencao({ grupoId: resumo.grupoId, manejo: null });
+  }
+  return origemMovimentacaoEManutencao(resumo);
+}
+
+/** Estorno genérico de Insumos — Sanitário e Manutenção ficam de fora. */
+export function podeOferecerEstornoGenerico(resumo: MovimentacaoResumo): boolean {
+  if (resumo.status !== "ativa") return false;
+  if (isMovimentacaoDeAbastecimento(resumo)) return false;
+  if (resumoDeOrigemSanitaria(resumo)) return false;
+  if (resumoDeOrigemManutencao(resumo)) return false;
+  return true;
 }
 
 export function rotuloDocumentoMov(m: MovimentacaoItemRaw): string {
@@ -463,6 +493,16 @@ function filtrarEstornosValidos(
   return estornos.filter(e => estornoInversoCompativel(e, originais));
 }
 
+function relogioCivilEstornoDe(item?: MovimentacaoItemRaw | null): string | null {
+  const direto = item?.createdAtCivil == null ? "" : String(item.createdAtCivil).trim();
+  if (direto) return direto;
+  const raw = typeof item?.createdAt === "string" ? item.createdAt.trim() : "";
+  if (!raw) return null;
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) return null;
+  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw)) return null;
+  return raw;
+}
+
 function montarInfoEstorno(
   originais: MovimentacaoItemRaw[],
   estornos: MovimentacaoItemRaw[],
@@ -504,11 +544,7 @@ function montarInfoEstorno(
     rotuloMotivoEstornoAbastecimento(motivoSeparado || motivoRaw) ||
     motivoSeparado;
 
-  const dataRaw =
-    headEstorno?.createdAt ||
-    headEstorno?.dataMovimentacao ||
-    headOriginal?.updatedAt ||
-    null;
+  const dataCivil = relogioCivilEstornoDe(headEstorno);
 
   const usuario =
     headEstorno?.registradoPor?.trim() ||
@@ -542,8 +578,8 @@ function montarInfoEstorno(
   }
 
   return {
-    dataHora: dataRaw ? String(dataRaw) : null,
-    dataHoraLabel: formatDataHoraEstorno(dataRaw),
+    dataHora: dataCivil,
+    dataHoraLabel: formatRelogioCivilEstorno(dataCivil),
     usuario,
     motivo,
     observacao,

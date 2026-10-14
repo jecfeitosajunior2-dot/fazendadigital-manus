@@ -1,35 +1,55 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolverLeituraEstoqueList } from "./estoqueListFonte";
 
-const dieselMysql = {
+type LinhaFonte = {
+  id: number;
+  quantidade: string;
+  valorTotalEstoque?: string | null;
+  capitalInicializadoEm?: string | null;
+  valorUnitario?: string | null;
+};
+
+const dieselMysql: LinhaFonte = {
   id: 34,
   quantidade: "2020",
   valorTotalEstoque: "15440",
   capitalInicializadoEm: "2026-10-09T23:01:19.000Z",
   valorUnitario: "7.643564",
 };
-const dieselLocal = {
+const dieselLocal: LinhaFonte = {
   id: 34,
   quantidade: "2020",
   valorTotalEstoque: null,
   capitalInicializadoEm: null,
   valorUnitario: "8",
 };
-const monovimMysql = { id: 26, quantidade: "5" };
-const monovimLocal = { id: 26, quantidade: "10" };
-const soroMysql = {
+const monovimMysql: LinhaFonte = {
+  id: 26,
+  quantidade: "5.00",
+  valorTotalEstoque: "10.25",
+  capitalInicializadoEm: "2026-10-09T23:01:19.000Z",
+  valorUnitario: "2.050000",
+};
+const monovimLocal: LinhaFonte = {
+  id: 26,
+  quantidade: "10",
+  valorTotalEstoque: null,
+  capitalInicializadoEm: null,
+  valorUnitario: "1.02",
+};
+const soroMysql: LinhaFonte = {
   id: 29,
   quantidade: "6",
   valorTotalEstoque: "75",
   capitalInicializadoEm: "2026-10-09T23:01:19.000Z",
 };
-const soroLocal = {
+const soroLocal: LinhaFonte = {
   id: 29,
   quantidade: "7",
   valorTotalEstoque: null,
   capitalInicializadoEm: null,
 };
-const salMysql = { id: 39, quantidade: "50.98", valorTotalEstoque: "6605.28" };
+const salMysql: LinhaFonte = { id: 39, quantidade: "50.98", valorTotalEstoque: "6605.28" };
 
 const bancoCaiu = (error: unknown) =>
   String((error as { code?: string })?.code ?? error).includes("ECONNREFUSED");
@@ -47,14 +67,17 @@ describe("resolverLeituraEstoqueList — fonte oficial", () => {
     expect(listarLocal).not.toHaveBeenCalled();
   });
 
-  it("CASO B — Monovim MySQL 5 vence local 10", () => {
+  it("CASO B — Monovim MySQL 5 / 10,25 vence local 10 / 1,02 e não lê JSON", () => {
     const listarLocal = vi.fn(() => [monovimLocal]);
     const rows = resolverLeituraEstoqueList(
       { ok: true, rows: [monovimMysql] },
       listarLocal,
       bancoCaiu,
     );
-    expect(rows).toEqual([{ id: 26, quantidade: "5" }]);
+    expect(rows).toEqual([monovimMysql]);
+    expect(rows[0]?.quantidade).toBe("5.00");
+    expect(rows[0]?.valorTotalEstoque).toBe("10.25");
+    expect(rows[0]?.valorUnitario).toBe("2.050000");
     expect(listarLocal).not.toHaveBeenCalled();
   });
 

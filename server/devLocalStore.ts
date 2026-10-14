@@ -11,6 +11,8 @@ import {
 import { categoriaControlaSaldoPorPadrao, categoriaExigeEstocavelCombustivel, produtoControlaSaldo } from "../shared/estoqueControle";
 import { decidirPatchSaldo } from "../shared/estoqueSaldo";
 import { capitalEstaInicializado, MSG_ESTOQUE_EDICAO_CAPITAL, MSG_ESTOQUE_EXCLUSAO_CAPITAL, MSG_ESTOQUE_ZERAR_CAPITAL } from "../shared/estoqueCapital";
+import { deveBloquearEstornoGenericoSanitario, MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
+import { deveBloquearEstornoGenericoManutencao, MSG_ESTORNO_GENERICO_MANUTENCAO } from "../shared/manutencaoEstoque";
 import { pessoaVisivelNaListagem } from "./pessoasListFiltro";
 
 const DATA_DIR = path.resolve(process.cwd(), ".dev-data");
@@ -1591,6 +1593,24 @@ export const devLocalStore = {
       ? data.movimentacoes.filter(m => m.grupoId === grupoId)
       : seeds;
 
+    if (deveBloquearEstornoGenericoSanitario({ movimentacoes: originais })) {
+      return {
+        podeEstornar: false,
+        jaEstornada: false,
+        insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+        mensagem: MSG_ESTORNO_GENERICO_SANITARIO,
+      };
+    }
+
+    if (deveBloquearEstornoGenericoManutencao({ movimentacoes: originais })) {
+      return {
+        podeEstornar: false,
+        jaEstornada: false,
+        insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+        mensagem: MSG_ESTORNO_GENERICO_MANUTENCAO,
+      };
+    }
+
     for (const mov of originais) {
       const st = mov.status || "ativa";
       if (st === "estornada") {
@@ -1677,6 +1697,13 @@ export const devLocalStore = {
       const originais = grupoId
         ? data.movimentacoes.filter(m => m.grupoId === grupoId)
         : seeds;
+
+      if (deveBloquearEstornoGenericoSanitario({ movimentacoes: originais })) {
+        throw new Error(MSG_ESTORNO_GENERICO_SANITARIO);
+      }
+      if (deveBloquearEstornoGenericoManutencao({ movimentacoes: originais })) {
+        throw new Error(MSG_ESTORNO_GENERICO_MANUTENCAO);
+      }
 
       for (const mov of originais) {
         const st = mov.status || "ativa";

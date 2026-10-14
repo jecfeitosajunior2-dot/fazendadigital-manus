@@ -9,6 +9,7 @@ import {
   sugerirUnidadeDoseSanitaria,
 } from "@/lib/produto-types";
 import { isMensagemBloqueioBaixa } from "@shared/animalBaixa";
+import { custoMedioFonteTecnica } from "@shared/estoqueCapital";
 import { Syringe } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -34,19 +35,15 @@ type EstoqueSanitarioItem = {
   subcategoria?: string | null;
   unidade?: string | null;
   quantidade?: number | string | null;
-  valorUnitario?: unknown;
+  valorUnitario?: string | number | null;
+  valorTotalEstoque?: string | number | null;
+  capitalInicializadoEm?: Date | string | null;
   fabricante?: string | null;
   fazendaId?: number | null;
   situacao?: string | null;
   embalagens?: string | null;
   controlarSaldo?: boolean | null;
 };
-
-function parseCustoMedioClient(raw: unknown): number | null {
-  if (raw == null || raw === "") return null;
-  const n = Number(String(raw).replace(",", "."));
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
 
 function parseDoseValorSanitario(raw: string): string | null {
   const t = raw.trim();
@@ -207,9 +204,7 @@ export function CurralSanitarioPanel({
       .slice(0, 40);
   }, [produtosFazenda, buscaProduto]);
 
-  const custoMedioProduto = produtoSel
-    ? parseCustoMedioClient(produtoSel.valorUnitario)
-    : null;
+  const custoMedioProduto = produtoSel ? custoMedioFonteTecnica(produtoSel) : null;
 
   const doseNumParsed = useMemo(() => {
     const raw = doseValor.trim();

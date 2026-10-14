@@ -87,6 +87,8 @@ export function isEstornoBusinessError(error: unknown): boolean {
     /Usuário autenticado inválido/i.test(msg) ||
     /Produto não encontrado/i.test(msg) ||
     /Não é possível estornar/i.test(msg) ||
+    /módulo de Manejo Sanitário/i.test(msg) ||
+    /módulo de Manutenção/i.test(msg) ||
     /anterior ao controle de capital/i.test(msg)
   );
 }

@@ -238,9 +238,15 @@ export const saudeRegistros = mysqlTable("saude_registros", {
   veterinario: varchar("veterinario", { length: 200 }),
   /** Custo total congelado (quantidadeConsumo × valorUnitario). */
   custo: decimal("custo", { precision: 10, scale: 2 }),
-  dataRegistro: date("dataRegistro").notNull(),
-  proximaData: date("proximaData"),
+  dataRegistro: date("dataRegistro", { mode: "string" }).notNull(),
+  proximaData: date("proximaData", { mode: "string" }),
   observacoes: text("observacoes"),
+  /** Movimentação oficial de estoque. NULL nos registros históricos. */
+  estoqueMovimentacaoId: int("estoqueMovimentacaoId"),
+  /** ativo | estornado */
+  status: varchar("status", { length: 20 }).default("ativo"),
+  estornadoEm: timestamp("estornadoEm"),
+  motivoEstorno: text("motivoEstorno"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 
@@ -347,6 +353,8 @@ export const manutencoes = mysqlTable("manutencoes", {
   valorPecas: decimal("valorPecas", { precision: 10, scale: 2 }).default("0"),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).default("0"),
   observacoes: text("observacoes"),
+  estornadoEm: timestamp("estornadoEm"),
+  motivoEstorno: text("motivoEstorno"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
@@ -360,6 +368,7 @@ export const manutencaoPecas = mysqlTable("manutencao_pecas", {
   quantidade: decimal("quantidade", { precision: 10, scale: 2 }).notNull().default("1"),
   valorUnitario: decimal("valorUnitario", { precision: 10, scale: 2 }).notNull().default("0"),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).notNull().default("0"),
+  estoqueMovimentacaoId: int("estoqueMovimentacaoId"),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

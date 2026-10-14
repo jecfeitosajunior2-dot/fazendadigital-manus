@@ -3,6 +3,8 @@ import { createMysqlPool } from "./_core/mysqlPool";
 import { ensureFinanceiroNucleoSchema } from "./ensureFinanceiroNucleoSchema";
 import { ensureEstoqueOperacoesSchema } from "./ensureEstoqueOperacoesSchema";
 import { ensureEstoqueCapitalSchema } from "./ensureEstoqueCapitalSchema";
+import { ensureSaudeEstoqueSchema } from "./ensureSaudeEstoqueSchema";
+import { ensureManutencaoEstoqueSchema } from "./ensureManutencaoEstoqueSchema";
 
 async function ensureColumn(
   pool: mysql.Pool,
@@ -890,6 +892,12 @@ export async function ensureSchema() {
         "valorUnitario",
         "decimal(10,2)",
       );
+      await ensureSaudeEstoqueSchema(pool);
+    }
+
+    const [manutencoesEstoqueTable] = await pool.query(`SHOW TABLES LIKE 'manutencoes'`);
+    if ((manutencoesEstoqueTable as unknown[]).length > 0) {
+      await ensureManutencaoEstoqueSchema(pool);
     }
 
     const [vendasTable] = await pool.query(`SHOW TABLES LIKE 'vendas'`);

@@ -22,6 +22,7 @@ import {
   MSG_DESCRICAO_SERVICO_OBRIGATORIA,
   normalizeDescricaoServico,
 } from "@shared/manutencaoDescricao";
+import { MSG_MANUT_EDICAO_PATRIMONIAL, pecaManutencaoTemVinculo } from "@shared/manutencaoEstoque";
 import {
   CATEGORIAS_MANUTENCAO_ESTOQUE,
   produtoControlaSaldo,
@@ -801,6 +802,17 @@ export default function ManutencaoFormPage() {
     else createMutation.mutate(payload);
   };
 
+  const pecasPatrimonializadas = useMemo(
+    () =>
+      Boolean(
+        isEdit &&
+          (registro?.pecas ?? []).some(p =>
+            pecaManutencaoTemVinculo(p as { estoqueMovimentacaoId?: number | null }),
+          ),
+      ),
+    [isEdit, registro],
+  );
+
   const pending = createMutation.isPending || updateMutation.isPending;
   const podeSalvar =
     !!form.maquinaId &&
@@ -986,8 +998,15 @@ export default function ManutencaoFormPage() {
             <h3 className="text-[12px] font-semibold text-gray-700 mb-3">
               Produtos e peças utilizados
             </h3>
+            {pecasPatrimonializadas ? (
+              <div className="mb-4 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
+                <p className="text-[11px] text-gray-700 leading-relaxed">
+                  {MSG_MANUT_EDICAO_PATRIMONIAL}
+                </p>
+              </div>
+            ) : null}
 
-            <div className="grid grid-cols-12 gap-3 items-start mb-4">
+            <div className={cn("grid grid-cols-12 gap-3 items-start mb-4", pecasPatrimonializadas && "hidden")}>
               <div className="col-span-12 sm:col-span-5">
                 <FormLabel>Produto ou peça</FormLabel>
                 {pecaEscolhida ? (
@@ -1275,14 +1294,16 @@ export default function ManutencaoFormPage() {
                         {brl(p.quantidade * p.valorUnitario)}
                       </td>
                       <td className="px-2 py-2.5 align-middle text-center">
-                        <TableIconButton
-                          label="Remover produto ou peça"
-                          tone="danger"
-                          compact
-                          onClick={() => void removerPeca(i)}
-                        >
-                          <DeleteActionIcon size={16} />
-                        </TableIconButton>
+                        {pecasPatrimonializadas ? null : (
+                          <TableIconButton
+                            label="Remover produto ou peça"
+                            tone="danger"
+                            compact
+                            onClick={() => void removerPeca(i)}
+                          >
+                            <DeleteActionIcon size={16} />
+                          </TableIconButton>
+                        )}
                       </td>
                     </tr>
                   ))}

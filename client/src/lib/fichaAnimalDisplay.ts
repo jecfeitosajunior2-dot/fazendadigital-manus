@@ -3,6 +3,7 @@ import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { EM_CARENCIA_SIM_BADGE_CLASS } from "@/lib/listaAnimaisTable";
 import { formatValorCelulaMoedaBrlExcel, formatMoedaBrlExcel, parseMoedaBr, parseValorDecimalBanco } from "@shared/parseMoedaBr";
 import { computeIndicadoresPeso, type OrigemUltimoPeso } from "@shared/pesoEntrada";
+import { saudeRegistroEstaEstornado } from "@shared/saudeEstoque";
 
 export { EM_CARENCIA_SIM_BADGE_CLASS };
 
@@ -273,11 +274,12 @@ function parseCustoRegistroValor(custo: string | number | null | undefined): num
 
 /** Soma custos informados nos registros sanitários do animal. */
 export function computeCustoSanitarioResumo(
-  registros: Array<{ custo?: string | number | null }>,
+  registros: Array<{ custo?: string | number | null; status?: string | null }>,
 ): { total: number; comCusto: number; totalRegistros: number; totalFormatado: string } {
   let total = 0;
   let comCusto = 0;
   for (const reg of registros) {
+    if (saudeRegistroEstaEstornado(reg.status)) continue;
     const valor = parseCustoRegistroValor(reg.custo);
     if (valor == null) continue;
     total += valor;

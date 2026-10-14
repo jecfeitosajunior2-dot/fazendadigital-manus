@@ -6,6 +6,8 @@ import { createMysqlPool } from "./_core/mysqlPool";
 import { ensureFinanceiroNucleoSchema } from "./ensureFinanceiroNucleoSchema";
 import { ensureEstoqueOperacoesSchema } from "./ensureEstoqueOperacoesSchema";
 import { ensureEstoqueCapitalSchema } from "./ensureEstoqueCapitalSchema";
+import { ensureSaudeEstoqueSchema } from "./ensureSaudeEstoqueSchema";
+import { ensureManutencaoEstoqueSchema } from "./ensureManutencaoEstoqueSchema";
 import { createFinanceiroNucleoMysqlStore, createFinanceiroNucleoService } from "./financeiroNucleo";
 
 config({ path: ".env.local" });
@@ -34,6 +36,8 @@ export async function openFinanceiroMysqlHarness(): Promise<FinanceiroMysqlHarne
     await ensureFinanceiroNucleoSchema(pool);
     await ensureEstoqueOperacoesSchema(pool);
     await ensureEstoqueCapitalSchema(pool);
+    await ensureSaudeEstoqueSchema(pool);
+    await ensureManutencaoEstoqueSchema(pool);
   } catch {
     return null;
   }
@@ -98,6 +102,16 @@ export async function resetFinanceiroMysqlHarness(h: FinanceiroMysqlHarness) {
      WHERE f.userId IN (?, ?)`,
     [...FIN_USERS],
   );
+  await h.pool.query(`DELETE FROM \`saude_registros\` WHERE \`userId\` IN (?, ?)`, [...FIN_USERS]);
+  await h.pool.query(
+    `DELETE pecas FROM \`manutencao_pecas\` pecas
+     INNER JOIN \`manutencoes\` m ON m.id = pecas.manutencaoId
+     WHERE m.userId IN (?, ?)`,
+    [...FIN_USERS],
+  );
+  await h.pool.query(`DELETE FROM \`manutencoes\` WHERE \`userId\` IN (?, ?)`, [...FIN_USERS]);
+  await h.pool.query(`DELETE FROM \`maquinas\` WHERE \`userId\` IN (?, ?)`, [...FIN_USERS]);
+  await h.pool.query(`DELETE FROM \`animais\` WHERE \`userId\` IN (?, ?)`, [...FIN_USERS]);
   await h.pool.query(`DELETE FROM \`pessoas\` WHERE \`user_id\` IN (?, ?)`, [...FIN_USERS]);
   await h.pool.query(`DELETE FROM \`fazendas\` WHERE \`userId\` IN (?, ?)`, [...FIN_USERS]);
 }

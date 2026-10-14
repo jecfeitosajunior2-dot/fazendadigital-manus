@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agruparMovimentacoes,
   chaveGrupoMovimentacao,
+  podeOferecerEstornoGenerico,
   rotuloMovimentacaoEstorno,
   textoResultadoEstornoNoEstoque,
 } from "./movimentacao-resumo";
@@ -113,7 +114,95 @@ describe("texto do resultado do estorno", () => {
     expect(grupos[0]?.infoEstorno?.resultado).toBe("devolução de 1,00 sc ao estoque da Fazenda.");
   });
 
+  it("Sanitário ativo não oferece estorno genérico; genérica ativa oferece", () => {
+    const sanitario = agruparMovimentacoes([
+      {
+        id: 121,
+        grupoId: "saude-26",
+        tipo: "Saída",
+        manejo: "Sanitário",
+        quantidade: -1,
+        status: "ativa",
+      },
+    ]);
+    expect(podeOferecerEstornoGenerico(sanitario[0]!)).toBe(false);
+
+    const generica = agruparMovimentacoes([
+      {
+        id: 50,
+        grupoId: "consumo-1",
+        tipo: "Consumo interno",
+        manejo: "Consumo interno",
+        quantidade: -2,
+        status: "ativa",
+      },
+    ]);
+    expect(podeOferecerEstornoGenerico(generica[0]!)).toBe(true);
+
+    const estornada = agruparMovimentacoes([
+      {
+        id: 121,
+        grupoId: "saude-26",
+        tipo: "Saída",
+        manejo: "Sanitário",
+        quantidade: -1,
+        status: "estornada",
+      },
+      {
+        id: 126,
+        grupoId: "e-saude-26",
+        originalGrupoId: "saude-26",
+        tipo: "Saída",
+        manejo: "Sanitário",
+        quantidade: 1,
+        status: "estorno",
+        createdAtCivil: "2026-10-13 19:25:37",
+      },
+    ]);
+    expect(podeOferecerEstornoGenerico(estornada[0]!)).toBe(false);
+    expect(estornada[0]?.infoEstorno?.dataHoraLabel).toBe("13/10/2026 às 19:25");
+  });
+
+  it("Manutenção ativa não oferece estorno genérico", () => {
+    const manutencao = agruparMovimentacoes([
+      {
+        id: 201,
+        grupoId: "manutencao-12-peca-3",
+        tipo: "Saída",
+        manejo: "Manutenção",
+        quantidade: -2,
+        status: "ativa",
+      },
+    ]);
+    expect(podeOferecerEstornoGenerico(manutencao[0]!)).toBe(false);
+  });
+
   it("rótulo da movimentação inversa usa estorno, não devolução", () => {
     expect(rotuloMovimentacaoEstorno(56)).toBe("Movimentação de estorno: Nº 56");
+  });
+
+  it("horário do estorno usa relógio civil, não Date/UTC", () => {
+    const grupos = agruparMovimentacoes([
+      {
+        id: 121,
+        grupoId: "saude-26",
+        tipo: "Saída",
+        quantidade: -1,
+        status: "estornada",
+        createdAt: "2026-10-13T19:25:37.000Z",
+      },
+      {
+        id: 126,
+        grupoId: "e-saude-26",
+        originalGrupoId: "saude-26",
+        tipo: "Saída",
+        quantidade: 1,
+        status: "estorno",
+        createdAt: "2026-10-13T19:25:37.000Z",
+        createdAtCivil: "2026-10-13 19:25:37",
+      },
+    ]);
+    expect(grupos[0]?.infoEstorno?.dataHoraLabel).toBe("13/10/2026 às 19:25");
+    expect(grupos[0]?.infoEstorno?.dataHora).toBe("2026-10-13 19:25:37");
   });
 });

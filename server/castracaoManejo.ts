@@ -10,6 +10,7 @@ import {
 } from "./localFallbackStore";
 import { assertAnimalNaFazenda, assertFazendaDoUsuario } from "./manejoContexto";
 import { assertManejoPermitidoNaData } from "./animalBaixa";
+import { dataCivilParaColunaDate } from "../shared/dataCivil";
 import {
   jaPossuiCastracaoRegistrada,
   montarPersistenciaCastracao,
@@ -98,7 +99,7 @@ export async function registrarCastracao(
         descricao: persist.descricao,
         medicamento: persist.medicamento,
         veterinario,
-        dataRegistro: new Date(dataISO),
+        dataRegistro: dataCivilParaColunaDate(dataISO),
         observacoes: persist.observacoes,
       });
       const id = (result as { insertId?: number }[])[0]?.insertId;

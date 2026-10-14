@@ -20,6 +20,9 @@ describe("menu lateral — Manejo vs Reprodução", () => {
   it("Manejo contém só Registros de Manejo", () => {
     expect(childLabels("Manejo")).toEqual(["Registros de Manejo"]);
     expect(childPaths("Manejo")).toEqual(["/manejo/registros"]);
+    expect(menuItems.map(i => i.label)).not.toContain("Saúde");
+    expect(childLabels("Manejo")).not.toContain("Saúde");
+    expect(childPaths("Manejo")).not.toContain("/saude/registros");
   });
 
   it("Reprodução contém apenas Controle de sêmen, sem cadastro separado", () => {

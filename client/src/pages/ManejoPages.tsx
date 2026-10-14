@@ -50,6 +50,8 @@ import {
   readPersistedRebanhoFazendaId,
   REBANHO_FAZENDA_STORAGE_KEY,
 } from "@shared/animal-filter-types";
+import { custoMedioFonteTecnica } from "@shared/estoqueCapital";
+import { custoEstimadoManejoSanitarioUi } from "@shared/saudeEstoque";
 import {
   calcPrevisaoParto283,
   getReproRelacionadoLabel,
@@ -201,6 +203,7 @@ import {
   getReproMachoTipoHint,
   orderReproTipoOptionsMachoCurral,
 } from "@/lib/curralReprodutivoUi";
+import { destinosAcoesHubSanitario } from "@shared/saudeListaDisplay";
 
 const FD_PRIMARY = "#4ECDC4";
 const ICON_CLASS = "h-5 w-5 shrink-0";
@@ -210,6 +213,8 @@ const stepCard = "border border-gray-200 rounded shadow-sm bg-white p-4";
 
 const btnRegistrar =
   "inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-white hover:brightness-95 transition min-h-[40px] shrink-0";
+const btnVerRegistros =
+  "inline-flex items-center justify-center gap-1.5 px-4 rounded-lg text-[12px] font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition min-h-[40px] shrink-0";
 
 export const TIPOS_MANEJO = [
   {
@@ -285,13 +290,6 @@ const MSG_SANITARIO_ESTOQUE_INSUFICIENTE =
   "Estoque insuficiente para a quantidade informada.";
 const CATEGORIA_SANITARIO_INSUMOS = "Farmácia";
 
-function parseCustoMedioClient(raw: unknown): number | null {
-  if (raw == null || String(raw).trim() === "") return null;
-  const n = parseFloat(String(raw).replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
-}
-
 function formatMoedaBrlSanitario(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -304,6 +302,8 @@ type EstoqueSanitarioItem = {
   unidade?: string | null;
   quantidade?: string | number | null;
   valorUnitario?: string | number | null;
+  valorTotalEstoque?: string | number | null;
+  capitalInicializadoEm?: Date | string | null;
   fabricante?: string | null;
   fazendaId?: number | null;
   situacao?: string | null;
@@ -349,6 +349,7 @@ function labelAnimal(a: {
 /** Hub: Sessão no curral + Manejo pontual. */
 export function ManejoRegistrosPage() {
   const [, setLocation] = useLocation();
+  const destinosSanitario = destinosAcoesHubSanitario();
 
   const scrollToManejoPontual = () => {
     const el = document.getElementById("manejo-pontual-secao");
@@ -461,19 +462,30 @@ export function ManejoRegistrosPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setLocation(
-                        `/manejo/registros/cadastro?tipo=${encodeURIComponent(tipo.id)}`,
-                      )
-                    }
-                    className={btnRegistrar}
-                    style={{ backgroundColor: FD_PRIMARY }}
-                  >
-                    <span className="material-icons text-[16px]">add</span>
-                    Registrar
-                  </button>
+                  <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                    {tipo.id === "sanitario" ? (
+                      <button
+                        type="button"
+                        onClick={() => setLocation(destinosSanitario.verRegistros)}
+                        className={btnVerRegistros}
+                      >
+                        Ver registros
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLocation(
+                          `/manejo/registros/cadastro?tipo=${encodeURIComponent(tipo.id)}`,
+                        )
+                      }
+                      className={btnRegistrar}
+                      style={{ backgroundColor: FD_PRIMARY }}
+                    >
+                      <span className="material-icons text-[16px]">add</span>
+                      Registrar
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -1059,9 +1071,7 @@ function ManejoSanitarioForm() {
       .slice(0, 40);
   }, [produtosFazenda, buscaProduto]);
 
-  const custoMedioProduto = produtoSel
-    ? parseCustoMedioClient(produtoSel.valorUnitario)
-    : null;
+  const custoMedioProduto = produtoSel ? custoMedioFonteTecnica(produtoSel) : null;
 
   const doseNumParsed = useMemo(() => {
     const raw = doseValor.trim();
@@ -1108,7 +1118,7 @@ function ManejoSanitarioForm() {
 
   const custoEstimado = useMemo(() => {
     if (custoReferenciaDose?.tipo === "dose" && doseNumParsed != null) {
-      return Math.round(doseNumParsed * custoReferenciaDose.valor * 100) / 100;
+      return custoEstimadoManejoSanitarioUi(custoReferenciaDose.valor, doseNumParsed);
     }
     if (consumoCalc && "quantidade" in consumoCalc && custoMedioProduto != null) {
       return Math.round(consumoCalc.quantidade * custoMedioProduto * 100) / 100;
@@ -1528,8 +1538,8 @@ function ManejoSanitarioForm() {
                                     {p.unidade
                                       ? ` · ${siglaUnidade(p.unidade) || p.unidade}`
                                       : ""}
-                                    {parseCustoMedioClient(p.valorUnitario) != null
-                                      ? ` · ${formatMoedaBrlSanitario(parseCustoMedioClient(p.valorUnitario)!)}`
+                                    {custoMedioFonteTecnica(p) != null
+                                      ? ` · ${formatMoedaBrlSanitario(custoMedioFonteTecnica(p)!)}`
                                       : ""}
                                   </div>
                                 </button>

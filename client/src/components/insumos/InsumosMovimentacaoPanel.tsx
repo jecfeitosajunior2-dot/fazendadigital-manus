@@ -15,6 +15,7 @@ import { FormDatePicker, FormLabel, FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { formatDataBr, produtoControlaSaldo, TIPOS_MOVIMENTACAO } from "@/lib/produto-types";
+import { MSG_ESTORNO_GENERICO_SANITARIO } from "@shared/saudeEstoque";
 import {
   agruparMovimentacoes,
   classificarMotivoEstornoAbastecimento,
@@ -24,6 +25,8 @@ import {
   formatUnidadeItem,
   formatValorResumo,
   isMovimentacaoDeAbastecimento,
+  podeOferecerEstornoGenerico,
+  resumoDeOrigemSanitaria,
   movimentacaoResumoAlteraSaldo,
   MOTIVO_ESTORNO_ABASTECIMENTO,
   MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
@@ -617,6 +620,10 @@ export default function InsumosMovimentacaoPanel() {
       toast.error(
         "Esta movimentação foi gerada por um abastecimento e não pode ser excluída diretamente. Estorne o abastecimento de origem.",
       );
+      return;
+    }
+    if (resumoDeOrigemSanitaria(resumo)) {
+      toast.error(MSG_ESTORNO_GENERICO_SANITARIO);
       return;
     }
     setEstornoAlvo(resumo);
@@ -1355,7 +1362,10 @@ export default function InsumosMovimentacaoPanel() {
                     const aberto = expandedIds.has(resumo.movimentacaoId);
                     const automaticaAbastecimento = isMovimentacaoDeAbastecimento(resumo);
                     const podeEditar = resumo.status === "ativa" && !automaticaAbastecimento;
-                    const podeEstornar = resumo.status === "ativa" && !automaticaAbastecimento;
+                    const origemSanitaria = resumoDeOrigemSanitaria(resumo);
+                    const podeEstornar = podeOferecerEstornoGenerico(resumo);
+                    const estornoSanitarioBloqueado =
+                      resumo.status === "ativa" && !automaticaAbastecimento && origemSanitaria;
                     const abastOrigem =
                       resumo.abastecimentoId != null
                         ? abastecimentoPorId.get(resumo.abastecimentoId)
@@ -1514,6 +1524,17 @@ export default function InsumosMovimentacaoPanel() {
                                   onClick={() => pedirEstorno(resumo)}
                                   tone="warning"
                                   compact
+                                >
+                                  <EstornoActionIcon size={16} />
+                                </TableIconButton>
+                              )}
+                              {estornoSanitarioBloqueado && (
+                                <TableIconButton
+                                  label={MSG_ESTORNO_GENERICO_SANITARIO}
+                                  onClick={() => toast.error(MSG_ESTORNO_GENERICO_SANITARIO)}
+                                  tone="warning"
+                                  compact
+                                  blocked
                                 >
                                   <EstornoActionIcon size={16} />
                                 </TableIconButton>

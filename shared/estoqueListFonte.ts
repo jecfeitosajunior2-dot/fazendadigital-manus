@@ -3,7 +3,7 @@ export type LeituraEstoqueMysql<T> =
   | { ok: false; error: unknown };
 
 /**
- * Política de leitura de estoque.list:
+ * Política de leitura de estoque.list e estoque.listByCategories:
  * MySQL saudável é a fonte oficial, inclusive quando volta [].
  * JSON/local só entra em erro real de acesso ao banco.
  */

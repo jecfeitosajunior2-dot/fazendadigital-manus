@@ -35,6 +35,7 @@ import {
   textoHistoricoOuTraco,
 } from '@shared/castracaoManejo';
 import { isRegistroDesmama, montarBlocoDesmamaFicha } from '@shared/desmamaManejo';
+import { saudeRegistroEstaEstornado } from '@shared/saudeEstoque';
 import { resolveBaseEntradaParaPesagem } from '@shared/pesoEntrada';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -568,7 +569,9 @@ export const CattleDetailPageExpanded: React.FC = () => {
       return { ativo: false, ate: null as string | null };
     }
     const fimMap = buildFimCarenciaPorAnimal(
-      sortedSaudeClinico.map(reg => ({
+      sortedSaudeClinico
+        .filter(reg => !saudeRegistroEstaEstornado("status" in reg ? (reg as { status?: string | null }).status : null))
+        .map(reg => ({
         animalId: animalId,
         medicamento: reg.medicamento,
         dataRegistro: reg.dataRegistro,
@@ -1196,8 +1199,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                           const custo = castracaoCells?.custo ?? formatCustoRegistroDisplay(reg.custo);
                           const obs =
                             castracaoCells?.observacoes ?? textoHistoricoOuTraco(reg.observacoes);
+                          const estornado = saudeRegistroEstaEstornado(
+                            "status" in reg ? (reg as { status?: string | null }).status : null,
+                          );
                           return (
-                            <tr key={reg.id} className="border-b border-gray-100 hover:bg-gray-50/80 transition-colors">
+                            <tr key={reg.id} className={`border-b border-gray-100 hover:bg-gray-50/80 transition-colors ${estornado ? "opacity-70" : ""}`}>
                               <td className="text-gray-800 tabular-nums whitespace-nowrap">
                                 {formatDate(reg.dataRegistro)}
                               </td>
@@ -1208,6 +1214,11 @@ export const CattleDetailPageExpanded: React.FC = () => {
                                 >
                                   {tipoDisplay.label}
                                 </span>
+                                {estornado ? (
+                                  <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-gray-200 text-gray-700">
+                                    ESTORNADO
+                                  </span>
+                                ) : null}
                               </td>
                               <td className="max-w-0">
                                 <span

@@ -52,6 +52,24 @@ import {
 import { resolverLeituraEstoqueList } from "../shared/estoqueListFonte";
 import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
+import { SaudeEstoqueError } from "./saudeEstoque";
+import { estornarManejoSanitarioMysql, persistirManejoSanitarioMysql, recusarEstornoGenericoSeSanitario, listarVinculosSaudePorMovimentacaoIds } from "./saudeEstoqueMysql";
+import { deveBloquearEstornoGenericoSanitario, MOTIVO_ESTORNO_SAUDE_PADRAO, MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
+import { ManutencaoEstoqueError } from "./manutencaoEstoque";
+import { estornarManutencaoMysql, persistirManutencaoMysql, recusarEstornoGenericoSeManutencao, listarVinculosManutencaoPorMovimentacaoIds } from "./manutencaoEstoqueMysql";
+import {
+  decidirEstornoManutencao,
+  deveBloquearEstornoGenericoManutencao,
+  MOTIVO_ESTORNO_MANUT_PADRAO,
+  MSG_ESTORNO_GENERICO_MANUTENCAO,
+  MSG_MANUT_EDICAO_PATRIMONIAL,
+  MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
+  MSG_MANUT_ESTORNO_LEGADO,
+  MSG_MANUT_MYSQL_OBRIGATORIO,
+  pecaManutencaoTemVinculo,
+  pecasConsumoIguais,
+} from "../shared/manutencaoEstoque";
+import { anexarIdentificacaoAnimalSaude } from "../shared/saudeListaDisplay";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
 import { compraInsumosService } from "./compraInsumosMysql";
@@ -3486,15 +3504,33 @@ const saudeRouter = router({
         const conditions = [eq(saudeRegistros.userId, ctx.user.id)];
         if (input?.animalId) conditions.push(eq(saudeRegistros.animalId, input.animalId));
         const rows = await db
-          .select()
+          .select({
+            registro: saudeRegistros,
+            brincoVisual: animais.brinco,
+            rfid: animais.brincoEletronico,
+          })
           .from(saudeRegistros)
+          .leftJoin(
+            animais,
+            and(eq(animais.id, saudeRegistros.animalId), eq(animais.userId, ctx.user.id)),
+          )
           .where(and(...conditions))
           .orderBy(desc(saudeRegistros.createdAt));
-        if (rows.length > 0) return rows;
+        if (rows.length > 0) {
+          return rows.map((row) => ({
+            ...row.registro,
+            brincoVisual: String(row.brincoVisual ?? "").trim() || null,
+            rfid: String(row.rfid ?? "").trim() || null,
+          }));
+        }
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
       }
-      return listLocalSaudeRegistros(ctx.user.id, input?.animalId);
+      const [locais, animaisLocais] = await Promise.all([
+        listLocalSaudeRegistros(ctx.user.id, input?.animalId),
+        listLocalAnimais(ctx.user.id),
+      ]);
+      return anexarIdentificacaoAnimalSaude(locais, animaisLocais);
     }),
 
   create: protectedProcedure
@@ -3724,51 +3760,17 @@ const saudeRouter = router({
         };
 
         try {
-          const insertId = await db.transaction(async tx => {
-            const locked = await tx
-              .select({
-                id: estoque.id,
-                quantidade: estoque.quantidade,
-              })
-              .from(estoque)
-              .where(eq(estoque.id, estoqueId))
-              .for("update");
-            const row = locked[0];
-            if (!row) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
-              });
-            }
-            const patchSaida = await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
-              tipoOp: "saida",
-              quantidade: qtd,
-            });
-            if (patchSaida.usaCapital && patchSaida.valorEstoqueMovimentado != null) {
-              payload.custo = patchSaida.valorEstoqueMovimentado;
-            }
-
-            const result = await tx.insert(saudeRegistros).values({
-              userId: ctx.user.id,
-              animalId: payload.animalId,
-              tipo: payload.tipo,
-              descricao: payload.descricao,
-              medicamento: payload.medicamento,
-              dosagem: payload.dosagem,
-              viaAplicacao: payload.viaAplicacao,
-              estoqueId: payload.estoqueId,
-              quantidadeConsumo: payload.quantidadeConsumo,
-              valorUnitario: payload.valorUnitario,
-              custo: payload.custo,
-              dataRegistro: new Date(payload.dataRegistro),
-              proximaData: payload.proximaData ? new Date(payload.proximaData) : undefined,
-              observacoes: payload.observacoes,
-            });
-            return (result as any)[0]?.insertId as number | undefined;
+          const persistido = await persistirManejoSanitarioMysql({
+            userId: ctx.user.id,
+            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+            fazendaId: input.fazendaId,
+            unidadeEstoque: item.unidade,
+            ...payload,
+            custoPrevisto: payload.custo,
           });
-          return { success: true as const, id: insertId };
+          return { success: true as const, id: persistido.id };
         } catch (error) {
-          if (error instanceof EstoqueCapitalError) {
+          if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
             throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
           }
           if (error instanceof TRPCError) throw error;
@@ -3799,16 +3801,17 @@ const saudeRouter = router({
       };
 
       try {
-        const result = await db.insert(saudeRegistros).values({
+        const persistido = await persistirManejoSanitarioMysql({
           userId: ctx.user.id,
+          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+          fazendaId: input.fazendaId,
           ...payloadSemEstoque,
-          dataRegistro: new Date(payloadSemEstoque.dataRegistro),
-          proximaData: payloadSemEstoque.proximaData
-            ? new Date(payloadSemEstoque.proximaData)
-            : undefined,
         });
-        return { success: true as const, id: (result as any)[0]?.insertId };
+        return { success: true as const, id: persistido.id };
       } catch (error) {
+        if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (!isDatabaseUnavailable(error)) throw error;
         const result = await createLocalSaudeRegistro(ctx.user.id, payloadSemEstoque);
         return { success: true as const, id: result.id, localFallback: true as const };
@@ -3816,12 +3819,24 @@ const saudeRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({
+      id: z.number(),
+      motivo: z.string().max(500).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       try {
-        await db.delete(saudeRegistros).where(and(eq(saudeRegistros.id, input.id), eq(saudeRegistros.userId, ctx.user.id)));
+        await estornarManejoSanitarioMysql({
+          userId: ctx.user.id,
+          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+          id: input.id,
+          motivo: input.motivo?.trim() || MOTIVO_ESTORNO_SAUDE_PADRAO,
+          hojeISO: hojeISODateLocal(),
+        });
         return { success: true };
       } catch (error) {
+        if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (!isDatabaseUnavailable(error)) throw error;
         await deleteLocalSaudeRegistro(ctx.user.id, input.id);
         return { success: true, localFallback: true };
@@ -6781,6 +6796,50 @@ function manutencaoTemConsumoEstoque(
   });
 }
 
+function throwSeErroManutencaoEstoque(error: unknown): never {
+  if (error instanceof ManutencaoEstoqueError || error instanceof EstoqueCapitalError) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+  }
+  if (error instanceof TRPCError) throw error;
+  if (isDatabaseUnavailable(error)) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+  }
+  throw error;
+}
+
+async function resolverFazendaMaquinaParaPecas(userId: number, maquinaId: number): Promise<number> {
+  try {
+    const [maq] = await db
+      .select({ fazendaId: maquinas.fazendaId })
+      .from(maquinas)
+      .where(and(eq(maquinas.id, maquinaId), eq(maquinas.userId, userId)))
+      .limit(1);
+    if (!maq) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
+    }
+    const fazendaId = Number(maq.fazendaId);
+    if (!Number.isInteger(fazendaId) || fazendaId <= 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Informe a fazenda da máquina para baixar o estoque.",
+      });
+    }
+    return fazendaId;
+  } catch (error) {
+    throwSeErroManutencaoEstoque(error);
+  }
+}
+
+async function estoquesTemCapitalInicializado(estoqueIds: number[]): Promise<boolean> {
+  const ids = [...new Set(estoqueIds.filter(id => Number.isFinite(id) && id > 0))];
+  if (ids.length === 0) return false;
+  const rows = await db
+    .select({ capitalInicializadoEm: estoque.capitalInicializadoEm })
+    .from(estoque)
+    .where(inArray(estoque.id, ids));
+  return rows.some(r => capitalEstaInicializado(r));
+}
+
 async function mapConsumiuEstoquePorManutencao(
   userId: number,
   rows: { id: number; pecas?: { estoqueId?: number | null; quantidade?: string | number | null }[] }[],
@@ -6940,49 +6999,44 @@ const manutencoesRouter = router({
       const totais = calcularTotaisManutencao(pecasResolvidas, valorMaoObra);
       const pecasPayload = pecasLocaisFromResolvidas(pecasResolvidas);
 
-      try {
-        let pendenteLocal = new Map<number, number>();
-        const manutencaoId = await db.transaction(async tx => {
-          const result = await tx.insert(manutencoes).values({
+      if (pecasResolvidas.length > 0) {
+        try {
+          const fazendaId = await resolverFazendaMaquinaParaPecas(ctx.user.id, rest.maquinaId);
+          const persistido = await persistirManutencaoMysql({
             userId: ctx.user.id,
-            ...rest,
+            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+            maquinaId: rest.maquinaId,
+            fazendaId,
+            tipo: rest.tipo,
+            descricao: rest.descricao,
             data,
-            status: "concluida",
+            horimetro: rest.horimetro,
             proximaManutencao: proximaManutencao || undefined,
-            valorMaoObra: totais.valorMaoObra.toFixed(2),
-            valorPecas: totais.valorPecas.toFixed(2),
-            valorTotal: totais.valorTotal.toFixed(2),
-            custo: totais.valorTotal.toFixed(2),
+            prestadorNome: rest.prestadorNome,
+            prestadorContato: rest.prestadorContato,
+            valorMaoObra: totais.valorMaoObra,
+            observacoes: rest.observacoes,
+            pecas: pecasResolvidas,
           });
-          const id = Number((result as any)[0]?.insertId);
-          const baixa = pecasResolvidas.length > 0
-            ? await aplicarBaixaEstoquePecasManutencao(tx, pecasResolvidas)
-            : { pendenteLocal: new Map<number, number>(), snapshots: new Map<number, string | null>() };
-          pendenteLocal = baixa.pendenteLocal;
-          if (pecasResolvidas.length > 0) {
-            const linhasPorEstoque = new Map<number, number>();
-            for (const p of pecasResolvidas) {
-              linhasPorEstoque.set(p.estoqueId, (linhasPorEstoque.get(p.estoqueId) ?? 0) + 1);
-            }
-            await tx.insert(manutencaoPecas).values(
-              pecasResolvidas.map(p => {
-                const snap = baixa.snapshots.get(p.estoqueId);
-                const usaSnap = snap != null && linhasPorEstoque.get(p.estoqueId) === 1;
-                return {
-                  manutencaoId: id,
-                  estoqueId: p.estoqueId,
-                  nome: p.nome,
-                  quantidade: p.quantidade.toFixed(2),
-                  valorUnitario: p.valorUnitario.toFixed(2),
-                  valorTotal: usaSnap ? snap : (p.quantidade * p.valorUnitario).toFixed(2),
-                };
-              }),
-            );
-          }
-          return id;
+          return { success: true, id: persistido.id };
+        } catch (error) {
+          throwSeErroManutencaoEstoque(error);
+        }
+      }
+
+      try {
+        const result = await db.insert(manutencoes).values({
+          userId: ctx.user.id,
+          ...rest,
+          data,
+          status: "concluida",
+          proximaManutencao: proximaManutencao || undefined,
+          valorMaoObra: totais.valorMaoObra.toFixed(2),
+          valorPecas: totais.valorPecas.toFixed(2),
+          valorTotal: totais.valorTotal.toFixed(2),
+          custo: totais.valorTotal.toFixed(2),
         });
-        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
-        return { success: true, id: manutencaoId };
+        return { success: true, id: Number((result as { insertId?: number }[])[0]?.insertId) };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
@@ -6998,12 +7052,6 @@ const manutencoesRouter = router({
           custo: totais.valorTotal.toFixed(2),
           pecas: pecasPayload,
         });
-        try {
-          aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque(pecasResolvidas));
-        } catch (baixaErr) {
-          await deleteLocalManutencao(ctx.user.id, created.id);
-          throw baixaErr;
-        }
         return { success: true, id: created.id, localFallback: true };
       }
     }),
@@ -7013,17 +7061,26 @@ const manutencoesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
 
-      let anterior: { maquinaId: number; status?: string | null } | null = null;
+      let anterior: {
+        maquinaId: number;
+        status?: string | null;
+        valorPecas?: string | number | null;
+      } | null = null;
       let pecasAntigas: {
         estoqueId: number | null;
         quantidade: string | number;
         valorUnitario?: string | number | null;
+        estoqueMovimentacaoId?: number | null;
       }[] = [];
       let fromLocal = false;
 
       try {
         const [row] = await db
-          .select({ maquinaId: manutencoes.maquinaId, status: manutencoes.status })
+          .select({
+            maquinaId: manutencoes.maquinaId,
+            status: manutencoes.status,
+            valorPecas: manutencoes.valorPecas,
+          })
           .from(manutencoes)
           .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
           .limit(1);
@@ -7034,12 +7091,16 @@ const manutencoesRouter = router({
               estoqueId: manutencaoPecas.estoqueId,
               quantidade: manutencaoPecas.quantidade,
               valorUnitario: manutencaoPecas.valorUnitario,
+              estoqueMovimentacaoId: manutencaoPecas.estoqueMovimentacaoId,
             })
             .from(manutencaoPecas)
             .where(eq(manutencaoPecas.manutencaoId, id));
         }
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
+        if (manutencaoTemConsumoEstoque(pecas ?? []) || (pecas ?? []).some(p => p.estoqueId != null)) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+        }
         fromLocal = true;
         const local = await getLocalManutencao(ctx.user.id, id);
         if (local) {
@@ -7057,6 +7118,9 @@ const manutencoesRouter = router({
         if (!local) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
         }
+        if (manutencaoTemConsumoEstoque(local.pecas ?? []) || manutencaoTemConsumoEstoque(pecas ?? [])) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+        }
         fromLocal = true;
         anterior = { maquinaId: Number(local.maquinaId), status: local.status ?? null };
         pecasAntigas = (local.pecas ?? []).map(p => ({
@@ -7073,14 +7137,43 @@ const manutencoesRouter = router({
         });
       }
 
+      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
+        allowSameInactiveId: anterior.maquinaId,
+      });
+
+      const patrimonializada = pecasAntigas.some(pecaManutencaoTemVinculo);
+      if (patrimonializada) {
+        if (!pecasConsumoIguais(pecasAntigas, pecas ?? [])) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_EDICAO_PATRIMONIAL });
+        }
+        const valorPecasCongelado = Number(anterior.valorPecas ?? 0);
+        const maoObra = valorMaoObra ?? 0;
+        const valorTotal = (Number.isFinite(valorPecasCongelado) ? valorPecasCongelado : 0) + maoObra;
+        try {
+          await db
+            .update(manutencoes)
+            .set({
+              ...rest,
+              data,
+              proximaManutencao: proximaManutencao || null,
+              prestadorNome: rest.prestadorNome ?? null,
+              prestadorContato: rest.prestadorContato ?? null,
+              descricao: rest.descricao ?? null,
+              valorMaoObra: maoObra.toFixed(2),
+              valorTotal: valorTotal.toFixed(2),
+              custo: valorTotal.toFixed(2),
+            })
+            .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
+          return { success: true };
+        } catch (error) {
+          throwSeErroManutencaoEstoque(error);
+        }
+      }
+
       await assertPecasSemCapitalInicializado([
         ...pecasAntigas.map(p => Number(p.estoqueId)),
         ...(pecas ?? []).map(p => Number(p.estoqueId)),
       ]);
-
-      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
-        allowSameInactiveId: anterior.maquinaId,
-      });
 
       const credito = new Map<number, number>();
       const custoCongelado = new Map<number, number>();
@@ -7118,15 +7211,14 @@ const manutencoesRouter = router({
       };
 
       if (fromLocal) {
+        if (manutencaoTemConsumoEstoque(pecasAntigas) || pecasResolvidas.length > 0) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+        }
         await updateLocalManutencao(ctx.user.id, id, localPayload);
-        aplicarBaixaEstoqueLocalPendente(
-          montarDeltasBaixaEstoque(pecasResolvidas, pecasAntigas),
-        );
         return { success: true, localFallback: true };
       }
 
       try {
-        let pendenteLocal = new Map<number, number>();
         await db.transaction(async tx => {
           await tx
             .update(manutencoes)
@@ -7162,10 +7254,13 @@ const manutencoesRouter = router({
             pecasResolvidas,
             pecasAntigas,
           );
-          pendenteLocal = baixa.pendenteLocal;
+          if (baixa.pendenteLocal.size > 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
+            });
+          }
         });
-        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
-        // Mantém espelho local em sincronia (evita edição “sumir” ao reabrir).
         const localExistente = await getLocalManutencao(ctx.user.id, id);
         if (localExistente) {
           await updateLocalManutencao(ctx.user.id, id, localPayload);
@@ -7173,12 +7268,14 @@ const manutencoesRouter = router({
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        if (error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (!isDatabaseUnavailable(error)) throw error;
-
+        if (manutencaoTemConsumoEstoque(pecasAntigas) || pecasResolvidas.length > 0) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+        }
         await updateLocalManutencao(ctx.user.id, id, localPayload);
-        aplicarBaixaEstoqueLocalPendente(
-          montarDeltasBaixaEstoque(pecasResolvidas, pecasAntigas),
-        );
         return { success: true, localFallback: true };
       }
     }),
@@ -7269,9 +7366,13 @@ const manutencoesRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      let pecasAntigas: { estoqueId: number | null; quantidade: string | number }[] = [];
+      const motivo = (input.motivo ?? "").trim() || MOTIVO_ESTORNO_MANUT_PADRAO;
+      let pecasAntigas: {
+        estoqueId: number | null;
+        quantidade: string | number;
+        estoqueMovimentacaoId?: number | null;
+      }[] = [];
       let status: string | null = null;
-      let fromLocal = false;
 
       try {
         const [row] = await db
@@ -7279,67 +7380,82 @@ const manutencoesRouter = router({
           .from(manutencoes)
           .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)))
           .limit(1);
-        if (row) {
-          status = row.status ?? null;
-          pecasAntigas = await db
-            .select({
-              estoqueId: manutencaoPecas.estoqueId,
-              quantidade: manutencaoPecas.quantidade,
-            })
-            .from(manutencaoPecas)
-            .where(eq(manutencaoPecas.manutencaoId, input.id));
-        } else {
-          fromLocal = true;
-        }
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        fromLocal = true;
-      }
-
-      if (fromLocal || !status) {
-        const local = await getLocalManutencao(ctx.user.id, input.id);
-        if (!local) {
+        if (!row) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
         }
-        status = local.status ?? null;
-        pecasAntigas = (local.pecas ?? []).map(p => ({
-          estoqueId: p.estoqueId ?? null,
-          quantidade: p.quantidade,
-        }));
-        fromLocal = true;
+        status = row.status ?? null;
+        pecasAntigas = await db
+          .select({
+            estoqueId: manutencaoPecas.estoqueId,
+            quantidade: manutencaoPecas.quantidade,
+            estoqueMovimentacaoId: manutencaoPecas.estoqueMovimentacaoId,
+          })
+          .from(manutencaoPecas)
+          .where(eq(manutencaoPecas.manutencaoId, input.id));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throwSeErroManutencaoEstoque(error);
       }
 
-      if (manutencaoEstornada(status)) {
+      const algumEstoqueComCapital = await estoquesTemCapitalInicializado(
+        pecasAntigas.map(p => Number(p.estoqueId)),
+      );
+      const decisao = decidirEstornoManutencao({
+        status,
+        pecas: pecasAntigas,
+        algumEstoqueComCapital,
+      });
+
+      if (decisao.kind === "ja_estornado") {
         return { success: true, alreadyEstornado: true };
       }
-
-      if (!manutencaoTemConsumoEstoque(pecasAntigas)) {
+      if (decisao.kind === "sem_consumo") {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
             "Estorno aplica-se apenas a manutenções que consumiram peças do estoque. Para serviços sem peças, use Excluir.",
         });
       }
+      if (decisao.kind === "legado_bloqueado") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_ESTORNO_LEGADO });
+      }
+
+      if (decisao.kind === "com_vinculo") {
+        try {
+          const resultado = await estornarManutencaoMysql({
+            userId: ctx.user.id,
+            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+            id: input.id,
+            motivo,
+            hojeISO: hojeISODateLocal(),
+            algumEstoqueComCapital,
+          });
+          return { success: true, alreadyEstornado: resultado.alreadyEstornado };
+        } catch (error) {
+          throwSeErroManutencaoEstoque(error);
+        }
+      }
 
       await assertPecasSemCapitalInicializado(pecasAntigas.map(p => Number(p.estoqueId)));
 
-      if (fromLocal) {
-        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
-        await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
-        return { success: true, localFallback: true };
-      }
-
       try {
-        let pendenteLocal = new Map<number, number>();
         await db.transaction(async tx => {
           const baixa = await aplicarBaixaEstoquePecasManutencao(tx, [], pecasAntigas);
-          pendenteLocal = baixa.pendenteLocal;
+          if (baixa.pendenteLocal.size > 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
+            });
+          }
           await tx
             .update(manutencoes)
-            .set({ status: "estornado" })
+            .set({
+              status: "estornado",
+              motivoEstorno: motivo,
+              estornadoEm: sql`CURRENT_TIMESTAMP`,
+            })
             .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
         });
-        aplicarBaixaEstoqueLocalPendente(pendenteLocal);
         const localExistente = await getLocalManutencao(ctx.user.id, input.id);
         if (localExistente) {
           await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
@@ -7347,6 +7463,9 @@ const manutencoesRouter = router({
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        if (error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (!isDatabaseUnavailable(error)) {
           console.error("[manutencoes.estornar]", error);
           throw new TRPCError({
@@ -7354,9 +7473,7 @@ const manutencoesRouter = router({
             message: "Não foi possível estornar a manutenção. Tente novamente.",
           });
         }
-        aplicarBaixaEstoqueLocalPendente(montarDeltasBaixaEstoque([], pecasAntigas));
-        await updateLocalManutencao(ctx.user.id, input.id, { status: "estornado" });
-        return { success: true, localFallback: true };
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
       }
     }),
 });
@@ -8788,6 +8905,7 @@ const estoqueRouter = router({
           originalGrupoId: estoqueMovimentacoes.originalGrupoId,
           motivoEstorno: estoqueMovimentacoes.motivoEstorno,
           createdAt: estoqueMovimentacoes.createdAt,
+          createdAtCivil: sql<string>`CAST(${estoqueMovimentacoes.createdAt} AS CHAR)`,
           updatedAt: estoqueMovimentacoes.updatedAt,
           updatedByUserId: estoqueMovimentacoes.updatedByUserId,
           updatedByNome: estoqueMovimentacoes.updatedByNome,
@@ -8843,6 +8961,7 @@ const estoqueRouter = router({
             originalGrupoId: estoqueMovimentacoes.originalGrupoId,
             motivoEstorno: estoqueMovimentacoes.motivoEstorno,
             createdAt: estoqueMovimentacoes.createdAt,
+            createdAtCivil: sql<string>`CAST(${estoqueMovimentacoes.createdAt} AS CHAR)`,
             updatedAt: estoqueMovimentacoes.updatedAt,
             updatedByUserId: estoqueMovimentacoes.updatedByUserId,
             updatedByNome: estoqueMovimentacoes.updatedByNome,
@@ -9165,6 +9284,7 @@ const estoqueRouter = router({
             id: estoqueMovimentacoes.id,
             grupoId: estoqueMovimentacoes.grupoId,
             operacaoId: estoqueMovimentacoes.operacaoId,
+            manejo: estoqueMovimentacoes.manejo,
             estoqueId: estoqueMovimentacoes.estoqueId,
             quantidade: estoqueMovimentacoes.quantidade,
             status: estoqueMovimentacoes.status,
@@ -9179,6 +9299,31 @@ const estoqueRouter = router({
         if (!seeds.length) {
           const local = devLocalStore.validarEstorno(input.itemIds);
           return local;
+        }
+
+        const vinculosSaude = await listarVinculosSaudePorMovimentacaoIds(seeds.map(s => s.id));
+        if (deveBloquearEstornoGenericoSanitario({
+          movimentacoes: seeds,
+          movimentacaoIdsComVinculoSaude: vinculosSaude,
+        })) {
+          return {
+            podeEstornar: false,
+            jaEstornada: false,
+            insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+            mensagem: MSG_ESTORNO_GENERICO_SANITARIO,
+          };
+        }
+        const vinculosManut = await listarVinculosManutencaoPorMovimentacaoIds(seeds.map(s => s.id));
+        if (deveBloquearEstornoGenericoManutencao({
+          movimentacoes: seeds,
+          movimentacaoIdsComVinculoManutencao: vinculosManut,
+        })) {
+          return {
+            podeEstornar: false,
+            jaEstornada: false,
+            insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+            mensagem: MSG_ESTORNO_GENERICO_MANUTENCAO,
+          };
         }
 
         const operacaoId = seeds.map(s => s.operacaoId).find(id => id != null);
@@ -9220,6 +9365,8 @@ const estoqueRouter = router({
           ? await db
               .select({
                 id: estoqueMovimentacoes.id,
+                grupoId: estoqueMovimentacoes.grupoId,
+                manejo: estoqueMovimentacoes.manejo,
                 estoqueId: estoqueMovimentacoes.estoqueId,
                 quantidade: estoqueMovimentacoes.quantidade,
                 status: estoqueMovimentacoes.status,
@@ -9231,6 +9378,31 @@ const estoqueRouter = router({
               .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
               .where(eq(estoqueMovimentacoes.grupoId, grupoId))
           : seeds;
+
+        const vinculosOriginais = await listarVinculosSaudePorMovimentacaoIds(originais.map(o => o.id));
+        if (deveBloquearEstornoGenericoSanitario({
+          movimentacoes: originais,
+          movimentacaoIdsComVinculoSaude: vinculosOriginais,
+        })) {
+          return {
+            podeEstornar: false,
+            jaEstornada: false,
+            insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+            mensagem: MSG_ESTORNO_GENERICO_SANITARIO,
+          };
+        }
+        const vinculosManutOriginais = await listarVinculosManutencaoPorMovimentacaoIds(originais.map(o => o.id));
+        if (deveBloquearEstornoGenericoManutencao({
+          movimentacoes: originais,
+          movimentacaoIdsComVinculoManutencao: vinculosManutOriginais,
+        })) {
+          return {
+            podeEstornar: false,
+            jaEstornada: false,
+            insuficientes: [] as ReturnType<typeof avaliarEstornoEstoque>,
+            mensagem: MSG_ESTORNO_GENERICO_MANUTENCAO,
+          };
+        }
 
         for (const mov of originais) {
           const st = mov.status || "ativa";
@@ -9318,6 +9490,9 @@ const estoqueRouter = router({
           return devLocalStore.estornarMovimentacaoGrupo(localPayload);
         }
 
+        await recusarEstornoGenericoSeSanitario(seeds);
+        await recusarEstornoGenericoSeManutencao(seeds);
+
         if (seeds.some(s => s.abastecimentoId != null)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -9350,6 +9525,9 @@ const estoqueRouter = router({
         const originais = grupoId
           ? await db.select().from(estoqueMovimentacoes).where(eq(estoqueMovimentacoes.grupoId, grupoId))
           : seeds;
+
+        await recusarEstornoGenericoSeSanitario(originais);
+        await recusarEstornoGenericoSeManutencao(originais);
 
         for (const mov of originais) {
           const st = mov.status || "ativa";
@@ -9457,7 +9635,11 @@ const estoqueRouter = router({
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (error instanceof EstoqueCapitalError) {
+        if (
+          error instanceof SaudeEstoqueError
+          || error instanceof ManutencaoEstoqueError
+          || error instanceof EstoqueCapitalError
+        ) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
         // Não usar /estorno/ solto: mensagens SQL com coluna motivo_estorno batem no regex.
@@ -9592,6 +9774,8 @@ const estoqueRouter = router({
             unidade: estoque.unidade,
             quantidade: estoque.quantidade,
             valorUnitario: estoque.valorUnitario,
+            valorTotalEstoque: estoque.valorTotalEstoque,
+            capitalInicializadoEm: estoque.capitalInicializadoEm,
             embalagens: estoque.embalagens,
             fabricante: estoque.fabricante,
             situacao: estoque.situacao,
@@ -9604,12 +9788,17 @@ const estoqueRouter = router({
           .from(estoque)
           .where(inArray(estoque.categoria, input.categorias))
           .orderBy(estoque.nome);
-        const localRows = devLocalStore.listByCategories(input.categorias);
-        if (localRows.length === 0) return rows;
-        return sortByNome(mergeEstoqueListPreferLocal(rows, localRows));
+        return sortByNome(resolverLeituraEstoqueList(
+          { ok: true, rows },
+          () => devLocalStore.listByCategories(input.categorias),
+          isDatabaseUnavailable,
+        ));
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return sortByNome(devLocalStore.listByCategories(input.categorias));
+        return sortByNome(resolverLeituraEstoqueList(
+          { ok: false, error },
+          () => devLocalStore.listByCategories(input.categorias),
+          isDatabaseUnavailable,
+        ));
       }
     }),
 });
