@@ -4,7 +4,13 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { formatDateInputLocal } from "@/lib/date-utils";
-import { cn, formatCurrencyBrl, parseCurrencyBrl } from "@/lib/utils";
+import {
+  telefoneAoSelecionarPrestador,
+  telefoneAoSincronizarPrestador,
+  telefonePrestadorParaExibicao,
+  telefonePrestadorParaOs,
+} from "@/lib/manutencaoPrestadorTelefone";
+import { cn, formatCurrencyBrl, formatPhoneBR, parseCurrencyBrl } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   FD_PRIMARY,
@@ -23,6 +29,27 @@ import {
   normalizeDescricaoServico,
 } from "@shared/manutencaoDescricao";
 import { MSG_MANUT_EDICAO_PATRIMONIAL, pecaManutencaoTemVinculo } from "@shared/manutencaoEstoque";
+import { lerTipoExecucaoManutencao } from "@shared/manutencaoTipoExecucao";
+import {
+  deveExibirNomeHistoricoPrestador,
+  prestadorPessoaIdDoPayload,
+  resolverPrestadorPessoaIdPersistido,
+} from "@shared/manutencaoIdentificacaoOperacional";
+import {
+  deveExibirRotuloOrigemPeca,
+  payloadPecaManutencao,
+  pecaItemDeRegistro,
+  podeExibirOrigemOficina,
+  podeMostrarFormularioEstoque,
+  podeMostrarFormularioOficina,
+  podeRemoverPecaNaEdicao,
+  podeTrocarParaInterna,
+  prepararPecaOficinaDoFormulario,
+  resumoCustosFormulario,
+  rotuloOrigemPeca,
+  type OrigemPecaFormulario,
+  type PecaFormularioManutencao,
+} from "@shared/manutencaoPecasFormulario";
 import {
   CATEGORIAS_MANUTENCAO_ESTOQUE,
   produtoControlaSaldo,
@@ -34,15 +61,11 @@ const TIPOS_MANUTENCAO = [
 ] as const;
 
 type TipoExecucao = "interna" | "externa";
+type TipoExecucaoForm = TipoExecucao | "";
+const FUNCIONARIO_MANUAL = "__manual__";
 type MedidorTipo = "horimetro" | "quilometragem";
 
-type PecaItem = {
-  nome: string;
-  quantidade: number;
-  valorUnitario: number;
-  estoqueId?: number | null;
-  unidade?: string | null;
-};
+type PecaItem = PecaFormularioManutencao;
 
 type FormState = {
   maquinaId: string;
@@ -117,14 +140,16 @@ type PecaEscolhidaState = {
 type ManutencaoDraft = {
   form: FormState;
   pecas: PecaItem[];
-  tipoExecucao: TipoExecucao;
+  tipoExecucao: TipoExecucaoForm;
   fornecedorId: string;
+  funcionarioId?: string;
   initializedForId: number | null;
   pecaEscolhida: PecaEscolhidaState | null;
   pecaNome: string;
   pecaQtd: string;
   pecaValor: string;
   pecaSearch: string;
+  origemPeca?: OrigemPecaFormulario;
 };
 
 const btnAcaoBaseCls =
@@ -196,20 +221,6 @@ function getMedidorTipo(maquina?: {
   return inferMedidorPorTipo(maquina?.tipo);
 }
 
-function inferTipoExecucao(opts: {
-  prestadorNome?: string | null;
-  prestadorContato?: string | null;
-  valorMaoObra?: string | number | null;
-}): TipoExecucao {
-  const contato = String(opts.prestadorContato || "").trim();
-  const nome = String(opts.prestadorNome || "").trim();
-  const mo = opts.valorMaoObra != null ? parseFloat(String(opts.valorMaoObra)) : 0;
-  if (contato) return "externa";
-  if (nome && Number.isFinite(mo) && mo > 0) return "externa";
-  if (!nome && Number.isFinite(mo) && mo > 0) return "externa";
-  return "interna";
-}
-
 export default function ManutencaoFormPage() {
   const [, setLocation] = useLocation();
   const editId = Number(getSearchParam("id") || 0);
@@ -222,10 +233,12 @@ export default function ManutencaoFormPage() {
 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [pecas, setPecas] = useState<PecaItem[]>([]);
-  const [tipoExecucao, setTipoExecucao] = useState<TipoExecucao>("interna");
+  const [tipoExecucao, setTipoExecucao] = useState<TipoExecucaoForm>("interna");
   const [fornecedorId, setFornecedorId] = useState("");
+  const [funcionarioId, setFuncionarioId] = useState("");
   const [erroDescricao, setErroDescricao] = useState<string | null>(null);
 
+  const [origemPeca, setOrigemPeca] = useState<OrigemPecaFormulario>("estoque");
   const [pecaNome, setPecaNome] = useState("");
   const [pecaQtd, setPecaQtd] = useState("1");
   const [pecaValor, setPecaValor] = useState("");
@@ -290,6 +303,7 @@ export default function ManutencaoFormPage() {
     categorias: [...CATEGORIAS_TODAS],
   });
   const { data: fornecedores = [] } = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
+  const { data: funcionarios = [] } = trpc.pessoas.list.useQuery({ tipo: "funcionario" });
   const utils = trpc.useUtils();
 
   const createMutation = trpc.manutencoes.create.useMutation({
@@ -321,20 +335,26 @@ export default function ManutencaoFormPage() {
     const params = new URLSearchParams(window.location.search);
     const novoProdutoId = params.get("produtoId");
     const novoFornecedorId = params.get("fornecedorId");
+    const novoFuncionarioId = params.get("funcionarioId") || params.get("pessoaId");
     const raw = sessionStorage.getItem(MANUTENCAO_DRAFT_KEY);
 
     if (raw) {
       try {
         const draft = JSON.parse(raw) as ManutencaoDraft;
-        setForm(draft.form);
+        setForm({
+          ...draft.form,
+          prestadorContato: telefonePrestadorParaExibicao(draft.form.prestadorContato),
+        });
         setPecas(draft.pecas);
-        setTipoExecucao(draft.tipoExecucao);
+        setTipoExecucao(draft.tipoExecucao ?? "interna");
         setFornecedorId(draft.fornecedorId ?? "");
+        setFuncionarioId(draft.funcionarioId ?? "");
         setPecaEscolhida(draft.pecaEscolhida ?? null);
         setPecaNome(draft.pecaNome ?? "");
         setPecaQtd(draft.pecaQtd ?? "1");
         setPecaValor(draft.pecaValor ?? "");
         setPecaSearch(draft.pecaSearch ?? "");
+        setOrigemPeca(draft.origemPeca === "oficina" ? "oficina" : "estoque");
         initializedForId.current = draft.initializedForId;
         draftRestoredRef.current = true;
       } catch {
@@ -347,8 +367,14 @@ export default function ManutencaoFormPage() {
       setFornecedorId(novoFornecedorId);
       params.delete("fornecedorId");
     }
+    if (novoFuncionarioId) {
+      setFuncionarioId(novoFuncionarioId);
+      setTipoExecucao("interna");
+      params.delete("funcionarioId");
+      params.delete("pessoaId");
+    }
 
-    let urlLimpa = Boolean(novoFornecedorId);
+    let urlLimpa = Boolean(novoFornecedorId || novoFuncionarioId);
     if (novoProdutoId) {
       const id = parseInt(novoProdutoId, 10);
       if (!Number.isNaN(id) && id > 0) produtoRetornoIdRef.current = id;
@@ -382,36 +408,36 @@ export default function ManutencaoFormPage() {
       horimetro: registro.horimetro ?? "",
       descricao: registro.descricao ?? "",
       prestadorNome: registro.prestadorNome ?? "",
-      prestadorContato: registro.prestadorContato ?? "",
+      prestadorContato: telefonePrestadorParaExibicao(registro.prestadorContato),
       valorMaoObra: registro.valorMaoObra
         ? formatCurrencyBrl(String(Math.round(parseFloat(String(registro.valorMaoObra)) * 100)))
         : "",
     });
-    setTipoExecucao(
-      inferTipoExecucao({
-        prestadorNome: registro.prestadorNome,
-        prestadorContato: registro.prestadorContato,
-        valorMaoObra: registro.valorMaoObra,
-      }),
-    );
-    setPecas(
-      (registro.pecas ?? []).map(p => ({
-        nome: p.nome,
-        quantidade: parseFloat(String(p.quantidade)) || 0,
-        valorUnitario: parseFloat(String(p.valorUnitario)) || 0,
-        estoqueId: p.estoqueId,
-      })),
-    );
+    setTipoExecucao(lerTipoExecucaoManutencao((registro as { tipoExecucao?: string | null }).tipoExecucao) ?? "");
+    setFuncionarioId("");
+    const pessoaIdOficial = resolverPrestadorPessoaIdPersistido({
+      prestadorPessoaId: (registro as { prestadorPessoaId?: number | null }).prestadorPessoaId,
+      prestadorNome: registro.prestadorNome,
+      candidatos: [],
+    });
+    setFornecedorId(pessoaIdOficial != null ? String(pessoaIdOficial) : "");
+    setPecas((registro.pecas ?? []).map(p => pecaItemDeRegistro(p)));
     initializedForId.current = registro.id;
   }, [isEdit, registro]);
 
   useEffect(() => {
-    if (!isEdit || !registro || fornecedorId || tipoExecucao !== "externa") return;
-    if (!registro.prestadorNome?.trim() || !fornecedores.length) return;
-    const nome = registro.prestadorNome.trim().toLowerCase();
-    const match = fornecedores.find(f => f.nome.trim().toLowerCase() === nome);
-    if (match) setFornecedorId(String(match.id));
-  }, [isEdit, registro, fornecedores, fornecedorId, tipoExecucao]);
+    if (tipoExecucao !== "interna" || funcionarioId || !form.prestadorNome.trim() || !funcionarios.length) return;
+    const nome = form.prestadorNome.trim().toLowerCase();
+    const match = funcionarios.find(f => f.nome.trim().toLowerCase() === nome);
+    if (match) setFuncionarioId(String(match.id));
+  }, [tipoExecucao, funcionarioId, form.prestadorNome, funcionarios]);
+
+  useEffect(() => {
+    if (tipoExecucao !== "interna" || !funcionarioId || funcionarioId === FUNCIONARIO_MANUAL) return;
+    const p = funcionarios.find(f => String(f.id) === funcionarioId);
+    if (!p) return;
+    setForm(f => (f.prestadorNome.trim() === p.nome.trim() ? f : { ...f, prestadorNome: p.nome }));
+  }, [tipoExecucao, funcionarioId, funcionarios]);
 
   const fornecedorOpcoes = useMemo(
     () => fornecedores.map(f => ({ value: String(f.id), label: f.nome })),
@@ -425,11 +451,10 @@ export default function ManutencaoFormPage() {
       setForm(f => ({ ...f, prestadorNome: "" }));
       return;
     }
-    const contatoCadastro = p.telefone?.trim() || p.email?.trim() || "";
     setForm(f => ({
       ...f,
       prestadorNome: p.nome,
-      prestadorContato: f.prestadorContato.trim() || contatoCadastro,
+      prestadorContato: telefoneAoSelecionarPrestador(p.telefone),
     }));
   };
 
@@ -442,22 +467,26 @@ export default function ManutencaoFormPage() {
       return {
         ...f,
         prestadorNome: p.nome,
-        prestadorContato: f.prestadorContato.trim() || p.telefone?.trim() || p.email?.trim() || "",
+        prestadorContato: telefoneAoSincronizarPrestador({
+          telefoneOs: f.prestadorContato,
+          telefoneCadastro: p.telefone,
+        }),
       };
     });
   }, [fornecedorId, fornecedores, tipoExecucao]);
 
-  const totalPecas = useMemo(
-    () => pecas.reduce((s, p) => s + p.quantidade * p.valorUnitario, 0),
-    [pecas],
-  );
-
   const valorMaoObraNum = useMemo(() => {
+    if (tipoExecucao === "interna") return 0;
     const v = parseCurrencyBrl(form.valorMaoObra);
     return v ? parseFloat(v) : 0;
-  }, [form.valorMaoObra]);
+  }, [form.valorMaoObra, tipoExecucao]);
 
-  const totalGeral = totalPecas + valorMaoObraNum;
+  const custosResumo = useMemo(
+    () => resumoCustosFormulario(pecas, valorMaoObraNum),
+    [pecas, valorMaoObraNum],
+  );
+  const totalPecas = custosResumo.valorPecas;
+  const totalGeral = custosResumo.valorTotal;
 
   const handleSelectEstoque = (item: (typeof estoqueItems)[0]) => {
     const custo = parseCustoMedioClient(item.valorUnitario);
@@ -499,12 +528,14 @@ export default function ManutencaoFormPage() {
       pecas,
       tipoExecucao,
       fornecedorId,
+      funcionarioId,
       initializedForId: initializedForId.current,
       pecaEscolhida,
       pecaNome,
       pecaQtd,
       pecaValor,
       pecaSearch,
+      origemPeca,
     };
     sessionStorage.setItem(MANUTENCAO_DRAFT_KEY, JSON.stringify(draft));
   };
@@ -513,6 +544,19 @@ export default function ManutencaoFormPage() {
     persistirRascunho();
     const retorno = window.location.pathname + window.location.search;
     setLocation(`/financeiro/pessoas?novo=fornecedor&retorno=${encodeURIComponent(retorno)}`);
+  };
+
+  const irCadastrarFuncionario = () => {
+    persistirRascunho();
+    const retorno = window.location.pathname + window.location.search;
+    setLocation(`/financeiro/pessoas?novo=funcionario&retorno=${encodeURIComponent(retorno)}`);
+  };
+
+  const aplicarFuncionarioSelecionado = (id: string) => {
+    setFuncionarioId(id);
+    if (!id || id === FUNCIONARIO_MANUAL) return;
+    const p = funcionarios.find(f => String(f.id) === id);
+    if (p) setForm(f => ({ ...f, prestadorNome: p.nome }));
   };
 
   const irCadastrarProduto = (nomeSugerido?: string) => {
@@ -644,22 +688,60 @@ export default function ManutencaoFormPage() {
   const pecaSemSaldo =
     pecaEscolhida?.quantidadeDisponivel != null && pecaEscolhida.quantidadeDisponivel <= 0;
   const pecaPrecisaEntrada = !!pecaEscolhida && (semCustoMedio || pecaSemSaldo);
-  const podeAdicionarPeca =
+  const valorOficinaNum = Number(parseCurrencyBrl(pecaValor) || NaN);
+  const totalOficinaPreview =
+    origemPeca === "oficina" && qtdNum > 0 && Number.isFinite(valorOficinaNum) && valorOficinaNum >= 0
+      ? qtdNum * valorOficinaNum
+      : null;
+  const podeAdicionarPecaOficina =
     !!pecaNome.trim() &&
-    !!pecaEscolhida?.id &&
-    !Number.isNaN(qtdNum) &&
     qtdNum > 0 &&
-    custoSelecionado != null &&
-    !(
-      pecaEscolhida.quantidadeDisponivel != null &&
-      pecas
-        .filter(p => p.estoqueId === pecaEscolhida.id)
-        .reduce((s, p) => s + p.quantidade, 0) +
-        qtdNum >
-        pecaEscolhida.quantidadeDisponivel
-    );
+    Number.isFinite(valorOficinaNum) &&
+    valorOficinaNum >= 0;
+  const podeAdicionarPeca =
+    origemPeca === "oficina"
+      ? podeAdicionarPecaOficina
+      : !!pecaNome.trim() &&
+        !!pecaEscolhida?.id &&
+        !Number.isNaN(qtdNum) &&
+        qtdNum > 0 &&
+        custoSelecionado != null &&
+        !(
+          pecaEscolhida.quantidadeDisponivel != null &&
+          pecas
+            .filter(p => p.estoqueId === pecaEscolhida.id)
+            .reduce((s, p) => s + p.quantidade, 0) +
+            qtdNum >
+            pecaEscolhida.quantidadeDisponivel
+        );
+
+  const adicionarPecaOficina = () => {
+    const qtd = parseFloat(pecaQtd.replace(",", "."));
+    const unitario = Number(parseCurrencyBrl(pecaValor) || NaN);
+    const validada = prepararPecaOficinaDoFormulario({
+      nome: pecaNome,
+      quantidade: qtd,
+      valorUnitario: unitario,
+    });
+    if (!validada.ok) return toast.error(validada.message);
+    setPecas(prev => [
+      ...prev,
+      {
+        nome: validada.peca.nome,
+        quantidade: validada.peca.quantidade,
+        valorUnitario: validada.peca.valorUnitario,
+        origem: "oficina",
+        estoqueId: null,
+      },
+    ]);
+    limparSelecaoPeca();
+  };
 
   const adicionarPeca = () => {
+    if (origemPeca === "oficina") {
+      adicionarPecaOficina();
+      return;
+    }
     const nome = pecaNome.trim();
     const qtd = parseFloat(pecaQtd.replace(",", "."));
     if (!nome || !pecaEscolhida?.id) {
@@ -698,6 +780,7 @@ export default function ManutencaoFormPage() {
         valorUnitario: custo,
         estoqueId: pecaEscolhida.id,
         unidade: pecaEscolhida.unidade,
+        origem: "estoque",
       },
     ]);
     limparSelecaoPeca();
@@ -771,12 +854,13 @@ export default function ManutencaoFormPage() {
     }
 
     const fornecedorSel = fornecedores.find(f => String(f.id) === fornecedorId);
+    const funcionarioSel = funcionarios.find(f => String(f.id) === funcionarioId);
     const prestadorNome =
       tipoExecucao === "externa"
         ? fornecedorSel?.nome?.trim() || form.prestadorNome.trim() || undefined
-        : form.prestadorNome.trim() || undefined;
+        : funcionarioSel?.nome?.trim() || form.prestadorNome.trim() || undefined;
     const prestadorContato =
-      tipoExecucao === "externa" ? form.prestadorContato.trim() || undefined : undefined;
+      tipoExecucao === "externa" ? telefonePrestadorParaOs(form.prestadorContato) : undefined;
 
     const payload = {
       maquinaId: Number(form.maquinaId),
@@ -789,13 +873,13 @@ export default function ManutencaoFormPage() {
       descricao: descricaoNorm,
       prestadorNome,
       prestadorContato,
-      valorMaoObra: valorMaoObraNum,
-      pecas: pecas.map(p => ({
-        nome: p.nome,
-        quantidade: p.quantidade,
-        valorUnitario: p.valorUnitario,
-        estoqueId: p.estoqueId,
-      })),
+      prestadorPessoaId: prestadorPessoaIdDoPayload({
+        tipoExecucao,
+        fornecedorId: fornecedorSel?.id ?? fornecedorId,
+      }),
+      tipoExecucao: tipoExecucao || undefined,
+      valorMaoObra: tipoExecucao === "interna" ? 0 : valorMaoObraNum,
+      pecas: pecas.map(payloadPecaManutencao),
     };
 
     if (isEdit) updateMutation.mutate({ id: editId, ...payload });
@@ -812,6 +896,13 @@ export default function ManutencaoFormPage() {
       ),
     [isEdit, registro],
   );
+  const exibirOrigemOficina = podeExibirOrigemOficina(tipoExecucao);
+  const mostrarFormEstoque = podeMostrarFormularioEstoque({
+    patrimonializada: pecasPatrimonializadas,
+    origemPeca,
+  });
+  const mostrarFormOficina = podeMostrarFormularioOficina({ tipoExecucao, origemPeca });
+  const exibirRotuloOrigem = deveExibirRotuloOrigemPeca(tipoExecucao, pecas);
 
   const pending = createMutation.isPending || updateMutation.isPending;
   const podeSalvar =
@@ -1002,11 +1093,33 @@ export default function ManutencaoFormPage() {
               <div className="mb-4 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
                 <p className="text-[11px] text-gray-700 leading-relaxed">
                   {MSG_MANUT_EDICAO_PATRIMONIAL}
+                  {exibirOrigemOficina
+                    ? " As peças da oficina ainda podem ser incluídas ou ajustadas."
+                    : ""}
                 </p>
               </div>
             ) : null}
 
-            <div className={cn("grid grid-cols-12 gap-3 items-start mb-4", pecasPatrimonializadas && "hidden")}>
+            {exibirOrigemOficina ? (
+              <div className="mb-4 max-w-xs">
+                <FormLabel>Origem da peça</FormLabel>
+                <FormNativeSelect
+                  variant="light"
+                  value={origemPeca}
+                  placeholder="Do estoque"
+                  onChange={v => {
+                    setOrigemPeca(v === "oficina" ? "oficina" : "estoque");
+                    limparSelecaoPeca();
+                  }}
+                  options={[
+                    { value: "estoque", label: "Do estoque" },
+                    { value: "oficina", label: "Fornecida pela oficina" },
+                  ]}
+                />
+              </div>
+            ) : null}
+
+            <div className={cn("grid grid-cols-12 gap-3 items-start mb-4", !mostrarFormEstoque && "hidden")}>
               <div className="col-span-12 sm:col-span-5">
                 <FormLabel>Produto ou peça</FormLabel>
                 {pecaEscolhida ? (
@@ -1205,7 +1318,65 @@ export default function ManutencaoFormPage() {
               </div>
             </div>
 
-            {pecaEscolhida &&
+            {mostrarFormOficina ? (
+              <div className="grid grid-cols-12 gap-3 items-start mb-4">
+                <div className="col-span-12 sm:col-span-5">
+                  <FormLabel>Descrição da peça</FormLabel>
+                  <FormInput
+                    variant="light"
+                    value={pecaNome}
+                    onChange={v => setPecaNome(v)}
+                    placeholder="Ex.: Retentor do eixo"
+                  />
+                </div>
+                <div className="col-span-4 sm:col-span-2">
+                  <FormLabel>Qtd</FormLabel>
+                  <FormInput
+                    variant="light"
+                    value={pecaQtd}
+                    onChange={v => setPecaQtd(v.replace(/[^\d.,]/g, ""))}
+                    placeholder="1"
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="col-span-5 sm:col-span-3">
+                  <FormLabel>Valor unitário</FormLabel>
+                  <FormInput
+                    variant="light"
+                    value={pecaValor}
+                    onChange={v => setPecaValor(formatCurrencyBrl(v))}
+                    placeholder="R$ 0,00"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className="col-span-3 sm:col-span-2">
+                  <FormLabel className="sr-only">Adicionar</FormLabel>
+                  <button
+                    type="button"
+                    onClick={adicionarPeca}
+                    disabled={!podeAdicionarPeca}
+                    className={cn(
+                      "w-full h-[34px] px-2 sm:px-3 rounded text-[11px] font-semibold text-white transition flex items-center justify-center shrink-0",
+                      podeAdicionarPeca
+                        ? "hover:brightness-95 active:scale-[0.97]"
+                        : "opacity-50 cursor-not-allowed",
+                    )}
+                    style={{ backgroundColor: FD_PRIMARY }}
+                  >
+                    Adicionar
+                  </button>
+                </div>
+                {totalOficinaPreview != null ? (
+                  <div className="col-span-12 -mt-1">
+                    <p className="text-[10px] text-gray-500">
+                      Total da peça: {brl(totalOficinaPreview)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {mostrarFormEstoque && pecaEscolhida &&
             (pecaEscolhida.quantidadeDisponivel != null ||
               (pecaEscolhida.doEstoque && !semCustoMedio)) ? (
               <div className="grid grid-cols-12 gap-x-3 gap-y-1 -mt-2 mb-4">
@@ -1233,7 +1404,7 @@ export default function ManutencaoFormPage() {
               </div>
             ) : null}
 
-            {pecaPrecisaEntrada ? (
+            {mostrarFormEstoque && pecaPrecisaEntrada ? (
               <div className="mb-4 rounded border border-amber-100 bg-amber-50 px-3 py-2.5">
                 <p className="text-[11px] text-gray-700 leading-relaxed">
                   {semCustoMedio && pecaSemSaldo
@@ -1282,7 +1453,14 @@ export default function ManutencaoFormPage() {
                   )}
                   {pecas.map((p, i) => (
                     <tr key={`${p.nome}-${i}`} className="hover:bg-gray-50/60">
-                      <td className="px-3 py-2.5 align-middle text-gray-800">{p.nome}</td>
+                      <td className="px-3 py-2.5 align-middle text-gray-800">
+                        <span>{p.nome}</span>
+                        {exibirRotuloOrigem && rotuloOrigemPeca(p) ? (
+                          <span className="ml-1.5 text-[10px] text-gray-400">
+                            {rotuloOrigemPeca(p)}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2.5 align-middle text-right text-gray-600 tabular-nums">
                         {p.quantidade.toLocaleString("pt-BR")}
                         {p.unidade ? ` ${p.unidade}` : ""}
@@ -1294,7 +1472,7 @@ export default function ManutencaoFormPage() {
                         {brl(p.quantidade * p.valorUnitario)}
                       </td>
                       <td className="px-2 py-2.5 align-middle text-center">
-                        {pecasPatrimonializadas ? null : (
+                        {podeRemoverPecaNaEdicao(pecasPatrimonializadas, p) ? (
                           <TableIconButton
                             label="Remover produto ou peça"
                             tone="danger"
@@ -1303,7 +1481,7 @@ export default function ManutencaoFormPage() {
                           >
                             <DeleteActionIcon size={16} />
                           </TableIconButton>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -1312,79 +1490,127 @@ export default function ManutencaoFormPage() {
             </div>
           </div>
 
-          {/* Execução do serviço */}
+          {/* Responsável pelo serviço */}
           <div className="border-t border-gray-100 pt-5">
-            <h3 className="text-[12px] font-semibold text-gray-700 mb-3">Execução do serviço</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <FormLabel>Tipo de execução</FormLabel>
-                <FormNativeSelect
-                  variant="light"
-                  value={tipoExecucao}
-                  onChange={v => {
-                    const next = v as TipoExecucao;
-                    setTipoExecucao(next);
-                    if (next === "interna") {
-                      setFornecedorId("");
-                      set("prestadorContato", "");
-                    }
-                  }}
-                  options={[
-                    { value: "interna", label: "Interna" },
-                    { value: "externa", label: "Prestador externo" },
-                  ]}
-                />
-              </div>
-              {tipoExecucao === "interna" ? (
-                <>
-                  <div className="sm:col-span-1 lg:col-span-2">
-                    <FormLabel>Responsável interno</FormLabel>
-                    <FormInput
-                      variant="light"
-                      value={form.prestadorNome}
-                      onChange={v => set("prestadorNome", v)}
-                      placeholder="Ex. Equipe da fazenda"
-                    />
-                  </div>
-                  <div>
-                    <FormLabel>Custo da mão de obra (opcional)</FormLabel>
-                    <FormInput
-                      variant="light"
-                      value={form.valorMaoObra}
-                      onChange={v => set("valorMaoObra", formatCurrencyBrl(v))}
-                      placeholder="R$ 0,00"
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="sm:col-span-1 lg:col-span-2">
-                    <FormLabel>Prestador ou oficina</FormLabel>
-                    <FormNativeSelect
-                      variant="light"
-                      value={fornecedorId}
-                      onChange={aplicarFornecedorSelecionado}
-                      placeholder="Selecione o prestador"
-                      options={fornecedorOpcoes}
-                    />
+            <h3 className="text-[12px] font-semibold text-gray-700 mb-3">Responsável pelo serviço</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                <div className="md:col-span-3 min-w-0">
+                  <FormLabel>Tipo de execução</FormLabel>
+                  <FormNativeSelect
+                    variant="light"
+                    value={tipoExecucao}
+                    onChange={v => {
+                      const next = v as TipoExecucaoForm;
+                      if (next === "interna") {
+                        const troca = podeTrocarParaInterna(pecas);
+                        if (!troca.ok) {
+                          toast.error(troca.message);
+                          return;
+                        }
+                        setFornecedorId("");
+                        set("prestadorContato", "");
+                        set("valorMaoObra", "");
+                        setOrigemPeca("estoque");
+                        limparSelecaoPeca();
+                      }
+                      if (next === "externa") {
+                        setFuncionarioId("");
+                      }
+                      setTipoExecucao(next);
+                    }}
+                    options={[
+                      ...(isEdit && !tipoExecucao
+                        ? [{ value: "", label: "Não informado (registro antigo)" }]
+                        : []),
+                      { value: "interna", label: "Interna" },
+                      { value: "externa", label: "Prestador externo" },
+                    ]}
+                  />
+                  {isEdit && !tipoExecucao ? (
+                    <p className="mt-1.5 text-[11px] text-gray-500 leading-snug">
+                      Este registro é anterior à classificação. Escolha Interna ou Prestador
+                      externo só se quiser atualizar.
+                    </p>
+                  ) : null}
+                </div>
+                {tipoExecucao === "interna" ? (
+                  <div className="md:col-span-9 min-w-0">
+                    <FormLabel>Funcionário responsável</FormLabel>
+                    {funcionarios.length > 0 ? (
+                      <FormNativeSelect
+                        variant="light"
+                        value={funcionarioId}
+                        onChange={aplicarFuncionarioSelecionado}
+                        placeholder="Opcional — selecione ou informe o nome"
+                        options={[
+                          ...funcionarios.map(f => ({ value: String(f.id), label: f.nome })),
+                          { value: FUNCIONARIO_MANUAL, label: "Informar nome manualmente" },
+                        ]}
+                      />
+                    ) : null}
+                    {!funcionarioId || funcionarioId === FUNCIONARIO_MANUAL ? (
+                      <FormInput
+                        variant="light"
+                        className={funcionarios.length > 0 ? "mt-2" : undefined}
+                        value={form.prestadorNome}
+                        onChange={v => set("prestadorNome", v)}
+                        placeholder="Nome de quem executou (opcional)"
+                      />
+                    ) : null}
                     <button
                       type="button"
-                      onClick={irCadastrarFornecedor}
+                      onClick={irCadastrarFuncionario}
                       className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
                     >
-                      Cadastrar novo fornecedor
+                      Cadastrar funcionário
                     </button>
                   </div>
-                  <div>
-                    <FormLabel>Contato</FormLabel>
-                    <FormInput
-                      variant="light"
-                      value={form.prestadorContato}
-                      onChange={v => set("prestadorContato", v)}
-                      placeholder="Telefone ou e-mail"
-                    />
-                  </div>
-                  <div>
+                ) : (
+                  <>
+                    <div className="md:col-span-6 min-w-0">
+                      <FormLabel>Prestador ou oficina</FormLabel>
+                      <FormNativeSelect
+                        variant="light"
+                        value={fornecedorId}
+                        onChange={aplicarFornecedorSelecionado}
+                        placeholder="Selecione o prestador"
+                        options={fornecedorOpcoes}
+                      />
+                      {deveExibirNomeHistoricoPrestador({
+                        tipoExecucao,
+                        prestadorPessoaId: Number(fornecedorId) || null,
+                        prestadorNome: form.prestadorNome,
+                      }) ? (
+                        <p className="mt-1.5 text-[11px] text-gray-500 leading-snug">
+                          Registrado como {form.prestadorNome}. Selecione o cadastro oficial
+                          em Pessoas para vincular — o nome antigo não escolhe o fornecedor.
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={irCadastrarFornecedor}
+                        className="mt-1.5 text-[11px] font-medium text-[#4ECDC4] hover:underline"
+                      >
+                        Cadastrar novo fornecedor
+                      </button>
+                    </div>
+                    <div className="md:col-span-3 min-w-0">
+                      <FormLabel>Telefone</FormLabel>
+                      <FormInput
+                        variant="light"
+                        value={form.prestadorContato}
+                        onChange={v => set("prestadorContato", formatPhoneBR(v))}
+                        placeholder="(00) 00000-0000"
+                        inputMode="tel"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              {tipoExecucao !== "interna" ? (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-3 min-w-0">
                     <FormLabel>Valor da mão de obra</FormLabel>
                     <FormInput
                       variant="light"
@@ -1393,23 +1619,75 @@ export default function ManutencaoFormPage() {
                       placeholder="R$ 0,00"
                     />
                   </div>
-                </>
-              )}
+                </div>
+              ) : null}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-              <p className="text-[10px] uppercase text-gray-500">Peças</p>
-              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(totalPecas)}</p>
+          <div className="rounded border border-gray-200 bg-gray-50/70 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-200/80">
+              <h3 className="text-[12px] font-semibold text-gray-700">Resumo da manutenção</h3>
             </div>
-            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3">
-              <p className="text-[10px] uppercase text-gray-500">Mão de obra</p>
-              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(valorMaoObraNum)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg border border-gray-100 p-3 col-span-2 sm:col-span-1">
-              <p className="text-[10px] uppercase text-gray-500">Total da manutenção</p>
-              <p className="text-[18px] font-bold text-gray-800 tabular-nums">{brl(totalGeral)}</p>
+            <div className="px-4 py-3 space-y-2">
+              {tipoExecucao === "externa" ? (
+                <>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-[12px] text-gray-600 min-w-0">Peças do estoque</span>
+                    <span className="text-[13px] text-gray-800 tabular-nums text-right shrink-0">
+                      {brl(custosResumo.valorPecasEstoque)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-[12px] text-gray-600 min-w-0">Peças da oficina</span>
+                    <span className="text-[13px] text-gray-800 tabular-nums text-right shrink-0">
+                      {brl(custosResumo.valorPecasOficina)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-[12px] text-gray-600 min-w-0">Mão de obra</span>
+                    <span className="text-[13px] text-gray-800 tabular-nums text-right shrink-0">
+                      {brl(valorMaoObraNum)}
+                    </span>
+                  </div>
+                  <div className="border-t border-gray-200 pt-2 mt-1 space-y-2">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-[12px] font-semibold text-gray-800 min-w-0">
+                        Custo total da manutenção
+                      </span>
+                      <span className="text-[14px] font-bold text-gray-900 tabular-nums text-right shrink-0">
+                        {brl(totalGeral)}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-[12px] text-gray-600 min-w-0">
+                        Valor cobrado pela oficina
+                      </span>
+                      <span className="text-[13px] font-medium text-gray-800 tabular-nums text-right shrink-0">
+                        {brl(custosResumo.valorCobradoOficina)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-[12px] text-gray-600 min-w-0">Peças do estoque</span>
+                    <span className="text-[13px] text-gray-800 tabular-nums text-right shrink-0">
+                      {brl(totalPecas)}
+                    </span>
+                  </div>
+                  <div className="border-t border-gray-200 pt-2 mt-1">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-[12px] font-semibold text-gray-800 min-w-0">
+                        Custo total da manutenção
+                      </span>
+                      <span className="text-[14px] font-bold text-gray-900 tabular-nums text-right shrink-0">
+                        {brl(totalGeral)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

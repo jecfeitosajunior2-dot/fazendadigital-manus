@@ -56,19 +56,37 @@ import { SaudeEstoqueError } from "./saudeEstoque";
 import { estornarManejoSanitarioMysql, persistirManejoSanitarioMysql, recusarEstornoGenericoSeSanitario, listarVinculosSaudePorMovimentacaoIds } from "./saudeEstoqueMysql";
 import { deveBloquearEstornoGenericoSanitario, MOTIVO_ESTORNO_SAUDE_PADRAO, MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
 import { ManutencaoEstoqueError } from "./manutencaoEstoque";
-import { estornarManutencaoMysql, persistirManutencaoMysql, recusarEstornoGenericoSeManutencao, listarVinculosManutencaoPorMovimentacaoIds } from "./manutencaoEstoqueMysql";
+import { recusarEstornoGenericoSeManutencao, listarVinculosManutencaoPorMovimentacaoIds } from "./manutencaoEstoqueMysql";
+import { estornarManutencaoCompletaMysql, persistirManutencaoCompletaMysql } from "./manutencaoCompletaMysql";
+import { editarPecasOficinaMysql } from "./manutencaoOficinaEdicaoMysql";
+import { recusarExclusaoManutencao } from "../shared/manutencaoAcoes";
 import {
-  decidirEstornoManutencao,
   deveBloquearEstornoGenericoManutencao,
   MOTIVO_ESTORNO_MANUT_PADRAO,
   MSG_ESTORNO_GENERICO_MANUTENCAO,
-  MSG_MANUT_EDICAO_PATRIMONIAL,
   MSG_MANUT_ESTOQUE_AUSENTE_MYSQL,
   MSG_MANUT_ESTORNO_LEGADO,
   MSG_MANUT_MYSQL_OBRIGATORIO,
   pecaManutencaoTemVinculo,
-  pecasConsumoIguais,
 } from "../shared/manutencaoEstoque";
+import { resolverValorMaoObraManutencao } from "../shared/manutencaoTipoExecucao";
+import {
+  confirmarFazendaDoUsuario,
+  decidirFazendaPersistenciaOs,
+  identificarFazendaMaquina,
+  lerPrestadorPessoaId,
+  validarPrestadorPessoaParaOs,
+} from "../shared/manutencaoIdentificacaoOperacional";
+import {
+  calcularCustosManutencaoCompletos,
+  classificarPecasManutencao,
+  MANUT_PECA_ORIGEM_ESTOQUE,
+  MANUT_PECA_ORIGEM_OFICINA,
+  MSG_MANUT_PECA_ESTOQUE_OBRIGATORIA,
+  validarPecaOficina,
+  validarPecasOficinaNaExecucao,
+  type PecaOficinaNormalizada,
+} from "../shared/manutencaoPecasOrigem";
 import { anexarIdentificacaoAnimalSaude } from "../shared/saudeListaDisplay";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
@@ -6452,6 +6470,7 @@ const pecaInput = z.object({
   /** Ignorado no servidor quando há estoqueId — custo médio do estoque é a fonte oficial. */
   valorUnitario: z.number().min(0).optional(),
   estoqueId: z.number().int().positive().optional().nullable(),
+  origem: z.enum(["estoque", "oficina"]).optional().nullable(),
 });
 
 const manutencaoBaseInput = z.object({
@@ -6470,12 +6489,73 @@ const manutencaoBaseInput = z.object({
   // Status não é aceito do frontend — sempre "concluida" no create; preservado no update.
   prestadorNome: z.string().optional(),
   prestadorContato: z.string().optional(),
+  prestadorPessoaId: z.number().int().positive().optional().nullable(),
+  tipoExecucao: z.enum(["interna", "externa"]).optional().nullable(),
   valorMaoObra: z.number().min(0).optional(),
   observacoes: z.string().optional(),
   pecas: z.array(pecaInput).optional(),
 });
 
 /** Calcula valor de peças, mão de obra e total geral. */
+function prepararPecasManutencaoDoInput(
+  pecas: Array<{
+    nome: string;
+    quantidade: number;
+    valorUnitario?: number;
+    estoqueId?: number | null;
+    origem?: string | null;
+  }> | undefined,
+  tipoExecucao: string | null | undefined,
+): {
+  pecasEstoqueInput: Array<{
+    nome: string;
+    quantidade: number;
+    valorUnitario?: number;
+    estoqueId?: number | null;
+  }>;
+  pecasOficina: PecaOficinaNormalizada[];
+} {
+  const classificadas = classificarPecasManutencao(pecas);
+  if (classificadas.semOrigemSemEstoque.length > 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_PECA_ESTOQUE_OBRIGATORIA });
+  }
+  const oficinaNaExecucao = validarPecasOficinaNaExecucao(tipoExecucao, classificadas.oficina);
+  if (!oficinaNaExecucao.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: oficinaNaExecucao.message });
+  }
+  const pecasOficina: PecaOficinaNormalizada[] = [];
+  for (const peca of classificadas.oficina) {
+    const normalizada = validarPecaOficina(peca);
+    if (!normalizada.ok) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: normalizada.message });
+    }
+    pecasOficina.push(normalizada.peca);
+  }
+  return { pecasEstoqueInput: classificadas.estoque, pecasOficina };
+}
+
+function valoresOsDosCustos(custos: ReturnType<typeof calcularCustosManutencaoCompletos>) {
+  return {
+    valorMaoObra: custos.valorMaoObra.toFixed(2),
+    valorPecas: custos.valorPecas.toFixed(2),
+    valorPecasOficina: custos.valorPecasOficina.toFixed(2),
+    valorCobradoOficina: custos.valorCobradoOficina.toFixed(2),
+    valorTotal: custos.valorTotal.toFixed(2),
+    custo: custos.valorTotal.toFixed(2),
+  };
+}
+
+function valorMaoObraOficialDaOs(
+  tipoExecucao: string | null | undefined,
+  valorMaoObra: number | undefined,
+): number {
+  const decisao = resolverValorMaoObraManutencao({ tipoExecucao, valorMaoObra });
+  if (!decisao.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: decisao.message });
+  }
+  return decisao.valorMaoObra;
+}
+
 export function calcularTotaisManutencao(
   pecas: { quantidade: number; valorUnitario: number }[] | undefined,
   valorMaoObra: number | undefined
@@ -6807,27 +6887,92 @@ function throwSeErroManutencaoEstoque(error: unknown): never {
   throw error;
 }
 
-async function resolverFazendaMaquinaParaPecas(userId: number, maquinaId: number): Promise<number> {
-  try {
-    const [maq] = await db
-      .select({ fazendaId: maquinas.fazendaId })
-      .from(maquinas)
-      .where(and(eq(maquinas.id, maquinaId), eq(maquinas.userId, userId)))
-      .limit(1);
-    if (!maq) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-    }
-    const fazendaId = Number(maq.fazendaId);
-    if (!Number.isInteger(fazendaId) || fazendaId <= 0) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Informe a fazenda da máquina para baixar o estoque.",
-      });
-    }
-    return fazendaId;
-  } catch (error) {
-    throwSeErroManutencaoEstoque(error);
+async function identificarFazendaMaquinaDoUsuario(
+  userId: number,
+  maquinaId: number,
+) {
+  const [maq] = await db
+    .select({
+      id: maquinas.id,
+      userId: maquinas.userId,
+      fazendaId: maquinas.fazendaId,
+    })
+    .from(maquinas)
+    .where(eq(maquinas.id, maquinaId))
+    .limit(1);
+  const identificacao = identificarFazendaMaquina({
+    userId,
+    maquina: maq ?? null,
+  });
+  if (!identificacao.ok) return identificacao;
+  const [fazenda] = await db
+    .select({ id: fazendas.id, userId: fazendas.userId })
+    .from(fazendas)
+    .where(eq(fazendas.id, identificacao.fazendaId))
+    .limit(1);
+  return confirmarFazendaDoUsuario({
+    userId,
+    fazendaId: identificacao.fazendaId,
+    fazenda: fazenda ?? null,
+  });
+}
+
+async function resolverFazendaPersistenciaOs(
+  userId: number,
+  maquinaId: number,
+  temPecasEstoque: boolean,
+) {
+  const identificacao = await identificarFazendaMaquinaDoUsuario(userId, maquinaId);
+  if (
+    !identificacao.ok
+    && (identificacao.motivo === "maquina_ausente" || identificacao.motivo === "maquina_outro_usuario")
+  ) {
+    throw new TRPCError({ code: "NOT_FOUND", message: identificacao.message });
   }
+  const persistencia = decidirFazendaPersistenciaOs({ temPecasEstoque, identificacao });
+  if (!persistencia.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: persistencia.message });
+  }
+  return persistencia;
+}
+
+async function resolverPrestadorPessoaOs(
+  userId: number,
+  tipoExecucao: string | null | undefined,
+  prestadorPessoaId: number | null | undefined,
+) {
+  const pessoaId = lerPrestadorPessoaId(prestadorPessoaId);
+  let pessoa: {
+    id: number;
+    userId: number;
+    tipo: string;
+    ativo: boolean | null;
+  } | null = null;
+  if (pessoaId != null) {
+    const [row] = await db
+      .select({
+        id: pessoas.id,
+        userId: pessoas.userId,
+        tipo: pessoas.tipo,
+        ativo: pessoas.ativo,
+      })
+      .from(pessoas)
+      .where(eq(pessoas.id, pessoaId))
+      .limit(1);
+    pessoa = row
+      ? { ...row, ativo: row.ativo ?? null }
+      : null;
+  }
+  const validado = validarPrestadorPessoaParaOs({
+    userId,
+    tipoExecucao,
+    prestadorPessoaId: pessoaId,
+    pessoa,
+  });
+  if (!validado.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: validado.message });
+  }
+  return validado.prestadorPessoaId;
 }
 
 async function estoquesTemCapitalInicializado(estoqueIds: number[]): Promise<boolean> {
@@ -6995,61 +7140,81 @@ const manutencoesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
       await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId);
-      const pecasResolvidas = await resolverPecasComCustoMedioEstoque(pecas);
-      const totais = calcularTotaisManutencao(pecasResolvidas, valorMaoObra);
-      const pecasPayload = pecasLocaisFromResolvidas(pecasResolvidas);
-
-      if (pecasResolvidas.length > 0) {
-        try {
-          const fazendaId = await resolverFazendaMaquinaParaPecas(ctx.user.id, rest.maquinaId);
-          const persistido = await persistirManutencaoMysql({
-            userId: ctx.user.id,
-            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-            maquinaId: rest.maquinaId,
-            fazendaId,
-            tipo: rest.tipo,
-            descricao: rest.descricao,
-            data,
-            horimetro: rest.horimetro,
-            proximaManutencao: proximaManutencao || undefined,
-            prestadorNome: rest.prestadorNome,
-            prestadorContato: rest.prestadorContato,
-            valorMaoObra: totais.valorMaoObra,
-            observacoes: rest.observacoes,
-            pecas: pecasResolvidas,
-          });
-          return { success: true, id: persistido.id };
-        } catch (error) {
-          throwSeErroManutencaoEstoque(error);
-        }
-      }
+      const valorMaoObraOficial = valorMaoObraOficialDaOs(rest.tipoExecucao, valorMaoObra);
+      const { pecasEstoqueInput, pecasOficina } = prepararPecasManutencaoDoInput(
+        pecas,
+        rest.tipoExecucao,
+      );
+      const pecasResolvidas = await resolverPecasComCustoMedioEstoque(pecasEstoqueInput);
+      const custos = calcularCustosManutencaoCompletos({
+        pecasEstoque: pecasResolvidas,
+        pecasOficina,
+        valorMaoObra: valorMaoObraOficial,
+      });
+      const totaisOs = valoresOsDosCustos(custos);
+      const pecasPayload = [
+        ...pecasLocaisFromResolvidas(pecasResolvidas).map(p => ({
+          ...p,
+          origem: MANUT_PECA_ORIGEM_ESTOQUE,
+        })),
+        ...pecasOficina.map(p => ({
+          estoqueId: null,
+          nome: p.nome,
+          quantidade: p.quantidade.toFixed(2),
+          valorUnitario: p.valorUnitario.toFixed(2),
+          valorTotal: p.valorTotal.toFixed(2),
+          origem: MANUT_PECA_ORIGEM_OFICINA,
+        })),
+      ];
 
       try {
-        const result = await db.insert(manutencoes).values({
+        const prestadorPessoaId = await resolverPrestadorPessoaOs(
+          ctx.user.id,
+          rest.tipoExecucao,
+          rest.prestadorPessoaId,
+        );
+        const persistencia = await resolverFazendaPersistenciaOs(
+          ctx.user.id,
+          rest.maquinaId,
+          pecasResolvidas.length > 0,
+        );
+        const persistido = await persistirManutencaoCompletaMysql({
           userId: ctx.user.id,
-          ...rest,
+          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+          maquinaId: rest.maquinaId,
+          fazendaId: persistencia.fazendaId,
+          tipo: rest.tipo,
+          descricao: rest.descricao,
           data,
-          status: "concluida",
+          horimetro: rest.horimetro,
           proximaManutencao: proximaManutencao || undefined,
-          valorMaoObra: totais.valorMaoObra.toFixed(2),
-          valorPecas: totais.valorPecas.toFixed(2),
-          valorTotal: totais.valorTotal.toFixed(2),
-          custo: totais.valorTotal.toFixed(2),
+          prestadorNome: rest.prestadorNome,
+          prestadorContato: rest.prestadorContato,
+          prestadorPessoaId,
+          valorMaoObra: custos.valorMaoObra,
+          observacoes: rest.observacoes,
+          pecas: pecasResolvidas,
+          pecasOficina,
+          tipoExecucao: rest.tipoExecucao,
         });
-        return { success: true, id: Number((result as { insertId?: number }[])[0]?.insertId) };
+        return { success: true, id: persistido.id };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        if (error instanceof ManutencaoEstoqueError || error instanceof EstoqueCapitalError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
         if (!isDatabaseUnavailable(error)) throw error;
-
+        if (pecasResolvidas.length > 0) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+        }
         const created = await createLocalManutencao(ctx.user.id, {
           ...rest,
           data,
           status: "concluida",
           proximaManutencao: proximaManutencao || undefined,
-          valorMaoObra: totais.valorMaoObra.toFixed(2),
-          valorPecas: totais.valorPecas.toFixed(2),
-          valorTotal: totais.valorTotal.toFixed(2),
-          custo: totais.valorTotal.toFixed(2),
+          prestadorPessoaId:
+            lerPrestadorPessoaId(rest.tipoExecucao === "externa" ? rest.prestadorPessoaId : null),
+          ...totaisOs,
           pecas: pecasPayload,
         });
         return { success: true, id: created.id, localFallback: true };
@@ -7060,17 +7225,20 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput.extend({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { id, data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
+      const valorMaoObraOficial = valorMaoObraOficialDaOs(rest.tipoExecucao, valorMaoObra);
 
       let anterior: {
         maquinaId: number;
         status?: string | null;
         valorPecas?: string | number | null;
+        valorPecasOficina?: string | number | null;
       } | null = null;
       let pecasAntigas: {
         estoqueId: number | null;
         quantidade: string | number;
         valorUnitario?: string | number | null;
         estoqueMovimentacaoId?: number | null;
+        origem?: string | null;
       }[] = [];
       let fromLocal = false;
 
@@ -7080,6 +7248,7 @@ const manutencoesRouter = router({
             maquinaId: manutencoes.maquinaId,
             status: manutencoes.status,
             valorPecas: manutencoes.valorPecas,
+            valorPecasOficina: manutencoes.valorPecasOficina,
           })
           .from(manutencoes)
           .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)))
@@ -7092,6 +7261,7 @@ const manutencoesRouter = router({
               quantidade: manutencaoPecas.quantidade,
               valorUnitario: manutencaoPecas.valorUnitario,
               estoqueMovimentacaoId: manutencaoPecas.estoqueMovimentacaoId,
+              origem: manutencaoPecas.origem,
             })
             .from(manutencaoPecas)
             .where(eq(manutencaoPecas.manutencaoId, id));
@@ -7141,29 +7311,70 @@ const manutencoesRouter = router({
         allowSameInactiveId: anterior.maquinaId,
       });
 
+      const { pecasEstoqueInput, pecasOficina } = prepararPecasManutencaoDoInput(
+        pecas,
+        rest.tipoExecucao,
+      );
+
+      const temEstoqueAntigo = manutencaoTemConsumoEstoque(pecasAntigas);
       const patrimonializada = pecasAntigas.some(pecaManutencaoTemVinculo);
-      if (patrimonializada) {
-        if (!pecasConsumoIguais(pecasAntigas, pecas ?? [])) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_EDICAO_PATRIMONIAL });
+      if (patrimonializada || !temEstoqueAntigo) {
+        if (fromLocal) {
+          if (temEstoqueAntigo) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
+          }
+          const custosLocal = calcularCustosManutencaoCompletos({
+            pecasEstoque: [],
+            pecasOficina,
+            valorMaoObra: valorMaoObraOficial,
+          });
+          await updateLocalManutencao(ctx.user.id, id, {
+            ...rest,
+            data,
+            proximaManutencao: proximaManutencao || null,
+            prestadorNome: rest.prestadorNome ?? null,
+            prestadorContato: rest.prestadorContato ?? null,
+            prestadorPessoaId: rest.prestadorPessoaId ?? null,
+            descricao: rest.descricao ?? null,
+            ...valoresOsDosCustos(custosLocal),
+            pecas: pecasOficina.map(p => ({
+              estoqueId: null as number | null,
+              nome: p.nome,
+              quantidade: p.quantidade.toFixed(2),
+              valorUnitario: p.valorUnitario.toFixed(2),
+              valorTotal: p.valorTotal.toFixed(2),
+              origem: MANUT_PECA_ORIGEM_OFICINA,
+            })),
+          });
+          return { success: true, localFallback: true };
         }
-        const valorPecasCongelado = Number(anterior.valorPecas ?? 0);
-        const maoObra = valorMaoObra ?? 0;
-        const valorTotal = (Number.isFinite(valorPecasCongelado) ? valorPecasCongelado : 0) + maoObra;
         try {
-          await db
-            .update(manutencoes)
-            .set({
-              ...rest,
+          const prestadorPessoaId = await resolverPrestadorPessoaOs(
+            ctx.user.id,
+            rest.tipoExecucao,
+            rest.prestadorPessoaId,
+          );
+          await editarPecasOficinaMysql({
+            userId: ctx.user.id,
+            id,
+            tipoExecucao: rest.tipoExecucao,
+            valorMaoObra: valorMaoObraOficial,
+            pecasOficina,
+            pecasEstoqueInput,
+            cabecalho: {
+              maquinaId: rest.maquinaId,
+              tipo: rest.tipo,
+              descricao: rest.descricao ?? null,
               data,
+              horimetro: rest.horimetro ?? null,
               proximaManutencao: proximaManutencao || null,
               prestadorNome: rest.prestadorNome ?? null,
               prestadorContato: rest.prestadorContato ?? null,
-              descricao: rest.descricao ?? null,
-              valorMaoObra: maoObra.toFixed(2),
-              valorTotal: valorTotal.toFixed(2),
-              custo: valorTotal.toFixed(2),
-            })
-            .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
+              prestadorPessoaId,
+              observacoes: rest.observacoes ?? null,
+              tipoExecucao: rest.tipoExecucao ?? null,
+            },
+          });
           return { success: true };
         } catch (error) {
           throwSeErroManutencaoEstoque(error);
@@ -7172,7 +7383,7 @@ const manutencoesRouter = router({
 
       await assertPecasSemCapitalInicializado([
         ...pecasAntigas.map(p => Number(p.estoqueId)),
-        ...(pecas ?? []).map(p => Number(p.estoqueId)),
+        ...pecasEstoqueInput.map(p => Number(p.estoqueId)),
       ]);
 
       const credito = new Map<number, number>();
@@ -7190,23 +7401,39 @@ const manutencoesRouter = router({
       }
 
       const pecasResolvidas = await resolverPecasComCustoMedioEstoque(
-        pecas,
+        pecasEstoqueInput,
         credito,
         custoCongelado,
       );
-      const totais = calcularTotaisManutencao(pecasResolvidas, valorMaoObra);
-      const pecasPayload = pecasLocaisFromResolvidas(pecasResolvidas);
+      const custos = calcularCustosManutencaoCompletos({
+        pecasEstoque: pecasResolvidas,
+        pecasOficina,
+        valorMaoObra: valorMaoObraOficial,
+      });
+      const totaisOs = valoresOsDosCustos(custos);
+      const pecasPayload = [
+        ...pecasLocaisFromResolvidas(pecasResolvidas).map(p => ({
+          ...p,
+          origem: MANUT_PECA_ORIGEM_ESTOQUE,
+        })),
+        ...pecasOficina.map(p => ({
+          estoqueId: null as number | null,
+          nome: p.nome,
+          quantidade: p.quantidade.toFixed(2),
+          valorUnitario: p.valorUnitario.toFixed(2),
+          valorTotal: p.valorTotal.toFixed(2),
+          origem: MANUT_PECA_ORIGEM_OFICINA,
+        })),
+      ];
       const localPayload = {
         ...rest,
         data,
         proximaManutencao: proximaManutencao || null,
         prestadorNome: rest.prestadorNome ?? null,
         prestadorContato: rest.prestadorContato ?? null,
+        prestadorPessoaId: rest.prestadorPessoaId ?? null,
         descricao: rest.descricao ?? null,
-        valorMaoObra: totais.valorMaoObra.toFixed(2),
-        valorPecas: totais.valorPecas.toFixed(2),
-        valorTotal: totais.valorTotal.toFixed(2),
-        custo: totais.valorTotal.toFixed(2),
+        ...totaisOs,
         pecas: pecasPayload,
       };
 
@@ -7228,11 +7455,9 @@ const manutencoesRouter = router({
               proximaManutencao: proximaManutencao || null,
               prestadorNome: rest.prestadorNome ?? null,
               prestadorContato: rest.prestadorContato ?? null,
+              prestadorPessoaId: rest.prestadorPessoaId ?? null,
               descricao: rest.descricao ?? null,
-              valorMaoObra: totais.valorMaoObra.toFixed(2),
-              valorPecas: totais.valorPecas.toFixed(2),
-              valorTotal: totais.valorTotal.toFixed(2),
-              custo: totais.valorTotal.toFixed(2),
+              ...totaisOs,
             })
             .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, ctx.user.id)));
 
@@ -7246,6 +7471,20 @@ const manutencoesRouter = router({
                 quantidade: p.quantidade.toFixed(2),
                 valorUnitario: p.valorUnitario.toFixed(2),
                 valorTotal: (p.quantidade * p.valorUnitario).toFixed(2),
+                origem: MANUT_PECA_ORIGEM_ESTOQUE,
+              })),
+            );
+          }
+          if (pecasOficina.length > 0) {
+            await tx.insert(manutencaoPecas).values(
+              pecasOficina.map(p => ({
+                manutencaoId: id,
+                estoqueId: null,
+                nome: p.nome,
+                quantidade: p.quantidade.toFixed(2),
+                valorUnitario: p.valorUnitario.toFixed(2),
+                valorTotal: p.valorTotal.toFixed(2),
+                origem: MANUT_PECA_ORIGEM_OFICINA,
               })),
             );
           }
@@ -7322,10 +7561,11 @@ const manutencoesRouter = router({
         }));
       }
 
-      if (manutencaoEstornada(status)) {
+      const exclusao = recusarExclusaoManutencao(status);
+      if (exclusao.recusar) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Manutenção estornada não pode ser excluída. O histórico é preservado.",
+          message: exclusao.message,
         });
       }
 
@@ -7372,7 +7612,6 @@ const manutencoesRouter = router({
         quantidade: string | number;
         estoqueMovimentacaoId?: number | null;
       }[] = [];
-      let status: string | null = null;
 
       try {
         const [row] = await db
@@ -7383,7 +7622,6 @@ const manutencoesRouter = router({
         if (!row) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Manutenção não encontrada." });
         }
-        status = row.status ?? null;
         pecasAntigas = await db
           .select({
             estoqueId: manutencaoPecas.estoqueId,
@@ -7400,40 +7638,21 @@ const manutencoesRouter = router({
       const algumEstoqueComCapital = await estoquesTemCapitalInicializado(
         pecasAntigas.map(p => Number(p.estoqueId)),
       );
-      const decisao = decidirEstornoManutencao({
-        status,
-        pecas: pecasAntigas,
-        algumEstoqueComCapital,
-      });
 
-      if (decisao.kind === "ja_estornado") {
-        return { success: true, alreadyEstornado: true };
-      }
-      if (decisao.kind === "sem_consumo") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "Estorno aplica-se apenas a manutenções que consumiram peças do estoque. Para serviços sem peças, use Excluir.",
+      try {
+        const resultado = await estornarManutencaoCompletaMysql({
+          userId: ctx.user.id,
+          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
+          id: input.id,
+          motivo,
+          hojeISO: hojeISODateLocal(),
+          algumEstoqueComCapital,
         });
-      }
-      if (decisao.kind === "legado_bloqueado") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MANUT_ESTORNO_LEGADO });
-      }
-
-      if (decisao.kind === "com_vinculo") {
-        try {
-          const resultado = await estornarManutencaoMysql({
-            userId: ctx.user.id,
-            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-            id: input.id,
-            motivo,
-            hojeISO: hojeISODateLocal(),
-            algumEstoqueComCapital,
-          });
+        if (resultado.handled) {
           return { success: true, alreadyEstornado: resultado.alreadyEstornado };
-        } catch (error) {
-          throwSeErroManutencaoEstoque(error);
         }
+      } catch (error) {
+        throwSeErroManutencaoEstoque(error);
       }
 
       await assertPecasSemCapitalInicializado(pecasAntigas.map(p => Number(p.estoqueId)));

@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { calcularTotaisManutencao } from "./routers";
+import { resolverValorMaoObraManutencao } from "../shared/manutencaoTipoExecucao";
 
 describe("calcularTotaisManutencao", () => {
   it("soma peças (quantidade x valor unitário) corretamente", () => {
@@ -67,6 +68,16 @@ describe("calcularTotaisManutencao", () => {
     expect(r.valorPecas).toBe(235);
     expect(r.valorMaoObra).toBe(350);
     expect(r.valorTotal).toBe(585);
+  });
+
+  it("manutenção interna com peças de estoque não soma mão de obra", () => {
+    const mao = resolverValorMaoObraManutencao({ tipoExecucao: "interna", valorMaoObra: 0 });
+    expect(mao.ok).toBe(true);
+    if (!mao.ok) return;
+    const r = calcularTotaisManutencao([{ quantidade: 1, valorUnitario: 25 }], mao.valorMaoObra);
+    expect(r.valorPecas).toBe(25);
+    expect(r.valorMaoObra).toBe(0);
+    expect(r.valorTotal).toBe(25);
   });
 
   it("formata os totais em string com 2 casas decimais (compatível com decimal SQL)", () => {

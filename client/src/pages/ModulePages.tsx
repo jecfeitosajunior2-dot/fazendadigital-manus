@@ -706,7 +706,7 @@ function KpiCard({
         <div className="min-w-0 flex-1">
           <div className="text-[17px] font-bold text-gray-800 leading-tight tabular-nums">{value}</div>
           <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
-        </div>
+          </div>
         {onClick ? (
           <span className="material-icons text-[18px] text-gray-300 shrink-0" aria-hidden>
             chevron_right
@@ -2076,7 +2076,7 @@ export function PurchasesPage() {
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              type="button"
+                type="button"
               onClick={() => setLocation(COMPRA_VENDA_COMPRA_NOVA_PATH)}
               className="inline-flex items-center gap-1.5 px-4 rounded-lg text-white text-[12px] font-semibold hover:brightness-95 active:scale-[0.97] transition shrink-0 min-h-[44px]"
               style={{ backgroundColor: FD_PRIMARY }}
@@ -2113,7 +2113,7 @@ export function PurchasesPage() {
               pdfIncludeSpreadsheetTitle={false}
               spreadsheetAllowEmpty
             />
-          </div>
+            </div>
         </div>
 
         {fazendaInitDone && (
@@ -2232,7 +2232,7 @@ export function PurchasesPage() {
                     placeholder="Todos"
                     options={opcoesStatus}
                   />
-                </div>
+          </div>
                 <div className="min-w-0">
                   <label className={vendaFiltroLabelCls}>Identificação</label>
                   <VendaFilterSelect
@@ -2285,14 +2285,14 @@ export function PurchasesPage() {
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
               >
                 Limpar filtros
-              </button>
-            </div>
-          </div>
+          </button>
+        </div>
+      </div>
         ) : isLoading ? (
           <div className="px-5 py-12 text-center">
             <p className="text-[12px] text-gray-400">Carregando...</p>
-          </div>
-        ) : (
+        </div>
+      ) : (
           <TableHorizontalScroll
             fitWidth
             footer={
@@ -2390,9 +2390,9 @@ export function PurchasesPage() {
                   <th className="px-3 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Ações
                   </th>
-                </tr>
-              </thead>
-              <tbody>
+              </tr>
+            </thead>
+            <tbody>
                 {pageItems.map(c => (
                   <tr
                     key={c.id}
@@ -2453,11 +2453,11 @@ export function PurchasesPage() {
                           </TableIconButton>
                         ) : null}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           </TableHorizontalScroll>
         )}
       </div>
@@ -2710,8 +2710,8 @@ export function SalesPage() {
   return (
     <AppLayout>
       {retornoVisaoGeral ? (
-        <button
-          type="button"
+          <button
+            type="button"
           onClick={() => setLocation(retornoVisaoGeral)}
           className="mb-4 flex items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors group"
           aria-label="Voltar"
@@ -2720,7 +2720,7 @@ export function SalesPage() {
             arrow_back
           </span>
           <span className="text-[13px]">Voltar</span>
-        </button>
+          </button>
       ) : null}
       <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden min-w-0">
         <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100">
@@ -2731,8 +2731,8 @@ export function SalesPage() {
             {tituloQuadro}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
+          <button
+            type="button"
               onClick={() => setLocation(COMPRA_VENDA_VENDA_NOVA_PATH)}
               disabled={!fazendaSelecionada}
               title={fazendaSelecionada ? "Nova Venda" : "Selecione uma fazenda para registrar vendas."}
@@ -2741,8 +2741,8 @@ export function SalesPage() {
             >
               <span className="material-icons text-[16px]">add</span>
               Nova Venda
-            </button>
-            <ListExportButtons
+          </button>
+          <ListExportButtons
               title={tituloQuadro}
               filename={exportFilenameBase}
               headers={[...VENDAS_LISTAGEM_EXPORT_HEADERS]}
@@ -2769,9 +2769,9 @@ export function SalesPage() {
               pdfShowRegistrosSubtitle={false}
               pdfIncludeSpreadsheetTitle={false}
               spreadsheetAllowEmpty
-            />
-          </div>
+          />
         </div>
+      </div>
 
         {fazendaInitDone && (
           <div className="px-5 py-3 border-b border-gray-100 space-y-3">
@@ -2826,9 +2826,9 @@ export function SalesPage() {
                 <span className="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-gray-400 pointer-events-none">
                   search
                 </span>
-                <input
+        <input
                   type="text"
-                  value={busca}
+          value={busca}
                   onChange={e => {
                     setBusca(e.target.value);
                     setPage(1);
@@ -2891,8 +2891,8 @@ export function SalesPage() {
                   />
                 </div>
               </div>
-            ) : null}
-          </div>
+      ) : null}
+        </div>
         )}
 
         {emptySemFazenda ? (
@@ -2931,8 +2931,8 @@ export function SalesPage() {
                 Limpar filtros
               </button>
             </div>
-          </div>
-        ) : (
+        </div>
+      ) : (
           <TableHorizontalScroll
             fitWidth
             footer={
@@ -3041,9 +3041,9 @@ export function SalesPage() {
                   <th className="px-3 py-3 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                     Ações
                   </th>
-                </tr>
-              </thead>
-              <tbody>
+              </tr>
+            </thead>
+            <tbody>
                 {isLoading ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
@@ -3054,19 +3054,19 @@ export function SalesPage() {
                   pageItems.map(v => {
                     const precoMedio = precoMedioKgVendaListagem(v);
                     return (
-                      <tr
-                        key={v.id}
+                <tr
+                  key={v.id}
                         className="border-t border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
-                        onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
-                      >
+                  onClick={() => setLocation(compraVendaVendaDetalhePath(v.id))}
+                >
                         <td className="px-4 py-2.5 text-center text-gray-700 whitespace-nowrap">
                           {formatDateBR(v.data)}
                         </td>
                         <td className="px-4 py-2.5 text-gray-800 font-medium">{v.comprador || "—"}</td>
                         <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums">{v.quantidade}</td>
                         <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
-                          {v.pesoTotal != null ? `${Number(v.pesoTotal).toLocaleString("pt-BR")} kg` : "—"}
-                        </td>
+                    {v.pesoTotal != null ? `${Number(v.pesoTotal).toLocaleString("pt-BR")} kg` : "—"}
+                  </td>
                         <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums whitespace-nowrap">
                           {precoMedio != null
                             ? precoMedio.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
@@ -3092,15 +3092,15 @@ export function SalesPage() {
                               <ViewActionIcon size={16} />
                             </TableIconButton>
                           </div>
-                        </td>
-                      </tr>
+                  </td>
+                </tr>
                     );
                   })
                 )}
-              </tbody>
-            </table>
+            </tbody>
+          </table>
           </TableHorizontalScroll>
-        )}
+      )}
       </div>
     </AppLayout>
   );

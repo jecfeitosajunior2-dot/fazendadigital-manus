@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -20,12 +20,10 @@ import {
   TableIconButton,
 } from "@/components/icons/FarmActionIcons";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  acoesAbastecimentoLista,
+  rotuloStatusAbastecimentoLista,
+  toggleExpandedId,
+} from "@/lib/listaExpansao";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
@@ -316,66 +314,23 @@ function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
 
 function AbastecimentoRowActions({
   podeEditar,
-  podeExcluir,
-  podeEstornar,
   onEdit,
-  onExcluir,
-  onEstornar,
 }: {
   podeEditar: boolean;
-  podeExcluir: boolean;
-  podeEstornar: boolean;
   onEdit: () => void;
-  onExcluir: () => void;
-  onEstornar: () => void;
 }) {
-  const temMenu = podeExcluir || podeEstornar;
+  if (!podeEditar) return null;
   return (
-    <div className="inline-flex items-center justify-center gap-1.5">
-      {podeEditar && (
-        <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
-          <EditActionIcon size={16} />
-        </TableIconButton>
-      )}
-      {temMenu && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="grid place-items-center h-7 w-7 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-1"
-              aria-label="Mais ações"
-              title="Mais ações"
-            >
-              <span className="material-icons text-[16px]" aria-hidden>
-                more_vert
-              </span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[180px] z-[100]">
-            {podeEstornar && (
-              <DropdownMenuItem
-                className="text-[12px] cursor-pointer gap-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300"
-                onSelect={onEstornar}
-              >
-                <EstornoActionIcon size={16} />
-                Estornar abastecimento
-              </DropdownMenuItem>
-            )}
-            {podeExcluir && (
-              <>
-                {podeEstornar && <DropdownMenuSeparator />}
-                <DropdownMenuItem
-                  className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-200"
-                  onSelect={onExcluir}
-                >
-                  <DeleteActionIcon size={16} />
-                  Excluir
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+    <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
+      <EditActionIcon size={16} />
+    </TableIconButton>
+  );
+}
+
+function DetalheCampo({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="text-gray-600">
+      {label}: <span className="font-medium text-gray-800">{value}</span>
     </div>
   );
 }
@@ -393,6 +348,8 @@ export default function AbastecimentoListPage() {
   const [aplicados, setAplicados] = useState<Filtros>(FILTROS_VAZIOS);
   const [sortKey, setSortKey] = useState<SortKey>("data");
   const [sortAsc, setSortAsc] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
+  const toggleExpand = (id: number) => setExpandedIds(prev => toggleExpandedId(prev, id));
 
   const { data: registros = [], isLoading, refetch } = trpc.abastecimentos.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
@@ -1143,13 +1100,15 @@ export default function AbastecimentoListPage() {
             >
               <table className="w-full min-w-[960px] table-fixed text-[12px] border-collapse">
                 <colgroup>
+                  <col style={{ width: "40px" }} />
                   {TABLE_COLUMNS.map(col => (
                     <col key={col.key} style={{ width: col.width }} />
                   ))}
-                  <col style={{ width: "86px" }} />
+                  <col style={{ width: "72px" }} />
                 </colgroup>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-1 py-2.5 text-center w-10" aria-label="Detalhes" />
                     {TABLE_COLUMNS.map(col => {
                       const sortable = !!col.sortKey;
                       const active = col.sortKey === sortKey;
@@ -1219,7 +1178,7 @@ export default function AbastecimentoListPage() {
                 {isLoading && (
                   <tr>
                     <td
-                      colSpan={TABLE_COLUMNS.length + 1}
+                      colSpan={TABLE_COLUMNS.length + 2}
                       className="px-4 py-12 text-center text-gray-400"
                     >
                       Carregando...
@@ -1235,7 +1194,7 @@ export default function AbastecimentoListPage() {
                       movimentacoes,
                     );
                     const combustivelTxt = labelCombustivel(r.combustivel);
-                    const origemTxt = sublinhaOrigem(r);
+                    const origemTxt = sublinhaOrigem(r) ?? labelOrigem(r) ?? "—";
                     const subMaquina = sublinhaMaquinaListagem(
                       maquina as {
                         marca?: string | null;
@@ -1247,104 +1206,182 @@ export default function AbastecimentoListPage() {
                         patrimonio?: string | null;
                       } | null,
                     );
-                    const status = labelStatus(r.status);
-                    const isEstoque = Boolean(r.abastecidoNaFazenda && r.fazendaId);
-                    const isEstornado = status === "estornado";
-                    const podeEditar = !isEstornado;
-                    const podeEstornar = isEstoque && !isEstornado;
-                    const podeExcluir = !isEstoque && !isEstornado;
+                    const { podeEditar, podeEstornar, podeExcluir } = acoesAbastecimentoLista(r);
+                    const isEstornado = !podeEditar;
                     const qtd = formatNum(r.litros);
+                    const aberto = expandedIds.has(r.id);
 
                     return (
-                      <tr
-                        key={r.id}
-                        className={cn(
-                          "border-b border-gray-100 bg-white hover:bg-[#4ECDC4]/[0.05] transition-colors",
-                          isEstornado && "opacity-80",
-                        )}
-                      >
-                        <td
+                      <Fragment key={r.id}>
+                        <tr
                           className={cn(
-                            cellPad,
-                            "align-middle text-center text-gray-600 tabular-nums whitespace-nowrap pl-4",
+                            "border-b border-gray-100 bg-white hover:bg-[#4ECDC4]/[0.05] transition-colors cursor-pointer",
+                            aberto && "bg-[#4ECDC414]",
+                            isEstornado && "opacity-80",
                           )}
+                          onClick={() => toggleExpand(r.id)}
                         >
-                          {formatDate(r.data)}
-                        </td>
-                        <td className={cn(cellPad, "align-middle text-left min-w-0")}>
-                          <div
-                            className="font-semibold text-gray-900 leading-tight truncate"
-                            title={maquina?.nome ?? undefined}
-                          >
-                            {maquina?.nome ?? `#${r.maquinaId}`}
-                          </div>
-                          {subMaquina ? (
-                            <div
-                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
-                              title={subMaquina}
+                          <td className="px-1 py-2.5 align-middle text-center">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center w-7 h-7 rounded text-gray-500 hover:bg-gray-100"
+                              aria-label={aberto ? "Recolher detalhes" : "Ver detalhes"}
+                              onClick={e => {
+                                e.stopPropagation();
+                                toggleExpand(r.id);
+                              }}
                             >
-                              {subMaquina}
-                            </div>
-                          ) : null}
-                          {isEstornado && (
-                            <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
-                              Estornado
-                            </span>
-                          )}
-                        </td>
-                        <td className={cn(cellPad, "align-middle text-center min-w-0")}>
-                          <div
-                            className="text-gray-800 leading-tight truncate"
-                            title={combustivelTxt}
+                              <span className="material-icons text-[18px]">
+                                {aberto ? "expand_less" : "expand_more"}
+                              </span>
+                            </button>
+                          </td>
+                          <td
+                            className={cn(
+                              cellPad,
+                              "align-middle text-center text-gray-600 tabular-nums whitespace-nowrap pl-4",
+                            )}
                           >
-                            {combustivelTxt}
-                          </div>
-                          {origemTxt ? (
+                            {formatDate(r.data)}
+                          </td>
+                          <td className={cn(cellPad, "align-middle text-left min-w-0")}>
                             <div
-                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
-                              title={origemTxt}
+                              className="font-semibold text-gray-900 leading-tight truncate"
+                              title={maquina?.nome ?? undefined}
                             >
-                              {origemTxt}
+                              {maquina?.nome ?? `#${r.maquinaId}`}
                             </div>
-                          ) : null}
-                        </td>
-                        <td
-                          className={cn(
-                            cellPad,
-                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
-                          )}
-                        >
-                          {qtd !== "—" ? `${qtd} L` : "—"}
-                        </td>
-                        <td
-                          className={cn(
-                            cellPad,
-                            "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
-                          )}
-                        >
-                          {formatMoney(valorLitro)}
-                        </td>
-                        <td
-                          className={cn(
-                            cellPad,
-                            "align-middle text-center text-gray-800 font-semibold tabular-nums whitespace-nowrap pr-5",
-                          )}
-                        >
-                          {formatMoney(valorTotal)}
-                        </td>
-                        <td className={cn(cellPad, "align-middle text-center pl-3 pr-4")}>
-                          <AbastecimentoRowActions
-                            podeEditar={podeEditar}
-                            podeExcluir={podeExcluir}
-                            podeEstornar={podeEstornar}
-                            onEdit={() =>
-                              setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)
-                            }
-                            onExcluir={() => void pedirExcluir(r.id)}
-                            onEstornar={() => void pedirEstornar(r.id)}
-                          />
-                        </td>
-                      </tr>
+                            {subMaquina ? (
+                              <div
+                                className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                                title={subMaquina}
+                              >
+                                {subMaquina}
+                              </div>
+                            ) : null}
+                            {isEstornado && (
+                              <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                Estornado
+                              </span>
+                            )}
+                          </td>
+                          <td className={cn(cellPad, "align-middle text-center min-w-0")}>
+                            <div
+                              className="text-gray-800 leading-tight truncate"
+                              title={combustivelTxt}
+                            >
+                              {combustivelTxt}
+                            </div>
+                            {origemTxt && origemTxt !== "—" ? (
+                              <div
+                                className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                                title={origemTxt}
+                              >
+                                {origemTxt}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td
+                            className={cn(
+                              cellPad,
+                              "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
+                            )}
+                          >
+                            {qtd !== "—" ? `${qtd} L` : "—"}
+                          </td>
+                          <td
+                            className={cn(
+                              cellPad,
+                              "align-middle text-center text-gray-700 tabular-nums whitespace-nowrap px-2.5",
+                            )}
+                          >
+                            {formatMoney(valorLitro)}
+                          </td>
+                          <td
+                            className={cn(
+                              cellPad,
+                              "align-middle text-center text-gray-800 font-semibold tabular-nums whitespace-nowrap pr-5",
+                            )}
+                          >
+                            {formatMoney(valorTotal)}
+                          </td>
+                          <td
+                            className={cn(cellPad, "align-middle text-center pl-3 pr-4")}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <AbastecimentoRowActions
+                              podeEditar={podeEditar}
+                              onEdit={() =>
+                                setLocation(`/maquinas/abastecimento/cadastro?id=${r.id}`)
+                              }
+                            />
+                          </td>
+                        </tr>
+                        {aberto ? (
+                          <tr className="bg-slate-50/80 border-b border-gray-100">
+                            <td colSpan={TABLE_COLUMNS.length + 2} className="px-3 py-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12px]">
+                                <DetalheCampo
+                                  label="Máquina"
+                                  value={maquina?.nome ?? `#${r.maquinaId}`}
+                                />
+                                <DetalheCampo label="Data" value={formatDate(r.data)} />
+                                <DetalheCampo label="Combustível" value={combustivelTxt} />
+                                <DetalheCampo label="Origem do abastecimento" value={origemTxt} />
+                                <DetalheCampo
+                                  label="Quantidade"
+                                  value={qtd !== "—" ? `${qtd} L` : "—"}
+                                />
+                                <DetalheCampo label="Valor por litro" value={formatMoney(valorLitro)} />
+                                <DetalheCampo label="Valor total" value={formatMoney(valorTotal)} />
+                                {r.horimetro?.trim() ? (
+                                  <DetalheCampo label="Horímetro" value={r.horimetro} />
+                                ) : null}
+                                {r.responsavel?.trim() ? (
+                                  <DetalheCampo label="Responsável" value={r.responsavel} />
+                                ) : null}
+                                {!r.abastecidoNaFazenda && r.fornecedor?.trim() ? (
+                                  <DetalheCampo label="Fornecedor" value={r.fornecedor} />
+                                ) : null}
+                                {r.observacoes?.trim() ? (
+                                  <DetalheCampo label="Observações" value={r.observacoes} />
+                                ) : null}
+                                <DetalheCampo
+                                  label="Situação do registro"
+                                  value={rotuloStatusAbastecimentoLista(r.status)}
+                                />
+                              </div>
+                              {(podeEstornar || podeExcluir) ? (
+                                <div
+                                  className="mt-3 flex flex-wrap justify-end gap-2"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  {podeEstornar ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void pedirEstornar(r.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-semibold border border-amber-200 bg-white text-amber-800 hover:bg-amber-50"
+                                    >
+                                      <EstornoActionIcon size={16} />
+                                      Estornar abastecimento
+                                    </button>
+                                  ) : null}
+                                  {podeExcluir ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void pedirExcluir(r.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-semibold border border-red-200 bg-white text-red-700 hover:bg-red-50"
+                                    >
+                                      <DeleteActionIcon size={16} />
+                                      Excluir
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
               </tbody>

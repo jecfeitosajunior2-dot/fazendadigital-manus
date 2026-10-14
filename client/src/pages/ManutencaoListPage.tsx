@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -17,20 +17,26 @@ import { formatDateBR } from "@/lib/date-utils";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { DeleteActionIcon, EditActionIcon, EstornoActionIcon, TableIconButton } from "@/components/icons/FarmActionIcons";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  camposOpcionaisDetalheManutencao,
+  rotuloStatusManutencaoLista,
+  rotuloTipoExecucaoLista,
+  toggleExpandedId,
+} from "@/lib/listaExpansao";
+import { pecaItemDeRegistro, rotuloOrigemPeca } from "@shared/manutencaoPecasFormulario";
 import {
   persistRebanhoFazendaId,
   readPersistedRebanhoFazendaId,
 } from "@shared/animal-filter-types";
+import { acoesMenuManutencao } from "@shared/manutencaoAcoes";
 import {
   descricaoServicoParaListagem,
   isDescricaoServicoValida,
 } from "@shared/manutencaoDescricao";
+import {
+  ordenarManutencoesListagem,
+  paginarManutencoesListagem,
+  type SortKeyManutencaoListagem,
+} from "@/lib/manutencaoListagem";
 
 const FD_PRIMARY = "#4ECDC4";
 
@@ -87,7 +93,7 @@ function ManutencaoFilterSelect({
 
 const TIPOS_CADASTRO = ["Preventiva", "Corretiva"] as const;
 
-type SortKey = "data" | "valor" | "maquina" | "tipo";
+type SortKey = SortKeyManutencaoListagem;
 
 type Filtros = {
   tipo: string;
@@ -139,66 +145,79 @@ function manutencaoEstornada(status: string | null | undefined): boolean {
 
 function ManutencaoRowActions({
   podeEditar,
-  podeExcluir,
-  podeEstornar,
   onEdit,
-  onExcluir,
-  onEstornar,
 }: {
   podeEditar: boolean;
-  podeExcluir: boolean;
-  podeEstornar: boolean;
   onEdit: () => void;
-  onExcluir: () => void;
-  onEstornar: () => void;
 }) {
-  const temMenu = podeExcluir || podeEstornar;
+  if (!podeEditar) return null;
   return (
-    <div className="inline-flex items-center justify-center gap-0.5">
-      {podeEditar && (
-        <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
-          <EditActionIcon size={16} />
-        </TableIconButton>
-      )}
-      {temMenu && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="grid place-items-center h-7 w-6 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
-              aria-label="Mais ações"
-              title="Mais ações"
-            >
-              <span className="material-icons text-[16px]" aria-hidden>
-                more_vert
-              </span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[180px] z-[100]">
-            {podeEstornar && (
-              <DropdownMenuItem
-                className="text-[12px] cursor-pointer gap-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-300"
-                onSelect={onEstornar}
-              >
-                <EstornoActionIcon size={16} />
-                Estornar manutenção
-              </DropdownMenuItem>
-            )}
-            {podeExcluir && (
-              <>
-                {podeEstornar && <DropdownMenuSeparator />}
-                <DropdownMenuItem
-                  className="text-[12px] cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
-                  onSelect={onExcluir}
-                >
-                  <DeleteActionIcon size={16} />
-                  Excluir
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+    <TableIconButton label="Editar" onClick={onEdit} tone="neutral" compact>
+      <EditActionIcon size={16} />
+    </TableIconButton>
+  );
+}
+
+function DetalheCampo({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="text-gray-600">
+      {label}: <span className="font-medium text-gray-800">{value}</span>
+    </div>
+  );
+}
+
+function ManutencaoPecasExpandido({ manutencaoId }: { manutencaoId: number }) {
+  const { data: pecas = [], isLoading } = trpc.manutencoes.listPecas.useQuery({ manutencaoId });
+  if (isLoading) {
+    return <p className="text-[12px] text-gray-500">Carregando peças…</p>;
+  }
+  if (pecas.length === 0) {
+    return <p className="text-[12px] text-gray-500">Nenhuma peça registrada.</p>;
+  }
+  return (
+    <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+      <table className="w-full text-[12px] border-collapse">
+        <thead className="bg-gray-50 border-b border-gray-100">
+          <tr>
+            <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+              Peça
+            </th>
+            <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+              Origem
+            </th>
+            <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+              Qtd
+            </th>
+            <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+              Valor unitário
+            </th>
+            <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+              Total
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {pecas.map((p, i) => {
+            const item = pecaItemDeRegistro(p);
+            const origem = rotuloOrigemPeca(item) ?? "—";
+            return (
+              <tr key={p.id ?? `${manutencaoId}-${i}`} className="border-b border-gray-50 last:border-0">
+                <td className="px-3 py-2 font-medium text-gray-900">{item.nome || "—"}</td>
+                <td className="px-3 py-2 text-center text-gray-700">{origem}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                  {item.quantidade.toLocaleString("pt-BR")}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                  {formatMoney(item.valorUnitario)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-900 font-medium">
+                  {formatMoney(item.quantidade * item.valorUnitario)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -290,6 +309,8 @@ export default function ManutencaoListPage() {
   const [aplicados, setAplicados] = useState<Filtros>(FILTROS_VAZIOS);
   const [sortKey, setSortKey] = useState<SortKey>("data");
   const [sortAsc, setSortAsc] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
+  const toggleExpand = (id: number) => setExpandedIds(prev => toggleExpandedId(prev, id));
 
   const { data: registros = [], isLoading, refetch } = trpc.manutencoes.list.useQuery({});
   const { data: maquinas = [] } = trpc.maquinas.list.useQuery();
@@ -358,8 +379,8 @@ export default function ManutencaoListPage() {
       title: "Estornar manutenção",
       description: (
         <p>
-          A manutenção será cancelada e as peças consumidas do estoque serão devolvidas. O histórico
-          será preservado.
+          Esta manutenção será cancelada e seu histórico será preservado. Caso existam peças
+          consumidas do estoque da fazenda, elas serão devolvidas conforme os registros originais.
         </p>
       ),
       confirmText: "Estornar manutenção",
@@ -556,28 +577,15 @@ export default function ManutencaoListPage() {
     });
   }, [filtroFazenda, registrosDaFazenda, aplicados, search, maquinaMap]);
 
-  const sorted = useMemo(() => {
-    const list = [...filtered];
-    list.sort((a, b) => {
-      const ma = maquinaMap.get(a.maquinaId);
-      const mb = maquinaMap.get(b.maquinaId);
-      let cmp = 0;
-      if (sortKey === "data") {
-        cmp = dataISO(a.data).localeCompare(dataISO(b.data));
-      } else if (sortKey === "valor") {
-        cmp =
-          (parseFloat(String(a.valorTotal ?? 0)) || 0) -
-          (parseFloat(String(b.valorTotal ?? 0)) || 0);
-      } else if (sortKey === "maquina") {
-        cmp = (ma?.nome ?? "").localeCompare(mb?.nome ?? "", "pt-BR");
-      } else if (sortKey === "tipo") {
-        cmp = (a.tipo ?? "").localeCompare(b.tipo ?? "", "pt-BR");
-      }
-      if (cmp === 0) cmp = b.id - a.id;
-      return sortAsc ? cmp : -cmp;
-    });
-    return list;
-  }, [filtered, sortKey, sortAsc, maquinaMap]);
+  const sorted = useMemo(
+    () =>
+      ordenarManutencoesListagem(filtered, {
+        sortKey,
+        sortAsc,
+        nomeMaquina: row => maquinaMap.get(row.maquinaId)?.nome ?? "",
+      }),
+    [filtered, sortKey, sortAsc, maquinaMap],
+  );
 
   const totalCusto = useMemo(
     () =>
@@ -590,7 +598,7 @@ export default function ManutencaoListPage() {
   );
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
+  const pageItems = paginarManutencoesListagem(sorted, page, pageSize);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -986,17 +994,19 @@ export default function ManutencaoListPage() {
                 ) : null
               }
             >
-              <table className="w-full min-w-[860px] table-fixed text-[12px] border-collapse">
+              <table className="w-full min-w-[900px] table-fixed text-[12px] border-collapse">
                 <colgroup>
+                  <col style={{ width: "40px" }} />
                   <col style={{ width: "110px" }} />
                   <col style={{ width: "22%" }} />
                   <col style={{ width: "110px" }} />
                   <col />
                   <col style={{ width: "130px" }} />
-                  <col style={{ width: "88px" }} />
+                  <col style={{ width: "72px" }} />
                 </colgroup>
                 <thead className="bg-gray-100 border-b border-gray-200">
                   <tr>
+                    <th className="px-1 py-3 text-center w-10" aria-label="Detalhes" />
                     <th className="px-4 py-3 text-center">
                       <button
                         type="button"
@@ -1048,7 +1058,7 @@ export default function ManutencaoListPage() {
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-16 text-center text-gray-400">
+                      <td colSpan={7} className="px-4 py-16 text-center text-gray-400">
                         Carregando...
                       </td>
                     </tr>
@@ -1072,79 +1082,193 @@ export default function ManutencaoListPage() {
                         r.oficina,
                       );
                       const isEstornado = manutencaoEstornada(r.status);
-                      const consumiuEstoque = Boolean(
-                        (r as { consumiuEstoque?: boolean }).consumiuEstoque,
-                      );
+                      const { podeEstornar, podeExcluir } = acoesMenuManutencao(r.status);
                       const podeEditar = !isEstornado;
-                      const podeEstornar = consumiuEstoque && !isEstornado;
-                      const podeExcluir = !consumiuEstoque && !isEstornado;
+                      const aberto = expandedIds.has(r.id);
+                      const opcionais = camposOpcionaisDetalheManutencao({
+                        tipoExecucao: (r as { tipoExecucao?: string | null }).tipoExecucao,
+                        prestadorContato: r.prestadorContato,
+                        horimetro: r.horimetro,
+                        proximaManutencao: r.proximaManutencao,
+                      });
                       return (
-                        <tr
-                          key={r.id}
-                          className={cn(
-                            "border-b border-gray-100 hover:bg-[#4ECDC414] transition-colors group",
-                            isEstornado && "opacity-80",
-                          )}
-                        >
-                          <td className="px-4 py-3 text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
-                            {formatDateBR(r.data)}
-                          </td>
-                          <td className="px-4 py-3 align-middle text-left min-w-0">
-                            <div className="font-semibold text-gray-900 leading-tight truncate" title={maquina?.nome}>
-                              {maquina?.nome ?? `#${r.maquinaId}`}
-                            </div>
-                            {subMaquina ? (
+                        <Fragment key={r.id}>
+                          <tr
+                            className={cn(
+                              "border-b border-gray-100 hover:bg-[#4ECDC414] transition-colors group cursor-pointer",
+                              aberto && "bg-[#4ECDC414]",
+                              isEstornado && "opacity-80",
+                            )}
+                            onClick={() => toggleExpand(r.id)}
+                          >
+                            <td className="px-1 py-3 align-middle text-center">
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded text-gray-500 hover:bg-gray-100"
+                                aria-label={aberto ? "Recolher detalhes" : "Ver detalhes"}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  toggleExpand(r.id);
+                                }}
+                              >
+                                <span className="material-icons text-[18px]">
+                                  {aberto ? "expand_less" : "expand_more"}
+                                </span>
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 text-center text-gray-800 tabular-nums whitespace-nowrap align-middle">
+                              {formatDateBR(r.data)}
+                            </td>
+                            <td className="px-4 py-3 align-middle text-left min-w-0">
+                              <div className="font-semibold text-gray-900 leading-tight truncate" title={maquina?.nome}>
+                                {maquina?.nome ?? `#${r.maquinaId}`}
+                              </div>
+                              {subMaquina ? (
+                                <div
+                                  className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
+                                  title={subMaquina}
+                                >
+                                  {subMaquina}
+                                </div>
+                              ) : null}
+                              {isEstornado ? (
+                                <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                  Estornado
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3 text-center align-middle">
+                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-50 text-slate-700 border border-slate-100">
+                                {r.tipo ?? "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 align-middle text-center min-w-0">
+                              <div
+                                className={cn(
+                                  "leading-tight truncate",
+                                  servicoFallback ? "text-gray-400" : "text-gray-800",
+                                )}
+                                title={servico}
+                              >
+                                {servico}
+                              </div>
                               <div
                                 className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
-                                title={subMaquina}
+                                title={responsavel}
                               >
-                                {subMaquina}
+                                {responsavel}
                               </div>
-                            ) : null}
-                            {isEstornado ? (
-                              <span className="inline-flex mt-0.5 items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100">
-                                Estornado
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-3 text-center align-middle">
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-50 text-slate-700 border border-slate-100">
-                              {r.tipo ?? "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 align-middle text-center min-w-0">
-                            <div
-                              className={cn(
-                                "leading-tight truncate",
-                                servicoFallback ? "text-gray-400" : "text-gray-800",
-                              )}
-                              title={servico}
-                            >
-                              {servico}
-                            </div>
-                            <div
-                              className="text-[11px] text-gray-500 leading-tight truncate mt-0.5"
-                              title={responsavel}
-                            >
-                              {responsavel}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center text-gray-900 font-medium tabular-nums whitespace-nowrap align-middle">
-                            {formatMoney(r.valorTotal)}
-                          </td>
-                          <td className="px-3 py-3 align-middle text-center" onClick={e => e.stopPropagation()}>
-                            <ManutencaoRowActions
-                              podeEditar={podeEditar}
-                              podeExcluir={podeExcluir}
-                              podeEstornar={podeEstornar}
-                              onEdit={() =>
-                                setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)
-                              }
-                              onExcluir={() => void handleDelete(r.id)}
-                              onEstornar={() => void handleEstornar(r.id)}
-                            />
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="px-4 py-3 text-center text-gray-900 font-medium tabular-nums whitespace-nowrap align-middle">
+                              {formatMoney(r.valorTotal)}
+                            </td>
+                            <td className="px-3 py-3 align-middle text-center" onClick={e => e.stopPropagation()}>
+                              <ManutencaoRowActions
+                                podeEditar={podeEditar}
+                                onEdit={() =>
+                                  setLocation(`/maquinas/manutencao/cadastro?id=${r.id}`)
+                                }
+                              />
+                            </td>
+                          </tr>
+                          {aberto ? (
+                            <tr className="bg-slate-50/80 border-b border-gray-100">
+                              <td colSpan={7} className="px-3 py-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12px]">
+                                  <DetalheCampo label="Máquina" value={maquina?.nome ?? `#${r.maquinaId}`} />
+                                  <DetalheCampo label="Data da manutenção" value={formatDateBR(r.data)} />
+                                  <DetalheCampo label="Tipo de manutenção" value={r.tipo ?? "—"} />
+                                  <DetalheCampo label="Serviço realizado" value={servico} />
+                                  <DetalheCampo
+                                    label="Tipo de execução"
+                                    value={rotuloTipoExecucaoLista(
+                                      (r as { tipoExecucao?: string | null }).tipoExecucao,
+                                    )}
+                                  />
+                                  <DetalheCampo label="Responsável ou prestador" value={responsavel} />
+                                  {opcionais.telefone ? (
+                                    <DetalheCampo label="Telefone" value={r.prestadorContato} />
+                                  ) : null}
+                                  {opcionais.horimetro ? (
+                                    <DetalheCampo label="Horímetro" value={r.horimetro} />
+                                  ) : null}
+                                  {opcionais.proximaManutencao ? (
+                                    <DetalheCampo
+                                      label="Próxima manutenção"
+                                      value={formatDateBR(r.proximaManutencao)}
+                                    />
+                                  ) : null}
+                                  <DetalheCampo
+                                    label="Status da manutenção"
+                                    value={rotuloStatusManutencaoLista(r.status)}
+                                  />
+                                </div>
+                                <div className="mt-3">
+                                  <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                                    Peças utilizadas
+                                  </div>
+                                  <ManutencaoPecasExpandido manutencaoId={r.id} />
+                                </div>
+                                <div className="mt-3 flex justify-end">
+                                  <div className="text-right text-[12px] space-y-1 min-w-[220px]">
+                                    {opcionais.maoObra ? (
+                                      <div className="text-gray-600">
+                                        Mão de obra:{" "}
+                                        <span className="font-semibold text-gray-900 tabular-nums">
+                                          {formatMoney(r.valorMaoObra)}
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                    <div className="text-gray-800 pt-1 border-t border-gray-200">
+                                      Custo total:{" "}
+                                      <span className="font-semibold tabular-nums">
+                                        {formatMoney(r.valorTotal)}
+                                      </span>
+                                    </div>
+                                    {opcionais.valorCobradoOficina ? (
+                                      <div className="text-gray-600">
+                                        Valor cobrado pela oficina:{" "}
+                                        <span className="font-semibold text-gray-900 tabular-nums">
+                                          {formatMoney(
+                                            (r as { valorCobradoOficina?: string | number | null })
+                                              .valorCobradoOficina,
+                                          )}
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                {(podeEstornar || podeExcluir) ? (
+                                  <div
+                                    className="mt-3 flex flex-wrap justify-end gap-2"
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {podeEstornar ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleEstornar(r.id)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-semibold border border-amber-200 bg-white text-amber-800 hover:bg-amber-50"
+                                      >
+                                        <EstornoActionIcon size={16} />
+                                        Estornar manutenção
+                                      </button>
+                                    ) : null}
+                                    {podeExcluir ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDelete(r.id)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-semibold border border-red-200 bg-white text-red-700 hover:bg-red-50"
+                                      >
+                                        <DeleteActionIcon size={16} />
+                                        Excluir
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       );
                     })
                   )}

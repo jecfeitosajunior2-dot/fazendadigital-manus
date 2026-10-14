@@ -348,9 +348,17 @@ export const manutencoes = mysqlTable("manutencoes", {
   // Prestador de serviço (mão de obra externa)
   prestadorNome: varchar("prestadorNome", { length: 200 }),
   prestadorContato: varchar("prestadorContato", { length: 100 }),
+  /** Pessoas.id do fornecedor. NULL = OS antiga ou interna (não inferir pelo nome). */
+  prestadorPessoaId: int("prestadorPessoaId"),
+  /** interna | externa. NULL = registro anterior à Fase 2 (não inferir). */
+  tipoExecucao: varchar("tipoExecucao", { length: 20 }),
   valorMaoObra: decimal("valorMaoObra", { precision: 10, scale: 2 }).default("0"),
   // Totais consolidados
   valorPecas: decimal("valorPecas", { precision: 10, scale: 2 }).default("0"),
+  /** Peças fornecidas pela oficina. NULL = registro anterior à Fase 2. */
+  valorPecasOficina: decimal("valorPecasOficina", { precision: 10, scale: 2 }),
+  /** Peças da oficina + mão de obra. NULL = registro anterior à Fase 2. */
+  valorCobradoOficina: decimal("valorCobradoOficina", { precision: 10, scale: 2 }),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).default("0"),
   observacoes: text("observacoes"),
   estornadoEm: timestamp("estornadoEm"),
@@ -369,6 +377,8 @@ export const manutencaoPecas = mysqlTable("manutencao_pecas", {
   valorUnitario: decimal("valorUnitario", { precision: 10, scale: 2 }).notNull().default("0"),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).notNull().default("0"),
   estoqueMovimentacaoId: int("estoqueMovimentacaoId"),
+  /** estoque | oficina. NULL = registro anterior à Fase 2 (não inferir oficina). */
+  origem: varchar("origem", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

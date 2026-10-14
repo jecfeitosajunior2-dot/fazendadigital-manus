@@ -31,6 +31,9 @@ export async function ensureManutencaoEstoqueSchema(pool: mysql.Pool) {
         `CREATE INDEX \`manutencao_pecas_estoque_mov_idx\` ON \`manutencao_pecas\` (\`estoqueMovimentacaoId\`)`,
       );
     }
+    if (!(await columnExists(pool, "manutencao_pecas", "origem"))) {
+      await pool.query(`ALTER TABLE \`manutencao_pecas\` ADD COLUMN \`origem\` varchar(20) NULL`);
+    }
   }
 
   if (await tableExists(pool, "manutencoes")) {
@@ -39,6 +42,22 @@ export async function ensureManutencaoEstoqueSchema(pool: mysql.Pool) {
     }
     if (!(await columnExists(pool, "manutencoes", "motivoEstorno"))) {
       await pool.query(`ALTER TABLE \`manutencoes\` ADD COLUMN \`motivoEstorno\` text NULL`);
+    }
+    if (!(await columnExists(pool, "manutencoes", "tipoExecucao"))) {
+      await pool.query(`ALTER TABLE \`manutencoes\` ADD COLUMN \`tipoExecucao\` varchar(20) NULL`);
+    }
+    if (!(await columnExists(pool, "manutencoes", "valorPecasOficina"))) {
+      await pool.query(
+        `ALTER TABLE \`manutencoes\` ADD COLUMN \`valorPecasOficina\` decimal(10,2) NULL`,
+      );
+    }
+    if (!(await columnExists(pool, "manutencoes", "valorCobradoOficina"))) {
+      await pool.query(
+        `ALTER TABLE \`manutencoes\` ADD COLUMN \`valorCobradoOficina\` decimal(10,2) NULL`,
+      );
+    }
+    if (!(await columnExists(pool, "manutencoes", "prestadorPessoaId"))) {
+      await pool.query(`ALTER TABLE \`manutencoes\` ADD COLUMN \`prestadorPessoaId\` int NULL`);
     }
   }
 }

@@ -553,6 +553,7 @@ export type LocalManutencaoPeca = {
   quantidade: string;
   valorUnitario: string;
   valorTotal: string;
+  origem?: string | null;
 };
 
 export type LocalManutencao = Record<string, any> & {
@@ -567,8 +568,12 @@ export type LocalManutencao = Record<string, any> & {
   status?: string | null;
   prestadorNome?: string | null;
   prestadorContato?: string | null;
+  prestadorPessoaId?: number | null;
+  tipoExecucao?: string | null;
   valorMaoObra?: string | null;
   valorPecas?: string | null;
+  valorPecasOficina?: string | null;
+  valorCobradoOficina?: string | null;
   valorTotal?: string | null;
   custo?: string | null;
   observacoes?: string | null;
@@ -625,8 +630,12 @@ export async function createLocalManutencao(
     status?: string;
     prestadorNome?: string;
     prestadorContato?: string;
+    prestadorPessoaId?: number | null;
+    tipoExecucao?: string | null;
     valorMaoObra?: string;
     valorPecas?: string;
+    valorPecasOficina?: string;
+    valorCobradoOficina?: string;
     valorTotal?: string;
     custo?: string;
     observacoes?: string;
@@ -648,8 +657,12 @@ export async function createLocalManutencao(
     status: input.status ?? "concluida",
     prestadorNome: input.prestadorNome ?? null,
     prestadorContato: input.prestadorContato ?? null,
+    prestadorPessoaId: input.prestadorPessoaId ?? null,
+    tipoExecucao: input.tipoExecucao ?? null,
     valorMaoObra: input.valorMaoObra ?? "0",
     valorPecas: input.valorPecas ?? "0",
+    valorPecasOficina: input.valorPecasOficina ?? null,
+    valorCobradoOficina: input.valorCobradoOficina ?? null,
     valorTotal: input.valorTotal ?? "0",
     custo: input.custo ?? input.valorTotal ?? "0",
     observacoes: input.observacoes ?? null,
@@ -683,6 +696,8 @@ export async function updateLocalManutencao(
       status: input.status ?? "concluida",
       prestadorNome: input.prestadorNome ?? null,
       prestadorContato: input.prestadorContato ?? null,
+      prestadorPessoaId: input.prestadorPessoaId ?? null,
+      tipoExecucao: input.tipoExecucao ?? null,
       valorMaoObra: input.valorMaoObra ?? "0",
       valorPecas: input.valorPecas ?? "0",
       valorTotal: input.valorTotal ?? "0",
