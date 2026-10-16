@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { estoque, manutencaoPecas, manutencoes } from "../drizzle/schema";
 import { db } from "./db";
 import {
@@ -58,6 +58,7 @@ export function criarPersistenciaCompletaCtx(tx: DrizzleLike): PersistenciaCompl
         valorTotal: row.valorTotal,
         custo: row.custo,
         observacoes: row.observacoes ?? undefined,
+        ...(row.chaveOperacao ? { chaveOperacao: row.chaveOperacao } : {}),
       });
       return insertIdOf(result);
     },
@@ -90,6 +91,34 @@ export function criarPersistenciaCompletaCtx(tx: DrizzleLike): PersistenciaCompl
         valorPecas: Number(row?.valorPecas ?? 0),
         valorMaoObra: Number(row?.valorMaoObra ?? 0),
       };
+    },
+    async findOsPorChaveOperacao(userId, chave) {
+      const [row] = await tx
+        .select({
+          id: manutencoes.id,
+          userId: manutencoes.userId,
+          maquinaId: manutencoes.maquinaId,
+          data: manutencoes.data,
+          tipoExecucao: manutencoes.tipoExecucao,
+          prestadorPessoaId: manutencoes.prestadorPessoaId,
+          valorMaoObra: manutencoes.valorMaoObra,
+          valorCobradoOficina: manutencoes.valorCobradoOficina,
+        })
+        .from(manutencoes)
+        .where(and(eq(manutencoes.userId, userId), eq(manutencoes.chaveOperacao, chave)))
+        .limit(1);
+      if (!row) return null;
+      const pecas = await tx
+        .select({
+          estoqueId: manutencaoPecas.estoqueId,
+          nome: manutencaoPecas.nome,
+          quantidade: manutencaoPecas.quantidade,
+          valorUnitario: manutencaoPecas.valorUnitario,
+          origem: manutencaoPecas.origem,
+        })
+        .from(manutencaoPecas)
+        .where(eq(manutencaoPecas.manutencaoId, row.id));
+      return { ...row, pecas };
     },
     async atualizarComplementoOs(osId, patch: ComplementoOsPatch) {
       await tx

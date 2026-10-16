@@ -35,6 +35,8 @@ export type FinanceiroCondicaoStatus = (typeof FINANCEIRO_CONDICOES)[number];
 
 export const FINANCEIRO_ORIGEM_MANUAL = "manual";
 export const FINANCEIRO_ORIGEM_COMPRA_INSUMOS = "compra_insumos";
+/** OS terceirizada. Ainda não emitida automaticamente (Fase 3B.1). */
+export const FINANCEIRO_ORIGEM_MANUTENCAO = "manutencao";
 
 export const FINANCEIRO_LIQUIDACAO_TIPOS = [
   "pagamento",

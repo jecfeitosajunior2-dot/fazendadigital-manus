@@ -52,6 +52,7 @@ export function criarManutencaoEstoqueTx(tx: DrizzleLike): ManutencaoEstoqueTx {
         valorTotal: row.valorTotal,
         custo: row.custo,
         observacoes: row.observacoes ?? undefined,
+        ...(row.chaveOperacao ? { chaveOperacao: row.chaveOperacao } : {}),
       });
       return insertIdOf(result);
     },
@@ -79,7 +80,13 @@ export function criarManutencaoEstoqueTx(tx: DrizzleLike): ManutencaoEstoqueTx {
     },
     async findOs(userId, id) {
       const [row] = await tx
-        .select()
+        .select({
+          id: manutencoes.id,
+          userId: manutencoes.userId,
+          maquinaId: manutencoes.maquinaId,
+          status: manutencoes.status,
+          valorMaoObra: manutencoes.valorMaoObra,
+        })
         .from(manutencoes)
         .where(and(eq(manutencoes.id, id), eq(manutencoes.userId, userId)));
       return (row as ManutencaoOsRow | undefined) ?? null;

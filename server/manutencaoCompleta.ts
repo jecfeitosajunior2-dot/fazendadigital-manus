@@ -30,6 +30,7 @@ export type PersistirManutencaoCompletaInput = Omit<PersistirManutencaoInput, "f
   tipoExecucao?: string | null;
   pecasOficina?: PecaOficinaNormalizada[];
   prestadorPessoaId?: number | null;
+  chaveOperacao?: string | null;
 };
 
 export type ComplementoOsPatch = {
@@ -40,6 +41,24 @@ export type ComplementoOsPatch = {
   valorCobradoOficina: string;
   valorTotal: string;
   custo: string;
+};
+
+export type OsChaveOperacaoSnapshot = {
+  id: number;
+  userId: number;
+  maquinaId: number;
+  data: string;
+  tipoExecucao?: string | null;
+  prestadorPessoaId?: number | null;
+  valorMaoObra: string | number;
+  valorCobradoOficina?: string | number | null;
+  pecas: Array<{
+    estoqueId?: number | null;
+    nome?: string | null;
+    quantidade?: string | number | null;
+    valorUnitario?: string | number | null;
+    origem?: string | null;
+  }>;
 };
 
 export type PersistenciaCompletaCtx = {
@@ -65,7 +84,12 @@ export type PersistenciaCompletaCtx = {
     valorTotal: string;
     custo: string;
     observacoes?: string | null;
+    chaveOperacao?: string | null;
   }) => Promise<number>;
+  findOsPorChaveOperacao?: (
+    userId: number,
+    chave: string,
+  ) => Promise<OsChaveOperacaoSnapshot | null>;
   marcarOrigemEstoque: (pecaIds: number[]) => Promise<void>;
   gravarPecasOficina: (osId: number, pecas: PecaOficinaNormalizada[]) => Promise<number[]>;
   lerTotaisOs: (osId: number) => Promise<{ valorPecas: number; valorMaoObra: number }>;
@@ -141,6 +165,7 @@ export async function persistirManutencaoCompletaNoTx(
       valorMaoObra: input.valorMaoObra,
       observacoes: input.observacoes,
       pecas: input.pecas,
+      chaveOperacao: input.chaveOperacao ?? undefined,
     });
     await ctx.marcarOrigemEstoque(persistido.pecaIds);
     const pecaOficinaIds = await ctx.gravarPecasOficina(persistido.id, pecasOficina);
@@ -186,6 +211,7 @@ export async function persistirManutencaoCompletaNoTx(
     valorTotal: persistirCapital(custos.valorTotal),
     custo: persistirCapital(custos.valorTotal),
     observacoes: input.observacoes,
+    chaveOperacao: input.chaveOperacao ?? undefined,
   });
   if (!osId) {
     throw new ManutencaoEstoqueError("Não foi possível gravar a manutenção.");

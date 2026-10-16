@@ -89,6 +89,8 @@ export type ManutencaoOsInsert = {
   valorTotal: string;
   custo: string;
   observacoes?: string | null;
+  /** Só preenchida pelo orquestrador A pagar. O motor patrimonial não gera essa chave. */
+  chaveOperacao?: string | null;
 };
 
 export type ManutencaoEstoqueTx = EstoqueMovimentacaoExecutor & {
@@ -136,6 +138,8 @@ export type PersistirManutencaoInput = {
   valorMaoObra: number;
   observacoes?: string | null;
   pecas: ManutencaoPecaResolvida[];
+  /** Só preenchida pelo orquestrador A pagar. Não altera custo médio nem snapshot. */
+  chaveOperacao?: string | null;
 };
 
 export type EstornarManutencaoInput = {
@@ -176,6 +180,7 @@ export async function persistirManutencaoComPecasNoTx(
     valorTotal: persistirCapital(totaisPrevistos + maoObra),
     custo: persistirCapital(totaisPrevistos + maoObra),
     observacoes: input.observacoes,
+    chaveOperacao: input.chaveOperacao ?? undefined,
   });
   if (!osId) {
     throw new ManutencaoEstoqueError("Não foi possível gravar a manutenção.");

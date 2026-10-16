@@ -360,12 +360,19 @@ export const manutencoes = mysqlTable("manutencoes", {
   /** Peças da oficina + mão de obra. NULL = registro anterior à Fase 2. */
   valorCobradoOficina: decimal("valorCobradoOficina", { precision: 10, scale: 2 }),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).default("0"),
+  /**
+   * Chave da operação completa (OS + financeiro). NULL = OS antiga.
+   * Unique por usuário; vários NULL convivem.
+   */
+  chaveOperacao: varchar("chaveOperacao", { length: 80 }),
   observacoes: text("observacoes"),
   estornadoEm: timestamp("estornadoEm"),
   motivoEstorno: text("motivoEstorno"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
-});
+}, (table) => ({
+  chaveOperacaoUq: uniqueIndex("manutencoes_chave_operacao_uq").on(table.userId, table.chaveOperacao),
+}));
 
 // Manutencao pecas table (itens de peças de uma manutenção)
 export const manutencaoPecas = mysqlTable("manutencao_pecas", {

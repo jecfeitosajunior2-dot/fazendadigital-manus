@@ -58,6 +58,7 @@ import { deveBloquearEstornoGenericoSanitario, MOTIVO_ESTORNO_SAUDE_PADRAO, MSG_
 import { ManutencaoEstoqueError } from "./manutencaoEstoque";
 import { recusarEstornoGenericoSeManutencao, listarVinculosManutencaoPorMovimentacaoIds } from "./manutencaoEstoqueMysql";
 import { estornarManutencaoCompletaMysql, persistirManutencaoCompletaMysql } from "./manutencaoCompletaMysql";
+import { colunasManutencaoSemChaveOperacao } from "./manutencaoColunas";
 import { editarPecasOficinaMysql } from "./manutencaoOficinaEdicaoMysql";
 import { recusarExclusaoManutencao } from "../shared/manutencaoAcoes";
 import {
@@ -7070,7 +7071,7 @@ const manutencoesRouter = router({
         const conditions = [eq(manutencoes.userId, ctx.user.id)];
         if (input?.maquinaId) conditions.push(eq(manutencoes.maquinaId, input.maquinaId));
         dbRows = (await db
-          .select()
+          .select(colunasManutencaoSemChaveOperacao())
           .from(manutencoes)
           .where(and(...conditions))
           .orderBy(desc(manutencoes.createdAt))) as typeof dbRows;
@@ -7095,7 +7096,7 @@ const manutencoesRouter = router({
       let dbRegistro: (typeof manutencoes.$inferSelect & { pecas: unknown[] }) | null = null;
       try {
         const [registro] = await db
-          .select()
+          .select(colunasManutencaoSemChaveOperacao())
           .from(manutencoes)
           .where(and(eq(manutencoes.id, input.id), eq(manutencoes.userId, ctx.user.id)));
         if (registro) {

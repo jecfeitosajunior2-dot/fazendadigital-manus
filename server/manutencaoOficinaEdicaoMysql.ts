@@ -26,7 +26,14 @@ export function criarEdicaoOficinaCtx(
   return {
     async bloquearOs() {
       const [row] = await tx
-        .select()
+        .select({
+          id: manutencoes.id,
+          userId: manutencoes.userId,
+          status: manutencoes.status,
+          valorPecas: manutencoes.valorPecas,
+          valorPecasOficina: manutencoes.valorPecasOficina,
+          valorMaoObra: manutencoes.valorMaoObra,
+        })
         .from(manutencoes)
         .where(and(eq(manutencoes.id, osId), eq(manutencoes.userId, userId)))
         .for("update");

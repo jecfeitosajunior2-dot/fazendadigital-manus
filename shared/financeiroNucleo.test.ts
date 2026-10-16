@@ -62,6 +62,20 @@ describe("financeiroMoeda / domínio puro", () => {
     expect(completa.apropriacaoCompleta).toBe(true);
   });
 
+  it("origem manutencao exige OS e chave oficina", () => {
+    const r = validarOrigemTitulo({
+      origemTipo: "manutencao",
+      origemId: 54,
+      origemItemChave: "oficina",
+    });
+    expect(r).toEqual({
+      ok: true,
+      origemTipo: "manutencao",
+      origemId: 54,
+      origemItemChave: "oficina",
+    });
+  });
+
   it("título manual não exige origem_id", () => {
     const r = validarOrigemTitulo({ origemTipo: "manual" });
     expect(r.ok).toBe(true);
