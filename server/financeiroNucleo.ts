@@ -19,6 +19,7 @@ import {
   caixaDaAlocacao,
   derivarSaldoParcela,
   derivarSituacaoTitulo,
+  somarDinheiro,
   direcaoDaLiquidacao,
   dinheiroPositivo,
   FINANCEIRO_ORIGEM_MANUAL,
@@ -253,6 +254,7 @@ export type FinanceiroNucleoTx = {
   insertConta(row: Omit<FinContaRow, "id" | "inativadaEm" | "motivoInativacao">): Promise<number>;
   updateContaInativa(userId: number, id: number, motivo: string | null, em: Date): Promise<void>;
   listContas(userId: number): Promise<FinContaRow[]>;
+  listContasPorIds(userId: number, ids: number[]): Promise<FinContaRow[]>;
   countMovimentosConta(userId: number, contaId: number): Promise<number>;
   listMovimentosConta(userId: number, contaId: number): Promise<FinMovimentoRow[]>;
 
@@ -278,6 +280,7 @@ export type FinanceiroNucleoTx = {
   deleteParcelasTitulo(userId: number, tituloId: number): Promise<void>;
 
   findLiquidacao(userId: number, id: number): Promise<FinLiquidacaoRow | null>;
+  listLiquidacoesPorIds(userId: number, ids: number[]): Promise<FinLiquidacaoRow[]>;
   findLiquidacaoPorIdem(userId: number, key: string): Promise<FinLiquidacaoRow | null>;
   findEstornoDe(userId: number, originalId: number, forUpdate?: boolean): Promise<FinLiquidacaoRow | null>;
   insertLiquidacao(row: Omit<FinLiquidacaoRow, "id">): Promise<number>;
@@ -331,6 +334,39 @@ function assertDataAposAbertura(dataMovimento: string, conta: FinContaRow): void
 function idsUnicosOrdenados(ids: number[]): number[] {
   return [...new Set(ids)].sort((a, b) => a - b);
 }
+
+export type HistoricoPagamentoAlocacaoTitulo = {
+  parcelaId: number;
+  parcelaNumero: number;
+  vencimento: string;
+  principalLiquidado: string;
+  desconto: string;
+  juros: string;
+  multa: string;
+  valorCaixaAlocado: number;
+};
+
+export type HistoricoPagamentoEvento = {
+  liquidacaoId: number;
+  tipo: FinanceiroLiquidacaoTipo;
+  dataLiquidacao: string;
+  contaId: number;
+  contaNome: string;
+  valorMovimentado: string;
+  valorAlocadoNesteTitulo: number;
+  liquidacaoOriginalId: number | null;
+  estornadaPorLiquidacaoId: number | null;
+  referencia: string | null;
+  observacoes: string | null;
+  formaPagamento: string | null;
+  alocacoesDesteTitulo: HistoricoPagamentoAlocacaoTitulo[];
+};
+
+export type HistoricoPagamentosTitulo = {
+  tituloId: number;
+  eventos: HistoricoPagamentoEvento[];
+  parcelas: Array<FinParcelaRow & ReturnType<typeof derivarSaldoParcela>>;
+};
 
 export type CriarTituloInput = {
   tipo: FinanceiroTituloTipo;
@@ -656,6 +692,108 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           parcelas: parcelasDetalhe,
           apropriacoes,
           ...derivarApropriacao(titulo.valorOriginal, apropriacoes),
+        };
+      });
+    },
+
+    async historicoPagamentosTitulo(userId: number, tituloId: number): Promise<HistoricoPagamentosTitulo> {
+      return store.transaction(async tx => {
+        const titulo = await tx.findTitulo(userId, tituloId);
+        if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
+        assertUser(titulo.userId, userId);
+
+        const parcelas = await tx.listParcelasTitulo(userId, tituloId);
+        const alocs = parcelas.length
+          ? await tx.listAlocacoesPorParcelas(userId, parcelas.map(p => p.id))
+          : [];
+
+        const parcelaPorId = new Map(parcelas.map(p => [p.id, p]));
+        const liquidacaoIds = idsUnicosOrdenados(alocs.map(a => a.liquidacaoId));
+        const liquidacoes = liquidacaoIds.length
+          ? await tx.listLiquidacoesPorIds(userId, liquidacaoIds)
+          : [];
+        const liquidacaoPorId = new Map(liquidacoes.map(l => [l.id, l]));
+
+        const contaIds = idsUnicosOrdenados(liquidacoes.map(l => l.contaId));
+        const contas = contaIds.length
+          ? await tx.listContasPorIds(userId, contaIds)
+          : [];
+        const contaPorId = new Map(contas.map(c => [c.id, c]));
+
+        const estornoPorOriginal = new Map<number, number>();
+        for (const liquidacao of liquidacoes) {
+          if (liquidacao.liquidacaoOriginalId != null) {
+            estornoPorOriginal.set(liquidacao.liquidacaoOriginalId, liquidacao.id);
+          }
+        }
+
+        const alocsPorLiquidacao = new Map<number, typeof alocs>();
+        for (const aloc of alocs) {
+          const lista = alocsPorLiquidacao.get(aloc.liquidacaoId) ?? [];
+          lista.push(aloc);
+          alocsPorLiquidacao.set(aloc.liquidacaoId, lista);
+        }
+
+        const eventos: HistoricoPagamentoEvento[] = [];
+        for (const liquidacaoId of liquidacaoIds) {
+          const liquidacao = liquidacaoPorId.get(liquidacaoId);
+          if (!liquidacao) continue;
+
+          const alocacoesDesteTitulo = (alocsPorLiquidacao.get(liquidacaoId) ?? [])
+            .flatMap(aloc => {
+              const parcela = parcelaPorId.get(aloc.parcelaId);
+              if (!parcela) return [];
+              return [{
+                parcelaId: aloc.parcelaId,
+                parcelaNumero: parcela.numero,
+                vencimento: parcela.vencimento,
+                principalLiquidado: aloc.principalLiquidado,
+                desconto: aloc.desconto,
+                juros: aloc.juros,
+                multa: aloc.multa,
+                valorCaixaAlocado: caixaDaAlocacao(aloc),
+              }];
+            })
+            .sort((a, b) => a.parcelaNumero - b.parcelaNumero || a.parcelaId - b.parcelaId);
+
+          eventos.push({
+            liquidacaoId: liquidacao.id,
+            tipo: liquidacao.tipo,
+            dataLiquidacao: liquidacao.dataLiquidacao,
+            contaId: liquidacao.contaId,
+            contaNome: contaPorId.get(liquidacao.contaId)?.nome ?? "",
+            valorMovimentado: liquidacao.valorMovimentado,
+            valorAlocadoNesteTitulo: somarDinheiro(
+              ...alocacoesDesteTitulo.map(aloc => aloc.valorCaixaAlocado),
+            ),
+            liquidacaoOriginalId: liquidacao.liquidacaoOriginalId,
+            estornadaPorLiquidacaoId: estornoPorOriginal.get(liquidacao.id) ?? null,
+            referencia: liquidacao.referencia,
+            observacoes: liquidacao.observacoes,
+            formaPagamento: liquidacao.formaPagamento,
+            alocacoesDesteTitulo,
+          });
+        }
+
+        eventos.sort((a, b) => {
+          if (a.dataLiquidacao !== b.dataLiquidacao) {
+            return a.dataLiquidacao.localeCompare(b.dataLiquidacao);
+          }
+          return a.liquidacaoId - b.liquidacaoId;
+        });
+
+        const parcelasComSaldo = parcelas.map(parcela => ({
+          ...parcela,
+          ...derivarSaldoParcela(
+            parcela.valorOriginal,
+            alocs.filter(aloc => aloc.parcelaId === parcela.id),
+          ),
+        }));
+
+        return {
+          tituloId: titulo.id,
+          eventos,
+          parcelas: parcelasComSaldo,
         };
       });
     },
@@ -1263,6 +1401,13 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
             .orderBy(desc(financeiroContas.createdAt));
           return rows.map(mapConta);
         },
+        async listContasPorIds(userId, ids) {
+          if (!ids.length) return [];
+          const unique = idsUnicosOrdenados(ids);
+          const rows = await drizzleTx.select().from(financeiroContas)
+            .where(and(eq(financeiroContas.userId, userId), inArray(financeiroContas.id, unique)));
+          return rows.map(mapConta);
+        },
         async countMovimentosConta(userId, contaId) {
           const [row] = await drizzleTx.select({ n: sql<number>`COUNT(*)` }).from(financeiroMovimentos)
             .where(and(eq(financeiroMovimentos.userId, userId), eq(financeiroMovimentos.contaId, contaId)));
@@ -1374,6 +1519,13 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
           const [row] = await drizzleTx.select().from(financeiroLiquidacoes)
             .where(and(eq(financeiroLiquidacoes.id, id), eq(financeiroLiquidacoes.userId, userId))).limit(1);
           return row ? mapLiq(row) : null;
+        },
+        async listLiquidacoesPorIds(userId, ids) {
+          if (!ids.length) return [];
+          const unique = idsUnicosOrdenados(ids);
+          const rows = await drizzleTx.select().from(financeiroLiquidacoes)
+            .where(and(eq(financeiroLiquidacoes.userId, userId), inArray(financeiroLiquidacoes.id, unique)));
+          return rows.map(mapLiq);
         },
         async findLiquidacaoPorIdem(userId, key) {
           const [row] = await drizzleTx.select().from(financeiroLiquidacoes)

@@ -50,6 +50,12 @@ export const financeiroV2Router = router({
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ ctx, input }) => financeiroNucleoService.detalheTitulo(ctx.user.id, input.id)),
 
+  tituloHistoricoPagamentos: protectedProcedure
+    .input(z.object({ tituloId: z.number().int().positive() }))
+    .query(({ ctx, input }) =>
+      financeiroNucleoService.historicoPagamentosTitulo(ctx.user.id, input.tituloId),
+    ),
+
   titulosCreateManual: protectedProcedure
     .input(z.object({
       tipo: z.enum(FINANCEIRO_TITULO_TIPOS),

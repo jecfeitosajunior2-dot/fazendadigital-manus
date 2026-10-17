@@ -81,6 +81,27 @@ describe("menu lateral — Compra e Venda", () => {
   });
 });
 
+describe("menu lateral — Financeiro", () => {
+  it("ganha Contas a Pagar sem substituir a Visão Geral nem as rotas do legado", () => {
+    expect(childLabels("Financeiro")).toEqual([
+      "Visão Geral",
+      "Contas a Pagar",
+      "Contas",
+      "Movimentação",
+      "Categorias",
+      "Pessoas",
+    ]);
+    expect(childPaths("Financeiro")).toEqual([
+      "/financeiro/visao-geral",
+      "/financeiro/contas-a-pagar",
+      "/financeiro/contas",
+      "/financeiro/movimentacao",
+      "/financeiro/categorias",
+      "/financeiro/pessoas",
+    ]);
+  });
+});
+
 describe("menu lateral — Nutrição", () => {
   it("é o grupo com mais atalhos — precisa caber na rolagem da tela", () => {
     const tamanhos = menuItems.map(item => ({

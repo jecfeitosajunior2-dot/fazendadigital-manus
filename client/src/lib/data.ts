@@ -86,6 +86,7 @@ export const menuItems: MenuItem[] = [
     icon: "fd_finance_cycle",
     children: [
       { label: "Visão Geral", icon: "", path: "/financeiro/visao-geral" },
+      { label: "Contas a Pagar", icon: "", path: "/financeiro/contas-a-pagar" },
       { label: "Contas", icon: "", path: "/financeiro/contas" },
       { label: "Movimentação", icon: "", path: "/financeiro/movimentacao" },
       { label: "Categorias", icon: "", path: "/financeiro/categorias" },

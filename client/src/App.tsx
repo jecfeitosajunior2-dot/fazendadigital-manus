@@ -40,6 +40,11 @@ import EditLotePage from "./pages/EditLotePage";
 import { SaudePage } from "./pages/ReproductionManagementPage";
 import { FinancialManagementPage } from "./pages/FinancialManagementPage";
 import FinancialPeoplePage from "./pages/FinancialPeoplePage";
+import ContasAPagarPage from "./pages/ContasAPagarPage";
+import ContasAPagarDetalhePage from "./pages/ContasAPagarDetalhePage";
+import ContasFinanceirasV2Page from "./pages/ContasFinanceirasV2Page";
+import { FINANCEIRO_CONTAS_A_PAGAR_PATH } from "./lib/contasAPagarListagem";
+import { FINANCEIRO_CONTAS_V2_PATH } from "./lib/contasFinanceirasV2";
 import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import NutricaoVisaoGeralPage from "./pages/NutricaoVisaoGeralPage";
 import NutricaoDietasListPage from "./pages/NutricaoDietasListPage";
@@ -217,6 +222,9 @@ function ProtectedRoutes() {
 
       {/* Financial */}
       <Route path="/financeiro/visao-geral" component={FinancialManagementPage} />
+      <Route path={`${FINANCEIRO_CONTAS_A_PAGAR_PATH}/:id`} component={ContasAPagarDetalhePage} />
+      <Route path={FINANCEIRO_CONTAS_A_PAGAR_PATH} component={ContasAPagarPage} />
+      <Route path={FINANCEIRO_CONTAS_V2_PATH} component={ContasFinanceirasV2Page} />
       <Route path="/financeiro/contas" component={FinancialManagementPage} />
       <Route path="/financeiro/movimentacao" component={FinancialManagementPage} />
       <Route path="/financeiro/categorias" component={FinancialManagementPage} />
