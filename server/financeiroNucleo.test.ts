@@ -6,6 +6,8 @@ import {
   MSG_FIN_CATEGORIA_TIPO,
   MSG_FIN_CENTRO_FAZENDA,
   MSG_FIN_DATA_ANTES_ABERTURA,
+  MSG_FIN_IDEMPOTENCIA_CONFLITO,
+  MSG_FIN_LIQUIDACAO_JA_ESTORNADA,
   MSG_FIN_ORIGEM_AUTOMATICA,
   MSG_FIN_OVERPAYMENT,
   MSG_FIN_PESSOAS_MISTURADAS,
@@ -403,5 +405,196 @@ describe("financeiroNucleo — Fase 1", () => {
       origemId: 15,
       origemItemChave: "animais",
     })).rejects.toBeInstanceOf(TRPCError);
+  });
+});
+
+describe("financeiroNucleo — idempotência segura 3C.5.4", () => {
+  it("A — retry legítimo do mesmo estorno não duplica", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-est-retry",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    const cmd = { liquidacaoId: pag.id, idempotencyKey: "est-pag-retry", dataLiquidacao: "2026-03-08" };
+    const a = await svc.estornarLiquidacao(10, cmd);
+    const b = await svc.estornarLiquidacao(10, cmd);
+    expect(a.id).toBe(b.id);
+    expect(b.idempotente).toBe(true);
+    expect(store.liquidacoes.filter(l => l.tipo === "estorno_pagamento")).toHaveLength(1);
+    expect(store.movimentos.filter(m => m.natureza === "estorno_pagamento")).toHaveLength(1);
+    expect(store.alocacoes).toHaveLength(2);
+  });
+
+  it("B — chave de pagamento não serve como sucesso de estorno", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-usada-no-estorno",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: pag.id,
+      idempotencyKey: "pag-usada-no-estorno",
+      dataLiquidacao: "2026-03-08",
+    })).rejects.toMatchObject({ code: "BAD_REQUEST", message: MSG_FIN_IDEMPOTENCIA_CONFLITO });
+    expect(store.liquidacoes).toHaveLength(1);
+    expect(store.movimentos).toHaveLength(1);
+    expect(store.alocacoes).toHaveLength(1);
+  });
+
+  it("C — chave de outro estorno não estorna liquidação diferente", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag1 = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-1",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    const pag2 = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 5000,
+      idempotencyKey: "pag-2",
+      alocacoes: [{ parcelaId: parcelas[1]!.id, principalLiquidado: 5000 }],
+    });
+    await svc.estornarLiquidacao(10, {
+      liquidacaoId: pag1.id,
+      idempotencyKey: "est-pag-1",
+      dataLiquidacao: "2026-03-08",
+    });
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: pag2.id,
+      idempotencyKey: "est-pag-1",
+      dataLiquidacao: "2026-03-08",
+    })).rejects.toMatchObject({ code: "BAD_REQUEST", message: MSG_FIN_IDEMPOTENCIA_CONFLITO });
+    expect(store.liquidacoes.filter(l => l.tipo === "estorno_pagamento")).toHaveLength(1);
+    expect(store.liquidacoes.find(l => l.liquidacaoOriginalId === pag2.id)).toBeUndefined();
+  });
+
+  it("D — retry legítimo de pagamento não duplica", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const cmd = {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-retry-id",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    };
+    const a = await svc.criarPagamento(10, cmd);
+    const b = await svc.criarPagamento(10, cmd);
+    expect(a.id).toBe(b.id);
+    expect(b.idempotente).toBe(true);
+    expect(store.liquidacoes).toHaveLength(1);
+    expect(store.alocacoes).toHaveLength(1);
+    expect(store.movimentos).toHaveLength(1);
+  });
+
+  it("E — mesma chave de pagamento com parâmetros diferentes é recusada", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-params",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    await expect(svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-03",
+      valorMovimentado: 5000,
+      idempotencyKey: "pag-params",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 5000 }],
+    })).rejects.toMatchObject({ code: "BAD_REQUEST", message: MSG_FIN_IDEMPOTENCIA_CONFLITO });
+    expect(store.liquidacoes).toHaveLength(1);
+    expect(store.alocacoes).toHaveLength(1);
+    expect(store.movimentos).toHaveLength(1);
+    expect(store.liquidacoes[0]!.valorMovimentado).toBe("4000.00");
+  });
+
+  it("L — segundo estorno da mesma liquidação continua JA_ESTORNADA e não duplica", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-ja-est",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    await svc.estornarLiquidacao(10, {
+      liquidacaoId: pag.id,
+      idempotencyKey: "est-pag-ja",
+      dataLiquidacao: "2026-03-08",
+    });
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: pag.id,
+      idempotencyKey: "est-pag-outra",
+      dataLiquidacao: "2026-03-09",
+    })).rejects.toMatchObject({ code: "BAD_REQUEST", message: MSG_FIN_LIQUIDACAO_JA_ESTORNADA });
+    expect(store.liquidacoes).toHaveLength(2);
+    expect(store.movimentos).toHaveLength(2);
+    expect(store.alocacoes).toHaveLength(2);
+  });
+
+  it("retry paralelo da mesma chave não duplica movimento nem alocação", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-conc-est",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    const cmd = { liquidacaoId: pag.id, idempotencyKey: "est-pag-conc", dataLiquidacao: "2026-03-08" };
+    const primeiro = await svc.estornarLiquidacao(10, cmd);
+    const paralelos = await Promise.all([
+      svc.estornarLiquidacao(10, cmd),
+      svc.estornarLiquidacao(10, cmd),
+    ]);
+    expect(paralelos.every(r => r.id === primeiro.id && r.idempotente === true)).toBe(true);
+    expect(store.liquidacoes.filter(l => l.tipo === "estorno_pagamento")).toHaveLength(1);
+    expect(store.movimentos.filter(m => m.natureza === "estorno_pagamento")).toHaveLength(1);
+    expect(store.alocacoes.filter(a => a.liquidacaoId === primeiro.id)).toHaveLength(1);
+    expect(store.movimentos).toHaveLength(2);
+  });
+
+  it("duas chaves novas em paralelo contra liquidação já estornada não criam segundo estorno", async () => {
+    const { svc, contaId, parcelas, store } = await cenarioBase();
+    const pag = await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "pag-conc-novo",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    await svc.estornarLiquidacao(10, {
+      liquidacaoId: pag.id,
+      idempotencyKey: "est-pag-oficial",
+      dataLiquidacao: "2026-03-08",
+    });
+    const tentativas = await Promise.allSettled([
+      svc.estornarLiquidacao(10, {
+        liquidacaoId: pag.id,
+        idempotencyKey: "est-pag-novo-a",
+        dataLiquidacao: "2026-03-09",
+      }),
+      svc.estornarLiquidacao(10, {
+        liquidacaoId: pag.id,
+        idempotencyKey: "est-pag-novo-b",
+        dataLiquidacao: "2026-03-09",
+      }),
+    ]);
+    expect(tentativas.every(r => r.status === "rejected")).toBe(true);
+    expect(tentativas.map(r => r.status === "rejected" ? r.reason.message : null)).toEqual([
+      MSG_FIN_LIQUIDACAO_JA_ESTORNADA,
+      MSG_FIN_LIQUIDACAO_JA_ESTORNADA,
+    ]);
+    expect(store.liquidacoes.filter(l => l.tipo === "estorno_pagamento")).toHaveLength(1);
+    expect(store.movimentos.filter(m => m.natureza === "estorno_pagamento")).toHaveLength(1);
   });
 });

@@ -86,6 +86,7 @@ describe("menu lateral — Financeiro", () => {
     expect(childLabels("Financeiro")).toEqual([
       "Visão Geral",
       "Contas a Pagar",
+      "Contas a Receber",
       "Contas",
       "Movimentação",
       "Categorias",
@@ -94,6 +95,7 @@ describe("menu lateral — Financeiro", () => {
     expect(childPaths("Financeiro")).toEqual([
       "/financeiro/visao-geral",
       "/financeiro/contas-a-pagar",
+      "/financeiro/contas-a-receber",
       "/financeiro/contas",
       "/financeiro/movimentacao",
       "/financeiro/categorias",

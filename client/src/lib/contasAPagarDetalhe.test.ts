@@ -147,8 +147,8 @@ describe("contasAPagarDetalhe — resumo oficial", () => {
     expect(resumo.totalPago).toBe(200);
     expect(resumo.saldoAberto).toBe(100);
     expect(resumo.situacaoExibida).toBe("Parcial");
-    expect(rotuloSituacaoParcela(detalhe.parcelas[0]!, detalhe, HOJE)).toBe("Liquidada");
-    expect(rotuloSituacaoParcela(detalhe.parcelas[1]!, detalhe, HOJE)).toBe("Em aberto");
+    expect(rotuloSituacaoParcela(detalhe.parcelas[0]!, detalhe)).toBe("Quitada");
+    expect(rotuloSituacaoParcela(detalhe.parcelas[1]!, detalhe)).toBe("Parcial");
   });
 
   it("liquidado e cancelado com parcelas", () => {
@@ -162,7 +162,7 @@ describe("contasAPagarDetalhe — resumo oficial", () => {
       situacaoExibida: "Liquidado",
       pendente: true,
     });
-    expect(rotuloSituacaoParcela(liquidado.parcelas[0]!, liquidado, HOJE)).toBe("Liquidada");
+    expect(rotuloSituacaoParcela(liquidado.parcelas[0]!, liquidado)).toBe("Quitada");
 
     const cancelado = titulo({
       estado: "cancelado",
@@ -174,7 +174,34 @@ describe("contasAPagarDetalhe — resumo oficial", () => {
     expect(resumo.saldoAberto).toBeNull();
     expect(resumo.pendente).toBe(false);
     expect(resumo.situacaoExibida).toBe("Cancelado");
-    expect(rotuloSituacaoParcela(cancelado.parcelas[0]!, cancelado, HOJE)).toBe("Cancelado");
+    expect(rotuloSituacaoParcela(cancelado.parcelas[0]!, cancelado)).toBe("Cancelado");
+  });
+
+  it("parcela usa saldo e principal oficiais: em aberto, parcial, quitada e estorno integral", () => {
+    const aberto = titulo({
+      situacao: "em_aberto",
+      parcelas: [parcela(1, 1, "2026-11-01", "100.00", 0, 100)],
+    });
+    expect(rotuloSituacaoParcela(aberto.parcelas[0]!, aberto)).toBe("Em aberto");
+
+    const parcial = titulo({
+      situacao: "parcial",
+      parcelas: [parcela(1, 1, "2026-11-01", "100.00", 40, 60)],
+    });
+    expect(rotuloSituacaoParcela(parcial.parcelas[0]!, parcial)).toBe("Parcial");
+
+    const quitada = titulo({
+      situacao: "liquidado",
+      parcelas: [parcela(1, 1, "2026-11-01", "100.00", 100, 0, true)],
+    });
+    expect(rotuloSituacaoParcela(quitada.parcelas[0]!, quitada)).toBe("Quitada");
+
+    const estornada = titulo({
+      situacao: "em_aberto",
+      parcelas: [parcela(1, 1, "2026-11-01", "100.00", 0, 100)],
+    });
+    expect(rotuloSituacaoParcela(estornada.parcelas[0]!, estornada)).toBe("Em aberto");
+    expect(rotuloSituacaoParcela(estornada.parcelas[0]!, estornada)).not.toBe("Parcial");
   });
 });
 
@@ -444,10 +471,10 @@ describe("contasAPagarDetalhe — tela e compatibilidade", () => {
     expect(page).toContain("MSG_NENHUM_PAGAMENTO_REGISTRADO");
     expect(page).toContain("tituloHistoricoPagamentos");
     expect(page).toContain("financeiroV2.titulosDefinirParcelas");
+    expect(page).toContain("financeiroV2.liquidacaoPagar");
     expect(page).toContain("NOT_FOUND");
     expect(page).toContain("FORBIDDEN");
-    expect(page).not.toContain("liquidacaoPagar");
-    expect(page).not.toContain("liquidacaoEstornar");
+    expect(page).toContain("liquidacaoEstornar");
     expect(page).not.toContain("titulosCreateManual");
     expect(page).not.toContain("trpc.financeiro.");
     expect(page).not.toContain("Título #");
@@ -464,9 +491,10 @@ describe("contasAPagarDetalhe — tela e compatibilidade", () => {
     expect(page).toContain("financeiroV2.titulosGet");
     expect(page).toContain("financeiroV2.contasList");
     expect(page).toContain("financeiroV2.titulosDefinirParcelas");
+    expect(page).toContain("financeiroV2.liquidacaoPagar");
     expect(page).toContain("FINANCEIRO_CONTAS_V2_PATH");
     expect(page).not.toContain("movimentosExtrato");
-    expect(page).not.toContain("liquidacaoPagar");
+    expect(page).toContain("liquidacaoEstornar");
     expect(page).toContain("lg:hidden");
     expect(page).toContain("hidden lg:block");
     expect(page).toContain("MobileCard");

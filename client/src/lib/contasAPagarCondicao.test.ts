@@ -267,8 +267,8 @@ describe("contasAPagarCondicao — tela e contrato oficial", () => {
     expect(page).toContain("titulosGet.invalidate");
     expect(page).toContain("tituloHistoricoPagamentos.invalidate");
     expect(page).toContain("titulosList.invalidate");
-    expect(page).not.toContain("liquidacaoPagar");
-    expect(page).not.toContain("liquidacaoEstornar");
+    expect(page).toContain("financeiroV2.liquidacaoPagar");
+    expect(page).toContain("liquidacaoEstornar");
     expect(page).not.toContain("titulosCreateManual");
     expect(page).not.toContain("trpc.financeiro.");
     expect(lista).not.toContain("titulosDefinirParcelas");

@@ -74,10 +74,11 @@ function formatarValorOficial(valor: string | number | null | undefined): string
 }
 
 function classeSituacaoLinha(linha: LinhaContasAPagar): string {
-  if (tituloEstaCancelado(linha)) return "bg-gray-100 text-gray-500";
-  if (linha.situacao === "liquidado") return "bg-emerald-50 text-emerald-700";
-  if (linha.situacao === "vencido") return "bg-red-50 text-red-700";
-  if (linha.situacao === "parcial") return "bg-amber-50 text-amber-800";
+  const texto = rotuloSituacaoLinha(linha);
+  if (texto === "Cancelado") return "bg-gray-100 text-gray-500";
+  if (texto === "Quitada" || texto === "Liquidado") return "bg-emerald-50 text-emerald-700";
+  if (texto === "Vencido") return "bg-red-50 text-red-700";
+  if (texto === "Parcial") return "bg-amber-50 text-amber-800";
   return "bg-sky-50 text-sky-800";
 }
 

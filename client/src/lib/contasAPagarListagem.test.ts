@@ -95,7 +95,7 @@ function parcela(
     vencimento,
     valorOriginal: valor,
     saldoPrincipal: saldo,
-    principalLiquidado: quitada ? Number(valor) : 0,
+    principalLiquidado: Number(valor) - saldo,
     quitada,
   };
 }
@@ -229,6 +229,24 @@ describe("contasAPagarListagem — dados oficiais do V2", () => {
     expect(vencidas.map(l => l.parcelaId)).toEqual([21]);
     expect(vencidas[0]?.situacao).toBe("parcial");
     expect(vencidas[0]?.saldoAberto).toBe(50);
+    expect(linhas.map(l => rotuloSituacaoLinha(l))).toEqual(["Parcial", "Em aberto"]);
+    expect(linhas.map(l => l.principalLiquidado)).toEqual([100, 0]);
+  });
+
+  it("rótulo da linha segue saldo e principal oficiais da parcela", () => {
+    const detalhe = titulo({
+      situacao: "parcial",
+      parcelas: [
+        parcela(1, 1, "2026-11-01", "100.00", 100),
+        { ...parcela(2, 2, "2026-12-01", "100.00", 60), principalLiquidado: 40 },
+        parcela(3, 3, "2027-01-01", "50.00", 0, true),
+      ],
+    });
+    expect(linhasDaListagemAPagar([detalhe]).map(l => rotuloSituacaoLinha(l))).toEqual([
+      "Em aberto",
+      "Parcial",
+      "Quitada",
+    ]);
   });
 
   it("não mistura título a receber na listagem de pagar", () => {

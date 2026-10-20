@@ -113,6 +113,8 @@ export const MSG_FIN_TRANSFERENCIA_PERNAS =
   "Transferência deve ter exatamente uma saída e uma entrada, no mesmo valor e nas contas declaradas.";
 export const MSG_FIN_MOVIMENTO_LIQUIDACAO =
   "O movimento da liquidação deve ter o mesmo valor, a mesma conta e a direção correta.";
+export const MSG_FIN_IDEMPOTENCIA_CONFLITO =
+  "Esta chave de idempotência já foi usada em outra operação.";
 
 export function isFinanceiroContaTipo(v: string): v is FinanceiroContaTipo {
   return (FINANCEIRO_CONTA_TIPOS as readonly string[]).includes(v);
@@ -339,6 +341,158 @@ export function validarPernasTransferencia(input: {
 
 export function persistirValor(valor: number | string): string {
   return formatarDinheiroPersistido(valor);
+}
+
+export type TituloAlcanceLiquidacao = {
+  tituloId: number;
+  descricao: string;
+  valorAlocado: number;
+};
+
+export type AlcanceTitulosLiquidacao = {
+  alcanceCompleto: boolean;
+  quantidadeTitulosNaLiquidacao: number;
+  titulosNaLiquidacao: TituloAlcanceLiquidacao[];
+};
+
+function textoOpcionalNormalizado(valor: string | null | undefined): string {
+  return (valor ?? "").trim();
+}
+
+function dataCivil(valor: string): string {
+  return String(valor).slice(0, 10);
+}
+
+function assinaturaAlocacaoRetry(aloc: {
+  parcelaId: number;
+  principalLiquidado: number | string;
+  desconto?: number | string;
+  juros?: number | string;
+  multa?: number | string;
+}): string {
+  return [
+    aloc.parcelaId,
+    toCentavos(aloc.principalLiquidado),
+    toCentavos(aloc.desconto ?? 0),
+    toCentavos(aloc.juros ?? 0),
+    toCentavos(aloc.multa ?? 0),
+  ].join(":");
+}
+
+export function retryEstornoBateComPedido(
+  existente: {
+    userId: number;
+    tipo: string;
+    liquidacaoOriginalId: number | null;
+  },
+  pedido: { userId: number; liquidacaoId: number },
+): boolean {
+  if (existente.userId !== pedido.userId) return false;
+  if (existente.tipo !== "estorno_pagamento" && existente.tipo !== "estorno_recebimento") return false;
+  return existente.liquidacaoOriginalId === pedido.liquidacaoId;
+}
+
+export function retryPagamentoBateComPedido(
+  existente: {
+    userId: number;
+    tipo: string;
+    contaId: number;
+    dataLiquidacao: string;
+    valorMovimentado: number | string;
+    formaPagamento?: string | null;
+    referencia?: string | null;
+    observacoes?: string | null;
+  },
+  alocacoesPersistidas: Array<{
+    parcelaId: number;
+    principalLiquidado: number | string;
+    desconto?: number | string;
+    juros?: number | string;
+    multa?: number | string;
+  }>,
+  pedido: {
+    userId: number;
+    tipo: string;
+    contaId: number;
+    dataLiquidacao: string;
+    valorMovimentado: number | string;
+    formaPagamento?: string | null;
+    referencia?: string | null;
+    observacoes?: string | null;
+    alocacoes: Array<{
+      parcelaId: number;
+      principalLiquidado: number | string;
+      desconto?: number | string;
+      juros?: number | string;
+      multa?: number | string;
+    }>;
+  },
+): boolean {
+  if (existente.userId !== pedido.userId) return false;
+  if (existente.tipo !== pedido.tipo) return false;
+  if (existente.contaId !== pedido.contaId) return false;
+  if (dataCivil(existente.dataLiquidacao) !== dataCivil(pedido.dataLiquidacao)) return false;
+  if (toCentavos(existente.valorMovimentado) !== toCentavos(pedido.valorMovimentado)) return false;
+  if (textoOpcionalNormalizado(existente.formaPagamento) !== textoOpcionalNormalizado(pedido.formaPagamento)) {
+    return false;
+  }
+  if (textoOpcionalNormalizado(existente.referencia) !== textoOpcionalNormalizado(pedido.referencia)) {
+    return false;
+  }
+  if (textoOpcionalNormalizado(existente.observacoes) !== textoOpcionalNormalizado(pedido.observacoes)) {
+    return false;
+  }
+  if (alocacoesPersistidas.length !== pedido.alocacoes.length) return false;
+  const persistidas = [...alocacoesPersistidas]
+    .sort((a, b) => a.parcelaId - b.parcelaId)
+    .map(assinaturaAlocacaoRetry);
+  const pedidas = [...pedido.alocacoes]
+    .sort((a, b) => a.parcelaId - b.parcelaId)
+    .map(assinaturaAlocacaoRetry);
+  return persistidas.every((item, indice) => item === pedidas[indice]);
+}
+
+export function montarAlcanceTitulosLiquidacao(input: {
+  alocacoes: Array<{
+    parcelaId: number;
+    principalLiquidado: number | string;
+    desconto?: number | string;
+    juros?: number | string;
+    multa?: number | string;
+  }>;
+  parcelas: Array<{ id: number; tituloId: number }>;
+  titulos: Array<{ id: number; descricao: string }>;
+}): AlcanceTitulosLiquidacao {
+  const parcelaPorId = new Map(input.parcelas.map(parcela => [parcela.id, parcela]));
+  const tituloPorId = new Map(input.titulos.map(titulo => [titulo.id, titulo]));
+  const valorPorTitulo = new Map<number, number>();
+  let resolvidas = 0;
+  for (const aloc of input.alocacoes) {
+    const parcela = parcelaPorId.get(aloc.parcelaId);
+    if (!parcela) continue;
+    const titulo = tituloPorId.get(parcela.tituloId);
+    if (!titulo) continue;
+    resolvidas += 1;
+    valorPorTitulo.set(
+      parcela.tituloId,
+      somarDinheiro(valorPorTitulo.get(parcela.tituloId) ?? 0, caixaDaAlocacao(aloc)),
+    );
+  }
+  const titulosNaLiquidacao = [...valorPorTitulo.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([tituloId, valorAlocado]) => ({
+      tituloId,
+      descricao: (tituloPorId.get(tituloId)?.descricao ?? "").trim() || `Título ${tituloId}`,
+      valorAlocado,
+    }));
+  const alcanceCompleto = input.alocacoes.length > 0
+    && resolvidas === input.alocacoes.length
+    && titulosNaLiquidacao.length > 0;
+  return {
+    alcanceCompleto,
+    quantidadeTitulosNaLiquidacao: titulosNaLiquidacao.length,
+    titulosNaLiquidacao,
+  };
 }
 
 export function somaAlocacoesFecha(

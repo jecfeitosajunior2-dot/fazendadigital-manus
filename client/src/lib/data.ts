@@ -87,6 +87,7 @@ export const menuItems: MenuItem[] = [
     children: [
       { label: "Visão Geral", icon: "", path: "/financeiro/visao-geral" },
       { label: "Contas a Pagar", icon: "", path: "/financeiro/contas-a-pagar" },
+      { label: "Contas a Receber", icon: "", path: "/financeiro/contas-a-receber" },
       { label: "Contas", icon: "", path: "/financeiro/contas" },
       { label: "Movimentação", icon: "", path: "/financeiro/movimentacao" },
       { label: "Categorias", icon: "", path: "/financeiro/categorias" },

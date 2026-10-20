@@ -11,13 +11,17 @@ import {
 import { compraVendaCompraDetalhePath } from "./compraVendaCompradores";
 import {
   TEXTO_A_DEFINIR,
-  parcelaVencidaEmAberto,
   rotuloOrigemTitulo,
   rotuloSituacaoLinha,
+  rotuloSituacaoParcela,
   tituloEstaCancelado,
   type ParcelaV2Oficial,
+  type SituacaoParcelaExibida,
   type TituloV2DetalheOficial,
 } from "./contasAPagarListagem";
+
+export type { SituacaoParcelaExibida };
+export { rotuloSituacaoParcela };
 
 export const MSG_CONDICAO_PAGAMENTO_A_DEFINIR = "Condição de pagamento ainda não definida.";
 export const MSG_NENHUM_PAGAMENTO_REGISTRADO = "Nenhum pagamento registrado.";
@@ -50,6 +54,13 @@ export type EventoHistoricoPagamentoOficial = {
     juros: string;
     multa: string;
     valorCaixaAlocado: number;
+  }>;
+  alcanceCompleto?: boolean;
+  quantidadeTitulosNaLiquidacao?: number;
+  titulosNaLiquidacao?: Array<{
+    tituloId: number;
+    descricao: string;
+    valorAlocado: number;
   }>;
 };
 
@@ -91,8 +102,6 @@ export type ResumoOficialContasAPagar = {
   pendente: boolean;
   situacaoExibida: string;
 };
-
-export type SituacaoParcelaExibida = "Cancelado" | "Liquidada" | "Vencida" | "Em aberto";
 
 export function tituloEhContaAPagar(titulo: Pick<TituloV2DetalheOficial, "tipo">): boolean {
   return titulo.tipo === "pagar";
@@ -214,17 +223,6 @@ export function resumoOficialContasAPagar(titulo: TituloV2DetalheOficial): Resum
     pendente: !cancelado,
     situacaoExibida,
   };
-}
-
-export function rotuloSituacaoParcela(
-  parcela: Pick<ParcelaV2Oficial, "quitada" | "vencimento">,
-  titulo: Pick<TituloV2DetalheOficial, "estado">,
-  hojeISO: string,
-): SituacaoParcelaExibida {
-  if (tituloEstaCancelado(titulo)) return "Cancelado";
-  if (parcela.quitada) return "Liquidada";
-  if (parcelaVencidaEmAberto(parcela, hojeISO)) return "Vencida";
-  return "Em aberto";
 }
 
 export function linkOrigemContasAPagar(

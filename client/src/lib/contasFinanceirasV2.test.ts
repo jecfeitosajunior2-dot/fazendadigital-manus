@@ -172,7 +172,7 @@ describe("contasFinanceirasV2 — tela e separação do legado", () => {
     expect(detalhe).toContain("FINANCEIRO_CONTAS_V2_PATH");
     expect(detalhe).toContain("MSG_SEM_CONTA_V2_ATIVA");
     expect(detalhe).toContain("financeiroV2.contasList");
-    expect(detalhe).not.toContain("liquidacaoPagar");
+    expect(detalhe).toContain("financeiroV2.liquidacaoPagar");
     expect(detalhe).not.toContain("trpc.financeiro.");
   });
 

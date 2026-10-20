@@ -37,6 +37,7 @@ import {
   MSG_FIN_FAZENDA_INVALIDA,
   MSG_FIN_FORMULA_CAIXA,
   MSG_FIN_IDEMPOTENCY,
+  MSG_FIN_IDEMPOTENCIA_CONFLITO,
   MSG_FIN_LIQUIDACAO_JA_ESTORNADA,
   MSG_FIN_LIQUIDACAO_NAO_ENCONTRADA,
   MSG_FIN_MOVIMENTO_LIQUIDACAO,
@@ -66,6 +67,9 @@ import {
   centroCompativelComFazenda,
   derivarApropriacao,
   movimentoAnteriorAAbertura,
+  montarAlcanceTitulosLiquidacao,
+  retryEstornoBateComPedido,
+  retryPagamentoBateComPedido,
   type FinanceiroCondicaoStatus,
   type FinanceiroContaTipo,
   type FinanceiroDirecao,
@@ -335,6 +339,27 @@ function idsUnicosOrdenados(ids: number[]): number[] {
   return [...new Set(ids)].sort((a, b) => a - b);
 }
 
+async function alcanceOficialDaLiquidacao(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  liquidacaoId: number,
+) {
+  const alocsTodas = await tx.listAlocacoesLiquidacao(userId, liquidacaoId);
+  const parcelaIds = idsUnicosOrdenados(alocsTodas.map(aloc => aloc.parcelaId));
+  const parcelasTodas = parcelaIds.length ? await tx.listParcelasPorIds(userId, parcelaIds) : [];
+  const tituloIds = idsUnicosOrdenados(parcelasTodas.map(parcela => parcela.tituloId));
+  const titulos: FinTituloRow[] = [];
+  for (const tituloId of tituloIds) {
+    const titulo = await tx.findTitulo(userId, tituloId);
+    if (titulo) titulos.push(titulo);
+  }
+  return montarAlcanceTitulosLiquidacao({
+    alocacoes: alocsTodas,
+    parcelas: parcelasTodas,
+    titulos,
+  });
+}
+
 export type HistoricoPagamentoAlocacaoTitulo = {
   parcelaId: number;
   parcelaNumero: number;
@@ -360,6 +385,13 @@ export type HistoricoPagamentoEvento = {
   observacoes: string | null;
   formaPagamento: string | null;
   alocacoesDesteTitulo: HistoricoPagamentoAlocacaoTitulo[];
+  alcanceCompleto: boolean;
+  quantidadeTitulosNaLiquidacao: number;
+  titulosNaLiquidacao: Array<{
+    tituloId: number;
+    descricao: string;
+    valorAlocado: number;
+  }>;
 };
 
 export type HistoricoPagamentosTitulo = {
@@ -756,6 +788,8 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
             })
             .sort((a, b) => a.parcelaNumero - b.parcelaNumero || a.parcelaId - b.parcelaId);
 
+          const alcance = await alcanceOficialDaLiquidacao(tx, userId, liquidacaoId);
+
           eventos.push({
             liquidacaoId: liquidacao.id,
             tipo: liquidacao.tipo,
@@ -772,6 +806,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
             observacoes: liquidacao.observacoes,
             formaPagamento: liquidacao.formaPagamento,
             alocacoesDesteTitulo,
+            alcanceCompleto: alcance.alcanceCompleto,
+            quantidadeTitulosNaLiquidacao: alcance.quantidadeTitulosNaLiquidacao,
+            titulosNaLiquidacao: alcance.titulosNaLiquidacao,
           });
         }
 
@@ -831,6 +868,11 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => {
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
+          assertUser(existente.userId, userId);
+          const alocsExistentes = await tx.listAlocacoesLiquidacao(userId, existente.id);
+          if (!retryPagamentoBateComPedido(existente, alocsExistentes, { userId, ...input })) {
+            toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
+          }
           const movimento = await tx.findMovimentoPorLiquidacao(userId, existente.id);
           return { id: existente.id, movimentoId: movimento?.id ?? null, idempotente: true };
         }
@@ -939,6 +981,10 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => {
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
+          assertUser(existente.userId, userId);
+          if (!retryEstornoBateComPedido(existente, { userId, liquidacaoId: input.liquidacaoId })) {
+            toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
+          }
           const movimento = await tx.findMovimentoPorLiquidacao(userId, existente.id);
           return { id: existente.id, movimentoId: movimento?.id ?? null, idempotente: true };
         }

@@ -28,6 +28,8 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
     expect(routerSrc).toContain("tituloHistoricoPagamentos: protectedProcedure");
     expect(nucleoSrc).toContain("async historicoPagamentosTitulo(userId: number, tituloId: number)");
     expect(nucleoSrc).toContain("listAlocacoesPorParcelas");
+    expect(nucleoSrc).toContain("listAlocacoesLiquidacao");
+    expect(nucleoSrc).toContain("titulosNaLiquidacao");
     expect(nucleoSrc).toContain("listLiquidacoesPorIds");
     expect(nucleoSrc).toContain("listContasPorIds");
     expect(nucleoSrc).toContain("derivarSaldoParcela");
@@ -38,7 +40,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
     expect(nucleoSrc).not.toMatch(/async historicoPagamentosTitulo[\s\S]{0,2500}insertMovimento/);
     expect(nucleoSrc).not.toMatch(/async historicoPagamentosTitulo[\s\S]{0,2500}extrato\(/);
     expect(detalhePage).toContain("tituloHistoricoPagamentos");
-    expect(detalhePage).not.toContain("liquidacaoPagar");
+    expect(detalhePage).toContain("liquidacaoPagar");
   });
 
   it("título sem pagamentos devolve histórico vazio", async () => {
@@ -217,6 +219,13 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
     expect(hist1.eventos[0]!.alocacoesDesteTitulo[0]!.parcelaId).toBe(d1.parcelas[0]!.id);
     expect(hist2.eventos[0]!.alocacoesDesteTitulo).toHaveLength(1);
     expect(hist2.eventos[0]!.alocacoesDesteTitulo[0]!.parcelaId).toBe(d2.parcelas[0]!.id);
+    expect(hist1.eventos[0]!.alcanceCompleto).toBe(true);
+    expect(hist1.eventos[0]!.quantidadeTitulosNaLiquidacao).toBe(2);
+    expect(hist1.eventos[0]!.titulosNaLiquidacao).toEqual([
+      { tituloId: t1.id, descricao: "Título A", valorAlocado: 10000 },
+      { tituloId: t2.id, descricao: "Título B", valorAlocado: 5000 },
+    ]);
+    expect(hist2.eventos[0]!.titulosNaLiquidacao).toEqual(hist1.eventos[0]!.titulosNaLiquidacao);
     expect(store.movimentos).toHaveLength(1);
   });
 
@@ -338,5 +347,109 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       parcelas: store.parcelas,
       titulos: store.titulos,
     })).toBe(foto);
+  });
+
+  it("F — liquidação de um único título declara alcance exclusivo", async () => {
+    const { svc, contaId, parcelas, tituloId } = await cenarioBase();
+    await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 4000,
+      idempotencyKey: "hist-f-unico",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
+    });
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    expect(ev.alcanceCompleto).toBe(true);
+    expect(ev.quantidadeTitulosNaLiquidacao).toBe(1);
+    expect(ev.titulosNaLiquidacao).toEqual([{ tituloId, descricao: "Compra teste", valorAlocado: 4000 }]);
+    expect(ev.valorAlocadoNesteTitulo).toBe(4000);
+    expect(ev.valorMovimentado).toBe("4000.00");
+  });
+
+  it("H — outro título com caixa zero por desconto integral entra no alcance", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const conta = await svc.criarContaFinanceira(10, {
+      nome: "Caixa",
+      tipo: "caixa",
+      saldoAbertura: 50000,
+      dataSaldoAbertura: "2026-01-01",
+    });
+    const t1 = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Título visível",
+      dataCompetencia: "2026-02-01",
+      valorOriginal: 10000,
+      parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 10000 }],
+    });
+    const t2 = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Título desconto integral",
+      dataCompetencia: "2026-02-01",
+      valorOriginal: 5000,
+      parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 5000 }],
+    });
+    const d1 = await svc.detalheTitulo(10, t1.id);
+    const d2 = await svc.detalheTitulo(10, t2.id);
+    await svc.criarPagamento(10, {
+      contaId: conta.id,
+      dataLiquidacao: "2026-03-05",
+      valorMovimentado: 10000,
+      idempotencyKey: "hist-h-zero",
+      alocacoes: [
+        { parcelaId: d1.parcelas[0]!.id, principalLiquidado: 10000 },
+        { parcelaId: d2.parcelas[0]!.id, principalLiquidado: 5000, desconto: 5000 },
+      ],
+    });
+    const hist = await svc.historicoPagamentosTitulo(10, t1.id);
+    const ev = hist.eventos[0]!;
+    expect(ev.valorMovimentado).toBe("10000.00");
+    expect(ev.valorAlocadoNesteTitulo).toBe(10000);
+    expect(ev.alcanceCompleto).toBe(true);
+    expect(ev.quantidadeTitulosNaLiquidacao).toBe(2);
+    expect(ev.titulosNaLiquidacao).toEqual([
+      { tituloId: t1.id, descricao: "Título visível", valorAlocado: 10000 },
+      { tituloId: t2.id, descricao: "Título desconto integral", valorAlocado: 0 },
+    ]);
+  });
+
+  it("J — várias parcelas do mesmo título continuam um único título no alcance", async () => {
+    const { svc, contaId, parcelas, tituloId } = await cenarioBase();
+    await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 25000,
+      idempotencyKey: "hist-j-parcelas",
+      alocacoes: [
+        { parcelaId: parcelas[0]!.id, principalLiquidado: 10000 },
+        { parcelaId: parcelas[1]!.id, principalLiquidado: 10000 },
+        { parcelaId: parcelas[2]!.id, principalLiquidado: 5000 },
+      ],
+    });
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    expect(ev.alocacoesDesteTitulo).toHaveLength(3);
+    expect(ev.quantidadeTitulosNaLiquidacao).toBe(1);
+    expect(ev.titulosNaLiquidacao[0]).toEqual({ tituloId, descricao: "Compra teste", valorAlocado: 25000 });
+  });
+
+  it("I/M — juros, multa e histórico existente preservam campos antigos e o alcance", async () => {
+    const { svc, contaId, parcelas, tituloId } = await cenarioBase();
+    await svc.criarPagamento(10, {
+      contaId,
+      dataLiquidacao: "2026-03-02",
+      valorMovimentado: 10250,
+      idempotencyKey: "hist-i-juros",
+      alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000, juros: 200, multa: 50 }],
+    });
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    expect(ev.valorMovimentado).toBe("10250.00");
+    expect(ev.valorAlocadoNesteTitulo).toBe(10250);
+    expect(ev.alocacoesDesteTitulo[0]).toMatchObject({ juros: "200.00", multa: "50.00" });
+    expect(ev.formaPagamento).toBeNull();
+    expect(ev.alcanceCompleto).toBe(true);
+    expect(ev.quantidadeTitulosNaLiquidacao).toBe(1);
+    expect(ev.titulosNaLiquidacao[0]!.valorAlocado).toBe(10250);
   });
 });

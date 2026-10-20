@@ -6,6 +6,7 @@
  * Aqui só projetamos o que o V2 já calculou — sem nova regra financeira.
  */
 
+import { toCentavos } from "@shared/financeiroMoeda";
 import {
   FINANCEIRO_ORIGEM_COMPRA_INSUMOS,
   FINANCEIRO_ORIGEM_MANUAL,
@@ -102,6 +103,7 @@ export type LinhaContasAPagar = {
   vencimento: string | null;
   valor: string | number | null;
   saldoAberto: number | null;
+  principalLiquidado: number | null;
   situacao: TituloSituacaoDerivada;
   quitada: boolean | null;
   estado: "ativo" | "cancelado";
@@ -213,9 +215,43 @@ export function tituloEstaCancelado(linha: Pick<LinhaContasAPagar, "estado">): b
   return linha.estado === "cancelado";
 }
 
-/** Apresentação: cancelado tem prioridade sobre a situação oficial do V2. */
-export function rotuloSituacaoLinha(linha: Pick<LinhaContasAPagar, "estado" | "situacao">): string {
+export type SituacaoParcelaExibida = "Cancelado" | "Quitada" | "Parcial" | "Em aberto";
+
+/** Rótulo da parcela com saldo e principal oficiais do V2. Estorno integral zera o principal. */
+export function rotuloSituacaoParcela(
+  parcela: Pick<ParcelaV2Oficial, "quitada" | "saldoPrincipal" | "principalLiquidado">,
+  titulo: Pick<TituloV2DetalheOficial, "estado">,
+): SituacaoParcelaExibida {
+  if (tituloEstaCancelado(titulo)) return "Cancelado";
+  const saldo = toCentavos(parcela.saldoPrincipal);
+  const pagoEfetivo = toCentavos(parcela.principalLiquidado);
+  if (parcela.quitada || saldo <= 0) return "Quitada";
+  if (pagoEfetivo > 0) return "Parcial";
+  return "Em aberto";
+}
+
+/** Apresentação: cancelado tem prioridade. Com parcela, usa o saldo oficial da parcela. */
+export function rotuloSituacaoLinha(
+  linha: Pick<LinhaContasAPagar, "estado" | "situacao"> & Partial<Pick<
+    LinhaContasAPagar,
+    "parcelaId" | "quitada" | "saldoAberto" | "principalLiquidado"
+  >>,
+): string {
   if (tituloEstaCancelado(linha)) return "Cancelado";
+  if (
+    linha.parcelaId != null
+    && linha.saldoAberto != null
+    && linha.principalLiquidado != null
+  ) {
+    return rotuloSituacaoParcela(
+      {
+        quitada: linha.quitada === true,
+        saldoPrincipal: linha.saldoAberto,
+        principalLiquidado: linha.principalLiquidado,
+      },
+      { estado: linha.estado },
+    );
+  }
   return rotuloSituacaoTitulo(linha.situacao);
 }
 
@@ -257,6 +293,7 @@ export function linhasDaListagemAPagar(
         vencimento: null,
         valor: titulo.valorOriginal,
         saldoAberto: null,
+        principalLiquidado: null,
         situacao: titulo.situacao,
         quitada: null,
         estado: titulo.estado,
@@ -282,6 +319,7 @@ export function linhasDaListagemAPagar(
         vencimento: parcela.vencimento,
         valor: parcela.valorOriginal,
         saldoAberto: parcela.saldoPrincipal,
+        principalLiquidado: parcela.principalLiquidado,
         situacao: titulo.situacao,
         quitada: parcela.quitada,
         estado: titulo.estado,
