@@ -37,6 +37,10 @@ export const FINANCEIRO_ORIGEM_MANUAL = "manual";
 export const FINANCEIRO_ORIGEM_COMPRA_INSUMOS = "compra_insumos";
 /** OS terceirizada. Ainda não emitida automaticamente (Fase 3B.1). */
 export const FINANCEIRO_ORIGEM_MANUTENCAO = "manutencao";
+/** Venda comercial de animais. Emissão automática ainda não ligada (Fase 3E.3). */
+export const FINANCEIRO_ORIGEM_VENDA_ANIMAIS = "venda_animais";
+/** Chave do título principal gerado por uma origem operacional (uma venda = um título). */
+export const FINANCEIRO_ORIGEM_ITEM_PRINCIPAL = "principal";
 
 export const FINANCEIRO_LIQUIDACAO_TIPOS = [
   "pagamento",

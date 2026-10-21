@@ -733,9 +733,12 @@ export const vendas = mysqlTable("vendas", {
   canceladoPorUserId: int("cancelado_por_user_id"),
   canceladoPorNome: varchar("cancelado_por_nome", { length: 200 }),
   motivoCancelamento: varchar("motivo_cancelamento", { length: 255 }),
+  /** Idempotência da confirmação comercial. NULL nas vendas antigas. */
+  idempotencyKey: varchar("idempotency_key", { length: 80 }),
 }, table => ({
   fazendaIdx: index("vendas_fazenda_idx").on(table.fazendaId),
   compradorIdx: index("vendas_comprador_idx").on(table.compradorId),
+  idemUq: uniqueIndex("vendas_idem_uq").on(table.userId, table.idempotencyKey),
 }));
 
 /** Um animal por linha. Snapshot comercial da operação. */

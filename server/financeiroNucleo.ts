@@ -90,6 +90,21 @@ function insertIdOf(result: unknown): number {
   return Number(asArray?.[0]?.insertId ?? asObj?.insertId ?? 0);
 }
 
+function mysqlExecuteRows(result: unknown): Array<Record<string, unknown>> {
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows: unknown }).rows;
+    if (Array.isArray(rows)) return rows as Array<Record<string, unknown>>;
+  }
+  const raw = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : result;
+  return (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
+}
+
+function mysqlDateStr(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const text = String(value ?? "");
+  return text.length >= 10 ? text.slice(0, 10) : text;
+}
+
 function hojeISO(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -425,10 +440,16 @@ export type ApropriarItemInput = {
   observacoes?: string | null;
 };
 
-export async function tituloTemLiquidacaoEfetiva(tx: FinanceiroNucleoTx, userId: number, tituloId: number) {
+export async function tituloTemLiquidacaoEfetiva(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  tituloId: number,
+  forUpdate = false,
+) {
   const parcelas = await tx.listParcelasTitulo(userId, tituloId);
   if (parcelas.length === 0) return false;
-  const alocs = await tx.listAlocacoesPorParcelas(userId, parcelas.map(p => p.id));
+  if (forUpdate) await tx.lockParcelas(userId, parcelas.map(p => p.id));
+  const alocs = await tx.listAlocacoesPorParcelas(userId, parcelas.map(p => p.id), forUpdate);
   return parcelas.some(p => {
     const saldo = derivarSaldoParcela(
       p.valorOriginal,
@@ -542,9 +563,10 @@ export async function apropriarNoTx(
 }
 
 export async function cancelarTituloNoTx(tx: FinanceiroNucleoTx, userId: number, tituloId: number, motivo: string) {
-  const titulo = await tx.findTitulo(userId, tituloId);
+  const titulo = (await tx.lockTitulos(userId, [tituloId]))[0] ?? null;
   if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
-  if (await tituloTemLiquidacaoEfetiva(tx, userId, tituloId)) toTrpc(MSG_FIN_CANCELAR_COM_LIQUIDACAO);
+  if (titulo.estado === "cancelado") toTrpc(MSG_FIN_TITULO_CANCELADO);
+  if (await tituloTemLiquidacaoEfetiva(tx, userId, tituloId, true)) toTrpc(MSG_FIN_CANCELAR_COM_LIQUIDACAO);
   await tx.cancelarTitulo(userId, tituloId, motivo.trim() || "Cancelado", new Date());
   return { success: true };
 }
@@ -1369,16 +1391,47 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         async lockTitulos(userId, ids) {
           const unique = idsUnicosOrdenados(ids);
           if (!unique.length) return [];
-          await drizzleTx.execute(sql`
-            SELECT id FROM financeiro_titulos
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              tipo,
+              estado,
+              condicao_status AS condicaoStatus,
+              pessoa_id AS pessoaId,
+              contraparte_nome_snapshot AS contraparteNomeSnapshot,
+              fazenda_origem_id AS fazendaOrigemId,
+              origem_tipo AS origemTipo,
+              origem_id AS origemId,
+              origem_item_chave AS origemItemChave,
+              descricao,
+              DATE_FORMAT(data_competencia, '%Y-%m-%d') AS dataCompetencia,
+              valor_original AS valorOriginal,
+              documento_referencia AS documentoReferencia,
+              observacoes
+            FROM financeiro_titulos
             WHERE user_id = ${userId}
               AND id IN (${sql.join(unique.map(id => sql`${id}`), sql`, `)})
             ORDER BY id FOR UPDATE
           `);
-          const rows = await drizzleTx.select().from(financeiroTitulos)
-            .where(and(eq(financeiroTitulos.userId, userId), inArray(financeiroTitulos.id, unique)))
-            .orderBy(financeiroTitulos.id);
-          return rows.map(mapTitulo);
+          return mysqlExecuteRows(result).map(row => ({
+            id: Number(row.id),
+            userId: Number(row.userId),
+            tipo: String(row.tipo) as FinanceiroTituloTipo,
+            estado: String(row.estado) as "ativo" | "cancelado",
+            condicaoStatus: String(row.condicaoStatus) as FinanceiroCondicaoStatus,
+            pessoaId: Number(row.pessoaId),
+            contraparteNomeSnapshot: String(row.contraparteNomeSnapshot ?? ""),
+            fazendaOrigemId: row.fazendaOrigemId == null ? null : Number(row.fazendaOrigemId),
+            origemTipo: String(row.origemTipo),
+            origemId: row.origemId == null ? null : Number(row.origemId),
+            origemItemChave: row.origemItemChave == null ? null : String(row.origemItemChave),
+            descricao: String(row.descricao ?? ""),
+            dataCompetencia: mysqlDateStr(row.dataCompetencia),
+            valorOriginal: String(row.valorOriginal),
+            documentoReferencia: row.documentoReferencia == null ? null : String(row.documentoReferencia),
+            observacoes: row.observacoes == null ? null : String(row.observacoes),
+          }));
         },
         async lockParcelas(userId, ids) {
           const unique = idsUnicosOrdenados(ids);

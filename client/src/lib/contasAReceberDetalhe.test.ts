@@ -305,8 +305,8 @@ describe("contasAReceberDetalhe — navegação, tela e restrições", () => {
     expect(page).toContain("financeiroV2.tituloHistoricoPagamentos");
     expect(page).toContain("financeiroV2.titulosDefinirParcelas");
     expect(page).not.toContain("liquidacaoPagar");
-    expect(page).not.toContain("liquidacaoReceber");
-    expect(page).not.toContain("liquidacaoEstornar");
+    expect(page).toContain("liquidacaoReceber");
+    expect(page).toContain("liquidacaoEstornar");
     expect(page).not.toContain("trpc.financeiro.");
     expect(page).toContain("lg:hidden");
     expect(page).toContain("hidden lg:block");

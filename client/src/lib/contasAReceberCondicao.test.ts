@@ -281,8 +281,8 @@ describe("contasAReceberCondicao — tela e contrato oficial", () => {
     expect(page).toContain("Valor a receber");
     expect(page).toContain("textoConfirmacaoParcelasReceber");
     expect(page).not.toContain("liquidacaoPagar");
-    expect(page).not.toContain("liquidacaoReceber");
-    expect(page).not.toContain("liquidacaoEstornar");
+    expect(page).toContain("liquidacaoReceber");
+    expect(page).toContain("liquidacaoEstornar");
     expect(page).not.toContain("trpc.financeiro.");
     expect(page).not.toContain("Pagamento único");
     expect(lista).not.toContain("titulosDefinirParcelas");

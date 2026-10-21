@@ -328,7 +328,8 @@ describe("contasAReceberListagem — tela, rota e ausência do legado", () => {
     expect(page).not.toContain("titulosCreateManual");
     expect(page).not.toContain(".useMutation");
     expect(page).toContain("Somente consulta");
-    expect(page).toContain("Recebimento ainda não está disponível");
+    expect(page).toContain("O recebimento é registrado no detalhe do título");
+    expect(page).not.toContain("Recebimento ainda não está disponível");
     expect(page).toContain("Pesquisar descrição");
     expect(page).toContain("Todas as datas");
     expect(page).toContain("Sem vencimento definido");

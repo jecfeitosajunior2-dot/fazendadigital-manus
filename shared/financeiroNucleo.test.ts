@@ -5,6 +5,8 @@ import {
   caixaDaAlocacao,
   derivarApropriacao,
   derivarSaldoParcela,
+  FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
   montarAlcanceTitulosLiquidacao,
   retryEstornoBateComPedido,
   retryPagamentoBateComPedido,
@@ -63,6 +65,24 @@ describe("financeiroMoeda / domínio puro", () => {
     expect(parcial.apropriacaoCompleta).toBe(false);
     const completa = derivarApropriacao(10000, [{ valor: 7000 }, { valor: 3000 }]);
     expect(completa.apropriacaoCompleta).toBe(true);
+  });
+
+  it("origem venda_animais exige id da venda e chave principal", () => {
+    expect(validarOrigemTitulo({
+      origemTipo: FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+      origemId: 2,
+      origemItemChave: FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
+    })).toEqual({
+      ok: true,
+      origemTipo: "venda_animais",
+      origemId: 2,
+      origemItemChave: "principal",
+    });
+    expect(validarOrigemTitulo({
+      origemTipo: FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+      origemId: 2,
+      origemItemChave: null,
+    }).ok).toBe(false);
   });
 
   it("origem manutencao exige OS e chave oficina", () => {

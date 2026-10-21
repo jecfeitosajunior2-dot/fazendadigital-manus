@@ -228,7 +228,7 @@ export default function ContasAReceberPage() {
                 Contas a Receber
               </h1>
               <p className="text-[12px] text-gray-500 mt-0.5">
-                Somente consulta. Recebimento ainda não está disponível nesta tela.
+                Somente consulta. O recebimento é registrado no detalhe do título.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

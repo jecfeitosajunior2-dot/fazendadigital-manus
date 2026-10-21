@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { FD_PRIMARY, FormInput } from "@/components/FormFields";
+import { FD_PRIMARY, FormInput, FormSelect } from "@/components/FormFields";
 import MobileCard from "@/components/MobileCard";
 import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { SelectItem } from "@/components/ui/select";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { formatDateBR, formatDateInputLocal } from "@/lib/date-utils";
 import { cn, formatCurrencyBrl } from "@/lib/utils";
@@ -22,7 +23,13 @@ import {
   tituloEstaCancelado,
   type TituloV2DetalheOficial,
 } from "@/lib/contasAReceberListagem";
-import { rotuloOrigemTitulo } from "@/lib/contasAPagarListagem";
+import { rotuloOrigemTitulo, type ParcelaV2Oficial } from "@/lib/contasAPagarListagem";
+import {
+  FINANCEIRO_CONTAS_V2_PATH,
+  MSG_SEM_CONTA_V2_ATIVA,
+  deveOrientarCadastroContaV2,
+  type ContaFinanceiraV2Oficial,
+} from "@/lib/contasFinanceirasV2";
 import {
   MSG_ACESSO_NEGADO,
   MSG_HISTORICO_RECEBIMENTOS_CARREGANDO,
@@ -39,6 +46,7 @@ import {
   resumoOficialContasAReceber,
   rotuloCondicaoPagamento,
   rotuloEstadoTitulo,
+  rotuloParcelasHistorico,
   rotuloSituacaoParcelaReceber,
   type EventoHistoricoPagamentoOficial,
   type EventoHistoricoRecebimentoExibicao,
@@ -60,6 +68,67 @@ import {
   type ErrosCondicaoPagamento,
   type RascunhoCondicaoPagamento,
 } from "@/lib/contasAReceberCondicao";
+import {
+  MSG_CONFIRMAR_RECEBIMENTO,
+  MSG_RECEBIMENTO_OCUPADO,
+  MSG_RECEBIMENTO_PENDENTE_RECUPERADA,
+  MSG_RECEBIMENTO_REGISTRADO,
+  MSG_RECEBIMENTO_RESULTADO_DESCONHECIDO,
+  MSG_RECEBIMENTO_RETRY_MESMA_CHAVE,
+  ROTULO_REGISTRAR_RECEBIMENTO,
+  apagarRecebimentoPendente,
+  contasAtivasParaRecebimento,
+  gravarRecebimentoPendente,
+  historicoSugereRecebimentoDaPendencia,
+  lerRecebimentoPendente,
+  mensagemErroRecebimento,
+  mensagemSituacaoPendenciaRecebimento,
+  montarIntencaoRecebimento,
+  novaChaveIdempotenciaRecebimento,
+  pendenciaFoiRecuperada,
+  podeRegistrarRecebimentoParcela,
+  rascunhoDeIntencaoRecebimento,
+  rascunhoInicialRecebimento,
+  recebimentoRecusaDefinitiva,
+  textoConfirmacaoRecebimento,
+  validarRecebimentoParcela,
+  type ErrosRecebimentoParcela,
+  type IntencaoRecebimentoV2,
+  type RascunhoRecebimentoParcela,
+} from "@/lib/contasAReceberRecebimento";
+import {
+  MSG_CONFIRMAR_ESTORNO_RECEBIMENTO,
+  MSG_ESTORNO_RECEBIMENTO_ALCANCE_INCOMPLETO,
+  MSG_ESTORNO_RECEBIMENTO_CHAVE_COLIDIU,
+  MSG_ESTORNO_RECEBIMENTO_PENDENTE_RECUPERADA,
+  MSG_ESTORNO_RECEBIMENTO_REGISTRADO,
+  MSG_ESTORNO_RECEBIMENTO_RESULTADO_DESCONHECIDO,
+  MSG_ESTORNO_RECEBIMENTO_RETRY_MESMA_CHAVE,
+  MSG_ESTORNO_RECEBIMENTO_SOMENTE_ESTE_TITULO,
+  MSG_ESTORNO_RECEBIMENTO_VARIOS_TITULOS,
+  PREFIXO_CHAVE_ESTORNO_RECEBIMENTO,
+  ROTULO_ESTORNAR_RECEBIMENTO,
+  alcanceEstornoDaLiquidacao,
+  apagarEstornoRecebimentoPendente,
+  estornoRecebimentoRecusaDefinitiva,
+  gravarEstornoRecebimentoPendente,
+  historicoSugereEstornoRecebimentoDaPendencia,
+  lerEstornoRecebimentoPendenteDoTitulo,
+  linhasTitulosAlcanceEstorno,
+  mensagemBloqueioEstornoRecebimento,
+  mensagemErroEstornoRecebimento,
+  mensagemSituacaoPendenciaEstornoRecebimento,
+  montarIntencaoEstornoRecebimento,
+  novaChaveIdempotenciaEstornoRecebimento,
+  pendenciaEstornoRecebimentoFoiRecuperada,
+  podeEstornarRecebimento,
+  respostaEstornoConfirmaIntencao,
+  textoAlcanceConfirmacaoEstornoRecebimento,
+  textoConfirmacaoEstornoRecebimento,
+  validarEstornoRecebimento,
+  type ErrosEstornoRecebimento,
+  type IntencaoEstornoRecebimentoV2,
+} from "@/lib/contasAReceberEstorno";
 
 function formatarValorOficial(valor: string | number | null | undefined): string {
   if (valor == null || valor === "") return "—";
@@ -119,6 +188,28 @@ export default function ContasAReceberDetalhePage() {
   const [modoEdicao, setModoEdicao] = useState(false);
   const [rascunho, setRascunho] = useState<RascunhoCondicaoPagamento | null>(null);
   const [errosCondicao, setErrosCondicao] = useState<ErrosCondicaoPagamento>({});
+  const [recebimentoAberto, setRecebimentoAberto] = useState(false);
+  const [parcelaRecebimento, setParcelaRecebimento] = useState<ParcelaV2Oficial | null>(null);
+  const [rascunhoRecebimento, setRascunhoRecebimento] = useState<RascunhoRecebimentoParcela | null>(null);
+  const [errosRecebimento, setErrosRecebimento] = useState<ErrosRecebimentoParcela>({});
+  const [chaveRecebimento, setChaveRecebimento] = useState("");
+  const [intencaoRecebimento, setIntencaoRecebimento] = useState<IntencaoRecebimentoV2 | null>(null);
+  const [resultadoDesconhecido, setResultadoDesconhecido] = useState(false);
+  const [bloqueioRecebimento, setBloqueioRecebimento] = useState(false);
+  const enviandoRecebimentoRef = useRef(false);
+  const pendenciaChaveRestauradaRef = useRef<string | null>(null);
+  const chaveIniciadaNestaSessaoRef = useRef<string | null>(null);
+  const [estornoAberto, setEstornoAberto] = useState(false);
+  const [eventoEstorno, setEventoEstorno] = useState<EventoHistoricoPagamentoOficial | null>(null);
+  const [dataEstorno, setDataEstorno] = useState("");
+  const [errosEstorno, setErrosEstorno] = useState<ErrosEstornoRecebimento>({});
+  const [chaveEstorno, setChaveEstorno] = useState("");
+  const [intencaoEstorno, setIntencaoEstorno] = useState<IntencaoEstornoRecebimentoV2 | null>(null);
+  const [resultadoDesconhecidoEstorno, setResultadoDesconhecidoEstorno] = useState(false);
+  const [bloqueioEstorno, setBloqueioEstorno] = useState(false);
+  const enviandoEstornoRef = useRef(false);
+  const pendenciaEstornoRestauradaRef = useRef<string | null>(null);
+  const chaveEstornoSessaoRef = useRef<string | null>(null);
 
   const consulta = trpc.financeiroV2.titulosGet.useQuery(
     { id: tituloId ?? 0 },
@@ -130,6 +221,9 @@ export default function ContasAReceberDetalhePage() {
   );
   const fazendasQuery = trpc.fazendas.list.useQuery();
   const fazendas = fazendasQuery.data ?? [];
+  const contasV2 = trpc.financeiroV2.contasList.useQuery();
+  const receberParcela = trpc.financeiroV2.liquidacaoReceber.useMutation();
+  const estornarRecebimento = trpc.financeiroV2.liquidacaoEstornar.useMutation();
   const definirParcelas = trpc.financeiroV2.titulosDefinirParcelas.useMutation({
     onSuccess: async () => {
       toast.success(modoEdicao ? MSG_PARCELAS_ATUALIZADAS : MSG_PARCELAS_DEFINIDAS);
@@ -145,6 +239,64 @@ export default function ContasAReceberDetalhePage() {
       toast.error(mensagemErroDefinirParcelasReceber(erro.data?.code, erro.message));
     },
   });
+
+  useEffect(() => {
+    if (typeof user?.id !== "number" || tituloId == null) return;
+    const persistido = lerRecebimentoPendente({ userId: user.id, tituloId });
+    if (!persistido) return;
+    if (!pendenciaFoiRecuperada({
+      persistido,
+      chaveIniciadaNestaSessao: chaveIniciadaNestaSessaoRef.current,
+    })) return;
+    const tituloAtual = consulta.data as TituloV2DetalheOficial | undefined;
+    const parcela = tituloAtual?.parcelas.find(item => item.id === persistido.parcelaId) ?? null;
+    if (pendenciaChaveRestauradaRef.current !== persistido.chave) {
+      pendenciaChaveRestauradaRef.current = persistido.chave;
+      setIntencaoRecebimento(persistido);
+      setChaveRecebimento(persistido.chave);
+      setResultadoDesconhecido(true);
+      setRascunhoRecebimento(rascunhoDeIntencaoRecebimento(persistido));
+      setRecebimentoAberto(true);
+      setErrosRecebimento({ geral: MSG_RECEBIMENTO_PENDENTE_RECUPERADA });
+      void Promise.all([
+        utils.financeiroV2.titulosGet.invalidate(),
+        utils.financeiroV2.tituloHistoricoPagamentos.invalidate(),
+        utils.financeiroV2.contasList.invalidate(),
+      ]);
+    }
+    if (parcela) setParcelaRecebimento(parcela);
+  }, [consulta.data, tituloId, user?.id, utils]);
+
+  useEffect(() => {
+    if (typeof user?.id !== "number" || tituloId == null) return;
+    const eventos = (historico.data?.eventos ?? []) as EventoHistoricoPagamentoOficial[];
+    const persistido = lerEstornoRecebimentoPendenteDoTitulo({
+      userId: user.id,
+      tituloId,
+      liquidacaoIds: eventos.map(item => item.liquidacaoId),
+    });
+    if (!persistido) return;
+    if (!pendenciaEstornoRecebimentoFoiRecuperada({
+      persistido,
+      chaveIniciadaNestaSessao: chaveEstornoSessaoRef.current,
+    })) return;
+    const evento = eventos.find(item => item.liquidacaoId === persistido.liquidacaoId) ?? null;
+    if (pendenciaEstornoRestauradaRef.current !== persistido.chave) {
+      pendenciaEstornoRestauradaRef.current = persistido.chave;
+      setIntencaoEstorno(persistido);
+      setChaveEstorno(persistido.chave);
+      setResultadoDesconhecidoEstorno(true);
+      setDataEstorno(persistido.payload.dataLiquidacao);
+      setEstornoAberto(true);
+      setErrosEstorno({ geral: MSG_ESTORNO_RECEBIMENTO_PENDENTE_RECUPERADA });
+      void Promise.all([
+        utils.financeiroV2.titulosGet.invalidate(),
+        utils.financeiroV2.tituloHistoricoPagamentos.invalidate(),
+        utils.financeiroV2.contasList.invalidate(),
+      ]);
+    }
+    if (evento) setEventoEstorno(evento);
+  }, [historico.data, tituloId, user?.id, utils]);
 
   if (tituloId == null) {
     return (
@@ -212,13 +364,365 @@ export default function ContasAReceberDetalhePage() {
       : formatarValorOficial(resumo.saldoAberto);
   const eventosHistorico = (historico.data?.eventos ?? []) as EventoHistoricoPagamentoOficial[];
   const acaoCondicao = acaoCondicaoRecebimentoTitulo(titulo, user?.id);
+  const contasAtivas = contasAtivasParaRecebimento(
+    (contasV2.data ?? []) as ContaFinanceiraV2Oficial[],
+    user?.id,
+  );
+  const orientarContaV2 = deveOrientarCadastroContaV2({
+    carregando: contasV2.isLoading,
+    erro: Boolean(contasV2.error),
+    contas: contasV2.data as ContaFinanceiraV2Oficial[] | undefined,
+  });
+  const ocupadoRecebimento = bloqueioRecebimento
+    || enviandoRecebimentoRef.current
+    || receberParcela.isPending
+    || definirParcelas.isPending
+    || formAberto
+    || bloqueioEstorno
+    || enviandoEstornoRef.current
+    || estornarRecebimento.isPending
+    || estornoAberto;
+  const persistidoTitulo = typeof user?.id === "number"
+    ? lerRecebimentoPendente({ userId: user.id, tituloId: titulo.id })
+    : null;
+  const pendenteTitulo = persistidoTitulo ?? (resultadoDesconhecido ? intencaoRecebimento : null);
+  const pendenciaRecuperada = pendenciaFoiRecuperada({
+    persistido: persistidoTitulo,
+    chaveIniciadaNestaSessao: chaveIniciadaNestaSessaoRef.current,
+  });
+  const situacaoPendencia = pendenteTitulo
+    ? historicoSugereRecebimentoDaPendencia({
+      intencao: pendenteTitulo,
+      eventos: historico.data?.eventos as EventoHistoricoPagamentoOficial[] | undefined,
+      historicoCarregando: historico.isLoading,
+      historicoComErro: Boolean(historico.error),
+    })
+    : null;
+  const persistidoEstorno = typeof user?.id === "number"
+    ? lerEstornoRecebimentoPendenteDoTitulo({
+      userId: user.id,
+      tituloId: titulo.id,
+      liquidacaoIds: eventosHistorico.map(item => item.liquidacaoId),
+    })
+    : null;
+  const pendenteEstorno = persistidoEstorno ?? (resultadoDesconhecidoEstorno ? intencaoEstorno : null);
+  const pendenciaEstornoRecuperada = pendenciaEstornoRecebimentoFoiRecuperada({
+    persistido: persistidoEstorno,
+    chaveIniciadaNestaSessao: chaveEstornoSessaoRef.current,
+  });
+  const situacaoPendenciaEstorno = pendenteEstorno
+    ? historicoSugereEstornoRecebimentoDaPendencia({
+      intencao: pendenteEstorno,
+      eventos: eventosHistorico,
+      historicoCarregando: historico.isLoading,
+      historicoComErro: Boolean(historico.error),
+    })
+    : null;
 
   const abrirCondicao = () => {
-    if (acaoCondicao.tipo === "nenhuma" || definirParcelas.isPending) return;
+    if (acaoCondicao.tipo === "nenhuma" || ocupadoRecebimento || recebimentoAberto || pendenteTitulo || pendenteEstorno) return;
     setModoEdicao(acaoCondicao.tipo === "editar");
     setRascunho(rascunhoInicialDaCondicao(titulo));
     setErrosCondicao({});
     setFormAberto(true);
+  };
+
+  const abrirRecebimento = (parcela: ParcelaV2Oficial) => {
+    if (pendenteEstorno || estornoAberto) {
+      toast.error(pendenciaEstornoRecuperada ? MSG_ESTORNO_RECEBIMENTO_PENDENTE_RECUPERADA : MSG_RECEBIMENTO_OCUPADO);
+      return;
+    }
+    if (pendenteTitulo) {
+      if (pendenteTitulo.parcelaId !== parcela.id) {
+        toast.error(pendenciaRecuperada ? MSG_RECEBIMENTO_PENDENTE_RECUPERADA : MSG_RECEBIMENTO_OCUPADO);
+        return;
+      }
+      setParcelaRecebimento(parcela);
+      setIntencaoRecebimento(pendenteTitulo);
+      setChaveRecebimento(pendenteTitulo.chave);
+      setResultadoDesconhecido(true);
+      setRascunhoRecebimento(rascunhoDeIntencaoRecebimento(pendenteTitulo));
+      setErrosRecebimento({
+        geral: situacaoPendencia
+          ? mensagemSituacaoPendenciaRecebimento(situacaoPendencia)
+          : MSG_RECEBIMENTO_RETRY_MESMA_CHAVE,
+      });
+      setRecebimentoAberto(true);
+      return;
+    }
+    const pode = podeRegistrarRecebimentoParcela({
+      titulo,
+      parcela,
+      contasAtivas,
+      userId: user?.id,
+      ocupado: ocupadoRecebimento || recebimentoAberto,
+    });
+    if (!pode.ok) {
+      if (pode.motivo === "ocupado" || pode.motivo === "pendente") toast.error(MSG_RECEBIMENTO_OCUPADO);
+      return;
+    }
+    setParcelaRecebimento(parcela);
+    setRascunhoRecebimento(rascunhoInicialRecebimento({
+      parcela,
+      dataLiquidacao: hojeISO,
+      contaId: contasAtivas.length === 1 ? contasAtivas[0]!.id : null,
+    }));
+    const chaveNova = novaChaveIdempotenciaRecebimento();
+    chaveIniciadaNestaSessaoRef.current = chaveNova;
+    setChaveRecebimento(chaveNova);
+    setIntencaoRecebimento(null);
+    setResultadoDesconhecido(false);
+    setErrosRecebimento({});
+    setRecebimentoAberto(true);
+  };
+
+  const atualizarAposRecebimento = async () => {
+    await Promise.all([
+      utils.financeiroV2.titulosGet.invalidate(),
+      utils.financeiroV2.titulosList.invalidate(),
+      utils.financeiroV2.tituloHistoricoPagamentos.invalidate(),
+      utils.financeiroV2.contasList.invalidate(),
+    ]);
+  };
+
+  const confirmarRecebimento = async () => {
+    if (!rascunhoRecebimento || !parcelaRecebimento) return;
+    if (enviandoRecebimentoRef.current || receberParcela.isPending) return;
+    const validado = validarRecebimentoParcela({
+      titulo,
+      parcela: parcelaRecebimento,
+      contas: (contasV2.data ?? []) as ContaFinanceiraV2Oficial[],
+      userId: user?.id,
+      rascunho: rascunhoRecebimento,
+      idempotencyKey: chaveRecebimento,
+      ocupado: false,
+      resultadoDesconhecido,
+      intencao: intencaoRecebimento,
+    });
+    if (!validado.ok) {
+      setErrosRecebimento(validado.erros);
+      return;
+    }
+    setErrosRecebimento({});
+    const ok = await confirm({
+      title: MSG_CONFIRMAR_RECEBIMENTO,
+      description: (
+        <span className="whitespace-pre-line">
+          {textoConfirmacaoRecebimento({
+            cliente: titulo.contraparteNomeSnapshot,
+            parcelaNumero: parcelaRecebimento.numero,
+            contaNome: contasAtivas.find(c => c.id === validado.payload.contaId)?.nome ?? "—",
+            dataLiquidacao: validado.payload.dataLiquidacao,
+            valor: validado.payload.valorMovimentado,
+          })}
+        </span>
+      ),
+      confirmText: ROTULO_REGISTRAR_RECEBIMENTO,
+      cancelText: "Voltar",
+      variant: "success",
+    });
+    if (!ok) return;
+    if (enviandoRecebimentoRef.current) return;
+    enviandoRecebimentoRef.current = true;
+    setBloqueioRecebimento(true);
+    const intencao = montarIntencaoRecebimento(titulo.id, validado.payload);
+    setIntencaoRecebimento(intencao);
+    setChaveRecebimento(validado.payload.idempotencyKey);
+    if (typeof user?.id === "number") {
+      gravarRecebimentoPendente({ userId: user.id, intencao });
+    }
+    try {
+      await receberParcela.mutateAsync(validado.payload);
+      if (typeof user?.id === "number") apagarRecebimentoPendente({ userId: user.id, tituloId: titulo.id });
+      pendenciaChaveRestauradaRef.current = null;
+      chaveIniciadaNestaSessaoRef.current = null;
+      toast.success(MSG_RECEBIMENTO_REGISTRADO);
+      setRecebimentoAberto(false);
+      setParcelaRecebimento(null);
+      setRascunhoRecebimento(null);
+      setIntencaoRecebimento(null);
+      setResultadoDesconhecido(false);
+      setChaveRecebimento("");
+      await atualizarAposRecebimento();
+    } catch (erro) {
+      const codigo = erro && typeof erro === "object" && "data" in erro
+        ? (erro as { data?: { code?: string } }).data?.code
+        : undefined;
+      const mensagem = erro instanceof Error ? erro.message : undefined;
+      await atualizarAposRecebimento();
+      if (!recebimentoRecusaDefinitiva(codigo)) {
+        setResultadoDesconhecido(true);
+        if (typeof user?.id === "number") gravarRecebimentoPendente({ userId: user.id, intencao });
+        setErrosRecebimento({ geral: MSG_RECEBIMENTO_RETRY_MESMA_CHAVE });
+        toast.message(MSG_RECEBIMENTO_RESULTADO_DESCONHECIDO);
+      } else {
+        if (typeof user?.id === "number") {
+          apagarRecebimentoPendente({ userId: user.id, tituloId: titulo.id });
+        }
+        pendenciaChaveRestauradaRef.current = null;
+        setResultadoDesconhecido(false);
+        setIntencaoRecebimento(null);
+        const chaveNova = novaChaveIdempotenciaRecebimento();
+        chaveIniciadaNestaSessaoRef.current = chaveNova;
+        setChaveRecebimento(chaveNova);
+        setErrosRecebimento({ geral: mensagemErroRecebimento(codigo, mensagem) });
+        toast.error(mensagemErroRecebimento(codigo, mensagem));
+      }
+    } finally {
+      enviandoRecebimentoRef.current = false;
+      setBloqueioRecebimento(false);
+    }
+  };
+
+  const abrirEstorno = (oficial: EventoHistoricoPagamentoOficial) => {
+    if (pendenteTitulo || recebimentoAberto) {
+      toast.error(pendenciaRecuperada ? MSG_RECEBIMENTO_PENDENTE_RECUPERADA : MSG_RECEBIMENTO_OCUPADO);
+      return;
+    }
+    if (pendenteEstorno) {
+      if (pendenteEstorno.liquidacaoId !== oficial.liquidacaoId) {
+        toast.error(pendenciaEstornoRecuperada ? MSG_ESTORNO_RECEBIMENTO_PENDENTE_RECUPERADA : MSG_RECEBIMENTO_OCUPADO);
+        return;
+      }
+      const evento = eventosHistorico.find(item => item.liquidacaoId === pendenteEstorno.liquidacaoId) ?? oficial;
+      setEventoEstorno(evento);
+      setIntencaoEstorno(pendenteEstorno);
+      setChaveEstorno(pendenteEstorno.chave);
+      setResultadoDesconhecidoEstorno(true);
+      setDataEstorno(pendenteEstorno.payload.dataLiquidacao);
+      setErrosEstorno({
+        geral: situacaoPendenciaEstorno
+          ? mensagemSituacaoPendenciaEstornoRecebimento(situacaoPendenciaEstorno)
+          : MSG_ESTORNO_RECEBIMENTO_RETRY_MESMA_CHAVE,
+      });
+      setEstornoAberto(true);
+      return;
+    }
+    const pode = podeEstornarRecebimento({
+      titulo,
+      evento: oficial,
+      userId: user?.id,
+      ocupado: ocupadoRecebimento && !estornoAberto,
+    });
+    if (!pode.ok) {
+      toast.error(mensagemBloqueioEstornoRecebimento(pode.motivo));
+      return;
+    }
+    const alcance = alcanceEstornoDaLiquidacao(oficial);
+    setEventoEstorno(oficial);
+    setDataEstorno(hojeISO);
+    const chaveNova = novaChaveIdempotenciaEstornoRecebimento();
+    if (!chaveNova.startsWith(PREFIXO_CHAVE_ESTORNO_RECEBIMENTO)) return;
+    chaveEstornoSessaoRef.current = chaveNova;
+    setChaveEstorno(chaveNova);
+    setIntencaoEstorno(null);
+    setResultadoDesconhecidoEstorno(false);
+    setErrosEstorno(alcance.ok ? {} : { geral: MSG_ESTORNO_RECEBIMENTO_ALCANCE_INCOMPLETO });
+    setEstornoAberto(true);
+  };
+
+  const confirmarEstorno = async () => {
+    if (!eventoEstorno) return;
+    if (enviandoEstornoRef.current || estornarRecebimento.isPending) return;
+    const validado = validarEstornoRecebimento({
+      titulo,
+      evento: eventoEstorno,
+      contas: (contasV2.data ?? []) as ContaFinanceiraV2Oficial[],
+      userId: user?.id,
+      dataLiquidacao: dataEstorno,
+      idempotencyKey: chaveEstorno,
+      ocupado: false,
+      resultadoDesconhecido: resultadoDesconhecidoEstorno,
+      intencao: intencaoEstorno,
+    });
+    if (!validado.ok) {
+      setErrosEstorno(validado.erros);
+      return;
+    }
+    setErrosEstorno({});
+    const ok = await confirm({
+      title: MSG_CONFIRMAR_ESTORNO_RECEBIMENTO,
+      description: (
+        <span className="whitespace-pre-line">
+          {textoConfirmacaoEstornoRecebimento({
+            cliente: validado.snapshot.cliente,
+            dataRecebimentoOriginal: validado.snapshot.dataRecebimentoOriginal,
+            contaNome: validado.snapshot.contaNome,
+            valorTotal: validado.snapshot.valorMovimentado,
+            valorNesteTitulo: validado.snapshot.valorNesteTitulo,
+            parcelasTexto: validado.snapshot.parcelasTexto,
+            dataEstorno: validado.payload.dataLiquidacao,
+            abrangencia: validado.snapshot.abrangencia,
+            titulos: validado.snapshot.titulosNaLiquidacao,
+          })}
+        </span>
+      ),
+      confirmText: ROTULO_ESTORNAR_RECEBIMENTO,
+      cancelText: "Voltar",
+      variant: "danger",
+    });
+    if (!ok) return;
+    if (enviandoEstornoRef.current) return;
+    enviandoEstornoRef.current = true;
+    setBloqueioEstorno(true);
+    const intencao = montarIntencaoEstornoRecebimento(titulo.id, validado.payload, validado.snapshot);
+    setIntencaoEstorno(intencao);
+    setChaveEstorno(validado.payload.idempotencyKey);
+    if (typeof user?.id === "number") gravarEstornoRecebimentoPendente({ userId: user.id, intencao });
+    try {
+      const resposta = await estornarRecebimento.mutateAsync(validado.payload);
+      const respostaId = resposta && typeof resposta === "object" && "id" in resposta
+        ? Number((resposta as { id: unknown }).id)
+        : null;
+      if (Number.isInteger(respostaId) && !respostaEstornoConfirmaIntencao({
+        liquidacaoOriginalId: validado.payload.liquidacaoId,
+        respostaId,
+      })) {
+        setResultadoDesconhecidoEstorno(true);
+        setErrosEstorno({ geral: MSG_ESTORNO_RECEBIMENTO_CHAVE_COLIDIU });
+        toast.error(MSG_ESTORNO_RECEBIMENTO_CHAVE_COLIDIU);
+        return;
+      }
+      if (typeof user?.id === "number") {
+        apagarEstornoRecebimentoPendente({ userId: user.id, liquidacaoId: validado.payload.liquidacaoId });
+      }
+      pendenciaEstornoRestauradaRef.current = null;
+      chaveEstornoSessaoRef.current = null;
+      toast.success(MSG_ESTORNO_RECEBIMENTO_REGISTRADO);
+      setEstornoAberto(false);
+      setEventoEstorno(null);
+      setIntencaoEstorno(null);
+      setResultadoDesconhecidoEstorno(false);
+      setChaveEstorno("");
+      await atualizarAposRecebimento();
+    } catch (erro) {
+      const codigo = erro && typeof erro === "object" && "data" in erro
+        ? (erro as { data?: { code?: string } }).data?.code
+        : undefined;
+      const mensagem = erro instanceof Error ? erro.message : undefined;
+      await atualizarAposRecebimento();
+      if (!estornoRecebimentoRecusaDefinitiva(codigo)) {
+        setResultadoDesconhecidoEstorno(true);
+        if (typeof user?.id === "number") gravarEstornoRecebimentoPendente({ userId: user.id, intencao });
+        setErrosEstorno({ geral: MSG_ESTORNO_RECEBIMENTO_RETRY_MESMA_CHAVE });
+        toast.message(MSG_ESTORNO_RECEBIMENTO_RESULTADO_DESCONHECIDO);
+      } else {
+        if (typeof user?.id === "number") {
+          apagarEstornoRecebimentoPendente({ userId: user.id, liquidacaoId: validado.payload.liquidacaoId });
+        }
+        pendenciaEstornoRestauradaRef.current = null;
+        setResultadoDesconhecidoEstorno(false);
+        setIntencaoEstorno(null);
+        const chaveNova = novaChaveIdempotenciaEstornoRecebimento();
+        chaveEstornoSessaoRef.current = chaveNova;
+        setChaveEstorno(chaveNova);
+        setErrosEstorno({ geral: mensagemErroEstornoRecebimento(codigo, mensagem) });
+        toast.error(mensagemErroEstornoRecebimento(codigo, mensagem));
+      }
+    } finally {
+      enviandoEstornoRef.current = false;
+      setBloqueioEstorno(false);
+    }
   };
 
   const confirmarCondicao = async () => {
@@ -272,6 +776,38 @@ export default function ContasAReceberDetalhePage() {
           </span>
         </div>
 
+        {pendenciaRecuperada ? (
+          <div className="px-4 py-3 border-b border-amber-100 bg-amber-50/70 text-[13px] text-amber-900">
+            <p>{MSG_RECEBIMENTO_PENDENTE_RECUPERADA}</p>
+            {situacaoPendencia ? (
+              <p className="mt-1 text-[12px]">{mensagemSituacaoPendenciaRecebimento(situacaoPendencia)}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {pendenciaEstornoRecuperada ? (
+          <div className="px-4 py-3 border-b border-amber-100 bg-amber-50/70 text-[13px] text-amber-900">
+            <p>{MSG_ESTORNO_RECEBIMENTO_PENDENTE_RECUPERADA}</p>
+            {situacaoPendenciaEstorno ? (
+              <p className="mt-1 text-[12px]">{mensagemSituacaoPendenciaEstornoRecebimento(situacaoPendenciaEstorno)}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {orientarContaV2 ? (
+          <div className="px-4 py-3 border-b border-amber-100 bg-amber-50/70 text-[13px] text-amber-900">
+            <p>{MSG_SEM_CONTA_V2_ATIVA}</p>
+            <button
+              type="button"
+              onClick={() => setLocation(FINANCEIRO_CONTAS_V2_PATH)}
+              className="mt-1 text-[12px] font-semibold underline underline-offset-2"
+              style={{ color: FD_PRIMARY }}
+            >
+              Cadastrar conta do caixa
+            </button>
+          </div>
+        ) : null}
+
         <section className="px-4 py-4 border-b border-gray-50">
           <h2 className="text-[13px] font-semibold text-[#4ECDC4] mb-3">Informações do título</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -299,7 +835,7 @@ export default function ContasAReceberDetalhePage() {
         <section className="px-4 py-4 border-b border-gray-50">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <h2 className="text-[13px] font-semibold text-[#4ECDC4]">Parcelas</h2>
-            {acaoCondicao.tipo !== "nenhuma" ? (
+            {acaoCondicao.tipo !== "nenhuma" && !pendenteTitulo && !recebimentoAberto && !pendenteEstorno && !estornoAberto ? (
               <button
                 type="button"
                 onClick={abrirCondicao}
@@ -317,6 +853,15 @@ export default function ContasAReceberDetalhePage() {
               <div className="lg:hidden space-y-3">
                 {parcelas.map(parcela => {
                   const situacaoParcela = rotuloSituacaoParcelaReceber(parcela, titulo, hojeISO);
+                  const podeReceber = podeRegistrarRecebimentoParcela({
+                    titulo,
+                    parcela,
+                    contasAtivas,
+                    userId: user?.id,
+                    ocupado: ocupadoRecebimento || (recebimentoAberto && parcelaRecebimento?.id !== parcela.id),
+                    pendenteDestaParcela: pendenteTitulo?.parcelaId === parcela.id,
+                    pendenteOutraParcela: Boolean(pendenteTitulo && pendenteTitulo.parcelaId !== parcela.id),
+                  }).ok;
                   return (
                     <MobileCard
                       key={parcela.id}
@@ -332,6 +877,11 @@ export default function ContasAReceberDetalhePage() {
                         { label: "Valor recebido", value: formatarValorOficial(parcela.principalLiquidado) },
                         { label: "Saldo restante", value: formatarValorOficial(parcela.saldoPrincipal), emphasis: true },
                       ]}
+                      actions={podeReceber ? [{
+                        icon: "payments",
+                        label: ROTULO_REGISTRAR_RECEBIMENTO,
+                        onClick: () => abrirRecebimento(parcela),
+                      }] : []}
                     />
                   );
                 })}
@@ -341,9 +891,9 @@ export default function ContasAReceberDetalhePage() {
                   <table className="w-full min-w-[820px] table-fixed text-[11px] border-collapse">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        {["Parcela", "Vencimento", "Valor original", "Valor recebido", "Saldo restante", "Situação"].map(col => (
+                        {["Parcela", "Vencimento", "Valor original", "Valor recebido", "Saldo restante", "Situação", ""].map(col => (
                           <th
-                            key={col}
+                            key={col || "acoes"}
                             className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
                           >
                             {col}
@@ -354,6 +904,15 @@ export default function ContasAReceberDetalhePage() {
                     <tbody>
                       {parcelas.map(parcela => {
                         const situacaoParcela = rotuloSituacaoParcelaReceber(parcela, titulo, hojeISO);
+                        const podeReceber = podeRegistrarRecebimentoParcela({
+                          titulo,
+                          parcela,
+                          contasAtivas,
+                          userId: user?.id,
+                          ocupado: ocupadoRecebimento || (recebimentoAberto && parcelaRecebimento?.id !== parcela.id),
+                          pendenteDestaParcela: pendenteTitulo?.parcelaId === parcela.id,
+                          pendenteOutraParcela: Boolean(pendenteTitulo && pendenteTitulo.parcelaId !== parcela.id),
+                        }).ok;
                         return (
                           <tr key={parcela.id} className="border-b border-gray-100">
                             <td className="px-3 py-2.5 text-gray-800">{parcela.numero}</td>
@@ -365,6 +924,18 @@ export default function ContasAReceberDetalhePage() {
                               <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold", classeSituacao(situacaoParcela))}>
                                 {situacaoParcela}
                               </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right">
+                              {podeReceber ? (
+                                <button
+                                  type="button"
+                                  className="text-[11px] font-semibold hover:underline"
+                                  style={{ color: FD_PRIMARY }}
+                                  onClick={() => abrirRecebimento(parcela)}
+                                >
+                                  {ROTULO_REGISTRAR_RECEBIMENTO}
+                                </button>
+                              ) : null}
                             </td>
                           </tr>
                         );
@@ -384,6 +955,14 @@ export default function ContasAReceberDetalhePage() {
             mensagem: historico.error.message,
           } : null}
           eventos={eventosHistorico}
+          onEstornar={abrirEstorno}
+          mostrarEstorno={oficial => podeEstornarRecebimento({
+            titulo,
+            evento: oficial,
+            userId: user?.id,
+            ocupado: ocupadoRecebimento && !estornoAberto,
+            pendenteOutraLiquidacao: Boolean(pendenteEstorno && pendenteEstorno.liquidacaoId !== oficial.liquidacaoId),
+          }).ok || (pendenteEstorno?.liquidacaoId === oficial.liquidacaoId)}
         />
       </div>
 
@@ -400,6 +979,45 @@ export default function ContasAReceberDetalhePage() {
         }}
         onChange={setRascunho}
         onConfirmar={() => void confirmarCondicao()}
+      />
+
+      <DialogRecebimentoParcela
+        aberto={recebimentoAberto}
+        titulo={titulo}
+        parcela={parcelaRecebimento}
+        rascunho={rascunhoRecebimento}
+        contasAtivas={contasAtivas}
+        erros={errosRecebimento}
+        travado={resultadoDesconhecido}
+        salvando={receberParcela.isPending || bloqueioRecebimento}
+        onFechar={() => {
+          if (receberParcela.isPending || bloqueioRecebimento) return;
+          setRecebimentoAberto(false);
+        }}
+        onChange={setRascunhoRecebimento}
+        onConfirmar={() => void confirmarRecebimento()}
+      />
+
+      <DialogEstornoRecebimento
+        aberto={estornoAberto}
+        cliente={titulo.contraparteNomeSnapshot}
+        evento={eventoEstorno}
+        dataLiquidacao={dataEstorno}
+        erros={errosEstorno}
+        travado={resultadoDesconhecidoEstorno}
+        salvando={bloqueioEstorno || estornarRecebimento.isPending}
+        onFechar={() => {
+          if (bloqueioEstorno || estornarRecebimento.isPending) return;
+          setEstornoAberto(false);
+          if (!resultadoDesconhecidoEstorno) {
+            setEventoEstorno(null);
+          }
+        }}
+        onChangeData={nova => {
+          if (resultadoDesconhecidoEstorno) return;
+          setDataEstorno(nova);
+        }}
+        onConfirmar={() => void confirmarEstorno()}
       />
     </AppLayout>
   );
@@ -419,19 +1037,25 @@ function SecaoHistoricoRecebimentos({
   carregando,
   erro,
   eventos,
+  onEstornar,
+  mostrarEstorno,
 }: {
   carregando: boolean;
   erro: { codigo?: string; mensagem?: string } | null;
   eventos: EventoHistoricoPagamentoOficial[] | undefined;
+  onEstornar: (evento: EventoHistoricoPagamentoOficial) => void;
+  mostrarEstorno: (evento: EventoHistoricoPagamentoOficial) => boolean;
 }) {
   const oficiais = Array.isArray(eventos) ? eventos : [];
   const linhas = montarEventosHistoricoRecebimentos(oficiais);
+  const eventoOficial = (id: number) => oficiais.find(item => item.liquidacaoId === id);
   const vazio = deveMostrarHistoricoVazio({
     carregando,
     erro: erro != null,
     eventos,
   });
   const temTotalCompartilhado = linhas.some(linha => linha.mostrarTotalLiquidacao);
+  const temAcaoEstorno = oficiais.some(oficial => mostrarEstorno(oficial));
   const mensagemErro = erro
     ? mensagemErroHistoricoRecebimentos(erro.codigo, erro.mensagem)
     : MSG_HISTORICO_RECEBIMENTOS_ERRO;
@@ -448,7 +1072,9 @@ function SecaoHistoricoRecebimentos({
       ) : (
         <>
           <div className="lg:hidden space-y-3">
-            {linhas.map(evento => (
+            {linhas.map(evento => {
+              const oficial = eventoOficial(evento.liquidacaoId);
+              return (
               <MobileCard
                 key={evento.liquidacaoId}
                 title={formatDateBR(evento.dataLiquidacao)}
@@ -477,8 +1103,15 @@ function SecaoHistoricoRecebimentos({
                     })),
                   ...(evento.referencia ? [{ label: "Referência", value: evento.referencia }] : []),
                 ]}
+                actions={oficial && mostrarEstorno(oficial) ? [{
+                  icon: "undo",
+                  label: ROTULO_ESTORNAR_RECEBIMENTO,
+                  variant: "danger",
+                  onClick: () => onEstornar(oficial),
+                }] : []}
               />
-            ))}
+              );
+            })}
           </div>
           <div className="hidden lg:block">
             <TableHorizontalScroll fitWidth>
@@ -493,9 +1126,10 @@ function SecaoHistoricoRecebimentos({
                       "Parcela",
                       "Referência",
                       "Situação",
+                      ...(temAcaoEstorno ? [""] : []),
                     ].map(col => (
                       <th
-                        key={col}
+                        key={col || "acoes"}
                         className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide"
                       >
                         {col}
@@ -504,7 +1138,9 @@ function SecaoHistoricoRecebimentos({
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.map(evento => (
+                  {linhas.map(evento => {
+                    const oficial = eventoOficial(evento.liquidacaoId);
+                    return (
                     <tr
                       key={evento.liquidacaoId}
                       className={cn("border-b border-gray-100", !evento.efetivo && "text-gray-500")}
@@ -536,8 +1172,22 @@ function SecaoHistoricoRecebimentos({
                           {evento.situacao}
                         </span>
                       </td>
+                      {temAcaoEstorno ? (
+                        <td className="px-3 py-2.5 text-right">
+                          {oficial && mostrarEstorno(oficial) ? (
+                            <button
+                              type="button"
+                              className="text-[11px] font-semibold text-red-700 hover:underline"
+                              onClick={() => onEstornar(oficial)}
+                            >
+                              {ROTULO_ESTORNAR_RECEBIMENTO}
+                            </button>
+                          ) : null}
+                        </td>
+                      ) : null}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </TableHorizontalScroll>
@@ -748,6 +1398,245 @@ function DialogCondicaoRecebimento({
                 style={{ backgroundColor: FD_PRIMARY }}
               >
                 {salvando ? "Salvando..." : "Confirmar"}
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DialogRecebimentoParcela({
+  aberto,
+  titulo,
+  parcela,
+  rascunho,
+  contasAtivas,
+  erros,
+  travado,
+  salvando,
+  onFechar,
+  onChange,
+  onConfirmar,
+}: {
+  aberto: boolean;
+  titulo: TituloV2DetalheOficial;
+  parcela: ParcelaV2Oficial | null;
+  rascunho: RascunhoRecebimentoParcela | null;
+  contasAtivas: ContaFinanceiraV2Oficial[];
+  erros: ErrosRecebimentoParcela;
+  travado: boolean;
+  salvando: boolean;
+  onFechar: () => void;
+  onChange: (rascunho: RascunhoRecebimentoParcela) => void;
+  onConfirmar: () => void;
+}) {
+  const somenteLeitura = travado || salvando;
+  return (
+    <Dialog open={aberto} onOpenChange={abertoAgora => { if (!abertoAgora) onFechar(); }}>
+      <DialogContent className="max-w-lg bg-white p-0 gap-0 max-h-[90vh] overflow-y-auto">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <DialogTitle className="text-[16px] font-semibold text-gray-900">{ROTULO_REGISTRAR_RECEBIMENTO}</DialogTitle>
+          <DialogDescription className="text-[12px] text-gray-500 mt-1">
+            {travado
+              ? MSG_RECEBIMENTO_RETRY_MESMA_CHAVE
+              : "Recebe uma parcela por vez. O valor sugerido é o saldo a receber. Pode ser parcial ou integral."}
+          </DialogDescription>
+        </div>
+        {parcela && rascunho ? (
+          <form
+            className="px-4 py-4 space-y-3"
+            onSubmit={evento => {
+              evento.preventDefault();
+              onConfirmar();
+            }}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Info label="Cliente" value={titulo.contraparteNomeSnapshot || "—"} />
+              <Info label="Título" value={identificacaoTitulo(titulo)} />
+              <Info label="Parcela" value={String(parcela.numero)} />
+              <Info label="Valor original" value={formatarValorOficial(parcela.valorOriginal)} />
+              <Info label="Valor já recebido" value={formatarValorOficial(parcela.principalLiquidado)} />
+              <Info label="Saldo a receber" value={formatarValorOficial(parcela.saldoPrincipal)} />
+            </div>
+            <label className="block min-w-0">
+              <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Conta financeira</span>
+              <FormSelect
+                variant="light"
+                required
+                modal={false}
+                disabled={somenteLeitura}
+                value={rascunho.contaId}
+                invalid={Boolean(erros.contaId)}
+                placeholder="Selecione a conta"
+                onChange={contaId => onChange({ ...rascunho, contaId })}
+              >
+                {contasAtivas.map(conta => (
+                  <SelectItem key={conta.id} value={String(conta.id)}>{conta.nome}</SelectItem>
+                ))}
+              </FormSelect>
+              {erros.contaId ? <span className="block text-[11px] text-red-600 mt-1">{erros.contaId}</span> : null}
+            </label>
+            <label className="block min-w-0">
+              <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Data do recebimento</span>
+              <FormInput
+                variant="light"
+                required
+                type="date"
+                readOnly={somenteLeitura}
+                value={rascunho.dataLiquidacao}
+                invalid={Boolean(erros.dataLiquidacao)}
+                onChange={dataLiquidacao => onChange({ ...rascunho, dataLiquidacao })}
+              />
+              {erros.dataLiquidacao ? <span className="block text-[11px] text-red-600 mt-1">{erros.dataLiquidacao}</span> : null}
+            </label>
+            <label className="block min-w-0">
+              <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Valor a receber agora</span>
+              <FormInput
+                variant="light"
+                required
+                inputMode="decimal"
+                readOnly={somenteLeitura}
+                value={rascunho.valor}
+                invalid={Boolean(erros.valor)}
+                onChange={valor => onChange({ ...rascunho, valor })}
+              />
+              {erros.valor ? <span className="block text-[11px] text-red-600 mt-1">{erros.valor}</span> : null}
+            </label>
+            {erros.geral ? <p className="text-[12px] text-red-600">{erros.geral}</p> : null}
+            {travado ? <p className="text-[12px] text-amber-800">{MSG_RECEBIMENTO_RESULTADO_DESCONHECIDO}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-700"
+                onClick={onFechar}
+                disabled={salvando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando}
+                className="h-9 px-3 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {salvando ? "Registrando..." : travado ? "Tentar de novo" : "Continuar"}
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DialogEstornoRecebimento({
+  aberto,
+  cliente,
+  evento,
+  dataLiquidacao,
+  erros,
+  travado,
+  salvando,
+  onFechar,
+  onChangeData,
+  onConfirmar,
+}: {
+  aberto: boolean;
+  cliente: string;
+  evento: EventoHistoricoPagamentoOficial | null;
+  dataLiquidacao: string;
+  erros: ErrosEstornoRecebimento;
+  travado: boolean;
+  salvando: boolean;
+  onFechar: () => void;
+  onChangeData: (data: string) => void;
+  onConfirmar: () => void;
+}) {
+  const somenteLeitura = travado || salvando;
+  const alcance = evento ? alcanceEstornoDaLiquidacao(evento) : null;
+  const bloqueadoAlcance = alcance != null && !alcance.ok;
+  const variosTitulos = alcance?.ok === true && alcance.abrangencia === "varios_titulos";
+  return (
+    <Dialog open={aberto} onOpenChange={abertoAgora => { if (!abertoAgora) onFechar(); }}>
+      <DialogContent className="max-w-lg bg-white p-0 gap-0 max-h-[90vh] overflow-y-auto">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <DialogTitle className="text-[16px] font-semibold text-gray-900">{ROTULO_ESTORNAR_RECEBIMENTO}</DialogTitle>
+          <DialogDescription className="text-[12px] text-gray-500 mt-1">
+            {travado
+              ? MSG_ESTORNO_RECEBIMENTO_RETRY_MESMA_CHAVE
+              : "Desfaz o recebimento original por completo. Isso não apaga o histórico."}
+          </DialogDescription>
+        </div>
+        {evento ? (
+          <form
+            className="px-4 py-4 space-y-3"
+            onSubmit={eventoForm => {
+              eventoForm.preventDefault();
+              if (!bloqueadoAlcance) onConfirmar();
+            }}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Info label="Cliente" value={cliente.trim() || "—"} />
+              <Info label="Data do recebimento original" value={formatDateBR(evento.dataLiquidacao)} />
+              <Info label="Conta financeira" value={evento.contaNome.trim() || "—"} />
+              <Info label="Valor total recebido" value={formatarValorOficial(evento.valorMovimentado)} />
+              <Info label="Valor atribuído ao título atual" value={formatarValorOficial(evento.valorAlocadoNesteTitulo)} />
+              <Info label="Parcelas envolvidas" value={rotuloParcelasHistorico(evento.alocacoesDesteTitulo)} />
+            </div>
+            {alcance?.ok === true ? (
+              <div className="text-[12px] text-gray-700 space-y-1">
+                {linhasTitulosAlcanceEstorno(alcance.titulos).map(tituloLinha => (
+                  <p key={tituloLinha.tituloId}>
+                    {tituloLinha.rotulo}
+                    {": "}
+                    {formatarValorOficial(tituloLinha.valorAlocado)}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            {alcance?.ok === true && !variosTitulos ? (
+              <p className="text-[12px] text-gray-700">{MSG_ESTORNO_RECEBIMENTO_SOMENTE_ESTE_TITULO}</p>
+            ) : null}
+            {variosTitulos ? (
+              <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                {MSG_ESTORNO_RECEBIMENTO_VARIOS_TITULOS}
+              </p>
+            ) : null}
+            {bloqueadoAlcance ? (
+              <p className="text-[12px] text-red-700">{MSG_ESTORNO_RECEBIMENTO_ALCANCE_INCOMPLETO}</p>
+            ) : null}
+            <label className="block min-w-0">
+              <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Data do estorno</span>
+              <FormInput
+                variant="light"
+                required
+                type="date"
+                readOnly={somenteLeitura || bloqueadoAlcance}
+                value={dataLiquidacao}
+                invalid={Boolean(erros.dataLiquidacao)}
+                onChange={onChangeData}
+              />
+              {erros.dataLiquidacao ? <span className="block text-[11px] text-red-600 mt-1">{erros.dataLiquidacao}</span> : null}
+            </label>
+            {erros.geral ? <p className="text-[12px] text-red-600">{erros.geral}</p> : null}
+            {travado ? <p className="text-[12px] text-amber-800">{MSG_ESTORNO_RECEBIMENTO_RESULTADO_DESCONHECIDO}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-700"
+                onClick={onFechar}
+                disabled={salvando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando || bloqueadoAlcance}
+                className="h-9 px-3 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50 bg-red-700"
+              >
+                {salvando ? "Estornando..." : travado ? "Tentar de novo" : "Continuar"}
               </button>
             </div>
           </form>
