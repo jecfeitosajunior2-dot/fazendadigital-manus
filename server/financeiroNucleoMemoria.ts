@@ -18,7 +18,15 @@ function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-export function criarStore(): FinanceiroNucleoStore & {
+function erroMysql(errno: number, code: string, message: string, cause?: unknown) {
+  const err = new Error(message);
+  (err as { errno?: number; code?: string }).errno = errno;
+  (err as { code?: string }).code = code;
+  if (cause !== undefined) (err as { cause?: unknown }).cause = cause;
+  return err;
+}
+
+export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNucleoStore & {
   contas: FinContaRow[];
   titulos: FinTituloRow[];
   parcelas: FinParcelaRow[];
@@ -29,6 +37,7 @@ export function criarStore(): FinanceiroNucleoStore & {
   apropriacoes: FinApropriacaoRow[];
   categorias: FinCategoriaRow[];
   centros: FinCentroRow[];
+  transacoes: number;
 } {
   const state = {
     pessoas: [
@@ -54,19 +63,29 @@ export function criarStore(): FinanceiroNucleoStore & {
   };
 
   const id = () => state.next++;
+  let deadlocksRestantes = Number(opts?.deadlocksRestantes ?? 0);
+  let transacoes = 0;
+
+  const talvezDeadlock = () => {
+    if (deadlocksRestantes <= 0) return;
+    deadlocksRestantes -= 1;
+    throw erroMysql(1213, "ER_LOCK_DEADLOCK", "Deadlock found when trying to get lock");
+  };
 
   const makeTx = (): FinanceiroNucleoTx => ({
     async findConta(userId, contaId) {
       return state.contas.find(c => c.id === contaId && c.userId === userId) ?? null;
     },
     async lockContas(userId, ids) {
-      return state.contas.filter(c => c.userId === userId && ids.includes(c.id));
+      talvezDeadlock();
+      return state.contas.filter(c => c.userId === userId && ids.includes(c.id)).sort((a, b) => a.id - b.id);
     },
     async lockTitulos(userId, ids) {
-      return state.titulos.filter(t => t.userId === userId && ids.includes(t.id));
+      talvezDeadlock();
+      return state.titulos.filter(t => t.userId === userId && ids.includes(t.id)).sort((a, b) => a.id - b.id);
     },
     async lockParcelas(userId, ids) {
-      return state.parcelas.filter(p => p.userId === userId && ids.includes(p.id));
+      return state.parcelas.filter(p => p.userId === userId && ids.includes(p.id)).sort((a, b) => a.id - b.id);
     },
     async lockLiquidacao(userId, liquidacaoId) {
       return state.liquidacoes.find(l => l.id === liquidacaoId && l.userId === userId) ?? null;
@@ -164,6 +183,13 @@ export function criarStore(): FinanceiroNucleoStore & {
       return state.liquidacoes.find(l => l.userId === userId && l.liquidacaoOriginalId === originalId) ?? null;
     },
     async insertLiquidacao(row) {
+      if (state.liquidacoes.some(l => l.userId === row.userId && l.idempotencyKey === row.idempotencyKey)) {
+        throw erroMysql(1062, "ER_DUP_ENTRY", "Duplicate entry for key 'financeiro_liquidacoes.financeiro_liquidacoes_idem_uq'");
+      }
+      if (row.liquidacaoOriginalId != null
+        && state.liquidacoes.some(l => l.liquidacaoOriginalId === row.liquidacaoOriginalId)) {
+        throw erroMysql(1062, "ER_DUP_ENTRY", "Duplicate entry for key 'financeiro_liquidacoes.financeiro_liquidacoes_original_uq'");
+      }
       const created = { ...row, id: id() };
       state.liquidacoes.push(created);
       return created.id;
@@ -190,6 +216,9 @@ export function criarStore(): FinanceiroNucleoStore & {
       return created.id;
     },
     async findMovimentoPorLiquidacao(userId, liquidacaoId) {
+      return state.movimentos.find(m => m.userId === userId && m.liquidacaoId === liquidacaoId) ?? null;
+    },
+    async lockMovimentoPorLiquidacao(userId, liquidacaoId) {
       return state.movimentos.find(m => m.userId === userId && m.liquidacaoId === liquidacaoId) ?? null;
     },
     async listMovimentosPorTransferencia(userId, transferenciaId) {
@@ -278,7 +307,9 @@ export function criarStore(): FinanceiroNucleoStore & {
     get apropriacoes() { return state.apropriacoes; },
     get categorias() { return state.categorias; },
     get centros() { return state.centros; },
+    get transacoes() { return transacoes; },
     async transaction(fn) {
+      transacoes += 1;
       const snap = clone(state);
       try {
         return await fn(makeTx());

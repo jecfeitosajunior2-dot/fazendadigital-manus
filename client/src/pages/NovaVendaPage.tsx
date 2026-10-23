@@ -55,7 +55,36 @@ import {
   type OrigemPesoEmbarque,
 } from "@shared/vendaComercial";
 import { formatarMetricaQuantidade, formatarMetricaValor } from "@/lib/compraVendaResumo";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { persistRebanhoFazendaId, readPersistedRebanhoFazendaId } from "@shared/animal-filter-types";
+import {
+  CONDICAO_RECEBIMENTO_VENDA_OPCOES,
+  MSG_VENDA_CONDICAO_PREPARACAO,
+  MSG_VENDA_DEFINIR_DEPOIS_ORIENTACAO,
+  alinharCondicaoNovaVendaAoTotal,
+  aplicarCondicaoNovaVenda,
+  aplicarQuantidadeParcelasNovaVenda,
+  atualizarLinhaParcelaNovaVenda,
+  formatarCentavosNovaVenda,
+  formatarValorOficialNovaVenda,
+  lerRascunhoCondicaoNovaVenda,
+  mensagemDiferencaParcelasNovaVenda,
+  preservarRascunhoComercialNovaVenda,
+  rascunhoInicialCondicaoNovaVenda,
+  resumoParcelasNovaVenda,
+  totalOficialNovaVenda,
+  type RascunhoCondicaoNovaVenda,
+} from "@/lib/novaVendaCondicao";
+import {
+  MSG_VENDA_PENDENCIA_DESCONHECIDA,
+  PREFIXO_PENDENCIA_VENDA,
+  ROTULO_VERIFICAR_CONFIRMACAO,
+  listarTentativasPendenciaVenda,
+  normalizarPendenciaVendaAposRecarregar,
+  prepararVerificacaoConfirmacaoVenda,
+  tentativasComResultadoDesconhecido,
+  type TentativaConfirmacaoVenda,
+} from "@/lib/novaVendaPendencia";
 import { trpc } from "@/lib/trpc";
 
 type ItemDraft = {
@@ -81,6 +110,7 @@ type VendaDraft = {
   rendimento: string;
   observacoes: string;
   itens: ItemDraft[];
+  condicaoRecebimento?: RascunhoCondicaoNovaVenda;
 };
 
 function precoPadraoParaItem(formatted: string): string {
@@ -106,7 +136,9 @@ function valorItemDraft(forma: FormaPrecificacaoVenda, item: ItemDraft, rendimen
 export default function NovaVendaPage() {
   const [, setLocation] = useLocation();
   const confirm = useConfirm();
+  const { user } = useAuth();
   const utils = trpc.useUtils();
+  const userId = Number(user?.id) > 0 ? Number(user?.id) : 0;
   const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
   const { data: compradores = [] } = trpc.pessoas.list.useQuery(CONSULTA_COMPRADORES_NOVA_VENDA);
 
@@ -123,6 +155,10 @@ export default function NovaVendaPage() {
   const [rendimento, setRendimento] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<ItemDraft[]>([]);
+  const [condicaoRecebimento, setCondicaoRecebimento] = useState<RascunhoCondicaoNovaVenda>(
+    rascunhoInicialCondicaoNovaVenda,
+  );
+  const [pendenciasDesconhecidas, setPendenciasDesconhecidas] = useState<TentativaConfirmacaoVenda[]>([]);
   const [rfidFeedback, setRfidFeedback] = useState<{ kind: "ok" | "erro"; text: string; detalhe?: string } | null>(null);
   const [focoPesoAnimalId, setFocoPesoAnimalId] = useState<number | null>(null);
   const pesoInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
@@ -136,6 +172,25 @@ export default function NovaVendaPage() {
   useEffect(() => {
     if (!fazendaId && fazendaInicial) setFazendaId(fazendaInicial);
   }, [fazendaId, fazendaInicial]);
+
+  useEffect(() => {
+    if (!userId) {
+      setPendenciasDesconhecidas([]);
+      return;
+    }
+    let cancelado = false;
+    void (async () => {
+      const normalizadas = await normalizarPendenciaVendaAposRecarregar({ userId });
+      if (cancelado) return;
+      const atuais = normalizadas.length
+        ? normalizadas
+        : listarTentativasPendenciaVenda({ userId });
+      setPendenciasDesconhecidas(tentativasComResultadoDesconhecido(atuais));
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -160,6 +215,7 @@ export default function NovaVendaPage() {
             rendimentoManual: Boolean(item.rendimentoManual),
           })),
         );
+        setCondicaoRecebimento(lerRascunhoCondicaoNovaVenda(draft.condicaoRecebimento));
       } catch {
         /* rascunho inválido */
       }
@@ -177,7 +233,7 @@ export default function NovaVendaPage() {
   const irCadastrarComprador = () => {
     sessionStorage.setItem(
       VENDA_DRAFT_KEY,
-      JSON.stringify({
+      JSON.stringify(preservarRascunhoComercialNovaVenda({
         fazendaId,
         data,
         compradorId,
@@ -186,7 +242,7 @@ export default function NovaVendaPage() {
         rendimento,
         observacoes,
         itens,
-      } satisfies VendaDraft),
+      }, condicaoRecebimento)),
     );
     const retorno = window.location.pathname + window.location.search;
     setLocation(`/financeiro/pessoas?novo=cliente&retorno=${encodeURIComponent(retorno)}`);
@@ -226,6 +282,43 @@ export default function NovaVendaPage() {
       quantidade: itens.length,
     };
   }, [itens, forma, rendimentoPadrao]);
+
+  const itensOficiaisCondicao = useMemo(() => (
+    itens.flatMap(item => {
+      const preco = parsePrecoVenda(item.preco);
+      if (preco == null) return [];
+      return [{
+        animalId: item.animalId,
+        pesoVenda: parsePesoVenda(item.pesoVenda),
+        precoUnitario: preco,
+      }];
+    })
+  ), [itens]);
+
+  const totalOficialCondicao = useMemo(() => {
+    if (!isFormaPrecificacaoVendaPersistivel(forma)) return null;
+    if (!itensOficiaisCondicao.length || itensOficiaisCondicao.length !== itens.length) return null;
+    const total = totalOficialNovaVenda({
+      formaPrecificacao: forma,
+      itens: itensOficiaisCondicao,
+    });
+    return total.ok ? total.valorTotal : null;
+  }, [forma, itens.length, itensOficiaisCondicao]);
+
+  useEffect(() => {
+    setCondicaoRecebimento(prev => {
+      const next = alinharCondicaoNovaVendaAoTotal(prev, {
+        dataVenda: data,
+        valorTotal: totalOficialCondicao,
+      });
+      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+    });
+  }, [data, totalOficialCondicao]);
+
+  const resumoParcelas = resumoParcelasNovaVenda(
+    totalOficialCondicao,
+    condicaoRecebimento.linhas,
+  );
 
   const unicaFazenda = fazendas.length === 1;
   const nomeFazenda = fazendas.find(f => String(f.id) === fazendaId)?.nome;
@@ -490,6 +583,11 @@ export default function NovaVendaPage() {
     setLocation(compraVendaVendaDetalhePath(result.vendaId));
   };
 
+  const verificarConfirmacaoPendente = (tentativa: TentativaConfirmacaoVenda) => {
+    const verificacao = prepararVerificacaoConfirmacaoVenda({ tentativa });
+    toast.message(verificacao.mensagem);
+  };
+
   const colSpan = forma === "arroba" ? 9 : forma === "kg" ? 6 : 5;
 
   return (
@@ -512,6 +610,22 @@ export default function NovaVendaPage() {
               Nova Venda
             </h1>
           </div>
+
+          {pendenciasDesconhecidas.length > 0 ? (
+            <div className="mx-5 mt-4 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 space-y-2" data-pendencia={PREFIXO_PENDENCIA_VENDA}>
+              <p className="text-[12px] text-amber-900 leading-relaxed">{MSG_VENDA_PENDENCIA_DESCONHECIDA}</p>
+              {pendenciasDesconhecidas.map(tentativa => (
+                <button
+                  key={tentativa.idempotencyKey}
+                  type="button"
+                  onClick={() => verificarConfirmacaoPendente(tentativa)}
+                  className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-white border border-amber-200 text-gray-800 hover:bg-amber-100"
+                >
+                  {ROTULO_VERIFICAR_CONFIRMACAO}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10.5rem,12rem)] gap-3 items-start">
@@ -855,6 +969,166 @@ export default function NovaVendaPage() {
           <div>
             <FormLabel>Observações</FormLabel>
             <FormTextarea variant="light" value={observacoes} onChange={setObservacoes} rows={2} />
+          </div>
+
+          <div className="rounded-lg border border-gray-100 bg-gray-50/70 p-4 space-y-3">
+            <div>
+              <h3 className="text-[13px] font-semibold text-[#4ECDC4]">Condições de recebimento</h3>
+              <p className="mt-1 text-[11px] text-gray-500">{MSG_VENDA_CONDICAO_PREPARACAO}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {CONDICAO_RECEBIMENTO_VENDA_OPCOES.map(opcao => {
+                const ativa = condicaoRecebimento.condicao === opcao.value;
+                return (
+                  <button
+                    key={opcao.value}
+                    type="button"
+                    onClick={() => setCondicaoRecebimento(prev => aplicarCondicaoNovaVenda(prev, opcao.value, {
+                      dataVenda: data,
+                      valorTotal: totalOficialCondicao,
+                    }))}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                      ativa
+                        ? "bg-[#4ECDC4] text-gray-900 border-[#4ECDC4]"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                    }`}
+                    aria-pressed={ativa}
+                  >
+                    {opcao.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {condicaoRecebimento.condicao === "a_vista" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <FormLabel>Valor total</FormLabel>
+                  <FormInput
+                    variant="light"
+                    readOnly
+                    value={formatarValorOficialNovaVenda(totalOficialCondicao)}
+                    onChange={() => {}}
+                  />
+                </div>
+                <div>
+                  <FormLabel>Parcelas</FormLabel>
+                  <FormInput variant="light" readOnly value="1" onChange={() => {}} />
+                </div>
+                <div>
+                  <FormLabel>Vencimento</FormLabel>
+                  <FormInput
+                    variant="light"
+                    readOnly
+                    value={data.split("-").reverse().join("/")}
+                    onChange={() => {}}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {condicaoRecebimento.condicao === "a_prazo" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <FormLabel>Valor total</FormLabel>
+                  <FormInput
+                    variant="light"
+                    readOnly
+                    value={formatarValorOficialNovaVenda(totalOficialCondicao)}
+                    onChange={() => {}}
+                  />
+                </div>
+                <div>
+                  <FormLabel required>Vencimento</FormLabel>
+                  <FormDatePicker
+                    value={condicaoRecebimento.linhas[0]?.vencimento ?? ""}
+                    onChange={v => setCondicaoRecebimento(prev => atualizarLinhaParcelaNovaVenda(prev, 1, "vencimento", v))}
+                    minHeight={34}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {condicaoRecebimento.condicao === "parcelado" ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <FormLabel required>Quantidade de parcelas</FormLabel>
+                    <input
+                      type="number"
+                      min={2}
+                      max={60}
+                      value={condicaoRecebimento.quantidadeParcelas}
+                      onChange={e => setCondicaoRecebimento(prev => aplicarQuantidadeParcelasNovaVenda(
+                        prev,
+                        Number(e.target.value),
+                        totalOficialCondicao,
+                      ))}
+                      className={`${formControlFlatCls} bg-white outline-none`}
+                    />
+                  </div>
+                  <div>
+                    <FormLabel>Total parcelado</FormLabel>
+                    <FormInput
+                      variant="light"
+                      readOnly
+                      value={formatarCentavosNovaVenda(resumoParcelas.somaCentavos)}
+                      onChange={() => {}}
+                    />
+                  </div>
+                  <div>
+                    <FormLabel>Diferença</FormLabel>
+                    <FormInput
+                      variant="light"
+                      readOnly
+                      value={formatarCentavosNovaVenda(resumoParcelas.restanteCentavos)}
+                      onChange={() => {}}
+                    />
+                  </div>
+                </div>
+                {mensagemDiferencaParcelasNovaVenda(resumoParcelas.restanteCentavos) ? (
+                  <p className="text-[11px] text-amber-800">{mensagemDiferencaParcelasNovaVenda(resumoParcelas.restanteCentavos)}</p>
+                ) : null}
+                <div className="border border-gray-100 rounded overflow-x-auto bg-white">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Nº</th>
+                        <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase">Vencimento</th>
+                        <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-500 uppercase">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {condicaoRecebimento.linhas.map(linha => (
+                        <tr key={linha.numero} className="border-t border-gray-50">
+                          <td className="px-3 py-1.5 text-gray-700">{linha.numero}</td>
+                          <td className="px-3 py-1.5">
+                            <FormDatePicker
+                              value={linha.vencimento}
+                              onChange={v => setCondicaoRecebimento(prev => atualizarLinhaParcelaNovaVenda(prev, linha.numero, "vencimento", v))}
+                              minHeight={34}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input
+                              value={linha.valor}
+                              onChange={e => setCondicaoRecebimento(prev => atualizarLinhaParcelaNovaVenda(prev, linha.numero, "valor", e.target.value))}
+                              className="w-full text-right border border-gray-200 rounded px-2 py-1"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {condicaoRecebimento.condicao === "definir_depois" ? (
+              <p className="text-[12px] text-gray-600 leading-relaxed">
+                {MSG_VENDA_DEFINIR_DEPOIS_ORIENTACAO}
+              </p>
+            ) : null}
           </div>
 
           <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">

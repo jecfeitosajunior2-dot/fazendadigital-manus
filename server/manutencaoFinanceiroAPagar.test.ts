@@ -377,6 +377,16 @@ class Mundo {
       async listApropriacoes(userId, tituloId) {
         return self.e.apropriacoes.filter(a => a.userId === userId && a.tituloId === tituloId);
       },
+      async lockTitulos(userId, ids) {
+        return self.e.titulos
+          .filter(t => t.userId === userId && ids.includes(t.id))
+          .sort((a, b) => a.id - b.id);
+      },
+      async lockParcelas(userId, ids) {
+        return self.e.parcelas
+          .filter(p => p.userId === userId && ids.includes(p.id))
+          .sort((a, b) => a.id - b.id);
+      },
       async cancelarTitulo(userId, id) {
         const titulo = self.e.titulos.find(t => t.userId === userId && t.id === id);
         if (titulo) titulo.estado = "cancelado";

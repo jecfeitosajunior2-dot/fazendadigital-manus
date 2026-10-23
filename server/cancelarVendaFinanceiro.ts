@@ -19,6 +19,8 @@ import {
 } from "./cancelarVenda";
 import {
   cancelarTituloNoTx,
+  isDeadlockMysql,
+  isLockWaitTimeoutMysql,
   listarTitulosPorOrigemNoTx,
   tituloTemLiquidacaoEfetiva,
   type FinanceiroNucleoTx,
@@ -187,7 +189,21 @@ export async function cancelarVendaFinanceiroAtomico(
   userId: number,
   input: CancelarVendaFinanceiroInput,
 ): Promise<CancelarVendaFinanceiroResultado> {
-  return store.transaction(tx => cancelarVendaFinanceiroNoTx(tx, userId, input));
+  let ultimo: unknown;
+  for (let tentativa = 0; tentativa < 6; tentativa++) {
+    try {
+      return await store.transaction(tx => cancelarVendaFinanceiroNoTx(tx, userId, input));
+    } catch (error) {
+      ultimo = error;
+      if (error instanceof TRPCError) throw error;
+      if ((isDeadlockMysql(error) || isLockWaitTimeoutMysql(error)) && tentativa < 5) {
+        await new Promise(resolve => setTimeout(resolve, 30 * (tentativa + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw ultimo;
 }
 
 export function createCancelarVendaFinanceiroService(store: CancelarVendaFinanceiroStore) {

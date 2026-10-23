@@ -78,6 +78,7 @@ import {
   type FinanceiroTituloTipo,
   type FinanceiroTransferenciaEstado,
 } from "../shared/financeiroNucleo";
+import { isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { db } from "./db";
 
 function toTrpc(message: string, code: "BAD_REQUEST" | "NOT_FOUND" | "FORBIDDEN" = "BAD_REQUEST"): never {
@@ -103,6 +104,96 @@ function mysqlDateStr(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const text = String(value ?? "");
   return text.length >= 10 ? text.slice(0, 10) : text;
+}
+
+function mysqlBool(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
+function mysqlNullableDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function mapContaFromLock(row: Record<string, unknown>): FinContaRow {
+  return {
+    id: Number(row.id),
+    userId: Number(row.userId),
+    nome: String(row.nome ?? ""),
+    tipo: String(row.tipo ?? ""),
+    banco: row.banco == null ? null : String(row.banco),
+    agencia: row.agencia == null ? null : String(row.agencia),
+    numeroConta: row.numeroConta == null ? null : String(row.numeroConta),
+    saldoAbertura: String(row.saldoAbertura ?? "0"),
+    dataSaldoAbertura: mysqlDateStr(row.dataSaldoAbertura),
+    ativa: mysqlBool(row.ativa),
+    inativadaEm: mysqlNullableDate(row.inativadaEm),
+    motivoInativacao: row.motivoInativacao == null ? null : String(row.motivoInativacao),
+  };
+}
+
+function mapParcelaFromLock(row: Record<string, unknown>): FinParcelaRow {
+  return {
+    id: Number(row.id),
+    userId: Number(row.userId),
+    tituloId: Number(row.tituloId),
+    numero: Number(row.numero),
+    vencimento: mysqlDateStr(row.vencimento),
+    valorOriginal: String(row.valorOriginal),
+  };
+}
+
+function mapLiqFromLock(row: Record<string, unknown>): FinLiquidacaoRow {
+  return {
+    id: Number(row.id),
+    userId: Number(row.userId),
+    tipo: String(row.tipo) as FinanceiroLiquidacaoTipo,
+    contaId: Number(row.contaId),
+    dataLiquidacao: mysqlDateStr(row.dataLiquidacao),
+    valorMovimentado: String(row.valorMovimentado),
+    formaPagamento: row.formaPagamento == null ? null : String(row.formaPagamento),
+    referencia: row.referencia == null ? null : String(row.referencia),
+    observacoes: row.observacoes == null ? null : String(row.observacoes),
+    liquidacaoOriginalId: row.liquidacaoOriginalId == null ? null : Number(row.liquidacaoOriginalId),
+    idempotencyKey: String(row.idempotencyKey ?? ""),
+  };
+}
+
+function mapMovFromLock(row: Record<string, unknown>): FinMovimentoRow {
+  return {
+    id: Number(row.id),
+    userId: Number(row.userId),
+    contaId: Number(row.contaId),
+    dataMovimento: mysqlDateStr(row.dataMovimento),
+    direcao: String(row.direcao) as FinanceiroDirecao,
+    natureza: String(row.natureza) as FinanceiroNatureza,
+    valor: String(row.valor),
+    liquidacaoId: row.liquidacaoId == null ? null : Number(row.liquidacaoId),
+    transferenciaId: row.transferenciaId == null ? null : Number(row.transferenciaId),
+    contrapartePessoaId: row.contrapartePessoaId == null ? null : Number(row.contrapartePessoaId),
+    descricao: String(row.descricao ?? ""),
+    referencia: row.referencia == null ? null : String(row.referencia),
+    movimentoOriginalId: row.movimentoOriginalId == null ? null : Number(row.movimentoOriginalId),
+  };
+}
+
+function mapTransfFromLock(row: Record<string, unknown>): FinTransferenciaRow {
+  return {
+    id: Number(row.id),
+    userId: Number(row.userId),
+    contaOrigemId: Number(row.contaOrigemId),
+    contaDestinoId: Number(row.contaDestinoId),
+    dataTransferencia: mysqlDateStr(row.dataTransferencia),
+    valor: String(row.valor),
+    descricao: row.descricao == null ? null : String(row.descricao),
+    referencia: row.referencia == null ? null : String(row.referencia),
+    observacoes: row.observacoes == null ? null : String(row.observacoes),
+    estado: String(row.estado) as FinanceiroTransferenciaEstado,
+    transferenciaOriginalId: row.transferenciaOriginalId == null ? null : Number(row.transferenciaOriginalId),
+    idempotencyKey: String(row.idempotencyKey ?? ""),
+  };
 }
 
 function hojeISO(): string {
@@ -309,6 +400,7 @@ export type FinanceiroNucleoTx = {
 
   insertMovimento(row: Omit<FinMovimentoRow, "id">): Promise<number>;
   findMovimentoPorLiquidacao(userId: number, liquidacaoId: number): Promise<FinMovimentoRow | null>;
+  lockMovimentoPorLiquidacao(userId: number, liquidacaoId: number): Promise<FinMovimentoRow | null>;
   listMovimentosPorTransferencia(userId: number, transferenciaId: number): Promise<FinMovimentoRow[]>;
   listMovimentosFiltro(userId: number, contaId: number, de?: string, ate?: string): Promise<FinMovimentoRow[]>;
 
@@ -352,6 +444,99 @@ function assertDataAposAbertura(dataMovimento: string, conta: FinContaRow): void
 
 function idsUnicosOrdenados(ids: number[]): number[] {
   return [...new Set(ids)].sort((a, b) => a - b);
+}
+
+async function idsDaLiquidacaoIdempotente(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  existente: FinLiquidacaoRow,
+): Promise<{ id: number; movimentoId: number; idempotente: true }> {
+  const movimento = await tx.lockMovimentoPorLiquidacao(userId, existente.id);
+  if (!movimento) toTrpc(MSG_FIN_MOVIMENTO_LIQUIDACAO);
+  return { id: existente.id, movimentoId: movimento.id, idempotente: true };
+}
+
+const TENTATIVAS_DEADLOCK_FINANCEIRO = 6;
+
+function cadeiasErro(error: unknown): unknown[] {
+  const lista: unknown[] = [];
+  let atual: unknown = error;
+  for (let i = 0; i < 8 && atual; i++) {
+    lista.push(atual);
+    if (typeof atual !== "object" || atual == null) break;
+    atual = (atual as { cause?: unknown; original?: unknown }).cause
+      ?? (atual as { original?: unknown }).original;
+  }
+  return lista;
+}
+
+function mysqlErrno(error: unknown): number | null {
+  for (const item of cadeiasErro(error)) {
+    if (typeof item !== "object" || item == null) continue;
+    const n = Number((item as { errno?: number }).errno);
+    if (Number.isInteger(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function textoErro(error: unknown): string {
+  return cadeiasErro(error)
+    .map(item => String((item as { message?: string })?.message ?? item ?? ""))
+    .join(" ");
+}
+
+export function isDeadlockMysql(error: unknown): boolean {
+  if (mysqlErrno(error) === 1213) return true;
+  return cadeiasErro(error).some(item => {
+    const obj = item as { code?: string; message?: string };
+    return obj?.code === "ER_LOCK_DEADLOCK" || /deadlock found when trying to get lock/i.test(String(obj?.message ?? ""));
+  });
+}
+
+export function isLockWaitTimeoutMysql(error: unknown): boolean {
+  if (mysqlErrno(error) === 1205) return true;
+  return cadeiasErro(error).some(item => {
+    const obj = item as { code?: string; message?: string };
+    return obj?.code === "ER_LOCK_WAIT_TIMEOUT" || /lock wait timeout/i.test(String(obj?.message ?? ""));
+  });
+}
+
+function isDuplicateKeyMysql(error: unknown): boolean {
+  if (mysqlErrno(error) === 1062) return true;
+  return cadeiasErro(error).some(item => isMysqlDuplicateKey(item)
+    || /ER_DUP_ENTRY|Duplicate entry/i.test(String((item as { message?: string })?.message ?? "")));
+}
+
+export function isDuplicateChaveIdempotenciaLiquidacao(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /financeiro_liquidacoes_idem_uq/i.test(textoErro(error));
+}
+
+export function isDuplicateOrigemLiquidacao(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /financeiro_liquidacoes_original_uq/i.test(textoErro(error));
+}
+
+async function transacaoFinanceiroComRetry<T>(
+  store: FinanceiroNucleoStore,
+  fn: (tx: FinanceiroNucleoTx) => Promise<T>,
+  extraRetry?: (error: unknown) => boolean,
+): Promise<T> {
+  let ultimo: unknown;
+  for (let tentativa = 0; tentativa < TENTATIVAS_DEADLOCK_FINANCEIRO; tentativa++) {
+    try {
+      return await store.transaction(fn);
+    } catch (error) {
+      ultimo = error;
+      if (error instanceof TRPCError) throw error;
+      const recuperavel = isDeadlockMysql(error)
+        || isLockWaitTimeoutMysql(error)
+        || Boolean(extraRetry?.(error));
+      if (!recuperavel || tentativa === TENTATIVAS_DEADLOCK_FINANCEIRO - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 30 * (tentativa + 1)));
+    }
+  }
+  throw ultimo;
 }
 
 async function alcanceOficialDaLiquidacao(
@@ -448,8 +633,9 @@ export async function tituloTemLiquidacaoEfetiva(
 ) {
   const parcelas = await tx.listParcelasTitulo(userId, tituloId);
   if (parcelas.length === 0) return false;
-  if (forUpdate) await tx.lockParcelas(userId, parcelas.map(p => p.id));
-  const alocs = await tx.listAlocacoesPorParcelas(userId, parcelas.map(p => p.id), forUpdate);
+  const parcelaIds = idsUnicosOrdenados(parcelas.map(p => p.id));
+  if (forUpdate) await tx.lockParcelas(userId, parcelaIds);
+  const alocs = await tx.listAlocacoesPorParcelas(userId, parcelaIds, forUpdate);
   return parcelas.some(p => {
     const saldo = derivarSaldoParcela(
       p.valorOriginal,
@@ -685,8 +871,8 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
         assertUser(titulo.userId, userId);
         if (titulo.estado === "cancelado") toTrpc(MSG_FIN_TITULO_CANCELADO);
         const atuais = await tx.listParcelasTitulo(userId, tituloId);
-        if (atuais.length) await tx.lockParcelas(userId, atuais.map(p => p.id));
-        if (await tituloTemLiquidacao(tx, userId, tituloId)) toTrpc(MSG_FIN_TITULO_COM_LIQUIDACAO);
+        if (atuais.length) await tx.lockParcelas(userId, idsUnicosOrdenados(atuais.map(p => p.id)));
+        if (await tituloTemLiquidacaoEfetiva(tx, userId, tituloId, true)) toTrpc(MSG_FIN_TITULO_COM_LIQUIDACAO);
         if (!validarSomaParcelas(titulo.valorOriginal, parcelas)) toTrpc(MSG_FIN_PARCELAS_SOMA);
         await tx.deleteParcelasTitulo(userId, tituloId);
         for (const p of parcelas) {
@@ -887,7 +1073,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       assertValorPositivo(input.valorMovimentado);
       if (!input.alocacoes.length) toTrpc("Informe ao menos uma parcela.");
-      return store.transaction(async tx => {
+      return transacaoFinanceiroComRetry(store, async tx => {
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
           assertUser(existente.userId, userId);
@@ -895,8 +1081,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           if (!retryPagamentoBateComPedido(existente, alocsExistentes, { userId, ...input })) {
             toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
           }
-          const movimento = await tx.findMovimentoPorLiquidacao(userId, existente.id);
-          return { id: existente.id, movimentoId: movimento?.id ?? null, idempotente: true };
+          return idsDaLiquidacaoIdempotente(tx, userId, existente);
         }
         const contas = await tx.lockContas(userId, [input.contaId]);
         const conta = contas[0] ?? null;
@@ -987,7 +1172,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           toTrpc(MSG_FIN_MOVIMENTO_LIQUIDACAO);
         }
         return { id: liquidacaoId, movimentoId, idempotente: false };
-      });
+      }, isDuplicateChaveIdempotenciaLiquidacao);
     },
 
     criarPagamento(userId: number, input: Omit<LiquidacaoCmd, "tipo">) {
@@ -1000,29 +1185,51 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
 
     async estornarLiquidacao(userId: number, input: { liquidacaoId: number; idempotencyKey: string; dataLiquidacao: string }) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
-      return store.transaction(async tx => {
+      return transacaoFinanceiroComRetry(store, async tx => {
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
           assertUser(existente.userId, userId);
           if (!retryEstornoBateComPedido(existente, { userId, liquidacaoId: input.liquidacaoId })) {
             toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
           }
-          const movimento = await tx.findMovimentoPorLiquidacao(userId, existente.id);
-          return { id: existente.id, movimentoId: movimento?.id ?? null, idempotente: true };
+          return idsDaLiquidacaoIdempotente(tx, userId, existente);
         }
+        // Ordem de locks do estorno (3E.8B):
+        // liquidação → conta → título → parcela.
+        // Título antes da parcela para não inverter cancelarTituloNoTx
+        // (título → parcela). Conta antes do título para não inverter
+        // registrarLiquidacao (conta → título → parcela).
+        // Título cancelado não bloqueia estorno histórico: o estorno não
+        // cria recebimento/pagamento novo e só preserva o histórico.
         const original = await tx.lockLiquidacao(userId, input.liquidacaoId);
         if (!original) toTrpc(MSG_FIN_LIQUIDACAO_NAO_ENCONTRADA, "NOT_FOUND");
         assertUser(original.userId, userId);
         if (original.tipo.startsWith("estorno_")) toTrpc("Não é possível estornar um estorno.");
         const ja = await tx.findEstornoDe(userId, original.id, true);
-        if (ja) toTrpc(MSG_FIN_LIQUIDACAO_JA_ESTORNADA);
+        if (ja) {
+          if (ja.idempotencyKey === input.idempotencyKey
+            && retryEstornoBateComPedido(ja, { userId, liquidacaoId: input.liquidacaoId })) {
+            return idsDaLiquidacaoIdempotente(tx, userId, ja);
+          }
+          toTrpc(MSG_FIN_LIQUIDACAO_JA_ESTORNADA);
+        }
         const contas = await tx.lockContas(userId, [original.contaId]);
         const conta = contas[0] ?? null;
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         if (!conta.ativa) toTrpc(MSG_FIN_CONTA_INATIVA);
         assertDataAposAbertura(input.dataLiquidacao, conta);
         const alocs = await tx.listAlocacoesLiquidacao(userId, original.id);
-        if (alocs.length) await tx.lockParcelas(userId, idsUnicosOrdenados(alocs.map(a => a.parcelaId)));
+        if (alocs.length) {
+          const parcelaIds = idsUnicosOrdenados(alocs.map(a => a.parcelaId));
+          const parcelasPreview = await tx.listParcelasPorIds(userId, parcelaIds);
+          if (parcelasPreview.length !== parcelaIds.length) toTrpc(MSG_FIN_PARCELA_NAO_ENCONTRADA, "NOT_FOUND");
+          const tituloIds = idsUnicosOrdenados(parcelasPreview.map(p => p.tituloId));
+          const titulos = await tx.lockTitulos(userId, tituloIds);
+          if (titulos.length !== tituloIds.length) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
+          for (const titulo of titulos) assertUser(titulo.userId, userId);
+          const parcelas = await tx.lockParcelas(userId, parcelaIds);
+          if (parcelas.length !== parcelaIds.length) toTrpc(MSG_FIN_PARCELA_NAO_ENCONTRADA, "NOT_FOUND");
+        }
         const tipoEstorno: FinanceiroLiquidacaoTipo = original.tipo === "pagamento"
           ? "estorno_pagamento"
           : "estorno_recebimento";
@@ -1065,7 +1272,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           movimentoOriginalId: originalMov?.id ?? null,
         });
         return { id: estornoId, movimentoId, idempotente: false };
-      });
+      }, error => isDuplicateChaveIdempotenciaLiquidacao(error) || isDuplicateOrigemLiquidacao(error));
     },
 
     async criarTransferencia(userId: number, input: {
@@ -1081,7 +1288,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       assertValorPositivo(input.valor);
       if (input.contaOrigemId === input.contaDestinoId) toTrpc(MSG_FIN_TRANSFERENCIA_MESMA_CONTA);
-      return store.transaction(async tx => {
+      return transacaoFinanceiroComRetry(store, async tx => {
         const existente = await tx.findTransferenciaPorIdem(userId, input.idempotencyKey);
         if (existente) return { id: existente.id, idempotente: true };
         const contas = await tx.lockContas(userId, [input.contaOrigemId, input.contaDestinoId]);
@@ -1153,7 +1360,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       dataTransferencia: string;
     }) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
-      return store.transaction(async tx => {
+      return transacaoFinanceiroComRetry(store, async tx => {
         const existente = await tx.findTransferenciaPorIdem(userId, input.idempotencyKey);
         if (existente) return { id: existente.id, idempotente: true };
         const original = await tx.lockTransferencia(userId, input.transferenciaId);
@@ -1335,7 +1542,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
     },
 
     async cancelarTitulo(userId: number, tituloId: number, motivo: string) {
-      return store.transaction(async tx => cancelarTituloNoTx(tx, userId, tituloId, motivo));
+      return transacaoFinanceiroComRetry(store, async tx => cancelarTituloNoTx(tx, userId, tituloId, motivo));
     },
   };
 }
@@ -1377,16 +1584,26 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         async lockContas(userId, ids) {
           const unique = idsUnicosOrdenados(ids);
           if (!unique.length) return [];
-          await drizzleTx.execute(sql`
-            SELECT id FROM financeiro_contas
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              nome,
+              tipo,
+              banco,
+              agencia,
+              numero_conta AS numeroConta,
+              saldo_abertura AS saldoAbertura,
+              DATE_FORMAT(data_saldo_abertura, '%Y-%m-%d') AS dataSaldoAbertura,
+              ativa,
+              inativada_em AS inativadaEm,
+              motivo_inativacao AS motivoInativacao
+            FROM financeiro_contas
             WHERE user_id = ${userId}
               AND id IN (${sql.join(unique.map(id => sql`${id}`), sql`, `)})
             ORDER BY id FOR UPDATE
           `);
-          const rows = await drizzleTx.select().from(financeiroContas)
-            .where(and(eq(financeiroContas.userId, userId), inArray(financeiroContas.id, unique)))
-            .orderBy(financeiroContas.id);
-          return rows.map(mapConta);
+          return mysqlExecuteRows(result).map(mapContaFromLock);
         },
         async lockTitulos(userId, ids) {
           const unique = idsUnicosOrdenados(ids);
@@ -1436,8 +1653,15 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         async lockParcelas(userId, ids) {
           const unique = idsUnicosOrdenados(ids);
           if (!unique.length) return [];
-          await drizzleTx.execute(sql`
-            SELECT id FROM financeiro_parcelas
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              titulo_id AS tituloId,
+              numero,
+              DATE_FORMAT(vencimento, '%Y-%m-%d') AS vencimento,
+              valor_original AS valorOriginal
+            FROM financeiro_parcelas
             WHERE user_id = ${userId}
               AND id IN (${sql.join(unique.map(id => sql`${id}`), sql`, `)})
             ORDER BY id FOR UPDATE
@@ -1446,34 +1670,75 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
             SELECT id FROM financeiro_liquidacao_alocacoes
             WHERE user_id = ${userId}
               AND parcela_id IN (${sql.join(unique.map(id => sql`${id}`), sql`, `)})
-            FOR UPDATE
+            ORDER BY id FOR UPDATE
           `);
-          const rows = await drizzleTx.select().from(financeiroParcelas)
-            .where(and(eq(financeiroParcelas.userId, userId), inArray(financeiroParcelas.id, unique)))
-            .orderBy(financeiroParcelas.id);
-          return rows.map(mapParcela);
+          return mysqlExecuteRows(result).map(mapParcelaFromLock);
         },
         async lockLiquidacao(userId, id) {
-          await drizzleTx.execute(sql`
-            SELECT id FROM financeiro_liquidacoes
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              tipo,
+              conta_id AS contaId,
+              DATE_FORMAT(data_liquidacao, '%Y-%m-%d') AS dataLiquidacao,
+              valor_movimentado AS valorMovimentado,
+              forma_pagamento AS formaPagamento,
+              referencia,
+              observacoes,
+              liquidacao_original_id AS liquidacaoOriginalId,
+              idempotency_key AS idempotencyKey
+            FROM financeiro_liquidacoes
             WHERE id = ${id} AND user_id = ${userId}
             FOR UPDATE
           `);
-          const [row] = await drizzleTx.select().from(financeiroLiquidacoes)
-            .where(and(eq(financeiroLiquidacoes.id, id), eq(financeiroLiquidacoes.userId, userId)))
-            .limit(1);
-          return row ? mapLiq(row) : null;
+          const row = mysqlExecuteRows(result)[0];
+          return row ? mapLiqFromLock(row) : null;
+        },
+        async lockMovimentoPorLiquidacao(userId, liquidacaoId) {
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              conta_id AS contaId,
+              DATE_FORMAT(data_movimento, '%Y-%m-%d') AS dataMovimento,
+              direcao,
+              natureza,
+              valor,
+              liquidacao_id AS liquidacaoId,
+              transferencia_id AS transferenciaId,
+              contraparte_pessoa_id AS contrapartePessoaId,
+              descricao,
+              referencia,
+              movimento_original_id AS movimentoOriginalId
+            FROM financeiro_movimentos
+            WHERE liquidacao_id = ${liquidacaoId} AND user_id = ${userId}
+            FOR UPDATE
+          `);
+          const row = mysqlExecuteRows(result)[0];
+          return row ? mapMovFromLock(row) : null;
         },
         async lockTransferencia(userId, id) {
-          await drizzleTx.execute(sql`
-            SELECT id FROM financeiro_transferencias
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              conta_origem_id AS contaOrigemId,
+              conta_destino_id AS contaDestinoId,
+              DATE_FORMAT(data_transferencia, '%Y-%m-%d') AS dataTransferencia,
+              valor,
+              descricao,
+              referencia,
+              observacoes,
+              estado,
+              transferencia_original_id AS transferenciaOriginalId,
+              idempotency_key AS idempotencyKey
+            FROM financeiro_transferencias
             WHERE id = ${id} AND user_id = ${userId}
             FOR UPDATE
           `);
-          const [row] = await drizzleTx.select().from(financeiroTransferencias)
-            .where(and(eq(financeiroTransferencias.id, id), eq(financeiroTransferencias.userId, userId)))
-            .limit(1);
-          return row ? mapTransf(row) : null;
+          const row = mysqlExecuteRows(result)[0];
+          return row ? mapTransfFromLock(row) : null;
         },
         async insertConta(row) {
           const result = await drizzleTx.insert(financeiroContas).values({
@@ -1634,17 +1899,24 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         async findEstornoDe(userId, originalId, forUpdate) {
           if (forUpdate) {
             const result = await drizzleTx.execute(sql`
-              SELECT id FROM financeiro_liquidacoes
+              SELECT
+                id,
+                user_id AS userId,
+                tipo,
+                conta_id AS contaId,
+                DATE_FORMAT(data_liquidacao, '%Y-%m-%d') AS dataLiquidacao,
+                valor_movimentado AS valorMovimentado,
+                forma_pagamento AS formaPagamento,
+                referencia,
+                observacoes,
+                liquidacao_original_id AS liquidacaoOriginalId,
+                idempotency_key AS idempotencyKey
+              FROM financeiro_liquidacoes
               WHERE user_id = ${userId} AND liquidacao_original_id = ${originalId}
-              FOR UPDATE
+              ORDER BY id FOR UPDATE
             `);
-            const raw = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : result;
-            const linhas = (Array.isArray(raw) ? raw : []) as Array<{ id?: number }>;
-            const id = Number(linhas[0]?.id ?? 0);
-            if (!id) return null;
-            const [row] = await drizzleTx.select().from(financeiroLiquidacoes)
-              .where(and(eq(financeiroLiquidacoes.id, id), eq(financeiroLiquidacoes.userId, userId))).limit(1);
-            return row ? mapLiq(row) : null;
+            const row = mysqlExecuteRows(result)[0];
+            return row ? mapLiqFromLock(row) : null;
           }
           const [row] = await drizzleTx.select().from(financeiroLiquidacoes)
             .where(and(eq(financeiroLiquidacoes.userId, userId), eq(financeiroLiquidacoes.liquidacaoOriginalId, originalId))).limit(1);
@@ -1679,17 +1951,17 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
         },
         async listAlocacoesPorParcelas(userId, parcelaIds, forUpdate) {
           if (!parcelaIds.length) return [];
+          const unique = idsUnicosOrdenados(parcelaIds);
           if (forUpdate) {
             const result = await drizzleTx.execute(sql`
               SELECT a.id, a.user_id, a.liquidacao_id, a.parcela_id, a.principal_liquidado, a.desconto, a.juros, a.multa, l.tipo
               FROM financeiro_liquidacao_alocacoes a
               INNER JOIN financeiro_liquidacoes l ON l.id = a.liquidacao_id
               WHERE a.user_id = ${userId}
-                AND a.parcela_id IN (${sql.join(parcelaIds.map(id => sql`${id}`), sql`, `)})
-              FOR UPDATE
+                AND a.parcela_id IN (${sql.join(unique.map(id => sql`${id}`), sql`, `)})
+              ORDER BY a.id FOR UPDATE
             `);
-            const raw = Array.isArray(result) && Array.isArray(result[0]) ? result[0] : result;
-            const linhas = (Array.isArray(raw) ? raw : []) as Array<Record<string, unknown>>;
+            const linhas = mysqlExecuteRows(result);
             return linhas.map(r => ({
               id: Number(r.id),
               userId: Number(r.user_id),
@@ -1711,7 +1983,7 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
             .innerJoin(financeiroLiquidacoes, eq(financeiroLiquidacoes.id, financeiroLiquidacaoAlocacoes.liquidacaoId))
             .where(and(
               eq(financeiroLiquidacaoAlocacoes.userId, userId),
-              inArray(financeiroLiquidacaoAlocacoes.parcelaId, parcelaIds),
+              inArray(financeiroLiquidacaoAlocacoes.parcelaId, unique),
             ));
           return rows.map(r => ({ ...mapAloc(r.aloc), tipoLiquidacao: r.tipo as FinanceiroLiquidacaoTipo }));
         },

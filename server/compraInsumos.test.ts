@@ -81,6 +81,16 @@ function criarStore(opts?: { falharNoItem?: number; falharFinanceiro?: boolean; 
         state.titulos.push(created);
         return created.id;
       },
+      async lockTitulos(userId: number, ids: number[]) {
+        return state.titulos
+          .filter(t => t.userId === userId && ids.includes(t.id))
+          .sort((a, b) => a.id - b.id);
+      },
+      async lockParcelas(userId: number, ids: number[]) {
+        return state.parcelas
+          .filter(p => p.userId === userId && ids.includes(p.id))
+          .sort((a, b) => a.id - b.id);
+      },
       async cancelarTitulo(userId: number, tituloId: number) {
         const t = state.titulos.find(x => x.id === tituloId && x.userId === userId);
         if (t) t.estado = "cancelado";

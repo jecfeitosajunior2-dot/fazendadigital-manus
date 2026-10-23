@@ -32,7 +32,6 @@ import { animalPertenceFazenda } from "./animaisPorFazenda";
 import {
   createFinanceiroNucleoTxFromDrizzle,
   criarTituloNoTx,
-  listarTitulosPorOrigemNoTx,
   type FinanceiroDrizzleTx,
   type FinanceiroNucleoTx,
   type FinParcelaRow,
@@ -113,6 +112,8 @@ export type ConfirmarVendaFinanceiroTx = {
   ): Promise<{ id: number; nome: string; tipo: string; ativo: boolean } | null>;
   findVendaPorIdempotency(userId: number, key: string): Promise<VendaFinanceiroRow | null>;
   listVendaItens(userId: number, vendaId: number): Promise<VendaItemFinanceiroRow[]>;
+  lockTituloPrincipalDaVenda(userId: number, vendaId: number): Promise<FinTituloRow | null>;
+  lockParcelasDoTitulo(userId: number, tituloId: number): Promise<FinParcelaRow[]>;
   listAnimais(userId: number, ids: number[]): Promise<AnimalVendaRow[]>;
   listBaixasAtivas(animalIds: number[]): Promise<Array<{ animalId: number }>>;
   listLotes(ids: number[]): Promise<Array<{ id: number; nome: string }>>;
@@ -172,11 +173,33 @@ function mysqlErrno(error: unknown): number | null {
   return null;
 }
 
+function textoErro(error: unknown): string {
+  return cadeiasErro(error)
+    .map(item => String((item as { message?: string })?.message ?? item ?? ""))
+    .join(" ");
+}
+
 /** Drizzle envolve o 1062 em Failed query; o UNIQUE real fica em cause. */
 function isDuplicateKeyMysql(error: unknown): boolean {
   if (mysqlErrno(error) === 1062) return true;
   return cadeiasErro(error).some(item => isMysqlDuplicateKey(item)
-    || /vendas_idem_uq|ER_DUP_ENTRY|Duplicate entry/i.test(String((item as { message?: string })?.message ?? "")));
+    || /ER_DUP_ENTRY|Duplicate entry/i.test(String((item as { message?: string })?.message ?? "")));
+}
+
+/** Somente a UNIQUE da chave ven- (user_id, idempotency_key). Outros 1062 não são retry de idempotência. */
+export function isDuplicateChaveIdempotenciaVenda(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /vendas_idem_uq/i.test(textoErro(error));
+}
+
+export function isDuplicateOrigemTituloVenda(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /financeiro_titulos_origem_uq/i.test(textoErro(error));
+}
+
+function isDuplicateBaixaAnimal(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /animal_baixas/i.test(textoErro(error));
 }
 
 function isDeadlockMysql(error: unknown): boolean {
@@ -184,6 +207,14 @@ function isDeadlockMysql(error: unknown): boolean {
   return cadeiasErro(error).some(item => {
     const obj = item as { code?: string; message?: string };
     return obj?.code === "ER_LOCK_DEADLOCK" || /deadlock/i.test(String(obj?.message ?? ""));
+  });
+}
+
+function isLockWaitTimeoutMysql(error: unknown): boolean {
+  if (mysqlErrno(error) === 1205) return true;
+  return cadeiasErro(error).some(item => {
+    const obj = item as { code?: string; message?: string };
+    return obj?.code === "ER_LOCK_WAIT_TIMEOUT" || /lock wait timeout/i.test(String(obj?.message ?? ""));
   });
 }
 
@@ -248,15 +279,9 @@ async function resultadoDaVendaExistente(
   pedido: IntencaoConfirmacaoVendaFinanceiro,
 ): Promise<ConfirmarVendaFinanceiroResultado> {
   const itens = await tx.listVendaItens(userId, venda.id);
-  const titulos = await listarTitulosPorOrigemNoTx(
-    tx.fin,
-    userId,
-    FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
-    venda.id,
-  );
-  const titulo = titulos[0];
-  if (!titulo || titulos.length !== 1) toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
-  const parcelas = await tx.fin.listParcelasTitulo(userId, titulo.id);
+  const titulo = await tx.lockTituloPrincipalDaVenda(userId, venda.id);
+  if (!titulo) toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
+  const parcelas = await tx.lockParcelasDoTitulo(userId, titulo.id);
   const persistida = intencaoPersistida(venda, itens, titulo, parcelas);
   if (!persistida || !retryConfirmacaoVendaBateComPedido(persistida, pedido)) {
     toTrpc(MSG_VENDA_CONFLITO_IDEMPOTENCIA, "CONFLICT");
@@ -296,7 +321,16 @@ async function confirmarVendaFinanceiroNoTx(
   const compradorNome = comprador.nome.trim();
 
   const animalIds = validado.itens.map(item => item.animalId);
-  const animaisRows = await tx.listAnimais(userId, animalIds);
+  const animalIdsOrdenados = [...new Set(animalIds)].sort((a, b) => a - b);
+  // Ordem de locks da confirmação (3E.8D):
+  // 1. venda por idempotencyKey (FOR UPDATE), se já existir — recuperação sem reler animais.
+  // 2. animais da intenção, por id crescente (FOR UPDATE) — estado desta leitura.
+  // 3. insert venda + itens + baixas.
+  // 4. marcar vendido só se status=ativo.
+  // 5. criar título receber (insert; sem lock de título alheio).
+  // Cancelamento integrado: venda → título → parcela → animais.
+  // Animais antes do título na confirmação evita inverter o cancelamento.
+  const animaisRows = await tx.listAnimais(userId, animalIdsOrdenados);
   const animalMap = new Map(animaisRows.map(animal => [animal.id, animal]));
   const indisponiveis: string[] = [];
   const outraFazenda: string[] = [];
@@ -352,7 +386,7 @@ async function confirmarVendaFinanceiroNoTx(
       idempotencyKey: chave,
     });
   } catch (error) {
-    if (isDuplicateKeyMysql(error)) {
+    if (isDuplicateChaveIdempotenciaVenda(error)) {
       throw new ConflitoIdempotenciaVendaError(userId, chave, error);
     }
     throw error;
@@ -372,7 +406,7 @@ async function confirmarVendaFinanceiroNoTx(
     };
   }));
 
-  await tx.insertBaixas(animalIds.map(animalId => ({
+  await tx.insertBaixas(animalIdsOrdenados.map(animalId => ({
     userId,
     animalId,
     fazendaId: input.fazendaId,
@@ -383,7 +417,7 @@ async function confirmarVendaFinanceiroNoTx(
     vendaId,
   })));
 
-  const atualizados = await tx.marcarAnimaisVendidos(userId, animalIds);
+  const atualizados = await tx.marcarAnimaisVendidos(userId, animalIdsOrdenados);
   if (atualizados !== animalIds.length) {
     toTrpc(mensagemAnimaisIndisponiveis(animalIds.map(id => {
       const animal = animalMap.get(id);
@@ -467,11 +501,11 @@ export async function confirmarVendaFinanceiroAtomico(
       if (error instanceof ConflitoIdempotenciaVendaError) {
         return recuperarAposConflitoComRetry(store, userId, input, chave.key);
       }
-      if (isDeadlockMysql(error) && tentativa < 5) {
+      if ((isDeadlockMysql(error) || isLockWaitTimeoutMysql(error)) && tentativa < 5) {
         await new Promise(resolve => setTimeout(resolve, 30 * (tentativa + 1)));
         continue;
       }
-      if (isDuplicateKeyMysql(error)) toTrpc(MSG_VENDA_ANIMAL_INDISPONIVEL);
+      if (isDuplicateBaixaAnimal(error)) toTrpc(MSG_VENDA_ANIMAL_INDISPONIVEL);
       throw error;
     }
   }
