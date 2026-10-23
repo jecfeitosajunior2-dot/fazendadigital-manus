@@ -187,31 +187,42 @@ export function chaveGrupoMovimentacao(m: MovimentacaoItemRaw): string {
   return `leg:${fazenda}|${data}|${tipo}|${fornecedor}|${nf}|${destino}|${manejo}|${created}`;
 }
 
+/**
+ * Tira o # só quando ele prefixa o número de um rótulo operacional
+ * (ex.: "Manutenção #12" → "Manutenção 12"). Texto livre, NF e observação ficam iguais.
+ */
+export function formatarReferenciaMovimentacao(texto: string): string {
+  const t = texto.trim();
+  const m = t.match(
+    /^(Manuten[cç][aã]o|Animal|Compra|Venda|Abastecimento|Sanit[aá]rio|OS)\s+#(\d+)$/iu,
+  );
+  if (!m) return texto;
+  return `${m[1]} ${m[2]}`;
+}
+
 export function rotuloOrigemDestino(m: MovimentacaoItemRaw): string {
   const tipo = tipoExibicaoMov(m).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const fornecedor = m.fornecedor?.trim();
   const destino = m.destino?.trim();
   const manejo = m.manejo?.trim();
 
+  let bruto: string;
   if (m.abastecimentoId != null || destino?.toLowerCase().includes("abastecimento de máquina")) {
-    return destino || "Abastecimento de máquina";
+    bruto = destino || "Abastecimento de máquina";
+  } else if (tipo.includes("compra") || (tipo.includes("entrada") && fornecedor)) {
+    bruto = fornecedor || destino || "—";
+  } else if (tipo.includes("transfer")) {
+    bruto = destino || "—";
+  } else if (tipo.includes("consumo") || tipo.includes("saida") || tipo.includes("venda")) {
+    bruto = destino || manejo || "—";
+  } else if (tipo.includes("ajuste")) {
+    bruto = destino || manejo || tipoExibicaoMov(m);
+  } else if (tipo.includes("entrada") || tipo.includes("producao")) {
+    bruto = destino || fornecedor || "—";
+  } else {
+    bruto = destino || fornecedor || manejo || "—";
   }
-  if (tipo.includes("compra") || (tipo.includes("entrada") && fornecedor)) {
-    return fornecedor || destino || "—";
-  }
-  if (tipo.includes("transfer")) {
-    return destino || "—";
-  }
-  if (tipo.includes("consumo") || tipo.includes("saida") || tipo.includes("venda")) {
-    return destino || manejo || "—";
-  }
-  if (tipo.includes("ajuste")) {
-    return destino || manejo || tipoExibicaoMov(m);
-  }
-  if (tipo.includes("entrada") || tipo.includes("producao")) {
-    return destino || fornecedor || "—";
-  }
-  return destino || fornecedor || manejo || "—";
+  return formatarReferenciaMovimentacao(bruto);
 }
 
 export function isMovimentacaoDeAbastecimento(m: MovimentacaoItemRaw | MovimentacaoResumo): boolean {

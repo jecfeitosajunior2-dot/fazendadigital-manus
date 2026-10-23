@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   agruparMovimentacoes,
   chaveGrupoMovimentacao,
+  formatarReferenciaMovimentacao,
   podeOferecerEstornoGenerico,
   rotuloMovimentacaoEstorno,
+  rotuloOrigemDestino,
   textoResultadoEstornoNoEstoque,
 } from "./movimentacao-resumo";
 
@@ -204,5 +206,57 @@ describe("texto do resultado do estorno", () => {
     ]);
     expect(grupos[0]?.infoEstorno?.dataHoraLabel).toBe("13/10/2026 às 19:25");
     expect(grupos[0]?.infoEstorno?.dataHora).toBe("2026-10-13 19:25:37");
+  });
+});
+
+describe("referência da movimentação — sem # no identificador", () => {
+  it("tira o # só do prefixo operacional", () => {
+    expect(formatarReferenciaMovimentacao("Manutenção #12")).toBe("Manutenção 12");
+    expect(formatarReferenciaMovimentacao("Animal #1")).toBe("Animal 1");
+    expect(formatarReferenciaMovimentacao("Compra #15")).toBe("Compra 15");
+    expect(formatarReferenciaMovimentacao("Venda #8")).toBe("Venda 8");
+  });
+
+  it("não mexe em texto livre, documento nem observação", () => {
+    expect(formatarReferenciaMovimentacao("NF #1234")).toBe("NF #1234");
+    expect(formatarReferenciaMovimentacao("Peça #especial do eixo")).toBe("Peça #especial do eixo");
+    expect(formatarReferenciaMovimentacao("Troca filtro — ver OS #12 no pátio")).toBe(
+      "Troca filtro — ver OS #12 no pátio",
+    );
+    expect(formatarReferenciaMovimentacao("Casa do Fazendeiro")).toBe("Casa do Fazendeiro");
+  });
+
+  it("a coluna Referência usa o destino gravado, só na exibição", () => {
+    expect(
+      rotuloOrigemDestino({
+        id: 201,
+        tipo: "Saída",
+        manejo: "Manutenção",
+        destino: "Manutenção #12",
+        quantidade: -1,
+      }),
+    ).toBe("Manutenção 12");
+    expect(
+      rotuloOrigemDestino({
+        id: 88,
+        tipo: "Saída",
+        manejo: "Sanitário",
+        destino: "Animal #1",
+        quantidade: -1,
+      }),
+    ).toBe("Animal 1");
+    expect(
+      agruparMovimentacoes([
+        {
+          id: 201,
+          grupoId: "manutencao-12-peca-3",
+          tipo: "Saída",
+          manejo: "Manutenção",
+          destino: "Manutenção #12",
+          quantidade: -2,
+          status: "ativa",
+        },
+      ])[0]?.origemDestino,
+    ).toBe("Manutenção 12");
   });
 });

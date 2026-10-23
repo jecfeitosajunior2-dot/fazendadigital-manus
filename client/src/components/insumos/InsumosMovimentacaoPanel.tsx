@@ -19,6 +19,7 @@ import { MSG_ESTORNO_GENERICO_SANITARIO } from "@shared/saudeEstoque";
 import {
   agruparMovimentacoes,
   classificarMotivoEstornoAbastecimento,
+  formatarReferenciaMovimentacao,
   formatDataResumo,
   formatItensLabel,
   formatQtdItem,
@@ -1214,7 +1215,10 @@ export default function InsumosMovimentacaoPanel() {
                   value={fDestino}
                   onChange={setFDestino}
                   placeholder="Todos"
-                  options={destinosDisponiveis.map(d => ({ value: d, label: d }))}
+                  options={destinosDisponiveis.map(d => ({
+                    value: d,
+                    label: formatarReferenciaMovimentacao(d),
+                  }))}
                 />
               </div>
             ) : null}
@@ -1460,7 +1464,7 @@ export default function InsumosMovimentacaoPanel() {
                                   title={
                                     identMaquinaDoResumo(resumo) ||
                                     (resumo.abastecimentoId
-                                      ? `Abastecimento #${resumo.abastecimentoId}`
+                                      ? `Abastecimento ${resumo.abastecimentoId}`
                                       : "Gerada por abastecimento")
                                   }
                                 >
