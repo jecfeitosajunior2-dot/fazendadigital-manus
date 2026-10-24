@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { FINANCEIRO_ORIGEM_MANUAL } from "@shared/financeiroNucleo";
+import {
+  FINANCEIRO_ORIGEM_COMPRA_INSUMOS,
+  FINANCEIRO_ORIGEM_MANUAL,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+} from "@shared/financeiroNucleo";
+import { compraVendaVendaDetalhePath } from "./compraVendaCompradores";
 import {
   FILTRO_VENCIDAS,
   TEXTO_A_DEFINIR,
@@ -25,7 +30,10 @@ import {
   detalheReceberVisivelParaUsuario,
   eventoRecebimentoEfetivo,
   identificacaoTitulo,
+  linkOrigemContasAReceber,
   mensagemErroHistoricoRecebimentos,
+  referenciaOrigemVendaAnimais,
+  rotuloOrigemTitulo,
   montarEventosHistoricoRecebimentos,
   resumoOficialContasAReceber,
   rotuloCondicaoPagamento,
@@ -270,6 +278,50 @@ describe("contasAReceberDetalhe — histórico de recebimentos", () => {
     expect(mensagemErroHistoricoRecebimentos("FORBIDDEN")).toBe(MSG_ACESSO_NEGADO);
     expect(mensagemErroHistoricoRecebimentos("NOT_FOUND")).toBe(MSG_TITULO_NAO_ENCONTRADO);
     expect(mensagemErroHistoricoRecebimentos("INTERNAL_SERVER_ERROR")).toBe(MSG_HISTORICO_RECEBIMENTOS_ERRO);
+  });
+});
+
+describe("contasAReceberDetalhe — origem de venda de animais", () => {
+  it("mostra rótulo amigável, referência da venda e link da rota real", () => {
+    expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_VENDA_ANIMAIS)).toBe("Venda de Animais");
+    expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_VENDA_ANIMAIS)).not.toBe("venda_animais");
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toBe("Venda 123");
+    expect(linkOrigemContasAReceber(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toEqual({
+      href: compraVendaVendaDetalhePath(123),
+      label: "Venda 123",
+    });
+    expect(compraVendaVendaDetalhePath(123)).toBe("/compra-venda/vendas/123");
+    expect(app).toContain('path="/compra-venda/vendas/:id"');
+    expect(page).toContain("linkOrigemContasAReceber");
+    expect(page).toContain("rotuloOrigemTitulo");
+    expect(page).toContain("Referência");
+    expect(page).not.toContain("venda_animais");
+  });
+
+  it("não inventa referência nem link falso quando a origem da venda é inválida", () => {
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, null)).toBeNull();
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 0)).toBeNull();
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, -4)).toBeNull();
+    expect(linkOrigemContasAReceber(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, null)).toBeNull();
+    expect(linkOrigemContasAReceber(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 0)).toBeNull();
+  });
+
+  it("preserva título manual, outra origem e isolamento por usuário", () => {
+    expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_MANUAL)).toBe("Manual");
+    expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_COMPRA_INSUMOS)).toBe("Compra");
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_MANUAL, 123)).toBeNull();
+    expect(linkOrigemContasAReceber(FINANCEIRO_ORIGEM_MANUAL, 123)).toBeNull();
+    expect(linkOrigemContasAReceber("origem_ausente", 9)).toBeNull();
+    expect(detalheReceberVisivelParaUsuario(titulo({
+      origemTipo: FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+      origemId: 123,
+      userId: 99,
+    }), 1)).toEqual({ ok: false, motivo: "acesso" });
+    expect(detalheReceberVisivelParaUsuario(titulo({
+      origemTipo: FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+      origemId: 123,
+      userId: 1,
+    }), 1)).toEqual({ ok: true });
   });
 });
 

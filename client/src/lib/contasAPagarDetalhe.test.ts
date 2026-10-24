@@ -6,6 +6,7 @@ import {
   FINANCEIRO_ORIGEM_COMPRA_INSUMOS,
   FINANCEIRO_ORIGEM_MANUAL,
   FINANCEIRO_ORIGEM_MANUTENCAO,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
 } from "@shared/financeiroNucleo";
 import {
   FILTRO_ATIVOS,
@@ -218,6 +219,7 @@ describe("contasAPagarDetalhe — origem, isolamento e navegação", () => {
     expect(linkOrigemContasAPagar(FINANCEIRO_ORIGEM_MANUAL, null)).toBeNull();
     expect(linkOrigemContasAPagar("origem_desconhecida", 9)).toBeNull();
     expect(linkOrigemContasAPagar(FINANCEIRO_ORIGEM_COMPRA_INSUMOS, 0)).toBeNull();
+    expect(linkOrigemContasAPagar(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toBeNull();
   });
 
   it("bloqueia receber e título de outro usuário", () => {

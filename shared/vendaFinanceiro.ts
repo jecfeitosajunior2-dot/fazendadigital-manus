@@ -360,6 +360,14 @@ export const MSG_VENDA_CONFLITO_IDEMPOTENCIA =
   "Esta chave já confirmou outra venda. Use uma chave nova ou o mesmo pedido original.";
 export const MSG_VENDA_RECUPERACAO_FALHOU =
   "Não foi possível recuperar a venda já confirmada com esta chave.";
+export const MSG_VENDA_CONFIRMACAO_JA_CANCELADA =
+  "Esta venda já foi cancelada. A mesma chave não confirma de novo e não gera outra venda.";
+export const MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO =
+  "O título financeiro desta venda está inconsistente com o status da venda e a confirmação não pode ser recuperada.";
+
+export function vendaConfirmacaoEstaCancelada(status: string | null | undefined): boolean {
+  return String(status ?? "").trim() === "cancelado";
+}
 
 export function validarChaveIdempotenciaVenda(
   raw: unknown,

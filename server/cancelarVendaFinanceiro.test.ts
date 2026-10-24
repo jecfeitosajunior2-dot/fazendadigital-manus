@@ -7,9 +7,13 @@ import {
   FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
   FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
 } from "../shared/vendaFinanceiro";
+import { INTEGRACAO_CONFIRMACAO_VENDA_ATIVA } from "../client/src/lib/novaVendaPendencia";
 import {
   createCancelarVendaFinanceiroService,
+  decidirCaminhoCancelamentoVenda,
   MSG_VENDA_CANCELAR_COM_RECEBIMENTO,
+  MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO,
+  MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS,
   type CancelarVendaFinanceiroStore,
   type CancelarVendaFinanceiroTx,
 } from "./cancelarVendaFinanceiro";
@@ -48,24 +52,28 @@ function criarStore(opts?: { falharCancelarTitulo?: boolean }) {
       { id: 10, userId: 10, brinco: "100", status: "vendido" },
       { id: 11, userId: 10, brinco: "101", status: "vendido" },
       { id: 12, userId: 10, brinco: "102", status: "vendido" },
+      { id: 13, userId: 10, brinco: "103", status: "vendido" },
       { id: 20, userId: 99, brinco: "200", status: "vendido" },
     ],
     vendas: [
       { id: 1, userId: 10, status: "concluido", idempotencyKey: "ven-3e6-01" },
       { id: 2, userId: 10, status: "concluido", idempotencyKey: null as string | null },
       { id: 3, userId: 99, status: "concluido", idempotencyKey: "ven-3e6-xx" },
+      { id: 4, userId: 10, status: "concluido", idempotencyKey: "ven-3e9b-sem-titulo" },
     ],
     itens: [
       { userId: 10, vendaId: 1, animalId: 10 },
       { userId: 10, vendaId: 1, animalId: 11 },
       { userId: 10, vendaId: 2, animalId: 12 },
       { userId: 99, vendaId: 3, animalId: 20 },
+      { userId: 10, vendaId: 4, animalId: 13 },
     ],
     baixas: [
       { id: 80, userId: 10, vendaId: 1, animalId: 10, status: "ativa" },
       { id: 81, userId: 10, vendaId: 1, animalId: 11, status: "ativa" },
       { id: 82, userId: 10, vendaId: 2, animalId: 12, status: "ativa" },
       { id: 83, userId: 99, vendaId: 3, animalId: 20, status: "ativa" },
+      { id: 84, userId: 10, vendaId: 4, animalId: 13, status: "ativa" },
     ],
     titulos: [
       {
@@ -146,15 +154,24 @@ function criarStore(opts?: { falharCancelarTitulo?: boolean }) {
     return {
       fin,
       async lockVenda(userId, vendaId) {
+        await esperaLock();
         return state.vendas.find(v => v.id === vendaId && v.userId === userId) ?? null;
       },
       async listItensAnimalIds(userId, vendaId) {
         return state.itens.filter(i => i.userId === userId && i.vendaId === vendaId).map(i => i.animalId);
       },
-      async listAnimais(userId, ids) {
+      async lockTitulosDaVenda(userId, vendaId) {
+        await esperaLock();
+        return state.titulos
+          .filter(t => t.userId === userId && t.origemTipo === FINANCEIRO_ORIGEM_VENDA_ANIMAIS && t.origemId === vendaId)
+          .sort((a, b) => a.id - b.id);
+      },
+      async lockAnimais(userId, ids) {
+        await esperaLock();
         return state.animais.filter(a => a.userId === userId && ids.includes(a.id));
       },
-      async listBaixasAtivasDaVenda(userId, vendaId, animalIds) {
+      async lockBaixasAtivasDaVenda(userId, vendaId, animalIds) {
+        await esperaLock();
         return state.baixas.filter(b =>
           b.userId === userId && b.vendaId === vendaId && b.status === "ativa" && animalIds.includes(b.animalId),
         );
@@ -333,6 +350,51 @@ describe("cancelarVendaFinanceiro", () => {
     expect(store.state.animais.find(a => a.id === 10)?.status).toBe("vendido");
   });
 
+  it("bloqueia título principal + extra e não cancela nenhum", async () => {
+    const store = criarStore();
+    const extra = { ...store.state.titulos[0]!, id: 51, origemItemChave: "item-extra" };
+    store.state.titulos.push(extra);
+    await expect(createCancelarVendaFinanceiroService(store).cancelar(10, input)).rejects.toMatchObject({
+      message: MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS,
+    });
+    expect(store.state.vendas[0]?.status).toBe("concluido");
+    expect(store.state.titulos.find(t => t.id === 50)?.estado).toBe("ativo");
+    expect(store.state.titulos.find(t => t.id === 51)?.estado).toBe("ativo");
+    expect(store.state.animais.find(a => a.id === 10)?.status).toBe("vendido");
+  });
+
+  it("bloqueia título extra sem principal e não usa fallback comercial", async () => {
+    const store = criarStore();
+    store.state.titulos[0]!.origemItemChave = "item-extra";
+    await expect(createCancelarVendaFinanceiroService(store).cancelar(10, input)).rejects.toMatchObject({
+      message: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO,
+    });
+    expect(store.state.vendas[0]?.status).toBe("concluido");
+    expect(store.state.titulos[0]?.estado).toBe("ativo");
+  });
+
+  it("bloqueia venda com chave ven- sem título e não usa fallback comercial", async () => {
+    const store = criarStore();
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    await expect(createCancelarVendaFinanceiroService(store).cancelar(10, {
+      ...input,
+      vendaId: 4,
+    })).rejects.toMatchObject({ message: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO });
+    expect(store.state.vendas.find(v => v.id === 4)?.status).toBe("concluido");
+    expect(store.state.animais.find(a => a.id === 13)?.status).toBe("vendido");
+    expect(store.state.baixas.find(b => b.id === 84)?.status).toBe("ativa");
+    expect(store.state.titulos).toHaveLength(1);
+  });
+
+  it("com flag desligada ainda cancela pelo caminho integrado quando há título V2", async () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    const store = criarStore();
+    const r = await createCancelarVendaFinanceiroService(store).cancelar(10, input);
+    expect(r.vendaAntigaSemTitulo).toBe(false);
+    expect(r.tituloCancelado).toBe(true);
+    expect(store.state.titulos[0]?.estado).toBe("cancelado");
+  });
+
   it("cancela venda antiga sem título e não cria V2", async () => {
     const store = criarStore();
     const r = await createCancelarVendaFinanceiroService(store).cancelar(10, {
@@ -394,20 +456,83 @@ describe("cancelarVendaFinanceiro", () => {
   });
 });
 
+describe("decidirCaminhoCancelamentoVenda", () => {
+  it("título principal usa o integrado mesmo sem chave ven-", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: null,
+      titulos: [{ id: 50, origemItemChave: FINANCEIRO_ORIGEM_ITEM_PRINCIPAL }],
+    })).toEqual({ caminho: "integrado", tituloId: 50 });
+  });
+
+  it("chave ven- sem título é integridade, não comercial", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: "ven-3e9b-sem-titulo",
+      titulos: [],
+    })).toEqual({ caminho: "integridade", motivo: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO });
+  });
+
+  it("título sem chave principal é integridade", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: null,
+      titulos: [{ id: 9, origemItemChave: "outra" }],
+    })).toEqual({ caminho: "integridade", motivo: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO });
+  });
+
+  it("principal + extra é integridade e não integrado", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: "ven-3e9b2-extra",
+      titulos: [
+        { id: 1, origemItemChave: FINANCEIRO_ORIGEM_ITEM_PRINCIPAL },
+        { id: 2, origemItemChave: "item-extra" },
+      ],
+    })).toEqual({ caminho: "integridade", motivo: MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS });
+  });
+
+  it("dois principais são integridade", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: "ven-3e9b-dup-01",
+      titulos: [
+        { id: 1, origemItemChave: FINANCEIRO_ORIGEM_ITEM_PRINCIPAL },
+        { id: 2, origemItemChave: FINANCEIRO_ORIGEM_ITEM_PRINCIPAL },
+      ],
+    })).toEqual({ caminho: "integridade", motivo: MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS });
+  });
+
+  it("histórico sem título e sem chave ven- permanece comercial", () => {
+    expect(decidirCaminhoCancelamentoVenda({
+      idempotencyKey: null,
+      titulos: [],
+    })).toEqual({ caminho: "comercial" });
+  });
+});
+
 describe("cancelarVendaFinanceiro — isolamento da aplicação", () => {
-  it("nenhuma rota ativa importa o serviço integrado", () => {
+  it("a rota de cancelar usa a proteção financeira; confirmar comercial permanece desligado", () => {
     const router = readFileSync(join(raiz, "routers.ts"), "utf8");
     const cancelar = readFileSync(join(raiz, "cancelarVenda.ts"), "utf8");
     const detalhe = readFileSync(join(raiz, "../client/src/pages/VendaDetalhePage.tsx"), "utf8");
-    expect(router).not.toContain("cancelarVendaFinanceiro");
+    const pendencia = readFileSync(join(raiz, "../client/src/lib/novaVendaPendencia.ts"), "utf8");
+    expect(router).toContain("createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar");
+    expect(router).toContain("confirmarVendaComercialSePermitida");
+    expect(router).toContain("confirmarVendaIntegradaSeAtiva");
+    expect(router).not.toContain("cancelarVendaComercial");
     expect(cancelar).not.toContain("cancelarVendaFinanceiro");
     expect(cancelar).not.toContain("cancelarTituloNoTx");
     expect(detalhe).not.toContain("cancelarVendaFinanceiro");
+    expect(detalhe).toContain("trpc.vendas.cancelar");
+    expect(pendencia).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA");
+    expect(readFileSync(join(raiz, "../shared/vendaIntegracao.ts"), "utf8")).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false");
     const svc = readFileSync(join(raiz, "cancelarVendaFinanceiro.ts"), "utf8");
-    expect(svc).toContain("cancelarTituloNoTx");
-    expect(svc).toContain("tituloTemLiquidacaoEfetiva");
-    expect(svc).toContain("lockTitulos");
+    const mysql = readFileSync(join(raiz, "cancelarVendaFinanceiroMysql.ts"), "utf8");
+    expect(svc).toContain("decidirCaminhoCancelamentoVenda");
+    expect(svc).toContain("lockTitulosDaVenda");
+    expect(svc).toContain("lockAnimais");
+    expect(svc).toContain("lockBaixasAtivasDaVenda");
+    expect(svc).not.toContain("listarTitulosPorOrigemNoTx");
     expect(svc).not.toContain("titulosCreateManual");
     expect(svc).not.toContain("DELETE FROM");
+    expect(mysql).toContain("ORDER BY id FOR UPDATE");
+    expect(mysql).toContain('.for("update")');
+    expect(mysql).toContain("origem_id = ${vendaId}");
   });
 });

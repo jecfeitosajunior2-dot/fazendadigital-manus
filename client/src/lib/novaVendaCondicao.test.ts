@@ -221,14 +221,13 @@ describe("Nova Venda — isolamento da confirmação integrada", () => {
     expect(page).toContain("Condições de recebimento");
     expect(page).toContain("MSG_VENDA_CONDICAO_PREPARACAO");
     expect(page).toContain("trpc.vendas.confirmar");
+    expect(page).toContain("trpc.vendas.integracaoConfirmacaoAtiva");
     expect(page).not.toContain("confirmarVendaFinanceiro");
     expect(page).not.toContain("cancelarVendaFinanceiro");
     expect(page).not.toContain("criarTituloNoTx");
     const confirmar = page.slice(page.indexOf("const confirmar = async"), page.indexOf("const colSpan"));
-    expect(confirmar).toContain("mutateAsync");
-    expect(confirmar).not.toContain("condicao:");
-    expect(confirmar).not.toContain("parcelas:");
-    expect(confirmar).not.toContain("idempotencyKey");
+    expect(confirmar).toContain("executarConfirmacaoNovaVenda");
+    expect(confirmar).toContain("rascunho: condicaoRecebimento");
     expect(confirmar).not.toContain("confirmarVendaFinanceiro");
     expect(page).toContain("condicaoRecebimento");
     expect(page).toContain("VENDA_DRAFT_KEY");

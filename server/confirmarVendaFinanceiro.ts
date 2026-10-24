@@ -8,8 +8,11 @@ import { persistirValor } from "../shared/financeiroNucleo";
 import {
   FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
   FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+  MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO,
+  MSG_VENDA_CONFIRMACAO_JA_CANCELADA,
   MSG_VENDA_CONFLITO_IDEMPOTENCIA,
   MSG_VENDA_RECUPERACAO_FALHOU,
+  vendaConfirmacaoEstaCancelada,
   observacaoCondicaoTituloVenda,
   origemFinanceiraVendaAnimais,
   lerCondicaoTituloVenda,
@@ -278,14 +281,23 @@ async function resultadoDaVendaExistente(
   venda: VendaFinanceiroRow,
   pedido: IntencaoConfirmacaoVendaFinanceiro,
 ): Promise<ConfirmarVendaFinanceiroResultado> {
+  // Venda já veio de findVendaPorIdempotency com FOR UPDATE — status atual da transação.
   const itens = await tx.listVendaItens(userId, venda.id);
   const titulo = await tx.lockTituloPrincipalDaVenda(userId, venda.id);
-  if (!titulo) toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
-  const parcelas = await tx.lockParcelasDoTitulo(userId, titulo.id);
-  const persistida = intencaoPersistida(venda, itens, titulo, parcelas);
-  if (!persistida || !retryConfirmacaoVendaBateComPedido(persistida, pedido)) {
-    toTrpc(MSG_VENDA_CONFLITO_IDEMPOTENCIA, "CONFLICT");
+  const parcelas = titulo ? await tx.lockParcelasDoTitulo(userId, titulo.id) : [];
+  const persistida = titulo ? intencaoPersistida(venda, itens, titulo, parcelas) : null;
+  const payloadBate = persistida != null && retryConfirmacaoVendaBateComPedido(persistida, pedido);
+
+  if (vendaConfirmacaoEstaCancelada(venda.status)) {
+    if (persistida && !payloadBate) toTrpc(MSG_VENDA_CONFLITO_IDEMPOTENCIA, "CONFLICT");
+    toTrpc(MSG_VENDA_CONFIRMACAO_JA_CANCELADA);
   }
+  if (persistida && !payloadBate) toTrpc(MSG_VENDA_CONFLITO_IDEMPOTENCIA, "CONFLICT");
+  if (String(venda.status ?? "") !== "concluido") toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
+  if (!titulo) toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
+  if (titulo.estado === "cancelado") toTrpc(MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO);
+  if (!persistida) toTrpc(MSG_VENDA_CONFLITO_IDEMPOTENCIA, "CONFLICT");
+
   const valorTotal = numeroOpcional(venda.valorTotal);
   if (valorTotal == null) toTrpc(MSG_VENDA_RECUPERACAO_FALHOU);
   return {

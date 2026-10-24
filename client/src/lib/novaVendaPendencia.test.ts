@@ -239,6 +239,8 @@ describe("Nova Venda — pendência de confirmação", async () => {
     await marcarTimeoutConfirmacaoVenda({ userId: 10, idempotencyKey: tentativa.idempotencyKey, storage });
     expect(tentativasComResultadoDesconhecido(listarTentativasPendenciaVenda({ userId: 10, storage }))).toHaveLength(1);
     expect(vendaRecusaDefinitiva("BAD_REQUEST")).toBe(true);
+    expect(vendaRecusaDefinitiva("CONFLICT")).toBe(true);
+    expect(vendaResultadoDesconhecido({ codigo: "CONFLICT" })).toBe(false);
     expect((await marcarErroDefinitivoConfirmacaoVenda({
       userId: 10,
       idempotencyKey: tentativa.idempotencyKey,
@@ -264,15 +266,13 @@ describe("Nova Venda — isolamento da recuperação na tela", async () => {
     expect(page).toContain("ROTULO_VERIFICAR_CONFIRMACAO");
     expect(page).toContain("PREFIXO_PENDENCIA_VENDA");
     expect(page).toContain("trpc.vendas.confirmar");
+    expect(page).toContain("trpc.vendas.integracaoConfirmacaoAtiva");
     expect(page).not.toContain("confirmarVendaFinanceiro");
     expect(page).not.toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true");
     const confirmar = page.slice(page.indexOf("const confirmar = async"), page.indexOf("const colSpan"));
-    expect(confirmar).toContain("mutateAsync");
-    expect(confirmar).not.toContain("idempotencyKey");
-    expect(confirmar).not.toContain("prepararRetryConfirmacaoVenda");
-    expect(confirmar).not.toContain("gravarTentativaPendenciaVenda");
+    expect(confirmar).toContain("executarConfirmacaoNovaVenda");
+    expect(confirmar).toContain("flag: flagConfirmacao");
     expect(confirmar).not.toContain("confirmarVendaFinanceiro");
-    expect(confirmar.split("mutateAsync").length).toBe(2);
   });
 });
 
@@ -570,6 +570,7 @@ describe("Nova Venda — segurança da recuperação 3E.8C", async () => {
     expect(lib).not.toContain("vendas.cancelar");
     expect(page).not.toContain("confirmarVendaFinanceiro");
     expect(page).toContain("trpc.vendas.confirmar");
+    expect(page).toContain("trpc.vendas.integracaoConfirmacaoAtiva");
     expect(page).not.toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true");
   });
 });

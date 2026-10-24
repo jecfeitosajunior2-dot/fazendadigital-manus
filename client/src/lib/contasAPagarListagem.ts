@@ -11,6 +11,7 @@ import {
   FINANCEIRO_ORIGEM_COMPRA_INSUMOS,
   FINANCEIRO_ORIGEM_MANUAL,
   FINANCEIRO_ORIGEM_MANUTENCAO,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
   type TituloSituacaoDerivada,
 } from "@shared/financeiroNucleo";
 
@@ -197,11 +198,36 @@ export function detalhesDoUsuarioAutenticado<T extends { userId: number }>(
   return detalhes.filter(item => item.userId === userId);
 }
 
+export function origemIdFinanceiroValido(origemId: number | null | undefined): origemId is number {
+  return origemId != null && Number.isInteger(origemId) && origemId > 0;
+}
+
 export function rotuloOrigemTitulo(origemTipo: string): string {
   if (origemTipo === FINANCEIRO_ORIGEM_COMPRA_INSUMOS) return "Compra";
   if (origemTipo === FINANCEIRO_ORIGEM_MANUTENCAO) return "Manutenção";
   if (origemTipo === FINANCEIRO_ORIGEM_MANUAL) return "Manual";
+  if (origemTipo === FINANCEIRO_ORIGEM_VENDA_ANIMAIS) return "Venda de Animais";
   return origemTipo;
+}
+
+export function referenciaOrigemVendaAnimais(
+  origemTipo: string,
+  origemId: number | null | undefined,
+): string | null {
+  if (origemTipo !== FINANCEIRO_ORIGEM_VENDA_ANIMAIS) return null;
+  if (!origemIdFinanceiroValido(origemId)) return null;
+  return `Venda ${origemId}`;
+}
+
+/** Linha compacta da listagem a receber. Sem ID válido, só o rótulo amigável. */
+export function textoListagemOrigemVendaAnimais(
+  origemTipo: string,
+  origemId: number | null | undefined,
+): string | null {
+  if (origemTipo !== FINANCEIRO_ORIGEM_VENDA_ANIMAIS) return null;
+  const referencia = referenciaOrigemVendaAnimais(origemTipo, origemId);
+  const rotulo = rotuloOrigemTitulo(origemTipo);
+  return referencia ? `${rotulo} · ${referencia}` : rotulo;
 }
 
 export function rotuloSituacaoTitulo(situacao: TituloSituacaoDerivada): string {
@@ -547,6 +573,7 @@ function camposPesquisaLinha(linha: LinhaContasAPagar): string[] {
   const origem = rotuloOrigemTitulo(linha.origemTipo);
   const origemId = linha.origemId != null ? String(linha.origemId) : "";
   const chave = linha.origemItemChave ?? "";
+  const referenciaVenda = referenciaOrigemVendaAnimais(linha.origemTipo, linha.origemId) ?? "";
   return [
     linha.fornecedor,
     linha.documentoReferencia,
@@ -554,6 +581,7 @@ function camposPesquisaLinha(linha: LinhaContasAPagar): string[] {
     origemId,
     chave,
     `${origem} ${origemId}`.trim(),
+    referenciaVenda,
     linha.descricao,
   ].map(normalizarPesquisa);
 }

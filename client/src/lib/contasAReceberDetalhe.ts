@@ -4,6 +4,8 @@
  */
 
 import { toCentavos } from "@shared/financeiroMoeda";
+import { FINANCEIRO_ORIGEM_VENDA_ANIMAIS } from "@shared/financeiroNucleo";
+import { compraVendaVendaDetalhePath } from "./compraVendaCompradores";
 import {
   deveMostrarHistoricoVazio,
   identificacaoTitulo,
@@ -17,6 +19,9 @@ import {
   type ResumoOficialContasAPagar,
 } from "./contasAPagarDetalhe";
 import {
+  origemIdFinanceiroValido,
+  referenciaOrigemVendaAnimais,
+  rotuloOrigemTitulo,
   rotuloSituacaoParcela,
   tituloEstaCancelado,
   type ParcelaV2Oficial,
@@ -31,6 +36,25 @@ export {
   rotuloEstadoTitulo,
   rotuloParcelasHistorico,
 };
+export { referenciaOrigemVendaAnimais, rotuloOrigemTitulo };
+
+export type LinkOrigemContasAReceber = {
+  href: string;
+  label: string;
+};
+
+export function linkOrigemContasAReceber(
+  origemTipo: string,
+  origemId: number | null | undefined,
+): LinkOrigemContasAReceber | null {
+  const referencia = referenciaOrigemVendaAnimais(origemTipo, origemId);
+  if (!referencia || !origemIdFinanceiroValido(origemId)) return null;
+  if (origemTipo !== FINANCEIRO_ORIGEM_VENDA_ANIMAIS) return null;
+  return {
+    href: compraVendaVendaDetalhePath(origemId),
+    label: referencia,
+  };
+}
 export type { EventoHistoricoPagamentoExibicao, EventoHistoricoPagamentoOficial };
 
 export const MSG_PARCELAS_AINDA_NAO_DEFINIDAS = "Parcelas ainda não definidas.";

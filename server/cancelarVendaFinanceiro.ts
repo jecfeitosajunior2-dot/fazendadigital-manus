@@ -1,13 +1,14 @@
 /**
  * Cancelamento comercial de venda + título V2 na mesma transação.
- * Serviço isolado: nenhuma rota ativa deve chamar este módulo nesta fase.
+ * A flag de integração controla só a criação de vendas novas.
+ * Venda com vínculo V2 nunca cai no cancelamento comercial antigo.
  */
 import { TRPCError } from "@trpc/server";
 import {
   FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
-  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
   MSG_FIN_CANCELAR_COM_LIQUIDACAO,
 } from "../shared/financeiroNucleo";
+import { validarChaveIdempotenciaVenda } from "../shared/vendaFinanceiro";
 import {
   MSG_VENDA_CANCELAR_ANIMAL_ALTERADO,
   MSG_VENDA_CANCELAR_BAIXA_AUSENTE,
@@ -21,7 +22,6 @@ import {
   cancelarTituloNoTx,
   isDeadlockMysql,
   isLockWaitTimeoutMysql,
-  listarTitulosPorOrigemNoTx,
   tituloTemLiquidacaoEfetiva,
   type FinanceiroNucleoTx,
   type FinTituloRow,
@@ -29,6 +29,36 @@ import {
 
 export const MSG_VENDA_CANCELAR_COM_RECEBIMENTO =
   "Esta venda não pode ser cancelada porque já tem recebimento efetivo.";
+export const MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO =
+  "Esta venda tem vínculo financeiro incompleto e não pode ser cancelada por aqui. O título esperado não foi encontrado.";
+export const MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS =
+  "Há mais de um título financeiro para esta venda.";
+
+export type CaminhoCancelamentoVenda =
+  | { caminho: "integrado"; tituloId: number }
+  | { caminho: "comercial" }
+  | { caminho: "integridade"; motivo: string };
+
+export function vendaTemChaveIntegrada(idempotencyKey?: string | null): boolean {
+  return validarChaveIdempotenciaVenda(idempotencyKey).ok;
+}
+
+export function decidirCaminhoCancelamentoVenda(input: {
+  idempotencyKey?: string | null;
+  titulos: ReadonlyArray<Pick<FinTituloRow, "id" | "origemItemChave">>;
+}): CaminhoCancelamentoVenda {
+  const titulos = [...input.titulos];
+  const principais = titulos.filter(t => (t.origemItemChave ?? "") === FINANCEIRO_ORIGEM_ITEM_PRINCIPAL);
+  if (principais.length > 1 || titulos.length > 1) {
+    return { caminho: "integridade", motivo: MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS };
+  }
+  if (principais.length === 1) return { caminho: "integrado", tituloId: principais[0]!.id };
+  if (titulos.length > 0) return { caminho: "integridade", motivo: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO };
+  if (vendaTemChaveIntegrada(input.idempotencyKey)) {
+    return { caminho: "integridade", motivo: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO };
+  }
+  return { caminho: "comercial" };
+}
 
 export type CancelarVendaFinanceiroInput = {
   vendaId: number;
@@ -57,8 +87,9 @@ export type CancelarVendaFinanceiroTx = {
   fin: FinanceiroNucleoTx;
   lockVenda(userId: number, vendaId: number): Promise<VendaCancelamentoRow | null>;
   listItensAnimalIds(userId: number, vendaId: number): Promise<number[]>;
-  listAnimais(userId: number, ids: number[]): Promise<Array<{ id: number; brinco: string | null; status: string | null }>>;
-  listBaixasAtivasDaVenda(
+  lockTitulosDaVenda(userId: number, vendaId: number): Promise<FinTituloRow[]>;
+  lockAnimais(userId: number, ids: number[]): Promise<Array<{ id: number; brinco: string | null; status: string | null }>>;
+  lockBaixasAtivasDaVenda(
     userId: number,
     vendaId: number,
     animalIds: number[],
@@ -88,12 +119,6 @@ function identificacao(animal: { brinco?: string | null; id: number }): string {
   return brinco || `#${animal.id}`;
 }
 
-function tituloPrincipalDaVenda(titulos: FinTituloRow[]): FinTituloRow | null {
-  const principais = titulos.filter(t => (t.origemItemChave ?? "") === FINANCEIRO_ORIGEM_ITEM_PRINCIPAL);
-  if (principais.length > 1) toTrpc("Há mais de um título financeiro para esta venda.");
-  return principais[0] ?? null;
-}
-
 async function cancelarVendaFinanceiroNoTx(
   tx: CancelarVendaFinanceiroTx,
   userId: number,
@@ -111,27 +136,35 @@ async function cancelarVendaFinanceiroNoTx(
   if (venda.status === "cancelado") toTrpc(MSG_VENDA_CANCELAR_JA_CANCELADA);
   if (venda.status !== "concluido") toTrpc(MSG_VENDA_CANCELAR_NAO_CONCLUIDA);
 
-  const animalIds = [...new Set(await tx.listItensAnimalIds(userId, vendaId))];
+  const animalIds = [...new Set(await tx.listItensAnimalIds(userId, vendaId))].sort((a, b) => a - b);
   if (!animalIds.length) toTrpc(MSG_VENDA_CANCELAR_SEM_ITENS);
 
-  const titulos = await listarTitulosPorOrigemNoTx(
-    tx.fin,
-    userId,
-    FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
-    vendaId,
-  );
-  const titulo = tituloPrincipalDaVenda(titulos);
+  // Ordem de locks do cancelamento (3E.9B.2), alinhada a 3E.8D:
+  // 1. venda FOR UPDATE
+  // 2. títulos da origem FOR UPDATE (ORDER BY id) — leitura atual, sem snapshot stale
+  // 3. parcelas do título principal (recebimento efetivo)
+  // 4. animais FOR UPDATE (ORDER BY id)
+  // 5. baixas ativas FOR UPDATE (ORDER BY id)
+  // Recebimento: conta → título → parcela. Estorno: liquidação → conta → título → parcela.
+  const titulos = await tx.lockTitulosDaVenda(userId, vendaId);
+
+  const decisao = decidirCaminhoCancelamentoVenda({
+    idempotencyKey: venda.idempotencyKey,
+    titulos,
+  });
+  if (decisao.caminho === "integridade") toTrpc(decisao.motivo);
+
+  let titulo: FinTituloRow | null = null;
   let tituloCancelado = false;
-  if (titulo) {
-    const locked = await tx.fin.lockTitulos(userId, [titulo.id]);
-    const atual = locked[0] ?? null;
-    if (!atual) toTrpc(MSG_VENDA_CANCELAR_NAO_ENCONTRADA, "NOT_FOUND");
-    if (atual.estado !== "cancelado") {
-      if (await tituloTemLiquidacaoEfetiva(tx.fin, userId, atual.id, true)) {
+  if (decisao.caminho === "integrado") {
+    titulo = titulos.find(t => t.id === decisao.tituloId) ?? null;
+    if (!titulo) toTrpc(MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO);
+    if (titulo.estado !== "cancelado") {
+      if (await tituloTemLiquidacaoEfetiva(tx.fin, userId, titulo.id, true)) {
         toTrpc(MSG_VENDA_CANCELAR_COM_RECEBIMENTO);
       }
       try {
-        await cancelarTituloNoTx(tx.fin, userId, atual.id, motivo);
+        await cancelarTituloNoTx(tx.fin, userId, titulo.id, motivo);
       } catch (error) {
         if (error instanceof TRPCError && error.message === MSG_FIN_CANCELAR_COM_LIQUIDACAO) {
           toTrpc(MSG_VENDA_CANCELAR_COM_RECEBIMENTO);
@@ -142,14 +175,14 @@ async function cancelarVendaFinanceiroNoTx(
     }
   }
 
-  const animaisRows = await tx.listAnimais(userId, animalIds);
+  const animaisRows = await tx.lockAnimais(userId, animalIds);
   if (animaisRows.length !== animalIds.length) toTrpc(MSG_VENDA_CANCELAR_ANIMAL_ALTERADO);
   const naoVendidos = animaisRows.filter(animal => animal.status !== "vendido");
   if (naoVendidos.length) {
     toTrpc(`${MSG_VENDA_CANCELAR_ANIMAL_ALTERADO} (${naoVendidos.map(identificacao).join(", ")})`);
   }
 
-  const baixas = await tx.listBaixasAtivasDaVenda(userId, vendaId, animalIds);
+  const baixas = await tx.lockBaixasAtivasDaVenda(userId, vendaId, animalIds);
   const baixaIds: number[] = [];
   for (const animalId of animalIds) {
     const baixa = baixas.find(row => row.animalId === animalId);
@@ -180,7 +213,7 @@ async function cancelarVendaFinanceiroNoTx(
     tituloId: titulo?.id ?? null,
     quantidade: animalIds.length,
     tituloCancelado,
-    vendaAntigaSemTitulo: titulo == null,
+    vendaAntigaSemTitulo: decisao.caminho === "comercial",
   };
 }
 

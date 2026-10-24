@@ -6,6 +6,7 @@ import {
   FINANCEIRO_ORIGEM_COMPRA_INSUMOS,
   FINANCEIRO_ORIGEM_MANUAL,
   FINANCEIRO_ORIGEM_MANUTENCAO,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
 } from "@shared/financeiroNucleo";
 import { somarDinheiro } from "@shared/financeiroMoeda";
 import {
@@ -40,8 +41,10 @@ import {
   periodoMesAnterior,
   periodoMesSeguinte,
   rotuloMesAno,
+  referenciaOrigemVendaAnimais,
   rotuloOrigemTitulo,
   rotuloParcela,
+  textoListagemOrigemVendaAnimais,
   rotuloSituacaoLinha,
   rotuloSituacaoTitulo,
   vencimentoOuSaldoADefinir,
@@ -360,7 +363,18 @@ describe("contasAPagarListagem — filtros e isolamento", () => {
     expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_COMPRA_INSUMOS)).toBe("Compra");
     expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_MANUTENCAO)).toBe("Manutenção");
     expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_MANUAL)).toBe("Manual");
+    expect(rotuloOrigemTitulo(FINANCEIRO_ORIGEM_VENDA_ANIMAIS)).toBe("Venda de Animais");
     expect(rotuloOrigemTitulo("origem_nova_inventada")).toBe("origem_nova_inventada");
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toBe("Venda 123");
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).not.toContain("#");
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, null)).toBeNull();
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 0)).toBeNull();
+    expect(referenciaOrigemVendaAnimais(FINANCEIRO_ORIGEM_MANUAL, 123)).toBeNull();
+    expect(textoListagemOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toBe(
+      "Venda de Animais · Venda 123",
+    );
+    expect(textoListagemOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, null)).toBe("Venda de Animais");
+    expect(textoListagemOrigemVendaAnimais(FINANCEIRO_ORIGEM_MANUAL, 9)).toBeNull();
     expect(rotuloSituacaoTitulo("vencido")).toBe("Vencido");
     expect(opcoesOrigemContasAPagar(linhas).map(o => o.value)).toEqual([
       FINANCEIRO_ORIGEM_COMPRA_INSUMOS,

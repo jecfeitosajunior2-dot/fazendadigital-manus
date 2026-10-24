@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -23,7 +23,7 @@ import {
   tituloEstaCancelado,
   type TituloV2DetalheOficial,
 } from "@/lib/contasAReceberListagem";
-import { rotuloOrigemTitulo, type ParcelaV2Oficial } from "@/lib/contasAPagarListagem";
+import { type ParcelaV2Oficial } from "@/lib/contasAPagarListagem";
 import {
   FINANCEIRO_CONTAS_V2_PATH,
   MSG_SEM_CONTA_V2_ATIVA,
@@ -41,9 +41,12 @@ import {
   deveMostrarHistoricoVazio,
   detalheReceberVisivelParaUsuario,
   identificacaoTitulo,
+  linkOrigemContasAReceber,
   mensagemErroHistoricoRecebimentos,
   montarEventosHistoricoRecebimentos,
+  referenciaOrigemVendaAnimais,
   resumoOficialContasAReceber,
+  rotuloOrigemTitulo,
   rotuloCondicaoPagamento,
   rotuloEstadoTitulo,
   rotuloParcelasHistorico,
@@ -153,11 +156,11 @@ function classeSituacao(texto: string): string {
   return "bg-sky-50 text-sky-800";
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="text-[13px] text-gray-800 mt-0.5 break-words">{value || "—"}</div>
+      <div className="text-[13px] text-gray-800 mt-0.5 break-words">{value == null || value === "" ? "—" : value}</div>
     </div>
   );
 }
@@ -354,6 +357,8 @@ export default function ContasAReceberDetalhePage() {
   }
 
   const resumo = resumoOficialContasAReceber(titulo);
+  const linkOrigem = linkOrigemContasAReceber(titulo.origemTipo, titulo.origemId);
+  const referenciaVenda = referenciaOrigemVendaAnimais(titulo.origemTipo, titulo.origemId);
   const parcelas = [...titulo.parcelas].sort((a, b) => a.numero - b.numero);
   const situacao = rotuloSituacaoLinhaReceber({ estado: titulo.estado, situacao: titulo.situacao });
   const textoRecebido = resumo.totalPago == null ? TEXTO_A_DEFINIR : formatarValorOficial(resumo.totalPago);
@@ -815,6 +820,26 @@ export default function ContasAReceberDetalhePage() {
             <Info label="Descrição" value={titulo.descricao.trim() || "—"} />
             <Info label="Fazenda" value={nomeFazendaDaLinha(titulo.fazendaOrigemId, fazendas)} />
             <Info label="Origem" value={rotuloOrigemTitulo(titulo.origemTipo)} />
+            {referenciaVenda ? (
+              <Info
+                label="Referência"
+                value={
+                  linkOrigem ? (
+                    <a
+                      href={linkOrigem.href}
+                      onClick={evento => {
+                        evento.preventDefault();
+                        setLocation(linkOrigem.href);
+                      }}
+                      className="font-semibold"
+                      style={{ color: FD_PRIMARY }}
+                    >
+                      {linkOrigem.label}
+                    </a>
+                  ) : referenciaVenda
+                }
+              />
+            ) : null}
             <Info label="Valor original" value={formatarValorOficial(titulo.valorOriginal)} />
             <Info label="Data de emissão" value={formatDateBR(titulo.dataCompetencia)} />
             <Info label="Condição" value={rotuloCondicaoPagamento(titulo)} />

@@ -181,14 +181,21 @@ import {
   registrarBaixaAnimal,
 } from "./animalBaixa";
 import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
-import { confirmarVendaComercial } from "./confirmarVenda";
+import {
+  confirmarVendaComercialSePermitida,
+  confirmarVendaIntegradaSeAtiva,
+  estadoConfirmacaoVenda,
+  integracaoConfirmacaoVendaAtiva,
+} from "./vendaConfirmacaoIntegrada";
 import { confirmarCompraNaoIdentificados } from "./confirmarCompra";
 import { getCompraDetalhe } from "./compraDetalhe";
 import { cancelarCompraComercial } from "./cancelarCompra";
 import { excluirCompraLegada } from "./excluirCompra";
 import { listarComprasDoUsuario } from "./comprasListagem";
 import { comprasListInputSchema } from "./comprasListFiltro";
-import { cancelarVendaComercial } from "./cancelarVenda";
+import { createCancelarVendaFinanceiroService } from "./cancelarVendaFinanceiro";
+import { createCancelarVendaFinanceiroMysqlStore } from "./cancelarVendaFinanceiroMysql";
+import { createConfirmarVendaFinanceiroMysqlStore } from "./confirmarVendaFinanceiroMysql";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
 import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
 import { MSG_PESSOA_REATIVAR_NAO_ENCONTRADA, reativarPessoa } from "./reativarPessoa";
@@ -10390,7 +10397,7 @@ const vendasRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) =>
-      confirmarVendaComercial(ctx.user.id, {
+      confirmarVendaComercialSePermitida(ctx.user.id, {
         ...input,
         usuarioNome: ctx.user.name,
       }),
@@ -10404,12 +10411,55 @@ const vendasRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) =>
-      cancelarVendaComercial(ctx.user.id, {
+      createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar(ctx.user.id, {
         vendaId: input.id,
         motivo: input.motivo,
         canceladoPorUserId: ctx.user.id,
         canceladoPorNome: ctx.user.name,
       }),
+    ),
+
+  integracaoConfirmacaoAtiva: protectedProcedure.query(() => integracaoConfirmacaoVendaAtiva()),
+
+  estadoConfirmacaoVenda: protectedProcedure.query(() => estadoConfirmacaoVenda()),
+
+  confirmarIntegrada: protectedProcedure
+    .input(
+      z.object({
+        idempotencyKey: z.string().min(8).max(80),
+        fazendaId: z.number().int().positive(),
+        data: z.string(),
+        compradorId: z.number().int().positive(),
+        formaPrecificacao: z.enum(["kg", "cabeca"]),
+        precoPadrao: z.number().positive().nullable().optional(),
+        observacoes: z.string().nullable().optional(),
+        itens: z
+          .array(
+            z.object({
+              animalId: z.number().int().positive(),
+              pesoVenda: z.number().positive().nullable().optional(),
+              precoUnitario: z.number().positive(),
+            }),
+          )
+          .min(1),
+        condicao: z.enum(["a_vista", "a_prazo", "parcelado", "definir_depois"]),
+        parcelas: z
+          .array(
+            z.object({
+              numero: z.number().int().positive(),
+              vencimento: z.string(),
+              valorOriginal: z.number().positive(),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      confirmarVendaIntegradaSeAtiva(
+        createConfirmarVendaFinanceiroMysqlStore(db),
+        ctx.user.id,
+        { ...input, usuarioNome: ctx.user.name },
+      ),
     ),
 
   documentosAnexar: protectedProcedure

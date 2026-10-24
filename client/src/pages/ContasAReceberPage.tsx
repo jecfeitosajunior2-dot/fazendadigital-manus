@@ -38,6 +38,7 @@ import {
   rotuloMesAno,
   rotuloParcela,
   rotuloSituacaoLinhaReceber,
+  textoListagemOrigemVendaAnimais,
   vencimentoOuSaldoADefinir,
   type FiltrosContasAReceber,
   type LinhaContasAReceber,
@@ -404,7 +405,9 @@ export default function ContasAReceberPage() {
                   <EmptyState temFiltro={temFiltro} periodo={filtros.periodo} />
                 ) : (
                   <>
-                    {pageItems.map(linha => (
+                    {pageItems.map(linha => {
+                      const origemVenda = textoListagemOrigemVendaAnimais(linha.origemTipo, linha.origemId);
+                      return (
                       <MobileCard
                         key={linha.key}
                         onClick={() => abrirDetalhe(linha.tituloId)}
@@ -417,13 +420,15 @@ export default function ContasAReceberPage() {
                         }
                         fields={[
                           { label: "Fazenda", value: nomeFazendaDaLinha(linha.fazendaOrigemId, fazendas) },
+                          ...(origemVenda ? [{ label: "Origem", value: origemVenda }] : []),
                           { label: "Vencimento", value: formatarVencimentoLinha(linha.vencimento) },
                           { label: "Valor original", value: formatarValorOficial(linha.valor), emphasis: true },
                           { label: "Valor recebido", value: formatarSaldoLinha(linha.principalLiquidado) },
                           { label: "Saldo a receber", value: formatarSaldoLinha(linha.saldoAberto), emphasis: true },
                         ]}
                       />
-                    ))}
+                      );
+                    })}
                     <TablePaginationFooter
                       page={page}
                       pageSize={pageSize}
@@ -487,6 +492,7 @@ export default function ContasAReceberPage() {
                       )}
                       {!loading && pageItems.map(linha => {
                         const vencida = linhaVencida(linha, hojeISO);
+                        const origemVenda = textoListagemOrigemVendaAnimais(linha.origemTipo, linha.origemId);
                         return (
                           <tr
                             key={linha.key}
@@ -496,8 +502,11 @@ export default function ContasAReceberPage() {
                             <td className="px-3 py-2.5 text-gray-800 font-medium truncate">
                               {clienteDaLinha(linha) || "—"}
                             </td>
-                            <td className="px-3 py-2.5 text-gray-600 truncate">
-                              {linha.descricao || "—"}
+                            <td className="px-3 py-2.5 text-gray-600">
+                              <div className="truncate">{linha.descricao || "—"}</div>
+                              {origemVenda ? (
+                                <div className="text-[10px] text-gray-400 truncate">{origemVenda}</div>
+                              ) : null}
                             </td>
                             <td className="px-3 py-2.5 text-gray-600 truncate">
                               {nomeFazendaDaLinha(linha.fazendaOrigemId, fazendas)}

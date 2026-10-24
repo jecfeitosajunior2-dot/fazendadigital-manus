@@ -59,6 +59,9 @@ export {
   rotuloSituacaoTitulo,
   tituloEstaCancelado,
   vencimentoOuSaldoADefinir,
+  referenciaOrigemVendaAnimais,
+  rotuloOrigemTitulo,
+  textoListagemOrigemVendaAnimais,
 } from "./contasAPagarListagem";
 
 export const idTituloContasAReceber = idTituloContasAPagar;

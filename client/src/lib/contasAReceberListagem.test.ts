@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { FINANCEIRO_ORIGEM_MANUAL } from "@shared/financeiroNucleo";
+import { FINANCEIRO_ORIGEM_MANUAL, FINANCEIRO_ORIGEM_VENDA_ANIMAIS } from "@shared/financeiroNucleo";
 import { somarDinheiro } from "@shared/financeiroMoeda";
 import {
   FILTRO_ATIVOS,
@@ -29,6 +29,7 @@ import {
   opcoesSituacaoContasAReceber,
   rotuloParcela,
   rotuloSituacaoLinhaReceber,
+  textoListagemOrigemVendaAnimais,
   vencimentoOuSaldoADefinir,
   FINANCEIRO_CONTAS_A_RECEBER_PATH,
 } from "./contasAReceberListagem";
@@ -235,6 +236,22 @@ describe("contasAReceberListagem — filtros, isolamento e navegação", () => {
     expect(filtrarLinhasContasAReceber(linhas, todas({ situacao: "em_aberto" }), HOJE).map(l => l.tituloId)).toEqual([2]);
     expect(filtrarLinhasContasAReceber(linhas, todas({ fornecedorId: "7" }), HOJE).map(l => l.tituloId)).toEqual([2]);
     expect(filtrarLinhasContasAReceber(linhas, todas({ pesquisa: "leite" }), HOJE).map(l => l.tituloId)).toEqual([2]);
+    const venda = linhasDaListagemAReceber([
+      titulo({
+        id: 40,
+        origemTipo: FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+        origemId: 123,
+        descricao: "Lote confirmado",
+        parcelas: [parcela(40, 1, "2026-11-01", "500.00", 500)],
+      }),
+    ]);
+    expect(textoListagemOrigemVendaAnimais(FINANCEIRO_ORIGEM_VENDA_ANIMAIS, 123)).toBe(
+      "Venda de Animais · Venda 123",
+    );
+    expect(filtrarLinhasContasAReceber(venda, todas({ pesquisa: "Venda 123" }), HOJE).map(l => l.tituloId)).toEqual([40]);
+    expect(filtrarLinhasContasAReceber(venda, todas({ pesquisa: "venda de animais" }), HOJE).map(l => l.tituloId)).toEqual([40]);
+    expect(filtrarLinhasContasAReceber(linhas, todas({ pesquisa: "Venda 123" }), HOJE)).toEqual([]);
+    expect(page).toContain("textoListagemOrigemVendaAnimais");
     expect(opcoesClienteContasAReceber(linhas).map(o => o.label)).toEqual(["Frigorífico Norte", "Laticínio Sul"]);
     expect(opcoesSituacaoContasAReceber()).toEqual([
       { value: FILTRO_ATIVOS, label: "Ativas" },

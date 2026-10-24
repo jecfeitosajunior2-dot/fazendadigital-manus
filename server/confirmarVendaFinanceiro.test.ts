@@ -7,6 +7,8 @@ import { persistirValor } from "../shared/financeiroNucleo";
 import {
   FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
   FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
+  MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO,
+  MSG_VENDA_CONFIRMACAO_JA_CANCELADA,
   MSG_VENDA_CONFLITO_IDEMPOTENCIA,
   MSG_VENDA_IDEMPOTENCY,
   MSG_VENDA_RECUPERACAO_FALHOU,
@@ -465,8 +467,7 @@ describe("confirmarVendaFinanceiro — isolamento da aplicação", () => {
     const financeiroRouter = readFileSync(join(raiz, "financeiroV2Router.ts"), "utf8");
     const confirmar = readFileSync(join(raiz, "confirmarVenda.ts"), "utf8");
     const novaVenda = readFileSync(join(raiz, "../client/src/pages/NovaVendaPage.tsx"), "utf8");
-    expect(router).not.toContain("confirmarVendaFinanceiro");
-    expect(router).not.toContain("confirmarVendaFinanceiroMysql");
+    expect(router).toContain("confirmarVendaIntegradaSeAtiva");
     expect(financeiroRouter).not.toContain("confirmarVendaFinanceiro");
     expect(confirmar).not.toContain("confirmarVendaFinanceiro");
     expect(novaVenda).not.toContain("confirmarVendaFinanceiro");
@@ -852,6 +853,91 @@ describe("confirmarVendaFinanceiro — recuperação idempotente 3E.8F", () => {
     (origem as { cause?: unknown }).cause = origemCause;
     expect(isDuplicateChaveIdempotenciaVenda(origem)).toBe(false);
     expect(isDuplicateOrigemTituloVenda(origem)).toBe(true);
+  });
+});
+
+describe("confirmarVendaFinanceiro — idempotência após cancelamento 3E.9F", () => {
+  it("B — venda cancelada com o mesmo payload recusa e não cria outra venda", async () => {
+    const store = criarStore();
+    const svc = createConfirmarVendaFinanceiroService(store);
+    const a = await svc.confirmar(10, baseKg);
+    store.state.vendas[0]!.status = "cancelado";
+    store.state.titulos[0]!.estado = "cancelado";
+    const vendas = store.state.vendas.length;
+    const titulos = store.state.titulos.length;
+    const baixas = store.state.baixas.length;
+    await expect(svc.confirmar(10, baseKg)).rejects.toMatchObject({
+      message: MSG_VENDA_CONFIRMACAO_JA_CANCELADA,
+      code: "BAD_REQUEST",
+    });
+    expect(store.state.vendas).toHaveLength(vendas);
+    expect(store.state.titulos).toHaveLength(titulos);
+    expect(store.state.baixas).toHaveLength(baixas);
+    expect(store.state.vendas[0]?.id).toBe(a.vendaId);
+    expect(store.state.vendas[0]?.status).toBe("cancelado");
+    expect(store.state.titulos[0]?.estado).toBe("cancelado");
+  });
+
+  it("E — venda cancelada com payload diferente continua conflito de idempotência", async () => {
+    const store = criarStore();
+    const svc = createConfirmarVendaFinanceiroService(store);
+    await svc.confirmar(10, baseKg);
+    store.state.vendas[0]!.status = "cancelado";
+    store.state.titulos[0]!.estado = "cancelado";
+    await expect(svc.confirmar(10, { ...baseKg, condicao: "definir_depois" }))
+      .rejects.toMatchObject({ message: MSG_VENDA_CONFLITO_IDEMPOTENCIA, code: "CONFLICT" });
+    expect(store.state.vendas).toHaveLength(1);
+    expect(store.state.titulos).toHaveLength(1);
+  });
+
+  it("C — venda concluída sem título principal é integridade, sem sucesso", async () => {
+    const store = criarStore();
+    const svc = createConfirmarVendaFinanceiroService(store);
+    await svc.confirmar(10, baseKg);
+    store.state.titulos = [];
+    store.state.parcelas = [];
+    await expect(svc.confirmar(10, baseKg)).rejects.toMatchObject({ message: MSG_VENDA_RECUPERACAO_FALHOU });
+    expect(store.state.vendas).toHaveLength(1);
+    expect(store.state.titulos).toHaveLength(0);
+  });
+
+  it("D — título cancelado com venda ainda concluída é integridade", async () => {
+    const store = criarStore();
+    const svc = createConfirmarVendaFinanceiroService(store);
+    await svc.confirmar(10, baseKg);
+    store.state.titulos[0]!.estado = "cancelado";
+    expect(store.state.vendas[0]?.status).toBe("concluido");
+    await expect(svc.confirmar(10, baseKg)).rejects.toMatchObject({
+      message: MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO,
+    });
+    expect(store.state.vendas).toHaveLength(1);
+    expect(store.state.vendas[0]?.status).toBe("concluido");
+    expect(store.state.titulos).toHaveLength(1);
+  });
+
+  it("A — venda concluída com título válido segue idempotente", async () => {
+    const store = criarStore();
+    const svc = createConfirmarVendaFinanceiroService(store);
+    const a = await svc.confirmar(10, baseKg);
+    const b = await svc.confirmar(10, baseKg);
+    expect(b).toEqual({ ...a, idempotente: true });
+  });
+
+  it("recuperação após UNIQUE também recusa venda cancelada", async () => {
+    const store = criarStore();
+    await createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg);
+    store.state.vendas[0]!.status = "cancelado";
+    store.state.titulos[0]!.estado = "cancelado";
+    const corrida = criarStore({ simularCorridaIdempotencia: true });
+    corrida.state.vendas = clone(store.state.vendas);
+    corrida.state.itens = clone(store.state.itens);
+    corrida.state.titulos = clone(store.state.titulos);
+    corrida.state.parcelas = clone(store.state.parcelas);
+    corrida.state.next = store.state.next;
+    await expect(createConfirmarVendaFinanceiroService(corrida).confirmar(10, baseKg))
+      .rejects.toMatchObject({ message: MSG_VENDA_CONFIRMACAO_JA_CANCELADA });
+    expect(corrida.state.vendas).toHaveLength(1);
+    expect(corrida.state.titulos).toHaveLength(1);
   });
 });
 

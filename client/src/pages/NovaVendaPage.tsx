@@ -76,12 +76,20 @@ import {
   type RascunhoCondicaoNovaVenda,
 } from "@/lib/novaVendaCondicao";
 import {
+  estadoConsultaFlagConfirmacaoVenda,
+  executarConfirmacaoNovaVenda,
+  executarVerificacaoConfirmacaoNovaVenda,
+  mensagemFlagConfirmacaoVenda,
+  modoDaFlagConfirmacaoVenda,
+  montarIntencaoNovaVenda,
+} from "@/lib/novaVendaConfirmacao";
+import {
   MSG_VENDA_PENDENCIA_DESCONHECIDA,
   PREFIXO_PENDENCIA_VENDA,
   ROTULO_VERIFICAR_CONFIRMACAO,
+  abaTokenPendenciaVenda,
   listarTentativasPendenciaVenda,
   normalizarPendenciaVendaAposRecarregar,
-  prepararVerificacaoConfirmacaoVenda,
   tentativasComResultadoDesconhecido,
   type TentativaConfirmacaoVenda,
 } from "@/lib/novaVendaPendencia";
@@ -254,9 +262,29 @@ export default function NovaVendaPage() {
     { enabled: fazendaNum > 0 },
   );
 
+  const consultaFlag = trpc.vendas.integracaoConfirmacaoAtiva.useQuery(
+    undefined,
+    { enabled: userId > 0 },
+  );
+  const consultaEstado = trpc.vendas.estadoConfirmacaoVenda.useQuery(
+    undefined,
+    { enabled: userId > 0 },
+  );
+  const flagConfirmacao = estadoConsultaFlagConfirmacaoVenda({
+    isPending: consultaEstado.isPending || consultaFlag.isPending,
+    isLoading: consultaEstado.isLoading || consultaFlag.isLoading,
+    isError: consultaEstado.isError,
+    isSuccess: consultaEstado.isSuccess,
+    data: consultaEstado.data ?? (consultaFlag.isSuccess ? consultaFlag.data : undefined),
+  });
+  const emManutencao = flagConfirmacao.estado === "pronta"
+    && modoDaFlagConfirmacaoVenda(flagConfirmacao) === "manutencao";
   const confirmarMut = trpc.vendas.confirmar.useMutation({
     onError: e => toast.error(e.message),
   });
+  const confirmarIntegradaMut = trpc.vendas.confirmarIntegrada.useMutation();
+  const confirmacaoOcupada = confirmarMut.isPending || confirmarIntegradaMut.isPending;
+  const confirmacaoLiberada = flagConfirmacao.estado === "pronta" && !emManutencao && !confirmacaoOcupada;
 
   const animaisDisponiveis = useMemo(() => {
     const ids = new Set(itens.map(i => i.animalId));
@@ -508,6 +536,10 @@ export default function NovaVendaPage() {
     forma === "kg" ? "Preço padrão (R$/kg)" : forma === "cabeca" ? "Valor padrão (R$/cabeça)" : "Preço padrão (R$/@)";
 
   const confirmar = async () => {
+    if (flagConfirmacao.estado !== "pronta" || emManutencao) {
+      toast.error(mensagemFlagConfirmacaoVenda(flagConfirmacao));
+      return;
+    }
     if (!fazendaNum) {
       toast.error("Selecione a Fazenda.");
       return;
@@ -565,7 +597,7 @@ export default function NovaVendaPage() {
     });
     if (!ok) return;
 
-    const result = await confirmarMut.mutateAsync({
+    const comercial = {
       fazendaId: fazendaNum,
       data,
       compradorId: Number(compradorId),
@@ -573,19 +605,71 @@ export default function NovaVendaPage() {
       precoPadrao: parsePrecoVenda(parseCurrencyBrl(precoPadrao)),
       observacoes: observacoes.trim() || undefined,
       itens: payloadItens,
+    };
+    const resultado = await executarConfirmacaoNovaVenda({
+      flag: flagConfirmacao,
+      userId,
+      abaToken: abaTokenPendenciaVenda(sessionStorage),
+      comercial,
+      rascunho: condicaoRecebimento,
+      confirmarComercial: payload => confirmarMut.mutateAsync(payload),
+      confirmarIntegrada: payload => confirmarIntegradaMut.mutateAsync(payload),
     });
+    if (!resultado.ok) {
+      toast.error(resultado.message);
+      if (userId) {
+        setPendenciasDesconhecidas(
+          tentativasComResultadoDesconhecido(listarTentativasPendenciaVenda({ userId })),
+        );
+      }
+      return;
+    }
     toast.success("Venda confirmada.");
     await Promise.all([
       utils.vendas.list.invalidate(),
       utils.animais.list.invalidate(),
       utils.animais.getById.invalidate(),
     ]);
-    setLocation(compraVendaVendaDetalhePath(result.vendaId));
+    setLocation(compraVendaVendaDetalhePath(resultado.vendaId));
   };
 
-  const verificarConfirmacaoPendente = (tentativa: TentativaConfirmacaoVenda) => {
-    const verificacao = prepararVerificacaoConfirmacaoVenda({ tentativa });
-    toast.message(verificacao.mensagem);
+  const verificarConfirmacaoPendente = async (tentativa: TentativaConfirmacaoVenda) => {
+    if (flagConfirmacao.estado !== "pronta" || emManutencao) {
+      toast.message(mensagemFlagConfirmacaoVenda(flagConfirmacao));
+      return;
+    }
+    const intencaoAtual = montarIntencaoNovaVenda({
+      fazendaId: fazendaNum,
+      data,
+      compradorId: Number(compradorId) || tentativa.intencao.compradorId,
+      formaPrecificacao: forma,
+      precoPadrao: parsePrecoVenda(parseCurrencyBrl(precoPadrao)),
+      observacoes: observacoes.trim() || undefined,
+      itens: itensOficiaisCondicao,
+      rascunho: condicaoRecebimento,
+    });
+    const resultado = await executarVerificacaoConfirmacaoNovaVenda({
+      flag: flagConfirmacao,
+      tentativa,
+      intencaoAtual: intencaoAtual.ok ? intencaoAtual.intencao : tentativa.intencao,
+      confirmarIntegrada: payload => confirmarIntegradaMut.mutateAsync(payload),
+    });
+    if (!resultado.ok) {
+      toast.message(resultado.message);
+      if (userId) {
+        setPendenciasDesconhecidas(
+          tentativasComResultadoDesconhecido(listarTentativasPendenciaVenda({ userId })),
+        );
+      }
+      return;
+    }
+    toast.success("Venda confirmada.");
+    await Promise.all([
+      utils.vendas.list.invalidate(),
+      utils.animais.list.invalidate(),
+      utils.animais.getById.invalidate(),
+    ]);
+    setLocation(compraVendaVendaDetalhePath(resultado.vendaId));
   };
 
   const colSpan = forma === "arroba" ? 9 : forma === "kg" ? 6 : 5;
@@ -618,8 +702,9 @@ export default function NovaVendaPage() {
                 <button
                   key={tentativa.idempotencyKey}
                   type="button"
+                  disabled={!confirmacaoLiberada}
                   onClick={() => verificarConfirmacaoPendente(tentativa)}
-                  className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-white border border-amber-200 text-gray-800 hover:bg-amber-100"
+                  className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-white border border-amber-200 text-gray-800 hover:bg-amber-100 disabled:opacity-50"
                 >
                   {ROTULO_VERIFICAR_CONFIRMACAO}
                 </button>
@@ -1132,26 +1217,35 @@ export default function NovaVendaPage() {
           </div>
 
           <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-3">
+            {flagConfirmacao.estado !== "pronta" || emManutencao ? (
+              <p className="mr-auto text-[12px] text-gray-600 leading-relaxed">
+                {mensagemFlagConfirmacaoVenda(flagConfirmacao)}
+              </p>
+            ) : null}
             <button
               type="button"
               onClick={() => setLocation(COMPRA_VENDA_VENDAS_PATH)}
-              disabled={confirmarMut.isPending}
+              disabled={confirmacaoOcupada}
               className="px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-[#EEEEEE] text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
             <button
               type="button"
-              disabled={confirmarMut.isPending}
+              disabled={!confirmacaoLiberada}
               onClick={() => void confirmar()}
               className="inline-flex items-center px-6 py-2 rounded-full text-[11px] font-semibold uppercase tracking-wide text-gray-800 disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ backgroundColor: FD_PRIMARY }}
             >
-              {confirmarMut.isPending ? (
+              {confirmacaoOcupada ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Salvando...
                 </>
+              ) : flagConfirmacao.estado !== "pronta" ? (
+                "Aguardando servidor"
+              ) : emManutencao ? (
+                "Indisponível"
               ) : (
                 "Confirmar Venda"
               )}

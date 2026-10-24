@@ -8,12 +8,13 @@ import {
   validarChaveIdempotenciaVenda,
   type IntencaoConfirmacaoVendaFinanceiro,
 } from "@shared/vendaFinanceiro";
+/** Fonte: shared/vendaIntegracao. Produção: INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false */
+export { INTEGRACAO_CONFIRMACAO_VENDA_ATIVA } from "@shared/vendaIntegracao";
 
 export const PREFIXO_PENDENCIA_VENDA_V1 = "fd.finv2.venpend.v1";
 export const PREFIXO_PENDENCIA_VENDA = "fd.finv2.venpend.v2";
 export const CHAVE_ABA_PENDENCIA_VENDA = "fd.finv2.venpend.aba";
 export const CANAL_PENDENCIA_VENDA = "fd.finv2.venpend.v2";
-export const INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false;
 export const ROTULO_VERIFICAR_CONFIRMACAO = "Verificar confirmação";
 
 export const MSG_VENDA_PENDENCIA_DESCONHECIDA =
@@ -227,9 +228,19 @@ export function estadoExigePreservarTentativa(estado: string): boolean {
   return estado === "enviando" || estado === "desconhecido" || !ESTADOS_CONHECIDOS.has(estado);
 }
 
+export function vendaConflitoIdempotencia(codigo?: string): boolean {
+  return codigo === "CONFLICT";
+}
+
 export function vendaResultadoDesconhecido(input: { codigo?: string; mensagem?: string }): boolean {
   const codigo = input.codigo?.trim();
-  if (codigo === "BAD_REQUEST" || codigo === "NOT_FOUND" || codigo === "FORBIDDEN" || codigo === "UNAUTHORIZED") {
+  if (
+    codigo === "BAD_REQUEST"
+    || codigo === "NOT_FOUND"
+    || codigo === "FORBIDDEN"
+    || codigo === "UNAUTHORIZED"
+    || vendaConflitoIdempotencia(codigo)
+  ) {
     return false;
   }
   if (!codigo) return true;
@@ -237,7 +248,11 @@ export function vendaResultadoDesconhecido(input: { codigo?: string; mensagem?: 
 }
 
 export function vendaRecusaDefinitiva(codigo?: string): boolean {
-  return codigo === "BAD_REQUEST" || codigo === "NOT_FOUND" || codigo === "FORBIDDEN" || codigo === "UNAUTHORIZED";
+  return codigo === "BAD_REQUEST"
+    || codigo === "NOT_FOUND"
+    || codigo === "FORBIDDEN"
+    || codigo === "UNAUTHORIZED"
+    || vendaConflitoIdempotencia(codigo);
 }
 
 function chavesDoArmazenamento(storage: ArmazenamentoPendenciaVenda): string[] {
@@ -677,19 +692,34 @@ export async function marcarErroDefinitivoConfirmacaoVenda(input: {
 
 export function prepararVerificacaoConfirmacaoVenda(input: {
   tentativa: TentativaConfirmacaoVenda;
-}): {
-  ok: false;
-  motivo: "integracao_desligada";
-  rotulo: typeof ROTULO_VERIFICAR_CONFIRMACAO;
-  mensagem: typeof MSG_VENDA_VERIFICACAO_AGUARDA_INTEGRACAO;
-  payload: PayloadConfirmacaoVendaIntegrada;
-} {
+  integracaoAtiva?: boolean;
+}):
+  | {
+    ok: false;
+    motivo: "integracao_desligada";
+    rotulo: typeof ROTULO_VERIFICAR_CONFIRMACAO;
+    mensagem: typeof MSG_VENDA_VERIFICACAO_AGUARDA_INTEGRACAO;
+    payload: PayloadConfirmacaoVendaIntegrada;
+  }
+  | {
+    ok: true;
+    rotulo: typeof ROTULO_VERIFICAR_CONFIRMACAO;
+    payload: PayloadConfirmacaoVendaIntegrada;
+  } {
+  const payload = payloadDaTentativaVenda(input.tentativa);
+  if (input.integracaoAtiva !== true) {
+    return {
+      ok: false,
+      motivo: "integracao_desligada",
+      rotulo: ROTULO_VERIFICAR_CONFIRMACAO,
+      mensagem: MSG_VENDA_VERIFICACAO_AGUARDA_INTEGRACAO,
+      payload,
+    };
+  }
   return {
-    ok: false,
-    motivo: "integracao_desligada",
+    ok: true,
     rotulo: ROTULO_VERIFICAR_CONFIRMACAO,
-    mensagem: MSG_VENDA_VERIFICACAO_AGUARDA_INTEGRACAO,
-    payload: payloadDaTentativaVenda(input.tentativa),
+    payload,
   };
 }
 

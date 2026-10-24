@@ -16,8 +16,11 @@ import {
   MSG_VENDA_VENCIMENTO_ANTES_DA_VENDA,
   MSG_VENDA_VENCIMENTO_INVALIDO,
   assinaturaIntencaoConfirmacaoVenda,
+  MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO,
+  MSG_VENDA_CONFIRMACAO_JA_CANCELADA,
   MSG_VENDA_IDEMPOTENCY,
   origemFinanceiraVendaAnimais,
+  vendaConfirmacaoEstaCancelada,
   observacaoCondicaoTituloVenda,
   lerCondicaoTituloVenda,
   retryConfirmacaoVendaBateComPedido,
@@ -51,6 +54,10 @@ describe("vendaFinanceiro — origem", () => {
   it("usa as constantes oficiais do núcleo, sem duplicar o literal", () => {
     expect(FINANCEIRO_ORIGEM_VENDA_ANIMAIS).toBe("venda_animais");
     expect(FINANCEIRO_ORIGEM_ITEM_PRINCIPAL).toBe("principal");
+    expect(vendaConfirmacaoEstaCancelada("cancelado")).toBe(true);
+    expect(vendaConfirmacaoEstaCancelada("concluido")).toBe(false);
+    expect(MSG_VENDA_CONFIRMACAO_JA_CANCELADA).toMatch(/já foi cancelada/);
+    expect(MSG_VENDA_CONFIRMACAO_INTEGRIDADE_TITULO).toMatch(/inconsistente/);
     expect(origemFinanceiraVendaAnimais(88)).toEqual({
       ok: true,
       origemTipo: "venda_animais",
@@ -320,9 +327,8 @@ describe("vendaFinanceiro — isolamento do fluxo comercial atual", () => {
     expect(confirmarTrpc).not.toContain("vendaFinanceiro");
     expect(confirmarTrpc).not.toContain("idempotencyKey");
     expect(confirmarTrpc).not.toContain("condicao");
-    expect(router).not.toContain("confirmarVendaFinanceiro");
-    expect(router).not.toContain("confirmarVendaFinanceiroMysql");
-    expect(router).not.toContain("cancelarVendaFinanceiro");
+    expect(router).toContain("confirmarVendaIntegradaSeAtiva");
+    expect(router).toContain("createCancelarVendaFinanceiroService");
     expect(novaVenda).not.toContain("confirmarVendaFinanceiro");
   });
 });
