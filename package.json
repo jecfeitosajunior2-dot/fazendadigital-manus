@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "db:up": "docker compose up -d mysql",
     "db:push": "drizzle-kit push",
+    "db:ensure-schema": "tsx scripts/ensure-schema.ts",
     "db:seed": "tsx scripts/seed.ts && tsx scripts/seed-manus-data.ts",
     "db:seed:manus": "tsx scripts/seed-manus-data.ts",
     "setup:local": "docker compose up -d mysql && drizzle-kit push && tsx scripts/seed.ts",
@@ -131,5 +132,20 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     }
-  }
+  },
+  "description": "Pure React 19 + Tailwind 4 template with shadcn/ui baked in. **Use this README as the checklist for shipping static experiences.**",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jecfeitosajunior2-dot/fazendadigital-manus.git"
+  },
+  "keywords": [],
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/jecfeitosajunior2-dot/fazendadigital-manus/issues"
+  },
+  "homepage": "https://github.com/jecfeitosajunior2-dot/fazendadigital-manus#readme"
 }

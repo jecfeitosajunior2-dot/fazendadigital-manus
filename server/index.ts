@@ -5,7 +5,7 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { handleOAuthCallback } from "./_core/oauth";
 import { clearAuthCookie } from "./_core/cookies";
-import { ensureSchema } from "./ensureSchema";
+import { prepareDatabaseForBoot } from "./prepareDatabaseBoot";
 import { mountLocalManusStorage } from "./_core/localManusStorage";
 import { registerVendaDocumentosHttp } from "./vendaDocumentosHttp";
 import { registerCompraDocumentosHttp } from "./compraDocumentosHttp";
@@ -15,14 +15,11 @@ import { env } from "./_core/env";
 let databaseAvailable = false;
 
 try {
-  await ensureSchema();
-  databaseAvailable = true;
+  const mode = await prepareDatabaseForBoot();
+  databaseAvailable = mode === "mysql";
 } catch (err) {
-  databaseAvailable = false;
-  console.error(
-    "[startup] Banco de dados indisponível. O servidor web continuará ativo, mas operações que salvam/listam dados vão falhar até o MySQL estar ligado.",
-    err
-  );
+  console.error("[startup] Inicialização bloqueada. O HTTP não será aberto.", err);
+  process.exit(1);
 }
 
 const app = express();

@@ -3,10 +3,10 @@
  * Produção permanece COMERCIAL. Integração desligada. Sem env.
  * Testes injetam comercial | integrado | manutencao.
  */
-export const ESTADO_CONFIRMACAO_VENDA_PRODUCAO = "comercial" as const;
+export const ESTADO_CONFIRMACAO_VENDA_PRODUCAO = "integrado" as const;
 
 /** Compatível com fases anteriores: true só se a produção estiver em INTEGRADO. */
-export const INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false;
+export const INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true;
 
 export const ESTADOS_CONFIRMACAO_VENDA = ["comercial", "integrado", "manutencao"] as const;
 export type EstadoConfirmacaoVenda = (typeof ESTADOS_CONFIRMACAO_VENDA)[number];

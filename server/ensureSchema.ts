@@ -1,3 +1,7 @@
+/**
+ * Manutenção estrutural e correções históricas.
+ * NÃO chamar no boot. Uso explícito: `pnpm db:ensure-schema`.
+ */
 import mysql from "mysql2/promise";
 import { createMysqlPool } from "./_core/mysqlPool";
 import { ensureFinanceiroNucleoSchema } from "./ensureFinanceiroNucleoSchema";

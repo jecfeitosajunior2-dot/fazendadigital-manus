@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ensureSchema } from "./ensureSchema";
+import { prepareDatabaseForBoot } from "./prepareDatabaseBoot";
 import { registerRoutes } from "./registerRoutes";
 
 let apiAppPromise: Promise<express.Express> | null = null;
@@ -27,11 +27,11 @@ async function createApiApp(): Promise<express.Express> {
   const databaseAvailable = { value: false };
 
   try {
-    await ensureSchema();
-    databaseAvailable.value = true;
+    const mode = await prepareDatabaseForBoot();
+    databaseAvailable.value = mode === "mysql";
   } catch (err) {
-    databaseAvailable.value = false;
-    console.error("[startup] Banco de dados indisponível:", err);
+    console.error("[startup] Inicialização bloqueada. O HTTP não será aberto.", err);
+    throw err;
   }
 
   const app = express();
