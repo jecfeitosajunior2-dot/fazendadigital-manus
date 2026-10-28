@@ -3,16 +3,8 @@ import AppLayout from '@/components/AppLayout';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, Activity, DollarSign, Heart, Zap } from 'lucide-react';
-
-const ManagerialReportData = [
-  { month: 'Jan', revenue: 45000, expenses: 28000, profit: 17000 },
-  { month: 'Fev', revenue: 52000, expenses: 31000, profit: 21000 },
-  { month: 'Mar', revenue: 48000, expenses: 29000, profit: 19000 },
-  { month: 'Abr', revenue: 61000, expenses: 35000, profit: 26000 },
-  { month: 'Mai', revenue: 58000, expenses: 32000, profit: 26000 },
-  { month: 'Jun', revenue: 65000, expenses: 38000, profit: 27000 },
-];
+import { Activity, Heart } from 'lucide-react';
+import { MSG_RELATORIO_FINANCEIRO_INDISPONIVEL } from '@/lib/financeiroNavegacao';
 
 const HerdAgeDistribution = [
   { name: '0-6 meses', value: 45, fill: '#3b82f6' },
@@ -69,25 +61,10 @@ export const ReportsManagementPage: React.FC = () => {
 
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Receita Total</p>
-                <p className="text-2xl font-bold text-blue-600">R$ 329.000</p>
-                <p className="text-xs text-gray-500 mt-1">Últimos 6 meses</p>
-              </div>
-              <DollarSign className="w-8 h-8 text-blue-400 opacity-50" />
-            </div>
-          </Card>
-
-          <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Lucro Líquido</p>
-                <p className="text-2xl font-bold text-green-600">R$ 136.000</p>
-                <p className="text-xs text-gray-500 mt-1">+41% vs período anterior</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-green-400 opacity-50" />
+          <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 md:col-span-2">
+            <div>
+              <p className="text-sm text-gray-600">Receita e resultado</p>
+              <p className="text-base font-medium text-gray-700 mt-2">{MSG_RELATORIO_FINANCEIRO_INDISPONIVEL}</p>
             </div>
           </Card>
 
@@ -127,38 +104,9 @@ export const ReportsManagementPage: React.FC = () => {
           {/* Managerial Reports */}
           <TabsContent value="managerial" className="space-y-6">
             <Card className="p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">Receita, Despesa e Lucro (Últimos 6 Meses)</h2>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={ManagerialReportData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`} />
-                  <Legend />
-                  <Bar dataKey="revenue" fill="#10b981" name="Receita" />
-                  <Bar dataKey="expenses" fill="#ef4444" name="Despesa" />
-                  <Bar dataKey="profit" fill="#3b82f6" name="Lucro" />
-                </BarChart>
-              </ResponsiveContainer>
+              <h2 className="text-lg font-bold text-gray-800 mb-2">Relatório gerencial</h2>
+              <p className="text-gray-700">{MSG_RELATORIO_FINANCEIRO_INDISPONIVEL}</p>
             </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-4">
-                <p className="text-sm text-gray-600 mb-2">Receita Média Mensal</p>
-                <p className="text-2xl font-bold text-green-600">R$ 54.833</p>
-                <p className="text-xs text-gray-500 mt-2">Crescimento de 8% vs mês anterior</p>
-              </Card>
-              <Card className="p-4">
-                <p className="text-sm text-gray-600 mb-2">Despesa Média Mensal</p>
-                <p className="text-2xl font-bold text-red-600">R$ 32.167</p>
-                <p className="text-xs text-gray-500 mt-2">Redução de 2% vs mês anterior</p>
-              </Card>
-              <Card className="p-4">
-                <p className="text-sm text-gray-600 mb-2">Margem de Lucro</p>
-                <p className="text-2xl font-bold text-blue-600">41,4%</p>
-                <p className="text-xs text-gray-500 mt-2">Acima da meta (40%)</p>
-              </Card>
-            </div>
           </TabsContent>
 
           {/* Reproductive Reports */}
@@ -283,8 +231,7 @@ export const ReportsManagementPage: React.FC = () => {
               </Card>
               <Card className="p-4">
                 <p className="text-sm text-gray-600 mb-2">Receita de Vendas</p>
-                <p className="text-2xl font-bold text-green-600">R$ 987.500</p>
-                <p className="text-xs text-gray-500 mt-2">Preço médio: R$ 4.202/cabeça</p>
+                <p className="text-base font-medium text-gray-700">{MSG_RELATORIO_FINANCEIRO_INDISPONIVEL}</p>
               </Card>
               <Card className="p-4">
                 <p className="text-sm text-gray-600 mb-2">Categoria Mais Vendida</p>

@@ -82,25 +82,24 @@ describe("menu lateral — Compra e Venda", () => {
 });
 
 describe("menu lateral — Financeiro", () => {
-  it("ganha Contas a Pagar sem substituir a Visão Geral nem as rotas do legado", () => {
+  it("aponta só para as páginas oficiais do V2", () => {
     expect(childLabels("Financeiro")).toEqual([
       "Visão Geral",
-      "Contas a Pagar",
       "Contas a Receber",
-      "Contas",
-      "Movimentação",
-      "Categorias",
+      "Contas a Pagar",
+      "Caixa e Bancos",
       "Pessoas",
     ]);
     expect(childPaths("Financeiro")).toEqual([
       "/financeiro/visao-geral",
-      "/financeiro/contas-a-pagar",
       "/financeiro/contas-a-receber",
-      "/financeiro/contas",
-      "/financeiro/movimentacao",
-      "/financeiro/categorias",
+      "/financeiro/contas-a-pagar",
+      "/financeiro/v2/contas",
       "/financeiro/pessoas",
     ]);
+    expect(childPaths("Financeiro")).not.toContain("/financeiro/contas");
+    expect(childPaths("Financeiro")).not.toContain("/financeiro/movimentacao");
+    expect(childPaths("Financeiro")).not.toContain("/financeiro/categorias");
   });
 });
 

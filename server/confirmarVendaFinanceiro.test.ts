@@ -56,9 +56,15 @@ function criarStore(opts?: {
       { id: 12, userId: 10, brinco: "102", status: "ativo", fazendaId: 9, loteId: null },
       { id: 13, userId: 10, brinco: "103", status: "vendido", fazendaId: 1, loteId: 5 },
       { id: 14, userId: 10, brinco: "104", status: "morto", fazendaId: 1, loteId: 5 },
+      { id: 15, userId: 10, brinco: "105", status: "ativo", fazendaId: null, loteId: 6 },
+      { id: 16, userId: 10, brinco: "106", status: "ativo", fazendaId: null, loteId: 7 },
       { id: 20, userId: 99, brinco: "200", status: "ativo", fazendaId: 8, loteId: null },
     ],
-    lotes: [{ id: 5, nome: "Desmama", fazendaId: 1 }],
+    lotes: [
+      { id: 5, nome: "Desmama", fazendaId: 1 },
+      { id: 6, nome: "B01", fazendaId: 1 },
+      { id: 7, nome: "Outro", fazendaId: 9 },
+    ],
     baixas: [] as Array<{ animalId: number; status: string; vendaId: number }>,
     vendas: [] as VendaFinanceiroRow[],
     itens: [] as Array<VendaItemFinanceiroRow & { userId: number; vendaId: number }>,
@@ -369,9 +375,10 @@ describe("confirmarVendaFinanceiro — origem, isolamento e caixa", () => {
 describe("confirmarVendaFinanceiro — falhas e rollback", () => {
   it("falha ao criar título desfaz venda, itens, baixas e status dos animais", async () => {
     const store = criarStore({ falharFinanceiro: true });
-    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg)).rejects.toThrow(
-      "falha financeira forçada",
-    );
+    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Não foi possível confirmar a venda.",
+    });
     expect(store.state.vendas).toHaveLength(0);
     expect(store.state.itens).toHaveLength(0);
     expect(store.state.baixas).toHaveLength(0);
@@ -582,8 +589,10 @@ describe("confirmarVendaFinanceiro — segurança concorrente 3E.8D", () => {
 
   it("J — falha na criação do título faz rollback completo", async () => {
     const store = criarStore({ falharFinanceiro: true });
-    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg))
-      .rejects.toThrow("falha financeira forçada");
+    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Não foi possível confirmar a venda.",
+    });
     expect(store.state.vendas).toHaveLength(0);
     expect(store.state.itens).toHaveLength(0);
     expect(store.state.baixas).toHaveLength(0);
@@ -666,6 +675,39 @@ describe("confirmarVendaFinanceiro — segurança concorrente 3E.8D", () => {
     expect(svc).not.toContain("eq(animais.status, \"ativo\")");
     expect(mysql).toContain("eq(animais.status, \"ativo\")");
     expect(readFileSync(join(raiz, "../client/src/pages/NovaVendaPage.tsx"), "utf8")).not.toContain("confirmarVendaFinanceiro");
+  });
+
+  it("3J — consulta do lote usa fazendaId, FOR UPDATE e confirma animal do lote da mesma fazenda", async () => {
+    const mysql = readFileSync(join(raiz, "confirmarVendaFinanceiroMysql.ts"), "utf8");
+    const listAnimais = mysql.slice(mysql.indexOf("async listAnimais"), mysql.indexOf("async listBaixasAtivas"));
+    expect(listAnimais).toMatch(/SELECT id, fazendaId\s+FROM lotes/);
+    expect(listAnimais).toContain("FOR UPDATE");
+    expect(listAnimais).not.toMatch(/fazenda_id\s+AS\s+fazendaId/);
+    const store = criarStore();
+    expect(store.state.animais.find(a => a.id === 15)?.loteId).toBe(6);
+    expect(store.state.lotes.find(l => l.id === 6)?.fazendaId).toBe(1);
+    const r = await createConfirmarVendaFinanceiroService(store).confirmar(10, {
+      ...baseKg,
+      idempotencyKey: "ven-lote01",
+      itens: [{ animalId: 15, pesoVenda: 300, precoUnitario: 10 }],
+    });
+    expect(r).toMatchObject({ success: true, quantidade: 1, valorTotal: 3000 });
+    expect(store.state.animais.find(a => a.id === 15)?.status).toBe("vendido");
+    expect(store.state.baixas).toHaveLength(1);
+    expect(store.state.titulos).toHaveLength(1);
+  });
+
+  it("3J — lote de outra fazenda continua recusado", async () => {
+    const store = criarStore();
+    expect(store.state.animais.find(a => a.id === 16)?.loteId).toBe(7);
+    expect(store.state.lotes.find(l => l.id === 7)?.fazendaId).toBe(9);
+    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, {
+      ...baseKg,
+      idempotencyKey: "ven-lote02",
+      itens: [{ animalId: 16, pesoVenda: 300, precoUnitario: 10 }],
+    })).rejects.toMatchObject({ message: MSG_VENDA_ANIMAL_OUTRA_FAZENDA });
+    expect(store.state.vendas).toHaveLength(0);
+    expect(store.state.animais.find(a => a.id === 16)?.status).toBe("ativo");
   });
 });
 
@@ -762,7 +804,10 @@ describe("confirmarVendaFinanceiro — recuperação idempotente 3E.8F", () => {
 
   it("I — 1062 de outra constraint não é tratado como conflito da chave ven-", async () => {
     const store = criarStore({ duplicarConstraint: "financeiro_titulos.financeiro_titulos_origem_uq" });
-    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg)).rejects.toThrow(/Duplicate entry|Failed query/);
+    await expect(createConfirmarVendaFinanceiroService(store).confirmar(10, baseKg)).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Não foi possível confirmar a venda.",
+    });
     expect(store.state.vendas).toHaveLength(0);
     expect(store.state.titulos).toHaveLength(0);
   });

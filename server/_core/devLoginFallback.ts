@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import { createSession, setAuthCookie } from "./cookies";
 import { isProductionDeploy } from "./isProductionDeploy";
+import { isLocalHomologHost } from "./localHomologHost";
 
 const DEV_USERS = [
   { email: "pngomes1@gmail.com", password: "123456", name: "Paulo Gomes", id: 1 },
@@ -18,6 +19,12 @@ export type DevPreviewSession = {
 function findDevUserByEmail(username: string) {
   const normalizedUsername = username.trim().toLowerCase();
   return DEV_USERS.find(user => user.email.toLowerCase() === normalizedUsername) ?? null;
+}
+
+function bloqueiaPreviewForaDoLocalhost(host?: string | null) {
+  if (process.env.VERCEL === "1") return true;
+  if (isLocalHomologHost(host)) return false;
+  return isProductionDeploy();
 }
 
 async function openDevPreviewSession(
@@ -39,9 +46,10 @@ async function openDevPreviewSession(
 export async function tryDevLoginFallback(
   username: string,
   password: string,
-  res: Response
+  res: Response,
+  host?: string | null,
 ): Promise<DevPreviewSession | null> {
-  if (isProductionDeploy()) return null;
+  if (bloqueiaPreviewForaDoLocalhost(host ?? res.req?.hostname)) return null;
 
   const matchedDevUser = findDevUserByEmail(username);
   if (!matchedDevUser || matchedDevUser.password !== password) return null;
@@ -53,8 +61,9 @@ export async function tryDevLoginFallback(
 export async function tryDevPreviewSession(
   email: string,
   res: Response,
+  host?: string | null,
 ): Promise<DevPreviewSession | null> {
-  if (isProductionDeploy()) return null;
+  if (bloqueiaPreviewForaDoLocalhost(host ?? res.req?.hostname)) return null;
 
   const matchedDevUser = findDevUserByEmail(email);
   if (!matchedDevUser) return null;

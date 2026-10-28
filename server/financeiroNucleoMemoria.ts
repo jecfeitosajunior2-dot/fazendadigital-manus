@@ -65,6 +65,7 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
   const id = () => state.next++;
   let deadlocksRestantes = Number(opts?.deadlocksRestantes ?? 0);
   let transacoes = 0;
+  let filaTransacao = Promise.resolve();
 
   const talvezDeadlock = () => {
     if (deadlocksRestantes <= 0) return;
@@ -106,6 +107,25 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
         c.inativadaEm = em;
       }
     },
+    async updateContaCadastro(userId, contaId, patch) {
+      const c = state.contas.find(x => x.id === contaId && x.userId === userId);
+      if (!c) return;
+      c.nome = patch.nome;
+      c.tipo = patch.tipo;
+      c.banco = patch.banco;
+      c.agencia = patch.agencia;
+      c.numeroConta = patch.numeroConta;
+      if (patch.saldoAbertura != null) c.saldoAbertura = patch.saldoAbertura;
+      if (patch.dataSaldoAbertura != null) c.dataSaldoAbertura = patch.dataSaldoAbertura;
+    },
+    async updateContaReativar(userId, contaId) {
+      const c = state.contas.find(x => x.id === contaId && x.userId === userId);
+      if (c) {
+        c.ativa = true;
+        c.motivoInativacao = null;
+        c.inativadaEm = null;
+      }
+    },
     async listContas(userId) {
       return state.contas.filter(c => c.userId === userId);
     },
@@ -115,7 +135,7 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
     async countMovimentosConta(userId, contaId) {
       return state.movimentos.filter(m => m.userId === userId && m.contaId === contaId).length;
     },
-    async listMovimentosConta(userId, contaId) {
+    async listMovimentosConta(userId, contaId, _forUpdate = false) {
       return state.movimentos.filter(m => m.userId === userId && m.contaId === contaId);
     },
     async findPessoa(userId, pessoaId) {
@@ -141,6 +161,15 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
       );
     },
     async insertTitulo(row) {
+      if (row.origemId != null && row.origemItemChave
+        && state.titulos.some(t =>
+          t.userId === row.userId
+          && t.origemTipo === row.origemTipo
+          && t.origemId === row.origemId
+          && t.origemItemChave === row.origemItemChave
+        )) {
+        throw erroMysql(1062, "ER_DUP_ENTRY", "Duplicate entry for key 'financeiro_titulos.financeiro_titulos_origem_uq'");
+      }
       const created = { ...row, id: id() };
       state.titulos.push(created);
       return created.id;
@@ -225,12 +254,14 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
       return state.movimentos.filter(m => m.userId === userId && m.transferenciaId === transferenciaId);
     },
     async listMovimentosFiltro(userId, contaId, de, ate) {
-      return state.movimentos.filter(m => {
-        if (m.userId !== userId || m.contaId !== contaId) return false;
-        if (de && m.dataMovimento < de) return false;
-        if (ate && m.dataMovimento > ate) return false;
-        return true;
-      });
+      return state.movimentos
+        .filter(m => {
+          if (m.userId !== userId || m.contaId !== contaId) return false;
+          if (de && m.dataMovimento < de) return false;
+          if (ate && m.dataMovimento > ate) return false;
+          return true;
+        })
+        .sort((a, b) => a.dataMovimento.localeCompare(b.dataMovimento) || a.id - b.id);
     },
     async findTransferencia(userId, transfId) {
       return state.transferencias.find(t => t.id === transfId && t.userId === userId) ?? null;
@@ -309,24 +340,29 @@ export function criarStore(opts?: { deadlocksRestantes?: number }): FinanceiroNu
     get centros() { return state.centros; },
     get transacoes() { return transacoes; },
     async transaction(fn) {
-      transacoes += 1;
-      const snap = clone(state);
-      try {
-        return await fn(makeTx());
-      } catch (error) {
-        state.contas = snap.contas;
-        state.titulos = snap.titulos;
-        state.parcelas = snap.parcelas;
-        state.liquidacoes = snap.liquidacoes;
-        state.alocacoes = snap.alocacoes;
-        state.movimentos = snap.movimentos;
-        state.transferencias = snap.transferencias;
-        state.apropriacoes = snap.apropriacoes;
-        state.categorias = snap.categorias;
-        state.centros = snap.centros;
-        state.next = snap.next;
-        throw error;
-      }
+      const executar = async () => {
+        transacoes += 1;
+        const snap = clone(state);
+        try {
+          return await fn(makeTx());
+        } catch (error) {
+          state.contas = snap.contas;
+          state.titulos = snap.titulos;
+          state.parcelas = snap.parcelas;
+          state.liquidacoes = snap.liquidacoes;
+          state.alocacoes = snap.alocacoes;
+          state.movimentos = snap.movimentos;
+          state.transferencias = snap.transferencias;
+          state.apropriacoes = snap.apropriacoes;
+          state.categorias = snap.categorias;
+          state.centros = snap.centros;
+          state.next = snap.next;
+          throw error;
+        }
+      };
+      const atual = filaTransacao.then(executar, executar);
+      filaTransacao = atual.then(() => undefined, () => undefined);
+      return atual;
     },
   };
 }

@@ -7,6 +7,7 @@ import {
   MSG_FIN_DATA_ANTES_ABERTURA,
   MSG_FIN_ESCOPO,
   MSG_FIN_OVERPAYMENT,
+  MSG_FIN_SALDO_INSUFICIENTE,
   MSG_FIN_TITULO_CANCELADO,
   MSG_FIN_VALOR_POSITIVO,
 } from "@shared/financeiroNucleo";
@@ -143,6 +144,17 @@ describe("contasAPagarPagamento — disponibilidade e validação", () => {
       expect(parcial.payload.alocacoes[0]?.principalLiquidado).toBe(100.5);
     }
     expect(rascunhoInicialPagamento({ parcela: parcelaAberta, dataLiquidacao: "2026-10-19" }).valor).toBe("300,00");
+
+    const semSaldo = validarPagamentoParcela({
+      titulo: titulo(),
+      parcela: parcelaAberta,
+      contas: [conta({ saldoAtual: 100 })],
+      userId: 1,
+      rascunho: rascunho({ valor: "300,00" }),
+      idempotencyKey: "pag-saldo",
+    });
+    expect(semSaldo.ok).toBe(false);
+    if (!semSaldo.ok) expect(semSaldo.erros.valor).toBe(MSG_FIN_SALDO_INSUFICIENTE);
   });
 
   it("rejeita valor zero, acima do saldo e data inválida ou anterior à abertura", () => {
@@ -389,6 +401,8 @@ describe("contasAPagarPagamento — tela e contrato oficial", () => {
     expect(nucleo).toContain("const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey)");
     expect(nucleo).toContain("if (toCentavos(alloc.principalLiquidado) > toCentavos(saldo.saldoPrincipal))");
     expect(nucleo).toContain("if (!conta.ativa) toTrpc(MSG_FIN_CONTA_INATIVA)");
+    expect(nucleo).toContain("async function assertSaldoSuficienteParaSaida");
+    expect(nucleo).toContain("if (input.tipo === \"pagamento\")");
   });
 });
 

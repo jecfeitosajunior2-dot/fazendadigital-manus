@@ -169,5 +169,16 @@ describe("financeiroMoeda / domínio puro", () => {
       expect(r.origemId).toBeNull();
       expect(r.origemItemChave).toBeNull();
     }
+    const comChave = validarOrigemTitulo({
+      origemTipo: "manual",
+      origemId: 1,
+      origemItemChave: "receber:man-abc",
+    });
+    expect(comChave).toEqual({
+      ok: true,
+      origemTipo: "manual",
+      origemId: 1,
+      origemItemChave: "receber:man-abc",
+    });
   });
 });

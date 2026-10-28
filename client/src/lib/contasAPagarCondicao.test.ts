@@ -277,7 +277,7 @@ describe("contasAPagarCondicao — tela e contrato oficial", () => {
   it("não altera o núcleo: a operação oficial continua a autoridade", () => {
     expect(v2Router).toMatch(/titulosDefinirParcelas: protectedProcedure/);
     expect(nucleo).toContain("if (titulo.estado === \"cancelado\") toTrpc(MSG_FIN_TITULO_CANCELADO)");
-    expect(nucleo).toContain("if (await tituloTemLiquidacao(tx, userId, tituloId)) toTrpc(MSG_FIN_TITULO_COM_LIQUIDACAO)");
+    expect(nucleo).toContain("if (await tituloTemLiquidacaoEfetiva(tx, userId, tituloId, true)) toTrpc(MSG_FIN_TITULO_COM_LIQUIDACAO)");
     expect(nucleo).toContain("if (!validarSomaParcelas(titulo.valorOriginal, parcelas)) toTrpc(MSG_FIN_PARCELAS_SOMA)");
     expect(nucleo).toContain("return tituloTemLiquidacaoEfetiva(tx, userId, tituloId)");
   });

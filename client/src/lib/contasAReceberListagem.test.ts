@@ -331,10 +331,10 @@ describe("contasAReceberListagem — tela, rota e ausência do legado", () => {
     expect(app).toContain("ContasAReceberPage");
     expect(app).toContain("ContasAPagarPage");
     expect(app).toContain("FINANCEIRO_CONTAS_A_RECEBER_PATH");
-    expect(app).toContain('path="/financeiro/visao-geral" component={FinancialManagementPage}');
+    expect(app).toContain('path="/financeiro/visao-geral" component={FinanceiroVisaoGeralPage}');
   });
 
-  it("a página consulta só o Financeiro V2 e permanece somente leitura", () => {
+  it("a página consulta o Financeiro V2 e cadastra receita sem receber na lista", () => {
     expect(page).toContain("financeiroV2.titulosList");
     expect(page).toContain("financeiroV2.titulosGet");
     expect(page).toContain("idsTitulosAReceber");
@@ -342,9 +342,8 @@ describe("contasAReceberListagem — tela, rota e ausência do legado", () => {
     expect(page).not.toContain("listMovimentacoes");
     expect(page).not.toContain("liquidacaoPagar");
     expect(page).not.toContain("liquidacaoReceber");
-    expect(page).not.toContain("titulosCreateManual");
-    expect(page).not.toContain(".useMutation");
-    expect(page).toContain("Somente consulta");
+    expect(page).toContain("titulosCreateManual");
+    expect(page).toContain("Nova receita");
     expect(page).toContain("O recebimento é registrado no detalhe do título");
     expect(page).not.toContain("Recebimento ainda não está disponível");
     expect(page).toContain("Pesquisar descrição");

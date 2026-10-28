@@ -34,6 +34,9 @@ export const FINANCEIRO_CONDICOES = ["a_definir", "definida"] as const;
 export type FinanceiroCondicaoStatus = (typeof FINANCEIRO_CONDICOES)[number];
 
 export const FINANCEIRO_ORIGEM_MANUAL = "manual";
+/** Sentinela persistida em origem_id para manuais com chave (UNIQUE não cobre NULL). */
+export const FINANCEIRO_ORIGEM_ID_MANUAL_IDEMP = 1;
+export const TAMANHO_MAX_CHAVE_TITULO_MANUAL = 72;
 export const FINANCEIRO_ORIGEM_COMPRA_INSUMOS = "compra_insumos";
 /** OS terceirizada. Ainda não emitida automaticamente (Fase 3B.1). */
 export const FINANCEIRO_ORIGEM_MANUTENCAO = "manutencao";
@@ -83,6 +86,7 @@ export const MSG_FIN_CONTA_NAO_ENCONTRADA = "Conta financeira não encontrada.";
 export const MSG_FIN_CONTA_INATIVA = "Esta conta está inativa e não aceita novos movimentos.";
 export const MSG_FIN_CONTA_COM_MOVIMENTOS = "Conta com movimentos não pode ser excluída.";
 export const MSG_FIN_CONTA_ABERTURA_TRAVADA = "Saldo ou data de abertura só podem ser alterados enquanto não houver movimentos.";
+export const MSG_FIN_SALDO_INSUFICIENTE = "Saldo insuficiente na conta de origem.";
 export const MSG_FIN_PESSOA_INVALIDA = "Pessoa não encontrada neste cadastro.";
 export const MSG_FIN_FAZENDA_INVALIDA = "Fazenda não encontrada neste cadastro.";
 export const MSG_FIN_TITULO_NAO_ENCONTRADO = "Título financeiro não encontrado.";
@@ -258,6 +262,29 @@ export function calcularSaldoConta(input: {
   return fromCentavos(saldo);
 }
 
+export function validarChaveTituloManual(key: string): { ok: true; key: string } | { ok: false; message: string } {
+  const normalizada = key.trim();
+  if (!normalizada || normalizada.length > TAMANHO_MAX_CHAVE_TITULO_MANUAL) {
+    return { ok: false, message: MSG_FIN_IDEMPOTENCY };
+  }
+  return { ok: true, key: normalizada };
+}
+
+export function origemTituloManualIdempotente(
+  tipo: FinanceiroTituloTipo,
+  idempotencyKey: string,
+): { ok: true; origemTipo: string; origemId: number; origemItemChave: string }
+  | { ok: false; message: string } {
+  const chave = validarChaveTituloManual(idempotencyKey);
+  if (!chave.ok) return chave;
+  return {
+    ok: true,
+    origemTipo: FINANCEIRO_ORIGEM_MANUAL,
+    origemId: FINANCEIRO_ORIGEM_ID_MANUAL_IDEMP,
+    origemItemChave: `${tipo}:${chave.key}`,
+  };
+}
+
 export function validarOrigemTitulo(input: {
   origemTipo: string;
   origemId?: number | null;
@@ -267,7 +294,15 @@ export function validarOrigemTitulo(input: {
   const tipo = input.origemTipo.trim();
   if (!tipo) return { ok: false, message: "Informe a origem do título." };
   if (tipo === FINANCEIRO_ORIGEM_MANUAL) {
-    return { ok: true, origemTipo: FINANCEIRO_ORIGEM_MANUAL, origemId: null, origemItemChave: null };
+    const origemId = input.origemId ?? null;
+    const chave = (input.origemItemChave ?? "").trim() || null;
+    if (origemId == null && chave == null) {
+      return { ok: true, origemTipo: FINANCEIRO_ORIGEM_MANUAL, origemId: null, origemItemChave: null };
+    }
+    if (origemId == null || origemId <= 0 || !chave) {
+      return { ok: false, message: MSG_FIN_ORIGEM_AUTOMATICA };
+    }
+    return { ok: true, origemTipo: FINANCEIRO_ORIGEM_MANUAL, origemId, origemItemChave: chave };
   }
   const origemId = input.origemId ?? null;
   const chave = (input.origemItemChave ?? "").trim() || null;

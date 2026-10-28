@@ -5,8 +5,6 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
-  Legend,
-  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -16,6 +14,7 @@ import {
 } from "recharts";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { FINANCEIRO_CAIXA_OFICIAL_PATH, FINANCEIRO_VISAO_GERAL_PATH } from "@/lib/financeiroNavegacao";
 import { getFichaAnimalPath } from "@/lib/fichaAnimalRoute";
 import { produtoControlaSaldo } from "@/lib/produto-types";
 import { valorPatrimonialExibicao } from "@shared/estoqueCapital";
@@ -31,16 +30,11 @@ import {
   GOLD,
 } from "@/components/dashboard/DashboardUI";
 import {
-  brl,
   brlCompact,
   num,
   diasAte,
   dataBr,
   prazoRelativo,
-  inicioPeriodo,
-  parseData,
-  ultimosMeses,
-  mesChave,
   idadeAnos,
   faixaEtaria,
   PERIODOS,
@@ -59,8 +53,6 @@ export default function DashboardPage() {
   const { data: me } = trpc.auth.me.useQuery();
   const { data: stats } = trpc.dashboard.stats.useQuery();
   const { data: animais = [] } = trpc.animais.list.useQuery();
-  const { data: movimentacoes = [] } = trpc.financeiro.listMovimentacoes.useQuery();
-  const { data: contas = [] } = trpc.financeiro.listContas.useQuery();
   const { data: produtos = [] } = trpc.estoque.list.useQuery();
   const { data: movEstoque = [] } = trpc.estoque.listMovimentacoes.useQuery();
   const { data: saude = [] } = trpc.saude.list.useQuery();
@@ -97,40 +89,6 @@ export default function DashboardPage() {
 
     return { total: ativos.length, machos, femeas, pesoTotal, pesoMedio, composicao, idades };
   }, [animais]);
-
-  // ── Financeiro: período + fluxo de caixa ─────────────────────────────────────
-  const financeiro = useMemo(() => {
-    const inicio = inicioPeriodo(periodo);
-    const validas = movimentacoes.filter(m => m.status !== "cancelado");
-
-    let receita = 0;
-    let despesa = 0;
-    for (const m of validas) {
-      const d = parseData(m.data);
-      if (inicio && (!d || d < inicio)) continue;
-      const v = Number(m.valor) || 0;
-      if (m.tipo === "receita") receita += v;
-      else despesa += v;
-    }
-
-    const buckets = ultimosMeses(6);
-    const idx = new Map(buckets.map((b, i) => [b.chave, i]));
-    for (const m of validas) {
-      const k = mesChave(m.data);
-      if (k == null || !idx.has(k)) continue;
-      const b = buckets[idx.get(k)!];
-      const v = Number(m.valor) || 0;
-      if (m.tipo === "receita") b.receita += v;
-      else b.despesa += v;
-    }
-    buckets.forEach(b => { b.saldo = b.receita - b.despesa; });
-
-    const saldoContas = contas
-      .filter(c => c.ativa !== false)
-      .reduce((s, c) => s + (Number(c.saldoAtual) || 0), 0);
-
-    return { receita, despesa, resultado: receita - despesa, fluxo: buckets, saldoContas };
-  }, [movimentacoes, contas, periodo]);
 
   // ── Estoque ──────────────────────────────────────────────────────────────────
   const estoque = useMemo(() => {
@@ -212,19 +170,11 @@ export default function DashboardPage() {
         detalhe: prazoRelativo(m.proximaManutencao),
       }));
 
-    // Contas/lançamentos pendentes
-    const pendentes = movimentacoes
-      .filter(m => m.status === "pendente")
-      .map(m => ({
-        texto: m.descricao ?? "Lançamento",
-        detalhe: brl(m.valor),
-      }));
-
     const total =
-      estoqueBaixo.length + validade.length + sanidade.length + partos.length + manut.length + pendentes.length;
+      estoqueBaixo.length + validade.length + sanidade.length + partos.length + manut.length;
 
-    return { estoqueBaixo, validade, sanidade, partos, manut, pendentes, total };
-  }, [estoque.baixo, movEstoque, saude, reproducao, manutencoes, movimentacoes, animais]);
+    return { estoqueBaixo, validade, sanidade, partos, manut, pendentes: [] as Array<{ texto: string; detalhe: string }>, total };
+  }, [estoque.baixo, movEstoque, saude, reproducao, manutencoes, animais]);
 
   // ── Pastos (ocupação) ────────────────────────────────────────────────────────
   const ocupacao = useMemo(
@@ -242,14 +192,6 @@ export default function DashboardPage() {
     [fazendas]
   );
 
-  const ultimasMov = useMemo(
-    () =>
-      [...movimentacoes]
-        .sort((a, b) => (parseData(b.data)?.getTime() ?? 0) - (parseData(a.data)?.getTime() ?? 0))
-        .slice(0, 6),
-    [movimentacoes]
-  );
-
   const saudacao = (() => {
     const h = new Date().getHours();
     if (h < 12) return "Bom dia";
@@ -264,7 +206,7 @@ export default function DashboardPage() {
   });
 
   const temAlgumDado =
-    rebanho.total > 0 || movimentacoes.length > 0 || produtos.length > 0 || fazendas.length > 0;
+    rebanho.total > 0 || produtos.length > 0 || fazendas.length > 0;
 
   const periodoAtivo = PERIODOS.find(p => p.chave === periodo)?.label ?? "90 dias";
   const primeiroAlerta =
@@ -282,7 +224,7 @@ export default function DashboardPage() {
   const resumoOperacao = [
     { label: "Status", value: statusOperacao.label, detail: statusOperacao.detalhe, icon: statusOperacao.icon, color: statusOperacao.color },
     { label: "Próxima ação", value: primeiroAlerta?.texto ?? "Sem ação imediata", detail: primeiroAlerta?.detalhe ?? "Operação sem alerta prioritário", icon: "task_alt", color: primeiroAlerta ? RED : GREEN },
-    { label: "Período", value: periodoAtivo, detail: "Filtro aplicado ao financeiro", icon: "date_range", color: TEAL },
+    { label: "Período", value: periodoAtivo, detail: "Filtro do painel", icon: "date_range", color: TEAL },
     { label: "Base", value: `${num(fazendas.length)} fazenda${fazendas.length === 1 ? "" : "s"}`, detail: `${num(stats?.totalLotes ?? 0)} lotes · ${num(pastos.length)} pastos`, icon: "map", color: NAVY },
   ];
 
@@ -370,20 +312,20 @@ export default function DashboardPage() {
           onClick={() => setLocation("/rebanho/visao-geral")}
         />
         <KpiCard
-          label="Saldo em contas"
-          value={brlCompact(financeiro.saldoContas)}
+          label="Caixa e Bancos"
+          value="V2"
           icon="account_balance"
-          color={financeiro.saldoContas >= 0 ? GREEN : RED}
-          sub={<span>{contas.length} {contas.length === 1 ? "conta" : "contas"}</span>}
-          onClick={() => setLocation("/financeiro/contas")}
+          color={GREEN}
+          sub={<span>Abrir contas oficiais</span>}
+          onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)}
         />
         <KpiCard
-          label="Resultado período"
-          value={brlCompact(financeiro.resultado)}
-          icon={financeiro.resultado >= 0 ? "trending_up" : "trending_down"}
-          color={financeiro.resultado >= 0 ? GREEN : RED}
-          sub={<span className="text-green-600">{brlCompact(financeiro.receita)}</span>}
-          onClick={() => setLocation("/financeiro/visao-geral")}
+          label="Financeiro"
+          value="Oficial"
+          icon="trending_up"
+          color={TEAL}
+          sub={<span>Receber, pagar e caixa</span>}
+          onClick={() => setLocation(FINANCEIRO_VISAO_GERAL_PATH)}
         />
         <KpiCard
           label="Valor em estoque"
@@ -468,7 +410,7 @@ export default function DashboardPage() {
               titulo="Lançamentos pendentes"
               severidade="info"
               itens={alertas.pendentes}
-              onClick={() => setLocation("/financeiro/movimentacao")}
+              onClick={() => setLocation(FINANCEIRO_VISAO_GERAL_PATH)}
             />
           </div>
         )}
@@ -476,48 +418,20 @@ export default function DashboardPage() {
 
       {/* ── Fluxo de caixa + Composição do rebanho ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-        <SectionCard title="Fluxo de Caixa (6 meses)" icon="bar_chart" className="lg:col-span-2">
+        <SectionCard title="Financeiro oficial" icon="account_balance_wallet" className="lg:col-span-2">
           <div className="p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4">
-              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#F0FDF4" }}>
-                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide text-green-700">Receitas</p>
-                <p className="text-[16px] sm:text-[15px] font-bold text-green-600">{brl(financeiro.receita)}</p>
-              </div>
-              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#FEF2F2" }}>
-                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide text-red-700">Despesas</p>
-                <p className="text-[16px] sm:text-[15px] font-bold text-red-600">{brl(financeiro.despesa)}</p>
-              </div>
-              <div className="rounded-lg p-3 flex flex-row sm:flex-col items-center sm:items-start justify-between" style={{ backgroundColor: "#F0FDFA" }}>
-                <p className="text-[11px] sm:text-[10px] uppercase tracking-wide" style={{ color: NAVY }}>Resultado</p>
-                <p className="text-[16px] sm:text-[15px] font-bold" style={{ color: financeiro.resultado >= 0 ? GREEN : RED }}>
-                  {brl(financeiro.resultado)}
-                </p>
-              </div>
+            <EmptyState icon="account_balance_wallet" text="Use Contas a Receber, Contas a Pagar e Caixa e Bancos." />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setLocation("/financeiro/contas-a-receber")} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
+                Contas a Receber
+              </button>
+              <button type="button" onClick={() => setLocation("/financeiro/contas-a-pagar")} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
+                Contas a Pagar
+              </button>
+              <button type="button" onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
+                Caixa e Bancos
+              </button>
             </div>
-            {movimentacoes.length === 0 ? (
-              <EmptyState icon="show_chart" text="Sem lançamentos financeiros ainda" />
-            ) : (
-              <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart data={financeiro.fluxo} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#94a3b8" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={v => brlCompact(v).replace("R$ ", "")}
-                  />
-                  <Tooltip
-                    formatter={(v: number, n: string) => [brl(v), n]}
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="receita" name="Receita" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                  <Bar dataKey="despesa" name="Despesa" fill={RED} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                  <Line dataKey="saldo" name="Saldo" stroke={NAVY} strokeWidth={2.5} dot={{ r: 3 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
           </div>
         </SectionCard>
 
@@ -624,31 +538,15 @@ export default function DashboardPage() {
       {/* ── Atividade recente ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <SectionCard
-          title="Últimas Movimentações"
+          title="Caixa oficial"
           icon="receipt_long"
           action={
-            <button type="button" onClick={() => setLocation("/financeiro/movimentacao")} className="text-[11px] font-medium hover:underline" style={{ color: TEAL }}>
-              Ver tudo
+            <button type="button" onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)} className="text-[11px] font-medium hover:underline" style={{ color: TEAL }}>
+              Abrir
             </button>
           }
         >
-          {ultimasMov.length === 0 ? (
-            <EmptyState icon="account_balance_wallet" text="Sem movimentações" />
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {ultimasMov.map(m => (
-                <div key={m.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-medium text-gray-700 truncate">{m.descricao}</p>
-                    <p className="text-[10px] text-gray-400">{dataBr(m.data)}</p>
-                  </div>
-                  <span className={`text-[12px] font-bold whitespace-nowrap ${m.tipo === "receita" ? "text-green-600" : "text-red-600"}`}>
-                    {m.tipo === "receita" ? "+" : "−"} {brl(m.valor)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <EmptyState icon="account_balance_wallet" text="O caixa oficial está em Caixa e Bancos." />
         </SectionCard>
 
         <SectionCard
@@ -680,31 +578,15 @@ export default function DashboardPage() {
         </SectionCard>
 
         <SectionCard
-          title="Saldo por Conta"
+          title="Caixa e Bancos"
           icon="savings"
           action={
-            <button type="button" onClick={() => setLocation("/financeiro/contas")} className="text-[11px] font-medium hover:underline" style={{ color: TEAL }}>
-              Ver tudo
+            <button type="button" onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)} className="text-[11px] font-medium hover:underline" style={{ color: TEAL }}>
+              Abrir
             </button>
           }
         >
-          {contas.length === 0 ? (
-            <EmptyState icon="account_balance" text="Nenhuma conta cadastrada" />
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {contas.slice(0, 6).map(c => (
-                <div key={c.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-medium text-gray-700 truncate">{c.nome}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{c.banco || c.tipo || "Conta"}</p>
-                  </div>
-                  <span className={`text-[12px] font-bold whitespace-nowrap ${Number(c.saldoAtual) >= 0 ? "text-gray-800" : "text-red-600"}`}>
-                    {brl(c.saldoAtual)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <EmptyState icon="account_balance" text="Consulte os saldos oficiais no Financeiro V2." />
         </SectionCard>
       </div>
 

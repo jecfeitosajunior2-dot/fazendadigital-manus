@@ -516,20 +516,19 @@ describe("contasAPagarListagem — tela, rota e compatibilidade", () => {
     expect(app).toContain("ContasAPagarPage");
     expect(app).toContain("ContasAPagarDetalhePage");
     expect(app).toContain("FINANCEIRO_CONTAS_A_PAGAR_PATH");
-    expect(app).toContain('path="/financeiro/visao-geral" component={FinancialManagementPage}');
+    expect(app).toContain('path="/financeiro/visao-geral" component={FinanceiroVisaoGeralPage}');
   });
 
-  it("a página consulta só o Financeiro V2 e permanece somente leitura", () => {
+  it("a página consulta o Financeiro V2 e cadastra despesa sem pagar na lista", () => {
     expect(page).toContain("financeiroV2.titulosList");
     expect(page).toContain("financeiroV2.titulosGet");
     expect(page).not.toContain("trpc.financeiro.");
     expect(page).not.toContain("listMovimentacoes");
     expect(page).not.toContain("liquidacaoPagar");
-    expect(page).not.toContain("titulosCreateManual");
+    expect(page).toContain("titulosCreateManual");
     expect(page).not.toContain("titulosDefinirParcelas");
     expect(page).not.toContain("titulosApropriar");
-    expect(page).not.toContain(".useMutation");
-    expect(page).toContain("Somente consulta");
+    expect(page).toContain("Nova despesa");
     expect(page).toContain("FILTRO_ATIVOS");
     expect(page).toContain("rotuloSituacaoLinha");
     expect(page).toContain("TEXTO_A_DEFINIR");

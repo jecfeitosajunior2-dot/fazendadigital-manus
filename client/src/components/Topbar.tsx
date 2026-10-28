@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { NotificationCenter } from "./NotificationCenter";
 import { trpc } from "@/lib/trpc";
-import { clearLocalAuthSession, getLocalAuthUser } from "@/lib/localAuth";
+import { clearLocalAuthSession } from "@/lib/localAuth";
 
 const LOGOUT_HREF = "/api/auth/logout";
 
@@ -11,8 +11,6 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
   const [menuStyle, setMenuStyle] = useState<{ top: number; right: number } | null>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
-  const localUser = getLocalAuthUser();
-
   const { data: user } = trpc.auth.me.useQuery(undefined, { retry: false });
 
   useEffect(() => {
@@ -51,8 +49,8 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
     };
   }, [showUser]);
 
-  const displayName = user?.name || localUser?.name || "Administrador";
-  const displayEmail = user?.email || localUser?.email || "admin@fazendadigital.com.br";
+  const displayName = user?.name || "Sessão";
+  const displayEmail = user?.email || "";
   const initials = displayName.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
 
   const userMenu = showUser && menuStyle
@@ -83,7 +81,7 @@ export default function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) 
                 <p className="text-xs text-white/40 truncate">{displayEmail}</p>
               </div>
             </div>
-            {(user?.role === "admin" || localUser?.role === "admin") && (
+            {user?.role === "admin" && (
               <span
                 className="inline-block mt-2 px-2 py-0.5 text-[10px] rounded-full font-semibold"
                 style={{ background: "rgba(27,197,189,0.15)", color: "#1BC5BD", border: "1px solid rgba(27,197,189,0.3)" }}

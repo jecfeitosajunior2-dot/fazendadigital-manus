@@ -148,7 +148,8 @@ describe("contasFinanceirasV2 — tela e separação do legado", () => {
     expect(app).toContain("ContasFinanceirasV2Page");
     expect(app).toContain("FINANCEIRO_CONTAS_V2_PATH");
     expect(app.indexOf("FINANCEIRO_CONTAS_V2_PATH")).toBeGreaterThan(-1);
-    expect(app).toContain('path="/financeiro/contas" component={FinancialManagementPage}');
+    expect(app).toContain('path="/financeiro/contas"');
+    expect(app).toContain("RedirectTo to={FINANCEIRO_CONTAS_V2_PATH}");
     expect(page).toContain("financeiroV2.contasList");
     expect(page).toContain("financeiroV2.contasGet");
     expect(page).toContain("financeiroV2.contasCreate");
@@ -163,10 +164,10 @@ describe("contasFinanceirasV2 — tela e separação do legado", () => {
     expect(legado).not.toContain("FINANCEIRO_CONTAS_V2_PATH");
   });
 
-  it("não cria segundo item de menu chamado Contas Financeiras", () => {
-    expect(menu).toContain('label: "Contas"');
-    expect(menu).toContain('path: "/financeiro/contas"');
-    expect(menu).not.toContain(FINANCEIRO_CONTAS_V2_PATH);
+  it("o menu oficial de Caixa e Bancos aponta para o V2", () => {
+    expect(menu).toContain('label: "Caixa e Bancos"');
+    expect(menu).toContain(FINANCEIRO_CONTAS_V2_PATH);
+    expect(menu).not.toContain('path: "/financeiro/contas"');
     expect(menu).not.toContain("Contas Financeiras");
     expect(lista).toContain("FINANCEIRO_CONTAS_V2_PATH");
     expect(detalhe).toContain("FINANCEIRO_CONTAS_V2_PATH");
@@ -176,14 +177,18 @@ describe("contasFinanceirasV2 — tela e separação do legado", () => {
     expect(detalhe).not.toContain("trpc.financeiro.");
   });
 
-  it("não altera o núcleo V2 nem calcula saldo no cliente", () => {
+  it("não calcula saldo no cliente e usa só o núcleo V2", () => {
     expect(nucleo).toContain("async listarContas(userId: number)");
     expect(nucleo).toContain("saldoAtual: await saldoContaTx");
     expect(page).toContain("saldoAtual");
     expect(page).not.toContain("calcularSaldoConta");
     expect(page).toContain("MSG_NENHUMA_CONTA_V2");
     expect(page).toContain("contasInativar");
-    expect(page).not.toContain("contasReativar");
+    expect(page).toContain("contasReativar");
+    expect(page).toContain("contasUpdate");
+    expect(page).toContain("movimentosExtrato");
+    expect(page).toContain("transferenciaCreate");
     expect(page).not.toContain("deleteConta");
+    expect(page).not.toContain("trpc.financeiro.");
   });
 });

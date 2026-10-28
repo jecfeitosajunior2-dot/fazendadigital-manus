@@ -5,6 +5,7 @@ import {
   isDeadlockMysql,
   isDuplicateChaveIdempotenciaLiquidacao,
   isDuplicateOrigemLiquidacao,
+  isDuplicateOrigemTitulo,
 } from "./financeiroNucleo";
 import { cenarioBase, criarStore } from "./financeiroNucleoMemoria";
 import {
@@ -17,9 +18,17 @@ import {
   MSG_FIN_LIQUIDACAO_NAO_ENCONTRADA,
   MSG_FIN_MOVIMENTO_LIQUIDACAO,
   MSG_FIN_ORIGEM_AUTOMATICA,
+  MSG_FIN_CONTA_ABERTURA_TRAVADA,
+  MSG_FIN_CONTA_INATIVA,
+  MSG_FIN_FAZENDA_INVALIDA,
   MSG_FIN_OVERPAYMENT,
+  MSG_FIN_PARCELAS_SOMA,
   MSG_FIN_PESSOAS_MISTURADAS,
+  MSG_FIN_SALDO_INSUFICIENTE,
   MSG_FIN_TITULO_CANCELADO,
+  MSG_FIN_TRANSFERENCIA_MESMA_CONTA,
+  MSG_FIN_VALOR_POSITIVO,
+  origemTituloManualIdempotente,
 } from "../shared/financeiroNucleo";
 
 describe("financeiroNucleo — Fase 1", () => {
@@ -1174,9 +1183,14 @@ describe("financeiroNucleo — recuperação de deadlock 3E.8G", () => {
     const orig = Object.assign(new Error("Failed query"), {
       cause: Object.assign(new Error("Duplicate entry for key 'financeiro_liquidacoes.financeiro_liquidacoes_original_uq'"), { errno: 1062 }),
     });
+    const tit = Object.assign(new Error("Failed query"), {
+      cause: Object.assign(new Error("Duplicate entry for key 'financeiro_titulos.financeiro_titulos_origem_uq'"), { errno: 1062 }),
+    });
     expect(isDuplicateChaveIdempotenciaLiquidacao(idem)).toBe(true);
     expect(isDuplicateOrigemLiquidacao(orig)).toBe(true);
     expect(isDuplicateChaveIdempotenciaLiquidacao(orig)).toBe(false);
+    expect(isDuplicateOrigemTitulo(tit)).toBe(true);
+    expect(isDuplicateOrigemTitulo(idem)).toBe(false);
   });
 });
 
@@ -1364,5 +1378,705 @@ describe("financeiroNucleo — recuperação de estorno 3E.8I", () => {
     await svc.estornarLiquidacao(10, cmd);
     expect(store.liquidacoes.filter(l => l.tipo === "estorno_pagamento")).toHaveLength(1);
     expect(store.movimentos.filter(m => m.natureza === "estorno_pagamento")).toHaveLength(1);
+  });
+});
+
+describe("financeiroNucleo — Caixa e Bancos 4.2", () => {
+  it("extrato isola usuário, filtra período e ordena por data e id", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const a = await svc.criarContaFinanceira(10, { nome: "Caixa A", tipo: "caixa", saldoAbertura: 10000, dataSaldoAbertura: "2026-01-01" });
+    const b = await svc.criarContaFinanceira(10, { nome: "Banco B", tipo: "conta_corrente", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01" });
+    await svc.criarContaFinanceira(99, { nome: "Alheia", tipo: "caixa", saldoAbertura: 1, dataSaldoAbertura: "2026-01-01" });
+    await svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-10", valor: 1000, idempotencyKey: "tr-ext-1",
+    });
+    await svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-02", valor: 500, idempotencyKey: "tr-ext-2",
+    });
+    const extrato = await svc.extrato(10, a.id, "2026-03-01", "2026-03-31");
+    expect(extrato.movimentos.every(m => m.contaId === a.id && m.userId === 10)).toBe(true);
+    expect(extrato.movimentos.map(m => m.dataMovimento)).toEqual(["2026-03-02", "2026-03-10"]);
+    expect(extrato.movimentos.every(m => m.direcao === "saida")).toBe(true);
+    await expect(svc.extrato(99, a.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("transferência válida, mesmas contas, valor inválido, saldo insuficiente, inativa e inexistente", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const a = await svc.criarContaFinanceira(10, { nome: "A", tipo: "caixa", saldoAbertura: 1000, dataSaldoAbertura: "2026-01-01" });
+    const b = await svc.criarContaFinanceira(10, { nome: "B", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01" });
+    const inat = await svc.criarContaFinanceira(10, { nome: "Inat", tipo: "caixa", saldoAbertura: 800, dataSaldoAbertura: "2026-01-01" });
+    await svc.inativarConta(10, inat.id, "teste");
+    const ok = await svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 200, idempotencyKey: "tr-ok",
+    });
+    expect(store.movimentos.filter(m => m.transferenciaId === ok.id)).toHaveLength(2);
+    await expect(svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: a.id, dataTransferencia: "2026-03-01", valor: 10, idempotencyKey: "tr-same",
+    })).rejects.toMatchObject({ message: MSG_FIN_TRANSFERENCIA_MESMA_CONTA });
+    await expect(svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 0, idempotencyKey: "tr-zero",
+    })).rejects.toMatchObject({ message: MSG_FIN_VALOR_POSITIVO });
+    await expect(svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 9999, idempotencyKey: "tr-saldo",
+    })).rejects.toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+    await expect(svc.criarTransferencia(10, {
+      contaOrigemId: inat.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 10, idempotencyKey: "tr-inat",
+    })).rejects.toMatchObject({ message: MSG_FIN_CONTA_INATIVA });
+    await expect(svc.criarTransferencia(10, {
+      contaOrigemId: 999, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 10, idempotencyKey: "tr-404",
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("retry da mesma chave não duplica e falha na validação não grava", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const a = await svc.criarContaFinanceira(10, { nome: "A", tipo: "caixa", saldoAbertura: 500, dataSaldoAbertura: "2026-01-01" });
+    const b = await svc.criarContaFinanceira(10, { nome: "B", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01" });
+    const cmd = {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 100, idempotencyKey: "tr-retry-42",
+    };
+    const primeiro = await svc.criarTransferencia(10, cmd);
+    const segundo = await svc.criarTransferencia(10, cmd);
+    expect(primeiro.id).toBe(segundo.id);
+    expect(segundo.idempotente).toBe(true);
+    expect(store.transferencias).toHaveLength(1);
+    expect(store.movimentos).toHaveLength(2);
+    const antes = store.movimentos.length;
+    await expect(svc.criarTransferencia(10, { ...cmd, valor: 0, idempotencyKey: "tr-fail" })).rejects.toBeTruthy();
+    expect(store.movimentos).toHaveLength(antes);
+  });
+
+  it("edição cadastral preserva saldo e recusa abertura com histórico e outro usuário", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const a = await svc.criarContaFinanceira(10, { nome: "A", tipo: "caixa", saldoAbertura: 800, dataSaldoAbertura: "2026-01-01" });
+    const b = await svc.criarContaFinanceira(10, { nome: "B", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01" });
+    await svc.criarTransferencia(10, {
+      contaOrigemId: a.id, contaDestinoId: b.id, dataTransferencia: "2026-03-01", valor: 100, idempotencyKey: "tr-edit",
+    });
+    const saldoAntes = await svc.calcularSaldoConta(10, a.id);
+    await svc.atualizarConta(10, a.id, { nome: "Caixa novo", tipo: "caixa", banco: "Sicoob" });
+    const depois = await svc.obterConta(10, a.id);
+    expect(depois.nome).toBe("Caixa novo");
+    expect(depois.banco).toBe("Sicoob");
+    expect(depois.saldoAtual).toBe(saldoAntes);
+    await expect(svc.atualizarConta(10, a.id, {
+      nome: "Caixa novo", tipo: "caixa", saldoAbertura: 1,
+    })).rejects.toMatchObject({ message: MSG_FIN_CONTA_ABERTURA_TRAVADA });
+    await expect(svc.atualizarConta(99, a.id, { nome: "X", tipo: "caixa" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("reativação não muda saldo nem movimentos", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const a = await svc.criarContaFinanceira(10, { nome: "A", tipo: "caixa", saldoAbertura: 300, dataSaldoAbertura: "2026-01-01" });
+    await svc.inativarConta(10, a.id, "pausa");
+    const saldo = await svc.calcularSaldoConta(10, a.id);
+    const movs = store.movimentos.length;
+    const r1 = await svc.reativarConta(10, a.id);
+    const r2 = await svc.reativarConta(10, a.id);
+    expect(r1.alterada).toBe(true);
+    expect(r2.alterada).toBe(false);
+    expect((await svc.obterConta(10, a.id)).ativa).toBe(true);
+    expect(await svc.calcularSaldoConta(10, a.id)).toBe(saldo);
+    expect(store.movimentos).toHaveLength(movs);
+    await expect(svc.reativarConta(10, 999)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(svc.reativarConta(99, a.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("financeiroNucleo — despesa manual 4.3", () => {
+  it("cadastro à vista e parcelado não move caixa", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const unico = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Ração",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: "manual",
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 3000 }],
+    });
+    const depois = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Energia",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 100,
+      origemTipo: "manual",
+      parcelas: [
+        { numero: 1, vencimento: "2026-03-10", valorOriginal: 50 },
+        { numero: 2, vencimento: "2026-04-10", valorOriginal: 50 },
+      ],
+    });
+    const aDefinir = await svc.criarTitulo(10, {
+      tipo: "pagar", pessoaId: 1, descricao: "Frete", dataCompetencia: "2026-03-01", valorOriginal: 80, origemTipo: "manual",
+    });
+    expect(store.movimentos).toHaveLength(0);
+    expect(store.liquidacoes).toHaveLength(0);
+    expect((await svc.detalheTitulo(10, unico.id)).condicaoStatus).toBe("definida");
+    expect((await svc.detalheTitulo(10, depois.id)).parcelas).toHaveLength(2);
+    expect((await svc.detalheTitulo(10, aDefinir.id)).condicaoStatus).toBe("a_definir");
+    expect((await svc.detalheTitulo(10, aDefinir.id)).parcelas).toHaveLength(0);
+  });
+
+  it("recusa valor, pessoa, soma de parcelas e isola usuário", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    await expect(svc.criarTitulo(10, {
+      tipo: "pagar", pessoaId: 1, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 0,
+    })).rejects.toMatchObject({ message: MSG_FIN_VALOR_POSITIVO });
+    await expect(svc.criarTitulo(10, {
+      tipo: "pagar", pessoaId: 999, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 10,
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "X",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 100,
+      parcelas: [
+        { numero: 1, vencimento: "2026-03-10", valorOriginal: 40 },
+        { numero: 2, vencimento: "2026-04-10", valorOriginal: 40 },
+      ],
+    })).rejects.toMatchObject({ message: MSG_FIN_PARCELAS_SOMA });
+    const ok = await svc.criarTitulo(10, {
+      tipo: "pagar", pessoaId: 1, descricao: "Y", dataCompetencia: "2026-03-01", valorOriginal: 10,
+    });
+    await expect(svc.detalheTitulo(99, ok.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("pagamento sem saldo na conta é recusado pela mesma regra da transferência", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const conta = await svc.criarContaFinanceira(10, {
+      nome: "Caixa zerado", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const titulo = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Saldo",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 25,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 25 }],
+    });
+    const d = await svc.detalheTitulo(10, titulo.id);
+    await expect(svc.criarPagamento(10, {
+      contaId: conta.id,
+      dataLiquidacao: "2026-03-10",
+      valorMovimentado: 25,
+      idempotencyKey: "pag-saldo-43",
+      alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 25 }],
+    })).rejects.toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+    expect(store.movimentos).toHaveLength(0);
+    expect(store.liquidacoes).toHaveLength(0);
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(0);
+  });
+});
+
+describe("financeiroNucleo — saldo do pagamento 4.3A", () => {
+  async function despesa(svc: ReturnType<typeof createFinanceiroNucleoService>, valor: number, chave = "desp") {
+    const titulo = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: chave,
+      dataCompetencia: "2026-03-01",
+      valorOriginal: valor,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: valor }],
+    });
+    const d = await svc.detalheTitulo(10, titulo.id);
+    return d.parcelas[0]!;
+  }
+
+  it("integral com saldo, insuficiente, parcial, parcial acima e saldo exato", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const conta = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 1000, dataSaldoAbertura: "2026-01-01",
+    });
+    const p1 = await despesa(svc, 800, "int");
+    await svc.criarPagamento(10, {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 800, idempotencyKey: "pag-int-ok",
+      alocacoes: [{ parcelaId: p1.id, principalLiquidado: 800 }],
+    });
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(200);
+
+    const p2 = await despesa(svc, 1500, "insuf");
+    await expect(svc.criarPagamento(10, {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 1500, idempotencyKey: "pag-int-nao",
+      alocacoes: [{ parcelaId: p2.id, principalLiquidado: 1500 }],
+    })).rejects.toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+    expect(store.liquidacoes).toHaveLength(1);
+
+    const p3 = await despesa(svc, 1500, "parc");
+    await svc.criarPagamento(10, {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 200, idempotencyKey: "pag-parc-ok",
+      alocacoes: [{ parcelaId: p3.id, principalLiquidado: 200 }],
+    });
+    expect((await svc.detalheTitulo(10, p3.tituloId)).parcelas[0]!.saldoPrincipal).toBe(1300);
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(0);
+
+    await expect(svc.criarPagamento(10, {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 1, idempotencyKey: "pag-parc-nao",
+      alocacoes: [{ parcelaId: p3.id, principalLiquidado: 1 }],
+    })).rejects.toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+
+    const conta2 = await svc.criarContaFinanceira(10, {
+      nome: "Exato", tipo: "caixa", saldoAbertura: 500, dataSaldoAbertura: "2026-01-01",
+    });
+    const p4 = await despesa(svc, 500, "exato");
+    await svc.criarPagamento(10, {
+      contaId: conta2.id, dataLiquidacao: "2026-03-10", valorMovimentado: 500, idempotencyKey: "pag-exato",
+      alocacoes: [{ parcelaId: p4.id, principalLiquidado: 500 }],
+    });
+    expect(await svc.calcularSaldoConta(10, conta2.id)).toBe(0);
+  });
+
+  it("conta inativa, idempotência e estorno devolvem o saldo", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const conta = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 300, dataSaldoAbertura: "2026-01-01",
+    });
+    const inat = await svc.criarContaFinanceira(10, {
+      nome: "Inat", tipo: "caixa", saldoAbertura: 300, dataSaldoAbertura: "2026-01-01",
+    });
+    await svc.inativarConta(10, inat.id, "pausa");
+    const p = await despesa(svc, 100, "inat");
+    await expect(svc.criarPagamento(10, {
+      contaId: inat.id, dataLiquidacao: "2026-03-10", valorMovimentado: 100, idempotencyKey: "pag-inat",
+      alocacoes: [{ parcelaId: p.id, principalLiquidado: 100 }],
+    })).rejects.toMatchObject({ message: MSG_FIN_CONTA_INATIVA });
+
+    const cmd = {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 100, idempotencyKey: "pag-idem-43a",
+      alocacoes: [{ parcelaId: p.id, principalLiquidado: 100 }],
+    };
+    const a = await svc.criarPagamento(10, cmd);
+    const b = await svc.criarPagamento(10, cmd);
+    expect(a.id).toBe(b.id);
+    expect(b.idempotente).toBe(true);
+    expect(store.liquidacoes.filter(l => l.tipo === "pagamento")).toHaveLength(1);
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(200);
+
+    await svc.estornarLiquidacao(10, {
+      liquidacaoId: a.id, idempotencyKey: "est-43a", dataLiquidacao: "2026-03-11",
+    });
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(300);
+    expect((await svc.detalheTitulo(10, p.tituloId)).parcelas[0]!.saldoPrincipal).toBe(100);
+  });
+
+  it("recebimento não é bloqueado por saldo e disputa sequencial do mesmo saldo", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const conta = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const rec = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Venda", dataCompetencia: "2026-03-01", valorOriginal: 80,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    });
+    const dr = await svc.detalheTitulo(10, rec.id);
+    await svc.criarRecebimento(10, {
+      contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-43a",
+      alocacoes: [{ parcelaId: dr.parcelas[0]!.id, principalLiquidado: 80 }],
+    });
+    expect(await svc.calcularSaldoConta(10, conta.id)).toBe(80);
+
+    const conta2 = await svc.criarContaFinanceira(10, {
+      nome: "Disputa", tipo: "caixa", saldoAbertura: 1000, dataSaldoAbertura: "2026-01-01",
+    });
+    const pa = await despesa(svc, 1000, "a");
+    const pb = await despesa(svc, 1000, "b");
+    const [r1, r2] = await Promise.allSettled([
+      svc.criarPagamento(10, {
+        contaId: conta2.id, dataLiquidacao: "2026-03-10", valorMovimentado: 1000, idempotencyKey: "pag-disp-a",
+        alocacoes: [{ parcelaId: pa.id, principalLiquidado: 1000 }],
+      }),
+      svc.criarPagamento(10, {
+        contaId: conta2.id, dataLiquidacao: "2026-03-10", valorMovimentado: 1000, idempotencyKey: "pag-disp-b",
+        alocacoes: [{ parcelaId: pb.id, principalLiquidado: 1000 }],
+      }),
+    ]);
+    const ok = [r1, r2].filter(r => r.status === "fulfilled");
+    const fail = [r1, r2].filter(r => r.status === "rejected");
+    expect(ok).toHaveLength(1);
+    expect(fail).toHaveLength(1);
+    expect((fail[0] as PromiseRejectedResult).reason).toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+    expect(await svc.calcularSaldoConta(10, conta2.id)).toBe(0);
+    expect(store.liquidacoes.filter(l => l.contaId === conta2.id)).toHaveLength(1);
+
+    const dest = await svc.criarContaFinanceira(10, {
+      nome: "Dest", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const conta3 = await svc.criarContaFinanceira(10, {
+      nome: "Misto", tipo: "caixa", saldoAbertura: 400, dataSaldoAbertura: "2026-01-01",
+    });
+    const pc = await despesa(svc, 400, "c");
+    const [pag, tr] = await Promise.allSettled([
+      svc.criarPagamento(10, {
+        contaId: conta3.id, dataLiquidacao: "2026-03-10", valorMovimentado: 400, idempotencyKey: "pag-misto",
+        alocacoes: [{ parcelaId: pc.id, principalLiquidado: 400 }],
+      }),
+      svc.criarTransferencia(10, {
+        contaOrigemId: conta3.id, contaDestinoId: dest.id, dataTransferencia: "2026-03-10", valor: 400, idempotencyKey: "tr-misto",
+      }),
+    ]);
+    const ganhos = [pag, tr].filter(r => r.status === "fulfilled");
+    const perdas = [pag, tr].filter(r => r.status === "rejected");
+    expect(ganhos).toHaveLength(1);
+    expect(perdas).toHaveLength(1);
+    expect(await svc.calcularSaldoConta(10, conta3.id)).toBe(0);
+  });
+});
+
+describe("financeiroNucleo — receita manual 4.4", () => {
+  it("cadastro não move caixa e recusa pessoa, fazenda e soma", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const unico = await svc.criarTitulo(10, {
+      tipo: "receber",
+      pessoaId: 1,
+      descricao: "Aluguel",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: "manual",
+      parcelas: [{ numero: 1, vencimento: "2026-03-31", valorOriginal: 3000 }],
+    });
+    const aDefinir = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Serviço", dataCompetencia: "2026-03-01", valorOriginal: 80, origemTipo: "manual",
+    });
+    expect(store.movimentos).toHaveLength(0);
+    expect(store.liquidacoes).toHaveLength(0);
+    expect((await svc.detalheTitulo(10, unico.id)).tipo).toBe("receber");
+    expect((await svc.detalheTitulo(10, aDefinir.id)).condicaoStatus).toBe("a_definir");
+    await expect(svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 0,
+    })).rejects.toMatchObject({ message: MSG_FIN_VALOR_POSITIVO });
+    await expect(svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 3, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 10,
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 10, fazendaOrigemId: 99,
+    })).rejects.toMatchObject({ message: MSG_FIN_FAZENDA_INVALIDA });
+    await expect(svc.criarTitulo(10, {
+      tipo: "receber",
+      pessoaId: 1,
+      descricao: "X",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 100,
+      parcelas: [
+        { numero: 1, vencimento: "2026-03-10", valorOriginal: 40 },
+        { numero: 2, vencimento: "2026-04-10", valorOriginal: 40 },
+      ],
+    })).rejects.toMatchObject({ message: MSG_FIN_PARCELAS_SOMA });
+    await expect(svc.detalheTitulo(99, unico.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("recebimento atualiza o caixa; estorno sem saldo é bloqueado e não cria movimento", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const caixa = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const dest = await svc.criarContaFinanceira(10, {
+      nome: "Dest", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const titulo = await svc.criarTitulo(10, {
+      tipo: "receber",
+      pessoaId: 1,
+      descricao: "Aluguel",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 80,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    });
+    const d = await svc.detalheTitulo(10, titulo.id);
+    const rec = await svc.criarRecebimento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-44",
+      alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 80 }],
+    });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(80);
+    await svc.criarTransferencia(10, {
+      contaOrigemId: caixa.id, contaDestinoId: dest.id, dataTransferencia: "2026-03-11", valor: 80, idempotencyKey: "tr-44",
+    });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: rec.id, idempotencyKey: "est-rec-44", dataLiquidacao: "2026-03-12",
+    })).rejects.toMatchObject({ message: MSG_FIN_SALDO_INSUFICIENTE });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
+    expect(store.liquidacoes.filter(l => l.tipo === "estorno_recebimento")).toHaveLength(0);
+    expect(store.movimentos.filter(m => m.natureza === "estorno_recebimento")).toHaveLength(0);
+    expect((await svc.detalheTitulo(10, titulo.id)).parcelas[0]!.saldoPrincipal).toBe(0);
+  });
+});
+
+function origemManual(tipo: "pagar" | "receber", key: string) {
+  const origem = origemTituloManualIdempotente(tipo, key);
+  if (!origem.ok) throw new Error(origem.message);
+  return origem;
+}
+
+describe("financeiroNucleo — segurança 4.5", () => {
+  it("estorno de recebimento com saldo exato zera a conta; pagamento devolvido não bloqueia", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const caixa = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const recTit = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Aluguel", dataCompetencia: "2026-03-01", valorOriginal: 80,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    });
+    const recDet = await svc.detalheTitulo(10, recTit.id);
+    const rec = await svc.criarRecebimento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-45",
+      alocacoes: [{ parcelaId: recDet.parcelas[0]!.id, principalLiquidado: 80 }],
+    });
+    const est = await svc.estornarLiquidacao(10, {
+      liquidacaoId: rec.id, idempotencyKey: "est-rec-45", dataLiquidacao: "2026-03-12",
+    });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
+    expect(est.idempotente).toBe(false);
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: rec.id, idempotencyKey: "est-rec-45b", dataLiquidacao: "2026-03-13",
+    })).rejects.toMatchObject({ message: MSG_FIN_LIQUIDACAO_JA_ESTORNADA });
+
+    const pagTit = await svc.criarTitulo(10, {
+      tipo: "pagar", pessoaId: 1, descricao: "Frete", dataCompetencia: "2026-03-01", valorOriginal: 50,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 50 }],
+    });
+    const rec2Tit = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Serviço", dataCompetencia: "2026-03-01", valorOriginal: 50,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 50 }],
+    });
+    const rec2 = await svc.detalheTitulo(10, rec2Tit.id);
+    await svc.criarRecebimento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-14", valorMovimentado: 50, idempotencyKey: "rec-45c",
+      alocacoes: [{ parcelaId: rec2.parcelas[0]!.id, principalLiquidado: 50 }],
+    });
+    const pagDet = await svc.detalheTitulo(10, pagTit.id);
+    const pag = await svc.criarPagamento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-15", valorMovimentado: 50, idempotencyKey: "pag-45",
+      alocacoes: [{ parcelaId: pagDet.parcelas[0]!.id, principalLiquidado: 50 }],
+    });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
+    await svc.estornarLiquidacao(10, {
+      liquidacaoId: pag.id, idempotencyKey: "est-pag-45", dataLiquidacao: "2026-03-16",
+    });
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(50);
+  });
+
+  it("conta inativa e concorrência com transferência bloqueiam o estorno de recebimento", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const caixa = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const dest = await svc.criarContaFinanceira(10, {
+      nome: "Dest", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const titulo = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Aluguel", dataCompetencia: "2026-03-01", valorOriginal: 80,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    });
+    const d = await svc.detalheTitulo(10, titulo.id);
+    const rec = await svc.criarRecebimento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-45-conc",
+      alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 80 }],
+    });
+    await svc.inativarConta(10, caixa.id, "teste");
+    await expect(svc.estornarLiquidacao(10, {
+      liquidacaoId: rec.id, idempotencyKey: "est-inativa", dataLiquidacao: "2026-03-12",
+    })).rejects.toMatchObject({ message: MSG_FIN_CONTA_INATIVA });
+    await svc.reativarConta(10, caixa.id);
+    const [est, tr] = await Promise.allSettled([
+      svc.estornarLiquidacao(10, {
+        liquidacaoId: rec.id, idempotencyKey: "est-conc", dataLiquidacao: "2026-03-12",
+      }),
+      svc.criarTransferencia(10, {
+        contaOrigemId: caixa.id, contaDestinoId: dest.id, dataTransferencia: "2026-03-12", valor: 80, idempotencyKey: "tr-conc",
+      }),
+    ]);
+    const ganhos = [est, tr].filter(r => r.status === "fulfilled");
+    const perdas = [est, tr].filter(r => r.status === "rejected");
+    expect(ganhos).toHaveLength(1);
+    expect(perdas).toHaveLength(1);
+    expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
+    expect(store.liquidacoes.filter(l => l.tipo === "recebimento")).toHaveLength(1);
+  });
+
+  it("idempotência de receita e despesa: retry, conflito, chaves distintas e isolamento", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const recOrigem = origemManual("receber", "man-receita-1");
+    const rec = {
+      tipo: "receber" as const,
+      pessoaId: 1,
+      descricao: "Aluguel",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: recOrigem.origemTipo,
+      origemId: recOrigem.origemId,
+      origemItemChave: recOrigem.origemItemChave,
+      parcelas: [{ numero: 1, vencimento: "2026-03-31", valorOriginal: 3000 }],
+    };
+    const primeira = await svc.criarTitulo(10, rec);
+    const retry = await svc.criarTitulo(10, rec);
+    expect(retry.id).toBe(primeira.id);
+    expect(retry.idempotente).toBe(true);
+    expect(store.titulos.filter(t => t.tipo === "receber")).toHaveLength(1);
+    expect(store.parcelas.filter(p => p.tituloId === primeira.id)).toHaveLength(1);
+    await expect(svc.criarTitulo(10, { ...rec, descricao: "Outra" })).rejects.toMatchObject({
+      message: MSG_FIN_IDEMPOTENCIA_CONFLITO,
+    });
+    expect(store.titulos).toHaveLength(1);
+
+    const despOrigem = origemManual("pagar", "man-receita-1");
+    const despesa = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Frete",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: despOrigem.origemTipo,
+      origemId: despOrigem.origemId,
+      origemItemChave: despOrigem.origemItemChave,
+    });
+    const despRetry = await svc.criarTitulo(10, {
+      tipo: "pagar",
+      pessoaId: 1,
+      descricao: "Frete",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: despOrigem.origemTipo,
+      origemId: despOrigem.origemId,
+      origemItemChave: despOrigem.origemItemChave,
+    });
+    expect(despRetry.id).toBe(despesa.id);
+    expect(store.titulos.filter(t => t.tipo === "pagar")).toHaveLength(1);
+
+    const outraChave = origemManual("receber", "man-receita-2");
+    const irma = await svc.criarTitulo(10, { ...rec, ...outraChave });
+    expect(irma.id).not.toBe(primeira.id);
+
+    const user99 = origemManual("receber", "man-receita-1");
+    const isolado = await svc.criarTitulo(99, {
+      tipo: "receber",
+      pessoaId: 3,
+      descricao: "Aluguel",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 3000,
+      origemTipo: user99.origemTipo,
+      origemId: user99.origemId,
+      origemItemChave: user99.origemItemChave,
+      parcelas: [{ numero: 1, vencimento: "2026-03-31", valorOriginal: 3000 }],
+    });
+    expect(isolado.id).not.toBe(primeira.id);
+  });
+
+  it("duas solicitações simultâneas com a mesma chave criam um título; falha de parcela faz rollback", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const origem = origemManual("receber", "man-paralelo");
+    const input = {
+      tipo: "receber" as const,
+      pessoaId: 1,
+      descricao: "Aluguel",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 80,
+      origemTipo: origem.origemTipo,
+      origemId: origem.origemId,
+      origemItemChave: origem.origemItemChave,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    };
+    const [a, b] = await Promise.all([svc.criarTitulo(10, input), svc.criarTitulo(10, input)]);
+    expect(a.id).toBe(b.id);
+    expect(store.titulos.filter(t => t.origemItemChave === origem.origemItemChave)).toHaveLength(1);
+
+    const falha = criarStore();
+    const originalTx = falha.transaction.bind(falha);
+    falha.transaction = async fn => originalTx(async tx => {
+      let n = 0;
+      return fn({
+        ...tx,
+        async insertParcela(row) {
+          n += 1;
+          if (n === 2) throw new Error("falha parcela");
+          return tx.insertParcela(row);
+        },
+      });
+    });
+    const svcFalha = createFinanceiroNucleoService(falha);
+    const origemFalha = origemManual("receber", "man-rollback");
+    await expect(svcFalha.criarTitulo(10, {
+      tipo: "receber",
+      pessoaId: 1,
+      descricao: "Serviço",
+      dataCompetencia: "2026-03-01",
+      valorOriginal: 80,
+      origemTipo: origemFalha.origemTipo,
+      origemId: origemFalha.origemId,
+      origemItemChave: origemFalha.origemItemChave,
+      parcelas: [
+        { numero: 1, vencimento: "2026-03-10", valorOriginal: 40 },
+        { numero: 2, vencimento: "2026-04-10", valorOriginal: 40 },
+      ],
+    })).rejects.toThrow("falha parcela");
+    expect(falha.titulos).toHaveLength(0);
+    expect(falha.parcelas).toHaveLength(0);
+  });
+});
+
+describe("financeiroNucleo — relatórios 4.6", () => {
+  it("isola por usuário, recusa fazenda alheia e não conta transferência no resultado", async () => {
+    const store = criarStore();
+    const svc = createFinanceiroNucleoService(store);
+    const caixa = await svc.criarContaFinanceira(10, {
+      nome: "Caixa", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const banco = await svc.criarContaFinanceira(10, {
+      nome: "Banco", tipo: "caixa", saldoAbertura: 0, dataSaldoAbertura: "2026-01-01",
+    });
+    const rec = await svc.criarTitulo(10, {
+      tipo: "receber", pessoaId: 1, descricao: "Aluguel", dataCompetencia: "2026-03-01",
+      valorOriginal: 80, fazendaOrigemId: 1,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
+    });
+    const recDet = await svc.detalheTitulo(10, rec.id);
+    await svc.criarRecebimento(10, {
+      contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rel-rec",
+      alocacoes: [{ parcelaId: recDet.parcelas[0]!.id, principalLiquidado: 80 }],
+    });
+    await svc.criarTransferencia(10, {
+      contaOrigemId: caixa.id, contaDestinoId: banco.id, dataTransferencia: "2026-03-11",
+      valor: 30, idempotencyKey: "rel-tr",
+    });
+    const outro = await svc.criarTitulo(99, {
+      tipo: "receber", pessoaId: 3, descricao: "Alheio", dataCompetencia: "2026-03-01", valorOriginal: 500,
+      parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 500 }],
+    });
+    const rel = await svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31" });
+    expect(rel.visao.recebimentosPeriodo).toBe(80);
+    expect(rel.visao.resultadoRealizado).toBe(80);
+    expect(rel.fluxoRealizado.linhas.some(l => l.tipo === "transferencia")).toBe(true);
+    expect(rel.receber.linhas.some(l => l.tituloId === outro.id)).toBe(false);
+    const isolado = await svc.relatorioFinanceiro(99, { de: "2026-01-01", ate: "2026-12-31" });
+    expect(isolado.visao.recebimentosPeriodo).toBe(0);
+    expect(isolado.receber.linhas.some(l => l.tituloId === rec.id)).toBe(false);
+    await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31", fazendaId: 99 }))
+      .rejects.toMatchObject({ message: MSG_FIN_FAZENDA_INVALIDA });
+  });
+});
+
+describe("financeiroNucleo — proteção 4.7A", () => {
+  it("MySQL lê saldo com FOR UPDATE e transação READ COMMITTED", async () => {
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync(new URL("./financeiroNucleo.ts", import.meta.url), "utf8");
+    expect(fonte).toContain("listMovimentosConta(userId, conta.id, true)");
+    expect(fonte).toContain("isolationLevel: \"read committed\"");
+    expect(fonte).toMatch(/FROM financeiro_movimentos[\s\S]*FOR UPDATE/);
   });
 });

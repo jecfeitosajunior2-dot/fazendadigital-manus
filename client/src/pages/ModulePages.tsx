@@ -3112,7 +3112,7 @@ export function SalesPage() {
 
 function FinancialTabs({ active }: { active: string }) {
   const tabs = ["Contas", "Importar Extrato", "Movimentações", "Rateio de Custo", "Listagem Rateio", "Receita x Despesa"];
-  const paths = ["/financeiro/contas", "/financeiro/movimentacao", "/financeiro/movimentacao", "/financeiro/categorias", "/financeiro/categorias", "/financeiro/pessoas"];
+  const paths = ["/financeiro/v2/contas", "/financeiro/visao-geral", "/financeiro/visao-geral", "/financeiro/visao-geral", "/financeiro/visao-geral", "/financeiro/pessoas"];
   return (
     <div className="flex border-b border-gray-200 mb-4 overflow-x-auto">
       {tabs.map((tab, i) => (
@@ -3658,7 +3658,7 @@ export function QuickAccessPage() {
           { label: "Cadastrar Insumo", icon: "fd_supply_bag", path: "/insumos/cadastro" },
           { label: "Cadastrar Máquina", icon: "fd_tractor", path: "/maquinas/visao-geral" },
           { label: "Lançar Manejo", icon: "fd_management_checklist", path: "/manejo/registros/cadastro" },
-          { label: "Lançar Financeiro", icon: "fd_finance_cycle", path: "/financeiro/movimentacao" },
+          { label: "Lançar Financeiro", icon: "fd_finance_cycle", path: "/financeiro/visao-geral" },
         ].map((item, i) => (
           <button
             key={i}

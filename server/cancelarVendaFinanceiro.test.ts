@@ -14,6 +14,7 @@ import {
   MSG_VENDA_CANCELAR_COM_RECEBIMENTO,
   MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO,
   MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS,
+  vendaTemRecebimentoEfetivo,
   type CancelarVendaFinanceiroStore,
   type CancelarVendaFinanceiroTx,
 } from "./cancelarVendaFinanceiro";
@@ -375,7 +376,7 @@ describe("cancelarVendaFinanceiro", () => {
 
   it("bloqueia venda com chave ven- sem título e não usa fallback comercial", async () => {
     const store = criarStore();
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     await expect(createCancelarVendaFinanceiroService(store).cancelar(10, {
       ...input,
       vendaId: 4,
@@ -386,8 +387,8 @@ describe("cancelarVendaFinanceiro", () => {
     expect(store.state.titulos).toHaveLength(1);
   });
 
-  it("com flag desligada ainda cancela pelo caminho integrado quando há título V2", async () => {
-    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(false);
+  it("ainda cancela pelo caminho integrado quando há título V2", async () => {
+    expect(INTEGRACAO_CONFIRMACAO_VENDA_ATIVA).toBe(true);
     const store = criarStore();
     const r = await createCancelarVendaFinanceiroService(store).cancelar(10, input);
     expect(r.vendaAntigaSemTitulo).toBe(false);
@@ -498,6 +499,27 @@ describe("decidirCaminhoCancelamentoVenda", () => {
     })).toEqual({ caminho: "integridade", motivo: MSG_VENDA_CANCELAR_TITULOS_DUPLICADOS });
   });
 
+  it("recebimento efetivo considera parcial, integral e estorno", async () => {
+    const store = criarStore();
+    const semRecebimento = await store.transaction(tx => vendaTemRecebimentoEfetivo(tx.fin, 10, 1));
+    expect(semRecebimento).toBe(false);
+
+    await store.receber(10, 50, 5000);
+    const parcial = await store.transaction(tx => vendaTemRecebimentoEfetivo(tx.fin, 10, 1));
+    expect(parcial).toBe(true);
+
+    await store.receber(10, 50, 6000);
+    const integral = await store.transaction(tx => vendaTemRecebimentoEfetivo(tx.fin, 10, 1));
+    expect(integral).toBe(true);
+
+    await store.receber(10, 50, 11000, "estorno_recebimento");
+    const estornado = await store.transaction(tx => vendaTemRecebimentoEfetivo(tx.fin, 10, 1));
+    expect(estornado).toBe(false);
+
+    const comercial = await store.transaction(tx => vendaTemRecebimentoEfetivo(tx.fin, 10, 2));
+    expect(comercial).toBe(false);
+  });
+
   it("histórico sem título e sem chave ven- permanece comercial", () => {
     expect(decidirCaminhoCancelamentoVenda({
       idempotencyKey: null,
@@ -521,7 +543,9 @@ describe("cancelarVendaFinanceiro — isolamento da aplicação", () => {
     expect(detalhe).not.toContain("cancelarVendaFinanceiro");
     expect(detalhe).toContain("trpc.vendas.cancelar");
     expect(pendencia).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA");
-    expect(readFileSync(join(raiz, "../shared/vendaIntegracao.ts"), "utf8")).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = false");
+    expect(readFileSync(join(raiz, "../shared/vendaIntegracao.ts"), "utf8")).toContain("INTEGRACAO_CONFIRMACAO_VENDA_ATIVA = true");
+    expect(router).toContain("vendaTemRecebimentoEfetivo");
+    expect(router).toContain("temRecebimentoEfetivo");
     const svc = readFileSync(join(raiz, "cancelarVendaFinanceiro.ts"), "utf8");
     const mysql = readFileSync(join(raiz, "cancelarVendaFinanceiroMysql.ts"), "utf8");
     expect(svc).toContain("decidirCaminhoCancelamentoVenda");

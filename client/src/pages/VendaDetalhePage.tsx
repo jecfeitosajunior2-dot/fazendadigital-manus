@@ -26,6 +26,11 @@ import {
   parseRendimentoCarcaca,
 } from "@shared/vendaComercial";
 import { trpc } from "@/lib/trpc";
+import {
+  MSG_VENDA_CANCELAR_COM_RECEBIMENTO_UI,
+  deveExibirAvisoCancelamentoRecebimento,
+  podeExibirCancelarVenda,
+} from "@/lib/vendaDetalheUx";
 
 function money(value: unknown): string {
   const n = Number(value);
@@ -68,7 +73,8 @@ export default function VendaDetalhePage() {
   const rendimentoParse = parseRendimentoCarcaca(data?.rendimentoCarcaca);
   const rendimento = rendimentoParse.ok ? rendimentoParse.valor : null;
   const temRendimento = rendimento != null;
-  const podeCancelar = data?.status === "concluido" && data.temItens;
+  const podeCancelar = podeExibirCancelarVenda(data ?? {});
+  const avisoRecebimento = deveExibirAvisoCancelamentoRecebimento(data ?? {});
   const exportacao = useMemo(() => {
     if (!data) return null;
     return {
@@ -163,6 +169,9 @@ export default function VendaDetalhePage() {
                 ) : null}
               </div>
             </div>
+            {avisoRecebimento ? (
+              <p className="mb-3 text-[11px] text-gray-500">{MSG_VENDA_CANCELAR_COM_RECEBIMENTO_UI}</p>
+            ) : null}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[12px]">
               <div>
                 <p className="text-[10px] uppercase text-gray-400">Data</p>

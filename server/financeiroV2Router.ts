@@ -1,7 +1,12 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { financeiroNucleoService } from "./financeiroNucleo";
-import { FINANCEIRO_CONTA_TIPOS, FINANCEIRO_TITULO_TIPOS } from "../shared/financeiroNucleo";
+import {
+  FINANCEIRO_CONTA_TIPOS,
+  FINANCEIRO_TITULO_TIPOS,
+  origemTituloManualIdempotente,
+} from "../shared/financeiroNucleo";
 
 const alocacaoInput = z.object({
   parcelaId: z.number().int().positive(),
@@ -42,6 +47,21 @@ export const financeiroV2Router = router({
     .input(z.object({ id: z.number().int().positive(), motivo: z.string().max(255).optional() }))
     .mutation(({ ctx, input }) => financeiroNucleoService.inativarConta(ctx.user.id, input.id, input.motivo)),
 
+  contasUpdate: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      nome: z.string().min(1).max(120),
+      tipo: z.enum(FINANCEIRO_CONTA_TIPOS),
+      banco: z.string().max(100).optional().nullable(),
+      agencia: z.string().max(20).optional().nullable(),
+      numeroConta: z.string().max(30).optional().nullable(),
+    }))
+    .mutation(({ ctx, input }) => financeiroNucleoService.atualizarConta(ctx.user.id, input.id, input)),
+
+  contasReativar: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(({ ctx, input }) => financeiroNucleoService.reativarConta(ctx.user.id, input.id)),
+
   titulosList: protectedProcedure.query(({ ctx }) =>
     financeiroNucleoService.listarTitulos(ctx.user.id),
   ),
@@ -67,11 +87,19 @@ export const financeiroV2Router = router({
       observacoes: z.string().optional().nullable(),
       fazendaOrigemId: z.number().int().positive().optional().nullable(),
       parcelas: z.array(parcelaInput).optional(),
+      idempotencyKey: z.string().min(1).max(72),
     }))
-    .mutation(({ ctx, input }) => financeiroNucleoService.criarTitulo(ctx.user.id, {
-      ...input,
-      origemTipo: "manual",
-    })),
+    .mutation(({ ctx, input }) => {
+      const origem = origemTituloManualIdempotente(input.tipo, input.idempotencyKey);
+      if (!origem.ok) throw new TRPCError({ code: "BAD_REQUEST", message: origem.message });
+      const { idempotencyKey: _chave, ...dados } = input;
+      return financeiroNucleoService.criarTitulo(ctx.user.id, {
+        ...dados,
+        origemTipo: origem.origemTipo,
+        origemId: origem.origemId,
+        origemItemChave: origem.origemItemChave,
+      });
+    }),
 
   titulosDefinirParcelas: protectedProcedure
     .input(z.object({
@@ -163,6 +191,15 @@ export const financeiroV2Router = router({
     .query(({ ctx, input }) =>
       financeiroNucleoService.extrato(ctx.user.id, input.contaId, input.de, input.ate),
     ),
+
+  relatorioFinanceiro: protectedProcedure
+    .input(z.object({
+      de: z.string().min(8),
+      ate: z.string().min(8),
+      fazendaId: z.number().int().positive().optional().nullable(),
+      contaId: z.number().int().positive().optional().nullable(),
+    }))
+    .query(({ ctx, input }) => financeiroNucleoService.relatorioFinanceiro(ctx.user.id, input)),
 
   categoriasList: protectedProcedure.query(({ ctx }) =>
     financeiroNucleoService.listarCategorias(ctx.user.id),

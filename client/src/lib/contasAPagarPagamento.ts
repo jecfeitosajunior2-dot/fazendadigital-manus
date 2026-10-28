@@ -14,6 +14,7 @@ import {
   MSG_FIN_IDEMPOTENCY,
   MSG_FIN_OVERPAYMENT,
   MSG_FIN_PARCELA_NAO_ENCONTRADA,
+  MSG_FIN_SALDO_INSUFICIENTE,
   MSG_FIN_TITULO_CANCELADO,
   MSG_FIN_VALOR_POSITIVO,
   movimentoAnteriorAAbertura,
@@ -285,6 +286,14 @@ export function validarPagamentoParcela(input: {
     if (!conta) erros.contaId = MSG_FIN_CONTA_NAO_ENCONTRADA;
     else if (typeof input.userId === "number" && conta.userId !== input.userId) erros.contaId = MSG_FIN_ESCOPO;
     else if (!conta.ativa) erros.contaId = MSG_FIN_CONTA_INATIVA;
+    else if (
+      valor.ok
+      && conta.saldoAtual != null
+      && Number.isFinite(toCentavos(conta.saldoAtual))
+      && toCentavos(conta.saldoAtual) < toCentavos(valor.valor)
+    ) {
+      erros.valor = MSG_FIN_SALDO_INSUFICIENTE;
+    }
   }
 
   const data = input.rascunho.dataLiquidacao.trim();

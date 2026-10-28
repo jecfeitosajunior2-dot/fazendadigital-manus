@@ -176,6 +176,52 @@ function mysqlErrno(error: unknown): number | null {
   return null;
 }
 
+function mysqlSqlState(error: unknown): string | null {
+  for (const item of cadeiasErro(error)) {
+    if (typeof item !== "object" || item == null) continue;
+    const state = (item as { sqlState?: unknown }).sqlState;
+    if (typeof state === "string" && state.trim()) return state.trim();
+  }
+  return null;
+}
+
+function codigoErroInterno(error: unknown): string | undefined {
+  for (const item of cadeiasErro(error)) {
+    if (typeof item !== "object" || item == null) continue;
+    const code = (item as { code?: unknown }).code;
+    if (typeof code === "string" && code.trim()) return code.trim();
+  }
+  return error instanceof Error ? error.name : undefined;
+}
+
+function etapaDoErro(error: unknown): string | undefined {
+  for (const item of cadeiasErro(error)) {
+    if (typeof item !== "object" || item == null) continue;
+    const etapa = (item as { etapa?: unknown }).etapa;
+    if (typeof etapa === "string" && etapa.trim()) return etapa.trim();
+  }
+  return undefined;
+}
+
+function relancarErroInternoConfirmacao(error: unknown, chave: string): never {
+  const detalhe: Record<string, unknown> = {
+    chave,
+    code: codigoErroInterno(error),
+    message: error instanceof Error ? error.message : String(error),
+  };
+  const errno = mysqlErrno(error);
+  if (errno != null) detalhe.errno = errno;
+  const sqlState = mysqlSqlState(error);
+  if (sqlState) detalhe.sqlState = sqlState;
+  const etapa = etapaDoErro(error);
+  if (etapa) detalhe.etapa = etapa;
+  console.error("[venda.confirmarIntegrada]", detalhe);
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Não foi possível confirmar a venda.",
+  });
+}
+
 function textoErro(error: unknown): string {
   return cadeiasErro(error)
     .map(item => String((item as { message?: string })?.message ?? item ?? ""))
@@ -518,10 +564,10 @@ export async function confirmarVendaFinanceiroAtomico(
         continue;
       }
       if (isDuplicateBaixaAnimal(error)) toTrpc(MSG_VENDA_ANIMAL_INDISPONIVEL);
-      throw error;
+      relancarErroInternoConfirmacao(error, chave.key);
     }
   }
-  throw ultimo;
+  relancarErroInternoConfirmacao(ultimo, chave.key);
 }
 
 export function createConfirmarVendaFinanceiroService(store: ConfirmarVendaFinanceiroStore) {

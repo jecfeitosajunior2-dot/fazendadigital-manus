@@ -1,9 +1,8 @@
 import { trpc } from "@/lib/trpc";
-import { clearLocalAuthSession, getLocalAuthUser } from "@/lib/localAuth";
+import { clearLocalAuthSession } from "@/lib/localAuth";
 
 export function useAuth() {
-  const localUser = getLocalAuthUser();
-  const { data: user, isLoading: loading, error } = trpc.auth.me.useQuery();
+  const { data: user, isLoading: loading, error } = trpc.auth.me.useQuery(undefined, { retry: false });
   const logoutMutation = trpc.auth.logout.useMutation();
 
   const logout = async () => {
@@ -17,10 +16,10 @@ export function useAuth() {
   };
 
   return {
-    user: user ?? localUser ?? null,
-    loading: localUser ? false : loading,
-    error: localUser ? null : error,
-    isAuthenticated: !!user || !!localUser,
+    user: user ?? null,
+    loading,
+    error,
+    isAuthenticated: !!user,
     logout,
   };
 }

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { getLocalAuthUser } from "@/lib/localAuth";
+import { invalidarConsultasAposSessaoHttp } from "@/lib/sessaoHttpAuth";
 import AppFooter from "./AppFooter";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -20,13 +21,17 @@ export function AuthGuard({ children }: AppLayoutProps) {
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });
+  const previewFalhou = useRef(false);
   const ensurePreviewSession = trpc.auth.ensureLocalPreviewSession.useMutation({
     onSuccess: async result => {
-      if (!result.success) return;
-      await Promise.all([
-        utils.auth.me.invalidate(),
-        utils.fazendas.list.invalidate(),
-      ]);
+      if (!result.success) {
+        previewFalhou.current = true;
+        return;
+      }
+      await invalidarConsultasAposSessaoHttp(utils);
+    },
+    onError: () => {
+      previewFalhou.current = true;
     },
   });
 
@@ -37,12 +42,16 @@ export function AuthGuard({ children }: AppLayoutProps) {
   }, [isLoading, user, localUser, ensurePreviewSession]);
 
   useEffect(() => {
-    if (!isLoading && !user && !localUser) {
-      setLocation("/entrar");
+    if (isLoading || user) return;
+    if (localUser && !previewFalhou.current && (ensurePreviewSession.isPending || !triedPreviewSession.current)) {
+      return;
     }
-  }, [user, localUser, isLoading, setLocation]);
+    if (!user) setLocation("/entrar");
+  }, [user, localUser, isLoading, ensurePreviewSession.isPending, setLocation]);
 
-  if (isLoading && !user && !localUser) {
+  const aguardandoSessao = isLoading || (!user && localUser && !previewFalhou.current);
+
+  if (aguardandoSessao) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
         <div className="text-center">
@@ -53,7 +62,7 @@ export function AuthGuard({ children }: AppLayoutProps) {
     );
   }
 
-  if (!user && !localUser) return null;
+  if (!user) return null;
 
   return <>{children}</>;
 }

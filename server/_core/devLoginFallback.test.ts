@@ -32,4 +32,10 @@ describe("login local de preview", () => {
     const res = {} as never;
     await expect(tryDevPreviewSession("outro@fazenda.local", res)).resolves.toBeNull();
   });
+
+  it("religa preview em localhost mesmo com NODE_ENV production", async () => {
+    const res = { req: { hostname: "localhost" } } as never;
+    const session = await tryDevPreviewSession("admin@fazendadigital.local", res, "localhost");
+    expect(session?.success).toBe(true);
+  });
 });

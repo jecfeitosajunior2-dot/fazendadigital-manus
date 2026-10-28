@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -8,6 +8,7 @@ import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter, { type TablePageSize } from "@/components/TablePaginationFooter";
 import { FD_PRIMARY, FormInput, FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { formatDateBR, formatDateInputLocal } from "@/lib/date-utils";
@@ -36,6 +37,7 @@ import {
   periodoMesAnterior,
   periodoMesSeguinte,
   rotuloMesAno,
+  rotuloOrigemTitulo,
   rotuloParcela,
   rotuloSituacaoLinhaReceber,
   textoListagemOrigemVendaAnimais,
@@ -44,14 +46,32 @@ import {
   type LinhaContasAReceber,
   detalhesDoUsuarioAutenticado,
 } from "@/lib/contasAReceberListagem";
+import {
+  MSG_RECEITA_CADASTRADA,
+  MSG_RECEITA_OCUPADA,
+  MSG_RECEITA_SEM_CAIXA,
+  aplicarModalidadeReceita,
+  aplicarQuantidadeReceita,
+  caminhoNovaPessoaReceita,
+  mensagemErroReceitaManual,
+  novaChaveIdempotenciaTituloManual,
+  pagadoresAtivosReceita,
+  rascunhoReceitaVazio,
+  redistribuirParcelasReceita,
+  validarReceitaManual,
+  type ErrosReceitaManual,
+  type ModalidadeReceitaManual,
+  type RascunhoReceitaManual,
+} from "@/lib/contasAReceberReceita";
 
 const FILTER_EMPTY = "__all__";
 const listControlClass =
   "h-9 px-3 text-[12px] border border-gray-200 rounded-lg bg-white text-gray-700 shrink-0 focus:outline-none focus:border-[#4ECDC4]";
 
 const TABLE_COLUMNS = [
-  { key: "cliente", label: "Cliente", align: "left" as const },
+  { key: "cliente", label: "Pagador", align: "left" as const },
   { key: "descricao", label: "Descrição", align: "left" as const },
+  { key: "origem", label: "Origem", align: "left" as const },
   { key: "fazenda", label: "Fazenda", align: "left" as const },
   { key: "parcela", label: "Parcela", align: "center" as const },
   { key: "vencimento", label: "Vencimento", align: "center" as const },
@@ -99,12 +119,30 @@ export default function ContasAReceberPage() {
   const [detalhes, setDetalhes] = useState<TituloV2DetalheOficial[] | null>(null);
   const [detalheErro, setDetalheErro] = useState<string | null>(null);
   const [detalheLoading, setDetalheLoading] = useState(false);
+  const [receitaAberta, setReceitaAberta] = useState(false);
+  const [receita, setReceita] = useState<RascunhoReceitaManual>(() => rascunhoReceitaVazio(hojeISO));
+  const [errosReceita, setErrosReceita] = useState<ErrosReceitaManual>({});
+  const chaveReceitaRef = useRef(novaChaveIdempotenciaTituloManual());
   const cargaSeq = useRef(0);
 
   const listQuery = trpc.financeiroV2.titulosList.useQuery();
   const contasV2 = trpc.financeiroV2.contasList.useQuery();
   const fazendasQuery = trpc.fazendas.list.useQuery();
   const fazendas = fazendasQuery.data ?? [];
+  const pessoasQuery = trpc.pessoas.list.useQuery();
+  const pagadores = pagadoresAtivosReceita(pessoasQuery.data ?? []);
+  const criarReceita = trpc.financeiroV2.titulosCreateManual.useMutation({
+    onSuccess: async resultado => {
+      toast.success(MSG_RECEITA_CADASTRADA);
+      chaveReceitaRef.current = novaChaveIdempotenciaTituloManual();
+      setReceitaAberta(false);
+      setReceita(rascunhoReceitaVazio(hojeISO));
+      setErrosReceita({});
+      await utils.financeiroV2.titulosList.invalidate();
+      if (resultado.id) setLocation(contasAReceberDetalhePath(resultado.id, filtros));
+    },
+    onError: erro => toast.error(mensagemErroReceitaManual(erro.data?.code, erro.message)),
+  });
 
   const carregarDetalhes = useCallback(async (titulos: TituloV2ListaBruta[]) => {
     const ordem = ++cargaSeq.current;
@@ -173,6 +211,20 @@ export default function ContasAReceberPage() {
     setLocation(contasAReceberDetalhePath(tituloId, filtros));
   };
 
+  const enviarReceita = () => {
+    if (criarReceita.isPending) {
+      toast.error(MSG_RECEITA_OCUPADA);
+      return;
+    }
+    const validado = validarReceitaManual({ rascunho: receita, pagadores, fazendas });
+    if (!validado.ok) {
+      setErrosReceita(validado.erros);
+      return;
+    }
+    setErrosReceita({});
+    criarReceita.mutate({ ...validado.payload, idempotencyKey: chaveReceitaRef.current });
+  };
+
   const userId = user?.id;
   const linhas = useMemo(() => {
     if (!detalhes) return [];
@@ -229,10 +281,24 @@ export default function ContasAReceberPage() {
                 Contas a Receber
               </h1>
               <p className="text-[12px] text-gray-500 mt-0.5">
-                Somente consulta. O recebimento é registrado no detalhe do título.
+                Receitas do Financeiro. O recebimento é registrado no detalhe do título.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  chaveReceitaRef.current = novaChaveIdempotenciaTituloManual();
+                  setReceita(rascunhoReceitaVazio(hojeISO));
+                  setErrosReceita({});
+                  setReceitaAberta(true);
+                }}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold text-white"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                <span className="material-icons text-[16px]">add</span>
+                Nova receita
+              </button>
               <button
                 type="button"
                 onClick={() => setLocation(FINANCEIRO_CONTAS_V2_PATH)}
@@ -420,7 +486,7 @@ export default function ContasAReceberPage() {
                         }
                         fields={[
                           { label: "Fazenda", value: nomeFazendaDaLinha(linha.fazendaOrigemId, fazendas) },
-                          ...(origemVenda ? [{ label: "Origem", value: origemVenda }] : []),
+                          { label: "Origem", value: origemVenda || rotuloOrigemTitulo(linha.origemTipo) },
                           { label: "Vencimento", value: formatarVencimentoLinha(linha.vencimento) },
                           { label: "Valor original", value: formatarValorOficial(linha.valor), emphasis: true },
                           { label: "Valor recebido", value: formatarSaldoLinha(linha.principalLiquidado) },
@@ -504,9 +570,9 @@ export default function ContasAReceberPage() {
                             </td>
                             <td className="px-3 py-2.5 text-gray-600">
                               <div className="truncate">{linha.descricao || "—"}</div>
-                              {origemVenda ? (
-                                <div className="text-[10px] text-gray-400 truncate">{origemVenda}</div>
-                              ) : null}
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-600 truncate">
+                              {origemVenda || rotuloOrigemTitulo(linha.origemTipo)}
                             </td>
                             <td className="px-3 py-2.5 text-gray-600 truncate">
                               {nomeFazendaDaLinha(linha.fazendaOrigemId, fazendas)}
@@ -540,7 +606,207 @@ export default function ContasAReceberPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={receitaAberta} onOpenChange={aberto => { if (!aberto && !criarReceita.isPending) setReceitaAberta(false); }}>
+        <DialogContent className="max-w-lg bg-white p-0 gap-0 max-h-[90vh] overflow-y-auto">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <DialogTitle className="text-[16px] font-semibold text-gray-900">Nova receita</DialogTitle>
+            <DialogDescription className="text-[12px] text-gray-500 mt-1">
+              {MSG_RECEITA_SEM_CAIXA}
+            </DialogDescription>
+          </div>
+          <form
+            className="px-4 py-4 space-y-3"
+            onSubmit={evento => {
+              evento.preventDefault();
+              enviarReceita();
+            }}
+          >
+            <Campo label="Pagador" erro={errosReceita.pessoaId}>
+              <FormSelect
+                variant="light"
+                modal={false}
+                required
+                value={receita.pessoaId}
+                invalid={Boolean(errosReceita.pessoaId)}
+                placeholder="Selecione"
+                onChange={pessoaId => setReceita(atual => ({ ...atual, pessoaId }))}
+              >
+                {pagadores.map(pessoa => (
+                  <SelectItem key={pessoa.id} value={String(pessoa.id)}>{pessoa.nome}</SelectItem>
+                ))}
+              </FormSelect>
+            </Campo>
+            <button
+              type="button"
+              className="text-[12px] font-semibold underline underline-offset-2"
+              style={{ color: FD_PRIMARY }}
+              onClick={() => setLocation(caminhoNovaPessoaReceita())}
+            >
+              Cadastrar pessoa
+            </button>
+            <Campo label="Fazenda (opcional)" erro={errosReceita.fazendaOrigemId}>
+              <FormSelect
+                variant="light"
+                modal={false}
+                value={receita.fazendaOrigemId}
+                invalid={Boolean(errosReceita.fazendaOrigemId)}
+                placeholder="Sem fazenda"
+                onChange={fazendaOrigemId => setReceita(atual => ({ ...atual, fazendaOrigemId }))}
+              >
+                {fazendas.map(fazenda => (
+                  <SelectItem key={fazenda.id} value={String(fazenda.id)}>{fazenda.nome}</SelectItem>
+                ))}
+              </FormSelect>
+            </Campo>
+            <Campo label="Descrição" erro={errosReceita.descricao}>
+              <FormInput
+                variant="light"
+                required
+                value={receita.descricao}
+                invalid={Boolean(errosReceita.descricao)}
+                onChange={descricao => setReceita(atual => ({ ...atual, descricao }))}
+              />
+            </Campo>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Campo label="Valor total" erro={errosReceita.valorOriginal}>
+                <FormInput
+                  variant="light"
+                  required
+                  inputMode="decimal"
+                  value={receita.valorOriginal}
+                  invalid={Boolean(errosReceita.valorOriginal)}
+                  onChange={valorOriginal => setReceita(atual => redistribuirParcelasReceita({ ...atual, valorOriginal }))}
+                />
+              </Campo>
+              <Campo label="Data de emissão" erro={errosReceita.dataCompetencia}>
+                <FormInput
+                  variant="light"
+                  required
+                  type="date"
+                  value={receita.dataCompetencia}
+                  invalid={Boolean(errosReceita.dataCompetencia)}
+                  onChange={dataCompetencia => setReceita(atual => ({ ...atual, dataCompetencia }))}
+                />
+              </Campo>
+            </div>
+            <Campo label="Condição de recebimento">
+              <FormSelect
+                variant="light"
+                modal={false}
+                value={receita.modalidade}
+                onChange={modalidade => setReceita(atual => aplicarModalidadeReceita(atual, modalidade as ModalidadeReceitaManual))}
+              >
+                <SelectItem value="unico">Recebimento único</SelectItem>
+                <SelectItem value="parcelado">Parcelado</SelectItem>
+                <SelectItem value="a_definir">Definir vencimentos depois</SelectItem>
+              </FormSelect>
+            </Campo>
+            {receita.modalidade === "parcelado" ? (
+              <Campo label="Quantidade de parcelas" erro={errosReceita.quantidade}>
+                <FormInput
+                  variant="light"
+                  inputMode="numeric"
+                  value={String(receita.quantidade || "")}
+                  invalid={Boolean(errosReceita.quantidade)}
+                  onChange={quantidade => setReceita(atual => aplicarQuantidadeReceita(atual, Number(quantidade) || 2))}
+                />
+              </Campo>
+            ) : null}
+            {receita.modalidade !== "a_definir" ? receita.linhas.map(linha => (
+              <div key={linha.numero} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Campo
+                  label={receita.modalidade === "unico" ? "Vencimento" : `Parcela ${linha.numero} — valor`}
+                  erro={receita.modalidade === "unico"
+                    ? errosReceita.linhas?.[linha.numero]?.vencimento
+                    : errosReceita.linhas?.[linha.numero]?.valor}
+                >
+                  {receita.modalidade === "unico" ? (
+                    <FormInput
+                      variant="light"
+                      type="date"
+                      value={linha.vencimento}
+                      invalid={Boolean(errosReceita.linhas?.[linha.numero]?.vencimento)}
+                      onChange={vencimento => setReceita(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, vencimento } : item),
+                      }))}
+                    />
+                  ) : (
+                    <FormInput
+                      variant="light"
+                      inputMode="decimal"
+                      value={linha.valor}
+                      invalid={Boolean(errosReceita.linhas?.[linha.numero]?.valor)}
+                      onChange={valor => setReceita(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, valor } : item),
+                      }))}
+                    />
+                  )}
+                </Campo>
+                {receita.modalidade === "unico" ? (
+                  <Campo label="Valor da parcela" erro={errosReceita.linhas?.[linha.numero]?.valor}>
+                    <FormInput variant="light" readOnly value={linha.valor} />
+                  </Campo>
+                ) : (
+                  <Campo label={`Vencimento ${linha.numero}`} erro={errosReceita.linhas?.[linha.numero]?.vencimento}>
+                    <FormInput
+                      variant="light"
+                      type="date"
+                      value={linha.vencimento}
+                      invalid={Boolean(errosReceita.linhas?.[linha.numero]?.vencimento)}
+                      onChange={vencimento => setReceita(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, vencimento } : item),
+                      }))}
+                    />
+                  </Campo>
+                )}
+              </div>
+            )) : (
+              <p className="text-[12px] text-gray-500">O vencimento pode ser definido depois, no detalhe. Enquanto isso, a receita não aceita recebimento.</p>
+            )}
+            <Campo label="Observações (opcional)">
+              <FormInput
+                variant="light"
+                value={receita.observacoes}
+                onChange={observacoes => setReceita(atual => ({ ...atual, observacoes }))}
+              />
+            </Campo>
+            {errosReceita.geral ? <p className="text-[12px] text-red-600">{errosReceita.geral}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-700"
+                disabled={criarReceita.isPending}
+                onClick={() => setReceitaAberta(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={criarReceita.isPending}
+                className="h-9 px-3 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {criarReceita.isPending ? "Salvando..." : "Cadastrar receita"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
+  );
+}
+
+function Campo({ label, erro, children }: { label: string; erro?: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">{label}</span>
+      {children}
+      {erro ? <span className="block text-[11px] text-red-600 mt-1">{erro}</span> : null}
+    </label>
   );
 }
 

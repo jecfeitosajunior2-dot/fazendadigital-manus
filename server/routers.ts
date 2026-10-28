@@ -6,7 +6,7 @@ import { db } from "./db";
 import {
   users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
   maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
-  benfeitorias, estoque, estoqueMovimentacoes, estoqueOperacoes, contasFinanceiras, movimentacoes,
+  benfeitorias, estoque, estoqueMovimentacoes, estoqueOperacoes,
   compras, compraGrupos, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas
 } from "../drizzle/schema";
@@ -17,6 +17,7 @@ import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
 import { toBenfeitoriaRow, toBenfeitoriaUpdateRow } from "./benfeitoriasDb";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
+import { MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA } from "../shared/financeiroLegadoBloqueio";
 import {
   importarCoordenadasPastos,
   importarCoordenadasPastosLocal,
@@ -193,8 +194,9 @@ import { cancelarCompraComercial } from "./cancelarCompra";
 import { excluirCompraLegada } from "./excluirCompra";
 import { listarComprasDoUsuario } from "./comprasListagem";
 import { comprasListInputSchema } from "./comprasListFiltro";
-import { createCancelarVendaFinanceiroService } from "./cancelarVendaFinanceiro";
+import { createCancelarVendaFinanceiroService, vendaTemRecebimentoEfetivo } from "./cancelarVendaFinanceiro";
 import { createCancelarVendaFinanceiroMysqlStore } from "./cancelarVendaFinanceiroMysql";
+import { financeiroNucleoMysqlStore } from "./financeiroNucleo";
 import { createConfirmarVendaFinanceiroMysqlStore } from "./confirmarVendaFinanceiroMysql";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
 import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
@@ -383,7 +385,7 @@ const authRouter = router({
         or(eq(users.openId, input.username), eq(users.email, input.username))
       ).limit(1);
       if (!user) {
-        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res);
+        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res, ctx.req.hostname);
         if (fallback) return fallback;
         throw new Error("Usuário não encontrado");
       }
@@ -400,7 +402,7 @@ const authRouter = router({
       return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res);
+        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res, ctx.req.hostname);
         if (!fallback) {
           throw new Error("Banco de dados indisponível. Tente novamente em instantes.");
         }
@@ -416,7 +418,7 @@ const authRouter = router({
   ensureLocalPreviewSession: publicProcedure
     .input(z.object({ email: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const session = await tryDevPreviewSession(input.email, ctx.res);
+      const session = await tryDevPreviewSession(input.email, ctx.res, ctx.req.hostname);
       if (!session) return { success: false as const };
       return session;
     }),
@@ -10032,8 +10034,11 @@ const estoqueRouter = router({
 
 // ─── FINANCEIRO ROUTER ────────────────────────────────────────────────────────
 const financeiroRouter = router({
-  listContas: protectedProcedure.query(async () => {
-    return db.select().from(contasFinanceiras).orderBy(desc(contasFinanceiras.createdAt));
+  listContas: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
+    });
   }),
 
   createConta: protectedProcedure
@@ -10043,19 +10048,18 @@ const financeiroRouter = router({
       banco: z.string().optional(),
       saldoInicial: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const result = await db.insert(contasFinanceiras).values({
-        nome: input.nome,
-        tipo: input.tipo,
-        banco: input.banco,
-        saldoInicial: input.saldoInicial || "0",
-        saldoAtual: input.saldoInicial || "0",
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
       });
-      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
-  listMovimentacoes: protectedProcedure.query(async () => {
-    return db.select().from(movimentacoes).orderBy(desc(movimentacoes.createdAt));
+  listMovimentacoes: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
+    });
   }),
 
   createMovimentacao: protectedProcedure
@@ -10068,32 +10072,27 @@ const financeiroRouter = router({
       status: z.enum(["pendente", "confirmado", "cancelado"]).optional(),
       observacoes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
-      const { data, ...rest } = input;
-      const result = await db.insert(movimentacoes).values({
-        ...rest,
-        data: new Date(data),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
       });
-      return { success: true, id: (result as any)[0]?.insertId };
     }),
 
   deleteMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await db.delete(movimentacoes).where(eq(movimentacoes.id, input.id));
-      return { success: true };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
+      });
     }),
 
-  summary: protectedProcedure.query(async ({ ctx }) => {
-    const [receitas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "receita"));
-    const [despesas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "despesa"));
-    const totalReceitas = parseFloat(receitas?.total || "0");
-    const totalDespesas = parseFloat(despesas?.total || "0");
-    return {
-      totalReceitas,
-      totalDespesas,
-      saldoTotal: totalReceitas - totalDespesas,
-    };
+  summary: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA,
+    });
   }),
 });
 
@@ -10105,17 +10104,14 @@ const dashboardRouter = router({
     const [totalMaquinasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(maquinas).where(eq(maquinas.userId, ctx.user.id));
     const [totalBenfeitoriasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id));
 
-    const [receitas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "receita"));
-    const [despesas] = await db.select({ total: sql<string>`COALESCE(SUM(valor), 0)` }).from(movimentacoes).where(eq(movimentacoes.tipo, "despesa"));
-
     return {
       totalAnimais: Number(totalAnimaisResult?.count || 0),
       totalLotes: Number(totalLotesResult?.count || 0),
       totalMaquinas: Number(totalMaquinasResult?.count || 0),
       totalBenfeitorias: Number(totalBenfeitoriasResult?.count || 0),
-      totalReceitas: parseFloat(receitas?.total || "0"),
-      totalDespesas: parseFloat(despesas?.total || "0"),
-      saldoTotal: parseFloat(receitas?.total || "0") - parseFloat(despesas?.total || "0"),
+      totalReceitas: null,
+      totalDespesas: null,
+      saldoTotal: null,
     };
   }),
 });
@@ -10354,7 +10350,10 @@ const vendasRouter = router({
             precoMedioArroba: null as number | null,
           };
       const documentos = await vendaDocumentosService.listarPublicos(ctx.user.id, venda.id);
-      return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0, documentos };
+      const temRecebimentoEfetivo = await financeiroNucleoMysqlStore.transaction(tx =>
+        vendaTemRecebimentoEfetivo(tx, ctx.user.id, venda.id),
+      );
+      return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0, documentos, temRecebimentoEfetivo };
     }),
 
   porAnimal: protectedProcedure

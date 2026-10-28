@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -8,6 +8,7 @@ import TableHorizontalScroll from "@/components/TableHorizontalScroll";
 import TablePaginationFooter, { type TablePageSize } from "@/components/TablePaginationFooter";
 import { FD_PRIMARY, FormInput, FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { formatDateBR, formatDateInputLocal } from "@/lib/date-utils";
@@ -50,6 +51,23 @@ import {
   type TituloV2DetalheOficial,
   type TituloV2ListaBruta,
 } from "@/lib/contasAPagarListagem";
+import {
+  MSG_DESPESA_CADASTRADA,
+  MSG_DESPESA_OCUPADA,
+  MSG_DESPESA_SEM_CAIXA,
+  aplicarModalidadeDespesa,
+  aplicarQuantidadeDespesa,
+  caminhoNovoFornecedorDespesa,
+  fornecedoresAtivosDespesa,
+  mensagemErroDespesaManual,
+  novaChaveIdempotenciaTituloManual,
+  rascunhoDespesaVazio,
+  redistribuirParcelasDespesa,
+  validarDespesaManual,
+  type ErrosDespesaManual,
+  type ModalidadeDespesaManual,
+  type RascunhoDespesaManual,
+} from "@/lib/contasAPagarDespesa";
 
 const FILTER_EMPTY = "__all__";
 const listControlClass =
@@ -110,12 +128,30 @@ export default function ContasAPagarPage() {
   const [detalhes, setDetalhes] = useState<TituloV2DetalheOficial[] | null>(null);
   const [detalheErro, setDetalheErro] = useState<string | null>(null);
   const [detalheLoading, setDetalheLoading] = useState(false);
+  const [despesaAberta, setDespesaAberta] = useState(false);
+  const [despesa, setDespesa] = useState<RascunhoDespesaManual>(() => rascunhoDespesaVazio(hojeISO));
+  const [errosDespesa, setErrosDespesa] = useState<ErrosDespesaManual>({});
+  const chaveDespesaRef = useRef(novaChaveIdempotenciaTituloManual());
   const cargaSeq = useRef(0);
 
   const listQuery = trpc.financeiroV2.titulosList.useQuery();
   const contasV2 = trpc.financeiroV2.contasList.useQuery();
   const fazendasQuery = trpc.fazendas.list.useQuery();
   const fazendas = fazendasQuery.data ?? [];
+  const pessoasQuery = trpc.pessoas.list.useQuery({ tipo: "fornecedor" });
+  const fornecedores = fornecedoresAtivosDespesa(pessoasQuery.data ?? []);
+  const criarDespesa = trpc.financeiroV2.titulosCreateManual.useMutation({
+    onSuccess: async resultado => {
+      toast.success(MSG_DESPESA_CADASTRADA);
+      chaveDespesaRef.current = novaChaveIdempotenciaTituloManual();
+      setDespesaAberta(false);
+      setDespesa(rascunhoDespesaVazio(hojeISO));
+      setErrosDespesa({});
+      await utils.financeiroV2.titulosList.invalidate();
+      if (resultado.id) setLocation(contasAPagarDetalhePath(resultado.id, filtros));
+    },
+    onError: erro => toast.error(mensagemErroDespesaManual(erro.data?.code, erro.message)),
+  });
 
   const carregarDetalhes = useCallback(async (titulos: TituloV2ListaBruta[]) => {
     const ordem = ++cargaSeq.current;
@@ -184,6 +220,20 @@ export default function ContasAPagarPage() {
     setLocation(contasAPagarDetalhePath(tituloId, filtros));
   };
 
+  const enviarDespesa = () => {
+    if (criarDespesa.isPending) {
+      toast.error(MSG_DESPESA_OCUPADA);
+      return;
+    }
+    const validado = validarDespesaManual({ rascunho: despesa, fornecedores, fazendas });
+    if (!validado.ok) {
+      setErrosDespesa(validado.erros);
+      return;
+    }
+    setErrosDespesa({});
+    criarDespesa.mutate({ ...validado.payload, idempotencyKey: chaveDespesaRef.current });
+  };
+
   const userId = user?.id;
   const linhas = useMemo(() => {
     if (!detalhes) return [];
@@ -241,10 +291,24 @@ export default function ContasAPagarPage() {
                 Contas a Pagar
               </h1>
               <p className="text-[12px] text-gray-500 mt-0.5">
-                Somente consulta. Pagamento ainda não está disponível nesta tela.
+                Despesas do Financeiro. O pagamento é feito no detalhe da conta.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  chaveDespesaRef.current = novaChaveIdempotenciaTituloManual();
+                  setDespesa(rascunhoDespesaVazio(hojeISO));
+                  setErrosDespesa({});
+                  setDespesaAberta(true);
+                }}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold text-white"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                <span className="material-icons text-[16px]">add</span>
+                Nova despesa
+              </button>
               <button
                 type="button"
                 onClick={() => setLocation(FINANCEIRO_CONTAS_V2_PATH)}
@@ -558,7 +622,207 @@ export default function ContasAPagarPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={despesaAberta} onOpenChange={aberto => { if (!aberto && !criarDespesa.isPending) setDespesaAberta(false); }}>
+        <DialogContent className="max-w-lg bg-white p-0 gap-0 max-h-[90vh] overflow-y-auto">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <DialogTitle className="text-[16px] font-semibold text-gray-900">Nova despesa</DialogTitle>
+            <DialogDescription className="text-[12px] text-gray-500 mt-1">
+              {MSG_DESPESA_SEM_CAIXA}
+            </DialogDescription>
+          </div>
+          <form
+            className="px-4 py-4 space-y-3"
+            onSubmit={evento => {
+              evento.preventDefault();
+              enviarDespesa();
+            }}
+          >
+            <Campo label="Fornecedor" erro={errosDespesa.pessoaId}>
+              <FormSelect
+                variant="light"
+                modal={false}
+                required
+                value={despesa.pessoaId}
+                invalid={Boolean(errosDespesa.pessoaId)}
+                placeholder="Selecione"
+                onChange={pessoaId => setDespesa(atual => ({ ...atual, pessoaId }))}
+              >
+                {fornecedores.map(pessoa => (
+                  <SelectItem key={pessoa.id} value={String(pessoa.id)}>{pessoa.nome}</SelectItem>
+                ))}
+              </FormSelect>
+            </Campo>
+            <button
+              type="button"
+              className="text-[12px] font-semibold underline underline-offset-2"
+              style={{ color: FD_PRIMARY }}
+              onClick={() => setLocation(caminhoNovoFornecedorDespesa())}
+            >
+              Cadastrar fornecedor
+            </button>
+            <Campo label="Fazenda (opcional)" erro={errosDespesa.fazendaOrigemId}>
+              <FormSelect
+                variant="light"
+                modal={false}
+                value={despesa.fazendaOrigemId}
+                invalid={Boolean(errosDespesa.fazendaOrigemId)}
+                placeholder="Sem fazenda"
+                onChange={fazendaOrigemId => setDespesa(atual => ({ ...atual, fazendaOrigemId }))}
+              >
+                {fazendas.map(fazenda => (
+                  <SelectItem key={fazenda.id} value={String(fazenda.id)}>{fazenda.nome}</SelectItem>
+                ))}
+              </FormSelect>
+            </Campo>
+            <Campo label="Descrição" erro={errosDespesa.descricao}>
+              <FormInput
+                variant="light"
+                required
+                value={despesa.descricao}
+                invalid={Boolean(errosDespesa.descricao)}
+                onChange={descricao => setDespesa(atual => ({ ...atual, descricao }))}
+              />
+            </Campo>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Campo label="Valor total" erro={errosDespesa.valorOriginal}>
+                <FormInput
+                  variant="light"
+                  required
+                  inputMode="decimal"
+                  value={despesa.valorOriginal}
+                  invalid={Boolean(errosDespesa.valorOriginal)}
+                  onChange={valorOriginal => setDespesa(atual => redistribuirParcelasDespesa({ ...atual, valorOriginal }))}
+                />
+              </Campo>
+              <Campo label="Data de emissão" erro={errosDespesa.dataCompetencia}>
+                <FormInput
+                  variant="light"
+                  required
+                  type="date"
+                  value={despesa.dataCompetencia}
+                  invalid={Boolean(errosDespesa.dataCompetencia)}
+                  onChange={dataCompetencia => setDespesa(atual => ({ ...atual, dataCompetencia }))}
+                />
+              </Campo>
+            </div>
+            <Campo label="Condição de pagamento">
+              <FormSelect
+                variant="light"
+                modal={false}
+                value={despesa.modalidade}
+                onChange={modalidade => setDespesa(atual => aplicarModalidadeDespesa(atual, modalidade as ModalidadeDespesaManual))}
+              >
+                <SelectItem value="unico">Pagamento único</SelectItem>
+                <SelectItem value="parcelado">Parcelado</SelectItem>
+                <SelectItem value="a_definir">Definir vencimentos depois</SelectItem>
+              </FormSelect>
+            </Campo>
+            {despesa.modalidade === "parcelado" ? (
+              <Campo label="Quantidade de parcelas" erro={errosDespesa.quantidade}>
+                <FormInput
+                  variant="light"
+                  inputMode="numeric"
+                  value={String(despesa.quantidade || "")}
+                  invalid={Boolean(errosDespesa.quantidade)}
+                  onChange={quantidade => setDespesa(atual => aplicarQuantidadeDespesa(atual, Number(quantidade) || 2))}
+                />
+              </Campo>
+            ) : null}
+            {despesa.modalidade !== "a_definir" ? despesa.linhas.map(linha => (
+              <div key={linha.numero} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Campo
+                  label={despesa.modalidade === "unico" ? "Vencimento" : `Parcela ${linha.numero} — valor`}
+                  erro={despesa.modalidade === "unico"
+                    ? errosDespesa.linhas?.[linha.numero]?.vencimento
+                    : errosDespesa.linhas?.[linha.numero]?.valor}
+                >
+                  {despesa.modalidade === "unico" ? (
+                    <FormInput
+                      variant="light"
+                      type="date"
+                      value={linha.vencimento}
+                      invalid={Boolean(errosDespesa.linhas?.[linha.numero]?.vencimento)}
+                      onChange={vencimento => setDespesa(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, vencimento } : item),
+                      }))}
+                    />
+                  ) : (
+                    <FormInput
+                      variant="light"
+                      inputMode="decimal"
+                      value={linha.valor}
+                      invalid={Boolean(errosDespesa.linhas?.[linha.numero]?.valor)}
+                      onChange={valor => setDespesa(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, valor } : item),
+                      }))}
+                    />
+                  )}
+                </Campo>
+                {despesa.modalidade === "unico" ? (
+                  <Campo label="Valor da parcela" erro={errosDespesa.linhas?.[linha.numero]?.valor}>
+                    <FormInput variant="light" readOnly value={linha.valor} />
+                  </Campo>
+                ) : (
+                  <Campo label={`Vencimento ${linha.numero}`} erro={errosDespesa.linhas?.[linha.numero]?.vencimento}>
+                    <FormInput
+                      variant="light"
+                      type="date"
+                      value={linha.vencimento}
+                      invalid={Boolean(errosDespesa.linhas?.[linha.numero]?.vencimento)}
+                      onChange={vencimento => setDespesa(atual => ({
+                        ...atual,
+                        linhas: atual.linhas.map(item => item.numero === linha.numero ? { ...item, vencimento } : item),
+                      }))}
+                    />
+                  </Campo>
+                )}
+              </div>
+            )) : (
+              <p className="text-[12px] text-gray-500">O vencimento pode ser definido depois, no detalhe. Enquanto isso, a despesa não aceita pagamento.</p>
+            )}
+            <Campo label="Observações (opcional)">
+              <FormInput
+                variant="light"
+                value={despesa.observacoes}
+                onChange={observacoes => setDespesa(atual => ({ ...atual, observacoes }))}
+              />
+            </Campo>
+            {errosDespesa.geral ? <p className="text-[12px] text-red-600">{errosDespesa.geral}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-gray-200 text-[12px] font-medium text-gray-700"
+                disabled={criarDespesa.isPending}
+                onClick={() => setDespesaAberta(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={criarDespesa.isPending}
+                className="h-9 px-3 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: FD_PRIMARY }}
+              >
+                {criarDespesa.isPending ? "Salvando..." : "Cadastrar despesa"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
+  );
+}
+
+function Campo({ label, erro, children }: { label: string; erro?: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">{label}</span>
+      {children}
+      {erro ? <span className="block text-[11px] text-red-600 mt-1">{erro}</span> : null}
+    </label>
   );
 }
 

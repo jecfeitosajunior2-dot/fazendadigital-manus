@@ -6,6 +6,7 @@
 import { TRPCError } from "@trpc/server";
 import {
   FINANCEIRO_ORIGEM_ITEM_PRINCIPAL,
+  FINANCEIRO_ORIGEM_VENDA_ANIMAIS,
   MSG_FIN_CANCELAR_COM_LIQUIDACAO,
 } from "../shared/financeiroNucleo";
 import { validarChaveIdempotenciaVenda } from "../shared/vendaFinanceiro";
@@ -58,6 +59,18 @@ export function decidirCaminhoCancelamentoVenda(input: {
     return { caminho: "integridade", motivo: MSG_VENDA_CANCELAR_INTEGRIDADE_TITULO };
   }
   return { caminho: "comercial" };
+}
+
+/** Mesma regra do cancelamento: principal líquido > 0 depois dos estornos. */
+export async function vendaTemRecebimentoEfetivo(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  vendaId: number,
+): Promise<boolean> {
+  const titulos = await tx.listTitulosPorOrigem(userId, FINANCEIRO_ORIGEM_VENDA_ANIMAIS, vendaId);
+  const decisao = decidirCaminhoCancelamentoVenda({ titulos });
+  if (decisao.caminho !== "integrado") return false;
+  return tituloTemLiquidacaoEfetiva(tx, userId, decisao.tituloId);
 }
 
 export type CancelarVendaFinanceiroInput = {

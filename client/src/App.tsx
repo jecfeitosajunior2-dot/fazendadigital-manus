@@ -38,7 +38,8 @@ import AlocacaoAnimaisPage from "./pages/AlocacaoAnimaisPage";
 import { NewLotePage } from "./pages/LoteFormPage";
 import EditLotePage from "./pages/EditLotePage";
 import { SaudePage } from "./pages/ReproductionManagementPage";
-import { FinancialManagementPage } from "./pages/FinancialManagementPage";
+import { FinanceiroVisaoGeralPage } from "./pages/FinanceiroVisaoGeralPage";
+import { FinanceiroRelatoriosPage } from "./pages/FinanceiroRelatoriosPage";
 import FinancialPeoplePage from "./pages/FinancialPeoplePage";
 import ContasAPagarPage from "./pages/ContasAPagarPage";
 import ContasAPagarDetalhePage from "./pages/ContasAPagarDetalhePage";
@@ -224,16 +225,17 @@ function ProtectedRoutes() {
       <Route path="/compra-venda/vendas" component={SalesPage} />
 
       {/* Financial */}
-      <Route path="/financeiro/visao-geral" component={FinancialManagementPage} />
+      <Route path="/financeiro/visao-geral" component={FinanceiroVisaoGeralPage} />
       <Route path={`${FINANCEIRO_CONTAS_A_PAGAR_PATH}/:id`} component={ContasAPagarDetalhePage} />
       <Route path={FINANCEIRO_CONTAS_A_PAGAR_PATH} component={ContasAPagarPage} />
       <Route path={`${FINANCEIRO_CONTAS_A_RECEBER_PATH}/:id`} component={ContasAReceberDetalhePage} />
       <Route path={FINANCEIRO_CONTAS_A_RECEBER_PATH} component={ContasAReceberPage} />
       <Route path={FINANCEIRO_CONTAS_V2_PATH} component={ContasFinanceirasV2Page} />
-      <Route path="/financeiro/contas" component={FinancialManagementPage} />
-      <Route path="/financeiro/movimentacao" component={FinancialManagementPage} />
-      <Route path="/financeiro/categorias" component={FinancialManagementPage} />
+      <Route path="/financeiro/contas" component={() => <RedirectTo to={FINANCEIRO_CONTAS_V2_PATH} />} />
+      <Route path="/financeiro/movimentacao" component={() => <RedirectTo to={FINANCEIRO_CONTAS_V2_PATH} />} />
+      <Route path="/financeiro/categorias" component={() => <RedirectTo to="/financeiro/visao-geral" />} />
       <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
+      <Route path="/financeiro/relatorios" component={FinanceiroRelatoriosPage} />
 
       {/* Reports */}
       <Route path="/relatorios/visao-geral" component={ReportsManagementPage} />

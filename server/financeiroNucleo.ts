@@ -30,8 +30,10 @@ import {
   MSG_FIN_CATEGORIA_DUPLICADA,
   MSG_FIN_CATEGORIA_TIPO,
   MSG_FIN_CENTRO_FAZENDA,
+  MSG_FIN_CONTA_ABERTURA_TRAVADA,
   MSG_FIN_CONTA_INATIVA,
   MSG_FIN_CONTA_NAO_ENCONTRADA,
+  MSG_FIN_SALDO_INSUFICIENTE,
   MSG_FIN_DATA_ANTES_ABERTURA,
   MSG_FIN_ESCOPO,
   MSG_FIN_FAZENDA_INVALIDA,
@@ -78,6 +80,7 @@ import {
   type FinanceiroTituloTipo,
   type FinanceiroTransferenciaEstado,
 } from "../shared/financeiroNucleo";
+import { montarRelatorioFinanceiroV2 } from "../shared/financeiroRelatoriosV2";
 import { isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { db } from "./db";
 
@@ -363,10 +366,20 @@ export type FinanceiroNucleoTx = {
   lockTransferencia(userId: number, id: number): Promise<FinTransferenciaRow | null>;
   insertConta(row: Omit<FinContaRow, "id" | "inativadaEm" | "motivoInativacao">): Promise<number>;
   updateContaInativa(userId: number, id: number, motivo: string | null, em: Date): Promise<void>;
+  updateContaCadastro(userId: number, id: number, patch: {
+    nome: string;
+    tipo: string;
+    banco: string | null;
+    agencia: string | null;
+    numeroConta: string | null;
+    saldoAbertura?: string;
+    dataSaldoAbertura?: string;
+  }): Promise<void>;
+  updateContaReativar(userId: number, id: number): Promise<void>;
   listContas(userId: number): Promise<FinContaRow[]>;
   listContasPorIds(userId: number, ids: number[]): Promise<FinContaRow[]>;
   countMovimentosConta(userId: number, contaId: number): Promise<number>;
-  listMovimentosConta(userId: number, contaId: number): Promise<FinMovimentoRow[]>;
+  listMovimentosConta(userId: number, contaId: number, forUpdate?: boolean): Promise<FinMovimentoRow[]>;
 
   findPessoa(userId: number, id: number): Promise<{ id: number; nome: string; ativo: boolean; tipo: string } | null>;
   listTitulosPorOrigem(userId: number, origemTipo: string, origemId: number): Promise<FinTituloRow[]>;
@@ -517,6 +530,11 @@ export function isDuplicateOrigemLiquidacao(error: unknown): boolean {
   return /financeiro_liquidacoes_original_uq/i.test(textoErro(error));
 }
 
+export function isDuplicateOrigemTitulo(error: unknown): boolean {
+  if (!isDuplicateKeyMysql(error)) return false;
+  return /financeiro_titulos_origem_uq/i.test(textoErro(error));
+}
+
 async function transacaoFinanceiroComRetry<T>(
   store: FinanceiroNucleoStore,
   fn: (tx: FinanceiroNucleoTx) => Promise<T>,
@@ -645,6 +663,33 @@ export async function tituloTemLiquidacaoEfetiva(
   });
 }
 
+async function retryTituloManualBateComPedido(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  existente: FinTituloRow,
+  input: CriarTituloInput,
+) {
+  if (existente.tipo !== input.tipo) return false;
+  if (existente.pessoaId !== input.pessoaId) return false;
+  if (existente.descricao.trim() !== input.descricao.trim()) return false;
+  if (String(existente.dataCompetencia).slice(0, 10) !== String(input.dataCompetencia).slice(0, 10)) return false;
+  if (toCentavos(existente.valorOriginal) !== toCentavos(input.valorOriginal)) return false;
+  if ((existente.fazendaOrigemId ?? null) !== (input.fazendaOrigemId ?? null)) return false;
+  if ((existente.documentoReferencia ?? null) !== (input.documentoReferencia?.trim() || null)) return false;
+  if ((existente.observacoes ?? null) !== (input.observacoes?.trim() || null)) return false;
+  const pedidas = input.parcelas ?? [];
+  const atuais = await tx.listParcelasTitulo(userId, existente.id);
+  if (atuais.length !== pedidas.length) return false;
+  const ordA = [...atuais].sort((a, b) => a.numero - b.numero);
+  const ordB = [...pedidas].sort((a, b) => a.numero - b.numero);
+  return ordA.every((p, i) => {
+    const pedida = ordB[i]!;
+    return p.numero === pedida.numero
+      && String(p.vencimento).slice(0, 10) === String(pedida.vencimento).slice(0, 10)
+      && toCentavos(p.valorOriginal) === toCentavos(pedida.valorOriginal);
+  });
+}
+
 export async function criarTituloNoTx(tx: FinanceiroNucleoTx, userId: number, input: CriarTituloInput) {
   assertValorPositivo(input.valorOriginal);
   const origem = validarOrigemTitulo({
@@ -661,7 +706,15 @@ export async function criarTituloNoTx(tx: FinanceiroNucleoTx, userId: number, in
   }
   if (origem.origemId != null && origem.origemItemChave) {
     const dup = await tx.findTituloPorOrigem(userId, origem.origemTipo, origem.origemId, origem.origemItemChave);
-    if (dup) toTrpc(MSG_FIN_ORIGEM_DUPLICADA);
+    if (dup) {
+      if (origem.origemTipo === FINANCEIRO_ORIGEM_MANUAL) {
+        if (await retryTituloManualBateComPedido(tx, userId, dup, input)) {
+          return { id: dup.id, idempotente: true };
+        }
+        toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
+      }
+      toTrpc(MSG_FIN_ORIGEM_DUPLICADA);
+    }
   }
   const parcelas = input.parcelas ?? [];
   const condicao: FinanceiroCondicaoStatus = parcelas.length > 0 ? "definida" : "a_definir";
@@ -695,7 +748,7 @@ export async function criarTituloNoTx(tx: FinanceiroNucleoTx, userId: number, in
       valorOriginal: persistirValor(p.valorOriginal),
     });
   }
-  return { id };
+  return { id, idempotente: false };
 }
 
 export async function apropriarNoTx(
@@ -768,8 +821,22 @@ export async function listarTitulosPorOrigemNoTx(
 
 export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
   async function saldoContaTx(tx: FinanceiroNucleoTx, userId: number, conta: FinContaRow) {
-    const movimentos = await tx.listMovimentosConta(userId, conta.id);
+    // MySQL REPEATABLE READ: SELECT comum do extrato reusa o snapshot da
+    // primeira leitura (ex.: busca de idempotência), ignorando movimentos
+    // já confirmados pela transação que acabou de soltar o FOR UPDATE da conta.
+    // A leitura com bloqueio vê a versão commitada mais recente.
+    const movimentos = await tx.listMovimentosConta(userId, conta.id, true);
     return calcularSaldoConta({ saldoAbertura: conta.saldoAbertura, movimentos });
+  }
+
+  async function assertSaldoSuficienteParaSaida(
+    tx: FinanceiroNucleoTx,
+    userId: number,
+    conta: FinContaRow,
+    valorSaida: number | string,
+  ) {
+    const saldo = await saldoContaTx(tx, userId, conta);
+    if (toCentavos(saldo) < toCentavos(valorSaida)) toTrpc(MSG_FIN_SALDO_INSUFICIENTE);
   }
 
   async function saldoParcelaTx(tx: FinanceiroNucleoTx, userId: number, parcela: FinParcelaRow, forUpdate = false) {
@@ -846,6 +913,64 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
+    async atualizarConta(userId: number, id: number, input: {
+      nome: string;
+      tipo: FinanceiroContaTipo;
+      banco?: string | null;
+      agencia?: string | null;
+      numeroConta?: string | null;
+      saldoAbertura?: number;
+      dataSaldoAbertura?: string;
+    }) {
+      if (!isFinanceiroContaTipo(input.tipo)) toTrpc("Tipo de conta inválido.");
+      const nome = input.nome.trim();
+      if (!nome) toTrpc("Informe o nome da conta.");
+      return store.transaction(async tx => {
+        const conta = await tx.findConta(userId, id);
+        if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
+        assertUser(conta.userId, userId);
+        const patch: {
+          nome: string;
+          tipo: string;
+          banco: string | null;
+          agencia: string | null;
+          numeroConta: string | null;
+          saldoAbertura?: string;
+          dataSaldoAbertura?: string;
+        } = {
+          nome,
+          tipo: input.tipo,
+          banco: input.banco?.trim() || null,
+          agencia: input.agencia?.trim() || null,
+          numeroConta: input.numeroConta?.trim() || null,
+        };
+        const mudaAbertura = input.saldoAbertura != null
+          || (input.dataSaldoAbertura != null && input.dataSaldoAbertura !== conta.dataSaldoAbertura);
+        if (mudaAbertura) {
+          const nMov = await tx.countMovimentosConta(userId, id);
+          if (nMov > 0) toTrpc(MSG_FIN_CONTA_ABERTURA_TRAVADA);
+          if (input.saldoAbertura != null) {
+            if (toCentavos(input.saldoAbertura) < 0) toTrpc(MSG_FIN_VALOR_POSITIVO);
+            patch.saldoAbertura = persistirValor(input.saldoAbertura);
+          }
+          if (input.dataSaldoAbertura) patch.dataSaldoAbertura = input.dataSaldoAbertura;
+        }
+        await tx.updateContaCadastro(userId, id, patch);
+        return { success: true, id };
+      });
+    },
+
+    async reativarConta(userId: number, id: number) {
+      return store.transaction(async tx => {
+        const conta = await tx.findConta(userId, id);
+        if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
+        assertUser(conta.userId, userId);
+        if (conta.ativa) return { success: true, alterada: false };
+        await tx.updateContaReativar(userId, id);
+        return { success: true, alterada: true };
+      });
+    },
+
     async criarTitulo(userId: number, input: {
       tipo: FinanceiroTituloTipo;
       pessoaId: number;
@@ -860,7 +985,11 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       origemItemChave?: string | null;
       parcelas?: Array<{ numero: number; vencimento: string; valorOriginal: number }>;
     }) {
-      return store.transaction(async tx => criarTituloNoTx(tx, userId, input));
+      return transacaoFinanceiroComRetry(
+        store,
+        async tx => criarTituloNoTx(tx, userId, input),
+        isDuplicateOrigemTitulo,
+      );
     },
 
     async definirParcelas(userId: number, tituloId: number, parcelas: Array<{ numero: number; vencimento: string; valorOriginal: number }>) {
@@ -1047,6 +1176,106 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => tx.listTitulos(userId));
     },
 
+    async relatorioFinanceiro(userId: number, input: {
+      de: string;
+      ate: string;
+      fazendaId?: number | null;
+      contaId?: number | null;
+    }) {
+      return store.transaction(async tx => {
+        if (input.fazendaId) {
+          const fazenda = await tx.findFazenda(userId, input.fazendaId);
+          if (!fazenda) toTrpc(MSG_FIN_FAZENDA_INVALIDA, "FORBIDDEN");
+        }
+        const contas = await tx.listContas(userId);
+        if (input.contaId) {
+          const conta = contas.find(c => c.id === input.contaId);
+          if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
+        }
+        const contasComSaldo = [];
+        const movimentos = [];
+        for (const conta of contas) {
+          const saldoAtual = await saldoContaTx(tx, userId, conta);
+          contasComSaldo.push({ id: conta.id, nome: conta.nome, ativa: conta.ativa, saldoAtual });
+          const movs = await tx.listMovimentosConta(userId, conta.id);
+          for (const mov of movs) {
+            if (!isFinanceiroNatureza(mov.natureza)) continue;
+            movimentos.push({
+              id: mov.id,
+              contaId: mov.contaId,
+              contaNome: conta.nome,
+              dataMovimento: mov.dataMovimento,
+              direcao: mov.direcao,
+              natureza: mov.natureza,
+              valor: mov.valor,
+              descricao: mov.descricao,
+              liquidacaoId: mov.liquidacaoId,
+              transferenciaId: mov.transferenciaId,
+              fazendaOrigemId: null as number | null,
+            });
+          }
+        }
+        const titulos = await tx.listTitulos(userId);
+        const titulosEntrada = [];
+        const tituloPorId = new Map(titulos.map(t => [t.id, t]));
+        const parcelaPorId = new Map<number, { tituloId: number }>();
+        for (const titulo of titulos) {
+          const parcelas = await tx.listParcelasTitulo(userId, titulo.id);
+          const alocs = parcelas.length
+            ? await tx.listAlocacoesPorParcelas(userId, parcelas.map(p => p.id))
+            : [];
+          for (const p of parcelas) parcelaPorId.set(p.id, { tituloId: titulo.id });
+          titulosEntrada.push({
+            id: titulo.id,
+            userId: titulo.userId,
+            tipo: titulo.tipo,
+            estado: titulo.estado,
+            condicaoStatus: titulo.condicaoStatus,
+            pessoaId: titulo.pessoaId,
+            contraparteNomeSnapshot: titulo.contraparteNomeSnapshot,
+            fazendaOrigemId: titulo.fazendaOrigemId,
+            origemTipo: titulo.origemTipo,
+            origemId: titulo.origemId,
+            descricao: titulo.descricao,
+            valorOriginal: titulo.valorOriginal,
+            parcelas: parcelas.map(p => ({
+              id: p.id,
+              numero: p.numero,
+              vencimento: p.vencimento,
+              valorOriginal: p.valorOriginal,
+              alocacoes: alocs.filter(a => a.parcelaId === p.id).map(a => ({
+                tipoLiquidacao: a.tipoLiquidacao,
+                principalLiquidado: a.principalLiquidado,
+              })),
+            })),
+          });
+        }
+        for (const mov of movimentos) {
+          if (mov.liquidacaoId == null) continue;
+          const alocs = await tx.listAlocacoesLiquidacao(userId, mov.liquidacaoId);
+          const fazendas = new Set<number>();
+          for (const a of alocs) {
+            const parcela = parcelaPorId.get(a.parcelaId);
+            const titulo = parcela ? tituloPorId.get(parcela.tituloId) : null;
+            if (titulo?.fazendaOrigemId != null) fazendas.add(titulo.fazendaOrigemId);
+          }
+          mov.fazendaOrigemId = fazendas.size === 1 ? [...fazendas][0]! : null;
+        }
+        return montarRelatorioFinanceiroV2({
+          contas: contasComSaldo,
+          titulos: titulosEntrada,
+          movimentos,
+          filtro: {
+            de: input.de,
+            ate: input.ate,
+            fazendaId: input.fazendaId ?? null,
+            contaId: input.contaId ?? null,
+            hojeISO: hojeISO(),
+          },
+        });
+      });
+    },
+
     async apropriar(userId: number, tituloId: number, itens: Array<{
       valor: number;
       fazendaId?: number | null;
@@ -1122,6 +1351,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
         }
         const somaCaixa = caixas.reduce((a, b) => a + toCentavos(b), 0);
         if (somaCaixa !== toCentavos(input.valorMovimentado)) toTrpc(MSG_FIN_FORMULA_CAIXA);
+        if (input.tipo === "pagamento") {
+          await assertSaldoSuficienteParaSaida(tx, userId, conta, input.valorMovimentado);
+        }
 
         const liquidacaoId = await tx.insertLiquidacao({
           userId,
@@ -1218,6 +1450,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         if (!conta.ativa) toTrpc(MSG_FIN_CONTA_INATIVA);
         assertDataAposAbertura(input.dataLiquidacao, conta);
+        const tipoEstorno: FinanceiroLiquidacaoTipo = original.tipo === "pagamento"
+          ? "estorno_pagamento"
+          : "estorno_recebimento";
+        if (tipoEstorno === "estorno_recebimento") {
+          await assertSaldoSuficienteParaSaida(tx, userId, conta, original.valorMovimentado);
+        }
         const alocs = await tx.listAlocacoesLiquidacao(userId, original.id);
         if (alocs.length) {
           const parcelaIds = idsUnicosOrdenados(alocs.map(a => a.parcelaId));
@@ -1230,9 +1468,6 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           const parcelas = await tx.lockParcelas(userId, parcelaIds);
           if (parcelas.length !== parcelaIds.length) toTrpc(MSG_FIN_PARCELA_NAO_ENCONTRADA, "NOT_FOUND");
         }
-        const tipoEstorno: FinanceiroLiquidacaoTipo = original.tipo === "pagamento"
-          ? "estorno_pagamento"
-          : "estorno_recebimento";
         const estornoId = await tx.insertLiquidacao({
           userId,
           tipo: tipoEstorno,
@@ -1300,6 +1535,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
         if (!origem.ativa || !destino.ativa) toTrpc(MSG_FIN_CONTA_INATIVA);
         assertDataAposAbertura(input.dataTransferencia, origem);
         assertDataAposAbertura(input.dataTransferencia, destino);
+        await assertSaldoSuficienteParaSaida(tx, userId, origem, input.valor);
         const id = await tx.insertTransferencia({
           userId,
           contaOrigemId: origem.id,
@@ -1759,6 +1995,24 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
             .set({ ativa: false, motivoInativacao: motivo, inativadaEm: em })
             .where(and(eq(financeiroContas.id, id), eq(financeiroContas.userId, userId)));
         },
+        async updateContaCadastro(userId, id, patch) {
+          await drizzleTx.update(financeiroContas)
+            .set({
+              nome: patch.nome,
+              tipo: patch.tipo,
+              banco: patch.banco,
+              agencia: patch.agencia,
+              numeroConta: patch.numeroConta,
+              ...(patch.saldoAbertura != null ? { saldoAbertura: patch.saldoAbertura } : {}),
+              ...(patch.dataSaldoAbertura != null ? { dataSaldoAbertura: patch.dataSaldoAbertura } : {}),
+            })
+            .where(and(eq(financeiroContas.id, id), eq(financeiroContas.userId, userId)));
+        },
+        async updateContaReativar(userId, id) {
+          await drizzleTx.update(financeiroContas)
+            .set({ ativa: true, motivoInativacao: null, inativadaEm: null })
+            .where(and(eq(financeiroContas.id, id), eq(financeiroContas.userId, userId)));
+        },
         async listContas(userId) {
           const rows = await drizzleTx.select().from(financeiroContas)
             .where(eq(financeiroContas.userId, userId))
@@ -1777,10 +2031,34 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
             .where(and(eq(financeiroMovimentos.userId, userId), eq(financeiroMovimentos.contaId, contaId)));
           return Number(row?.n ?? 0);
         },
-        async listMovimentosConta(userId, contaId) {
-          const rows = await drizzleTx.select().from(financeiroMovimentos)
-            .where(and(eq(financeiroMovimentos.userId, userId), eq(financeiroMovimentos.contaId, contaId)));
-          return rows.map(mapMov);
+        async listMovimentosConta(userId, contaId, forUpdate = false) {
+          if (!forUpdate) {
+            const rows = await drizzleTx.select().from(financeiroMovimentos)
+              .where(and(eq(financeiroMovimentos.userId, userId), eq(financeiroMovimentos.contaId, contaId)));
+            return rows.map(mapMov);
+          }
+          const result = await drizzleTx.execute(sql`
+            SELECT
+              id,
+              user_id AS userId,
+              conta_id AS contaId,
+              DATE_FORMAT(data_movimento, '%Y-%m-%d') AS dataMovimento,
+              direcao,
+              natureza,
+              valor,
+              liquidacao_id AS liquidacaoId,
+              transferencia_id AS transferenciaId,
+              contraparte_pessoa_id AS contrapartePessoaId,
+              descricao,
+              referencia,
+              movimento_original_id AS movimentoOriginalId
+            FROM financeiro_movimentos
+            WHERE user_id = ${userId}
+              AND conta_id = ${contaId}
+            ORDER BY id
+            FOR UPDATE
+          `);
+          return mysqlExecuteRows(result).map(mapMovFromLock);
         },
         async findPessoa(userId, id) {
           const [row] = await drizzleTx.select({
@@ -2149,7 +2427,12 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
 export function createFinanceiroNucleoMysqlStore(drizzleDb: { transaction: typeof db.transaction }): FinanceiroNucleoStore {
   return {
     transaction(fn) {
-      return drizzleDb.transaction(async drizzleTx => fn(createFinanceiroNucleoTxFromDrizzle(drizzleTx)));
+      // READ COMMITTED: após o lock da conta, o saldo lê movimentos recém-commitados.
+      // Sem isso, o REPEATABLE READ do InnoDB reutiliza o snapshot anterior ao lock.
+      return drizzleDb.transaction(
+        async drizzleTx => fn(createFinanceiroNucleoTxFromDrizzle(drizzleTx)),
+        { isolationLevel: "read committed" },
+      );
     },
   };
 }

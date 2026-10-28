@@ -250,7 +250,7 @@ export function createConfirmarVendaFinanceiroTxFromDrizzle(
       const loteIds = [...new Set(rows.map(row => row.loteId).filter((id): id is number => id != null))];
       if (loteIds.length) {
         const loteResult = await drizzleTx.execute(sql`
-          SELECT id, fazenda_id AS fazendaId
+          SELECT id, fazendaId
           FROM lotes
           WHERE id IN (${sql.join(loteIds.map(id => sql`${id}`), sql`, `)})
           FOR UPDATE
