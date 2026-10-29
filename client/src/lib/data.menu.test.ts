@@ -88,6 +88,7 @@ describe("menu lateral — Financeiro", () => {
       "Contas a Receber",
       "Contas a Pagar",
       "Caixa e Bancos",
+      "Relatórios",
       "Pessoas",
     ]);
     expect(childPaths("Financeiro")).toEqual([
@@ -95,11 +96,32 @@ describe("menu lateral — Financeiro", () => {
       "/financeiro/contas-a-receber",
       "/financeiro/contas-a-pagar",
       "/financeiro/v2/contas",
+      "/financeiro/relatorios",
       "/financeiro/pessoas",
     ]);
     expect(childPaths("Financeiro")).not.toContain("/financeiro/contas");
     expect(childPaths("Financeiro")).not.toContain("/financeiro/movimentacao");
     expect(childPaths("Financeiro")).not.toContain("/financeiro/categorias");
+  });
+});
+
+describe("menu lateral — Relatórios independentes", () => {
+  it("não aparece no menu principal", () => {
+    expect(menuItems.map(i => i.label)).not.toContain("Relatórios");
+    expect(menuItems.flatMap(i => i.children?.map(c => c.path) ?? [])).not.toContain("/relatorios/visao-geral");
+    expect(menuItems.flatMap(i => i.children?.map(c => c.path) ?? [])).not.toContain("/relatorios/gerenciais");
+    expect(menuItems.flatMap(i => i.children?.map(c => c.path) ?? [])).not.toContain("/relatorios/evolucao");
+    expect(menuItems.flatMap(i => i.children?.map(c => c.path) ?? [])).not.toContain("/relatorios/reprodutivos");
+    expect(menuItems.flatMap(i => i.children?.map(c => c.path) ?? [])).not.toContain("/relatorios/operacionais");
+  });
+
+  it("Financeiro → Relatórios permanece", () => {
+    expect(childLabels("Financeiro")).toContain("Relatórios");
+    expect(childPaths("Financeiro")).toContain("/financeiro/relatorios");
+  });
+
+  it("Painel de Controle permanece", () => {
+    expect(menuItems[0]).toMatchObject({ label: "Painel de Controle", path: "/admin/overview" });
   });
 });
 

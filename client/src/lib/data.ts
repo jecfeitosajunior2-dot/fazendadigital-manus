@@ -102,17 +102,6 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    label: "Relatórios",
-    icon: "fd_reports_doc_chart",
-    children: [
-      { label: "Visão Geral", icon: "", path: "/relatorios/visao-geral" },
-      { label: "Gerenciais", icon: "", path: "/relatorios/gerenciais" },
-      { label: "Evolução", icon: "", path: "/relatorios/evolucao" },
-      { label: "Reprodutivos", icon: "", path: "/relatorios/reprodutivos" },
-      { label: "Operacionais", icon: "", path: "/relatorios/operacionais" },
-    ],
-  },
-  {
     label: "Simulações",
     icon: "calculate",
     children: [

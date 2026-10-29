@@ -35,11 +35,13 @@ describe("sessaoHttpAuth", () => {
     expect(page).toContain("Carregando relatórios oficiais");
   });
 
-  it("AuthGuard não libera o app só com localStorage e invalida o Financeiro V2", () => {
+  it("AuthGuard não libera o app só com localStorage", () => {
     const layout = readFileSync(resolve(here, "../components/AppLayout.tsx"), "utf8");
-    expect(layout).toContain("invalidarConsultasAposSessaoHttp");
     expect(layout).toContain("if (!user) return null");
-    expect(layout).toContain("aguardandoSessao");
+    expect(layout).toContain("clearLocalAuthSession");
+    expect(layout).not.toContain("ensureLocalPreviewSession");
+    expect(layout).not.toContain("getLocalAuthUser");
+    expect(layout).not.toContain("aguardandoSessao");
   });
 
   it("cabeçalho e useAuth não tratam localStorage como sessão", () => {

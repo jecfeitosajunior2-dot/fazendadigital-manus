@@ -195,6 +195,9 @@ export async function persistirManutencaoComPecasNoTx(
     if (!item) {
       throw new ManutencaoEstoqueError(MSG_MANUT_ESTOQUE_AUSENTE_MYSQL);
     }
+    if (Number(item.fazendaId) !== Number(input.fazendaId)) {
+      throw new ManutencaoEstoqueError("O produto não pertence à fazenda da máquina.");
+    }
 
     const qtd = persistirQuantidadeEstoque(peca.quantidade);
     const vuPrevisto = persistirCapital(peca.valorUnitario);

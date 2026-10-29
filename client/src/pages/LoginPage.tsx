@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { getLocalAuthUser, signInLocal } from "@/lib/localAuth";
+import { clearLocalAuthSession } from "@/lib/localAuth";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -14,7 +14,6 @@ export default function LoginPage() {
   const [registerName, setRegisterName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
   const [accessFeedback, setAccessFeedback] = useState("");
-  const [localUser, setLocalUser] = useState(() => getLocalAuthUser());
   const currentYear = new Date().getFullYear();
 
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
@@ -28,26 +27,17 @@ export default function LoginPage() {
       setLocation("/admin/overview");
     },
     onError: () => {
-      const session = signInLocal(email, password);
-      if (session) {
-        setLocalUser(session);
-        setIsLoggingIn(false);
-        setLocation("/admin/overview");
-        return;
-      }
-
       setIsLoggingIn(false);
     },
   });
 
   useEffect(() => {
-    if (isLoading) return;
+    clearLocalAuthSession();
+  }, []);
 
-    const session = getLocalAuthUser();
-    if (user || session) {
-      setLocalUser(session);
-      setLocation("/admin/overview");
-    }
+  useEffect(() => {
+    if (isLoading) return;
+    if (user) setLocation("/admin/overview");
   }, [user, isLoading, setLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -68,7 +58,7 @@ export default function LoginPage() {
     }
   };
 
-  if (isLoading && !localUser) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#0d1b2e" }}>
         <div className="text-center">

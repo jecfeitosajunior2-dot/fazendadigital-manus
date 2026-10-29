@@ -49,7 +49,6 @@ import ContasFinanceirasV2Page from "./pages/ContasFinanceirasV2Page";
 import { FINANCEIRO_CONTAS_A_PAGAR_PATH } from "./lib/contasAPagarListagem";
 import { FINANCEIRO_CONTAS_A_RECEBER_PATH } from "./lib/contasAReceberListagem";
 import { FINANCEIRO_CONTAS_V2_PATH } from "./lib/contasFinanceirasV2";
-import { ReportsManagementPage } from "./pages/ReportsManagementPage";
 import NutricaoVisaoGeralPage from "./pages/NutricaoVisaoGeralPage";
 import NutricaoDietasListPage from "./pages/NutricaoDietasListPage";
 import NutricaoDietaFormPage from "./pages/NutricaoDietaFormPage";
@@ -101,6 +100,10 @@ function RedirectTo({ to }: { to: string }) {
 
 function RedirectReproducaoLegado() {
   return <Redirect to={MANEJO_REPRODUTIVO_PATH} replace />;
+}
+
+function RedirectPainelControle() {
+  return <Redirect to="/admin/overview" replace />;
 }
 
 function ProtectedRoutes() {
@@ -237,12 +240,12 @@ function ProtectedRoutes() {
       <Route path="/financeiro/pessoas" component={FinancialPeoplePage} />
       <Route path="/financeiro/relatorios" component={FinanceiroRelatoriosPage} />
 
-      {/* Reports */}
-      <Route path="/relatorios/visao-geral" component={ReportsManagementPage} />
-      <Route path="/relatorios/gerenciais" component={ReportsManagementPage} />
-      <Route path="/relatorios/evolucao" component={ReportsManagementPage} />
-      <Route path="/relatorios/reprodutivos" component={ReportsManagementPage} />
-      <Route path="/relatorios/operacionais" component={ReportsManagementPage} />
+      {/* Relatórios independentes (fictícios) — fora de circulação. Arquivo da tela antiga permanece sem rota. */}
+      <Route path="/relatorios/visao-geral" component={RedirectPainelControle} />
+      <Route path="/relatorios/gerenciais" component={RedirectPainelControle} />
+      <Route path="/relatorios/evolucao" component={RedirectPainelControle} />
+      <Route path="/relatorios/reprodutivos" component={RedirectPainelControle} />
+      <Route path="/relatorios/operacionais" component={RedirectPainelControle} />
 
       {/* Simulations */}
       <Route path="/simulacoes/visao-geral" component={SimulationsFeedlotPage} />

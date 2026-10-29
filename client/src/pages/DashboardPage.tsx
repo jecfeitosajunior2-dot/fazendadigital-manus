@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   Bar,
@@ -13,11 +13,18 @@ import {
   YAxis,
 } from "recharts";
 import AppLayout from "@/components/AppLayout";
+import FazendaOverviewSelect from "@/components/FazendaOverviewSelect";
 import { trpc } from "@/lib/trpc";
 import { FINANCEIRO_CAIXA_OFICIAL_PATH, FINANCEIRO_VISAO_GERAL_PATH } from "@/lib/financeiroNavegacao";
+import { formatarValorRelatorioV2 } from "@/lib/financeiroRelatoriosExport";
+import {
+  COMPRA_VENDA_COMPRAS_PATH,
+  COMPRA_VENDA_VENDAS_PATH,
+  compraVendaCompraDetalhePath,
+  compraVendaVendaDetalhePath,
+} from "@/lib/compraVendaCompradores";
 import { getFichaAnimalPath } from "@/lib/fichaAnimalRoute";
-import { produtoControlaSaldo } from "@/lib/produto-types";
-import { valorPatrimonialExibicao } from "@shared/estoqueCapital";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   SectionCard,
   KpiCard,
@@ -32,165 +39,57 @@ import {
 import {
   brlCompact,
   num,
-  diasAte,
   dataBr,
-  prazoRelativo,
-  idadeAnos,
-  faixaEtaria,
-  PERIODOS,
   CHART_COLORS,
-  formatFemeaAlertaTexto,
-  type PeriodoChave,
 } from "@/lib/dashboard-utils";
-
-// ──────────────────────────────── Página ────────────────────────────────────
+import {
+  MSG_PAINEL_FAZENDA_NEGADA,
+  PAINEL_STORAGE_KEY,
+  emptyPainelOverview,
+  estadoBlocoPainel,
+  normalizarFazendaPainelPersistida,
+  statusOperacaoPainel,
+} from "@shared/painelControle";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
-  const [periodo, setPeriodo] = useState<PeriodoChave>("90d");
+  const [filtro, setFiltro] = usePersistedState<{ fazendaId: string }>(PAINEL_STORAGE_KEY, {
+    fazendaId: "",
+  });
 
-  // Queries (todas em paralelo)
   const { data: me } = trpc.auth.me.useQuery();
-  const { data: stats } = trpc.dashboard.stats.useQuery();
-  const { data: animais = [] } = trpc.animais.list.useQuery();
-  const { data: produtos = [] } = trpc.estoque.list.useQuery();
-  const { data: movEstoque = [] } = trpc.estoque.listMovimentacoes.useQuery();
-  const { data: saude = [] } = trpc.saude.list.useQuery();
-  const { data: reproducao = [] } = trpc.reproducao.list.useQuery();
-  const { data: manutencoes = [] } = trpc.manutencoes.list.useQuery();
-  const { data: pastos = [] } = trpc.pastos.listWithDetails.useQuery();
-  const { data: fazendas = [] } = trpc.fazendas.list.useQuery();
+  const fazendaIdInput = useMemo(() => {
+    const id = Number(filtro.fazendaId);
+    return Number.isFinite(id) && id > 0 ? id : undefined;
+  }, [filtro.fazendaId]);
 
-  // ── Rebanho ────────────────────────────────────────────────────────────────
-  const rebanho = useMemo(() => {
-    const ativos = animais.filter(a => a.status === "ativo");
-    const machos = ativos.filter(a => a.sexo === "macho").length;
-    const femeas = ativos.filter(a => a.sexo === "femea").length;
-    const pesos = ativos.map(a => Number(a.pesoAtual)).filter(p => p > 0);
-    const pesoTotal = pesos.reduce((s, p) => s + p, 0);
-    const pesoMedio = pesos.length ? pesoTotal / pesos.length : 0;
+  const overviewQuery = trpc.dashboard.overview.useQuery(
+    { fazendaId: fazendaIdInput },
+    { retry: false },
+  );
 
-    const porCategoria = new Map<string, number>();
-    ativos.forEach(a => {
-      const cat = a.categoria?.trim() || (a.sexo === "femea" ? "Fêmeas" : "Machos");
-      porCategoria.set(cat, (porCategoria.get(cat) ?? 0) + 1);
-    });
-    const composicao = [...porCategoria.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-
-    const faixas = new Map<string, number>();
-    ["0–12 meses", "12–24 meses", "24–36 meses", "+36 meses", "Sem idade"].forEach(f => faixas.set(f, 0));
-    ativos.forEach(a => {
-      const f = faixaEtaria(idadeAnos(a.dataNascimento));
-      faixas.set(f, (faixas.get(f) ?? 0) + 1);
-    });
-    const idades = [...faixas.entries()].map(([name, value]) => ({ name, value }));
-
-    return { total: ativos.length, machos, femeas, pesoTotal, pesoMedio, composicao, idades };
-  }, [animais]);
-
-  // ── Estoque ──────────────────────────────────────────────────────────────────
-  const estoque = useMemo(() => {
-    const valorTotal = produtos.reduce(
-      (s, p) =>
-        produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo)
-          ? s + valorPatrimonialExibicao(p)
-          : s,
-      0,
-    );
-    const baixo = produtos.filter(
-      p =>
-        produtoControlaSaldo((p as { controlarSaldo?: boolean | null }).controlarSaldo) &&
-        p.monitorarEstoque &&
-        Number(p.quantidadeMinima) > 0 &&
-        Number(p.quantidade) <= Number(p.quantidadeMinima),
-    );
-    return { valorTotal, baixo, totalProdutos: produtos.length };
-  }, [produtos]);
-
-  // ── Central de Alertas ───────────────────────────────────────────────────────
-  const alertas = useMemo(() => {
-    const animaisPorId = new Map(animais.map(a => [a.id, a]));
-
-    // Estoque baixo
-    const estoqueBaixo = estoque.baixo.map(p => ({
-      texto: p.nome,
-      detalhe: `${num(p.quantidade, 0)}/${num(p.quantidadeMinima, 0)} ${p.unidade ?? ""}`.trim(),
-    }));
-
-    // Validade próxima (≤30 dias) ou vencida — dedupe por produto+validade
-    const vistos = new Set<string>();
-    const validade: { texto: string; detalhe: string; vencido?: boolean; dias: number }[] = [];
-    for (const m of movEstoque) {
-      const dias = diasAte(m.dataValidade);
-      if (dias == null || dias > 30) continue;
-      const chave = `${m.nome}|${m.dataValidade}`;
-      if (vistos.has(chave)) continue;
-      vistos.add(chave);
-      validade.push({
-        texto: m.nome ?? "Produto",
-        detalhe: prazoRelativo(m.dataValidade),
-        vencido: dias < 0,
-        dias,
-      });
+  useEffect(() => {
+    const codigo = overviewQuery.error?.data?.code;
+    const mensagem = overviewQuery.error?.message ?? "";
+    if (codigo === "FORBIDDEN" || mensagem.includes(MSG_PAINEL_FAZENDA_NEGADA)) {
+      setFiltro({ fazendaId: "" });
     }
-    validade.sort((a, b) => a.dias - b.dias);
+  }, [overviewQuery.error, setFiltro]);
 
-    // Sanidade (próxima dose/retorno ≤30 dias)
-    const sanidade = saude
-      .map(s => ({ s, dias: diasAte(s.proximaData) }))
-      .filter(x => x.dias != null && x.dias <= 30)
-      .sort((a, b) => (a.dias ?? 0) - (b.dias ?? 0))
-      .map(({ s }) => ({
-        texto: `${s.tipo}${s.medicamento ? ` · ${s.medicamento}` : ""}`,
-        detalhe: prazoRelativo(s.proximaData),
-      }));
+  useEffect(() => {
+    if (!overviewQuery.data) return;
+    const valida = normalizarFazendaPainelPersistida(filtro.fazendaId, overviewQuery.data.fazendas);
+    if (filtro.fazendaId && valida == null) setFiltro({ fazendaId: "" });
+  }, [overviewQuery.data, filtro.fazendaId, setFiltro]);
 
-    // Partos previstos (prenhez sem parto real, ≤45 dias)
-    const partos = reproducao
-      .filter(r => !r.dataPartoReal && r.dataPrevistoParto)
-      .map(r => ({ r, dias: diasAte(r.dataPrevistoParto) }))
-      .filter(x => x.dias != null && x.dias <= 45 && x.dias >= -15)
-      .sort((a, b) => (a.dias ?? 0) - (b.dias ?? 0))
-      .map(({ r }) => ({
-        texto: formatFemeaAlertaTexto(r.femeaId, animaisPorId.get(r.femeaId)),
-        detalhe: prazoRelativo(r.dataPrevistoParto),
-        animalId: r.femeaId,
-      }));
-
-    // Manutenções próximas (≤30 dias, não concluídas)
-    const manut = manutencoes
-      .filter(m => m.status !== "concluida" && m.proximaManutencao)
-      .map(m => ({ m, dias: diasAte(m.proximaManutencao) }))
-      .filter(x => x.dias != null && x.dias <= 30)
-      .sort((a, b) => (a.dias ?? 0) - (b.dias ?? 0))
-      .map(({ m }) => ({
-        texto: m.tipo ?? "Manutenção",
-        detalhe: prazoRelativo(m.proximaManutencao),
-      }));
-
-    const total =
-      estoqueBaixo.length + validade.length + sanidade.length + partos.length + manut.length;
-
-    return { estoqueBaixo, validade, sanidade, partos, manut, pendentes: [] as Array<{ texto: string; detalhe: string }>, total };
-  }, [estoque.baixo, movEstoque, saude, reproducao, manutencoes, animais]);
-
-  // ── Pastos (ocupação) ────────────────────────────────────────────────────────
-  const ocupacao = useMemo(
-    () =>
-      [...pastos]
-        .filter(p => (p.capacidade ?? 0) > 0 || (p.qtdAnimais ?? 0) > 0)
-        .sort((a, b) => (b.pctOcupacao ?? 0) - (a.pctOcupacao ?? 0))
-        .slice(0, 6),
-    [pastos]
-  );
-
-  // ── Outros KPIs ────────────────────────────────────────────────────────────
-  const areaTotal = useMemo(
-    () => fazendas.reduce((s, f) => s + (Number(f.area) || 0), 0),
-    [fazendas]
-  );
+  const carregando = overviewQuery.isLoading || overviewQuery.isFetching;
+  const comErro = overviewQuery.isError
+    && overviewQuery.error?.data?.code !== "FORBIDDEN"
+    && !(overviewQuery.error?.message ?? "").includes(MSG_PAINEL_FAZENDA_NEGADA);
+  const painel = overviewQuery.data ?? emptyPainelOverview();
+  const fazendas = painel.fazendas;
+  const estadoIndicadores = estadoBlocoPainel(carregando, comErro, overviewQuery.data != null);
+  const estadoAlertas = estadoBlocoPainel(carregando, comErro, overviewQuery.data != null);
 
   const saudacao = (() => {
     const h = new Date().getHours();
@@ -205,63 +104,103 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  const temAlgumDado =
-    rebanho.total > 0 || produtos.length > 0 || fazendas.length > 0;
+  const fazendaNome = fazendaIdInput
+    ? fazendas.find(f => f.id === fazendaIdInput)?.nome
+    : fazendas.length === 1
+      ? fazendas[0].nome
+      : fazendas.length > 1
+        ? "Todas as fazendas"
+        : "";
 
-  const periodoAtivo = PERIODOS.find(p => p.chave === periodo)?.label ?? "90 dias";
   const primeiroAlerta =
-    alertas.estoqueBaixo[0] ??
-    alertas.validade[0] ??
-    alertas.sanidade[0] ??
-    alertas.partos[0] ??
-    alertas.manut[0] ??
-    alertas.pendentes[0];
-  const statusOperacao = alertas.total === 0
-    ? { label: "Tudo em ordem", detalhe: "Nenhuma pendência crítica", color: GREEN, icon: "check_circle" }
-    : alertas.estoqueBaixo.length > 0
-      ? { label: "Atenção no estoque", detalhe: `${alertas.estoqueBaixo.length} item(ns) abaixo do mínimo`, color: RED, icon: "warning" }
-      : { label: "Pendências abertas", detalhe: `${alertas.total} ponto(s) pedindo revisão`, color: GOLD, icon: "priority_high" };
+    painel.alertas.estoqueBaixo[0] ??
+    painel.alertas.validade[0] ??
+    painel.alertas.sanidade[0] ??
+    painel.alertas.partos[0] ??
+    painel.alertas.manut[0] ??
+    painel.alertas.pendentes[0];
+
+  const statusOperacao = statusOperacaoPainel(estadoAlertas, painel.alertas);
+  const statusColor =
+    statusOperacao.tom === "ok" ? GREEN
+      : statusOperacao.tom === "critico" ? RED
+        : statusOperacao.tom === "alerta" ? GOLD
+          : TEAL;
+
   const resumoOperacao = [
-    { label: "Status", value: statusOperacao.label, detail: statusOperacao.detalhe, icon: statusOperacao.icon, color: statusOperacao.color },
-    { label: "Próxima ação", value: primeiroAlerta?.texto ?? "Sem ação imediata", detail: primeiroAlerta?.detalhe ?? "Operação sem alerta prioritário", icon: "task_alt", color: primeiroAlerta ? RED : GREEN },
-    { label: "Período", value: periodoAtivo, detail: "Filtro do painel", icon: "date_range", color: TEAL },
-    { label: "Base", value: `${num(fazendas.length)} fazenda${fazendas.length === 1 ? "" : "s"}`, detail: `${num(stats?.totalLotes ?? 0)} lotes · ${num(pastos.length)} pastos`, icon: "map", color: NAVY },
+    {
+      label: "Status",
+      value: statusOperacao.label,
+      detail: statusOperacao.detalhe,
+      icon: statusOperacao.tom === "ok" ? "check_circle" : statusOperacao.tom === "critico" ? "warning" : "priority_high",
+      color: statusColor,
+    },
+    {
+      label: "Próxima ação",
+      value: estadoAlertas === "carregando"
+        ? "Carregando…"
+        : estadoAlertas === "erro"
+          ? "Indisponível"
+          : primeiroAlerta?.texto ?? "Sem ação imediata",
+      detail: estadoAlertas === "carregando"
+        ? "Aguardando alertas"
+        : estadoAlertas === "erro"
+          ? "Tente novamente"
+          : primeiroAlerta?.detalhe ?? "Operação sem alerta prioritário",
+      icon: "task_alt",
+      color: primeiroAlerta && estadoAlertas === "pronto" ? RED : GREEN,
+    },
+    {
+      label: "Fazenda",
+      value: fazendaNome || (carregando ? "Carregando…" : "Sem fazenda"),
+      detail: fazendaIdInput ? "Filtro aplicado no servidor" : "Consolidado das fazendas autorizadas",
+      icon: "agriculture",
+      color: TEAL,
+    },
+    {
+      label: "Base",
+      value: carregando ? "Carregando…" : `${num(fazendas.length)} fazenda${fazendas.length === 1 ? "" : "s"}`,
+      detail: carregando
+        ? "Consultando lotes e pastos"
+        : `${num(painel.totalLotes)} lotes · ${num(painel.totalPastos)} pastos`,
+      icon: "map",
+      color: NAVY,
+    },
   ];
+
+  const temAlgumDado =
+    estadoIndicadores === "pronto" &&
+    (painel.rebanho.total > 0 || painel.estoque.totalProdutos > 0 || fazendas.length > 0);
 
   return (
     <AppLayout>
-      {/* ── Cabeçalho ── */}
       <div className="relative overflow-hidden rounded-3xl border border-[#D7F4F1] bg-gradient-to-br from-[#0F3F46] via-[#12606A] to-[#0F766E] shadow-[0_22px_50px_rgba(15,79,89,0.22)] mb-5">
         <div className="absolute -right-14 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute bottom-0 left-1/3 h-24 w-64 rounded-full bg-[#1BC5BD]/20 blur-3xl" />
         <div className="relative p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[12px] text-teal-100/85">{hojeBr.charAt(0).toUpperCase() + hojeBr.slice(1)}</p>
-              <h1 className="text-[26px] sm:text-[30px] font-bold text-white leading-tight mt-1">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 sm:flex-1">
+              <p className="text-[12px] text-teal-100/85 break-words">{hojeBr.charAt(0).toUpperCase() + hojeBr.slice(1)}</p>
+              <h1 className="text-[26px] sm:text-[30px] font-bold text-white leading-tight mt-1 break-words">
                 {saudacao}{me?.name ? `, ${me.name.split(" ")[0]}` : ""}
               </h1>
-              <p className="text-[13px] text-teal-50/80 mt-1">
-                Painel de controle da sua operação{fazendas.length === 1 ? ` · ${fazendas[0].nome}` : fazendas.length > 1 ? ` · ${fazendas.length} fazendas` : ""}
+              <p className="text-[13px] text-teal-50/80 mt-1 break-words">
+                Painel de controle da sua operação{fazendaNome ? ` · ${fazendaNome}` : ""}
               </p>
             </div>
-            <div className="flex items-center gap-1 bg-white/12 border border-white/15 rounded-xl p-1 backdrop-blur-sm">
-              {PERIODOS.map(p => (
-                <button
-                  key={p.chave}
-                  type="button"
-                  onClick={() => setPeriodo(p.chave)}
-                  className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-wide transition-colors ${
-                    periodo === p.chave ? "bg-white text-[#0F3F46] shadow-sm" : "text-white/80 hover:bg-white/10"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+            <div className="w-full min-w-0 max-w-full rounded-xl bg-white p-1 sm:w-auto sm:max-w-sm sm:min-w-[220px] sm:shrink-0">
+              <FazendaOverviewSelect
+                value={filtro.fazendaId}
+                onChange={value => setFiltro({ fazendaId: value })}
+                fazendas={fazendas}
+                emptyLabel="Todas as fazendas"
+                disabled={carregando && fazendas.length === 0}
+                className="w-full min-w-0 max-w-full sm:min-w-[200px]"
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-5">
+          <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {resumoOperacao.map(item => (
               <button
                 key={item.label}
@@ -270,14 +209,14 @@ export default function DashboardPage() {
                   if (item.label === "Próxima ação") setLocation(primeiroAlerta ? "/insumos/visao-geral" : "/admin/overview");
                   if (item.label === "Base") setLocation("/fazendas/visao-geral");
                 }}
-                className="text-left rounded-2xl border border-white/15 bg-white/12 p-3 backdrop-blur-sm hover:bg-white/18 transition-colors"
+                className="min-w-0 text-left rounded-2xl border border-white/15 bg-white/12 p-3 backdrop-blur-sm hover:bg-white/18 transition-colors"
               >
                 <div className="flex items-start gap-3">
-                  <span className="material-icons rounded-xl p-2 text-[20px] bg-white/90" style={{ color: item.color }}>{item.icon}</span>
+                  <span className="material-icons shrink-0 rounded-xl bg-white/90 p-2 text-[20px]" style={{ color: item.color }}>{item.icon}</span>
                   <div className="min-w-0">
                     <p className="text-[10px] uppercase tracking-wide text-teal-50/70">{item.label}</p>
-                    <p className="text-[14px] font-bold text-white truncate">{item.value}</p>
-                    <p className="text-[11px] text-teal-50/70 truncate">{item.detail}</p>
+                    <p className="break-words text-[14px] font-bold leading-snug text-white line-clamp-2">{item.value}</p>
+                    <p className="break-words text-[11px] leading-snug text-teal-50/70 line-clamp-2">{item.detail}</p>
                   </div>
                 </div>
               </button>
@@ -286,6 +225,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {comErro ? (
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          Não foi possível carregar o Painel de Controle. Os números abaixo não estão confirmados.
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between mb-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Resumo executivo</p>
@@ -293,106 +238,148 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── KPIs ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 mb-5">
+      <div className="mb-5 grid min-w-0 grid-cols-1 items-stretch gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
+          wrapText
           label="Rebanho ativo"
-          value={num(rebanho.total)}
+          value={num(painel.rebanho.total)}
+          loading={carregando}
           icon="pets"
           color={TEAL}
-          sub={<span>{num(rebanho.machos)} machos · {num(rebanho.femeas)} fêmeas</span>}
+          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.rebanho.machos)} machos · {num(painel.rebanho.femeas)} fêmeas</span>}
           onClick={() => setLocation("/rebanho/visao-geral")}
         />
         <KpiCard
+          wrapText
           label="Peso médio"
-          value={`${num(rebanho.pesoMedio, 0)} kg`}
+          value={`${num(painel.rebanho.pesoMedio, 0)} kg`}
+          loading={carregando}
           icon="monitor_weight"
           color={NAVY}
-          sub={<span>{num(rebanho.pesoTotal / 1000, 1)} t no rebanho</span>}
+          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.rebanho.pesoTotal / 1000, 1)} t no rebanho</span>}
           onClick={() => setLocation("/rebanho/visao-geral")}
         />
         <KpiCard
+          wrapText
           label="Caixa e Bancos"
-          value="V2"
+          value={painel.financeiro.disponivel ? formatarValorRelatorioV2(painel.financeiro.saldoCaixaBancos) : "—"}
+          loading={carregando}
           icon="account_balance"
           color={GREEN}
-          sub={<span>Abrir contas oficiais</span>}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? painel.financeiro.avisoCaixa : "Financeiro oficial indisponível"}</span>}
           onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)}
         />
         <KpiCard
-          label="Financeiro"
-          value="Oficial"
-          icon="trending_up"
+          wrapText
+          label="Total a receber"
+          value={painel.financeiro.disponivel ? formatarValorRelatorioV2(painel.financeiro.totalAReceber) : "—"}
+          loading={carregando}
+          icon="south_west"
           color={TEAL}
-          sub={<span>Receber, pagar e caixa</span>}
-          onClick={() => setLocation(FINANCEIRO_VISAO_GERAL_PATH)}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : "Financeiro oficial indisponível"}</span>}
+          onClick={() => setLocation("/financeiro/contas-a-receber")}
         />
         <KpiCard
+          wrapText
+          label="Total a pagar"
+          value={painel.financeiro.disponivel ? formatarValorRelatorioV2(painel.financeiro.totalAPagar) : "—"}
+          loading={carregando}
+          icon="north_east"
+          color={RED}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : "Financeiro oficial indisponível"}</span>}
+          onClick={() => setLocation("/financeiro/contas-a-pagar")}
+        />
+        <KpiCard
+          wrapText
+          label={painel.financeiro.rotuloResultado}
+          value={painel.financeiro.disponivel ? formatarValorRelatorioV2(painel.financeiro.resultadoRealizado) : "—"}
+          loading={carregando}
+          icon="trending_up"
+          color={painel.financeiro.resultadoRealizado < 0 ? RED : TEAL}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.avisoResultado, painel.financeiro.avisoSemAtribuicao].filter(Boolean).join(" ") : "Financeiro oficial indisponível"}</span>}
+          onClick={() => setLocation("/financeiro/relatorios")}
+        />
+        <KpiCard
+          wrapText
           label="Valor em estoque"
-          value={brlCompact(estoque.valorTotal)}
+          value={brlCompact(painel.estoque.valorTotal)}
+          loading={carregando}
           icon="inventory_2"
           color={GOLD}
-          sub={<span>{num(estoque.totalProdutos)} produtos</span>}
+          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.estoque.totalProdutos)} produtos</span>}
           onClick={() => setLocation("/insumos/visao-geral")}
         />
         <KpiCard
+          wrapText
           label="Área total"
-          value={`${num(areaTotal, 0)} ha`}
+          value={`${num(painel.areaTotal, 0)} ha`}
+          loading={carregando}
           icon="map"
           color="#0891B2"
-          sub={<span>{num(stats?.totalLotes ?? 0)} lotes · {num(pastos.length)} pastos</span>}
+          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.totalLotes)} lotes · {num(painel.totalPastos)} pastos</span>}
           onClick={() => setLocation("/fazendas/visao-geral")}
         />
       </div>
 
-      {/* ── Central de Alertas ── */}
       <SectionCard
         title="Central de Alertas"
         icon="notifications_active"
         className="mb-5"
         action={
           <span
-            className="text-[11px] font-bold rounded-full px-2.5 py-0.5 text-white"
-            style={{ backgroundColor: alertas.total > 0 ? RED : GREEN }}
+            className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white"
+            style={{ backgroundColor: estadoAlertas === "pronto" && painel.alertas.total > 0 ? RED : GREEN }}
           >
-            {alertas.total} {alertas.total === 1 ? "pendência" : "pendências"}
+            {carregando ? "…" : `${painel.alertas.total} ${painel.alertas.total === 1 ? "pendência" : "pendências"}`}
           </span>
         }
       >
-        {alertas.total === 0 ? (
+        {estadoAlertas === "carregando" ? (
+          <div className="p-8 text-center">
+            <span className="material-icons text-3xl text-gray-300 animate-pulse">hourglass_empty</span>
+            <p className="text-[13px] text-gray-600 mt-2 font-medium">Carregando alertas…</p>
+            <p className="text-[12px] text-gray-400">Aguarde a consulta terminar para ver o status.</p>
+          </div>
+        ) : estadoAlertas === "erro" ? (
+          <div className="p-8 text-center">
+            <span className="material-icons text-3xl text-red-400">error_outline</span>
+            <p className="text-[13px] text-gray-600 mt-2 font-medium">Não foi possível carregar os alertas.</p>
+            <p className="text-[12px] text-gray-400">Isso não significa que está tudo em ordem.</p>
+          </div>
+        ) : painel.alertas.total === 0 ? (
           <div className="p-8 text-center">
             <span className="material-icons text-3xl" style={{ color: GREEN }}>check_circle</span>
             <p className="text-[13px] text-gray-600 mt-2 font-medium">Tudo em ordem!</p>
             <p className="text-[12px] text-gray-400">Nenhuma pendência crítica no momento.</p>
           </div>
         ) : (
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
             <AlertGroup
               icon="warning"
               titulo="Estoque baixo"
               severidade="critico"
-              itens={alertas.estoqueBaixo}
+              itens={painel.alertas.estoqueBaixo}
               onClick={() => setLocation("/insumos/visao-geral")}
             />
             <AlertGroup
               icon="event_busy"
               titulo="Validade próxima"
-              severidade={alertas.validade.some(v => v.vencido) ? "critico" : "alerta"}
-              itens={alertas.validade}
+              severidade={painel.alertas.validade.some(v => v.vencido) ? "critico" : "alerta"}
+              itens={painel.alertas.validade}
               onClick={() => setLocation("/insumos/movimentacao")}
             />
             <AlertGroup
               icon="vaccines"
               titulo="Sanidade / retornos"
               severidade="alerta"
-              itens={alertas.sanidade}
+              itens={painel.alertas.sanidade}
               onClick={() => setLocation("/rebanho/visao-geral")}
             />
             <AlertGroup
               icon="pregnant_woman"
               titulo="Partos previstos"
               severidade="info"
-              itens={alertas.partos}
+              itens={painel.alertas.partos}
               onItemClick={(item) => {
                 if (item.animalId == null || item.animalId <= 0) return;
                 setLocation(getFichaAnimalPath(item.animalId, "reproducao"));
@@ -402,26 +389,84 @@ export default function DashboardPage() {
               icon="build"
               titulo="Manutenções"
               severidade="alerta"
-              itens={alertas.manut}
+              itens={painel.alertas.manut}
               onClick={() => setLocation("/maquinas/manutencao")}
             />
             <AlertGroup
               icon="schedule"
               titulo="Lançamentos pendentes"
               severidade="info"
-              itens={alertas.pendentes}
+              itens={painel.alertas.pendentes}
               onClick={() => setLocation(FINANCEIRO_VISAO_GERAL_PATH)}
             />
           </div>
         )}
       </SectionCard>
 
-      {/* ── Fluxo de caixa + Composição do rebanho ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-        <SectionCard title="Financeiro oficial" icon="account_balance_wallet" className="lg:col-span-2">
+        <SectionCard title="Compra e Venda recentes" icon="swap_horiz" className="lg:col-span-2">
           <div className="p-4">
-            <EmptyState icon="account_balance_wallet" text="Use Contas a Receber, Contas a Pagar e Caixa e Bancos." />
+            {carregando ? (
+              <EmptyState icon="swap_horiz" text="Carregando operações…" />
+            ) : painel.comercial.compras.length === 0 && painel.comercial.vendas.length === 0 ? (
+              <EmptyState icon="swap_horiz" text="Sem compras ou vendas recentes neste recorte." />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Compras</p>
+                  {painel.comercial.compras.length === 0 ? (
+                    <p className="text-[12px] text-gray-400">Nenhuma compra recente.</p>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {painel.comercial.compras.map(op => (
+                        <button
+                          key={`c-${op.id}`}
+                          type="button"
+                          onClick={() => setLocation(compraVendaCompraDetalhePath(op.id))}
+                          className="w-full text-left py-2 hover:bg-gray-50 rounded-md px-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[12px] font-medium text-gray-700 truncate">{op.parceiro}</span>
+                            <span className="text-[12px] tabular-nums text-gray-800">{op.valor == null ? "—" : formatarValorRelatorioV2(op.valor)}</span>
+                          </div>
+                          <p className="text-[10px] text-gray-400">{dataBr(op.data)}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Vendas</p>
+                  {painel.comercial.vendas.length === 0 ? (
+                    <p className="text-[12px] text-gray-400">Nenhuma venda recente.</p>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {painel.comercial.vendas.map(op => (
+                        <button
+                          key={`v-${op.id}`}
+                          type="button"
+                          onClick={() => setLocation(compraVendaVendaDetalhePath(op.id))}
+                          className="w-full text-left py-2 hover:bg-gray-50 rounded-md px-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[12px] font-medium text-gray-700 truncate">{op.parceiro}</span>
+                            <span className="text-[12px] tabular-nums text-gray-800">{op.valor == null ? "—" : formatarValorRelatorioV2(op.valor)}</span>
+                          </div>
+                          <p className="text-[10px] text-gray-400">{dataBr(op.data)}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setLocation(COMPRA_VENDA_COMPRAS_PATH)} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
+                Compras
+              </button>
+              <button type="button" onClick={() => setLocation(COMPRA_VENDA_VENDAS_PATH)} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
+                Vendas
+              </button>
               <button type="button" onClick={() => setLocation("/financeiro/contas-a-receber")} className="text-[12px] font-medium hover:underline" style={{ color: TEAL }}>
                 Contas a Receber
               </button>
@@ -437,14 +482,16 @@ export default function DashboardPage() {
 
         <SectionCard title="Composição do Rebanho" icon="donut_large">
           <div className="p-4">
-            {rebanho.composicao.length === 0 ? (
+            {carregando ? (
+              <EmptyState icon="donut_large" text="Carregando composição…" />
+            ) : painel.rebanho.composicao.length === 0 ? (
               <EmptyState icon="pets" text="Sem animais cadastrados" />
             ) : (
               <>
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
                     <Pie
-                      data={rebanho.composicao}
+                      data={painel.rebanho.composicao}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -453,7 +500,7 @@ export default function DashboardPage() {
                       outerRadius={80}
                       paddingAngle={2}
                     >
-                      {rebanho.composicao.map((_, i) => (
+                      {painel.rebanho.composicao.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
                     </Pie>
@@ -464,7 +511,7 @@ export default function DashboardPage() {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-1.5 mt-2">
-                  {rebanho.composicao.slice(0, 6).map((c, i) => (
+                  {painel.rebanho.composicao.slice(0, 6).map((c, i) => (
                     <div key={c.name} className="flex items-center justify-between text-[12px]">
                       <span className="flex items-center gap-2 text-gray-600 truncate">
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
@@ -480,14 +527,15 @@ export default function DashboardPage() {
         </SectionCard>
       </div>
 
-      {/* ── Ocupação de pastos + Faixa etária ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
         <SectionCard title="Ocupação de Pastos" icon="grass" className="lg:col-span-2">
-          {ocupacao.length === 0 ? (
+          {carregando ? (
+            <EmptyState icon="grass" text="Carregando pastos…" />
+          ) : painel.ocupacao.length === 0 ? (
             <EmptyState icon="grass" text="Sem pastos cadastrados" />
           ) : (
             <div className="p-4 space-y-3">
-              {ocupacao.map(p => {
+              {painel.ocupacao.map(p => {
                 const pct = p.pctOcupacao ?? 0;
                 const cor = pct >= 95 ? RED : pct >= 75 ? GOLD : TEAL;
                 return (
@@ -511,13 +559,15 @@ export default function DashboardPage() {
 
         <SectionCard title="Faixa Etária" icon="cake">
           <div className="p-4">
-            {rebanho.total === 0 ? (
+            {carregando ? (
+              <EmptyState icon="cake" text="Carregando idades…" />
+            ) : painel.rebanho.total === 0 ? (
               <EmptyState icon="cake" text="Sem animais cadastrados" />
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart
                   layout="vertical"
-                  data={rebanho.idades}
+                  data={painel.rebanho.idades}
                   margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
@@ -535,7 +585,6 @@ export default function DashboardPage() {
         </SectionCard>
       </div>
 
-      {/* ── Atividade recente ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <SectionCard
           title="Caixa oficial"
@@ -558,11 +607,13 @@ export default function DashboardPage() {
             </button>
           }
         >
-          {saude.length === 0 ? (
+          {carregando ? (
+            <EmptyState icon="health_and_safety" text="Carregando registros…" />
+          ) : painel.saudeRecente.length === 0 ? (
             <EmptyState icon="health_and_safety" text="Sem registros" />
           ) : (
             <div className="divide-y divide-gray-50">
-              {[...saude].slice(0, 6).map(s => (
+              {painel.saudeRecente.map(s => (
                 <div key={s.id} className="px-4 py-2.5">
                   <div className="flex items-center justify-between mb-0.5 gap-2">
                     <span className="text-[11px] font-medium text-gray-700 truncate">Animal #{s.animalId}</span>
@@ -590,7 +641,7 @@ export default function DashboardPage() {
         </SectionCard>
       </div>
 
-      {!temAlgumDado && (
+      {estadoIndicadores === "pronto" && !temAlgumDado && (
         <div className="mt-5 text-center text-[12px] text-gray-400">
           Comece cadastrando sua fazenda, rebanho e lançamentos — o painel se preenche automaticamente.
         </div>

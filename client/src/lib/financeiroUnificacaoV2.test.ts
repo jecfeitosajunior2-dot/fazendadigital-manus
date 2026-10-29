@@ -49,6 +49,16 @@ describe("Fase 4.1 — unificação do Financeiro no V2", () => {
     expect(visao).not.toContain("createMovimentacao");
   });
 
+  it("o módulo Relatórios independente não tem rota pública", () => {
+    expect(app).not.toMatch(/import\s+\{[^}]*ReportsManagementPage/);
+    expect(app).not.toContain("component={ReportsManagementPage}");
+    expect(app).toContain("RedirectPainelControle");
+    expect(app).toContain('path="/relatorios/visao-geral"');
+    expect(app).toContain('path="/financeiro/relatorios"');
+    expect(app).toContain("FinanceiroRelatoriosPage");
+    expect(app).toContain('path="/admin/overview"');
+  });
+
   it("relatórios não exibem valores financeiros fictícios", () => {
     expect(reports).toContain("MSG_RELATORIO_FINANCEIRO_INDISPONIVEL");
     expect(MSG_RELATORIO_FINANCEIRO_INDISPONIVEL).toBe(

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import bcrypt from "bcryptjs";
 import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
@@ -17,6 +16,7 @@ import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
 import { toBenfeitoriaRow, toBenfeitoriaUpdateRow } from "./benfeitoriasDb";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
+import { carregarPainelControle } from "./painelControle";
 import { MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA } from "../shared/financeiroLegadoBloqueio";
 import {
   importarCoordenadasPastos,
@@ -314,7 +314,7 @@ import {
 } from "../shared/reproPipelineConfig";
 import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
-import { tryDevLoginFallback, tryDevPreviewSession } from "./_core/devLoginFallback";
+import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
 import { isProductionDeploy } from "./_core/isProductionDeploy";
 import { devLocalStore } from "./devLocalStore";
 import {
@@ -348,6 +348,23 @@ import {
   computeIndicadoresPeso,
   isPesoEntradaInformadoInvalido,
 } from "../shared/pesoEntrada";
+import { idsFazendasDoUsuarioParaEstoque } from "./estoqueIsolamentoLeitura";
+import {
+  assertFazendasEstoqueDoUsuario,
+  assertMovimentacaoEstoqueDoUsuario,
+  assertProdutoEstoqueDoUsuario,
+  assertProdutosEstoqueDoUsuario,
+  fazendasAutorizadasEstoque,
+  recusarEscritaEstoque,
+} from "./estoqueIsolamentoEscrita";
+import {
+  filtrarMovimentacoesEstoque,
+  filtrarProdutosEstoque,
+  podeEscreverProdutoEstoque,
+  produtoEstoqueVisivel,
+  movimentacaoEstoqueVisivel,
+  setFazendasDoUsuario,
+} from "../shared/estoqueIsolamento";
 
 const imageSlotInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("empty") }),
@@ -379,34 +396,21 @@ const authRouter = router({
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
-      // Support login by email OR by openId
       const { or } = await import("drizzle-orm");
       const [user] = await db.select().from(users).where(
         or(eq(users.openId, input.username), eq(users.email, input.username))
       ).limit(1);
-      if (!user) {
-        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res, ctx.req.hostname);
-        if (fallback) return fallback;
-        throw new Error("Usuário não encontrado");
-      }
-      // Check password: use passwordHash if available, otherwise fallback to admin123
-      let valid = false;
-      if (user.passwordHash) {
-        valid = await bcrypt.compare(input.password, user.passwordHash);
-      } else {
-        valid = input.password === "admin123";
-      }
-      if (!valid) throw new Error("Senha incorreta");
+      const senhaOk = await senhaConfereComHash(user?.passwordHash, input.password);
+      if (!user || !senhaOk) throw new Error(MSG_LOGIN_INVALIDO);
       const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
       setAuthCookie(ctx.res, token);
       return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const fallback = await tryDevLoginFallback(input.username, input.password, ctx.res, ctx.req.hostname);
-        if (!fallback) {
+        if (isDatabaseUnavailable(error)) {
           throw new Error("Banco de dados indisponível. Tente novamente em instantes.");
         }
-        return fallback;
+        if (error instanceof Error && error.message === MSG_LOGIN_INVALIDO) throw error;
+        throw error;
       }
     }),
 
@@ -417,10 +421,8 @@ const authRouter = router({
 
   ensureLocalPreviewSession: publicProcedure
     .input(z.object({ email: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const session = await tryDevPreviewSession(input.email, ctx.res, ctx.req.hostname);
-      if (!session) return { success: false as const };
-      return session;
+    .mutation(async () => {
+      return { success: false as const };
     }),
 });
 
@@ -8419,14 +8421,21 @@ const estoqueInputFields = {
 };
 
 const estoqueRouter = router({
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+    const listarLocal = () => filtrarProdutosEstoque(devLocalStore.listEstoque(), fazendaIds);
+    if (fazendaIds.length === 0) return [];
     try {
-      const rows = await db.select().from(estoque).orderBy(desc(estoque.createdAt));
-      return resolverLeituraEstoqueList({ ok: true, rows }, () => devLocalStore.listEstoque(), isDatabaseUnavailable);
+      const rows = await db
+        .select()
+        .from(estoque)
+        .where(inArray(estoque.fazendaId, fazendaIds))
+        .orderBy(desc(estoque.createdAt));
+      return resolverLeituraEstoqueList({ ok: true, rows }, listarLocal, isDatabaseUnavailable);
     } catch (error) {
       return resolverLeituraEstoqueList(
         { ok: false, error },
-        () => devLocalStore.listEstoque(),
+        listarLocal,
         isDatabaseUnavailable,
       );
     }
@@ -8434,27 +8443,27 @@ const estoqueRouter = router({
 
   listByFazenda: protectedProcedure
     .input(z.object({ fazendaId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
       try {
         const rows = await db
           .select()
           .from(estoque)
           .where(eq(estoque.fazendaId, input.fazendaId))
           .orderBy(desc(estoque.createdAt));
-        const localRows = devLocalStore
-          .listEstoque()
-          .filter(r => Number(r.fazendaId) === input.fazendaId);
+        const localRows = filtrarProdutosEstoque(devLocalStore.listEstoque(), [input.fazendaId]);
         if (localRows.length === 0) return rows;
         return mergeEstoqueListPreferLocal(rows, localRows);
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        return devLocalStore.listEstoque().filter(r => Number(r.fazendaId) === input.fazendaId);
+        return filtrarProdutosEstoque(devLocalStore.listEstoque(), [input.fazendaId]);
       }
     }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const autorizadas = setFazendasDoUsuario(await idsFazendasDoUsuarioParaEstoque(ctx.user.id));
       const mergeVinculos = (
         base: {
           fazendaId: number;
@@ -8483,7 +8492,7 @@ const estoqueRouter = router({
 
       try {
         const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
-        if (row) {
+        if (row && produtoEstoqueVisivel(row, autorizadas)) {
           let estoquesVinculados: {
             fazendaId: number;
             estoqueId: number;
@@ -8538,7 +8547,8 @@ const estoqueRouter = router({
           const localRow = devLocalStore.getEstoque(input.id);
           const localProdutoId = localRow?.produtoId ?? row.produtoId ?? null;
           const localVinculos = devLocalStore.listEstoquesVinculados(localProdutoId, localRow ?? row);
-          estoquesVinculados = mergeVinculos(estoquesVinculados, localVinculos);
+          estoquesVinculados = mergeVinculos(estoquesVinculados, localVinculos)
+            .filter(v => produtoEstoqueVisivel(v, autorizadas));
 
           const base = localRow ? { ...row, ...localRow, id: row.id } : row;
           const fazendaIds = [...new Set(estoquesVinculados.map(e => e.fazendaId))];
@@ -8548,11 +8558,11 @@ const estoqueRouter = router({
         if (!isDatabaseUnavailable(error)) throw error;
       }
       const local = devLocalStore.getEstoque(input.id);
-      if (!local) return null;
+      if (!local || !produtoEstoqueVisivel(local, autorizadas)) return null;
       const estoquesVinculados = devLocalStore.listEstoquesVinculados(
         local.produtoId ?? null,
         local
-      );
+      ).filter(v => produtoEstoqueVisivel(v, autorizadas));
       return {
         ...local,
         fazendaIds: estoquesVinculados.map(e => e.fazendaId),
@@ -8562,7 +8572,7 @@ const estoqueRouter = router({
 
   create: protectedProcedure
     .input(z.object(estoqueInputFields))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const fazendaIds = resolverFazendaIds(input);
       if (fazendaIds.length === 0) {
         throw new TRPCError({
@@ -8570,6 +8580,7 @@ const estoqueRouter = router({
           message: "Selecione pelo menos uma fazenda para usar este produto.",
         });
       }
+      await assertFazendasEstoqueDoUsuario(ctx.user.id, fazendaIds);
       const catalogoValues = toCatalogoInsertValues(input);
 
       try {
@@ -8614,7 +8625,7 @@ const estoqueRouter = router({
 
   update: protectedProcedure
     .input(z.object({ id: z.number(), ...estoqueInputFields }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, ...fields } = input;
       const fazendaIds = resolverFazendaIds(fields);
       if (fazendaIds.length === 0) {
@@ -8623,6 +8634,8 @@ const estoqueRouter = router({
           message: "Selecione pelo menos uma fazenda para usar este produto.",
         });
       }
+      await assertFazendasEstoqueDoUsuario(ctx.user.id, fazendaIds);
+      const { set: autorizadas, ids: fazendasUsuario } = await fazendasAutorizadasEstoque(ctx.user.id);
       const catalogoValues = toCatalogoInsertValues(fields);
       const syncValues = toEstoqueSyncFromCatalogo(catalogoValues);
       const localPayload = { id, ...fields, embalagens: fields.embalagens };
@@ -8631,6 +8644,7 @@ const estoqueRouter = router({
         const [existing] = await db.select().from(estoque).where(eq(estoque.id, id));
 
         if (existing) {
+          if (!podeEscreverProdutoEstoque(existing, autorizadas)) recusarEscritaEstoque();
           if (
             capitalEstaInicializado({ capitalInicializadoEm: existing.capitalInicializadoEm }) &&
             fields.valorUnitario != null &&
@@ -8656,14 +8670,15 @@ const estoqueRouter = router({
                   : fields.valorUnitario ?? existing.valorUnitario,
                 localizacao: fields.localizacao ?? existing.localizacao,
               })
-              .where(eq(estoque.produtoId, produtoId));
+              .where(and(eq(estoque.produtoId, produtoId), inArray(estoque.fazendaId, fazendasUsuario)));
 
             // Situação operacional (ativo/inativo) é por fazenda — não cascatear a do catálogo
 
-            const linked = await db
+            const linkedAll = await db
               .select()
               .from(estoque)
               .where(eq(estoque.produtoId, produtoId));
+            const linked = linkedAll.filter(l => podeEscreverProdutoEstoque(l, autorizadas));
             const linkedFazendas = new Set(
               linked
                 .map(l => Number(l.fazendaId))
@@ -8790,6 +8805,7 @@ const estoqueRouter = router({
 
         const local = devLocalStore.getEstoque(id);
         if (local) {
+          if (!podeEscreverProdutoEstoque(local, autorizadas)) recusarEscritaEstoque();
           devLocalStore.updateProdutoComEstoques(localPayload);
           return { success: true, localFallback: true };
         }
@@ -8798,7 +8814,10 @@ const estoqueRouter = router({
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
-        devLocalStore.updateProdutoComEstoques(localPayload);
+        const localDown = devLocalStore.getEstoque(id);
+        if (localDown && !podeEscreverProdutoEstoque(localDown, autorizadas)) recusarEscritaEstoque();
+        if (localDown) devLocalStore.updateProdutoComEstoques(localPayload);
+        else recusarEscritaEstoque();
         return { success: true, localFallback: true };
       }
     }),
@@ -8813,7 +8832,8 @@ const estoqueRouter = router({
       quantidadeMinima: z.string().optional(),
       quantidadeMaxima: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
       try {
         const [catalogo] = await db
           .select()
@@ -8879,7 +8899,8 @@ const estoqueRouter = router({
       /** fazenda = desvincular só desta fazenda; catalogo = apagar produto inteiro */
       escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const { set: autorizadas } = await fazendasAutorizadasEstoque(ctx.user.id);
       const deleteLocal = () => {
         try {
           return devLocalStore.deleteEstoque(input.id, input.escopo);
@@ -8892,9 +8913,12 @@ const estoqueRouter = router({
       try {
         const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
         if (!row) {
+          const localRow = devLocalStore.getEstoque(input.id);
+          if (localRow && !podeEscreverProdutoEstoque(localRow, autorizadas)) recusarEscritaEstoque();
           const local = deleteLocal();
           return { success: true, localFallback: true, escopo: input.escopo, ...local };
         }
+        if (!podeEscreverProdutoEstoque(row, autorizadas)) recusarEscritaEstoque();
 
         if (input.escopo === "fazenda") {
           const qty = Number(row.quantidade ?? 0);
@@ -8936,9 +8960,10 @@ const estoqueRouter = router({
         let estoqueIds = [row.id];
         if (produtoId) {
           const linked = await db
-            .select({ id: estoque.id })
+            .select()
             .from(estoque)
             .where(eq(estoque.produtoId, produtoId));
+          if (linked.some(l => !podeEscreverProdutoEstoque(l, autorizadas))) recusarEscritaEstoque();
           estoqueIds = linked.map(l => l.id);
         }
 
@@ -8977,13 +9002,15 @@ const estoqueRouter = router({
       /** fazenda = só os estoques informados; catalogo = produto inteiro + todas as fazendas */
       escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await assertProdutosEstoqueDoUsuario(ctx.user.id, input.ids);
+      const { set: autorizadas, ids: fazendasUsuario } = await fazendasAutorizadasEstoque(ctx.user.id);
       const aplicar = async () => {
         if (input.escopo === "fazenda") {
           await db
             .update(estoque)
             .set({ situacao: "inativo" })
-            .where(inArray(estoque.id, input.ids));
+            .where(and(inArray(estoque.id, input.ids), inArray(estoque.fazendaId, fazendasUsuario)));
           return { success: true, count: input.ids.length, escopo: input.escopo as const };
         }
 
@@ -8996,9 +9023,10 @@ const estoqueRouter = router({
         }
         if (produtoIds.size > 0) {
           const linked = await db
-            .select({ id: estoque.id, produtoId: estoque.produtoId })
+            .select()
             .from(estoque)
             .where(inArray(estoque.produtoId, [...produtoIds]));
+          if (linked.some(l => !podeEscreverProdutoEstoque(l, autorizadas))) recusarEscritaEstoque();
           for (const l of linked) estoqueIds.add(l.id);
           await db
             .update(produtosCatalogo)
@@ -9007,7 +9035,7 @@ const estoqueRouter = router({
         }
         const ids = [...estoqueIds];
         if (ids.length > 0) {
-          await db.update(estoque).set({ situacao: "inativo" }).where(inArray(estoque.id, ids));
+          await db.update(estoque).set({ situacao: "inativo" }).where(and(inArray(estoque.id, ids), inArray(estoque.fazendaId, fazendasUsuario)));
         }
         return { success: true, count: ids.length, escopo: input.escopo as const };
       };
@@ -9030,13 +9058,15 @@ const estoqueRouter = router({
       ids: z.array(z.number()).min(1),
       escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await assertProdutosEstoqueDoUsuario(ctx.user.id, input.ids);
+      const { set: autorizadas, ids: fazendasUsuario } = await fazendasAutorizadasEstoque(ctx.user.id);
       const aplicar = async () => {
         if (input.escopo === "fazenda") {
           await db
             .update(estoque)
             .set({ situacao: "ativo" })
-            .where(inArray(estoque.id, input.ids));
+            .where(and(inArray(estoque.id, input.ids), inArray(estoque.fazendaId, fazendasUsuario)));
           return { success: true, count: input.ids.length, escopo: input.escopo as const };
         }
 
@@ -9048,9 +9078,10 @@ const estoqueRouter = router({
         }
         if (produtoIds.size > 0) {
           const linked = await db
-            .select({ id: estoque.id, produtoId: estoque.produtoId })
+            .select()
             .from(estoque)
             .where(inArray(estoque.produtoId, [...produtoIds]));
+          if (linked.some(l => !podeEscreverProdutoEstoque(l, autorizadas))) recusarEscritaEstoque();
           for (const l of linked) estoqueIds.add(l.id);
           await db
             .update(produtosCatalogo)
@@ -9059,7 +9090,7 @@ const estoqueRouter = router({
         }
         const ids = [...estoqueIds];
         if (ids.length > 0) {
-          await db.update(estoque).set({ situacao: "ativo" }).where(inArray(estoque.id, ids));
+          await db.update(estoque).set({ situacao: "ativo" }).where(and(inArray(estoque.id, ids), inArray(estoque.fazendaId, fazendasUsuario)));
         }
         return { success: true, count: ids.length, escopo: input.escopo as const };
       };
@@ -9077,9 +9108,12 @@ const estoqueRouter = router({
       }
     }),
 
-  resumo: protectedProcedure.query(async () => {
+  resumo: protectedProcedure.query(async ({ ctx }) => {
+    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
     try {
-      const itens = await db.select().from(estoque);
+      const itens = fazendaIds.length === 0
+        ? []
+        : await db.select().from(estoque).where(inArray(estoque.fazendaId, fazendaIds));
       const monitorados = itens.filter(i => i.monitorarEstoque);
       const abaixoLimite = monitorados.filter(i => {
         const q = Number(i.quantidade ?? 0);
@@ -9092,7 +9126,7 @@ const estoqueRouter = router({
       };
     } catch (error) {
       if (!isDatabaseUnavailable(error)) throw error;
-      const itens = devLocalStore.listEstoque();
+      const itens = filtrarProdutosEstoque(devLocalStore.listEstoque(), fazendaIds);
       const monitorados = itens.filter(i => i.monitorarEstoque);
       const abaixoLimite = monitorados.filter(i => {
         const q = Number(i.quantidade ?? 0);
@@ -9106,7 +9140,9 @@ const estoqueRouter = router({
     }
   }),
 
-  listMovimentacoes: protectedProcedure.query(async () => {
+  listMovimentacoes: protectedProcedure.query(async ({ ctx }) => {
+    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+    if (fazendaIds.length === 0) return [];
     try {
       const rows = await db
         .select({
@@ -9148,21 +9184,26 @@ const estoqueRouter = router({
         })
         .from(estoqueMovimentacoes)
         .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
+        .where(and(
+          inArray(estoque.fazendaId, fazendaIds),
+          or(isNull(estoqueMovimentacoes.fazendaId), inArray(estoqueMovimentacoes.fazendaId, fazendaIds)),
+        ))
         .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
-      const localRows = devLocalStore.listMovimentacoes();
+      const localRows = filtrarMovimentacoesEstoque(devLocalStore.listMovimentacoes(), fazendaIds);
       if (localRows.length === 0) return rows;
       const ids = new Set(rows.map(r => r.id));
       const extras = localRows.filter(r => !ids.has(r.id));
       return [...rows, ...extras];
     } catch (error) {
       if (!isDatabaseUnavailable(error)) throw error;
-      return devLocalStore.listMovimentacoes();
+      return filtrarMovimentacoesEstoque(devLocalStore.listMovimentacoes(), fazendaIds);
     }
   }),
 
   getMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const autorizadas = setFazendasDoUsuario(await idsFazendasDoUsuarioParaEstoque(ctx.user.id));
       try {
         const [row] = await db
           .select({
@@ -9205,12 +9246,13 @@ const estoqueRouter = router({
           .from(estoqueMovimentacoes)
           .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
           .where(eq(estoqueMovimentacoes.id, input.id));
-        if (row) return row;
+        if (row && movimentacaoEstoqueVisivel(row, autorizadas)) return row;
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
       }
-      // Itens criados no store local (dev) aparecem na listagem, mas podem não existir no banco.
-      return devLocalStore.getMovimentacao(input.id);
+      const local = devLocalStore.getMovimentacao(input.id);
+      if (!local || !movimentacaoEstoqueVisivel(local, autorizadas)) return null;
+      return local;
     }),
 
   createMovimentacao: protectedProcedure
@@ -9249,6 +9291,8 @@ const estoqueRouter = router({
       if (!userId || !registradoPor) {
         throw new Error("Usuário autenticado inválido para registrar movimentação.");
       }
+      await assertFazendaDoUsuario(userId, input.fazendaId);
+      await assertProdutoEstoqueDoUsuario(userId, input.estoqueId);
 
       const localInput = {
         ...input,
@@ -9387,6 +9431,9 @@ const estoqueRouter = router({
       if (!ctx.user.id || !updatedByNome) {
         throw new Error("Usuário autenticado inválido para editar movimentação.");
       }
+      await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, input.id);
+      await assertProdutoEstoqueDoUsuario(ctx.user.id, input.estoqueId);
+      if (input.fazendaId) await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
 
       try {
         const [mov] = await db
@@ -9507,6 +9554,9 @@ const estoqueRouter = router({
   validarEstorno: protectedProcedure
     .input(z.object({ itemIds: z.array(z.number()).min(1) }))
     .query(async ({ ctx, input }) => {
+      for (const id of input.itemIds) {
+        await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, id);
+      }
       try {
         const seeds = await db
           .select({
@@ -9701,6 +9751,9 @@ const estoqueRouter = router({
       }
       const motivo = montarMotivoEstorno(input.motivo, input.observacao);
       if (!motivo) throw new Error("Informe o motivo do estorno.");
+      for (const id of input.itemIds) {
+        await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, id);
+      }
 
       const localPayload = {
         itemIds: input.itemIds,
@@ -9884,7 +9937,8 @@ const estoqueRouter = router({
 
   deleteMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, input.id);
       try {
         const [mov] = await db
           .select()
@@ -9939,7 +9993,11 @@ const estoqueRouter = router({
 
   listMovimentacoesByProduto: protectedProcedure
     .input(z.object({ estoqueId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+      const autorizadas = setFazendasDoUsuario(fazendaIds);
+      const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
+      if (!item || !produtoEstoqueVisivel(item, autorizadas)) return [];
       const rows = await db
         .select({
           id: estoqueMovimentacoes.id,
@@ -9963,7 +10021,8 @@ const estoqueRouter = router({
 
   deleteAllMovimentacoesByProduto: protectedProcedure
     .input(z.object({ estoqueId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      await assertProdutoEstoqueDoUsuario(ctx.user.id, input.estoqueId);
       const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
       if (item && capitalEstaInicializado({ capitalInicializadoEm: item.capitalInicializadoEm })) {
         throw new TRPCError({ code: "BAD_REQUEST", message: MSG_ESTOQUE_ZERAR_CAPITAL });
@@ -9985,11 +10044,14 @@ const estoqueRouter = router({
 
   listByCategories: protectedProcedure
     .input(z.object({ categorias: z.array(z.string()).min(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
       const sortByNome = <T extends { nome?: string | null }>(rows: T[]) =>
         [...rows].sort((a, b) =>
           String(a.nome ?? "").localeCompare(String(b.nome ?? ""), "pt-BR"),
         );
+      const listarLocal = () => filtrarProdutosEstoque(devLocalStore.listByCategories(input.categorias), fazendaIds);
+      if (fazendaIds.length === 0) return [];
 
       try {
         const rows = await db
@@ -10015,17 +10077,20 @@ const estoqueRouter = router({
             updatedAt: estoque.updatedAt,
           })
           .from(estoque)
-          .where(inArray(estoque.categoria, input.categorias))
+          .where(and(
+            inArray(estoque.categoria, input.categorias),
+            inArray(estoque.fazendaId, fazendaIds),
+          ))
           .orderBy(estoque.nome);
         return sortByNome(resolverLeituraEstoqueList(
           { ok: true, rows },
-          () => devLocalStore.listByCategories(input.categorias),
+          listarLocal,
           isDatabaseUnavailable,
         ));
       } catch (error) {
         return sortByNome(resolverLeituraEstoqueList(
           { ok: false, error },
-          () => devLocalStore.listByCategories(input.categorias),
+          listarLocal,
           isDatabaseUnavailable,
         ));
       }
@@ -10098,6 +10163,9 @@ const financeiroRouter = router({
 
 // ─── DASHBOARD ROUTER ─────────────────────────────────────────────────────────
 const dashboardRouter = router({
+  overview: protectedProcedure
+    .input(z.object({ fazendaId: z.number().int().positive().optional() }).optional())
+    .query(({ ctx, input }) => carregarPainelControle(ctx.user.id, input?.fazendaId)),
   stats: protectedProcedure.query(async ({ ctx }) => {
     const [totalAnimaisResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(animais).where(eq(animais.userId, ctx.user.id));
     const [totalLotesResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(lotes).where(eq(lotes.userId, ctx.user.id));

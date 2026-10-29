@@ -1,41 +1,56 @@
+import type { Response } from "express";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-
-vi.mock("./isProductionDeploy", () => ({
-  isProductionDeploy: () => false,
-}));
-
-vi.mock("./cookies", () => ({
-  createSession: vi.fn(async (user: { id: number }) => `token-${user.id}`),
-  setAuthCookie: vi.fn(),
-}));
-
-import { setAuthCookie } from "./cookies";
 import { tryDevLoginFallback, tryDevPreviewSession } from "./devLoginFallback";
 
-describe("login local de preview", () => {
-  it("abre sessão quando o e-mail conhecido não está no banco", async () => {
-    const res = {} as never;
-    const session = await tryDevLoginFallback("pngomes1@gmail.com", "123456", res);
-    expect(session?.user.id).toBe(1);
-    expect(session?.user.name).toBe("Paulo Gomes");
-    expect(setAuthCookie).toHaveBeenCalled();
+const here = dirname(fileURLToPath(import.meta.url));
+
+function respostaVazia() {
+  return { cookie: vi.fn(), clearCookie: vi.fn() } as unknown as Response & {
+    cookie: ReturnType<typeof vi.fn>;
+  };
+}
+
+describe("sessão de demonstração desligada", () => {
+  it("o servidor não aceita login automático de demonstração", async () => {
+    const res = respostaVazia();
+    await expect(
+      tryDevLoginFallback("pngomes1@gmail.com", "123456", res, "localhost"),
+    ).resolves.toBeNull();
+    await expect(
+      tryDevLoginFallback("admin@fazendadigital.local", "admin123", res, "127.0.0.1"),
+    ).resolves.toBeNull();
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 
-  it("religa a sessão pelo e-mail já autenticado no preview", async () => {
-    const res = {} as never;
-    const session = await tryDevPreviewSession("pngomes1@gmail.com", res);
-    expect(session?.success).toBe(true);
-    expect(session?.user.id).toBe(1);
+  it("informar apenas o e-mail não gera sessão", async () => {
+    const res = respostaVazia();
+    await expect(tryDevPreviewSession("pngomes1@gmail.com", res, "localhost")).resolves.toBeNull();
+    await expect(tryDevPreviewSession("admin@fazendadigital.local", res, "localhost")).resolves.toBeNull();
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 
-  it("não abre sessão para e-mail desconhecido", async () => {
-    const res = {} as never;
-    await expect(tryDevPreviewSession("outro@fazenda.local", res)).resolves.toBeNull();
+  it("localhost em produção também não concede administrador", async () => {
+    const anterior = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const res = respostaVazia();
+      await expect(tryDevPreviewSession("pngomes1@gmail.com", res, "localhost")).resolves.toBeNull();
+      await expect(tryDevLoginFallback("pngomes1@gmail.com", "123456", res, "localhost")).resolves.toBeNull();
+      expect(res.cookie).not.toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = anterior;
+    }
   });
 
-  it("religa preview em localhost mesmo com NODE_ENV production", async () => {
-    const res = { req: { hostname: "localhost" } } as never;
-    const session = await tryDevPreviewSession("admin@fazendadigital.local", res, "localhost");
-    expect(session?.success).toBe(true);
+  it("o arquivo não guarda mais senhas de demonstração", () => {
+    const fonte = readFileSync(resolve(here, "devLoginFallback.ts"), "utf8");
+    expect(fonte).not.toContain("openDevPreviewSession");
+    expect(fonte).not.toContain("setAuthCookie");
+    expect(fonte).not.toContain("role: \"admin\"");
+    expect(fonte).not.toContain("123456");
+    expect(fonte).not.toContain("admin123");
   });
 });

@@ -1,8 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { getLocalAuthUser } from "@/lib/localAuth";
-import { invalidarConsultasAposSessaoHttp } from "@/lib/sessaoHttpAuth";
+import { clearLocalAuthSession } from "@/lib/localAuth";
 import AppFooter from "./AppFooter";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -15,43 +14,20 @@ interface AppLayoutProps {
 
 export function AuthGuard({ children }: AppLayoutProps) {
   const [, setLocation] = useLocation();
-  const localUser = getLocalAuthUser();
-  const utils = trpc.useUtils();
-  const triedPreviewSession = useRef(false);
   const { data: user, isLoading } = trpc.auth.me.useQuery(undefined, {
     retry: false,
   });
-  const previewFalhou = useRef(false);
-  const ensurePreviewSession = trpc.auth.ensureLocalPreviewSession.useMutation({
-    onSuccess: async result => {
-      if (!result.success) {
-        previewFalhou.current = true;
-        return;
-      }
-      await invalidarConsultasAposSessaoHttp(utils);
-    },
-    onError: () => {
-      previewFalhou.current = true;
-    },
-  });
 
   useEffect(() => {
-    if (isLoading || user || !localUser || triedPreviewSession.current) return;
-    triedPreviewSession.current = true;
-    ensurePreviewSession.mutate({ email: localUser.email });
-  }, [isLoading, user, localUser, ensurePreviewSession]);
+    clearLocalAuthSession();
+  }, []);
 
   useEffect(() => {
-    if (isLoading || user) return;
-    if (localUser && !previewFalhou.current && (ensurePreviewSession.isPending || !triedPreviewSession.current)) {
-      return;
-    }
+    if (isLoading) return;
     if (!user) setLocation("/entrar");
-  }, [user, localUser, isLoading, ensurePreviewSession.isPending, setLocation]);
+  }, [user, isLoading, setLocation]);
 
-  const aguardandoSessao = isLoading || (!user && localUser && !previewFalhou.current);
-
-  if (aguardandoSessao) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F5F5F5" }}>
         <div className="text-center">

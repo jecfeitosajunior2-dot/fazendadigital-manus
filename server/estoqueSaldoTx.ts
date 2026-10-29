@@ -81,6 +81,9 @@ async function criarMovimentacaoPeloSaldo(
 
   const item = await exec.findEstoque(input.estoqueId);
   if (!item) throw new Error("Produto não encontrado.");
+  if (Number(item.fazendaId) !== Number(input.fazendaId)) {
+    throw new Error("O produto não pertence à fazenda da movimentação.");
+  }
 
   const op = sentido === "entrada"
     ? { tipoOp: "entrada" as const, quantidade: qtyAbs, valorInformado: input.valor, tipoMov: input.tipo }
