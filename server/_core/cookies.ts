@@ -10,14 +10,20 @@ export const SESSION_COOKIE_NAME = "session";
 
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-export function sessionCookieOptions(host?: string | null) {
+function atributosCookie(host?: string | null) {
   const exigeHttps = env.NODE_ENV === "production" && !isLocalHomologHost(host);
   return {
-    httpOnly: true,
+    httpOnly: true as const,
     sameSite: "lax" as const,
+    ...(exigeHttps ? { secure: true as const } : {}),
+  };
+}
+
+export function sessionCookieOptions(host?: string | null) {
+  return {
+    ...atributosCookie(host),
     path: "/",
     maxAge: SESSION_MAX_AGE_MS,
-    ...(exigeHttps ? { secure: true as const } : {}),
   };
 }
 
@@ -31,15 +37,46 @@ export async function createSession(user: UserContext): Promise<string> {
     .sign(secret);
 }
 
-export async function verifySession(req: Request): Promise<UserContext | null> {
-  const token = req.cookies?.[SESSION_COOKIE_NAME];
-  if (!token) return null;
+function valorDoCookie(bruto: string): string {
+  const aparado = bruto.trim();
+  if (!aparado) return "";
   try {
-    const { payload } = await jose.jwtVerify(token, secret);
-    return payload as unknown as UserContext;
+    return decodeURIComponent(aparado);
   } catch {
-    return null;
+    return aparado;
   }
+}
+
+/** Lê todos os cookies `session`. O vazio do caminho legado não esconde o válido. */
+function tokensDeSessao(req: Request): string[] {
+  const encontrados: string[] = [];
+  const header = req.headers?.cookie;
+  if (typeof header === "string") {
+    for (const parte of header.split(";")) {
+      const eq = parte.indexOf("=");
+      if (eq <= 0) continue;
+      if (parte.slice(0, eq).trim() !== SESSION_COOKIE_NAME) continue;
+      const valor = valorDoCookie(parte.slice(eq + 1));
+      if (valor) encontrados.push(valor);
+    }
+  }
+  const unico = req.cookies?.[SESSION_COOKIE_NAME];
+  if (typeof unico === "string" && unico && !encontrados.includes(unico)) {
+    encontrados.push(unico);
+  }
+  return encontrados;
+}
+
+export async function verifySession(req: Request): Promise<UserContext | null> {
+  for (const token of tokensDeSessao(req)) {
+    try {
+      const { payload } = await jose.jwtVerify(token, secret);
+      return payload as unknown as UserContext;
+    } catch {
+      // Valor inválido ou vencido não autentica. Outro cookie ainda pode ser o válido.
+    }
+  }
+  return null;
 }
 
 export function setAuthCookie(res: Response, token: string): void {
@@ -47,7 +84,7 @@ export function setAuthCookie(res: Response, token: string): void {
 }
 
 export function clearAuthCookie(res: Response): void {
-  const base = sessionCookieOptions(res.req?.hostname);
-  res.clearCookie(SESSION_COOKIE_NAME, { ...base, path: "/" });
-  res.clearCookie(SESSION_COOKIE_NAME, { ...base, path: "/api/trpc" });
+  const atributos = atributosCookie(res.req?.hostname);
+  res.clearCookie(SESSION_COOKIE_NAME, { ...atributos, path: "/" });
+  res.clearCookie(SESSION_COOKIE_NAME, { ...atributos, path: "/api/trpc" });
 }
