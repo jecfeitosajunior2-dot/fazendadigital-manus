@@ -9,10 +9,52 @@ export const users = mysqlTable("users", {
   loginMethod: varchar("loginMethod", { length: 50 }).default("local"),
   passwordHash: varchar("passwordHash", { length: 255 }),
   role: mysqlEnum("role", ["admin", "user"]).default("user"),
+  papel: mysqlEnum("papel", ["principal", "secundario", "comum"]).notNull().default("comum"),
+  titularUserId: int("titularUserId"),
+  situacao: mysqlEnum("situacao", ["convidado", "ativo", "inativo"]).notNull().default("ativo"),
+  sessionVersion: int("sessionVersion").notNull().default(0),
+  inativadoEm: timestamp("inativadoEm"),
+  inativadoPorUserId: int("inativadoPorUserId"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
   lastSignedIn: timestamp("lastSignedIn"),
-});
+}, (table) => ({
+  emailUq: uniqueIndex("users_email_uq").on(table.email),
+}));
+
+/** Autorização explícita de fazenda. O principal não depende desta tabela. */
+export const usuarioFazendas = mysqlTable("usuario_fazendas", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  concedidoPorUserId: int("concedidoPorUserId").notNull(),
+  concedidoEm: timestamp("concedidoEm").defaultNow().notNull(),
+}, (table) => ({
+  usuarioFazendaUq: uniqueIndex("usuario_fazendas_usuario_fazenda_uq").on(table.userId, table.fazendaId),
+  userIdx: index("usuario_fazendas_user_idx").on(table.userId),
+  fazendaIdx: index("usuario_fazendas_fazenda_idx").on(table.fazendaId),
+}));
+
+/** Histórico de atividades. Somente inclusão. Não apaga o rastro quando o usuário é inativado. */
+export const auditoriaEventos = mysqlTable("auditoria_eventos", {
+  id: int("id").primaryKey().autoincrement(),
+  executorUserId: int("executorUserId").notNull(),
+  executorNome: varchar("executorNome", { length: 255 }).notNull(),
+  titularUserId: int("titularUserId").notNull(),
+  fazendaId: int("fazendaId"),
+  modulo: varchar("modulo", { length: 80 }).notNull(),
+  operacao: varchar("operacao", { length: 80 }).notNull(),
+  registroTipo: varchar("registroTipo", { length: 80 }),
+  registroId: int("registroId"),
+  dadosAnteriores: text("dadosAnteriores"),
+  dadosPosteriores: text("dadosPosteriores"),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+}, (table) => ({
+  titularCriadoIdx: index("auditoria_eventos_titular_criado_idx").on(table.titularUserId, table.criadoEm),
+  fazendaCriadoIdx: index("auditoria_eventos_fazenda_criado_idx").on(table.fazendaId, table.criadoEm),
+  executorIdx: index("auditoria_eventos_executor_idx").on(table.executorUserId),
+  moduloCriadoIdx: index("auditoria_eventos_modulo_criado_idx").on(table.modulo, table.criadoEm),
+}));
 
 // Fazendas table
 export const fazendas = mysqlTable("fazendas", {

@@ -314,6 +314,9 @@ import {
 } from "../shared/reproPipelineConfig";
 import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
+import { carregarIdentidade } from "./_core/carregarIdentidade";
+import { identificadorDeLogin } from "./_core/identificadorLogin";
+import { loginPermitido } from "./_core/identidadeSessao";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
 import { isProductionDeploy } from "./_core/isProductionDeploy";
 import { devLocalStore } from "./devLocalStore";
@@ -377,18 +380,20 @@ const authRouter = router({
   me: publicProcedure.query(async ({ ctx }) => {
     if (!ctx.user) return null;
     try {
-      const [freshUser] = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
-      if (!freshUser) return ctx.user;
+      const registro = await carregarIdentidade(ctx.user.id);
+      if (!registro || registro.sessionVersion !== ctx.user.sessionVersion) return null;
       return {
-        id: freshUser.id,
-        openId: freshUser.openId,
-        name: freshUser.name,
-        email: freshUser.email || "",
-        role: freshUser.role || "user",
+        id: registro.id,
+        openId: registro.openId,
+        name: registro.name,
+        email: registro.email || "",
+        role: registro.role,
+        papel: registro.papel,
+        situacao: registro.situacao,
+        titularUserId: registro.titularUserId,
       };
-    } catch (error) {
-      if (isDatabaseUnavailable(error)) return ctx.user;
-      throw error;
+    } catch {
+      return null;
     }
   }),
 
@@ -396,20 +401,42 @@ const authRouter = router({
     .input(z.object({ username: z.string(), password: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
-      const { or } = await import("drizzle-orm");
-      const [user] = await db.select().from(users).where(
-        or(eq(users.openId, input.username), eq(users.email, input.username))
-      ).limit(1);
-      const senhaOk = await senhaConfereComHash(user?.passwordHash, input.password);
-      if (!user || !senhaOk) throw new Error(MSG_LOGIN_INVALIDO);
-      const token = await createSession({ id: user.id, openId: user.openId, name: user.name, email: user.email || "", role: user.role || "user" });
-      setAuthCookie(ctx.res, token);
-      return { success: true, user: { id: user.id, openId: user.openId, name: user.name, email: user.email, role: user.role } };
+        const { or } = await import("drizzle-orm");
+        const identificador = identificadorDeLogin(input.username);
+        const [user] = await db.select().from(users).where(
+          or(eq(users.openId, identificador), eq(users.email, identificador))
+        ).limit(1);
+        const senhaOk = await senhaConfereComHash(user?.passwordHash, input.password);
+        if (!user || !senhaOk || !loginPermitido(user.situacao) || user.titularUserId == null || !user.papel) {
+          throw new Error(MSG_LOGIN_INVALIDO);
+        }
+        const token = await createSession({
+          id: user.id,
+          openId: user.openId,
+          name: user.name,
+          email: user.email || "",
+          role: user.role || "user",
+          papel: user.papel,
+          titularUserId: user.titularUserId,
+          situacao: user.situacao,
+          sessionVersion: user.sessionVersion,
+        });
+        setAuthCookie(ctx.res, token);
+        return {
+          success: true,
+          user: {
+            id: user.id,
+            openId: user.openId,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            papel: user.papel,
+          },
+        };
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
           throw new Error("Banco de dados indisponível. Tente novamente em instantes.");
         }
-        if (error instanceof Error && error.message === MSG_LOGIN_INVALIDO) throw error;
         throw error;
       }
     }),

@@ -9,6 +9,7 @@ import {
   listLocalAnimais,
   listLocalLotes,
 } from "./localFallbackStore";
+import { carregarAcessoPorExecutor, decidirAcessoAFazenda } from "./acessoFazendasDb";
 import { loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import { assertBrincoUnicoEntreAtivos } from "./brincoAtivoValidation";
 import {
@@ -17,19 +18,26 @@ import {
   normalizeRfidKey,
 } from "../shared/rfidUnicidade";
 
-/** Garante que a fazenda existe e pertence ao usuário. */
+/** Garante que o executor pode usar a fazenda. O dono dos dados continua sendo o titular. */
 export async function assertFazendaDoUsuario(userId: number, fazendaId: number) {
   if (!Number.isFinite(fazendaId) || fazendaId <= 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Fazenda inválida." });
   }
   try {
-    const [row] = await db
-      .select({ id: fazendas.id })
-      .from(fazendas)
-      .where(and(eq(fazendas.id, fazendaId), eq(fazendas.userId, userId)))
-      .limit(1);
-    if (row) return;
+    const decisao = await decidirAcessoAFazenda(userId, fazendaId);
+    if (decisao === "permitido") return;
+    if (decisao === "inexistente") {
+      const acesso = await carregarAcessoPorExecutor(userId);
+      if (acesso?.papel === "principal") {
+        /* Fazenda só no espelho local: o principal continua podendo usá-la. */
+      } else {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta Fazenda." });
+      }
+    } else {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta Fazenda." });
+    }
   } catch (error) {
+    if (error instanceof TRPCError) throw error;
     if (!isDatabaseUnavailable(error)) throw error;
   }
   const local = await getLocalFazenda(userId, fazendaId);

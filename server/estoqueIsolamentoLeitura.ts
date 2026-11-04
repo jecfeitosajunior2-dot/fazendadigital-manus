@@ -1,19 +1,14 @@
-import { eq } from "drizzle-orm";
-import { fazendas } from "../drizzle/schema";
-import { db } from "./db";
+import { carregarAcessoPorExecutor } from "./acessoFazendasDb";
 import { isDatabaseUnavailable, listLocalFazendas } from "./localFallbackStore";
 
-/** Fazendas do usuário no MySQL + espelho local. Sem fazenda, o estoque fica vazio. */
+/** Fazendas autorizadas no MySQL. O principal também enxerga o espelho local. */
 export async function idsFazendasDoUsuarioParaEstoque(userId: number): Promise<number[]> {
   const ids = new Set<number>();
   try {
-    const rows = await db
-      .select({ id: fazendas.id })
-      .from(fazendas)
-      .where(eq(fazendas.userId, userId));
-    for (const row of rows) {
-      if (row.id > 0) ids.add(row.id);
-    }
+    const acesso = await carregarAcessoPorExecutor(userId);
+    if (!acesso) return [];
+    for (const id of acesso.fazendasAutorizadas) ids.add(id);
+    if (acesso.papel !== "principal") return [...ids];
   } catch (error) {
     if (!isDatabaseUnavailable(error)) throw error;
   }

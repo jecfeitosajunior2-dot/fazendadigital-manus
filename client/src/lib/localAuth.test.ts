@@ -20,6 +20,14 @@ describe("sessão local no navegador", () => {
 
     expect(login).not.toContain("signInLocal");
     expect(login).not.toContain("getLocalAuthUser");
+    expect(login).toContain("E-MAIL");
+    expect(login).not.toContain("E-MAIL OU USUÁRIO");
+    expect(login).toContain("placeholder=\"seu@email.com\"");
+    expect(login).toContain("SENHA");
+    expect(login).toContain("placeholder=\"••••••••\"");
+    expect(login).toContain("autoComplete=\"current-password\"");
+    expect(login).toContain("Entrar");
+    expect(login).toContain("loginMutation.mutate({ username: email, password })");
     expect(login).toContain("Usuário ou senha inválidos.");
     expect(login).toContain("trpc.auth.login");
     expect(login).toContain("trpc.auth.me");

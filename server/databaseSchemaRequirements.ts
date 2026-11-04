@@ -31,6 +31,16 @@ export type DatabaseSchemaRequirements = {
 
 const EXTRA_CONFIG = Symbol.for("drizzle:ExtraConfigBuilder");
 
+/**
+ * Fora da verificação de boot, para um reinício não parar o sistema
+ * enquanto a checagem ainda não exige estas tabelas.
+ * usuario_fazendas e auditoria_eventos já existem no operacional.
+ */
+const TABLES_NOT_YET_REQUIRED = new Set([
+  "usuario_fazendas",
+  "auditoria_eventos",
+]);
+
 /** Índices Drizzle ainda não presentes no operacional; não bloqueiam o boot. */
 const INDEXES_NOT_REQUIRED = new Set([
   "nutricao_fornecimentos.nutricao_fornecimentos_cocho_idx",
@@ -101,6 +111,7 @@ export function collectDatabaseSchemaRequirements(): DatabaseSchemaRequirements 
   for (const value of Object.values(schema)) {
     if (!isTable(value)) continue;
     const tableName = getTableName(value);
+    if (TABLES_NOT_YET_REQUIRED.has(tableName)) continue;
     tables.push(tableName);
     for (const col of Object.values(getTableColumns(value))) {
       const mustAllowNull = tableName === "vendas" && col.name === "idempotency_key";

@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -51,5 +51,20 @@ describe("verificação de senha no login", () => {
     expect(preview).toContain("success: false");
     expect(preview).not.toContain("setAuthCookie");
     expect(preview).not.toContain("tryDevPreviewSession");
+  });
+
+  it("não resta instrumentação temporária de diagnóstico", () => {
+    expect(existsSync(resolve(here, "loginDiagnostico.ts"))).toBe(false);
+    expect(existsSync(resolve(here, "loginDiagnostico.test.ts"))).toBe(false);
+    const senha = readFileSync(resolve(here, "loginSenha.ts"), "utf8");
+    const routers = readFileSync(resolve(here, "../routers.ts"), "utf8");
+    for (const texto of [senha, routers]) {
+      expect(texto).not.toContain("loginDiagnostico");
+      expect(texto).not.toContain("abrirObservacaoSeArmada");
+      expect(texto).not.toContain("concluirObservacao");
+      expect(texto).not.toContain("observarEntradaLogin");
+      expect(texto).not.toContain("anotarComparacao");
+      expect(texto).not.toContain("fd-login-diag");
+    }
   });
 });

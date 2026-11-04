@@ -179,7 +179,7 @@ export default function LoginPage() {
                 display: "block",
                 marginBottom: "7px",
               }}>
-                E-MAIL OU USUÁRIO
+                E-MAIL
               </label>
               <div className="relative">
                 <span className="material-icons absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]" style={{ color: "rgba(255,255,255,0.35)" }}>

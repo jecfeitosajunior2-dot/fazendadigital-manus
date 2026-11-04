@@ -16,7 +16,10 @@ const blocoEstoque = routers.slice(
 
 describe("Fase 5.2B — isolamento de leitura do estoque", () => {
   it("listagens oficiais filtram pela fazenda do usuário autenticado", () => {
-    expect(leitura).toContain("eq(fazendas.userId, userId)");
+    const acesso = readFileSync(resolve(here, "acessoFazendasDb.ts"), "utf8");
+    expect(leitura).toContain("carregarAcessoPorExecutor(userId)");
+    expect(acesso).toContain("eq(fazendas.userId, titularUserId)");
+    expect(acesso).toContain("identidade.titularUserId");
     expect(blocoEstoque).toContain("idsFazendasDoUsuarioParaEstoque(ctx.user.id)");
     expect(blocoEstoque).toContain("inArray(estoque.fazendaId, fazendaIds)");
     expect(blocoEstoque).toContain("assertFazendaDoUsuario(ctx.user.id, input.fazendaId)");

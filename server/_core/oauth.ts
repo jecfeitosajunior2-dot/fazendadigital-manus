@@ -4,6 +4,7 @@ import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { createSession, setAuthCookie } from "./cookies";
 import { env } from "./env";
+import { recusarOAuthDesabilitado } from "./oauthAcesso";
 
 export function getLoginUrl(origin: string, returnPath?: string): string {
   const state = Buffer.from(JSON.stringify({ origin, returnPath: returnPath || "/" })).toString("base64url");
@@ -12,6 +13,8 @@ export function getLoginUrl(origin: string, returnPath?: string): string {
 }
 
 export async function handleOAuthCallback(req: Request, res: Response) {
+  if (recusarOAuthDesabilitado(res)) return;
+
   const { code, state } = req.query as { code?: string; state?: string };
   
   if (!code) {
