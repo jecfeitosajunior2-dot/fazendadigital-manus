@@ -20,6 +20,12 @@ export type SchemaIndexRequirement = {
 export type SchemaForeignKeyRequirement = {
   table: string;
   name: string;
+  deleteRule?: "RESTRICT";
+  updateRule?: "RESTRICT";
+  /** Ordem real das colunas. Quando informada, a inicialização confere a sequência. */
+  columns?: string[];
+  referencedTable?: string;
+  referencedColumns?: string[];
 };
 
 export type DatabaseSchemaRequirements = {
@@ -31,14 +37,16 @@ export type DatabaseSchemaRequirements = {
 
 const EXTRA_CONFIG = Symbol.for("drizzle:ExtraConfigBuilder");
 
-/**
- * Fora da verificação de boot, para um reinício não parar o sistema
- * enquanto a checagem ainda não exige estas tabelas.
- * usuario_fazendas e auditoria_eventos já existem no operacional.
- */
-const TABLES_NOT_YET_REQUIRED = new Set([
-  "usuario_fazendas",
-  "auditoria_eventos",
+/** Colunas que a aplicação precisa nulas. Fazenda do histórico é opcional. */
+const COLUMNS_MUST_ALLOW_NULL = new Set([
+  "vendas.idempotency_key",
+  "auditoria_eventos.fazendaId",
+  "auditoria_eventos.registroTipo",
+  "auditoria_eventos.registroId",
+  "auditoria_eventos.dadosAnteriores",
+  "auditoria_eventos.dadosPosteriores",
+  "perfis_acesso.descricao",
+  "usuario_permissoes.origemPerfilId",
 ]);
 
 /** Índices Drizzle ainda não presentes no operacional; não bloqueiam o boot. */
@@ -76,6 +84,90 @@ const REQUIRED_FOREIGN_KEYS: SchemaForeignKeyRequirement[] = [
   { table: "financeiro_apropriacoes", name: "financeiro_apropriacoes_titulo_fk" },
   { table: "financeiro_apropriacoes", name: "financeiro_apropriacoes_categoria_fk" },
   { table: "financeiro_apropriacoes", name: "financeiro_apropriacoes_centro_fk" },
+  { table: "usuario_fazendas", name: "usuario_fazendas_user_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  { table: "usuario_fazendas", name: "usuario_fazendas_fazenda_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  { table: "usuario_fazendas", name: "usuario_fazendas_concedido_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  { table: "auditoria_eventos", name: "auditoria_eventos_executor_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  { table: "auditoria_eventos", name: "auditoria_eventos_titular_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  { table: "auditoria_eventos", name: "auditoria_eventos_fazenda_fk", deleteRule: "RESTRICT", updateRule: "RESTRICT" },
+  {
+    table: "perfis_acesso",
+    name: "perfis_acesso_titular_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["titularUserId"],
+    referencedTable: "users",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "perfis_acesso",
+    name: "perfis_acesso_criado_por_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["criadoPorUserId"],
+    referencedTable: "users",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "perfil_permissoes",
+    name: "perfil_permissoes_perfil_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["perfilId"],
+    referencedTable: "perfis_acesso",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "usuario_permissoes",
+    name: "usuario_permissoes_user_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["userId"],
+    referencedTable: "users",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "usuario_permissoes",
+    name: "usuario_permissoes_usuario_titular_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["userId", "titularUserId"],
+    referencedTable: "users",
+    referencedColumns: ["id", "titularUserId"],
+  },
+  {
+    table: "usuario_permissoes",
+    name: "usuario_permissoes_concedido_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["concedidoPorUserId"],
+    referencedTable: "users",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "usuario_permissoes",
+    name: "usuario_permissoes_titular_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["titularUserId"],
+    referencedTable: "users",
+    referencedColumns: ["id"],
+  },
+  {
+    table: "usuario_permissoes",
+    name: "usuario_permissoes_origem_fk",
+    deleteRule: "RESTRICT",
+    updateRule: "RESTRICT",
+    columns: ["origemPerfilId", "titularUserId"],
+    referencedTable: "perfis_acesso",
+    referencedColumns: ["id", "titularUserId"],
+  },
+];
+
+const PRIMARY_KEYS: SchemaIndexRequirement[] = [
+  { table: "perfis_acesso", name: "PRIMARY", unique: true, columns: ["id"] },
+  { table: "perfil_permissoes", name: "PRIMARY", unique: true, columns: ["id"] },
+  { table: "usuario_permissoes", name: "PRIMARY", unique: true, columns: ["id"] },
 ];
 
 const FUNCTIONAL_UNIQUES: SchemaIndexRequirement[] = [
@@ -111,10 +203,9 @@ export function collectDatabaseSchemaRequirements(): DatabaseSchemaRequirements 
   for (const value of Object.values(schema)) {
     if (!isTable(value)) continue;
     const tableName = getTableName(value);
-    if (TABLES_NOT_YET_REQUIRED.has(tableName)) continue;
     tables.push(tableName);
     for (const col of Object.values(getTableColumns(value))) {
-      const mustAllowNull = tableName === "vendas" && col.name === "idempotency_key";
+      const mustAllowNull = COLUMNS_MUST_ALLOW_NULL.has(`${tableName}.${col.name}`);
       columns.push({
         table: tableName,
         column: col.name,
@@ -126,7 +217,7 @@ export function collectDatabaseSchemaRequirements(): DatabaseSchemaRequirements 
     indexes.push(...extractIndexes(value, tableName));
   }
 
-  indexes.push(...FUNCTIONAL_UNIQUES);
+  indexes.push(...FUNCTIONAL_UNIQUES, ...PRIMARY_KEYS);
 
   tables.sort();
   columns.sort((a, b) => `${a.table}.${a.column}`.localeCompare(`${b.table}.${b.column}`));

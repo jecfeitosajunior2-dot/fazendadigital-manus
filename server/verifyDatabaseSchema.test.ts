@@ -84,11 +84,21 @@ function buildCompatibleSnapshot(): Snapshot {
     tables: new Set(req.tables),
     columns,
     indexes,
-    constraints: req.foreignKeys.map((fk) => ({
-      table_name: fk.table,
-      constraint_name: fk.name,
-      constraint_type: "FOREIGN KEY",
-    })),
+    constraints: req.foreignKeys.flatMap((fk) => {
+      const cols = fk.columns?.length ? fk.columns : [""];
+      const refs = fk.referencedColumns ?? cols.map(() => "");
+      return cols.map((column, i) => ({
+        table_name: fk.table,
+        constraint_name: fk.name,
+        constraint_type: "FOREIGN KEY",
+        delete_rule: fk.deleteRule ?? null,
+        update_rule: fk.updateRule ?? null,
+        ordinal_position: i + 1,
+        column_name: column || null,
+        referenced_table_name: fk.referencedTable ?? null,
+        referenced_column_name: refs[i] || null,
+      }));
+    }),
   };
 }
 

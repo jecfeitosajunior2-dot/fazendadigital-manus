@@ -40,11 +40,25 @@ export const SCHEMA_VERIFY_SQL = {
      FROM information_schema.STATISTICS
      WHERE TABLE_SCHEMA = DATABASE()
      ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`,
-  constraints: `SELECT TABLE_NAME AS table_name,
-            CONSTRAINT_NAME AS constraint_name,
-            CONSTRAINT_TYPE AS constraint_type
-     FROM information_schema.TABLE_CONSTRAINTS
-     WHERE TABLE_SCHEMA = DATABASE()`,
+  constraints: `SELECT tc.TABLE_NAME AS table_name,
+            tc.CONSTRAINT_NAME AS constraint_name,
+            tc.CONSTRAINT_TYPE AS constraint_type,
+            rc.DELETE_RULE AS delete_rule,
+            rc.UPDATE_RULE AS update_rule,
+            kcu.ORDINAL_POSITION AS ordinal_position,
+            kcu.COLUMN_NAME AS column_name,
+            kcu.REFERENCED_TABLE_NAME AS referenced_table_name,
+            kcu.REFERENCED_COLUMN_NAME AS referenced_column_name
+     FROM information_schema.TABLE_CONSTRAINTS tc
+     LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+       ON rc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA
+      AND rc.TABLE_NAME = tc.TABLE_NAME
+      AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+     LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu
+       ON kcu.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA
+      AND kcu.TABLE_NAME = tc.TABLE_NAME
+      AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+     WHERE tc.TABLE_SCHEMA = DATABASE()`,
 } as const;
 
 const WRITE_HEAD =
@@ -150,11 +164,27 @@ export async function verifyDatabaseSchema(
     }
 
     const constraintRows = await selectRows(query, SCHEMA_VERIFY_SQL.constraints);
-    const foreignKeys = new Set(
-      constraintRows
-        .filter((row) => String(row.constraint_type).toUpperCase() === "FOREIGN KEY")
-        .map((row) => `${row.table_name}.${row.constraint_name}`),
-    );
+    const foreignKeys = new Map<string, {
+      deleteRule: string;
+      updateRule: string;
+      columns: Array<{ seq: number; column: string; referencedTable: string; referencedColumn: string }>;
+    }>();
+    for (const row of constraintRows) {
+      if (String(row.constraint_type).toUpperCase() !== "FOREIGN KEY") continue;
+      const key = `${row.table_name}.${row.constraint_name}`;
+      const found = foreignKeys.get(key) ?? { deleteRule: "", updateRule: "", columns: [] };
+      found.deleteRule = String(row.delete_rule ?? found.deleteRule).toUpperCase();
+      found.updateRule = String(row.update_rule ?? found.updateRule).toUpperCase();
+      if (row.column_name != null && String(row.column_name) !== "") {
+        found.columns.push({
+          seq: Number(row.ordinal_position ?? found.columns.length + 1),
+          column: String(row.column_name),
+          referencedTable: String(row.referenced_table_name ?? ""),
+          referencedColumn: String(row.referenced_column_name ?? ""),
+        });
+      }
+      foreignKeys.set(key, found);
+    }
 
     for (const table of requirements.tables) {
       if (!tables.has(table)) {
@@ -239,13 +269,58 @@ export async function verifyDatabaseSchema(
     }
 
     for (const fk of requirements.foreignKeys) {
-      if (!foreignKeys.has(`${fk.table}.${fk.name}`)) {
+      const found = foreignKeys.get(`${fk.table}.${fk.name}`);
+      if (!found) {
         issues.push({
           kind: "foreign_key",
           table: fk.table,
           index: fk.name,
           message: `Chave estrangeira ausente: ${fk.table}.${fk.name}`,
         });
+        continue;
+      }
+      if (fk.deleteRule && found.deleteRule !== fk.deleteRule) {
+        issues.push({
+          kind: "foreign_key",
+          table: fk.table,
+          index: fk.name,
+          message: `Chave ${fk.table}.${fk.name} deveria recusar exclusão (${fk.deleteRule}), encontrado ${found.deleteRule || "indefinido"}.`,
+        });
+      }
+      if (fk.updateRule && found.updateRule !== fk.updateRule) {
+        issues.push({
+          kind: "foreign_key",
+          table: fk.table,
+          index: fk.name,
+          message: `Chave ${fk.table}.${fk.name} deveria recusar atualização (${fk.updateRule}), encontrado ${found.updateRule || "indefinido"}.`,
+        });
+      }
+      if (fk.columns && fk.columns.length > 0) {
+        const actual = [...found.columns].sort((a, b) => a.seq - b.seq);
+        const actualColumns = actual.map((part) => part.column);
+        if (actualColumns.join("\0") !== fk.columns.join("\0")) {
+          issues.push({
+            kind: "foreign_key",
+            table: fk.table,
+            index: fk.name,
+            message: `Chave ${fk.table}.${fk.name} com ordem/colunas incorretas: esperado (${fk.columns.join(", ")}), encontrado (${actualColumns.join(", ")}).`,
+          });
+        }
+        if (fk.referencedColumns && fk.referencedColumns.length > 0) {
+          const actualReferenced = actual.map((part) => part.referencedColumn);
+          const actualTable = actual.find((part) => part.referencedTable)?.referencedTable ?? "";
+          if (
+            actualReferenced.join("\0") !== fk.referencedColumns.join("\0")
+            || (fk.referencedTable && actualTable !== fk.referencedTable)
+          ) {
+            issues.push({
+              kind: "foreign_key",
+              table: fk.table,
+              index: fk.name,
+              message: `Chave ${fk.table}.${fk.name} aponta para colunas incorretas: esperado ${fk.referencedTable ?? ""}(${fk.referencedColumns.join(", ")}), encontrado ${actualTable}(${actualReferenced.join(", ")}).`,
+            });
+          }
+        }
       }
     }
   } catch (err) {

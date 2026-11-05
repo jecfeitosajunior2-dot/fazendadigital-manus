@@ -241,7 +241,7 @@ describe("auditoria de atividades", () => {
     expect(segunda.itens.map(item => item.id)).toEqual([3, 2]);
   });
 
-  it("não oferece edição nem exclusão e fica fora do boot", () => {
+  it("não oferece edição nem exclusão e entra no boot", () => {
     const fontes = ["auditoria.ts", "auditoriaTransacao.ts"].map(nome => readFileSync(resolve(here, nome), "utf8")).join("\n");
     const routers = readFileSync(resolve(here, "routers.ts"), "utf8");
     const sql = readFileSync(resolve(here, "../drizzle/migrations/0064_auditoria_eventos.sql"), "utf8");
@@ -250,7 +250,10 @@ describe("auditoria de atividades", () => {
     expect(routers).not.toContain("auditoria_eventos");
     expect(routers).not.toContain("registrarEvento");
     const requisitos = collectDatabaseSchemaRequirements();
-    expect(requisitos.tables).not.toContain("auditoria_eventos");
+    expect(requisitos.tables).toContain("auditoria_eventos");
+    expect(requisitos.columns).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: "auditoria_eventos", column: "fazendaId", mustAllowNull: true }),
+    ]));
     expect(sql).toContain("NÃO EXECUTAR nesta etapa");
     expect(sql).toContain("NÃO usar db:push");
     expect(sql.indexOf("-- CALL fd_77_auditoria_eventos();")).toBeGreaterThan(-1);

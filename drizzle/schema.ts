@@ -20,6 +20,8 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn"),
 }, (table) => ({
   emailUq: uniqueIndex("users_email_uq").on(table.email),
+  /** Par usado pela permissão efetiva. Não muda papel nem titular. */
+  idTitularUq: uniqueIndex("users_id_titular_uq").on(table.id, table.titularUserId),
 }));
 
 /** Autorização explícita de fazenda. O principal não depende desta tabela. */
@@ -54,6 +56,55 @@ export const auditoriaEventos = mysqlTable("auditoria_eventos", {
   fazendaCriadoIdx: index("auditoria_eventos_fazenda_criado_idx").on(table.fazendaId, table.criadoEm),
   executorIdx: index("auditoria_eventos_executor_idx").on(table.executorUserId),
   moduloCriadoIdx: index("auditoria_eventos_modulo_criado_idx").on(table.modulo, table.criadoEm),
+}));
+
+/**
+ * Modelo de permissões de uma conta. Não autoriza sozinho.
+ * A permissão efetiva fica em usuario_permissoes.
+ */
+export const perfisAcesso = mysqlTable("perfis_acesso", {
+  id: int("id").primaryKey().autoincrement(),
+  titularUserId: int("titularUserId").notNull(),
+  nome: varchar("nome", { length: 80 }).notNull(),
+  descricao: varchar("descricao", { length: 255 }),
+  situacao: mysqlEnum("situacao", ["ativo", "inativo"]).notNull().default("ativo"),
+  criadoPorUserId: int("criadoPorUserId").notNull(),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+  atualizadoEm: timestamp("atualizadoEm").defaultNow().notNull().onUpdateNow(),
+}, (table) => ({
+  titularNomeUq: uniqueIndex("perfis_acesso_titular_nome_uq").on(table.titularUserId, table.nome),
+  idTitularUq: uniqueIndex("perfis_acesso_id_titular_uq").on(table.id, table.titularUserId),
+  criadoPorIdx: index("perfis_acesso_criado_por_idx").on(table.criadoPorUserId),
+}));
+
+/** Operações do modelo. O identificador vem do catálogo, não do nome da tela. */
+export const perfilPermissoes = mysqlTable("perfil_permissoes", {
+  id: int("id").primaryKey().autoincrement(),
+  perfilId: int("perfilId").notNull(),
+  permissao: varchar("permissao", { length: 80 }).notNull(),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+}, (table) => ({
+  perfilPermissaoUq: uniqueIndex("perfil_permissoes_perfil_permissao_uq").on(table.perfilId, table.permissao),
+}));
+
+/**
+ * Permissão efetiva do usuário. origemPerfilId é só a lembrança de onde veio a cópia.
+ * Editar o perfil depois não muda esta linha.
+ */
+export const usuarioPermissoes = mysqlTable("usuario_permissoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  titularUserId: int("titularUserId").notNull(),
+  permissao: varchar("permissao", { length: 80 }).notNull(),
+  concedidoPorUserId: int("concedidoPorUserId").notNull(),
+  origemPerfilId: int("origemPerfilId"),
+  concedidoEm: timestamp("concedidoEm").defaultNow().notNull(),
+}, (table) => ({
+  usuarioPermissaoUq: uniqueIndex("usuario_permissoes_usuario_permissao_uq").on(table.userId, table.permissao),
+  usuarioTitularIdx: index("usuario_permissoes_usuario_titular_idx").on(table.userId, table.titularUserId),
+  origemTitularIdx: index("usuario_permissoes_origem_titular_idx").on(table.origemPerfilId, table.titularUserId),
+  concedidoIdx: index("usuario_permissoes_concedido_idx").on(table.concedidoPorUserId),
+  titularIdx: index("usuario_permissoes_titular_idx").on(table.titularUserId),
 }));
 
 // Fazendas table

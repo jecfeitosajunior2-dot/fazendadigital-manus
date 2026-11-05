@@ -131,9 +131,12 @@ describe("resolvedor de acesso às fazendas", () => {
     expect(acesso?.fazendasAutorizadas).toEqual([FAZENDA_J]);
   });
 
-  it("a migração da tabela não entra no boot nem roda sozinha", () => {
+  it("a tabela entra no boot e a migração não roda sozinha", () => {
     const requisitos = collectDatabaseSchemaRequirements();
-    expect(requisitos.tables).not.toContain("usuario_fazendas");
+    expect(requisitos.tables).toContain("usuario_fazendas");
+    expect(requisitos.foreignKeys).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: "usuario_fazendas", name: "usuario_fazendas_user_fk", deleteRule: "RESTRICT" }),
+    ]));
     const sql = readFileSync(resolve(here, "../drizzle/migrations/0063_usuario_fazendas.sql"), "utf8");
     expect(sql).toContain("NÃO EXECUTAR nesta etapa");
     expect(sql).toContain("NÃO usar db:push");

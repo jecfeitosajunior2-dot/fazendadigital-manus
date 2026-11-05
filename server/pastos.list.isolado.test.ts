@@ -1,0 +1,285 @@
+import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import mysql, { type RowDataPacket } from "mysql2/promise";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { IdentidadeUsuario } from "./_core/identidadeSessao";
+import { comporListaPastos } from "./routers";
+
+const exec = promisify(execFile);
+const here = dirname(fileURLToPath(import.meta.url));
+const CONTAINER = "fd-pastolist-785c27";
+const PORTA = 3327;
+const SENHA = "isolado-785c27";
+const BANCO = "fd_785c27";
+
+async function docker(...args: string[]) {
+  return exec("docker", args, { windowsHide: true });
+}
+
+async function conectar(banco?: string) {
+  return mysql.createConnection({
+    host: "127.0.0.1",
+    port: PORTA,
+    user: "root",
+    password: SENHA,
+    database: banco,
+    multipleStatements: true,
+  });
+}
+
+async function esperarMysql() {
+  const prazo = Date.now() + 90_000;
+  let ultimo = "";
+  while (Date.now() < prazo) {
+    try {
+      const conn = await conectar();
+      await conn.query("SELECT 1 AS ok");
+      await conn.end();
+      return;
+    } catch (erro) {
+      ultimo = erro instanceof Error ? erro.message : String(erro);
+      await new Promise((resolver) => setTimeout(resolver, 1500));
+    }
+  }
+  throw new Error(`MySQL isolado não respondeu. ${ultimo}`);
+}
+
+function pessoa(id: number, papel: IdentidadeUsuario["papel"]): IdentidadeUsuario {
+  return {
+    id, openId: `ficticio-openid-${id}`, name: "Teste", email: null,
+    role: papel === "principal" ? "admin" : "user", papel, titularUserId: 1,
+    situacao: "ativo", sessionVersion: 0,
+  };
+}
+
+describe.sequential("pastos.list em MySQL isolado", () => {
+  let pool: mysql.Pool;
+
+  beforeAll(async () => {
+    expect(PORTA).not.toBe(3306);
+    expect(BANCO).not.toBe("fazenda_digital");
+    expect(CONTAINER).not.toBe("fazenda-digital-mysql");
+    await docker("rm", "-f", CONTAINER).catch(() => undefined);
+    await docker(
+      "run", "-d", "--name", CONTAINER,
+      "-e", `MYSQL_ROOT_PASSWORD=${SENHA}`,
+      "-e", `MYSQL_DATABASE=${BANCO}`,
+      "-p", `127.0.0.1:${PORTA}:3306`,
+      "mysql:8.4",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_0900_ai_ci",
+    );
+    await esperarMysql();
+    const conn = await conectar(BANCO);
+    const [banco] = await conn.query<RowDataPacket[]>("SELECT DATABASE() AS nome");
+    expect(banco[0]?.nome).toBe(BANCO);
+    await conn.query(readFileSync(resolve(here, "administracao.isolado.sql"), "utf8"));
+    await conn.query(`
+      CREATE TABLE pastos (
+        id int NOT NULL PRIMARY KEY,
+        userId int NOT NULL,
+        fazendaId int NOT NULL,
+        nome varchar(100) NOT NULL,
+        sigla varchar(20) NULL,
+        tipo varchar(80) NULL,
+        area decimal(10,2) NULL,
+        capacidade int NULL,
+        status varchar(30) NULL,
+        coordenadas text NULL,
+        observacoes text NULL,
+        createdAt timestamp NULL
+      )
+    `);
+    await conn.end();
+    pool = mysql.createPool({
+      host: "127.0.0.1", port: PORTA, database: BANCO, user: "root", password: SENHA, connectionLimit: 4,
+    });
+  }, 120_000);
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM pastos");
+    await pool.query("DELETE FROM usuario_permissoes");
+    await pool.query("DELETE FROM usuario_fazendas");
+    await pool.query("DELETE FROM users");
+    await pool.query("DELETE FROM fazendas");
+    await pool.query("INSERT INTO fazendas (id, userId, nome) VALUES (10, 1, 'Pasto Norte'), (20, 1, 'Pasto Sul'), (30, 9, 'Fazenda Alheia')");
+    await pool.query(
+      `INSERT INTO users (id, openId, name, email, role, papel, titularUserId, situacao, sessionVersion, passwordHash) VALUES
+       (1, 'ficticio-openid-1', 'Ana', 'ana@teste.isolado', 'admin', 'principal', 1, 'ativo', 0, NULL),
+       (2, 'ficticio-openid-2', 'Comum', 'comum@teste.isolado', 'user', 'comum', 1, 'ativo', 0, NULL),
+       (3, 'ficticio-openid-3', 'Secundario', 'secundario@teste.isolado', 'user', 'secundario', 1, 'ativo', 0, NULL),
+       (9, 'ficticio-openid-9', 'Beto', 'beto@teste.isolado', 'admin', 'principal', 9, 'ativo', 0, NULL)`,
+    );
+    await pool.query(
+      `INSERT INTO pastos (id, userId, fazendaId, nome, sigla, tipo, area, capacidade, status, coordenadas, observacoes, createdAt) VALUES
+       (7, 1, 10, 'Pasto Norte', 'PN', 'Pasto', 12.50, 40, 'ativo', '-15.1,-47.2', NULL, '2026-11-02 00:00:00'),
+       (8, 1, 20, 'Pasto Sul', 'PS', 'Pasto', 8.00, 25, 'descanso', NULL, 'Seco', '2026-11-01 00:00:00'),
+       (15, 1, 30, 'Cruzado', NULL, 'Pasto', NULL, NULL, 'ativo', NULL, NULL, '2026-11-03 00:00:00'),
+       (16, 1, 999, 'Sem Fazenda', NULL, 'Pasto', NULL, NULL, 'ativo', NULL, NULL, '2026-10-01 00:00:00'),
+       (9, 9, 30, 'Pasto Alheio', NULL, 'Pasto', NULL, NULL, 'ativo', 'secreto', NULL, '2026-11-04 00:00:00')`,
+    );
+    await pool.query("INSERT INTO usuario_permissoes (userId, titularUserId, permissao, concedidoPorUserId) VALUES (3, 1, 'pastos.visualizar', 1), (2, 1, 'animais.visualizar', 1)");
+    await pool.query("INSERT INTO usuario_fazendas (userId, fazendaId, concedidoPorUserId) VALUES (3, 10, 1), (2, 10, 1)");
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await docker("rm", "-f", CONTAINER).catch(() => undefined);
+  });
+
+  async function base(titularUserId: number) {
+    const [fazendas] = await pool.query<RowDataPacket[]>("SELECT id, userId FROM fazendas WHERE userId = ?", [titularUserId]);
+    const [pastos] = await pool.query<RowDataPacket[]>(
+      `SELECT id, userId, fazendaId, nome, sigla, tipo, area, capacidade, status, coordenadas, observacoes, createdAt
+       FROM pastos WHERE userId = ? ORDER BY createdAt DESC`,
+      [titularUserId],
+    );
+    return {
+      fazendas: fazendas.map((row) => ({ id: Number(row.id), userId: Number(row.userId) })),
+      pastos: pastos.map((row) => ({
+        id: Number(row.id),
+        userId: Number(row.userId),
+        fazendaId: Number(row.fazendaId),
+        nome: String(row.nome),
+        sigla: row.sigla == null ? null : String(row.sigla),
+        tipo: row.tipo == null ? null : String(row.tipo),
+        area: row.area == null ? null : String(row.area),
+        capacidade: row.capacidade == null ? null : Number(row.capacidade),
+        status: row.status == null ? null : String(row.status),
+        coordenadas: row.coordenadas == null ? null : String(row.coordenadas),
+        observacoes: row.observacoes == null ? null : String(row.observacoes),
+        createdAt: row.createdAt,
+      })),
+    };
+  }
+
+  async function permissoes(userId: number) {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT permissao FROM usuario_permissoes WHERE userId = ? AND titularUserId = 1",
+      [userId],
+    );
+    return rows.map((row) => String(row.permissao));
+  }
+
+  async function vinculos(userId: number) {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT userId, fazendaId FROM usuario_fazendas WHERE userId = ?",
+      [userId],
+    );
+    return rows.map((row) => ({ userId: Number(row.userId), fazendaId: Number(row.fazendaId) }));
+  }
+
+  it("A. Principal vê os pastos das duas fazendas", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(1, "principal"),
+      permissoes: [], vinculos: [],
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok && resultado.pastos.map((pasto) => pasto.nome).sort()).toEqual(["Pasto Norte", "Pasto Sul"]);
+  });
+
+  it("B. Secundário vê só o pasto da fazenda concedida", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(3, "secundario"),
+      permissoes: await permissoes(3),
+      vinculos: await vinculos(3),
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok && resultado.pastos.map((pasto) => pasto.nome)).toEqual(["Pasto Norte"]);
+  });
+
+  it("C. Comum sem a permissão de pastos é recusado", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(2, "comum"),
+      permissoes: await permissoes(2),
+      vinculos: await vinculos(2),
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado).toEqual({ ok: false, motivo: "sem_permissao" });
+    expect(JSON.stringify(resultado)).not.toContain("Pasto Norte");
+  });
+
+  it("D. Pasto de outra conta não entra na consulta do titular", async () => {
+    const dados = await base(1);
+    const [alheios] = await pool.query<RowDataPacket[]>("SELECT id FROM pastos WHERE userId = 1 AND id = 9");
+    expect(alheios).toHaveLength(0);
+    const resultado = comporListaPastos({
+      identidade: pessoa(1, "principal"),
+      permissoes: [], vinculos: [],
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(JSON.stringify(resultado)).not.toContain("Pasto Alheio");
+    expect(JSON.stringify(resultado)).not.toContain("secreto");
+  });
+
+  it("E. Pasto com fazenda alheia ou inexistente fica de fora", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(1, "principal"),
+      permissoes: [], vinculos: [],
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok && resultado.pastos.some((pasto) => pasto.nome === "Cruzado" || pasto.nome === "Sem Fazenda")).toBe(false);
+  });
+
+  it("F. Vínculo removido esconde o pasto na consulta seguinte", async () => {
+    await pool.query("DELETE FROM usuario_fazendas WHERE userId = 3");
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(3, "secundario"),
+      permissoes: await permissoes(3),
+      vinculos: await vinculos(3),
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok && resultado.pastos).toEqual([]);
+  });
+
+  it("G. Pasto só do espelho não reaparece", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(1, "principal"),
+      permissoes: [], vinculos: [],
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      locais: [{ id: 99, userId: 1, fazendaId: 10, nome: "Só Espelho" }],
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok && resultado.pastos.some((pasto) => pasto.id === 99)).toBe(false);
+  });
+
+  it("H. O pasto do Principal conserva campos e a ordem da consulta", async () => {
+    const dados = await base(1);
+    const resultado = comporListaPastos({
+      identidade: pessoa(1, "principal"),
+      permissoes: [], vinculos: [],
+      fazendasDoTitular: dados.fazendas,
+      pastos: dados.pastos,
+      consultaMysqlConcluida: true,
+    });
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.pastos.map((pasto) => pasto.nome)).toEqual(["Pasto Norte", "Pasto Sul"]);
+    expect(resultado.pastos[0]).toMatchObject({
+      id: 7, nome: "Pasto Norte", sigla: "PN", tipo: "Pasto", capacidade: 40,
+      status: "ativo", coordenadas: "-15.1,-47.2", observacoes: null, fazendaId: 10,
+    });
+  });
+});
