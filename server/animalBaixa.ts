@@ -1,3 +1,8 @@
+/**
+ * Caminho antigo da baixa, com o usuário da sessão como dono da linha.
+ * A rota animais.registrarBaixa não chama mais esta função.
+ * A venda comercial continua com o mecanismo próprio e não passa por aqui.
+ */
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { animalBaixas, animais } from "../drizzle/schema";

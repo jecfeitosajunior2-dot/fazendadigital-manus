@@ -45,7 +45,7 @@ import {
   formatUltimoPesoKg,
 } from "@/lib/listaAnimaisTable";
 import {
-  MSG_ANIMAL_EXCLUSAO_BLOQUEADA,
+  MSG_EXCLUSAO_FISICA_INDISPONIVEL,
   TOOLTIP_ANIMAL_EXCLUIR,
   TOOLTIP_ANIMAL_EXCLUIR_BLOQUEADO,
 } from "@shared/animalExclusao";
@@ -138,7 +138,6 @@ function AnimaisListEmptyState({
 // --- Animals Page ---
 export function AnimaisPage() {
   const [, setLocation] = useLocation();
-  const confirm = useConfirm();
   const searchString = useSearch();
   const [filters, setFilters] = useState<AnimaisListFiltersState>(() => {
     const fromUrl = animaisFiltersFromSearchParams(searchString);
@@ -178,26 +177,8 @@ export function AnimaisPage() {
     }
   };
 
-  const handleDeleteAnimal = async (animal: {
-    id?: unknown;
-    brinco?: unknown;
-    exclusaoBloqueada?: unknown;
-  }) => {
-    if (animal.exclusaoBloqueada) {
-      toast.error(MSG_ANIMAL_EXCLUSAO_BLOQUEADA);
-      return;
-    }
-    const id = Number(animal.id);
-    const brinco = typeof animal.brinco === "string" ? animal.brinco.trim() : "";
-    const label = brinco || `#${id}`;
-    const ok = await confirm({
-      title: "Excluir animal",
-      description: `Tem certeza que deseja excluir o animal "${label}"? Esta ação não pode ser desfeita.`,
-      confirmText: "Excluir",
-      cancelText: "Cancelar",
-      variant: "danger",
-    });
-    if (ok) deleteMutation.mutate({ id });
+  const handleDeleteAnimal = () => {
+    toast.error(MSG_EXCLUSAO_FISICA_INDISPONIVEL);
   };
 
   const apiParams = useMemo(
@@ -208,14 +189,6 @@ export function AnimaisPage() {
   const hasFazendaFilter = !!filters.fazendaId;
   const { data: animaisData, isLoading, refetch } = trpc.animais.list.useQuery(apiParams, {
     enabled: fazendaInitDone && hasFazendaFilter,
-  });
-  const utils = trpc.useUtils();
-  const deleteMutation = trpc.animais.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Animal excluído com sucesso!");
-      utils.animais.list.invalidate();
-    },
-    onError: e => toast.error(e.message),
   });
   const { data: lotesData } = trpc.lotes.list.useQuery();
   const { data: fazendasData } = trpc.fazendas.list.useQuery();

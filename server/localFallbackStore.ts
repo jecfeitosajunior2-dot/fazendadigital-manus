@@ -964,8 +964,6 @@ export async function moveLocalLoteToPasto(
       ...rows[index],
       pastoAtualId: null,
       dataEntradaPasto: null,
-      fazendaId: null,
-      localizacao: null,
       updatedAt: now,
     };
     await writeLotes(rows);
@@ -997,7 +995,6 @@ export async function moveLocalLoteToPasto(
   rows[index] = {
     ...rows[index],
     pastoAtualId: input.pastoId,
-    fazendaId: pasto.fazendaId,
     dataEntradaPasto: hoje,
     localizacao: pasto.nome,
     updatedAt: now,
@@ -1012,7 +1009,6 @@ export async function moveLocalLoteToPasto(
 
   await syncLocalAnimaisDoLote(userId, lote.id, {
     pastoId: input.pastoId,
-    fazendaId: pasto.fazendaId,
   });
 
   return { success: true, localFallback: true };
@@ -1414,6 +1410,20 @@ export async function createLocalAnimal(
   });
   await writeAnimais(rows);
   return { id };
+}
+
+/** Espelho da retirada: só tira o lote. Não mexe em pasto, fazenda nem histórico. */
+export async function espelharRetiradaAnimaisLocal(userId: number, animalIds: number[]): Promise<void> {
+  const rows = await readAnimais();
+  const ids = new Set(animalIds);
+  const now = new Date().toISOString();
+  let mudou = false;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].userId !== userId || !ids.has(Number(rows[i].id))) continue;
+    rows[i] = { ...rows[i], loteId: null, updatedAt: now };
+    mudou = true;
+  }
+  if (mudou) await writeAnimais(rows);
 }
 
 export async function updateLocalAnimal(

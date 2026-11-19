@@ -8,8 +8,12 @@
 export const MSG_ANIMAL_EXCLUSAO_BLOQUEADA =
   "Animal com histórico não pode ser excluído. Use Manejo → Baixa para tirá-lo da operação.";
 
-export const TOOLTIP_ANIMAL_EXCLUIR = "Excluir animal";
-export const TOOLTIP_ANIMAL_EXCLUIR_BLOQUEADO = MSG_ANIMAL_EXCLUSAO_BLOQUEADA;
+/** A lixeira da lista está fechada até sanidade, reprodução e compra travarem o animal. */
+export const MSG_EXCLUSAO_FISICA_INDISPONIVEL =
+  "Exclusão física de animais temporariamente indisponível por segurança.";
+
+export const TOOLTIP_ANIMAL_EXCLUIR = MSG_EXCLUSAO_FISICA_INDISPONIVEL;
+export const TOOLTIP_ANIMAL_EXCLUIR_BLOQUEADO = MSG_EXCLUSAO_FISICA_INDISPONIVEL;
 
 export type AnimalExclusaoFlags = {
   statusNaoAtivo?: boolean;

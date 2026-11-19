@@ -54,6 +54,7 @@ async function listCastracoesAnimal(userId: number, animalId: number) {
   }
 }
 
+/** A rota não chama mais esta função. Ela permanece para revisão direta. */
 export async function registrarCastracao(
   userId: number,
   input: RegistrarCastracaoInput,

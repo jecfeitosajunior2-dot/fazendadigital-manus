@@ -39,7 +39,6 @@ import {
   formatCustoMedio,
   parseCustoMedio,
 } from "./custoMedioEstoque";
-import { calcularQuantidadeEstoquePorDose } from "../client/src/lib/produto-types";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
 import {
   capitalEstaInicializado,
@@ -55,8 +54,16 @@ import { resolverLeituraEstoqueList } from "../shared/estoqueListFonte";
 import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { SaudeEstoqueError } from "./saudeEstoque";
-import { estornarManejoSanitarioMysql, persistirManejoSanitarioMysql, recusarEstornoGenericoSeSanitario, listarVinculosSaudePorMovimentacaoIds } from "./saudeEstoqueMysql";
-import { deveBloquearEstornoGenericoSanitario, MOTIVO_ESTORNO_SAUDE_PADRAO, MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
+import { recusarEstornoGenericoSeSanitario, listarVinculosSaudePorMovimentacaoIds } from "./saudeEstoqueMysql";
+import {
+  ConflitoSanidadeEstoque,
+  erroEstornoSanidade,
+  erroLancamentoSanidade,
+  estornarSanidadeAutorizado,
+  lancarSanidadeEEspelhar,
+} from "./sanidadeEstoqueAutorizado";
+import { ioSanidadeDrizzle } from "./sanidadeEstoqueDb";
+import { deveBloquearEstornoGenericoSanitario, MSG_ESTORNO_GENERICO_SANITARIO } from "../shared/saudeEstoque";
 import { ManutencaoEstoqueError } from "./manutencaoEstoque";
 import { recusarEstornoGenericoSeManutencao, listarVinculosManutencaoPorMovimentacaoIds } from "./manutencaoEstoqueMysql";
 import { estornarManutencaoCompletaMysql, persistirManutencaoCompletaMysql } from "./manutencaoCompletaMysql";
@@ -109,7 +116,7 @@ import {
   deleteLocalMaquina,
   deleteLocalAbastecimento,
   deleteLocalManutencao,
-  deleteLocalAnimal,
+  registrarLocalAnimalBaixa,
   getLocalFazenda,
   getLocalBenfeitoria,
   getLocalMaquina,
@@ -135,9 +142,12 @@ import {
   excluirLocalLote,
   incluirAnimaisLocalLote,
   registrarLocalEntradaInicialLote,
+  registrarLocalTransferenciaInterna,
   movimentarAnimaisLocalLote,
+  espelharRetiradaAnimaisLocal,
   createLocalPesagem,
   deleteLocalPesagem,
+  updateLocalPesagemObservacoes,
   listLocalSaudeRegistros,
   createLocalSaudeRegistro,
   deleteLocalSaudeRegistro,
@@ -165,22 +175,63 @@ import {
   cancelarLocalEstadiaSinteticaLote,
   listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
-import { transferirAnimaisEntreLotesDb } from "./transferirAnimaisEntreLotes";
-import { incluirAnimaisNoLoteDb } from "./incluirAnimaisNoLote";
+import {
+  alocarEEspelharAnimais,
+  DeadlockMovimentacaoAnimais,
+  erroAnimaisLote,
+  incluirEEspelharAnimais,
+  movimentarEEspelharAnimais,
+  retirarEEspelharAnimais,
+} from "./movimentarAnimaisLoteAutorizado";
+import { ioAnimaisLoteDrizzle } from "./movimentarAnimaisLoteDb";
 import { hojeISODateLocal } from "../shared/transferirAnimaisEntreLotes";
 import {
   buildEntradaInicialLoteMovimentacao,
   loteIdEfetivoParaHistorico,
 } from "../shared/animalLoteMovimentacaoEntrada";
-import { registrarCastracao } from "./castracaoManejo";
+import { buildAnimalInsertRow } from "./animalInsertRow";
+import { cadastrarEEspelhar, erroCadastroAnimal } from "./cadastroAnimalAutorizado";
+import { ioCadastroDrizzle } from "./cadastroAnimalDb";
+import { cadastrarEEspelharLote, erroCadastroLote } from "./cadastroLoteAutorizado";
+import { ioCadastroLoteDrizzle } from "./cadastroLoteDb";
+import { editarEEspelharLote, erroEdicaoLote } from "./editarLoteAutorizado";
+import { ioEditarLoteDrizzle } from "./editarLoteDb";
+import { erroMovimentacaoLote, LoteMudouDuranteMovimentacao, movimentarEEspelharLote } from "./movimentarLotePastoAutorizado";
+import { ioMovimentarLotePastoDrizzle } from "./movimentarLotePastoDb";
+import { editarEEspelharAnimal, erroEdicaoAnimal } from "./editarAnimalAutorizado";
+import { ioEditarAnimalDrizzle } from "./editarAnimalDb";
+import {
+  ConflitoManejoAnimal,
+  castrarEEspelharAnimal,
+  erroCastracao,
+  erroReproducaoSimples,
+  registrarReproducaoSimplesEEspelhar,
+} from "./registrarManejoAutorizado";
+import { ioManejoDrizzle } from "./registrarManejoDb";
 import { assertAlteracaoSexoAnimal } from "./assertAlteracaoSexoAnimal";
-import { registrarDesmama } from "./desmamaManejo";
+import {
+  ConflitoPesagemAnimal,
+  desmamarEEspelharAnimal,
+  erroDesmama,
+  erroPesagem,
+  pesarEEspelharAnimal,
+} from "./pesarAnimalAutorizado";
+import { ioPesagemDrizzle } from "./pesarAnimalDb";
 import {
   assertManejoPermitidoNaData,
   getBaixaAnimal,
-  registrarBaixaAnimal,
 } from "./animalBaixa";
-import { registrarTransferenciaInternaAnimal } from "./transferenciaInternaAnimal";
+import {
+  baixarEEspelharAnimal,
+  ConflitoBaixaAnimal,
+  erroBaixaAnimal,
+} from "./baixarAnimalAutorizado";
+import { recusarExclusaoFisicaAnimal } from "./exclusaoFisicaAnimal";
+import { ioBaixaDrizzle } from "./baixarAnimalDb";
+import {
+  erroTransferenciaFazenda,
+  transferirEEspelharAnimalFazenda,
+} from "./transferirAnimalFazendaAutorizado";
 import {
   confirmarVendaComercialSePermitida,
   confirmarVendaIntegradaSeAtiva,
@@ -238,11 +289,7 @@ import {
   executarExclusaoLote,
   executarInativacaoLote,
 } from "./loteExclusaoCheck";
-import {
-  assertAnimalPodeExcluirDb,
-  assertAnimalPodeExcluirLocal,
-  collectAnimalIdsComHistoricoDb,
-} from "./animalExclusaoCheck";
+import { collectAnimalIdsComHistoricoDb } from "./animalExclusaoCheck";
 import {
   animalStatusNaoAtivo,
   isAnimalExclusaoBloqueada,
@@ -483,73 +530,6 @@ const animaisListInput = z.object({
   /** Em manejos, inclui baixados apenas quando o evento é retroativo (data <= baixa). */
   dataManejo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).optional();
-
-function buildAnimalInsertRow(userId: number, input: {
-  brinco?: string;
-  brincoEletronico?: string;
-  nome?: string;
-  raca?: string;
-  sexo: "macho" | "femea";
-  dataNascimento?: string | null;
-  pesoAtual?: string;
-  loteId?: number;
-  categoria?: string;
-  observacoes?: string;
-  pelagem?: string;
-  marca?: string;
-  dataDesmama?: string | null;
-  castrado?: boolean | null;
-  dataEntrada?: string | null;
-  pesoEntrada?: string;
-  produtorOrigem?: string;
-  precoKg?: string;
-  frete?: string;
-  sisbov?: string;
-  dataRnd?: string | null;
-  rgn?: string;
-  rgd?: string;
-  rastreadoNascimento?: boolean;
-  maeId?: number | null;
-  paiId?: number | null;
-  pai?: string;
-  mae?: string;
-  fazendaId?: number;
-  pastoId?: number;
-}) {
-  return {
-    userId,
-    brinco: input.brinco,
-    brincoEletronico: input.brincoEletronico,
-    nome: input.nome,
-    raca: input.raca,
-    sexo: input.sexo,
-    dataNascimento: input.dataNascimento || undefined,
-    pesoAtual: input.pesoAtual,
-    loteId: input.loteId,
-    categoria: input.categoria,
-    observacoes: input.observacoes,
-    pelagem: input.pelagem,
-    marca: input.marca,
-    dataDesmama: input.dataDesmama || undefined,
-    castrado: input.castrado ?? null,
-    dataEntrada: input.dataEntrada || undefined,
-    pesoEntrada: input.pesoEntrada,
-    produtorOrigem: input.produtorOrigem,
-    precoKg: input.precoKg,
-    frete: input.frete,
-    sisbov: input.sisbov,
-    dataRnd: input.dataRnd || undefined,
-    rgn: input.rgn,
-    rgd: input.rgd,
-    rastreadoNascimento: input.rastreadoNascimento,
-    maeId: input.maeId ?? undefined,
-    paiId: input.paiId ?? undefined,
-    pai: input.pai,
-    mae: input.mae,
-    fazendaId: input.fazendaId,
-    pastoId: input.pastoId,
-  };
-}
 
 /** Usa o espelho local quando existir — evita listas de seed antigas do MySQL no modelo/validação. */
 async function loadFazendasUsuarioParaOperacao(userId: number): Promise<Array<{ id: number; nome: string }>> {
@@ -1521,12 +1501,35 @@ const animaisRouter = router({
       motivo: z.string().max(255).nullable().optional(),
       observacoes: z.string().max(2000).nullable().optional(),
     }))
-    .mutation(async ({ ctx, input }) =>
-      registrarBaixaAnimal(ctx.user.id, {
-        ...input,
-        usuarioNome: ctx.user.name?.trim() || null,
-      }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const executorNome = ctx.user.name?.trim() || ctx.user.email || "Usuário";
+      try {
+        const resultado = await baixarEEspelharAnimal(ioBaixaDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input,
+        }, {
+          async baixar(userId, dados) {
+            await registrarLocalAnimalBaixa(userId, dados);
+          },
+        });
+        if (!resultado.ok) throw erroBaixaAnimal(resultado);
+        return { success: true as const, id: resultado.id, status: resultado.status };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoBaixaAnimal) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
+          });
+        }
+        throw error;
+      }
+    }),
 
   transferirEntreFazendas: protectedProcedure
     .input(z.object({
@@ -1538,12 +1541,49 @@ const animaisRouter = router({
       dataTransferencia: z.string().min(1).max(10),
       observacoes: z.string().max(2000).nullable().optional(),
     }))
-    .mutation(async ({ ctx, input }) =>
-      registrarTransferenciaInternaAnimal(ctx.user.id, {
-        ...input,
-        usuarioNome: ctx.user.name?.trim() || null,
-      }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const executorNome = ctx.user.name?.trim() || ctx.user.email || "Usuário";
+      try {
+        const resultado = await transferirEEspelharAnimalFazenda(ioAnimaisLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input: {
+            fazendaOrigemId: input.fazendaOrigemId,
+            fazendaDestinoId: input.fazendaDestinoId,
+            animalId: input.animalId,
+            loteDestinoId: input.loteDestinoId,
+            pastoDestinoId: input.pastoDestinoId ?? null,
+            dataTransferencia: input.dataTransferencia,
+            observacoes: input.observacoes ?? null,
+          },
+        }, {
+          async transferir(userId, dados) {
+            await registrarLocalTransferenciaInterna(userId, dados);
+          },
+        });
+        if (!resultado.ok) throw erroTransferenciaFazenda(resultado);
+        return {
+          success: true as const,
+          status: resultado.status,
+          fazendaId: resultado.fazendaId,
+          loteId: resultado.loteId,
+          loteDestinoNome: resultado.loteDestinoNome,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof DeadlockMovimentacaoAnimais) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
+          });
+        }
+        throw error;
+      }
+    }),
 
   /**
    * POC AT05 — busca animal por brinco eletrônico com igualdade exata (string).
@@ -1690,99 +1730,28 @@ const animaisRouter = router({
       pastoId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (isPesoEntradaInformadoInvalido(input.pesoEntrada)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_PESO_ENTRADA_INVALIDO });
-      }
-      const row = buildAnimalInsertRow(ctx.user.id, input);
-      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
-      const dataMovimentacao = hojeISODateLocal();
-      const loteDestinoId = loteIdEfetivoParaHistorico(row.loteId);
       try {
-        await assertBrincoUnicoEntreAtivosDb(
-          ctx.user.id,
-          row.brinco,
-          "ativo",
-          undefined,
-          row.fazendaId ?? undefined,
-        );
-        if (row.brincoEletronico) {
-          await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico);
-        }
-        const id = await db.transaction(async tx => {
-          const result = await tx.insert(animais).values(row);
-          const insertedId = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-          if (!Number.isFinite(insertedId) || insertedId <= 0) {
-            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao cadastrar animal." });
-          }
-          if (loteDestinoId != null) {
-            await tx.insert(animalLoteMovimentacoes).values(
-              buildEntradaInicialLoteMovimentacao({
-                userId: ctx.user.id,
-                animalId: insertedId,
-                loteDestinoId,
-                pastoOrigemId: null,
-                pastoDestinoId: row.pastoId ?? null,
-                fazendaId: row.fazendaId ?? null,
-                dataMovimentacao,
-                usuarioNome,
-              }),
-            );
-          }
-          return insertedId;
+        const resultado = await cadastrarEEspelhar(ioCadastroDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async atualizar(userId, id, row) {
+            await updateLocalAnimal(userId, id, row);
+          },
+          async historico(entrada) {
+            await registrarLocalEntradaInicialLote(entrada);
+          },
         });
-        if (Number.isFinite(id) && id > 0) {
-          try {
-            await updateLocalAnimal(ctx.user.id, id, row);
-            if (loteDestinoId != null) {
-              await registrarLocalEntradaInicialLote({
-                userId: ctx.user.id,
-                animalId: id,
-                loteDestinoId,
-                pastoOrigemId: null,
-                pastoDestinoId: row.pastoId ?? null,
-                fazendaId: row.fazendaId ?? null,
-                dataMovimentacao,
-                usuarioNome,
-              });
-            }
-          } catch (mirrorError) {
-            console.warn("[animais.create] Espelho local não gravado:", mirrorError);
-          }
-        }
-        return { success: true, id };
+        if (!resultado.ok) throw erroCadastroAnimal(resultado);
+        return { success: true as const, id: resultado.id };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isDatabaseUnavailable(err)) {
-          await assertBrincoUnicoEntreAtivos(
-            ctx.user.id,
-            row.brinco,
-            "ativo",
-            undefined,
-            true,
-            row.fazendaId ?? undefined,
-          );
-          if (row.brincoEletronico) {
-            await assertRfidNaoReutilizavel(ctx.user.id, row.brincoEletronico, undefined, true);
-          }
-          const result = await createLocalAnimal(ctx.user.id, row);
-          try {
-            if (loteDestinoId != null) {
-              await registrarLocalEntradaInicialLote({
-                userId: ctx.user.id,
-                animalId: result.id,
-                loteDestinoId,
-                pastoOrigemId: null,
-                pastoDestinoId: row.pastoId ?? null,
-                fazendaId: row.fazendaId ?? null,
-                dataMovimentacao,
-                usuarioNome,
-              });
-            }
-          } catch (histError) {
-            await deleteLocalAnimal(ctx.user.id, result.id);
-            throw histError;
-          }
-          return { success: true, id: result.id, localFallback: true };
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
+          });
         }
         console.error("[animais.create]", err);
         throw err;
@@ -1825,210 +1794,34 @@ const animaisRouter = router({
       pastoId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (isPesoEntradaInformadoInvalido(input.pesoEntrada)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_PESO_ENTRADA_INVALIDO });
-      }
-      const {
-        id, dataNascimento, dataDesmama, dataEntrada, dataRnd,
-        loteId, pastoId, pesoEntrada, pesoAtual,
-        status,
-        brinco, brincoEletronico, nome, raca, categoria, observacoes,
-        pelagem, marca, produtorOrigem, precoKg, frete,
-        sisbov, rgn, rgd, pai, mae, maeId, paiId, fazendaId,
-        ...rest
-      } = input;
-
-      // null = limpar campo, undefined = não alterar, string = atualizar
-      const resolveData = (v: string | null | undefined) => {
-        if (v === null) return null;
-        if (v === undefined) return undefined;
-        return v || null; // string vazia também limpa
-      };
-      const resolveStr = (v: string | null | undefined) => {
-        if (v === undefined) return undefined;
-        return v === null || v === '' ? null : v;
-      };
-      const resolvePeso = (v: string | null | undefined) => {
-        if (v === undefined) return undefined;
-        return v === null || v === '' ? null : v;
-      };
-
-      const setData: Record<string, unknown> = {
-        ...rest,
-        dataNascimento: resolveData(dataNascimento),
-        dataDesmama: resolveData(dataDesmama),
-        dataEntrada: resolveData(dataEntrada),
-        dataRnd: resolveData(dataRnd),
-        pesoEntrada: resolvePeso(pesoEntrada),
-        pesoAtual: resolvePeso(pesoAtual),
-        brinco: resolveStr(brinco),
-        brincoEletronico: resolveStr(brincoEletronico),
-        nome: resolveStr(nome),
-        raca: resolveStr(raca),
-        categoria: resolveStr(categoria),
-        observacoes: resolveStr(observacoes),
-        pelagem: resolveStr(pelagem),
-        marca: resolveStr(marca),
-        produtorOrigem: resolveStr(produtorOrigem),
-        precoKg: resolveStr(precoKg),
-        frete: resolveStr(frete),
-        sisbov: resolveStr(sisbov),
-        rgn: resolveStr(rgn),
-        rgd: resolveStr(rgd),
-        pai: resolveStr(pai),
-        mae: resolveStr(mae),
-      };
-      // Remove chaves undefined para não sobrescrever campos não enviados
-      Object.keys(setData).forEach(k => setData[k] === undefined && delete setData[k]);
-      if (loteId !== undefined) setData.loteId = loteId;
-      if (pastoId !== undefined) setData.pastoId = pastoId;
-      if (fazendaId !== undefined) setData.fazendaId = fazendaId;
-      if (maeId !== undefined) setData.maeId = maeId;
-      if (paiId !== undefined) setData.paiId = paiId;
       try {
-        const [current] = await db
-          .select({
-            brinco: animais.brinco,
-            brincoEletronico: animais.brincoEletronico,
-            status: animais.status,
-            fazendaId: animais.fazendaId,
-            loteId: animais.loteId,
-            sexo: animais.sexo,
-            castrado: animais.castrado,
-          })
-          .from(animais)
-          .where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)))
-          .limit(1);
-        if (!current) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
-        }
-        if (status !== undefined && status !== current.status) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: MSG_STATUS_ALTERACAO_DIRETA });
-        }
-
-        await assertAlteracaoSexoAnimal({
-          userId: ctx.user.id,
-          animalId: id,
-          sexoAtual: current.sexo,
-          novoSexo: input.sexo,
-          castradoAtual: current.castrado,
-          source: "db",
+        const resultado = await editarEEspelharAnimal(ioEditarAnimalDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async atualizar(userId, id, patch) {
+            await updateLocalAnimal(userId, id, patch);
+          },
         });
-
-        const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
-        const effectiveRfid =
-          brincoEletronico !== undefined ? resolveStr(brincoEletronico) : current.brincoEletronico;
-        const effectiveStatus = resolveEffectiveStatus(
-          current.status,
-          current.status,
-        );
-        let effectiveFazendaId: number | undefined =
-          fazendaId !== undefined
-            ? fazendaId ?? undefined
-            : current.fazendaId ?? undefined;
-        if (effectiveFazendaId == null && current.loteId != null) {
-          const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
-          const fromLote = loteFazendaById.get(Number(current.loteId));
-          if (fromLote != null) effectiveFazendaId = fromLote;
-        }
-
-        await assertBrincoUnicoEntreAtivosDb(
-          ctx.user.id,
-          effectiveBrinco,
-          effectiveStatus,
-          id,
-          effectiveFazendaId,
-        );
-
-        const rfidKey = normalizeRfidKey(effectiveRfid);
-        const rfidAtualKey = normalizeRfidKey(current.brincoEletronico);
-        if (rfidKey && rfidKey !== rfidAtualKey) {
-          await assertRfidNaoReutilizavel(ctx.user.id, rfidKey, id);
-        }
-
-        await db.update(animais).set(setData).where(and(eq(animais.id, id), eq(animais.userId, ctx.user.id)));
-        try {
-          await updateLocalAnimal(ctx.user.id, id, setData);
-        } catch (mirrorError) {
-          console.warn("[animais.update] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true };
+        if (!resultado.ok) throw erroEdicaoAnimal(resultado);
+        return { success: true as const };
       } catch (err) {
         if (err instanceof TRPCError) throw err;
         if (isDatabaseUnavailable(err)) {
-          const current = await getLocalAnimal(ctx.user.id, id);
-          if (!current) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Animal não encontrado." });
-          }
-          if (status !== undefined && status !== current.status) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: MSG_STATUS_ALTERACAO_DIRETA });
-          }
-          await assertAlteracaoSexoAnimal({
-            userId: ctx.user.id,
-            animalId: id,
-            sexoAtual: current.sexo,
-            novoSexo: input.sexo,
-            castradoAtual: current.castrado,
-            source: "local",
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
           });
-          const effectiveBrinco = brinco !== undefined ? resolveStr(brinco) : current.brinco;
-          const effectiveRfid =
-            brincoEletronico !== undefined
-              ? resolveStr(brincoEletronico)
-              : current.brincoEletronico;
-          const effectiveStatus = resolveEffectiveStatus(
-            current.status,
-            current.status,
-          );
-          let effectiveFazendaId: number | undefined =
-            fazendaId !== undefined
-              ? fazendaId ?? undefined
-              : current.fazendaId ?? undefined;
-          if (effectiveFazendaId == null && current.loteId != null) {
-            try {
-              const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
-              const fromLote = loteFazendaById.get(Number(current.loteId));
-              if (fromLote != null) effectiveFazendaId = fromLote;
-            } catch {
-              /* mantém undefined — validação sem escopo de fazenda */
-            }
-          }
-          await assertBrincoUnicoEntreAtivos(
-            ctx.user.id,
-            effectiveBrinco,
-            effectiveStatus,
-            id,
-            true,
-            effectiveFazendaId,
-          );
-          const rfidKey = normalizeRfidKey(effectiveRfid);
-          const rfidAtualKey = normalizeRfidKey(current.brincoEletronico);
-          if (rfidKey && rfidKey !== rfidAtualKey) {
-            await assertRfidNaoReutilizavel(ctx.user.id, rfidKey, id, true);
-          }
-          await updateLocalAnimal(ctx.user.id, id, setData);
-          return { success: true, localFallback: true };
         }
+        console.error("[animais.update]", err);
         throw err;
       }
     }),
-
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await assertAnimalPodeExcluirDb(ctx.user.id, input.id);
-        await db.delete(animais).where(and(eq(animais.id, input.id), eq(animais.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (isDatabaseUnavailable(error)) {
-          await assertAnimalPodeExcluirLocal(ctx.user.id, input.id);
-          await deleteLocalAnimal(ctx.user.id, input.id);
-          return { success: true, localFallback: true };
-        }
-        throw error;
-      }
+    .mutation(async () => {
+      recusarExclusaoFisicaAnimal();
     }),
 
   // ── Gera planilha modelo para download ──────────────────────────────────────
@@ -2645,7 +2438,45 @@ const animaisRouter = router({
       idadeMeses: z.number().int().min(0).max(600).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return registrarDesmama(ctx.user.id, input);
+      try {
+        const resultado = await desmamarEEspelharAnimal(ioPesagemDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async desmamar(userId, dados) {
+            await updateLocalAnimal(userId, dados.animalId, {
+              dataDesmama: dados.dataDesmama,
+              ...(dados.dataNascimento ? { dataNascimento: dados.dataNascimento } : {}),
+              ...(dados.pesoAtual ? { pesoAtual: dados.pesoAtual } : {}),
+            });
+            if (dados.novaPesagem) await createLocalPesagem(userId, dados.novaPesagem);
+            else if (dados.pesagemObservacao) {
+              await updateLocalPesagemObservacoes(
+                userId,
+                dados.pesagemObservacao.id,
+                dados.pesagemObservacao.observacoes,
+              );
+            }
+          },
+        });
+        if (!resultado.ok) throw erroDesmama(resultado);
+        return {
+          success: true as const,
+          pesagemCriada: resultado.pesagemCriada,
+          pesagemReutilizada: resultado.pesagemReutilizada,
+          pesagemVinculada: resultado.pesagemVinculada,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoPesagemAnimal) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
     }),
 });
 
@@ -3247,122 +3078,29 @@ const lotesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const [lote] = await db.select().from(lotes).where(
-          and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id))
-        ).limit(1);
-        if (!lote) throw new Error("Lote não encontrado");
-
-        const hojeLimite = hojeISO();
-        const hoje = input.dataEntrada ?? hojeLimite;
-        if (hoje > hojeLimite) {
-          throw new Error("A data de entrada no pasto não pode ser futura.");
-        }
-
-        const qtdAnimais = await countAnimaisLote(lote.id);
-        const pastoOrigemId = lote.pastoAtualId ?? null;
-
-        if (input.pastoId === pastoOrigemId) {
-          return { success: true };
-        }
-
-        // Fecha estadia anterior
-        if (pastoOrigemId) {
-          const [aberta] = await db.select().from(lotePastoMovimentacoes).where(
-            and(
-              eq(lotePastoMovimentacoes.loteId, lote.id),
-              eq(lotePastoMovimentacoes.pastoDestinoId, pastoOrigemId),
-              isNull(lotePastoMovimentacoes.dataSaida),
-            )
-          ).limit(1);
-
-          const dataEntrada = aberta?.dataEntrada ?? lote.dataEntradaPasto ?? hoje;
-          const dias = diasEntre(dataEntrada, hoje);
-
-          if (aberta) {
-            await db.update(lotePastoMovimentacoes).set({ dataSaida: hoje, diasNoPasto: dias })
-              .where(eq(lotePastoMovimentacoes.id, aberta.id));
-          } else {
-            await db.insert(lotePastoMovimentacoes).values({
-              userId: ctx.user.id,
-              loteId: lote.id,
-              pastoOrigemId: null,
-              pastoDestinoId: pastoOrigemId,
-              dataEntrada,
-              dataSaida: hoje,
-              diasNoPasto: dias,
-              qtdAnimais,
-            });
-          }
-          await syncPastoStatus(pastoOrigemId, ctx.user.id);
-        }
-
-        if (input.pastoId === null) {
-          await db.update(lotes).set({
-            pastoAtualId: null,
-            dataEntradaPasto: null,
-            fazendaId: null,
-          }).where(eq(lotes.id, lote.id));
-
-          await db.update(animais)
-            .set({ pastoId: null })
-            .where(and(
-              eq(animais.userId, ctx.user.id),
-              eq(animais.loteId, lote.id),
-              eq(animais.status, "ativo"),
-            ));
-
-          return { success: true };
-        }
-
-        const [pasto] = await db.select().from(pastos).where(
-          and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id))
-        ).limit(1);
-        if (!pasto) throw new Error("Pasto não encontrado");
-
-        await db.insert(lotePastoMovimentacoes).values({
-          userId: ctx.user.id,
-          loteId: lote.id,
-          pastoOrigemId,
-          pastoDestinoId: input.pastoId,
-          dataEntrada: hoje,
-          qtdAnimais,
-          observacoes: input.observacoes,
+        const resultado = await movimentarEEspelharLote(ioMovimentarLotePastoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async mover(userId, dados) {
+            await moveLocalLoteToPasto(userId, dados);
+          },
         });
-
-        await db.update(lotes).set({
-          pastoAtualId: input.pastoId,
-          fazendaId: pasto.fazendaId,
-          dataEntradaPasto: hoje,
-          localizacao: pasto.nome,
-        }).where(eq(lotes.id, lote.id));
-
-        await db.update(pastos).set({ status: "ativo" })
-          .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, ctx.user.id)));
-
-        await db.update(animais)
-          .set({ pastoId: input.pastoId, fazendaId: pasto.fazendaId })
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            eq(animais.loteId, lote.id),
-            eq(animais.status, "ativo"),
-          ));
-
-        return { success: true };
+        if (!resultado.ok) throw erroMovimentacaoLote(resultado);
+        return { success: true as const };
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return await moveLocalLoteToPasto(ctx.user.id, {
-            loteId: input.loteId,
-            pastoId: input.pastoId,
-            dataEntrada: input.dataEntrada,
-            observacoes: input.observacoes,
-          });
-        } catch (localError) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof LoteMudouDuranteMovimentacao) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: localError instanceof Error ? localError.message : "Lote ou pasto não encontrado.",
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
           });
         }
+        throw error;
       }
     }),
 
@@ -3457,24 +3195,28 @@ const lotesRouter = router({
       localizacao: z.string().optional(),
       capacidade: z.number().optional(),
       fazendaId: z.number({ required_error: "Selecione uma fazenda." }),
+      pastoAtualId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const payload = {
-        ...input,
-        sigla: input.sigla?.trim() || undefined,
-        dataCriacao: input.dataCriacao || hojeISO(),
-      };
       try {
-        const result = await db.insert(lotes).values({
-          userId: ctx.user.id,
-          ...payload,
+        const resultado = await cadastrarEEspelharLote(ioCadastroLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async criar(userId, row) {
+            await createLocalLote(userId, row);
+          },
         });
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-        return { success: true, id };
+        if (!resultado.ok) throw erroCadastroLote(resultado);
+        return { success: true as const, id: resultado.id };
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
-          const result = await createLocalLote(ctx.user.id, payload);
-          return { success: true, id: result.id, localFallback: true };
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
+          });
         }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -3494,58 +3236,36 @@ const lotesRouter = router({
       capacidade: z.number().optional(),
       ativo: z.boolean().optional(),
       pastoAtualId: z.number().nullable().optional(),
+      dataEntradaPasto: z.string().nullable().optional(),
+      fazendaId: z.number().nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...rest } = input;
-      // Permite salvar sigla como null quando string vazia é enviada
-      const updateData = {
-        ...rest,
-        sigla: rest.sigla !== undefined ? (rest.sigla.trim() === '' ? null : rest.sigla.trim()) : undefined,
-      };
-
       try {
-        const [existing] = await db.select({ id: lotes.id }).from(lotes)
-          .where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)))
-          .limit(1);
-        if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
-        }
-
-        await db.update(lotes).set(updateData).where(and(eq(lotes.id, id), eq(lotes.userId, ctx.user.id)));
-
-        // Sincroniza pastoId e fazendaId de todos os animais do lote quando pastoAtualId é alterado
-        if (rest.pastoAtualId !== undefined) {
-          const animalPatch: { pastoId: number | null; fazendaId?: number } = {
-            pastoId: rest.pastoAtualId,
-          };
-          if (rest.pastoAtualId != null) {
-            const [pasto] = await db.select({ fazendaId: pastos.fazendaId })
-              .from(pastos)
-              .where(and(eq(pastos.id, rest.pastoAtualId), eq(pastos.userId, ctx.user.id)))
-              .limit(1);
-            if (pasto?.fazendaId) animalPatch.fazendaId = pasto.fazendaId;
-          }
-          await db.update(animais)
-            .set(animalPatch)
-            .where(and(
-              eq(animais.userId, ctx.user.id),
-              eq(animais.loteId, id),
-              eq(animais.status, 'ativo'),
-            ));
-        }
-
-        return { success: true };
+        const resultado = await editarEEspelharLote(ioEditarLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async atualizar(userId, id, patch) {
+            await updateLocalLote(userId, id, {
+              ...(typeof patch.nome === "string" ? { nome: patch.nome } : {}),
+              ...(patch.sigla === null || typeof patch.sigla === "string" ? { sigla: patch.sigla } : {}),
+              ...(typeof patch.dataCriacao === "string" ? { dataCriacao: patch.dataCriacao } : {}),
+              ...(typeof patch.descricao === "string" ? { descricao: patch.descricao } : {}),
+              ...(typeof patch.localizacao === "string" ? { localizacao: patch.localizacao } : {}),
+              ...(typeof patch.capacidade === "number" ? { capacidade: patch.capacidade } : {}),
+            });
+          },
+        });
+        if (!resultado.ok) throw erroEdicaoLote(resultado);
+        return { success: true as const };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
-          try {
-            return await updateLocalLote(ctx.user.id, id, updateData);
-          } catch (localError) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: localError instanceof Error ? localError.message : "Lote não encontrado.",
-            });
-          }
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banco de dados indisponível.",
+          });
         }
         throw error;
       }
@@ -3557,22 +3277,32 @@ const lotesRouter = router({
       animalIds: z.array(z.number()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
-      const dataMovimentacao = hojeISODateLocal();
+      const executorNome = ctx.user.name || ctx.user.email || "Usuário";
       try {
-        return await incluirAnimaisNoLoteDb(ctx.user.id, input, { usuarioNome, dataMovimentacao });
+        const resultado = await incluirEEspelharAnimais(ioAnimaisLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input,
+        }, {
+          async incluir(userId, dados) {
+            await incluirAnimaisLocalLote(userId, { loteId: dados.loteId, animalIds: dados.animalIds }, {
+              usuarioNome: dados.usuarioNome,
+              dataMovimentacao: dados.dataMovimentacao,
+            });
+          },
+        });
+        if (!resultado.ok) throw erroAnimaisLote(resultado);
+        return { success: true as const, count: resultado.count };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return await incluirAnimaisLocalLote(ctx.user.id, input, { usuarioNome, dataMovimentacao });
-        } catch (localError) {
-          const message = localError instanceof Error ? localError.message : "Não foi possível incluir os animais.";
-          throw new TRPCError({
-            code: message.includes("não encontrado") ? "NOT_FOUND" : "BAD_REQUEST",
-            message,
-          });
+        if (error instanceof DeadlockMovimentacaoAnimais) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
         }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
@@ -3587,23 +3317,36 @@ const lotesRouter = router({
       observacoes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
+      const executorNome = ctx.user.name || ctx.user.email || "Usuário";
       try {
-        return await transferirAnimaisEntreLotesDb(ctx.user.id, usuarioNome, input);
+        const resultado = await movimentarEEspelharAnimais(ioAnimaisLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input,
+        }, {
+          async mover(userId, dados) {
+            await movimentarAnimaisLocalLote(userId, {
+              loteOrigemId: dados.loteOrigemId,
+              loteDestinoId: dados.loteDestinoId,
+              animalIds: dados.animalIds,
+              dataMovimentacao: dados.dataMovimentacao,
+              responsavel: dados.responsavel,
+              observacoes: dados.observacoes,
+            }, dados.usuarioNome);
+          },
+        });
+        if (!resultado.ok) throw erroAnimaisLote(resultado);
+        return { success: true as const, count: resultado.count, loteDestinoNome: resultado.loteDestinoNome };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return await movimentarAnimaisLocalLote(ctx.user.id, input, usuarioNome);
-        } catch (localError) {
-          const message = localError instanceof Error
-            ? localError.message
-            : "Não foi possível concluir a troca de lote.";
-          throw new TRPCError({
-            code: message.includes("não encontrado") ? "NOT_FOUND" : "BAD_REQUEST",
-            message,
-          });
+        if (error instanceof DeadlockMovimentacaoAnimais) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
         }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
@@ -3638,83 +3381,34 @@ const lotesRouter = router({
       dataMovimentacao: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const [pasto] = await db.select().from(pastos)
-        .where(and(
-          eq(pastos.id, input.pastoDestinoId),
-          eq(pastos.userId, ctx.user.id),
-          eq(pastos.fazendaId, input.fazendaDestinoId),
-        ))
-        .limit(1);
-      if (!pasto) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Subdivisão de destino não encontrada." });
+      const executorNome = ctx.user.name || ctx.user.email || "Usuário";
+      try {
+        const resultado = await alocarEEspelharAnimais(ioAnimaisLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input,
+        }, {
+          async mover(userId, dados) {
+            await movimentarAnimaisLocalLote(userId, {
+              loteDestinoId: dados.loteDestinoId,
+              animalIds: dados.animalIds,
+              dataMovimentacao: dados.dataMovimentacao,
+            }, dados.usuarioNome);
+          },
+        });
+        if (!resultado.ok) throw erroAnimaisLote(resultado);
+        return { success: true as const, count: resultado.count, loteDestinoNome: resultado.loteDestinoNome };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof DeadlockMovimentacaoAnimais) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
-
-      const [loteDestino] = await db.select().from(lotes)
-        .where(and(
-          eq(lotes.id, input.loteDestinoId),
-          eq(lotes.userId, ctx.user.id),
-        ))
-        .limit(1);
-      if (!loteDestino) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote de destino não encontrado." });
-      }
-      if (loteDestino.ativo === false) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não está ativo." });
-      }
-      if (loteDestino.pastoAtualId !== input.pastoDestinoId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "O lote de destino não pertence à subdivisão selecionada." });
-      }
-
-      const animaisRows = await db.select({ id: animais.id, loteId: animais.loteId })
-        .from(animais)
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      const toMove = animaisRows.filter(a => a.loteId && a.loteId !== input.loteDestinoId);
-      if (toMove.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal válido para transferência." });
-      }
-
-      for (const animal of toMove) {
-        await assertManejoPermitidoNaData(
-          ctx.user.id,
-          animal.id,
-          input.dataMovimentacao,
-        );
-      }
-
-      const usuarioNome = ctx.user.name || ctx.user.email || "Usuário";
-      const animalIds = toMove.map(a => a.id);
-
-      await db.update(animais)
-        .set({
-          loteId: input.loteDestinoId,
-          fazendaId: input.fazendaDestinoId,
-          pastoId: input.pastoDestinoId,
-        })
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          inArray(animais.id, animalIds),
-        ));
-
-      await db.insert(animalLoteMovimentacoes).values(
-        toMove.map(a => ({
-          userId: ctx.user.id,
-          animalId: a.id,
-          loteOrigemId: a.loteId!,
-          loteDestinoId: input.loteDestinoId,
-          dataMovimentacao: input.dataMovimentacao,
-          usuarioNome,
-        })),
-      );
-
-      return {
-        success: true,
-        count: animalIds.length,
-        loteDestinoNome: loteDestino.nome,
-      };
     }),
 
   listHistoricoMovimentacoesAnimais: protectedProcedure
@@ -3755,35 +3449,30 @@ const lotesRouter = router({
       animalIds: z.array(z.number()).min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      const [lote] = await db.select({ id: lotes.id })
-        .from(lotes)
-        .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
-        .limit(1);
-      if (!lote) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+      const executorNome = ctx.user.name || ctx.user.email || "Usuário";
+      try {
+        const resultado = await retirarEEspelharAnimais(ioAnimaisLoteDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome,
+          input,
+        }, {
+          async retirar(userId, animalIds) {
+            await espelharRetiradaAnimaisLocal(userId, animalIds);
+          },
+        });
+        if (!resultado.ok) throw erroAnimaisLote(resultado);
+        return { success: true as const, count: resultado.count };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof DeadlockMovimentacaoAnimais) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
-
-      const animaisRows = await db.select({ id: animais.id })
-        .from(animais)
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          eq(animais.loteId, input.loteId),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      if (animaisRows.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Nenhum animal selecionado pertence a este lote." });
-      }
-
-      await db.update(animais)
-        .set({ loteId: null })
-        .where(and(
-          eq(animais.userId, ctx.user.id),
-          eq(animais.loteId, input.loteId),
-          inArray(animais.id, input.animalIds),
-        ));
-
-      return { success: true, count: animaisRows.length };
     }),
 
   verificarExclusao: protectedProcedure
@@ -4360,269 +4049,32 @@ const saudeRouter = router({
       observacoes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const MSG_ESTOQUE_INSUFICIENTE = "Estoque insuficiente para a quantidade informada.";
-
-      // Comparação por data civil (YYYY-MM-DD) — mesma estratégia de Pesagem/Identificação.
-      const hoje = new Date();
-      const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-      const dataISO = String(input.dataRegistro).trim().slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataISO)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Data do manejo sanitário inválida." });
-      }
-      if (dataISO > hojeISO) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A data do manejo sanitário não pode ser futura.",
-        });
-      }
-
-      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
-      await assertAnimalNaFazenda(ctx.user.id, input.animalId, input.fazendaId);
-      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
-
-      const tipo = input.tipo.trim();
-      if (!tipo) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o tipo de manejo sanitário." });
-      }
-      const descricao = (input.descricao ?? "").trim() || undefined;
-      if (tipo === "Outro" && !descricao) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Descreva o manejo sanitário.",
-        });
-      }
-
-      const exigeProduto = tipo !== "Outro";
-      const estoqueId = input.estoqueId ?? null;
-      if (exigeProduto && estoqueId == null) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Selecione um produto / medicamento do estoque da Fazenda.",
-        });
-      }
-
-      const doseValorRaw = (input.doseValor ?? "").trim();
-      const doseUnidadeRaw = (input.doseUnidade ?? "").trim();
-      const viaAplicacao = (input.viaAplicacao ?? "").trim() || undefined;
-      const observacoes = (input.observacoes ?? "").trim() || undefined;
-      const dosagemTextoCliente = (input.dosagem ?? "").trim() || undefined;
-
-      let medicamento = (input.medicamento ?? "").trim() || undefined;
-      let dosagem = dosagemTextoCliente;
-      let quantidadeConsumo: string | undefined;
-      let valorUnitario: string | undefined;
-      let custo: string | undefined;
-
-      if (estoqueId != null) {
-        if (!doseValorRaw || !doseUnidadeRaw) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Informe a dose (valor e unidade) para baixar o estoque.",
-          });
-        }
-        let doseNum = Number.NaN;
-        {
-          let normalized = doseValorRaw;
-          if (doseValorRaw.includes(",")) {
-            normalized = doseValorRaw.replace(/\./g, "").replace(",", ".");
-          }
-          doseNum = Number(normalized);
-        }
-        if (!Number.isFinite(doseNum) || doseNum <= 0) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Informe um valor de dose válido maior que zero.",
-          });
-        }
-
-        type ItemEstoqueSaude = {
-          id: number;
-          nome: string | null;
-          quantidade: string | number | null;
-          unidade: string | null;
-          valorUnitario: string | number | null;
-          valorTotalEstoque?: string | number | null;
-          capitalInicializadoEm?: Date | string | null;
-          fazendaId: number | null;
-          categoria: string | null;
-          situacao: string | null;
-          embalagens: string | null;
-        };
-
-        let item: ItemEstoqueSaude | null = null;
-        try {
-          const rows = await db
-            .select({
-              id: estoque.id,
-              nome: estoque.nome,
-              quantidade: estoque.quantidade,
-              unidade: estoque.unidade,
-              valorUnitario: estoque.valorUnitario,
-              valorTotalEstoque: estoque.valorTotalEstoque,
-              capitalInicializadoEm: estoque.capitalInicializadoEm,
-              fazendaId: estoque.fazendaId,
-              categoria: estoque.categoria,
-              situacao: estoque.situacao,
-              embalagens: estoque.embalagens,
-            })
-            .from(estoque)
-            .where(eq(estoque.id, estoqueId))
-            .limit(1);
-          item = rows[0] ?? null;
-        } catch (error) {
-          if (!isDatabaseUnavailable(error)) throw error;
-        }
-        if (!item) {
-          const local = devLocalStore.getEstoque(estoqueId);
-          if (local) {
-            item = {
-              id: local.id,
-              nome: local.nome,
-              quantidade: local.quantidade,
-              unidade: local.unidade,
-              valorUnitario: local.valorUnitario,
-              fazendaId: local.fazendaId ?? null,
-              categoria: local.categoria ?? null,
-              situacao: local.situacao ?? null,
-              embalagens: local.embalagens ?? null,
-            };
-          }
-        }
-        if (!item) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
-          });
-        }
-        if (Number(item.fazendaId) !== Number(input.fazendaId)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "O produto selecionado não pertence à Fazenda do manejo.",
-          });
-        }
-        const sit = String(item.situacao || "ativo").toLowerCase();
-        if (sit === "inativo") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "O produto selecionado está inativo no estoque.",
-          });
-        }
-        if (String(item.categoria || "").trim().toLowerCase() !== "farmácia") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Selecione um produto da categoria Farmácia.",
-          });
-        }
-
-        const custoMedio = custoMedioFonteTecnica(item) ?? parseCustoMedio(item.valorUnitario);
-        if (custoMedio == null) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "Este produto ainda não possui custo médio no estoque. Registre uma entrada com valor antes de usá-lo no manejo sanitário.",
-          });
-        }
-
-        const conv = calcularQuantidadeEstoquePorDose({
-          doseValor: doseNum,
-          doseUnidade: doseUnidadeRaw,
-          unidadeEstoque: item.unidade,
-          embalagensRaw: item.embalagens,
-        });
-        if ("erro" in conv) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: conv.erro });
-        }
-
-        const qtd = Math.round(conv.quantidade * 10000) / 10000;
-        const disponivel = parseFloat(String(item.quantidade ?? 0));
-        if (!Number.isFinite(disponivel) || qtd > disponivel + 1e-9) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: MSG_ESTOQUE_INSUFICIENTE,
-          });
-        }
-
-        const custoTotal = Math.round(qtd * custoMedio * 100) / 100;
-        medicamento = (item.nome || "").trim() || medicamento;
-        dosagem =
-          dosagemTextoCliente ||
-          `${Number.isInteger(doseNum) ? String(doseNum) : String(doseNum).replace(".", ",")} ${doseUnidadeRaw}`;
-        quantidadeConsumo = String(qtd);
-        valorUnitario = formatCustoMedio(custoMedio);
-        custo = formatCustoMedio(custoTotal);
-
-        const payload = {
-          animalId: input.animalId,
-          tipo,
-          descricao,
-          medicamento,
-          dosagem,
-          viaAplicacao,
-          estoqueId,
-          quantidadeConsumo,
-          valorUnitario,
-          custo,
-          dataRegistro: dataISO,
-          proximaData: input.proximaData,
-          observacoes,
-        };
-
-        try {
-          const persistido = await persistirManejoSanitarioMysql({
-            userId: ctx.user.id,
-            registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-            fazendaId: input.fazendaId,
-            unidadeEstoque: item.unidade,
-            ...payload,
-            custoPrevisto: payload.custo,
-          });
-          return { success: true as const, id: persistido.id };
-        } catch (error) {
-          if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
-          }
-          if (error instanceof TRPCError) throw error;
-          if (!isDatabaseUnavailable(error)) throw error;
-          const result = await createLocalSaudeRegistro(ctx.user.id, payload);
-          return { success: true as const, id: result.id, localFallback: true as const };
-        }
-      }
-
-      // Sem estoque (ex.: Tipo Outro sem produto) — sem baixa e sem custo automático.
-      if (exigeProduto) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Selecione um produto / medicamento do estoque da Fazenda.",
-        });
-      }
-
-      const payloadSemEstoque = {
-        animalId: input.animalId,
-        tipo,
-        descricao,
-        medicamento,
-        dosagem: dosagemTextoCliente,
-        viaAplicacao,
-        dataRegistro: dataISO,
-        proximaData: input.proximaData,
-        observacoes,
-      };
-
       try {
-        const persistido = await persistirManejoSanitarioMysql({
-          userId: ctx.user.id,
-          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-          fazendaId: input.fazendaId,
-          ...payloadSemEstoque,
+        const resultado = await lancarSanidadeEEspelhar(ioSanidadeDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome: ctx.user.name,
+          input,
+        }, {
+          async lancar(userId, dados) {
+            await createLocalSaudeRegistro(userId, dados as {
+              animalId: number;
+              tipo: string;
+              dataRegistro: string;
+            });
+          },
         });
-        return { success: true as const, id: persistido.id };
+        if (!resultado.ok) throw erroLancamentoSanidade(resultado);
+        return { success: true as const, id: resultado.id };
       } catch (error) {
-        if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoSanidadeEstoque) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
         }
-        if (!isDatabaseUnavailable(error)) throw error;
-        const result = await createLocalSaudeRegistro(ctx.user.id, payloadSemEstoque);
-        return { success: true as const, id: result.id, localFallback: true as const };
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
@@ -4633,21 +4085,24 @@ const saudeRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        await estornarManejoSanitarioMysql({
-          userId: ctx.user.id,
-          registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
-          id: input.id,
-          motivo: input.motivo?.trim() || MOTIVO_ESTORNO_SAUDE_PADRAO,
+        const resultado = await estornarSanidadeAutorizado(ioSanidadeDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome: ctx.user.name,
           hojeISO: hojeISODateLocal(),
+          input,
         });
-        return { success: true };
+        if (!resultado.ok) throw erroEstornoSanidade(resultado);
+        return { success: true as const };
       } catch (error) {
-        if (error instanceof SaudeEstoqueError || error instanceof EstoqueCapitalError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoSanidadeEstoque) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
         }
-        if (!isDatabaseUnavailable(error)) throw error;
-        await deleteLocalSaudeRegistro(ctx.user.id, input.id);
-        return { success: true, localFallback: true };
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
@@ -4661,10 +4116,30 @@ const saudeRouter = router({
       observacoes: z.string().max(2000).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return registrarCastracao(ctx.user.id, {
-        ...input,
-        veterinario: ctx.user.name?.trim() || undefined,
-      });
+      try {
+        const resultado = await castrarEEspelharAnimal(ioManejoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          executorNome: ctx.user.name,
+          input,
+        }, {
+          async castrar(userId, dados) {
+            await createLocalSaudeRegistro(userId, dados);
+            await updateLocalAnimal(userId, dados.animalId, { castrado: true });
+          },
+        });
+        if (!resultado.ok) throw erroCastracao(resultado);
+        return { success: true as const, id: resultado.id };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoManejoAnimal) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
     }),
 });
 
@@ -4793,6 +4268,45 @@ const reproducaoRouter = router({
           code: "BAD_REQUEST",
           message: "Informe o animal do registro reprodutivo (animalId).",
         });
+      }
+
+      const caminhoProtegido =
+        !shouldConsumirEstoqueSemenNaInseminacao(input.semenPartidaId) &&
+        !(input.coberturaMatrizIds?.length) &&
+        input.coberturaLoteId == null &&
+        !(input.substituirEspelhosMatrizIds?.length) &&
+        input.tipo.trim() !== "Estação de monta";
+      if (caminhoProtegido) {
+        try {
+          const resultado = await registrarReproducaoSimplesEEspelhar(ioManejoDrizzle(), {
+            executorId: ctx.user.id,
+            sessionVersionDaSessao: ctx.user.sessionVersion,
+            executorNome: ctx.user.name,
+            input: { ...input, animalId },
+          }, {
+            async reproduzir(userId, dados) {
+              await createLocalReproducaoRegistro(userId, dados);
+            },
+          });
+          if (!(resultado.ok === false && resultado.motivo === "caminho_matriz")) {
+            if (!resultado.ok) throw erroReproducaoSimples(resultado);
+            return {
+              success: true as const,
+              id: resultado.id,
+              espelhosMatriz: 0,
+              matrizesIgnoradas: 0,
+            };
+          }
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          if (error instanceof ConflitoManejoAnimal) {
+            throw new TRPCError({ code: "CONFLICT", message: error.message });
+          }
+          if (isDatabaseUnavailable(error)) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+          }
+          throw error;
+        }
       }
 
       await assertManejoPermitidoNaData(ctx.user.id, animalId, input.dataCobertura);
@@ -8528,22 +8042,27 @@ const pesagensRouter = router({
           message: "A data da pesagem não pode ser futura.",
         });
       }
-      await assertManejoPermitidoNaData(ctx.user.id, input.animalId, dataISO);
-
       try {
-        const result = await db.insert(pesagens).values({
-          userId: ctx.user.id,
-          animalId: input.animalId,
-          peso: input.peso,
-          observacoes: input.observacoes,
-          data: dataCivilParaColunaDate(dataISO),
+        const resultado = await pesarEEspelharAnimal(ioPesagemDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input: { ...input, data: dataISO },
+        }, {
+          async pesar(userId, dados) {
+            await createLocalPesagem(userId, dados);
+          },
         });
-        await db.update(animais).set({ pesoAtual: input.peso }).where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)));
-        return { success: true, id: (result as any)[0]?.insertId };
+        if (!resultado.ok) throw erroPesagem(resultado);
+        return { success: true as const, id: resultado.id };
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const result = await createLocalPesagem(ctx.user.id, input);
-        return { success: true, id: result.id, localFallback: true };
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoPesagemAnimal) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 

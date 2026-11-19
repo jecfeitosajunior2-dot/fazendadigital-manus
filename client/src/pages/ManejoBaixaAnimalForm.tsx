@@ -470,7 +470,7 @@ export function ManejoBaixaAnimalForm() {
         </ManejoSectionCard>
 
         {tipo === "transferencia" ? (
-          <ManejoSectionCard title="Transferência">
+          <ManejoSectionCard title={tipoDestino === "interna" ? "Transferência entre fazendas" : "Transferência"}>
             <FormLabel required>Tipo de destino</FormLabel>
             <FormSelect
               variant="light"
@@ -494,6 +494,9 @@ export function ManejoBaixaAnimalForm() {
 
             {tipoDestino === "interna" ? (
               <>
+                <p className="text-[12px] text-gray-500">
+                  O animal muda de fazenda e entra no lote de destino. A alocação dentro da mesma fazenda continua na tela de Alocação de Animais.
+                </p>
                 <FormLabel required>Fazenda de destino</FormLabel>
                 <FormSelect
                   variant="light"

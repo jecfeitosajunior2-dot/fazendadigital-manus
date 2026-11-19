@@ -11,6 +11,10 @@ import { FormLabel, FormDatePicker, FormNativeSelect } from "@/components/FormFi
 import SelecionarAnimaisAlocacaoDialog from "@/components/rebanho/SelecionarAnimaisAlocacaoDialog";
 import type { AnimalAlocacaoRow } from "@/components/rebanho/alocacao-types";
 import { formatDateBR, formatDateInputLocal } from "@/lib/date-utils";
+import {
+  MSG_ALOCACAO_SO_MESMA_FAZENDA,
+  alocacaoPedeOutraFazenda,
+} from "@shared/alocacaoVsTransferencia";
 
 const IRANCHO_BTN_GREEN = "#8ab83d";
 const IRANCHO_PETROL = "#2D5A5A";
@@ -151,6 +155,10 @@ export default function AlocacaoAnimaisPage() {
       toast.error("Selecione o lote de destino.");
       return;
     }
+    if (alocacaoPedeOutraFazenda(Number(fazendaDestinoId), animais.map(animal => animal.fazendaId))) {
+      toast.error(MSG_ALOCACAO_SO_MESMA_FAZENDA);
+      return;
+    }
 
     transferirMutation.mutate({
       animalIds: animais.map(a => a.id),
@@ -194,7 +202,12 @@ export default function AlocacaoAnimaisPage() {
             </button>
           </div>
           <div className="flex flex-wrap items-center px-5 py-3 border-b border-gray-100">
-            <h1 className="text-[15px] font-semibold text-gray-900">Alocação de Animais</h1>
+            <div>
+              <h1 className="text-[15px] font-semibold text-gray-900">Alocação de Animais</h1>
+              <p className="text-[12px] text-gray-500 mt-0.5">
+                Movimentação dentro da mesma fazenda. Para trocar de fazenda, use Manejo → Movimentação do Animal.
+              </p>
+            </div>
           </div>
 
           <div className="px-5 py-4">

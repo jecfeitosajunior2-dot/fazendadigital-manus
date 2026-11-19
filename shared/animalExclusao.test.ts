@@ -69,6 +69,8 @@ describe("animalExclusao", () => {
 
   it("expõe o aviso para a lixeira cinza", () => {
     expect(MSG_ANIMAL_EXCLUSAO_BLOQUEADA).toMatch(/Manejo → Baixa/);
-    expect(TOOLTIP_ANIMAL_EXCLUIR).toBe("Excluir animal");
+    expect(TOOLTIP_ANIMAL_EXCLUIR).toBe(
+      "Exclusão física de animais temporariamente indisponível por segurança.",
+    );
   });
 });

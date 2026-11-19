@@ -1,3 +1,8 @@
+/**
+ * Caminho antigo, sem a autorização das duas fazendas.
+ * A rota animais.transferirEntreFazendas não chama mais esta função.
+ * Ela ficou aqui para não apagar o comportamento que já estava escrito.
+ */
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { animalBaixas, animalLoteMovimentacoes, animais, lotes, pastos } from "../drizzle/schema";

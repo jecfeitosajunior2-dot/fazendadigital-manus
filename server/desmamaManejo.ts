@@ -1,3 +1,8 @@
+/**
+ * A rota animais.registrarDesmama não chama mais esta função.
+ * A desmama autorizada fica em pesarAnimalAutorizado.
+ * Esta função permanece para o comportamento antigo e os testes que a chamam direto.
+ */
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { animais, pesagens, reproducaoRegistros } from "../drizzle/schema";

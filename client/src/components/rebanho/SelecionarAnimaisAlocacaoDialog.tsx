@@ -373,8 +373,9 @@ function toAlocacaoRow(
     sexo: "macho" | "femea";
     loteId: number | null;
     loteNome: string | null;
+    fazendaId?: number | null;
   },
-  lote?: { nome?: string | null; fazendaNome?: string | null; pastoNome?: string | null },
+  lote?: { nome?: string | null; fazendaId?: number | null; fazendaNome?: string | null; pastoNome?: string | null },
 ): AnimalAlocacaoRow {
   return {
     id: animal.id,
@@ -382,6 +383,7 @@ function toAlocacaoRow(
     numeroRfid: numeroRfid(animal),
     sexo: animal.sexo,
     loteNome: lote?.nome ?? animal.loteNome ?? "—",
+    fazendaId: animal.fazendaId ?? lote?.fazendaId ?? null,
     fazendaSubdivisao: fazendaSubdivisao(lote),
     ultimaMovimentacao: null,
   };

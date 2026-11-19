@@ -4,6 +4,7 @@ export type AnimalAlocacaoRow = {
   numeroRfid: string;
   sexo: "macho" | "femea";
   loteNome: string;
+  fazendaId?: number | null;
   fazendaSubdivisao: string;
   ultimaMovimentacao: string | null;
 };
