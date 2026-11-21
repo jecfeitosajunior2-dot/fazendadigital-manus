@@ -356,9 +356,9 @@ describe("contasAReceberListagem — tela, rota e ausência do legado", () => {
   });
 
   it("procedures oficiais isolam pelo usuário autenticado", () => {
-    expect(v2Router).toContain("titulosList: protectedProcedure.query(({ ctx }) =>");
-    expect(v2Router).toContain("financeiroNucleoService.listarTitulos(ctx.user.id)");
-    expect(v2Router).toContain("financeiroNucleoService.detalheTitulo(ctx.user.id, input.id)");
+    expect(v2Router).toContain("titulosList: protectedProcedure");
+    expect(v2Router).toContain("financeiroNucleoService.listarTitulos(acesso.titularUserId, acesso)");
+    expect(v2Router).toContain("financeiroNucleoService.detalheTitulo(acesso.titularUserId, input.id, acesso)");
     expect(nucleo).toContain(".where(eq(financeiroTitulos.userId, userId))");
     expect(nucleo).toContain("assertUser(titulo.userId, userId)");
   });

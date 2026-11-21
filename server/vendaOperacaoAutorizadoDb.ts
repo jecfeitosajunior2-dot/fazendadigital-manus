@@ -65,6 +65,7 @@ function consultas(tx: Executor): ConsultaVendaOperacao {
       }).from(vendas).where(eq(vendas.id, id)).limit(1);
       return linha ?? null;
     },
+    transacaoAtual: tx,
   };
 }
 

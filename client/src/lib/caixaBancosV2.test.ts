@@ -195,10 +195,12 @@ describe("caixaBancosV2 — edição e reativação", () => {
 
 describe("caixaBancosV2 — isolamento e legado", () => {
   it("router V2 isola por usuário e o legado permanece bloqueado", () => {
-    expect(router).toContain("financeiroNucleoService.extrato(ctx.user.id");
-    expect(router).toContain("financeiroNucleoService.criarTransferencia(ctx.user.id");
-    expect(router).toContain("financeiroNucleoService.atualizarConta(ctx.user.id");
-    expect(router).toContain("financeiroNucleoService.reativarConta(ctx.user.id");
+    expect(router).toContain("financeiroNucleoService.extrato(");
+    expect(router).toContain("acesso.titularUserId");
+    expect(router).toContain("financeiroNucleoService.criarTransferencia(");
+    expect(router).toContain("PERMISSAO_CRIAR_FINANCEIRO, true");
+    expect(router).toContain("financeiroNucleoService.atualizarConta(");
+    expect(router).toContain("financeiroNucleoService.reativarConta(");
     expect(legadoRouter).toMatch(/listContas:[\s\S]{0,200}FORBIDDEN/);
     expect(page).not.toContain("trpc.financeiro.");
   });

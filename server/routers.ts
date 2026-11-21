@@ -10458,13 +10458,22 @@ const vendasRouter = router({
           sessionVersionDaSessao: ctx.user.sessionVersion,
           vendaId: input.id,
           motivo: input.motivo,
-        }, (titularUserId) =>
-          createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar(titularUserId, {
+        }, (titularUserId, tx) => {
+          if (!tx.transacaoAtual) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "A gravação da venda precisa da mesma transação da autorização.",
+            });
+          }
+          return createCancelarVendaFinanceiroService(
+            createCancelarVendaFinanceiroMysqlStore(tx.transacaoAtual as Parameters<typeof createCancelarVendaFinanceiroMysqlStore>[0]),
+          ).cancelar(titularUserId, {
             vendaId: input.id,
             motivo: input.motivo,
             canceladoPorUserId: ctx.user.id,
             canceladoPorNome: ctx.user.name,
-          }));
+          });
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
@@ -10515,11 +10524,19 @@ const vendasRouter = router({
           executorId: ctx.user.id,
           sessionVersionDaSessao: ctx.user.sessionVersion,
           fazendaId: input.fazendaId,
-        }, (titularUserId) => confirmarVendaIntegradaSeAtiva(
-          createConfirmarVendaFinanceiroMysqlStore(db),
-          titularUserId,
-          { ...input, usuarioNome: ctx.user.name },
-        ));
+        }, (titularUserId, tx) => {
+          if (!tx.transacaoAtual) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "A gravação da venda precisa da mesma transação da autorização.",
+            });
+          }
+          return confirmarVendaIntegradaSeAtiva(
+            createConfirmarVendaFinanceiroMysqlStore(tx.transacaoAtual as Parameters<typeof createConfirmarVendaFinanceiroMysqlStore>[0]),
+            titularUserId,
+            { ...input, usuarioNome: ctx.user.name },
+          );
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {

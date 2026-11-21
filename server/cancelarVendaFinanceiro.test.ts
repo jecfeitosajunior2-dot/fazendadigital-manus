@@ -534,7 +534,10 @@ describe("cancelarVendaFinanceiro — isolamento da aplicação", () => {
     const cancelar = readFileSync(join(raiz, "cancelarVenda.ts"), "utf8");
     const detalhe = readFileSync(join(raiz, "../client/src/pages/VendaDetalhePage.tsx"), "utf8");
     const pendencia = readFileSync(join(raiz, "../client/src/lib/novaVendaPendencia.ts"), "utf8");
-    expect(router).toContain("createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar");
+    expect(router).toContain("createCancelarVendaFinanceiroService(");
+    expect(router).toContain("tx.transacaoAtual");
+    expect(router).toContain(".cancelar(titularUserId");
+    expect(router).not.toContain("createCancelarVendaFinanceiroMysqlStore(db)");
     expect(router).toContain("confirmarVendaComercialSePermitida");
     expect(router).toContain("confirmarVendaIntegradaSeAtiva");
     expect(router).not.toContain("cancelarVendaComercial");

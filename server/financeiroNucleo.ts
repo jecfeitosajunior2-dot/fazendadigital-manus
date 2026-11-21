@@ -13,7 +13,19 @@ import {
   financeiroTransferencias,
   fazendas,
   pessoas,
+  users,
+  usuarioFazendas,
+  usuarioPermissoes,
 } from "../drizzle/schema";
+import type { PapelConta, SituacaoUsuario } from "./_core/identidadeSessao";
+import type { LinhaUsuarioCadastro } from "./cadastroAnimalAutorizado";
+import {
+  acessoDaSessaoFinanceiro,
+  conferirFazendasDaSessao,
+  documentoFinanceiroVisivel,
+  type AcessoFinanceiro,
+  type SessaoFinanceiro,
+} from "./consultaFinanceiroAutorizada";
 import {
   calcularSaldoConta,
   caixaDaAlocacao,
@@ -435,6 +447,7 @@ export type FinanceiroNucleoTx = {
   insertCentro(row: Omit<FinCentroRow, "id">): Promise<number>;
   updateCentro(userId: number, id: number, patch: Partial<Pick<FinCentroRow, "nome" | "fazendaId" | "ativo">>): Promise<void>;
   listCentros(userId: number): Promise<FinCentroRow[]>;
+  revalidarSessao?(sessao: SessaoFinanceiro): Promise<AcessoFinanceiro>;
 };
 
 export type FinanceiroNucleoStore = {
@@ -443,6 +456,46 @@ export type FinanceiroNucleoStore = {
 
 function assertUser(rowUserId: number, userId: number): void {
   if (rowUserId !== userId) toTrpc(MSG_FIN_ESCOPO, "FORBIDDEN");
+}
+
+async function abrirSessaoFinanceiro(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  sessao?: SessaoFinanceiro,
+): Promise<AcessoFinanceiro | null> {
+  if (!sessao) return null;
+  if (!tx.revalidarSessao) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "O banco de dados está indisponível. Nenhum valor foi consultado ou alterado.",
+    });
+  }
+  const acesso = await tx.revalidarSessao(sessao);
+  if (acesso.titularUserId !== userId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+  }
+  if (sessao.exigirPrincipal) conferirFazendasDaSessao(acesso, [], true);
+  return acesso;
+}
+
+function fecharFazendasFinanceiro(
+  acesso: AcessoFinanceiro | null,
+  fazendasDoDocumento: readonly (number | null | undefined)[],
+): void {
+  if (!acesso) return;
+  conferirFazendasDaSessao(acesso, fazendasDoDocumento);
+}
+
+async function fazendasDaLiquidacao(
+  tx: FinanceiroNucleoTx,
+  userId: number,
+  liquidacaoId: number,
+): Promise<Array<number | null>> {
+  const alocs = await tx.listAlocacoesLiquidacao(userId, liquidacaoId);
+  if (!alocs.length) return [];
+  const parcelas = await tx.listParcelasPorIds(userId, alocs.map((item) => item.parcelaId));
+  const titulos = await tx.lockTitulos(userId, idsUnicosOrdenados(parcelas.map((item) => item.tituloId)));
+  return titulos.map((item) => item.fazendaOrigemId);
 }
 
 function assertValorPositivo(valor: number | string): void {
@@ -857,12 +910,13 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       numeroConta?: string | null;
       saldoAbertura: number;
       dataSaldoAbertura: string;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       if (!isFinanceiroContaTipo(input.tipo)) toTrpc("Tipo de conta inválido.");
       if (toCentavos(input.saldoAbertura) < 0) toTrpc(MSG_FIN_VALOR_POSITIVO);
       const nome = input.nome.trim();
       if (!nome) toTrpc("Informe o nome da conta.");
       return store.transaction(async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const id = await tx.insertConta({
           userId,
           nome,
@@ -903,8 +957,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return conta.saldoAtual;
     },
 
-    async inativarConta(userId: number, id: number, motivo?: string | null) {
+    async inativarConta(userId: number, id: number, motivo?: string | null, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const conta = await tx.findConta(userId, id);
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         assertUser(conta.userId, userId);
@@ -921,11 +976,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       numeroConta?: string | null;
       saldoAbertura?: number;
       dataSaldoAbertura?: string;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       if (!isFinanceiroContaTipo(input.tipo)) toTrpc("Tipo de conta inválido.");
       const nome = input.nome.trim();
       if (!nome) toTrpc("Informe o nome da conta.");
       return store.transaction(async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const conta = await tx.findConta(userId, id);
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         assertUser(conta.userId, userId);
@@ -960,8 +1016,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async reativarConta(userId: number, id: number) {
+    async reativarConta(userId: number, id: number, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const conta = await tx.findConta(userId, id);
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         assertUser(conta.userId, userId);
@@ -984,20 +1041,26 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       origemId?: number | null;
       origemItemChave?: string | null;
       parcelas?: Array<{ numero: number; vencimento: string; valorOriginal: number }>;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       return transacaoFinanceiroComRetry(
         store,
-        async tx => criarTituloNoTx(tx, userId, input),
+        async tx => {
+          const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+          fecharFazendasFinanceiro(acesso, [input.fazendaOrigemId ?? null]);
+          return criarTituloNoTx(tx, userId, input);
+        },
         isDuplicateOrigemTitulo,
       );
     },
 
-    async definirParcelas(userId: number, tituloId: number, parcelas: Array<{ numero: number; vencimento: string; valorOriginal: number }>) {
+    async definirParcelas(userId: number, tituloId: number, parcelas: Array<{ numero: number; vencimento: string; valorOriginal: number }>, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         const lockedTitulos = await tx.lockTitulos(userId, [tituloId]);
         const titulo = lockedTitulos[0] ?? null;
         if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
         assertUser(titulo.userId, userId);
+        fecharFazendasFinanceiro(acesso, [titulo.fazendaOrigemId]);
         if (titulo.estado === "cancelado") toTrpc(MSG_FIN_TITULO_CANCELADO);
         const atuais = await tx.listParcelasTitulo(userId, tituloId);
         if (atuais.length) await tx.lockParcelas(userId, idsUnicosOrdenados(atuais.map(p => p.id)));
@@ -1031,7 +1094,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async detalheTitulo(userId: number, tituloId: number) {
+    async detalheTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro) {
       return store.transaction(async tx => {
         const titulo = await tx.findTitulo(userId, tituloId);
         if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
@@ -1048,6 +1111,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           return { ...p, ...saldo };
         });
         const apropriacoes = await tx.listApropriacoes(userId, tituloId);
+        if (escopo && !documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) {
+          toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
+        }
         const situacao = derivarSituacaoTitulo({
           estado: titulo.estado,
           tipo: titulo.tipo,
@@ -1065,11 +1131,17 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async historicoPagamentosTitulo(userId: number, tituloId: number): Promise<HistoricoPagamentosTitulo> {
+    async historicoPagamentosTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro): Promise<HistoricoPagamentosTitulo> {
       return store.transaction(async tx => {
         const titulo = await tx.findTitulo(userId, tituloId);
         if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
         assertUser(titulo.userId, userId);
+        if (escopo) {
+          const apropriacoes = await tx.listApropriacoes(userId, tituloId);
+          if (!documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) {
+            toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
+          }
+        }
 
         const parcelas = await tx.listParcelasTitulo(userId, tituloId);
         const alocs = parcelas.length
@@ -1172,8 +1244,17 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async listarTitulos(userId: number) {
-      return store.transaction(async tx => tx.listTitulos(userId));
+    async listarTitulos(userId: number, escopo?: AcessoFinanceiro) {
+      return store.transaction(async tx => {
+        const titulos = await tx.listTitulos(userId);
+        if (!escopo || escopo.papel === "principal") return titulos;
+        const visiveis = [];
+        for (const titulo of titulos) {
+          const apropriacoes = await tx.listApropriacoes(userId, titulo.id);
+          if (documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) visiveis.push(titulo);
+        }
+        return visiveis;
+      });
     },
 
     async relatorioFinanceiro(userId: number, input: {
@@ -1181,7 +1262,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       ate: string;
       fazendaId?: number | null;
       contaId?: number | null;
-    }) {
+    }, escopo?: AcessoFinanceiro) {
       return store.transaction(async tx => {
         if (input.fazendaId) {
           const fazenda = await tx.findFazenda(userId, input.fazendaId);
@@ -1261,10 +1342,19 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           }
           mov.fazendaOrigemId = fazendas.size === 1 ? [...fazendas][0]! : null;
         }
+        const titulosVisiveis = !escopo || escopo.papel === "principal"
+          ? titulosEntrada
+          : titulosEntrada.filter((titulo) => documentoFinanceiroVisivel(titulo.fazendaOrigemId, [], escopo));
+        const movimentosVisiveis = !escopo || escopo.papel === "principal"
+          ? movimentos
+          : movimentos.filter((mov) => mov.fazendaOrigemId != null && escopo.fazendaIds.includes(mov.fazendaOrigemId));
+        const contasVisiveis = !escopo || escopo.papel === "principal"
+          ? contasComSaldo
+          : [];
         return montarRelatorioFinanceiroV2({
-          contas: contasComSaldo,
-          titulos: titulosEntrada,
-          movimentos,
+          contas: contasVisiveis,
+          titulos: titulosVisiveis,
+          movimentos: movimentosVisiveis,
           filtro: {
             de: input.de,
             ate: input.ate,
@@ -1284,8 +1374,14 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       origemDetalheTipo?: string | null;
       origemDetalheId?: number | null;
       observacoes?: string | null;
-    }>) {
-      return store.transaction(async tx => apropriarNoTx(tx, userId, tituloId, itens));
+    }>, sessao?: SessaoFinanceiro) {
+      return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        const titulo = await tx.findTitulo(userId, tituloId);
+        if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [titulo.fazendaOrigemId, ...itens.map((item) => item.fazendaId ?? null)]);
+        return apropriarNoTx(tx, userId, tituloId, itens);
+      });
     },
 
     async registrarLiquidacao(userId: number, input: {
@@ -1298,14 +1394,16 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       referencia?: string | null;
       observacoes?: string | null;
       alocacoes: AlocacaoInput[];
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       assertValorPositivo(input.valorMovimentado);
       if (!input.alocacoes.length) toTrpc("Informe ao menos uma parcela.");
       return transacaoFinanceiroComRetry(store, async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
           assertUser(existente.userId, userId);
+          fecharFazendasFinanceiro(acesso, await fazendasDaLiquidacao(tx, userId, existente.id));
           const alocsExistentes = await tx.listAlocacoesLiquidacao(userId, existente.id);
           if (!retryPagamentoBateComPedido(existente, alocsExistentes, { userId, ...input })) {
             toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
@@ -1332,6 +1430,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           assertUser(titulo.userId, userId);
           if (titulo.estado === "cancelado") toTrpc(MSG_FIN_TITULO_CANCELADO);
         }
+        fecharFazendasFinanceiro(acesso, titulos.map((titulo) => titulo.fazendaOrigemId));
         const tipoEsperado = input.tipo === "pagamento" ? "pagar" : "receber";
         if (titulos.some(t => t.tipo !== tipoEsperado)) toTrpc(MSG_FIN_TIPO_LIQUIDACAO);
         if (new Set(titulos.map(t => t.tipo)).size > 1) toTrpc(MSG_FIN_TIPOS_MISTURADOS);
@@ -1407,20 +1506,22 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       }, isDuplicateChaveIdempotenciaLiquidacao);
     },
 
-    criarPagamento(userId: number, input: Omit<LiquidacaoCmd, "tipo">) {
-      return this.registrarLiquidacao(userId, { ...input, tipo: "pagamento" });
+    criarPagamento(userId: number, input: Omit<LiquidacaoCmd, "tipo">, sessao?: SessaoFinanceiro) {
+      return this.registrarLiquidacao(userId, { ...input, tipo: "pagamento" }, sessao);
     },
 
-    criarRecebimento(userId: number, input: Omit<LiquidacaoCmd, "tipo">) {
-      return this.registrarLiquidacao(userId, { ...input, tipo: "recebimento" });
+    criarRecebimento(userId: number, input: Omit<LiquidacaoCmd, "tipo">, sessao?: SessaoFinanceiro) {
+      return this.registrarLiquidacao(userId, { ...input, tipo: "recebimento" }, sessao);
     },
 
-    async estornarLiquidacao(userId: number, input: { liquidacaoId: number; idempotencyKey: string; dataLiquidacao: string }) {
+    async estornarLiquidacao(userId: number, input: { liquidacaoId: number; idempotencyKey: string; dataLiquidacao: string }, sessao?: SessaoFinanceiro) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       return transacaoFinanceiroComRetry(store, async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         const existente = await tx.findLiquidacaoPorIdem(userId, input.idempotencyKey);
         if (existente) {
           assertUser(existente.userId, userId);
+          fecharFazendasFinanceiro(acesso, await fazendasDaLiquidacao(tx, userId, input.liquidacaoId));
           if (!retryEstornoBateComPedido(existente, { userId, liquidacaoId: input.liquidacaoId })) {
             toTrpc(MSG_FIN_IDEMPOTENCIA_CONFLITO);
           }
@@ -1465,8 +1566,11 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           const titulos = await tx.lockTitulos(userId, tituloIds);
           if (titulos.length !== tituloIds.length) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
           for (const titulo of titulos) assertUser(titulo.userId, userId);
+          fecharFazendasFinanceiro(acesso, titulos.map((titulo) => titulo.fazendaOrigemId));
           const parcelas = await tx.lockParcelas(userId, parcelaIds);
           if (parcelas.length !== parcelaIds.length) toTrpc(MSG_FIN_PARCELA_NAO_ENCONTRADA, "NOT_FOUND");
+        } else {
+          fecharFazendasFinanceiro(acesso, [null]);
         }
         const estornoId = await tx.insertLiquidacao({
           userId,
@@ -1519,11 +1623,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       descricao?: string | null;
       referencia?: string | null;
       observacoes?: string | null;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       assertValorPositivo(input.valor);
       if (input.contaOrigemId === input.contaDestinoId) toTrpc(MSG_FIN_TRANSFERENCIA_MESMA_CONTA);
       return transacaoFinanceiroComRetry(store, async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const existente = await tx.findTransferenciaPorIdem(userId, input.idempotencyKey);
         if (existente) return { id: existente.id, idempotente: true };
         const contas = await tx.lockContas(userId, [input.contaOrigemId, input.contaDestinoId]);
@@ -1594,9 +1699,10 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       transferenciaId: number;
       idempotencyKey: string;
       dataTransferencia: string;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       if (!input.idempotencyKey.trim()) toTrpc(MSG_FIN_IDEMPOTENCY);
       return transacaoFinanceiroComRetry(store, async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const existente = await tx.findTransferenciaPorIdem(userId, input.idempotencyKey);
         if (existente) return { id: existente.id, idempotente: true };
         const original = await tx.lockTransferencia(userId, input.transferenciaId);
@@ -1666,8 +1772,9 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async extrato(userId: number, contaId: number, de?: string, ate?: string) {
+    async extrato(userId: number, contaId: number, de?: string, ate?: string, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        await abrirSessaoFinanceiro(tx, userId, sessao);
         const conta = await tx.findConta(userId, contaId);
         if (!conta) toTrpc(MSG_FIN_CONTA_NAO_ENCONTRADA, "NOT_FOUND");
         assertUser(conta.userId, userId);
@@ -1685,10 +1792,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       tipo: "entrada" | "saida";
       categoriaPaiId?: number | null;
       chaveSistema?: string | null;
-    }) {
+    }, sessao?: SessaoFinanceiro) {
       const nome = input.nome.trim();
       if (!nome) toTrpc("Informe o nome da categoria.");
       return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, []);
         const chave = input.chaveSistema?.trim() || null;
         if (chave) {
           const dup = await tx.findCategoriaPorChave(userId, chave);
@@ -1715,8 +1824,10 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       return store.transaction(async tx => tx.listCategorias(userId));
     },
 
-    async inativarCategoria(userId: number, id: number) {
+    async inativarCategoria(userId: number, id: number, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, []);
         const cat = await tx.findCategoria(userId, id);
         if (!cat) toTrpc("Categoria financeira não encontrada.", "NOT_FOUND");
         await tx.updateCategoria(userId, id, { ativa: false });
@@ -1724,10 +1835,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async criarCentroCusto(userId: number, input: { nome: string; fazendaId?: number | null }) {
+    async criarCentroCusto(userId: number, input: { nome: string; fazendaId?: number | null }, sessao?: SessaoFinanceiro) {
       const nome = input.nome.trim();
       if (!nome) toTrpc("Informe o nome do centro de custo.");
       return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
+        fecharFazendasFinanceiro(acesso, [input.fazendaId ?? null]);
         if (input.fazendaId) {
           const fazenda = await tx.findFazenda(userId, input.fazendaId);
           if (!fazenda) toTrpc(MSG_FIN_FAZENDA_INVALIDA, "FORBIDDEN");
@@ -1742,14 +1855,20 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async listarCentrosCusto(userId: number) {
-      return store.transaction(async tx => tx.listCentros(userId));
+    async listarCentrosCusto(userId: number, escopo?: AcessoFinanceiro) {
+      return store.transaction(async tx => {
+        const centros = await tx.listCentros(userId);
+        if (!escopo || escopo.papel === "principal") return centros;
+        return centros.filter((centro) => centro.fazendaId != null && escopo.fazendaIds.includes(centro.fazendaId));
+      });
     },
 
-    async inativarCentroCusto(userId: number, id: number) {
+    async inativarCentroCusto(userId: number, id: number, sessao?: SessaoFinanceiro) {
       return store.transaction(async tx => {
+        const acesso = await abrirSessaoFinanceiro(tx, userId, sessao);
         const centro = await tx.findCentro(userId, id);
         if (!centro) toTrpc("Centro de custo não encontrado.", "NOT_FOUND");
+        fecharFazendasFinanceiro(acesso, [centro.fazendaId]);
         await tx.updateCentro(userId, id, { ativo: false });
         return { success: true };
       });
@@ -2419,6 +2538,74 @@ export function createFinanceiroNucleoTxFromDrizzle(drizzleTx: FinanceiroDrizzle
           const rows = await drizzleTx.select().from(financeiroCentrosCusto)
             .where(eq(financeiroCentrosCusto.userId, userId));
           return rows.map(mapCentro);
+        },
+        async revalidarSessao(sessao) {
+          const consulta = {
+            async usuario(id: number): Promise<LinhaUsuarioCadastro | null> {
+              const [linha] = await drizzleTx
+                .select({
+                  id: users.id,
+                  openId: users.openId,
+                  name: users.name,
+                  email: users.email,
+                  role: users.role,
+                  papel: users.papel,
+                  titularUserId: users.titularUserId,
+                  situacao: users.situacao,
+                  sessionVersion: users.sessionVersion,
+                })
+                .from(users)
+                .where(eq(users.id, id))
+                .for("update")
+                .limit(1);
+              if (!linha) return null;
+              return {
+                id: linha.id,
+                openId: linha.openId,
+                name: linha.name,
+                email: linha.email,
+                role: linha.role === "admin" ? "admin" : "user",
+                papel: linha.papel as PapelConta,
+                titularUserId: linha.titularUserId,
+                situacao: linha.situacao as SituacaoUsuario,
+                sessionVersion: linha.sessionVersion,
+              };
+            },
+            async permissoes(userId: number, titularUserId: number) {
+              const linhas = await drizzleTx
+                .select({ permissao: usuarioPermissoes.permissao })
+                .from(usuarioPermissoes)
+                .where(and(eq(usuarioPermissoes.userId, userId), eq(usuarioPermissoes.titularUserId, titularUserId)))
+                .for("update");
+              return linhas.map((linha) => linha.permissao);
+            },
+            async vinculos(userId: number, titularUserId: number) {
+              const linhas = await drizzleTx
+                .select({ userId: usuarioFazendas.userId, fazendaId: usuarioFazendas.fazendaId })
+                .from(usuarioFazendas)
+                .innerJoin(users, eq(users.id, usuarioFazendas.userId))
+                .where(and(eq(usuarioFazendas.userId, userId), eq(users.titularUserId, titularUserId)))
+                .for("update");
+              return linhas.map((linha) => ({ userId: linha.userId, fazendaId: linha.fazendaId }));
+            },
+            async fazendasDoTitular(titularUserId: number) {
+              const linhas = await drizzleTx
+                .select({ id: fazendas.id, userId: fazendas.userId })
+                .from(fazendas)
+                .where(eq(fazendas.userId, titularUserId));
+              return [...linhas].sort((a, b) => a.id - b.id);
+            },
+            async fazenda(id: number) {
+              const [linha] = await drizzleTx
+                .select({ id: fazendas.id, userId: fazendas.userId })
+                .from(fazendas)
+                .where(eq(fazendas.id, id))
+                .for("update")
+                .limit(1);
+              return linha ?? null;
+            },
+          };
+          return acessoDaSessaoFinanceiro(consulta, sessao);
         },
   };
   return tx;

@@ -53,6 +53,7 @@ export type VendaEspiada = {
 
 export type ConsultaVendaOperacao = ConsultaAutorizacaoPersistida & {
   espiarVenda(id: number): Promise<VendaEspiada | null>;
+  transacaoAtual?: { transaction: (...args: any[]) => Promise<unknown> };
 };
 
 export type IoVendaOperacao = {

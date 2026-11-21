@@ -19,14 +19,14 @@ function idsUnicos(ids: number[]) {
 describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
   it("contrato oficial: procedure de leitura com tituloId e isolamento por usuário", () => {
     expect(routerSrc).toContain("tituloHistoricoPagamentos: protectedProcedure");
-    expect(routerSrc).toContain("historicoPagamentosTitulo(ctx.user.id, input.tituloId)");
+    expect(routerSrc).toContain("historicoPagamentosTitulo(");
+    expect(routerSrc).toContain("acesso.titularUserId");
+    expect(routerSrc).toContain("input.tituloId");
     expect(routerSrc).toContain("titulosGet: protectedProcedure");
-    expect(routerSrc).toContain("detalheTitulo(ctx.user.id, input.id)");
-    expect(routerSrc).toMatch(
-      /titulosGet: protectedProcedure\s*\.input\(z\.object\(\{ id: z\.number\(\)\.int\(\)\.positive\(\) \}\)\)\s*\.query\(\(\{ ctx, input \}\) => financeiroNucleoService\.detalheTitulo\(ctx\.user\.id, input\.id\)\)/,
-    );
+    expect(routerSrc).toContain("detalheTitulo(acesso.titularUserId, input.id, acesso)");
+    expect(routerSrc).toContain("z.object({ id: z.number().int().positive() })");
     expect(routerSrc).toContain("tituloHistoricoPagamentos: protectedProcedure");
-    expect(nucleoSrc).toContain("async historicoPagamentosTitulo(userId: number, tituloId: number)");
+    expect(nucleoSrc).toContain("async historicoPagamentosTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro)");
     expect(nucleoSrc).toContain("listAlocacoesPorParcelas");
     expect(nucleoSrc).toContain("listAlocacoesLiquidacao");
     expect(nucleoSrc).toContain("titulosNaLiquidacao");

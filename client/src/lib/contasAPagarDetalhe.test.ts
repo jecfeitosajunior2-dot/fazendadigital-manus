@@ -485,9 +485,9 @@ describe("contasAPagarDetalhe — tela e compatibilidade", () => {
 
   it("usa a consulta oficial de histórico sem reconstruir pelo extrato nem gravar", () => {
     expect(v2Router).toContain("titulosGet: protectedProcedure");
-    expect(v2Router).toContain("detalheTitulo(ctx.user.id, input.id)");
+    expect(v2Router).toContain("detalheTitulo(acesso.titularUserId, input.id, acesso)");
     expect(v2Router).toContain("tituloHistoricoPagamentos: protectedProcedure");
-    expect(nucleo).toContain("async detalheTitulo(userId: number, tituloId: number)");
+    expect(nucleo).toContain("async detalheTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro)");
     expect(nucleo).toContain("assertUser(titulo.userId, userId)");
     expect(page).toContain("financeiroV2.tituloHistoricoPagamentos");
     expect(page).toContain("financeiroV2.titulosGet");
