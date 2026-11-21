@@ -3766,10 +3766,41 @@ const lotesRouter = router({
             message: mensagemExclusaoLoteBloqueada(avaliacao.nomeLote, avaliacao.qtdAnimais),
           });
         }
-        await db.update(lotes)
-          .set({ ativo: false })
-          .where(and(eq(lotes.id, input.id), eq(lotes.userId, titular)));
-        return { success: true as const, nomeLote: avaliacao.nomeLote };
+        const nomeLote = await db.transaction(async (tx) => {
+          const [lote] = await tx.select({
+            nome: lotes.nome,
+            fazendaId: lotes.fazendaId,
+            ativo: lotes.ativo,
+          }).from(lotes)
+            .where(and(eq(lotes.id, input.id), eq(lotes.userId, titular)))
+            .for("update")
+            .limit(1);
+          if (!lote || !fazendaDoLoteLiberada(contexto, lote.fazendaId)) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+          }
+          const [contagem] = await tx.select({ quantidade: sql<number>`COUNT(*)` })
+            .from(animais)
+            .where(and(
+              eq(animais.userId, titular),
+              eq(animais.loteId, input.id),
+              eq(animais.status, "ativo"),
+            ))
+            .for("update");
+          const qtd = Number(contagem?.quantidade ?? 0);
+          if (qtd > 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: mensagemExclusaoLoteBloqueada(lote.nome, qtd),
+            });
+          }
+          if (lote.ativo !== false) {
+            await tx.update(lotes)
+              .set({ ativo: false })
+              .where(and(eq(lotes.id, input.id), eq(lotes.userId, titular)));
+          }
+          return lote.nome;
+        });
+        return { success: true as const, nomeLote };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) recusarLoteSemMysql();

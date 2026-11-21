@@ -74,6 +74,7 @@ describe("lotes — homologação das 23 rotas", () => {
     expect(bloco).toContain("recusarEstadiaSinteticaLote()");
     expect(bloco).toContain('"lotes.inativar"');
     expect(bloco).toContain("avaliarExclusaoLoteDb");
+    expect(bloco).toContain('.for("update")');
     expect(bloco).not.toContain("db.delete(lotes)");
     expect(bloco).not.toContain("db.delete(lotePastoMovimentacoes)");
   });
