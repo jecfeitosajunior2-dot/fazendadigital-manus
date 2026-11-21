@@ -186,10 +186,10 @@ import { buildAnimalInsertRow } from "./animalInsertRow";
 import {
   eventoHistoricoVisivel,
   inserirAnimalImportadoNaTransacao,
-  decisaoImportacaoSemIndice,
   errosDeVinculoImportacao,
   INDICE_BRINCO_ATIVO,
-  indiceBrincoAtivoPresente,
+  indiceBrincoAtivoConfiavel,
+  linhasIndiceBrinco,
   resolverVinculosImportacao,
   type CatalogoImportacaoAnimal,
 } from "./importacaoAnimalAutorizada";
@@ -342,7 +342,6 @@ import {
 import {
   assertBrincoUnicoEntreAtivos,
   assertBrincoUnicoEntreAtivosDb,
-  loadActiveBrincoKeysFromDb,
 } from "./brincoAtivoValidation";
 import {
   resolveEffectiveStatus,
@@ -579,8 +578,27 @@ async function loadLotesUsuarioParaOperacao(userId: number): Promise<{
   return { loteNomeParaId, loteInativoSet, lotes: detalhes };
 }
 
-async function loadBrincosAtivosParaOperacao(userId: number): Promise<Set<string>> {
-  return loadActiveBrincoKeysFromDb(userId);
+async function loadBrincosAtivosParaOperacao(userId: number): Promise<Array<{ fazendaId: number | null; brinco: string }>> {
+  const rows = await db
+    .select({ fazendaId: animais.fazendaId, brinco: animais.brinco })
+    .from(animais)
+    .where(and(eq(animais.userId, userId), eq(animais.status, "ativo")));
+  return rows
+    .filter((row) => String(row.brinco ?? "").trim())
+    .map((row) => ({ fazendaId: row.fazendaId ?? null, brinco: String(row.brinco) }));
+}
+
+function brincosAtivosDaFazenda(
+  linhas: Array<{ fazendaId: number | null; brinco: string }>,
+  fazendaId: number,
+): Set<string> {
+  const conjunto = new Set<string>();
+  for (const linha of linhas) {
+    if (linha.fazendaId !== fazendaId) continue;
+    const chave = normalizeBrincoKey(linha.brinco);
+    if (chave) conjunto.add(chave);
+  }
+  return conjunto;
 }
 
 type AnimalListaMinimo = {
@@ -2112,18 +2130,19 @@ const animaisRouter = router({
       );
 
       // Brincos em uso por animais ativos do titular (inativos podem reutilizar número)
-      const brincosAtivosBancoSet = await loadBrincosAtivosParaOperacao(contexto.identidade.titularUserId);
+      const brincosAtivosBanco = await loadBrincosAtivosParaOperacao(contexto.identidade.titularUserId);
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
       const validos: typeof input.linhas = [];
-      const brincosAtivosNaPlanilha = new Set<string>();
+      const brincosAtivosNaPlanilha = new Map<number, Set<string>>();
 
       for (let i = 0; i < input.linhas.length; i++) {
         const linha = input.linhas[i];
         const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
         const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
 
-        for (const erro of errosDeVinculoImportacao(linha, catalogo).erros) {
+        const vinculoLinha = errosDeVinculoImportacao(linha, catalogo);
+        for (const erro of vinculoLinha.erros) {
           errosLinha.push({ linha: numLinha, campo: erro.campo, mensagem: erro.mensagem });
         }
 
@@ -2135,12 +2154,14 @@ const animaisRouter = router({
         const brinco = (linha.brinco || '').trim();
         if (!brinco) {
           errosLinha.push({ linha: numLinha, campo: 'brinco', mensagem: 'Brinco é obrigatório' });
-        } else if (statusValidoBrinco) {
+        } else if (statusValidoBrinco && vinculoLinha.fazendaId != null) {
+          const planilhaDaFazenda = brincosAtivosNaPlanilha.get(vinculoLinha.fazendaId) ?? new Set<string>();
+          brincosAtivosNaPlanilha.set(vinculoLinha.fazendaId, planilhaDaFazenda);
           const brincoErro = validarBrincoAtivoImportacao({
             brinco,
             statusEfetivo: statusNormBrinco,
-            brincosAtivosBanco: brincosAtivosBancoSet,
-            brincosAtivosPlanilha: brincosAtivosNaPlanilha,
+            brincosAtivosBanco: brincosAtivosDaFazenda(brincosAtivosBanco, vinculoLinha.fazendaId),
+            brincosAtivosPlanilha: planilhaDaFazenda,
           });
           if (brincoErro) {
             errosLinha.push({ linha: numLinha, campo: brincoErro.campo, mensagem: brincoErro.mensagem });
@@ -2308,13 +2329,24 @@ const animaisRouter = router({
 
       let contexto: Awaited<ReturnType<typeof contextoConsultaAnimal>>;
       let catalogo: CatalogoImportacaoAnimal;
-      let brincosAtivosReservados: Set<string>;
+      let brincosAtivosReservados: Array<{ fazendaId: number | null; brinco: string }>;
       try {
         contexto = await contextoConsultaAnimal(ctx.user, "animais.criar");
         catalogo = await catalogoImportacaoDoTitular(contexto);
         brincosAtivosReservados = await loadBrincosAtivosParaOperacao(contexto.identidade.titularUserId);
-        const indices = await db.execute(sql`SHOW INDEX FROM animais WHERE Key_name = ${INDICE_BRINCO_ATIVO}`);
-        if (decisaoImportacaoSemIndice(indiceBrincoAtivoPresente(indices)) === "bloqueada") {
+        const indices = await db.execute(sql`
+          SELECT s.INDEX_NAME AS nome, s.COLUMN_NAME AS coluna, s.NON_UNIQUE AS naoUnico,
+                 s.SEQ_IN_INDEX AS ordem, c.EXTRA AS extra, c.COLLATION_NAME AS collation
+          FROM information_schema.STATISTICS s
+          LEFT JOIN information_schema.COLUMNS c
+            ON c.TABLE_SCHEMA = s.TABLE_SCHEMA
+           AND c.TABLE_NAME = s.TABLE_NAME
+           AND c.COLUMN_NAME = s.COLUMN_NAME
+          WHERE s.TABLE_SCHEMA = DATABASE()
+            AND s.TABLE_NAME = 'animais'
+            AND s.INDEX_NAME = ${INDICE_BRINCO_ATIVO}
+        `);
+        if (!indiceBrincoAtivoConfiavel(linhasIndiceBrinco(indices))) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "A importação está bloqueada até a proteção contra brinco repetido existir no banco.",
@@ -2326,6 +2358,7 @@ const animaisRouter = router({
         throw error;
       }
       const titular = contexto.identidade.titularUserId;
+      const brincosNaPlanilha = new Map<number, Set<string>>();
 
       for (let i = 0; i < input.linhas.length; i++) {
         // Normaliza cabeçalhos PT-BR → chaves internas
@@ -2343,11 +2376,19 @@ const animaisRouter = router({
             return ['ativo', 'vendido', 'morto', 'transferido'].includes(st) ? st : 'ativo';
           })();
 
+          const vinculo = resolverVinculosImportacao(linha, catalogo);
+          if (!vinculo.ok) {
+            rejeitados.push({ linha: numLinha, mensagem: vinculo.mensagem });
+            continue;
+          }
+          const { fazendaId, loteId, pastoId } = vinculo;
+          const planilhaDaFazenda = brincosNaPlanilha.get(fazendaId) ?? new Set<string>();
+          brincosNaPlanilha.set(fazendaId, planilhaDaFazenda);
           const brincoErro = validarBrincoAtivoImportacao({
             brinco,
             statusEfetivo: statusImport,
-            brincosAtivosBanco: brincosAtivosReservados,
-            brincosAtivosPlanilha: brincosAtivosReservados,
+            brincosAtivosBanco: brincosAtivosDaFazenda(brincosAtivosReservados, fazendaId),
+            brincosAtivosPlanilha: planilhaDaFazenda,
           });
           if (brincoErro) {
             rejeitados.push({ linha: numLinha, mensagem: brincoErro.mensagem });
@@ -2358,13 +2399,6 @@ const animaisRouter = router({
             rejeitados.push({ linha: numLinha, mensagem: mensagemDataReferenciaLinha(numLinha) });
             continue;
           }
-
-          const vinculo = resolverVinculosImportacao(linha, catalogo);
-          if (!vinculo.ok) {
-            rejeitados.push({ linha: numLinha, mensagem: vinculo.mensagem });
-            continue;
-          }
-          const { fazendaId, loteId, pastoId } = vinculo;
 
           // Converte rastreadoNascimento (aceita Sim/Não em PT-BR).
           // Castrado: só macho; fêmea nunca persiste este campo.
@@ -2448,9 +2482,10 @@ const animaisRouter = router({
                   .for("update");
                 return linhas.map((linha) => linha.fazendaId);
               },
-              async brincoAtivo(titularUserId, brincoInformado) {
+              async brincoAtivo(titularUserId, fazendaIdLinha, brincoInformado) {
                 const [linhaAtiva] = await tx.select({ id: animais.id }).from(animais).where(and(
                   eq(animais.userId, titularUserId),
+                  eq(animais.fazendaId, fazendaIdLinha),
                   eq(animais.status, "ativo"),
                   sql`LOWER(TRIM(${animais.brinco})) = LOWER(TRIM(${brincoInformado}))`,
                 )).for("update").limit(1);

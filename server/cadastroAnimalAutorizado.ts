@@ -5,6 +5,7 @@ import type { VinculoFazenda } from "./acessoFazendas";
 import { buildAnimalInsertRow, type AnimalFormInput, type LinhaInsercaoAnimal } from "./animalInsertRow";
 import { autorizarOperacao, type MotivoOperacional, type ResultadoOperacional } from "./contextoOperacional";
 import { buildBrincoAtivoConflitoMessage } from "../shared/brincoAtivo";
+import { ehBrincoDuplicadoNoMysql } from "./importacaoAnimalAutorizada";
 import { findActiveBrincoConflict } from "../shared/brincoAtivo";
 import { buildEntradaInicialLoteMovimentacao, loteIdEfetivoParaHistorico } from "../shared/animalLoteMovimentacaoEntrada";
 import { MSG_PESO_ENTRADA_INVALIDO, isPesoEntradaInformadoInvalido } from "../shared/pesoEntrada";
@@ -323,7 +324,13 @@ export async function cadastrarAnimalAutorizado(
   return io.emTransacao(async (tx) => {
     const deciso = await decidir(tx, pedido);
     if (!deciso.ok) return deciso;
-    const id = await tx.inserirAnimal(deciso.row);
+    let id: number;
+    try {
+      id = await tx.inserirAnimal(deciso.row);
+    } catch (erro) {
+      if (!ehBrincoDuplicadoNoMysql(erro)) throw erro;
+      return recusa("brinco_duplicado", buildBrincoAtivoConflitoMessage(String(deciso.row.brinco ?? "")));
+    }
     if (!Number.isFinite(id) || id <= 0) {
       throw new Error("Falha ao cadastrar animal.");
     }

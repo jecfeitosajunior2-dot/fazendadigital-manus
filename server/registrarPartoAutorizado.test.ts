@@ -42,7 +42,7 @@ function animal(parcial: Partial<AnimalPartoLinha> & Pick<AnimalPartoLinha, "id"
   };
 }
 
-function mundo(opcoes?: { falha?: "conexao"; estourarCria?: number }) {
+function mundo(opcoes?: { falha?: "conexao" | "deadlock-uma-vez"; estourarCria?: number; duplicarNoInsert?: boolean }) {
   const usuarios = [
     usuario({ id: 1, papel: "principal", sessionVersion: 3 }),
     usuario({ id: 2, papel: "comum", titularUserId: 1 }),
@@ -82,7 +82,16 @@ function mundo(opcoes?: { falha?: "conexao"; estourarCria?: number }) {
     async rfidAtivo() { return null; },
     async inserirParto() { partos += 1; return 900; },
     async fecharPrevisoes() { return undefined; },
-    async inserirAnimal() { const id = 1000 + crias.length; crias.push(id); return id; },
+    async inserirAnimal() {
+      if (opcoes?.duplicarNoInsert) {
+        throw Object.assign(new Error("Failed query: insert into animais"), {
+          cause: { errno: 1062, code: "ER_DUP_ENTRY" },
+        });
+      }
+      const id = 1000 + crias.length;
+      crias.push(id);
+      return id;
+    },
     async inserirMovimento() { return undefined; },
     async inserirVinculo() { return undefined; },
     async inserirPesagem() { return 1; },
@@ -90,9 +99,14 @@ function mundo(opcoes?: { falha?: "conexao"; estourarCria?: number }) {
       if (opcoes?.estourarCria === indice) throw new Error("falha na segunda cria");
     },
   };
+  let tentativas = 0;
   const io: IoParto = {
     async emTransacao(fn) {
+      tentativas += 1;
       if (opcoes?.falha === "conexao") throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+      if (opcoes?.falha === "deadlock-uma-vez" && tentativas === 1) {
+        throw Object.assign(new Error("Deadlock found when trying to get lock"), { errno: 1213, code: "ER_LOCK_DEADLOCK" });
+      }
       const antes = crias.length;
       const partosAntes = partos;
       try {
@@ -227,5 +241,28 @@ describe("parto com crias autorizado", () => {
     const fora = mundo({ falha: "conexao" });
     await expect(registrarPartoAutorizado(fora.io, pedido(1, 3))).rejects.toBeInstanceOf(TRPCError);
     await expect(registrarPartoAutorizado(fora.io, pedido(1, 3))).rejects.toMatchObject({ message: "Banco de dados indisponível." });
+  });
+
+  it("brinco repetido no banco desfaz o parto e o deadlock tenta de novo", async () => {
+    const duplicado = mundo({ duplicarNoInsert: true });
+    await expect(registrarPartoAutorizado(duplicado.io, pedido(1, 3, {
+      input: {
+        crias: [
+          { brinco: "G1", sexo: "femea", categoria: "Bezerra", pesoNascimento: "30" },
+          { brinco: "G2", sexo: "macho", categoria: "Bezerro" },
+        ],
+      },
+    }))).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Já existe um animal ativo com o brinco visual G1 nesta fazenda.",
+    });
+    expect(duplicado.crias()).toEqual([]);
+    expect(duplicado.partos()).toBe(0);
+
+    const retry = mundo({ falha: "deadlock-uma-vez" });
+    const resultado = await registrarPartoAutorizado(retry.io, pedido(1, 3));
+    expect(resultado.ok).toBe(true);
+    expect(retry.partos()).toBe(1);
+    expect(retry.crias()).toHaveLength(1);
   });
 });

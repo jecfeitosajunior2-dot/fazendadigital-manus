@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,24 @@ async function docker(...args: string[]) {
 async function conectar(banco?: string) {
   return mysql.createConnection({
     host: "127.0.0.1", port: PORTA, user: "root", password: SENHA, database: banco, multipleStatements: true,
+  });
+}
+
+function mysqlCli(sql: string) {
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolver, rejeitar) => {
+    const filho = spawn("docker", [
+      "exec", "-i", CONTAINER, "mysql", "-uroot", `-p${SENHA}`, "--default-character-set=utf8mb4", BANCO,
+    ], { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    filho.stdout.setEncoding("utf8");
+    filho.stderr.setEncoding("utf8");
+    filho.stdout.on("data", (pedaço) => { stdout += pedaço; });
+    filho.stderr.on("data", (pedaço) => { stderr += pedaço; });
+    filho.on("error", rejeitar);
+    filho.on("close", (code) => resolver({ code: code ?? 1, stdout, stderr }));
+    filho.stdin.write(sql);
+    filho.stdin.end();
   });
 }
 
@@ -72,12 +90,12 @@ function adaptador(conn: mysql.PoolConnection): TransacaoImportacaoAnimal {
       );
       return rows.map((row) => Number(row.fazendaId));
     },
-    async brincoAtivo(titularUserId, brinco) {
+    async brincoAtivo(titularUserId, fazendaId, brinco) {
       const [rows] = await conn.query<RowDataPacket[]>(
         `SELECT id FROM animais
-         WHERE userId = ? AND status = 'ativo' AND LOWER(TRIM(brinco)) = LOWER(TRIM(?))
+         WHERE userId = ? AND fazendaId = ? AND status = 'ativo' AND LOWER(TRIM(brinco)) = LOWER(TRIM(?))
          LIMIT 1 FOR UPDATE`,
-        [titularUserId, brinco],
+        [titularUserId, fazendaId, brinco],
       );
       return rows.length > 0;
     },
@@ -136,8 +154,9 @@ describe("animais.importar no MySQL descartável", () => {
         status varchar(20) NOT NULL
       );
     `);
-    await conn.query(readFileSync(resolve(here, "../drizzle/propostas/0070_animais_brinco_ativo_uq.sql"), "utf8"));
     await conn.end();
+    const aplicado = await mysqlCli(readFileSync(resolve(here, "../drizzle/propostas/0071_animais_brinco_ativo_fazenda_uq.sql"), "utf8"));
+    expect(aplicado.code, aplicado.stderr).toBe(0);
     pool = mysql.createPool({
       host: "127.0.0.1", port: PORTA, user: "root", password: SENHA, database: BANCO,
       connectionLimit: 6,
@@ -209,6 +228,14 @@ describe("animais.importar no MySQL descartável", () => {
     expect(rows.map((row) => ({
       userId: Number(row.userId), fazendaId: Number(row.fazendaId), brinco: String(row.brinco),
     }))).toEqual([{ userId: 1, fazendaId: 10, brinco: "B1" }]);
+  });
+
+  it("o mesmo brinco ativo cabe em outra fazenda e o índice continua recusando a repetição na mesma", async () => {
+    expect(await importar(1, "IGUAL", 10)).toMatchObject({ ok: true });
+    expect(await importar(1, "IGUAL", 20)).toMatchObject({ ok: true });
+    expect(await importar(1, "igual", 10)).toEqual({ ok: false, motivo: "brinco_duplicado" });
+    const [rows] = await pool.query<RowDataPacket[]>("SELECT fazendaId, brinco FROM animais ORDER BY fazendaId");
+    expect(rows.map((row) => Number(row.fazendaId))).toEqual([10, 20]);
   });
 
   it("o índice recusa a segunda gravação mesmo sem a consulta prévia", async () => {

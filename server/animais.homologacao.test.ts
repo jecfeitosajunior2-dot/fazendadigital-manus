@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { cadastrarAnimalAutorizado } from "./cadastroAnimalAutorizado";
 import {
   errosDeVinculoImportacao,
   eventoHistoricoVisivel,
-  decisaoImportacaoSemIndice,
-  indiceBrincoAtivoPresente,
+  INDICE_BRINCO_ATIVO,
+  indiceBrincoAtivoConfiavel,
   inserirAnimalImportadoNaTransacao,
   type CatalogoImportacaoAnimal,
   type TransacaoImportacaoAnimal,
@@ -93,14 +94,37 @@ describe("animais — consultas e importação sem o arquivo local", () => {
     expect(animais).toContain("recusarExclusaoFisicaAnimal()");
     expect(animais).toContain("inserirAnimalImportadoNaTransacao");
     expect(animais).toContain("INDICE_BRINCO_ATIVO");
+    expect(animais).toContain("indiceBrincoAtivoConfiavel");
     expect(animais).toContain("A importação está bloqueada até a proteção contra brinco repetido existir no banco.");
-    expect(decisaoImportacaoSemIndice(false)).toBe("bloqueada");
-    expect(decisaoImportacaoSemIndice(true)).toBe("liberada");
-    expect(indiceBrincoAtivoPresente([[{ Key_name: "animais_user_brinco_ativo_uq" }], []])).toBe(true);
-    expect(indiceBrincoAtivoPresente([[], []])).toBe(false);
-    expect(indiceBrincoAtivoPresente([])).toBe(false);
+    expect(INDICE_BRINCO_ATIVO).toBe("animais_brinco_ativo_fazenda_uq");
+    const chave = {
+      nome: INDICE_BRINCO_ATIVO,
+      coluna: "brinco_ativo_chave",
+      unico: true,
+      ordem: 3,
+      gerada: true,
+      collationBin: true,
+    };
+    expect(indiceBrincoAtivoConfiavel([
+      { nome: INDICE_BRINCO_ATIVO, coluna: "userId", unico: true, ordem: 1, gerada: false, collationBin: false },
+      { nome: INDICE_BRINCO_ATIVO, coluna: "fazendaId", unico: true, ordem: 2, gerada: false, collationBin: false },
+      chave,
+    ])).toBe(true);
+    expect(indiceBrincoAtivoConfiavel([
+      { nome: "animais_user_brinco_ativo_uq", coluna: "userId", unico: true, ordem: 1, gerada: false, collationBin: false },
+      { nome: "animais_user_brinco_ativo_uq", coluna: "brinco_ativo_chave", unico: true, ordem: 2, gerada: true, collationBin: false },
+    ])).toBe(false);
+    expect(indiceBrincoAtivoConfiavel([{ ...chave, gerada: false }])).toBe(false);
+    expect(indiceBrincoAtivoConfiavel([{ ...chave, collationBin: false, ordem: 1 }])).toBe(false);
+    expect(indiceBrincoAtivoConfiavel([])).toBe(false);
     expect(animais).toContain('"animais.visualizar"');
     expect(animais).toContain('"animais.criar"');
+    const journal = readFileSync(resolve(here, "../drizzle/migrations/meta/_journal.json"), "utf8");
+    expect(journal).not.toContain("0070");
+    expect(journal).not.toContain("0071");
+    const propostaAntiga = readFileSync(resolve(here, "../drizzle/propostas/0070_animais_brinco_ativo_uq.sql"), "utf8");
+    expect(propostaAntiga).toContain("animais_user_brinco_ativo_uq");
+    expect(propostaAntiga).not.toContain("fazendaId, brinco_ativo_chave");
   });
 
   it("histórico de outra fazenda não aparece só porque o animal está hoje numa fazenda concedida", () => {
@@ -156,6 +180,47 @@ describe("animais — consultas e importação sem o arquivo local", () => {
       brinco: "B1", brincoEletronico: null, status: "ativo", row: { brinco: "B1" },
     });
     expect(repetido).toEqual({ ok: false, motivo: "brinco_duplicado" });
+  });
+
+  it("o segundo cadastro do mesmo brinco não grava animal nem histórico", async () => {
+    let movimentos = 0;
+    const resultado = await cadastrarAnimalAutorizado({
+      async emTransacao(fn) {
+        return fn({
+          async usuario(id) {
+            return {
+              id, openId: "u-1", name: "Ana", email: null, role: "admin", papel: "principal",
+              titularUserId: 1, situacao: "ativo", sessionVersion: 0,
+            };
+          },
+          async permissoes() { return []; },
+          async vinculos() { return []; },
+          async fazendasDoTitular() { return [{ id: 10, userId: 1 }]; },
+          async fazenda() { return { id: 10, userId: 1 }; },
+          async lote() { return null; },
+          async pasto() { return null; },
+          async animaisAtivos() { return []; },
+          async lotesDoTitular() { return []; },
+          async inserirAnimal() {
+            throw Object.assign(new Error("Failed query: insert into animais"), {
+              cause: { errno: 1062, code: "ER_DUP_ENTRY" },
+            });
+          },
+          async inserirMovimento() { movimentos += 1; },
+        });
+      },
+    }, {
+      executorId: 1,
+      sessionVersionDaSessao: 0,
+      titularInformadoPeloCliente: 9,
+      input: { brinco: "B1", sexo: "macho", fazendaId: 10 },
+    });
+    expect(resultado).toMatchObject({
+      ok: false,
+      motivo: "brinco_duplicado",
+      mensagem: "Já existe um animal ativo com o brinco visual B1 nesta fazenda.",
+    });
+    expect(movimentos).toBe(0);
   });
 
   it("falha no meio da linha não devolve um id", async () => {

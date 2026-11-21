@@ -2,22 +2,48 @@
  * Regras da planilha de animais que não dependem do arquivo local.
  * A tela pode mandar mapas de id; quem decide é este catálogo, lido no banco.
  * Cada linha gravada é a sua própria transação: uma linha ruim não apaga as que já entraram.
- * Dois funcionários diferentes ainda podem cadastrar o mesmo brinco ativo ao mesmo tempo
- * enquanto o índice animais_user_brinco_ativo_uq não existir. Por isso a importação
- * permanece parcial até essa proteção estar no banco.
+ * A importação só grava quando o índice animais_brinco_ativo_fazenda_uq está no banco em uso.
  */
 
-export const INDICE_BRINCO_ATIVO = "animais_user_brinco_ativo_uq";
+export const INDICE_BRINCO_ATIVO = "animais_brinco_ativo_fazenda_uq";
+const COLUNAS_INDICE_BRINCO_ATIVO = ["userId", "fazendaId", "brinco_ativo_chave"];
 
-/** Sem o índice, dois funcionários ainda conseguem gravar o mesmo brinco ativo. A importação fica recusada. */
-export function decisaoImportacaoSemIndice(indiceExiste: boolean): "liberada" | "bloqueada" {
-  return indiceExiste ? "liberada" : "bloqueada";
+export type LinhaIndiceBrinco = {
+  nome: string;
+  coluna: string;
+  unico: boolean;
+  ordem: number;
+  gerada: boolean;
+  collationBin: boolean;
+};
+
+/** O nome do índice não basta. As três colunas, a unicidade e a chave binária gerada precisam conferir. */
+export function indiceBrincoAtivoConfiavel(linhas: readonly LinhaIndiceBrinco[]): boolean {
+  const doIndice = linhas.filter((linha) => linha.nome === INDICE_BRINCO_ATIVO);
+  if (doIndice.length !== COLUNAS_INDICE_BRINCO_ATIVO.length) return false;
+  if (doIndice.some((linha) => !linha.unico)) return false;
+  const colunas = [...doIndice].sort((a, b) => a.ordem - b.ordem).map((linha) => linha.coluna);
+  if (colunas.join(",") !== COLUNAS_INDICE_BRINCO_ATIVO.join(",")) return false;
+  const chave = doIndice.find((linha) => linha.coluna === "brinco_ativo_chave");
+  return chave?.gerada === true && chave.collationBin === true;
 }
 
-/** O SHOW INDEX do MySQL pode vir como linhas ou como o par [linhas, campos]. */
-export function indiceBrincoAtivoPresente(resultado: unknown): boolean {
-  if (Array.isArray(resultado) && Array.isArray(resultado[0])) return resultado[0].length > 0;
-  return Array.isArray(resultado) && resultado.length > 0 && !Array.isArray(resultado[1]);
+export function linhasIndiceBrinco(resultado: unknown): LinhaIndiceBrinco[] {
+  const pacote = Array.isArray(resultado) && Array.isArray(resultado[0]) ? resultado[0] : resultado;
+  if (!Array.isArray(pacote)) return [];
+  return pacote.map((item) => {
+    const linha = item as Record<string, unknown>;
+    const extra = String(linha.extra ?? linha.EXTRA ?? "");
+    const collation = String(linha.collation ?? linha.COLLATION_NAME ?? "");
+    return {
+      nome: String(linha.nome ?? linha.INDEX_NAME ?? ""),
+      coluna: String(linha.coluna ?? linha.COLUMN_NAME ?? ""),
+      unico: Number(linha.naoUnico ?? linha.NON_UNIQUE ?? 1) === 0,
+      ordem: Number(linha.ordem ?? linha.SEQ_IN_INDEX ?? 0),
+      gerada: /GENERATED/i.test(extra),
+      collationBin: collation.toLowerCase() === "utf8mb4_bin",
+    };
+  });
 }
 
 export type CatalogoImportacaoAnimal = {
@@ -127,7 +153,7 @@ export type TransacaoImportacaoAnimal = {
   travarUsuario(id: number): Promise<UsuarioTravadoImportacao | null>;
   permissoes(userId: number, titularUserId: number): Promise<string[]>;
   fazendasDoVinculo(userId: number): Promise<number[]>;
-  brincoAtivo(titularUserId: number, brinco: string): Promise<boolean>;
+  brincoAtivo(titularUserId: number, fazendaId: number, brinco: string): Promise<boolean>;
   rfidAtivo(titularUserId: number, rfid: string): Promise<boolean>;
   inserir(row: Record<string, unknown>): Promise<number>;
 };
@@ -136,9 +162,16 @@ export type ResultadoImportacaoAnimal =
   | { ok: true; id: number }
   | { ok: false; motivo: "sem_identidade" | "sem_permissao" | "brinco_duplicado" | "rfid_duplicado" };
 
-function erroDeIndiceUnico(error: unknown): boolean {
-  const erro = error as { errno?: number; code?: string };
-  return erro?.errno === 1062 || erro?.code === "ER_DUP_ENTRY";
+export function ehBrincoDuplicadoNoMysql(error: unknown): boolean {
+  const visto = new Set<unknown>();
+  let atual: unknown = error;
+  while (atual && typeof atual === "object" && !visto.has(atual)) {
+    visto.add(atual);
+    const item = atual as { errno?: number; code?: string; cause?: unknown };
+    if (item.errno === 1062 || item.code === "ER_DUP_ENTRY") return true;
+    atual = item.cause;
+  }
+  return false;
 }
 
 /**
@@ -180,7 +213,7 @@ export async function inserirAnimalImportadoNaTransacao(
     }
   }
   const ativo = pedido.status === "ativo";
-  if (ativo && pedido.brinco.trim() && await tx.brincoAtivo(pedido.titularUserId, pedido.brinco)) {
+  if (ativo && pedido.brinco.trim() && await tx.brincoAtivo(pedido.titularUserId, pedido.fazendaId, pedido.brinco)) {
     return { ok: false, motivo: "brinco_duplicado" };
   }
   if (ativo && pedido.brincoEletronico?.trim() && await tx.rfidAtivo(pedido.titularUserId, pedido.brincoEletronico)) {
@@ -190,7 +223,7 @@ export async function inserirAnimalImportadoNaTransacao(
     const id = await tx.inserir({ ...pedido.row, userId: pedido.titularUserId });
     return { ok: true, id };
   } catch (error) {
-    if (erroDeIndiceUnico(error)) return { ok: false, motivo: "brinco_duplicado" };
+    if (ehBrincoDuplicadoNoMysql(error)) return { ok: false, motivo: "brinco_duplicado" };
     throw error;
   }
 }

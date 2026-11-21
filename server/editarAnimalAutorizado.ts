@@ -6,6 +6,7 @@ import type { MotivoOperacional } from "./contextoOperacional";
 import { MSG_STATUS_ALTERACAO_DIRETA } from "../shared/animalBaixa";
 
 export { MSG_STATUS_ALTERACAO_DIRETA };
+import { ehBrincoDuplicadoNoMysql } from "./importacaoAnimalAutorizada";
 import { findActiveBrincoConflict } from "../shared/brincoAtivo";
 import { buildBrincoAtivoConflitoMessage } from "../shared/brincoAtivo";
 import { MSG_PESO_ENTRADA_INVALIDO, isPesoEntradaInformadoInvalido } from "../shared/pesoEntrada";
@@ -416,7 +417,13 @@ export async function editarAnimalAutorizado(
 
     const patch = patchCadastral(pedido.input);
     if (Object.keys(patch).length > 0) {
-      await tx.atualizarAnimal(animal.id, deciso.contexto.titularUserId, patch);
+      try {
+        await tx.atualizarAnimal(animal.id, deciso.contexto.titularUserId, patch);
+      } catch (erro) {
+        if (!ehBrincoDuplicadoNoMysql(erro)) throw erro;
+        const brinco = typeof patch.brinco === "string" ? patch.brinco : (animal.brinco ?? "");
+        return recusa("brinco_duplicado", buildBrincoAtivoConflitoMessage(brinco), "brinco");
+      }
     }
     if (io.aposAtualizar) await io.aposAtualizar();
     return {

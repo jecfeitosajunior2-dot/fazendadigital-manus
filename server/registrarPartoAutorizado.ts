@@ -28,6 +28,7 @@ import {
 } from "../shared/reproElegibilidade";
 import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
 import { MSG_RFID_ATIVO_CONFLITO, normalizeRfidKey } from "../shared/rfidUnicidade";
+import { ehBrincoDuplicadoNoMysql } from "./importacaoAnimalAutorizada";
 import {
   autorizarOperacaoPersistida,
   type ConsultaAutorizacaoPersistida,
@@ -425,22 +426,31 @@ async function gravar(
   for (let i = 0; i < criasEntrada.length; i++) {
     const cria = criasEntrada[i]!;
     const local = locais[i] as { loteId: number | null; pastoId: number | null };
-    const animalId = await tx.inserirAnimal({
-      userId: titular,
-      brinco: cria.brinco.trim(),
-      brincoEletronico: normalizeRfidKey(cria.brincoEletronico) || null,
-      nome: cria.nome?.trim() || null,
-      raca: cria.raca?.trim() || null,
-      sexo: cria.sexo,
-      dataNascimento: dataISO,
-      pesoAtual: cria.pesoNascimento?.trim() || null,
-      categoria: cria.categoria!.trim(),
-      loteId: local.loteId,
-      pastoId: local.pastoId,
-      fazendaId: matriz.fazendaId,
-      maeId: matriz.id,
-      paiId,
-    });
+    let animalId: number;
+    try {
+      animalId = await tx.inserirAnimal({
+        userId: titular,
+        brinco: cria.brinco.trim(),
+        brincoEletronico: normalizeRfidKey(cria.brincoEletronico) || null,
+        nome: cria.nome?.trim() || null,
+        raca: cria.raca?.trim() || null,
+        sexo: cria.sexo,
+        dataNascimento: dataISO,
+        pesoAtual: cria.pesoNascimento?.trim() || null,
+        categoria: cria.categoria!.trim(),
+        loteId: local.loteId,
+        pastoId: local.pastoId,
+        fazendaId: matriz.fazendaId,
+        maeId: matriz.id,
+        paiId,
+      });
+    } catch (erro) {
+      if (!ehBrincoDuplicadoNoMysql(erro)) throw erro;
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: buildBrincoAtivoConflitoMessage(cria.brinco.trim()),
+      });
+    }
     if (local.loteId != null) {
       await tx.inserirMovimento(buildEntradaInicialLoteMovimentacao({
         userId: titular,
