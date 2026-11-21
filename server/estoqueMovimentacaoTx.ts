@@ -11,6 +11,7 @@ export type EstoqueItemParaMovimentacao = {
   valorTotalEstoque?: string | number | null;
   capitalInicializadoEm?: Date | string | null;
   nome: string | null;
+  situacao?: string | null;
 };
 
 export type MovimentacaoEstoqueInsert = {

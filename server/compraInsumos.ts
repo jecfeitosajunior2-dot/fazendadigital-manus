@@ -99,13 +99,18 @@ export type CompraInsumosTx = EstoqueMovimentacaoExecutor & {
     nome?: string | null;
     unidade?: string | null;
   }>>;
+  autorizarDono?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    fazendaId: number;
+  }): Promise<number>;
+  fin: FinanceiroNucleoTx;
   updateMovimentacaoEstornada(
     id: number,
     motivo: string,
     updatedByUserId: number,
     updatedByNome: string,
   ): Promise<void>;
-  fin: FinanceiroNucleoTx;
 };
 
 export type CompraInsumosStore = {
@@ -195,6 +200,11 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
       userId: number,
       registradoPor: string,
       input: ConfirmarCompraInsumosInput,
+      contexto?: {
+        executorId: number;
+        sessionVersionDaSessao: number | null;
+        fazendaId: number;
+      },
     ) {
       const idem = input.idempotencyKey.trim();
       if (idem.length < 8 || idem.length > 80) toTrpc(MSG_COMPRA_IDEMPOTENCY);
@@ -206,9 +216,10 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
       }));
 
       return store.transaction(async tx => {
-        const existente = await tx.findOperacaoPorIdempotency(userId, idem);
+        const dono = tx.autorizarDono && contexto ? await tx.autorizarDono(contexto) : userId;
+        const existente = await tx.findOperacaoPorIdempotency(dono, idem);
         if (existente) {
-          const titulos = await listarTitulosPorOrigemNoTx(tx.fin, userId, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, existente.id);
+          const titulos = await listarTitulosPorOrigemNoTx(tx.fin, dono, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, existente.id);
           return {
             success: true as const,
             operacaoId: existente.id,
@@ -217,10 +228,10 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
           };
         }
 
-        const fazenda = await tx.findFazenda(userId, input.fazendaId);
+        const fazenda = await tx.findFazenda(dono, input.fazendaId);
         if (!fazenda) toTrpc(MSG_COMPRA_FAZENDA_INVALIDA, "FORBIDDEN");
 
-        const fornecedor = await resolverPessoaFornecedor(tx, userId, input.fornecedorId, {
+        const fornecedor = await resolverPessoaFornecedor(tx, dono, input.fornecedorId, {
           ausente: MSG_COMPRA_FORNECEDOR_OBRIGATORIO,
           invalido: MSG_COMPRA_FORNECEDOR_INVALIDO,
           tipo: MSG_COMPRA_FORNECEDOR_TIPO,
@@ -229,7 +240,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
         const frete = Number(input.valorFrete ?? 0);
         let freteCredor: PessoaFornecedorSnapshot | null = null;
         if (frete > 0) {
-          freteCredor = await resolverPessoaFornecedor(tx, userId, input.freteCredorId, {
+          freteCredor = await resolverPessoaFornecedor(tx, dono, input.freteCredorId, {
             ausente: MSG_COMPRA_FRETE_CREDOR,
             invalido: MSG_COMPRA_FRETE_CREDOR_INVALIDO,
             tipo: MSG_COMPRA_FRETE_CREDOR_INVALIDO,
@@ -258,7 +269,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
         let operacaoId: number;
         try {
           operacaoId = await tx.insertOperacao({
-            userId,
+            userId: dono,
             fazendaId: input.fazendaId,
             tipo: ESTOQUE_OPERACAO_TIPO_ENTRADA,
             motivo: ESTOQUE_OPERACAO_MOTIVO_COMPRA,
@@ -277,9 +288,9 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
           });
         } catch (error) {
           if (isMysqlDuplicateKey(error)) {
-            const dup = await tx.findOperacaoPorIdempotency(userId, idem);
+            const dup = await tx.findOperacaoPorIdempotency(dono, idem);
             if (dup) {
-              const titulos = await listarTitulosPorOrigemNoTx(tx.fin, userId, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, dup.id);
+              const titulos = await listarTitulosPorOrigemNoTx(tx.fin, dono, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, dup.id);
               return {
                 success: true as const,
                 operacaoId: dup.id,
@@ -308,7 +319,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
             notaFiscal: input.numeroNf?.trim() || undefined,
             frete: linha.valorFrete > 0 ? persistirValor(linha.valorFrete) : undefined,
             valor: persistirValor(linha.valorTotal),
-            userId,
+            userId: dono,
             registradoPor,
           });
           movIds.push(criado.id);
@@ -327,7 +338,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
 
         const tituloIds = await integrarTitulosCompra(
           tx,
-          userId,
+          dono,
           {
             id: operacaoId,
             fazendaId: input.fazendaId,

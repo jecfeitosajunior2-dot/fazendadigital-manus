@@ -14,14 +14,11 @@ const bloco = routers.slice(routers.indexOf("const estoqueRouter"), routers.inde
 
 describe("Fase 5.2B.1 — isolamento de escrita do estoque", () => {
   it("mutações oficiais exigem fazenda ou produto do usuário antes de gravar", () => {
-    expect(bloco).toContain("assertFazendasEstoqueDoUsuario(ctx.user.id, fazendaIds)");
-    expect(bloco).toContain("assertProdutoEstoqueDoUsuario(userId, input.estoqueId)");
-    expect(bloco).toContain("assertProdutoEstoqueDoUsuario(ctx.user.id, input.estoqueId)");
-    expect(bloco).toContain("assertProdutosEstoqueDoUsuario(ctx.user.id, input.ids)");
-    expect(bloco).toContain("assertMovimentacaoEstoqueDoUsuario(ctx.user.id, input.id)");
-    expect(bloco).toContain("assertFazendaDoUsuario(ctx.user.id, input.fazendaId)");
-    expect(bloco).toContain("recusarEscritaEstoque");
-    expect(bloco).toContain("inArray(estoque.fazendaId, fazendasUsuario)");
+    expect(bloco).toContain("cadastrarProdutoEstoque(ctx.user, input)");
+    expect(bloco).toContain("editarProdutoEstoque(ctx.user, input)");
+    expect(bloco).toContain("autorizarMovimentoEstoque");
+    expect(bloco).toContain("PERMISSAO_ESTORNAR_ESTOQUE");
+    expect(bloco).toContain("recusarExclusaoFisicaEstoque()");
   });
 
   it("saída compartilhada recusa produto de outra fazenda antes do saldo", () => {

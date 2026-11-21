@@ -44,6 +44,12 @@ export type TransferenciaInsumosTx = TransferenciaSaldoExecutor & {
   listMovimentacoesOperacao(operacaoId: number): Promise<TransferenciaMovRow[]>;
   updateOperacaoEstornada(userId: number, id: number, motivo: string, em: Date): Promise<void>;
   updateMovimentacaoEstornada(id: number, motivo: string, userId: number, nome: string): Promise<void>;
+  autorizarDono?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    fazendaOrigemId: number;
+    fazendaDestinoId: number;
+  }): Promise<number>;
   transaction<T>(fn: (tx: TransferenciaInsumosTx) => Promise<T>): Promise<T>;
 };
 
@@ -61,22 +67,32 @@ export function createTransferenciaInsumosService(store: {
         dataOperacao: string;
         itens: { estoqueOrigemId: number; quantidade: string }[];
       },
+      contexto?: {
+        executorId: number;
+        sessionVersionDaSessao: number | null;
+        fazendaOrigemId: number;
+        fazendaDestinoId: number;
+      },
     ) {
       const erro = validarTransferenciaInsumosInput(input);
       if (erro) toTrpc(erro);
       try {
-        return await store.transaction(tx => transferirEstoqueNoTx(tx, {
-          userId,
-          registradoPor,
-          ...input,
-          dataOperacao: input.dataOperacao.slice(0, 10),
-        }));
+        return await store.transaction(async tx => {
+          const dono = tx.autorizarDono && contexto ? await tx.autorizarDono(contexto) : userId;
+          return transferirEstoqueNoTx(tx, {
+            userId: dono,
+            registradoPor,
+            ...input,
+            dataOperacao: input.dataOperacao.slice(0, 10),
+          });
+        });
       } catch (error) {
         recusarSeDeadlockEstoque(error);
         if (error instanceof TRPCError) throw error;
         if (isMysqlDuplicateKey(error)) {
           return store.transaction(async tx => {
-            const existente = await tx.findOperacaoPorIdem(userId, input.idempotencyKey);
+            const dono = tx.autorizarDono && contexto ? await tx.autorizarDono(contexto) : userId;
+            const existente = await tx.findOperacaoPorIdem(dono, input.idempotencyKey);
             if (existente) return { id: existente.id, idempotent: true, itemCount: input.itens.length };
             throw error;
           });

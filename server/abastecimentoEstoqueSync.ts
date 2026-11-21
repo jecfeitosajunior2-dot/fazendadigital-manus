@@ -64,6 +64,7 @@ async function findEstoqueCombustivel(
       categoria: estoque.categoria,
       quantidade: estoque.quantidade,
       controlarSaldo: estoque.controlarSaldo,
+      situacao: estoque.situacao,
     })
     .from(estoque)
     .where(eq(estoque.fazendaId, fazendaId));
@@ -75,6 +76,7 @@ async function findEstoqueCombustivel(
       nome: estoque.nome,
       quantidade: estoque.quantidade,
       controlarSaldo: estoque.controlarSaldo,
+      situacao: estoque.situacao,
     })
     .from(estoque)
     .where(eq(estoque.id, match.id))
@@ -83,7 +85,10 @@ async function findEstoqueCombustivel(
   return travado ?? null;
 }
 
-function assertCombustivelEstocavelNaFazenda(item: { controlarSaldo: boolean | null }): void {
+function assertCombustivelEstocavelNaFazenda(item: { controlarSaldo: boolean | null; situacao?: string | null }): void {
+  if ((item.situacao ?? "ativo") === "inativo") {
+    friendlyStockError("Produto inativo não recebe movimentação.");
+  }
   if (!produtoControlaSaldo(item.controlarSaldo)) {
     friendlyStockError(MSG_ABAST_FAZENDA_USO_IMEDIATO);
   }

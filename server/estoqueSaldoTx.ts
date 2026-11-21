@@ -81,6 +81,9 @@ async function criarMovimentacaoPeloSaldo(
 
   const item = await exec.findEstoque(input.estoqueId);
   if (!item) throw new Error("Produto não encontrado.");
+  if (item.situacao === "inativo") {
+    throw new Error("Produto inativo não recebe movimentação.");
+  }
   if (Number(item.fazendaId) !== Number(input.fazendaId)) {
     throw new Error("O produto não pertence à fazenda da movimentação.");
   }
@@ -224,6 +227,8 @@ export type TransferenciaSaldoExecutor = EstoqueMovimentacaoExecutor & {
     valorFrete: string;
     valorTotal: string;
   }): Promise<number>;
+  lerEstoque?(id: number): Promise<EstoqueItemParaMovimentacao | null>;
+  idDestinoSemTrava?(produtoId: number, fazendaId: number): Promise<number | null>;
 };
 
 export async function transferirEstoqueNoTx(
@@ -267,6 +272,22 @@ export async function transferirEstoqueNoTx(
   });
 
   const itens = [...input.itens].sort((a, b) => a.estoqueOrigemId - b.estoqueOrigemId);
+  if (exec.lerEstoque && exec.idDestinoSemTrava) {
+    const ids: number[] = [];
+    for (const item of itens) {
+      const origem = await exec.lerEstoque(item.estoqueOrigemId);
+      if (!origem) throw new Error("Produto de origem não encontrado.");
+      ids.push(origem.id);
+      const produtoId = origem.produtoId;
+      if (produtoId) {
+        const destinoId = await exec.idDestinoSemTrava(Number(produtoId), input.fazendaDestinoId);
+        if (destinoId) ids.push(destinoId);
+      }
+    }
+    for (const id of ordemTravaTransferencia(ids)) {
+      await exec.findEstoque(id);
+    }
+  }
   let itemIdx = 0;
   for (const item of itens) {
     itemIdx += 1;
@@ -326,6 +347,10 @@ export async function transferirEstoqueNoTx(
   return { id: operacaoId, idempotent: false, itemCount: input.itens.length };
 }
 
+export function ordemTravaTransferencia(ids: number[]): number[] {
+  return [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))].sort((a, b) => a - b);
+}
+
 export function persistirQuantidadeLegado(q: number): string {
   return persistirQuantidadeEstoque(q);
 }
@@ -359,6 +384,7 @@ export function mapEstoqueParaMovimentacao(row: typeof estoque.$inferSelect): Es
     valorTotalEstoque: row.valorTotalEstoque,
     capitalInicializadoEm: row.capitalInicializadoEm,
     nome: row.nome,
+    situacao: row.situacao,
     produtoId: row.produtoId ?? null,
   };
 }

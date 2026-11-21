@@ -8,9 +8,17 @@ import type { MotivoOperacional } from "./contextoOperacional";
 
 export const PERMISSAO_CONSULTAR_ESTOQUE = "estoque.visualizar";
 export const PERMISSAO_MOVIMENTAR_ESTOQUE = "estoque.criar";
+export const PERMISSAO_EDITAR_ESTOQUE = "estoque.editar";
+export const PERMISSAO_INATIVAR_ESTOQUE = "estoque.inativar";
+export const PERMISSAO_CONFIRMAR_ESTOQUE = "estoque.confirmar";
+export const PERMISSAO_ESTORNAR_ESTOQUE = "estoque.estornar";
 
 export const MSG_SEM_PERMISSAO_ESTOQUE = "Sem permissão para consultar o estoque.";
 export const MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE = "Sem permissão para movimentar o estoque.";
+export const MSG_SEM_PERMISSAO_EDITAR_ESTOQUE = "Sem permissão para editar o estoque.";
+export const MSG_SEM_PERMISSAO_INATIVAR_ESTOQUE = "Sem permissão para inativar o estoque.";
+export const MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE = "Sem permissão para confirmar esta operação de estoque.";
+export const MSG_SEM_PERMISSAO_ESTORNAR_ESTOQUE = "Sem permissão para estornar o estoque.";
 export const MSG_SEM_FAZENDA_ESTOQUE = "Você não tem acesso a esta fazenda.";
 export const MSG_EXCLUSAO_FISICA_ESTOQUE =
   "A exclusão do estoque está bloqueada. Apagar produto ou movimento deixaria saldo e histórico sem rastreio. Para corrigir uma quantidade, registre uma movimentação ou um estorno.";
@@ -93,18 +101,16 @@ export async function fazendasDaConsultaEstoque(
   });
 }
 
-export async function autorizarMovimentoEstoque(
+export async function autorizarEstoqueNaFazenda(
   io: IoEstoque,
-  pedido: PedidoBase & { fazendaId: number },
+  pedido: PedidoBase & { fazendaId: number; permissaoId: string },
+  semPermissao: string,
 ): Promise<{ ok: true; titularUserId: number } | RecusaEstoque> {
   return io.emTransacao(async (tx) => {
-    const decisao = await autorizarOperacaoPersistida(tx, {
-      ...pedido,
-      permissaoId: PERMISSAO_MOVIMENTAR_ESTOQUE,
-    });
+    const decisao = await autorizarOperacaoPersistida(tx, pedido);
     if (!decisao.ok) {
       if (decisao.motivo === "sem_permissao") {
-        return { ok: false, motivo: "sem_permissao", mensagem: MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE };
+        return { ok: false, motivo: "sem_permissao", mensagem: semPermissao };
       }
       if (decisao.motivo === "sem_fazenda") {
         return { ok: false, motivo: "sem_fazenda", mensagem: MSG_SEM_FAZENDA_ESTOQUE };
@@ -116,4 +122,14 @@ export async function autorizarMovimentoEstoque(
     }
     return { ok: true, titularUserId: decisao.contexto.titularUserId };
   });
+}
+
+export async function autorizarMovimentoEstoque(
+  io: IoEstoque,
+  pedido: PedidoBase & { fazendaId: number },
+): Promise<{ ok: true; titularUserId: number } | RecusaEstoque> {
+  return autorizarEstoqueNaFazenda(io, {
+    ...pedido,
+    permissaoId: PERMISSAO_MOVIMENTAR_ESTOQUE,
+  }, MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE);
 }

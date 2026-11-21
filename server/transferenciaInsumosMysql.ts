@@ -2,6 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { estoque, estoqueMovimentacoes, estoqueOperacoes, fazendas } from "../drizzle/schema";
 import { db } from "./db";
 import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
+import {
+  MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE,
+  PERMISSAO_CONFIRMAR_ESTOQUE,
+  autorizarEstoqueNaFazenda,
+  erroEstoque,
+} from "./consultaEstoqueAutorizada";
+import { consultaEstoqueNaTransacao } from "./consultaEstoqueDb";
 import { createTransferenciaInsumosService, type TransferenciaInsumosTx, type TransferenciaOperacaoRow } from "./transferenciaInsumos";
 import { mapEstoqueParaMovimentacao } from "./estoqueSaldoTx";
 
@@ -57,6 +64,39 @@ function criarTx(drizzleTx: Parameters<Parameters<typeof db.transaction>[0]>[0])
         eq(estoque.fazendaId, fazendaId),
       )).for("update").limit(1);
       return row ? mapEstoqueParaMovimentacao(row) : null;
+    },
+    async lerEstoque(id) {
+      const [row] = await drizzleTx.select().from(estoque).where(eq(estoque.id, id)).limit(1);
+      return row ? mapEstoqueParaMovimentacao(row) : null;
+    },
+    async idDestinoSemTrava(produtoId, fazendaId) {
+      const [row] = await drizzleTx.select({ id: estoque.id }).from(estoque).where(and(
+        eq(estoque.produtoId, produtoId),
+        eq(estoque.fazendaId, fazendaId),
+      )).limit(1);
+      return row?.id ?? null;
+    },
+    async autorizarDono(contexto: {
+      executorId: number;
+      sessionVersionDaSessao: number | null;
+      fazendaOrigemId: number;
+      fazendaDestinoId: number;
+    }) {
+      const io = { emTransacao: (fn: (tx: ReturnType<typeof consultaEstoqueNaTransacao>) => Promise<unknown>) => fn(consultaEstoqueNaTransacao(drizzleTx as never)) };
+      const fazendaIds = [contexto.fazendaOrigemId, contexto.fazendaDestinoId].sort((a, b) => a - b);
+      let titular: number | null = null;
+      for (const fazendaId of fazendaIds) {
+        const acesso = await autorizarEstoqueNaFazenda(io as never, {
+          executorId: contexto.executorId,
+          sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+          fazendaId,
+          permissaoId: PERMISSAO_CONFIRMAR_ESTOQUE,
+        }, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
+        if (!acesso.ok) throw erroEstoque(acesso, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
+        if (titular == null) titular = acesso.titularUserId;
+        else if (titular !== acesso.titularUserId) throw erroEstoque({ ok: false, motivo: "sem_fazenda" });
+      }
+      return titular ?? contexto.executorId;
     },
     async insertEstoqueDestino(origem, fazendaDestinoId, inicializarCapital) {
       const [full] = await drizzleTx.select().from(estoque).where(eq(estoque.id, origem.id)).limit(1);

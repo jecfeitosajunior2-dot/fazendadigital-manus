@@ -2,6 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { estoque, estoqueMovimentacoes, estoqueOperacoes, fazendas, pessoas } from "../drizzle/schema";
 import { db } from "./db";
 import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
+import {
+  MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE,
+  PERMISSAO_CONFIRMAR_ESTOQUE,
+  autorizarEstoqueNaFazenda,
+  erroEstoque,
+} from "./consultaEstoqueAutorizada";
+import { consultaEstoqueNaTransacao } from "./consultaEstoqueDb";
 import { createFinanceiroNucleoTxFromDrizzle, type FinanceiroDrizzleTx } from "./financeiroNucleo";
 import {
   createCompraInsumosService,
@@ -173,6 +180,18 @@ export function createCompraInsumosTxFromDrizzle(drizzleTx: FinanceiroDrizzleTx)
     },
     async updateEstoque(id, patch) {
       await drizzleTx.update(estoque).set(patch).where(eq(estoque.id, id));
+    },
+    async autorizarDono(contexto) {
+      const acesso = await autorizarEstoqueNaFazenda({
+        emTransacao: (fn) => fn(consultaEstoqueNaTransacao(drizzleTx as never)),
+      }, {
+        executorId: contexto.executorId,
+        sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+        fazendaId: contexto.fazendaId,
+        permissaoId: PERMISSAO_CONFIRMAR_ESTOQUE,
+      }, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
+      if (!acesso.ok) throw erroEstoque(acesso, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
+      return acesso.titularUserId;
     },
     async updateMovimentacaoEstornada(id, motivo, updatedByUserId, updatedByNome) {
       await drizzleTx.update(estoqueMovimentacoes).set({

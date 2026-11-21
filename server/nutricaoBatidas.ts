@@ -602,6 +602,9 @@ export const nutricaoBatidasStore: BatidaStore = {
       async debitarEstoque(estoqueId, quantidadeUnidade) {
         const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
+        if ((item.situacao ?? "ativo") === "inativo") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Produto inativo não recebe movimentação." });
+        }
         if (!produtoControlaSaldo(item.controlarSaldo)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
         }
