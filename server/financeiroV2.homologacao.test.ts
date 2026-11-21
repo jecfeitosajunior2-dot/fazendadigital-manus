@@ -116,7 +116,28 @@ describe("financeiro V2 — contrato da conta", () => {
     expect(documentoFinanceiroVisivel(10, [], funcionario)).toBe(true);
     expect(documentoFinanceiroVisivel(20, [], funcionario)).toBe(false);
     expect(documentoFinanceiroVisivel(10, [{ fazendaId: 20 }], funcionario)).toBe(false);
+    expect(documentoFinanceiroVisivel(10, [{ fazendaId: null }], funcionario)).toBe(false);
     expect(documentoFinanceiroVisivel(null, [], funcionario)).toBe(false);
     expect(documentoFinanceiroVisivel(20, [{ fazendaId: 20 }], { titularUserId: 1, papel: "principal", fazendaIds: [] })).toBe(true);
+  });
+
+  it("o relatório lê as apropriações antes de somar e a exportação usa essa mesma consulta", () => {
+    const nucleo = ler("financeiroNucleo.ts");
+    const inicio = nucleo.indexOf("async relatorioFinanceiro(");
+    const fim = nucleo.indexOf("async apropriar(", inicio);
+    const corpo = nucleo.slice(inicio, fim);
+    expect(corpo).toContain("listApropriacoes(userId, titulo.id)");
+    expect(corpo).toContain("documentoFinanceiroVisivel(");
+    expect(corpo).not.toContain("documentoFinanceiroVisivel(titulo.fazendaOrigemId, [], escopo)");
+    expect(corpo).not.toContain("getLocal");
+    expect(corpo).not.toContain("withDbFallback");
+    const pagina = ler("../client/src/pages/FinanceiroRelatoriosPage.tsx");
+    expect(pagina).toContain("trpc.financeiroV2.relatorioFinanceiro.useQuery");
+    expect(pagina).toContain("ListExportButtons");
+    expect(pagina).not.toContain("/api/");
+    const painel = ler("painelControle.ts");
+    const chamada = painel.slice(painel.indexOf("async function carregarFinanceiroPainel"), painel.indexOf("async function carregarComercialPainel"));
+    expect(chamada).toContain("financeiroNucleoService.relatorioFinanceiro(userId,");
+    expect(chamada).not.toContain("relatorioFinanceiro(userId, periodo,");
   });
 });

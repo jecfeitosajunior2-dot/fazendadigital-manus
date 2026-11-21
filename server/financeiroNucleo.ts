@@ -1331,23 +1331,45 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
             })),
           });
         }
+        const titulosTocados = new Map<number, number[]>();
         for (const mov of movimentos) {
-          if (mov.liquidacaoId == null) continue;
+          if (mov.liquidacaoId == null) {
+            titulosTocados.set(mov.id, []);
+            continue;
+          }
           const alocs = await tx.listAlocacoesLiquidacao(userId, mov.liquidacaoId);
           const fazendas = new Set<number>();
+          const ids = new Set<number>();
           for (const a of alocs) {
             const parcela = parcelaPorId.get(a.parcelaId);
             const titulo = parcela ? tituloPorId.get(parcela.tituloId) : null;
-            if (titulo?.fazendaOrigemId != null) fazendas.add(titulo.fazendaOrigemId);
+            if (!titulo) continue;
+            ids.add(titulo.id);
+            if (titulo.fazendaOrigemId != null) fazendas.add(titulo.fazendaOrigemId);
           }
           mov.fazendaOrigemId = fazendas.size === 1 ? [...fazendas][0]! : null;
+          titulosTocados.set(mov.id, [...ids]);
         }
-        const titulosVisiveis = !escopo || escopo.papel === "principal"
-          ? titulosEntrada
-          : titulosEntrada.filter((titulo) => documentoFinanceiroVisivel(titulo.fazendaOrigemId, [], escopo));
+        const apropriacoesPorTitulo = new Map<number, Array<{ fazendaId: number | null }>>();
+        for (const titulo of titulos) {
+          apropriacoesPorTitulo.set(titulo.id, await tx.listApropriacoes(userId, titulo.id));
+        }
+        const tituloLiberado = (titulo: { id: number; fazendaOrigemId: number | null }) => {
+          if (!escopo || escopo.papel === "principal") return true;
+          return documentoFinanceiroVisivel(
+            titulo.fazendaOrigemId,
+            apropriacoesPorTitulo.get(titulo.id) ?? [],
+            escopo,
+          );
+        };
+        const titulosVisiveis = titulosEntrada.filter((titulo) => tituloLiberado(titulo));
+        const idsVisiveis = new Set(titulosVisiveis.map((titulo) => titulo.id));
         const movimentosVisiveis = !escopo || escopo.papel === "principal"
           ? movimentos
-          : movimentos.filter((mov) => mov.fazendaOrigemId != null && escopo.fazendaIds.includes(mov.fazendaOrigemId));
+          : movimentos.filter((mov) => {
+            const ids = titulosTocados.get(mov.id) ?? [];
+            return ids.length > 0 && ids.every((id) => idsVisiveis.has(id));
+          });
         const contasVisiveis = !escopo || escopo.papel === "principal"
           ? contasComSaldo
           : [];

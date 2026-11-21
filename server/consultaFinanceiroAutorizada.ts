@@ -55,7 +55,8 @@ export function documentoFinanceiroVisivel(
   const fazendas = new Set<number>();
   if (fazendaOrigemId != null) fazendas.add(fazendaOrigemId);
   for (const linha of apropriacoes) {
-    if (linha.fazendaId != null) fazendas.add(linha.fazendaId);
+    if (linha.fazendaId == null) return false;
+    fazendas.add(linha.fazendaId);
   }
   if (fazendas.size === 0) return false;
   for (const id of fazendas) {
