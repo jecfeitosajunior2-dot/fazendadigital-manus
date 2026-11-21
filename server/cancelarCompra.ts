@@ -12,6 +12,15 @@ import {
   normalizarMotivoCancelamentoCompra,
 } from "../shared/compraCancelamento";
 import { db } from "./db";
+import { isDatabaseUnavailable } from "./localFallbackStore";
+import {
+  MSG_SEM_PERMISSAO_CANCELAR_COMPRAS,
+  PERMISSAO_CANCELAR_COMPRAS,
+  erroCompra,
+  recusarCompraSemMysql,
+  type SessaoExecutorCompra,
+} from "./consultaCompraAutorizada";
+import { autorizarCompraNaTransacao } from "./consultaCompraDb";
 
 export type CancelarCompraInput = {
   compraId: number;
@@ -30,7 +39,11 @@ function affectedRowsOf(result: unknown): number {
   return Number(asArray?.[0]?.affectedRows ?? asObj?.affectedRows ?? 0);
 }
 
-export async function cancelarCompraComercial(userId: number, input: CancelarCompraInput) {
+export async function cancelarCompraComercial(
+  userId: number,
+  input: CancelarCompraInput,
+  contexto?: SessaoExecutorCompra,
+) {
   const compraId = input.compraId;
   const motivo = normalizarMotivoCancelamentoCompra(input.motivo);
   if (!Number.isInteger(compraId) || compraId <= 0) {
@@ -43,11 +56,37 @@ export async function cancelarCompraComercial(userId: number, input: CancelarCom
 
   try {
     return await db.transaction(async tx => {
-      const [compra] = await tx
+      let dono = userId;
+      if (contexto) {
+        const [peek] = await tx
+          .select({ fazendaId: compras.fazendaId, userId: compras.userId })
+          .from(compras)
+          .where(eq(compras.id, compraId))
+          .limit(1);
+        if (!peek?.fazendaId || peek.userId == null) {
+          toTrpc(MSG_COMPRA_CANCELAR_NAO_ENCONTRADA, "NOT_FOUND");
+        }
+        const acesso = await autorizarCompraNaTransacao(tx as never, {
+          executorId: contexto.executorId,
+          sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+          fazendaId: peek.fazendaId,
+          permissaoId: PERMISSAO_CANCELAR_COMPRAS,
+        }, MSG_SEM_PERMISSAO_CANCELAR_COMPRAS);
+        if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_CANCELAR_COMPRAS);
+        if (peek.userId !== acesso.titularUserId) {
+          toTrpc(MSG_COMPRA_CANCELAR_NAO_ENCONTRADA, "NOT_FOUND");
+        }
+        dono = acesso.titularUserId;
+      }
+
+      const consulta = tx
         .select({ id: compras.id, status: compras.status })
         .from(compras)
-        .where(and(eq(compras.id, compraId), eq(compras.userId, userId)))
-        .limit(1);
+        .where(and(eq(compras.id, compraId), eq(compras.userId, dono)));
+      const travada = typeof (consulta as { for?: unknown }).for === "function"
+        ? (consulta as { for: (modo: "update") => typeof consulta }).for("update")
+        : consulta;
+      const [compra] = await travada.limit(1);
       if (!compra) toTrpc(MSG_COMPRA_CANCELAR_NAO_ENCONTRADA, "NOT_FOUND");
       if (compra.status === "cancelado") toTrpc(MSG_COMPRA_CANCELAR_JA_CANCELADA);
       if (compra.status !== "concluido") toTrpc(MSG_COMPRA_CANCELAR_NAO_CONCLUIDA);
@@ -55,7 +94,7 @@ export async function cancelarCompraComercial(userId: number, input: CancelarCom
       const vinculados = await tx
         .select({ id: animais.id })
         .from(animais)
-        .where(and(eq(animais.userId, userId), eq(animais.compraId, compraId)));
+        .where(and(eq(animais.userId, dono), eq(animais.compraId, compraId)));
       if (vinculados.length > 0) {
         toTrpc(`${MSG_COMPRA_CANCELAR_COM_ANIMAIS} ${MSG_COMPRA_CANCELAR_COM_ANIMAIS_DETALHE}`);
       }
@@ -73,7 +112,7 @@ export async function cancelarCompraComercial(userId: number, input: CancelarCom
         .where(
           and(
             eq(compras.id, compraId),
-            eq(compras.userId, userId),
+            eq(compras.userId, dono),
             eq(compras.status, "concluido"),
           ),
         );
@@ -85,6 +124,7 @@ export async function cancelarCompraComercial(userId: number, input: CancelarCom
     });
   } catch (error) {
     if (error instanceof TRPCError) throw error;
+    if (isDatabaseUnavailable(error)) recusarCompraSemMysql();
     console.error("[compra.cancelar]", error);
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",

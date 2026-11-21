@@ -142,6 +142,11 @@ export type ReceberAnimalCompraTx = {
     observacoes: string;
     compraRecebimentoId: number;
   }): Promise<number>;
+  autorizarDono?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    compraId: number;
+  }): Promise<number>;
 };
 
 export type ReceberAnimalCompraStore = {
@@ -160,7 +165,11 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
   return async function receberAnimalCompra(
     userId: number,
     input: ReceberAnimalCompraInput,
-    opts?: { usuarioNome?: string | null },
+    opts?: {
+      usuarioNome?: string | null;
+      executorId?: number;
+      sessionVersionDaSessao?: number | null;
+    },
   ) {
     const parsed = normalizarRecebimentoAnimalInput(input);
     if (!parsed.ok) toTrpc(parsed.message);
@@ -169,8 +178,18 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
     const obsHistorico = observacaoRecebimentoCompra(parsed.compraId);
 
     return store.transaction(async tx => {
-      const compra = await tx.getCompra(userId, parsed.compraId);
-      if (!compra || compra.userId !== userId) {
+      let dono = userId;
+      let executor = userId;
+      if (tx.autorizarDono && opts?.executorId != null) {
+        dono = await tx.autorizarDono({
+          executorId: opts.executorId,
+          sessionVersionDaSessao: opts.sessionVersionDaSessao ?? null,
+          compraId: parsed.compraId,
+        });
+        executor = opts.executorId;
+      }
+      const compra = await tx.getCompra(dono, parsed.compraId);
+      if (!compra || compra.userId !== dono) {
         toTrpc(MSG_RECEBIMENTO_COMPRA_NAO_ENCONTRADA, "NOT_FOUND");
       }
       if (compra.status === "cancelado") toTrpc(MSG_RECEBIMENTO_COMPRA_CANCELADA);
@@ -180,13 +199,13 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
       }
       const fazendaId = Number(compra.fazendaId);
 
-      const grupo = await tx.lockGrupo(userId, parsed.compraId, parsed.compraGrupoId);
-      if (!grupo || grupo.userId !== userId || grupo.compraId !== parsed.compraId) {
+      const grupo = await tx.lockGrupo(dono, parsed.compraId, parsed.compraGrupoId);
+      if (!grupo || grupo.userId !== dono || grupo.compraId !== parsed.compraId) {
         toTrpc(MSG_RECEBIMENTO_GRUPO_NAO_ENCONTRADO, "NOT_FOUND");
       }
 
       const identificados = await tx.countIdentificadosNoGrupo(
-        userId,
+        dono,
         parsed.compraId,
         grupo.id,
       );
@@ -195,19 +214,19 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
       }
 
       if (parsed.brinco) {
-        const brincoConflito = await tx.findBrincoAtivoConflito(userId, parsed.brinco, fazendaId);
+        const brincoConflito = await tx.findBrincoAtivoConflito(dono, parsed.brinco, fazendaId);
         if (brincoConflito) toTrpc(buildBrincoAtivoConflitoMessage(parsed.brinco, brincoConflito));
       }
 
       if (parsed.rfid) {
         const rfidKey = normalizeRfidKey(parsed.rfid);
-        const rfidConflito = await tx.findRfidConflito(userId, rfidKey);
+        const rfidConflito = await tx.findRfidConflito(dono, rfidKey);
         if (rfidConflito) toTrpc(buildRfidConflitoMessage(rfidConflito));
       }
 
       let lote: ReceberAnimalCompraLote | null = null;
       if (parsed.loteId != null) {
-        lote = await tx.findLote(userId, parsed.loteId);
+        lote = await tx.findLote(dono, parsed.loteId);
         if (!lote) toTrpc(MSG_RECEBIMENTO_LOTE_NAO_ENCONTRADO, "NOT_FOUND");
         if (lote.ativo === false) toTrpc(MSG_RECEBIMENTO_LOTE_INATIVO);
         if (lote.fazendaId == null || Number(lote.fazendaId) !== fazendaId) {
@@ -219,7 +238,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
       const pastoIdInformado = parsed.pastoId;
       const pastoIdEfetivo = pastoIdInformado ?? lote?.pastoAtualId ?? null;
       if (pastoIdEfetivo != null) {
-        pasto = await tx.findPasto(userId, pastoIdEfetivo);
+        pasto = await tx.findPasto(dono, pastoIdEfetivo);
         if (!pasto) toTrpc(MSG_RECEBIMENTO_PASTO_NAO_ENCONTRADO, "NOT_FOUND");
         if (pasto.fazendaId == null || Number(pasto.fazendaId) !== fazendaId) {
           toTrpc(MSG_RECEBIMENTO_PASTO_FAZENDA);
@@ -228,7 +247,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
 
       const pesoTextoValor = parsed.pesoKg != null ? pesoTexto(parsed.pesoKg) : null;
       const animalId = await tx.insertAnimal({
-        userId,
+        userId: dono,
         fazendaId,
         sexo: grupo.sexo,
         categoria: grupo.categoria,
@@ -249,7 +268,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
 
       const recebidoEm = new Date();
       const snapshot = montarSnapshotRecebimentoCompra({
-        userId,
+        userId: dono,
         compraId: parsed.compraId,
         compraGrupoId: grupo.id,
         animalId,
@@ -260,7 +279,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         pesoTexto: pesoTextoValor,
         loteDestinoId: lote?.id ?? null,
         pastoDestinoId: pasto?.id ?? null,
-        recebidoPorUserId: userId,
+        recebidoPorUserId: executor,
       });
       const recebimentoId = await tx.insertRecebimento({
         ...snapshot,
@@ -270,7 +289,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
 
       if (pesoTextoValor) {
         const pesagemId = await tx.insertPesagem({
-          userId,
+          userId: dono,
           animalId,
           peso: pesoTextoValor,
           data: parsed.dataRecebimento,
@@ -282,7 +301,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
 
       if (lote) {
         const movId = await tx.insertMovimentacao({
-          userId,
+          userId: dono,
           animalId,
           loteOrigemId: null,
           loteDestinoId: lote.id,
@@ -313,7 +332,7 @@ export function createReceberAnimalCompraService(store: ReceberAnimalCompraStore
         compraId: parsed.compraId,
         compraGrupoId: grupo.id,
         fazendaId,
-        userId,
+        userId: dono,
         statusCompra: compra.status,
       };
     });

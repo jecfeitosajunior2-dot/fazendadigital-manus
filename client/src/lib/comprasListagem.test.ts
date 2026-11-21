@@ -256,7 +256,7 @@ describe("comprasListagem — filtros no padrão de Vendas", () => {
     expect(listagemServer).toContain("eq(compras.userId, where.userId)");
     expect(listagemServer).toContain("eq(compras.fazendaId, where.fazendaId)");
     expect(router).toContain("comprasListInputSchema");
-    expect(router).toContain("listarComprasDoUsuario(ctx.user.id, input)");
+    expect(router).toContain("listarComprasAutorizadas(");
     expect(filtrarComprasListagem(lista, { fazendaId: fazendaJ }).some(c => c.fazendaId === fazendaB)).toBe(
       false,
     );

@@ -67,6 +67,17 @@ export type CompraDocumentosStore = {
     >,
   ): Promise<boolean>;
   deleteDocumento(id: number, userId: number): Promise<boolean>;
+  resolverDonoArquivo?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    documentoId: number;
+  }): Promise<number | null>;
+  autorizarDono?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    compraId: number;
+    permissaoId: string;
+  }): Promise<number>;
 };
 
 export type CompraDocumentosServiceDeps = {
@@ -112,6 +123,21 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     return compra;
   }
 
+  async function donoDoDocumento(
+    userId: number,
+    compraId: number,
+    sessionVersionDaSessao: number | null | undefined,
+    permissaoId: string,
+  ) {
+    if (sessionVersionDaSessao === undefined || !deps.store.autorizarDono) return userId;
+    return deps.store.autorizarDono({
+      executorId: userId,
+      sessionVersionDaSessao,
+      compraId,
+      permissaoId,
+    });
+  }
+
   async function listarPublicos(userId: number, compraId: number): Promise<CompraDocumentoPublico[]> {
     await assertCompraDoUsuario(userId, compraId);
     const rows = await deps.store.listDocumentos(userId, compraId);
@@ -129,6 +155,7 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
       substituir?: boolean;
       uploadedByUserId: number;
       uploadedByNome?: string | null;
+      sessionVersionDaSessao?: number | null;
     },
   ) {
     if (!isCompraDocumentoTipo(input.tipo)) toTrpc(MSG_COMPRA_DOC_TIPO);
@@ -139,8 +166,14 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     });
     if (!validacao.ok) toTrpc(validacao.message);
 
-    await assertCompraDoUsuario(userId, input.compraId);
-    const existente = await deps.store.getDocumentoPorTipo(userId, input.compraId, input.tipo);
+    const dono = await donoDoDocumento(
+      userId,
+      input.compraId,
+      input.sessionVersionDaSessao,
+      "compras.criar",
+    );
+    await assertCompraDoUsuario(dono, input.compraId);
+    const existente = await deps.store.getDocumentoPorTipo(dono, input.compraId, input.tipo);
     if (existente && !input.substituir) toTrpc(MSG_COMPRA_DOC_JA_EXISTE);
 
     const nomeOriginal = sanitizarNomeOriginalPdf(input.nomeOriginal);
@@ -159,7 +192,7 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     const uploadedByNome = String(input.uploadedByNome ?? "").trim() || null;
 
     if (existente) {
-      const ok = await deps.store.updateDocumento(existente.id, userId, {
+      const ok = await deps.store.updateDocumento(existente.id, dono, {
         nomeOriginal,
         storagePath,
         uploadedAt,
@@ -176,7 +209,7 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     }
 
     const id = await deps.store.insertDocumento({
-      userId,
+      userId: dono,
       compraId: input.compraId,
       tipo: input.tipo,
       nomeOriginal,
@@ -189,13 +222,22 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     return { success: true as const, id, substituido: false, arquivoAnteriorOrfao: null as string | null };
   }
 
-  async function excluir(userId: number, input: { compraId: number; documentoId: number }) {
-    await assertCompraDoUsuario(userId, input.compraId);
-    const doc = await deps.store.getDocumento(userId, input.documentoId);
+  async function excluir(
+    userId: number,
+    input: { compraId: number; documentoId: number; sessionVersionDaSessao?: number | null },
+  ) {
+    const dono = await donoDoDocumento(
+      userId,
+      input.compraId,
+      input.sessionVersionDaSessao,
+      "compras.criar",
+    );
+    await assertCompraDoUsuario(dono, input.compraId);
+    const doc = await deps.store.getDocumento(dono, input.documentoId);
     if (!doc || doc.compraId !== input.compraId) {
       toTrpc(MSG_COMPRA_DOC_DOCUMENTO_NAO_ENCONTRADO, "NOT_FOUND");
     }
-    const ok = await deps.store.deleteDocumento(doc.id, userId);
+    const ok = await deps.store.deleteDocumento(doc.id, dono);
     if (!ok) toTrpc(MSG_COMPRA_DOC_DOCUMENTO_NAO_ENCONTRADO, "NOT_FOUND");
     return {
       success: true as const,
@@ -203,10 +245,24 @@ export function createCompraDocumentosService(deps: CompraDocumentosServiceDeps)
     };
   }
 
-  async function carregarArquivo(userId: number, documentoId: number) {
-    const doc = await deps.store.getDocumento(userId, documentoId);
+  async function carregarArquivo(
+    userId: number,
+    documentoId: number,
+    sessao?: { sessionVersionDaSessao?: number | null },
+  ) {
+    const dono = deps.store.resolverDonoArquivo
+      ? await deps.store.resolverDonoArquivo({
+          executorId: userId,
+          sessionVersionDaSessao: sessao?.sessionVersionDaSessao ?? null,
+          documentoId,
+        })
+      : userId;
+    if (dono == null) return null;
+    const doc = dono === userId
+      ? await deps.store.getDocumento(userId, documentoId)
+      : await deps.store.getDocumento(dono, documentoId);
     if (!doc) return null;
-    const compra = await deps.store.getCompra(userId, doc.compraId);
+    const compra = await deps.store.getCompra(dono, doc.compraId);
     if (!compra) return null;
     const buffer = await deps.readFile(doc.storagePath);
     if (!buffer) return null;

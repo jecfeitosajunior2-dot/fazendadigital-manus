@@ -2,6 +2,14 @@ import { promises as fs } from "node:fs";
 import { and, eq } from "drizzle-orm";
 import { compraDocumentos, compras } from "../drizzle/schema";
 import { db } from "./db";
+import { TRPCError } from "@trpc/server";
+import {
+  MSG_SEM_PERMISSAO_CRIAR_COMPRAS,
+  MSG_SEM_PERMISSAO_VER_COMPRAS,
+  PERMISSAO_VISUALIZAR_COMPRAS,
+  erroCompra,
+} from "./consultaCompraAutorizada";
+import { autorizarCompraNaTransacao } from "./consultaCompraDb";
 import { env } from "./_core/env";
 import { getLocalManusStoragePath } from "./_core/localManusStorage";
 import { uploadToStorage } from "./_core/storage";
@@ -113,6 +121,59 @@ export const compraDocumentosStore: CompraDocumentosStore = {
         0,
     );
     return affected > 0;
+  },
+
+  async autorizarDono(contexto) {
+    return db.transaction(async (tx) => {
+      const [peek] = await tx
+        .select({ fazendaId: compras.fazendaId, userId: compras.userId })
+        .from(compras)
+        .where(eq(compras.id, contexto.compraId))
+        .limit(1);
+      if (!peek?.fazendaId || peek.userId == null) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
+      }
+      const acesso = await autorizarCompraNaTransacao(tx as never, {
+        executorId: contexto.executorId,
+        sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+        fazendaId: peek.fazendaId,
+        permissaoId: contexto.permissaoId,
+      }, MSG_SEM_PERMISSAO_CRIAR_COMPRAS);
+      if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_CRIAR_COMPRAS);
+      if (peek.userId !== acesso.titularUserId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
+      }
+      return acesso.titularUserId;
+    });
+  },
+
+  async resolverDonoArquivo(contexto) {
+    const [doc] = await db
+      .select({ compraId: compraDocumentos.compraId })
+      .from(compraDocumentos)
+      .where(eq(compraDocumentos.id, contexto.documentoId))
+      .limit(1);
+    if (!doc) return null;
+    try {
+      return await db.transaction(async (tx) => {
+        const [peek] = await tx
+          .select({ fazendaId: compras.fazendaId, userId: compras.userId })
+          .from(compras)
+          .where(eq(compras.id, doc.compraId))
+          .limit(1);
+        if (!peek?.fazendaId || peek.userId == null) return null;
+        const acesso = await autorizarCompraNaTransacao(tx as never, {
+          executorId: contexto.executorId,
+          sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+          fazendaId: peek.fazendaId,
+          permissaoId: PERMISSAO_VISUALIZAR_COMPRAS,
+        }, MSG_SEM_PERMISSAO_VER_COMPRAS);
+        if (!acesso.ok || peek.userId !== acesso.titularUserId) return null;
+        return acesso.titularUserId;
+      });
+    } catch {
+      return null;
+    }
   },
 };
 

@@ -4,7 +4,9 @@ import { db } from "./db";
 import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import {
   MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE,
+  MSG_SEM_PERMISSAO_ESTORNAR_ESTOQUE,
   PERMISSAO_CONFIRMAR_ESTOQUE,
+  PERMISSAO_ESTORNAR_ESTOQUE,
   autorizarEstoqueNaFazenda,
   erroEstoque,
 } from "./consultaEstoqueAutorizada";
@@ -90,7 +92,11 @@ export function createCompraInsumosTxFromDrizzle(drizzleTx: FinanceiroDrizzleTx)
       return row ? mapOperacao(row) : null;
     },
     async lockOperacao(userId, id) {
-      return this.findOperacao(userId, id);
+      const [row] = await drizzleTx.select().from(estoqueOperacoes)
+        .where(and(eq(estoqueOperacoes.id, id), eq(estoqueOperacoes.userId, userId)))
+        .for("update")
+        .limit(1);
+      return row ? mapOperacao(row) : null;
     },
     async insertOperacao(row) {
       const result = await drizzleTx.insert(estoqueOperacoes).values({
@@ -182,15 +188,19 @@ export function createCompraInsumosTxFromDrizzle(drizzleTx: FinanceiroDrizzleTx)
       await drizzleTx.update(estoque).set(patch).where(eq(estoque.id, id));
     },
     async autorizarDono(contexto) {
+      const permissaoId = contexto.permissaoId ?? PERMISSAO_CONFIRMAR_ESTOQUE;
+      const semPermissao = permissaoId === PERMISSAO_ESTORNAR_ESTOQUE
+        ? MSG_SEM_PERMISSAO_ESTORNAR_ESTOQUE
+        : MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE;
       const acesso = await autorizarEstoqueNaFazenda({
         emTransacao: (fn) => fn(consultaEstoqueNaTransacao(drizzleTx as never)),
       }, {
         executorId: contexto.executorId,
         sessionVersionDaSessao: contexto.sessionVersionDaSessao,
         fazendaId: contexto.fazendaId,
-        permissaoId: PERMISSAO_CONFIRMAR_ESTOQUE,
-      }, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
-      if (!acesso.ok) throw erroEstoque(acesso, MSG_SEM_PERMISSAO_CONFIRMAR_ESTOQUE);
+        permissaoId,
+      }, semPermissao);
+      if (!acesso.ok) throw erroEstoque(acesso, semPermissao);
       return acesso.titularUserId;
     },
     async updateMovimentacaoEstornada(id, motivo, updatedByUserId, updatedByNome) {

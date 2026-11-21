@@ -6,22 +6,25 @@ import {
   unificarAnimaisRecebidosCompra,
   type RecebimentoCompraListaItem,
 } from "../shared/compraRecebimentosListagem";
+import { compraVisivelNoEscopo, type EscopoConsultaCompra } from "./consultaCompraAutorizada";
 import { db } from "./db";
 
 export async function listarRecebimentosCompra(
   userId: number,
   compraId: number,
+  escopo?: EscopoConsultaCompra,
 ): Promise<RecebimentoCompraListaItem[]> {
   if (!Number.isInteger(compraId) || compraId <= 0) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
   }
 
+  const dono = escopo?.titularUserId ?? userId;
   const [compra] = await db
-    .select({ id: compras.id, userId: compras.userId })
+    .select({ id: compras.id, userId: compras.userId, fazendaId: compras.fazendaId })
     .from(compras)
-    .where(and(eq(compras.id, compraId), eq(compras.userId, userId)))
+    .where(and(eq(compras.id, compraId), eq(compras.userId, dono)))
     .limit(1);
-  if (!compra) {
+  if (!compra || (escopo && !compraVisivelNoEscopo(compra.fazendaId, escopo))) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
   }
 
@@ -43,7 +46,7 @@ export async function listarRecebimentosCompra(
       recebidoEm: compraRecebimentos.recebidoEm,
     })
     .from(compraRecebimentos)
-    .where(and(eq(compraRecebimentos.userId, userId), eq(compraRecebimentos.compraId, compra.id)));
+    .where(and(eq(compraRecebimentos.userId, dono), eq(compraRecebimentos.compraId, compra.id)));
 
   const loteIds = [...new Set(rows.map(r => r.loteDestinoId).filter((id): id is number => id != null && id > 0))];
   const pastoIds = [...new Set(rows.map(r => r.pastoDestinoId).filter((id): id is number => id != null && id > 0))];
@@ -53,7 +56,7 @@ export async function listarRecebimentosCompra(
     const loteRows = await db
       .select({ id: lotes.id, nome: lotes.nome })
       .from(lotes)
-      .where(and(eq(lotes.userId, userId), inArray(lotes.id, loteIds)));
+      .where(and(eq(lotes.userId, dono), inArray(lotes.id, loteIds)));
     for (const lote of loteRows) loteNomePorId.set(lote.id, lote.nome);
   }
 
@@ -62,7 +65,7 @@ export async function listarRecebimentosCompra(
     const pastoRows = await db
       .select({ id: pastos.id, nome: pastos.nome })
       .from(pastos)
-      .where(and(eq(pastos.userId, userId), inArray(pastos.id, pastoIds)));
+      .where(and(eq(pastos.userId, dono), inArray(pastos.id, pastoIds)));
     for (const pasto of pastoRows) pastoNomePorId.set(pasto.id, pasto.nome);
   }
 
@@ -84,7 +87,7 @@ export async function listarRecebimentosCompra(
       dataEntrada: animais.dataEntrada,
     })
     .from(animais)
-    .where(and(eq(animais.userId, userId), eq(animais.compraId, compra.id)));
+    .where(and(eq(animais.userId, dono), eq(animais.compraId, compra.id)));
 
   const grupos = await db
     .select({
@@ -93,7 +96,7 @@ export async function listarRecebimentosCompra(
       sexo: compraGrupos.sexo,
     })
     .from(compraGrupos)
-    .where(and(eq(compraGrupos.compraId, compra.id), eq(compraGrupos.userId, userId)));
+    .where(and(eq(compraGrupos.compraId, compra.id), eq(compraGrupos.userId, dono)));
 
   return unificarAnimaisRecebidosCompra({
     compraId: compra.id,

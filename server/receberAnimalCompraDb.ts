@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import {
   animalLoteMovimentacoes,
@@ -10,9 +11,20 @@ import {
   pesagens,
 } from "../drizzle/schema";
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
+import { MSG_RECEBIMENTO_COMPRA_NAO_ENCONTRADA } from "../shared/compraRecebimento";
+import { isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { normalizeRfidKey } from "../shared/rfidUnicidade";
 import { dataCivilParaColunaDate } from "../shared/dataCivil";
 import { db } from "./db";
+import { isDatabaseUnavailable } from "./localFallbackStore";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
+import {
+  MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS,
+  PERMISSAO_CONFIRMAR_COMPRAS,
+  erroCompra,
+  recusarCompraSemMysql,
+} from "./consultaCompraAutorizada";
+import { autorizarCompraNaTransacao } from "./consultaCompraDb";
 import {
   createReceberAnimalCompraService,
   type ReceberAnimalCompraGrupo,
@@ -99,6 +111,7 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
             sql`LOWER(TRIM(${animais.brinco})) = ${key}`,
           ),
         )
+        .for("update")
         .limit(1);
       return row ?? null;
     },
@@ -116,6 +129,7 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
             sql`TRIM(${animais.brincoEletronico}) = ${key}`,
           ),
         )
+        .for("update")
         .limit(1);
       return row ?? null;
     },
@@ -220,12 +234,44 @@ function txFromDrizzle(tx: typeof db): ReceberAnimalCompraTx {
       });
       return insertIdOf(result);
     },
+    async autorizarDono(contexto) {
+      const [peek] = await tx
+        .select({ fazendaId: compras.fazendaId, userId: compras.userId })
+        .from(compras)
+        .where(eq(compras.id, contexto.compraId))
+        .limit(1);
+      if (!peek?.fazendaId || peek.userId == null) {
+        throw new TRPCError({ code: "NOT_FOUND", message: MSG_RECEBIMENTO_COMPRA_NAO_ENCONTRADA });
+      }
+      const acesso = await autorizarCompraNaTransacao(tx as never, {
+        executorId: contexto.executorId,
+        sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+        fazendaId: peek.fazendaId,
+        permissaoId: PERMISSAO_CONFIRMAR_COMPRAS,
+      }, MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS);
+      if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS);
+      if (peek.userId !== acesso.titularUserId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: MSG_RECEBIMENTO_COMPRA_NAO_ENCONTRADA });
+      }
+      return acesso.titularUserId;
+    },
   };
 }
 
 export const receberAnimalCompraStore: ReceberAnimalCompraStore = {
   transaction(fn) {
-    return db.transaction(tx => fn(txFromDrizzle(tx as unknown as typeof db)));
+    return db.transaction(tx => fn(txFromDrizzle(tx as unknown as typeof db))).catch((erro) => {
+      if (erro instanceof TRPCError) throw erro;
+      recusarSeDeadlockEstoque(erro);
+      if (isMysqlDuplicateKey(erro)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Este brinco já está ativo nesta fazenda. Nenhum animal foi cadastrado e o recebimento não foi gravado.",
+        });
+      }
+      if (isDatabaseUnavailable(erro)) recusarCompraSemMysql();
+      throw erro;
+    });
   },
 };
 

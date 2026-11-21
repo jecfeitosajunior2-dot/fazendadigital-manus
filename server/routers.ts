@@ -274,8 +274,15 @@ import { ioEditarReproducaoDrizzle } from "./editarReproducaoAutorizadoDb";
 import { confirmarCompraNaoIdentificados } from "./confirmarCompra";
 import { getCompraDetalhe } from "./compraDetalhe";
 import { cancelarCompraComercial } from "./cancelarCompra";
-import { excluirCompraLegada } from "./excluirCompra";
-import { listarComprasDoUsuario } from "./comprasListagem";
+import { excluirCompraLegada, titularParaExcluirCompra } from "./excluirCompra";
+import { listarComprasAutorizadas } from "./comprasListagem";
+import {
+  MSG_CADASTRO_COMPRA_SEM_FAZENDA,
+  MSG_SEM_PERMISSAO_VER_COMPRAS,
+  erroCompra,
+  recusarCompraSemMysql,
+} from "./consultaCompraAutorizada";
+import { fazendasDaConsultaCompraNoBanco } from "./consultaCompraDb";
 import { comprasListInputSchema } from "./comprasListFiltro";
 import { createCancelarVendaFinanceiroService, vendaTemRecebimentoEfetivo } from "./cancelarVendaFinanceiro";
 import { createCancelarVendaFinanceiroMysqlStore } from "./cancelarVendaFinanceiroMysql";
@@ -9405,7 +9412,12 @@ const estoqueRouter = router({
               mensagem: ja ? "Esta transferência já foi estornada." : null,
             };
           }
-          const v = await compraInsumosService.validarEstornoOperacao(ctx.user.id, operacaoId);
+          const v = await compraInsumosService.validarEstornoOperacao(ctx.user.id, operacaoId, {
+            executorId: ctx.user.id,
+            sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+            fazendaId: fazendasEstorno[0]!,
+            permissaoId: PERMISSAO_ESTORNAR_ESTOQUE,
+          });
           return {
             podeEstornar: v.podeEstornar,
             jaEstornada: Boolean(v.jaEstornada),
@@ -9568,7 +9580,16 @@ const estoqueRouter = router({
           if (opHead && isOperacaoTransferenciaInsumos(opHead)) {
             return transferenciaInsumosService.estornar(ctx.user.id, registradoPor, operacaoIds[0]!, motivo);
           }
-          return compraInsumosService.estornarOperacao(ctx.user.id, operacaoIds[0]!, motivo, registradoPor);
+          const fazendaEstorno = seeds.map((s) => s.fazendaId).find((id): id is number => id != null);
+          if (fazendaEstorno == null) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Movimentação não encontrada no banco." });
+          }
+          return compraInsumosService.estornarOperacao(ctx.user.id, operacaoIds[0]!, motivo, registradoPor, {
+            executorId: ctx.user.id,
+            sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+            fazendaId: fazendaEstorno,
+            permissaoId: PERMISSAO_ESTORNAR_ESTOQUE,
+          });
         }
 
         const grupoId = seeds[0]!.grupoId?.trim() || null;
@@ -9993,13 +10014,57 @@ const dashboardRouter = router({
 const comprasRouter = router({
   list: protectedProcedure
     .input(comprasListInputSchema)
-    .query(({ ctx, input }) => listarComprasDoUsuario(ctx.user.id, input)),
+    .query(async ({ ctx, input }) => {
+      try {
+        const acesso = await fazendasDaConsultaCompraNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        });
+        if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_VER_COMPRAS);
+        return await listarComprasAutorizadas(
+          acesso.titularUserId,
+          acesso.fazendaIds,
+          acesso.papel === "principal",
+          input,
+        );
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarCompraSemMysql();
+        throw error;
+      }
+    }),
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ ctx, input }) => getCompraDetalhe(ctx.user.id, input.id)),
+    .query(async ({ ctx, input }) => {
+      try {
+        const acesso = await fazendasDaConsultaCompraNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        });
+        if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_VER_COMPRAS);
+        return await getCompraDetalhe(acesso.titularUserId, input.id, acesso);
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarCompraSemMysql();
+        throw error;
+      }
+    }),
   listarRecebimentos: protectedProcedure
     .input(z.object({ compraId: z.number().int().positive() }))
-    .query(({ ctx, input }) => listarRecebimentosCompra(ctx.user.id, input.compraId)),
+    .query(async ({ ctx, input }) => {
+      try {
+        const acesso = await fazendasDaConsultaCompraNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        });
+        if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_VER_COMPRAS);
+        return await listarRecebimentosCompra(acesso.titularUserId, input.compraId, acesso);
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarCompraSemMysql();
+        throw error;
+      }
+    }),
   cancelar: protectedProcedure
     .input(z.object({
       id: z.number().int().positive(),
@@ -10011,6 +10076,9 @@ const comprasRouter = router({
         motivo: input.motivo,
         canceladoPorUserId: ctx.user.id,
         canceladoPorNome: ctx.user.name,
+      }, {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
       }),
     ),
   create: protectedProcedure
@@ -10021,9 +10089,11 @@ const comprasRouter = router({
       valorTotal: z.string().optional(),
       observacoes: z.string().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      await db.insert(compras).values({ userId: ctx.user.id, ...input });
-      return { success: true };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: MSG_CADASTRO_COMPRA_SEM_FAZENDA,
+      });
     }),
   confirmarNaoIdentificados: protectedProcedure
     .input(z.object({
@@ -10046,7 +10116,10 @@ const comprasRouter = router({
         pesoTotal: z.number().nullable().optional(),
       })),
     }))
-    .mutation(async ({ ctx, input }) => confirmarCompraNaoIdentificados(ctx.user.id, input)),
+    .mutation(async ({ ctx, input }) => confirmarCompraNaoIdentificados(ctx.user.id, input, {
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+    })),
   documentosAnexar: protectedProcedure
     .input(
       z.object({
@@ -10068,6 +10141,7 @@ const comprasRouter = router({
         substituir: input.substituir,
         uploadedByUserId: ctx.user.id,
         uploadedByNome: ctx.user.name,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
       }),
     ),
   documentosExcluir: protectedProcedure
@@ -10081,6 +10155,7 @@ const comprasRouter = router({
       compraDocumentosService.excluir(ctx.user.id, {
         compraId: input.compraId,
         documentoId: input.documentoId,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
       }),
     ),
   receberAnimal: protectedProcedure
@@ -10099,7 +10174,11 @@ const comprasRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) =>
-      receberAnimalCompra(ctx.user.id, input, { usuarioNome: ctx.user.name }),
+      receberAnimalCompra(ctx.user.id, input, {
+        usuarioNome: ctx.user.name,
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+      }),
     ),
   desfazerRecebimento: protectedProcedure
     .input(
@@ -10129,7 +10208,14 @@ const comprasRouter = router({
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => excluirCompraLegada(ctx.user.id, input.id)),
+    .mutation(async ({ ctx, input }) => {
+      const titular = await titularParaExcluirCompra(
+        ctx.user.id,
+        ctx.user.sessionVersion ?? null,
+        input.id,
+      );
+      return excluirCompraLegada(titular, input.id);
+    }),
 });
 
 // ─── VENDAS ROUTER ───────────────────────────────────────────────────────────

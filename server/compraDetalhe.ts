@@ -14,6 +14,7 @@ import {
   type VinculoAnimalCompra,
 } from "../shared/compraIdentificacao";
 import { compraDocumentosService } from "./compraDocumentosDb";
+import { compraVisivelNoEscopo, type EscopoConsultaCompra } from "./consultaCompraAutorizada";
 import { db } from "./db";
 
 function num(raw: unknown): number | null {
@@ -131,20 +132,25 @@ export function montarDetalheCompra(input: {
   };
 }
 
-export async function getCompraDetalhe(userId: number, compraId: number) {
+export async function getCompraDetalhe(
+  userId: number,
+  compraId: number,
+  escopo?: EscopoConsultaCompra,
+) {
+  const dono = escopo?.titularUserId ?? userId;
   const [compra] = await db
     .select()
     .from(compras)
-    .where(and(eq(compras.id, compraId), eq(compras.userId, userId)))
+    .where(and(eq(compras.id, compraId), eq(compras.userId, dono)))
     .limit(1);
-  if (!compra) {
+  if (!compra || (escopo && !compraVisivelNoEscopo(compra.fazendaId, escopo))) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
   }
 
   const grupos = await db
     .select()
     .from(compraGrupos)
-    .where(and(eq(compraGrupos.compraId, compra.id), eq(compraGrupos.userId, userId)));
+    .where(and(eq(compraGrupos.compraId, compra.id), eq(compraGrupos.userId, dono)));
 
   const vinculos = await db
     .select({
@@ -154,14 +160,14 @@ export async function getCompraDetalhe(userId: number, compraId: number) {
       compraGrupoId: animais.compraGrupoId,
     })
     .from(animais)
-    .where(and(eq(animais.userId, userId), eq(animais.compraId, compra.id)));
+    .where(and(eq(animais.userId, dono), eq(animais.compraId, compra.id)));
 
   let fazendaNome: string | null = null;
   if (compra.fazendaId != null) {
     const [fazenda] = await db
       .select({ nome: fazendas.nome })
       .from(fazendas)
-      .where(and(eq(fazendas.id, compra.fazendaId), eq(fazendas.userId, userId)))
+      .where(and(eq(fazendas.id, compra.fazendaId), eq(fazendas.userId, dono)))
       .limit(1);
     fazendaNome = fazenda?.nome ?? null;
   }
@@ -171,7 +177,7 @@ export async function getCompraDetalhe(userId: number, compraId: number) {
     const [lote] = await db
       .select({ nome: lotes.nome })
       .from(lotes)
-      .where(and(eq(lotes.id, compra.loteDestinoId), eq(lotes.userId, userId)))
+      .where(and(eq(lotes.id, compra.loteDestinoId), eq(lotes.userId, dono)))
       .limit(1);
     loteNome = lote?.nome ?? null;
   }
@@ -181,13 +187,13 @@ export async function getCompraDetalhe(userId: number, compraId: number) {
     const [pasto] = await db
       .select({ nome: pastos.nome })
       .from(pastos)
-      .where(and(eq(pastos.id, compra.pastoDestinoId), eq(pastos.userId, userId)))
+      .where(and(eq(pastos.id, compra.pastoDestinoId), eq(pastos.userId, dono)))
       .limit(1);
     pastoNome = pasto?.nome ?? null;
   }
 
   const detalhe = montarDetalheCompra({
-    userId,
+    userId: dono,
     compra,
     grupos,
     vinculos,
@@ -198,6 +204,6 @@ export async function getCompraDetalhe(userId: number, compraId: number) {
   if (!detalhe) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Compra não encontrada." });
   }
-  const documentos = await compraDocumentosService.listarPublicos(userId, compra.id);
+  const documentos = await compraDocumentosService.listarPublicos(dono, compra.id);
   return { ...detalhe, documentos };
 }

@@ -12,6 +12,15 @@ import {
 } from "../shared/compraComercial";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import { db } from "./db";
+import { isDatabaseUnavailable } from "./localFallbackStore";
+import {
+  MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS,
+  PERMISSAO_CONFIRMAR_COMPRAS,
+  erroCompra,
+  recusarCompraSemMysql,
+  type SessaoExecutorCompra,
+} from "./consultaCompraAutorizada";
+import { autorizarCompraNaTransacao } from "./consultaCompraDb";
 
 export type ConfirmarCompraGrupoInput = {
   categoria: string;
@@ -49,6 +58,7 @@ function insertIdOf(result: unknown): number {
 export async function confirmarCompraNaoIdentificados(
   userId: number,
   input: ConfirmarCompraNaoIdentificadosInput,
+  contexto?: SessaoExecutorCompra,
 ) {
   const avaliado = avaliarConfirmacaoCompraNaoIdentificados(input);
   if (!avaliado.ok) toTrpc(avaliado.message);
@@ -58,14 +68,28 @@ export async function confirmarCompraNaoIdentificados(
   const dataISO = normalizarDataOperacional(input.data);
   if (!dataISO) toTrpc(MSG_COMPRA_DATA_INVALIDA);
 
-  await assertFazendaDoUsuario(userId, input.fazendaId);
+  if (!contexto) {
+    await assertFazendaDoUsuario(userId, input.fazendaId);
+  }
 
   try {
     const result = await db.transaction(async tx => {
+      let dono = userId;
+      if (contexto) {
+        const acesso = await autorizarCompraNaTransacao(tx as never, {
+          executorId: contexto.executorId,
+          sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+          fazendaId: input.fazendaId,
+          permissaoId: PERMISSAO_CONFIRMAR_COMPRAS,
+        }, MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS);
+        if (!acesso.ok) throw erroCompra(acesso, MSG_SEM_PERMISSAO_CONFIRMAR_COMPRAS);
+        dono = acesso.titularUserId;
+      }
+
       const [fazenda] = await tx
         .select({ id: fazendas.id })
         .from(fazendas)
-        .where(and(eq(fazendas.userId, userId), eq(fazendas.id, input.fazendaId)))
+        .where(and(eq(fazendas.userId, dono), eq(fazendas.id, input.fazendaId)))
         .limit(1);
       if (!fazenda) toTrpc(MSG_COMPRA_SEM_FAZENDA, "NOT_FOUND");
 
@@ -77,7 +101,7 @@ export async function confirmarCompraNaoIdentificados(
           ativo: pessoas.ativo,
         })
         .from(pessoas)
-        .where(and(eq(pessoas.userId, userId), eq(pessoas.id, input.fornecedorId)))
+        .where(and(eq(pessoas.userId, dono), eq(pessoas.id, input.fornecedorId)))
         .limit(1);
       if (!fornecedor || fornecedor.tipo !== "fornecedor" || fornecedor.ativo === false) {
         toTrpc(MSG_COMPRA_FORNECEDOR_INVALIDO);
@@ -85,7 +109,7 @@ export async function confirmarCompraNaoIdentificados(
 
       const agora = new Date();
       const insertCompra = await tx.insert(compras).values({
-        userId,
+        userId: dono,
         fazendaId: input.fazendaId,
         fornecedorId: input.fornecedorId,
         fornecedor: fornecedor.nome.trim(),
@@ -112,7 +136,7 @@ export async function confirmarCompraNaoIdentificados(
 
       await tx.insert(compraGrupos).values(
         calc.grupos.map(grupo => ({
-          userId,
+          userId: dono,
           compraId,
           categoria: grupo.categoria,
           sexo: grupo.sexo,
@@ -132,6 +156,7 @@ export async function confirmarCompraNaoIdentificados(
     return { success: true as const, ...result };
   } catch (error) {
     if (error instanceof TRPCError) throw error;
+    if (isDatabaseUnavailable(error)) recusarCompraSemMysql();
     console.error("[compra.confirmarNaoIdentificados]", error);
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",

@@ -103,6 +103,7 @@ export type CompraInsumosTx = EstoqueMovimentacaoExecutor & {
     executorId: number;
     sessionVersionDaSessao: number | null;
     fazendaId: number;
+    permissaoId?: string;
   }): Promise<number>;
   fin: FinanceiroNucleoTx;
   updateMovimentacaoEstornada(
@@ -360,16 +361,26 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
       });
     },
 
-    async validarEstornoOperacao(userId: number, operacaoId: number) {
+    async validarEstornoOperacao(
+      userId: number,
+      operacaoId: number,
+      contexto?: {
+        executorId: number;
+        sessionVersionDaSessao: number | null;
+        fazendaId: number;
+        permissaoId?: string;
+      },
+    ) {
       return store.transaction(async tx => {
-        const operacao = await tx.findOperacao(userId, operacaoId);
+        const dono = tx.autorizarDono && contexto ? await tx.autorizarDono(contexto) : userId;
+        const operacao = await tx.findOperacao(dono, operacaoId);
         if (!operacao) return { podeEstornar: false, mensagem: "Operação não encontrada." };
         if (operacao.status === ESTOQUE_OPERACAO_STATUS_ESTORNADA) {
           return { podeEstornar: false, jaEstornada: true, mensagem: MSG_COMPRA_JA_ESTORNADA };
         }
-        const titulos = await listarTitulosPorOrigemNoTx(tx.fin, userId, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, operacao.id);
+        const titulos = await listarTitulosPorOrigemNoTx(tx.fin, dono, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, operacao.id);
         for (const titulo of titulos) {
-          if (await tituloTemLiquidacaoEfetiva(tx.fin, userId, titulo.id)) {
+          if (await tituloTemLiquidacaoEfetiva(tx.fin, dono, titulo.id)) {
             return { podeEstornar: false, mensagem: MSG_COMPRA_ESTORNO_COM_PAGAMENTO };
           }
         }
@@ -377,9 +388,21 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
       });
     },
 
-    async estornarOperacao(userId: number, operacaoId: number, motivo: string, registradoPor: string) {
+    async estornarOperacao(
+      userId: number,
+      operacaoId: number,
+      motivo: string,
+      registradoPor: string,
+      contexto?: {
+        executorId: number;
+        sessionVersionDaSessao: number | null;
+        fazendaId: number;
+        permissaoId?: string;
+      },
+    ) {
       return store.transaction(async tx => {
-        const operacao = await tx.lockOperacao(userId, operacaoId);
+        const dono = tx.autorizarDono && contexto ? await tx.autorizarDono(contexto) : userId;
+        const operacao = await tx.lockOperacao(dono, operacaoId);
         if (!operacao) toTrpc("Operação não encontrada.", "NOT_FOUND");
         if (operacao.status === ESTOQUE_OPERACAO_STATUS_ESTORNADA) toTrpc(MSG_COMPRA_JA_ESTORNADA);
 
@@ -387,15 +410,15 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
           .filter(m => (m.status || "ativa") === "ativa");
         if (!originais.length) toTrpc(MSG_COMPRA_JA_ESTORNADA);
 
-        const titulos = await listarTitulosPorOrigemNoTx(tx.fin, userId, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, operacao.id);
+        const titulos = await listarTitulosPorOrigemNoTx(tx.fin, dono, FINANCEIRO_ORIGEM_COMPRA_INSUMOS, operacao.id);
         for (const titulo of titulos) {
-          if (await tituloTemLiquidacaoEfetiva(tx.fin, userId, titulo.id)) {
+          if (await tituloTemLiquidacaoEfetiva(tx.fin, dono, titulo.id)) {
             toTrpc(MSG_COMPRA_ESTORNO_COM_PAGAMENTO);
           }
         }
         for (const titulo of titulos) {
           if (titulo.estado !== "cancelado") {
-            await cancelarTituloNoTx(tx.fin, userId, titulo.id, motivo);
+            await cancelarTituloNoTx(tx.fin, dono, titulo.id, motivo);
           }
         }
 
@@ -464,7 +487,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
             operacaoId: operacao.id,
             estoqueId: mov.estoqueId,
             fazendaId: mov.fazendaId ?? undefined,
-            userId,
+            userId: dono,
             registradoPor,
             tipo: mov.tipo || ESTOQUE_OPERACAO_MOTIVO_COMPRA,
             dataMovimentacao: hoje,
@@ -486,7 +509,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
           await tx.updateMovimentacaoEstornada(mov.id, motivo, userId, registradoPor);
         }
 
-        await tx.updateOperacaoEstornada(userId, operacao.id, motivo, new Date());
+        await tx.updateOperacaoEstornada(dono, operacao.id, motivo, new Date());
         return {
           success: true as const,
           originalGrupoId,
