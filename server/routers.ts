@@ -97,7 +97,6 @@ import {
   validarPecasOficinaNaExecucao,
   type PecaOficinaNormalizada,
 } from "../shared/manutencaoPecasOrigem";
-import { anexarIdentificacaoAnimalSaude } from "../shared/saudeListaDisplay";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
 import { compraInsumosService } from "./compraInsumosMysql";
@@ -138,9 +137,7 @@ import {
   espelharRetiradaAnimaisLocal,
   createLocalPesagem,
   updateLocalPesagemObservacoes,
-  listLocalSaudeRegistros,
   createLocalSaudeRegistro,
-  deleteLocalSaudeRegistro,
   createLocalReproducaoRegistro,
   updateLocalReproducaoRegistro,
   deleteLocalReproducaoRegistro,
@@ -210,6 +207,8 @@ import {
   pesarEEspelharAnimal,
 } from "./pesarAnimalAutorizado";
 import { ioPesagemDrizzle } from "./pesarAnimalDb";
+import { listarSaudeNoBanco } from "./consultaSaudeDb";
+import { recusarSaudeSemMysql } from "./consultaSaudeAutorizada";
 import { listarPesagensNoBanco } from "./consultaPesagemDb";
 import { recusarExclusaoFisicaPesagem, recusarPesagemSemMysql } from "./consultaPesagemAutorizada";
 import {
@@ -4253,36 +4252,23 @@ const saudeRouter = router({
     .input(z.object({ animalId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       try {
-        const conditions = [eq(saudeRegistros.userId, ctx.user.id)];
-        if (input?.animalId) conditions.push(eq(saudeRegistros.animalId, input.animalId));
-        const rows = await db
-          .select({
-            registro: saudeRegistros,
-            brincoVisual: animais.brinco,
-            rfid: animais.brincoEletronico,
-          })
-          .from(saudeRegistros)
-          .leftJoin(
-            animais,
-            and(eq(animais.id, saudeRegistros.animalId), eq(animais.userId, ctx.user.id)),
-          )
-          .where(and(...conditions))
-          .orderBy(desc(saudeRegistros.createdAt));
-        if (rows.length > 0) {
-          return rows.map((row) => ({
-            ...row.registro,
-            brincoVisual: String(row.brincoVisual ?? "").trim() || null,
-            rfid: String(row.rfid ?? "").trim() || null,
-          }));
+        const resultado = await listarSaudeNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          animalId: input?.animalId,
+        });
+        if (!resultado.ok) {
+          throw new TRPCError({
+            code: resultado.motivo === "sem_identidade" ? "UNAUTHORIZED" : "FORBIDDEN",
+            message: resultado.mensagem ?? "Sem permissão para consultar os lançamentos de saúde.",
+          });
         }
+        return resultado.registros;
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarSaudeSemMysql();
+        throw error;
       }
-      const [locais, animaisLocais] = await Promise.all([
-        listLocalSaudeRegistros(ctx.user.id, input?.animalId),
-        listLocalAnimais(ctx.user.id),
-      ]);
-      return anexarIdentificacaoAnimalSaude(locais, animaisLocais);
     }),
 
   create: protectedProcedure
