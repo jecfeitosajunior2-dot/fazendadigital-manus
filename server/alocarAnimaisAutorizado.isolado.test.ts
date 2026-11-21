@@ -649,6 +649,31 @@ describe.sequential("retirada e alocação de animais em MySQL isolado", () => {
     expect(Number((await animal(51))?.fazendaId)).toBe(20);
     expect(await historico()).toHaveLength(0);
   });
+
+  it("29. inclusão não assume fazenda quando o brinco ativo já existe", async () => {
+    await pool.query("UPDATE animais SET brinco = 'BR-50' WHERE id = 55");
+    const { resultado, chamadas } = await incluir(pedidoInclusao(1, 3, [55]));
+    expect(resultado).toMatchObject({ ok: false, motivo: "brinco_duplicado" });
+    expect((await animal(55))?.fazendaId).toBeNull();
+    expect((await animal(55))?.loteId).toBeNull();
+    expect(await historico()).toHaveLength(0);
+    expect(chamadas).toEqual([]);
+  });
+
+  it("30. alocação não grava histórico se o brinco ativo colide", async () => {
+    await pool.query(
+      "INSERT INTO animais (id, userId, loteId, fazendaId, pastoId, status, brinco) VALUES (57, 1, 120, NULL, NULL, 'ativo', 'br-50')",
+    );
+    const { resultado, chamadas } = await alocar(pedidoAlocacao(1, 3, {
+      animalIds: [57],
+      loteDestinoId: 110,
+    }));
+    expect(resultado).toMatchObject({ ok: false, motivo: "brinco_duplicado" });
+    expect((await animal(57))?.fazendaId).toBeNull();
+    expect(Number((await animal(57))?.loteId)).toBe(120);
+    expect(await historico()).toHaveLength(0);
+    expect(chamadas).toEqual([]);
+  });
 });
 
 function autenticacao(conn: mysql.PoolConnection) {
@@ -743,7 +768,7 @@ function consultas(conn: mysql.PoolConnection): ConsultaAnimaisLote {
       if (ids.length === 0) return [];
       const marcas = ids.map(() => "?").join(", ");
       const [linhas] = await conn.query<RowDataPacket[]>(
-        `SELECT id, userId, fazendaId, loteId, pastoId, status FROM animais WHERE id IN (${marcas}) ORDER BY id`,
+        `SELECT id, userId, fazendaId, loteId, pastoId, status, brinco FROM animais WHERE id IN (${marcas}) ORDER BY id`,
         ids,
       );
       return linhas.map(mapearAnimal);
@@ -752,7 +777,7 @@ function consultas(conn: mysql.PoolConnection): ConsultaAnimaisLote {
       if (ids.length === 0) return [];
       const marcas = ids.map(() => "?").join(", ");
       const [linhas] = await conn.query<RowDataPacket[]>(
-        `SELECT id, userId, fazendaId, loteId, pastoId, status FROM animais
+        `SELECT id, userId, fazendaId, loteId, pastoId, status, brinco FROM animais
          WHERE userId = ? AND id IN (${marcas}) ORDER BY id FOR UPDATE`,
         [titularUserId, ...ids],
       );
@@ -760,6 +785,16 @@ function consultas(conn: mysql.PoolConnection): ConsultaAnimaisLote {
     },
     async baixaAtiva() {
       return null;
+    },
+    async brincoAtivoNaFazenda(titularUserId, fazendaId, brinco, excetoAnimalId) {
+      const [linhas] = await conn.query<RowDataPacket[]>(
+        `SELECT id FROM animais
+         WHERE userId = ? AND fazendaId = ? AND status = 'ativo'
+           AND LOWER(TRIM(brinco)) = LOWER(TRIM(?)) AND id <> ?
+         LIMIT 1 FOR UPDATE`,
+        [titularUserId, fazendaId, brinco, excetoAnimalId],
+      );
+      return linhas.length > 0;
     },
     async atualizarAnimais(ids, titularUserId, patch) {
       if (ids.length === 0) return;
@@ -810,6 +845,7 @@ function mapearAnimal(linha: RowDataPacket) {
     loteId: linha.loteId == null ? null : Number(linha.loteId),
     pastoId: linha.pastoId == null ? null : Number(linha.pastoId),
     status: linha.status == null ? null : String(linha.status),
+    brinco: linha.brinco == null ? null : String(linha.brinco),
   };
 }
 

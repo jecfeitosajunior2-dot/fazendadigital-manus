@@ -56,7 +56,7 @@ function consultar(parcial: Partial<Parameters<typeof resolverConsultaLote>[0]> 
 }
 
 function blocoDaRota() {
-  const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
+  const fonte = readFileSync(resolve(here, "routers.ts"), "utf8").replace(/\r\n/g, "\n");
   const marca = "getById: protectedProcedure\n    .input(z.object({ id: z.number() }))";
   const inicio = fonte.lastIndexOf(marca);
   return fonte.slice(inicio, fonte.indexOf("create: protectedProcedure", inicio));
@@ -322,9 +322,10 @@ describe("lotes.getById — autorização da ficha", () => {
 
   it("32. Erro real de banco continua sendo erro", () => {
     const bloco = blocoDaRota();
-    expect(bloco).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(bloco).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
-    expect(bloco.indexOf("getLocalLote")).toBeGreaterThan(bloco.indexOf("isDatabaseUnavailable"));
+    expect(bloco).toContain("if (error instanceof TRPCError) throw error");
+    expect(bloco).toContain("if (isDatabaseUnavailable(error)) recusarLoteSemMysql()");
+    expect(bloco).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(bloco).not.toContain("getLocalLote");
     expect(bloco).toContain("eq(lotes.userId, identidade.titularUserId)");
   });
 

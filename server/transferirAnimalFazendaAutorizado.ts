@@ -10,7 +10,9 @@ import {
   MSG_TRANSFERENCIA_PASTO_FAZENDA,
   validarTransferenciaInternaInput,
 } from "../shared/transferenciaInternaAnimal";
+import { buildBrincoAtivoConflitoMessage, normalizeBrincoKey } from "../shared/brincoAtivo";
 import { autorizarOperacaoPersistida } from "./cadastroAnimalAutorizado";
+import { ehBrincoDuplicadoNoMysql } from "./importacaoAnimalAutorizada";
 import type { MotivoOperacional } from "./contextoOperacional";
 import {
   AnimaisMudaramDuranteMovimentacao,
@@ -56,6 +58,7 @@ export type MotivoTransferenciaFazenda =
   | "fazendas_diferentes"
   | "data_futura"
   | "pasto_incompativel"
+  | "brinco_duplicado"
   | "conflito";
 
 export type RecusaTransferenciaFazenda = {
@@ -306,14 +309,29 @@ async function transferirNaTransacao(
   if (animal.status !== "ativo") return recusa("animal_invalido", MSG_BAIXA_ANIMAL_INATIVO);
   const baixa = await tx.baixaAtiva(animal.id, titularUserId);
   if (baixa) return recusa("animal_invalido", MSG_SAIDA_TRANSFERENCIA_DUPLICADA);
+  const brinco = animal.brinco?.trim() || "";
+  if (normalizeBrincoKey(brinco) && tx.brincoAtivoNaFazenda) {
+    const ocupado = await tx.brincoAtivoNaFazenda(titularUserId, destino.fazendaId, brinco, animal.id);
+    if (ocupado) return recusa("brinco_duplicado", buildBrincoAtivoConflitoMessage(brinco));
+  }
 
   const usuarioNome = pedido.executorNome.trim() || "Usuário";
   const observacoes = pedido.input.observacoes?.trim() || null;
-  await tx.atualizarAnimais([animal.id], titularUserId, {
-    fazendaId: destino.fazendaId,
-    loteId: destino.id,
-    pastoId: pastoDestinoId,
-  });
+  try {
+    await tx.atualizarAnimais([animal.id], titularUserId, {
+      fazendaId: destino.fazendaId,
+      loteId: destino.id,
+      pastoId: pastoDestinoId,
+    });
+  } catch (erro) {
+    if (ehBrincoDuplicadoNoMysql(erro)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: buildBrincoAtivoConflitoMessage(brinco || "informado"),
+      });
+    }
+    throw erro;
+  }
   if (io.aposAnimais) await io.aposAnimais();
   await tx.inserirHistorico([{
     userId: titularUserId,

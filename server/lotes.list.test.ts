@@ -8,6 +8,12 @@ import { comporListaLotes, deveUsarEspelhoQuandoBancoCai } from "./routers";
 const here = dirname(fileURLToPath(import.meta.url));
 const hoje = new Date(2026, 10, 5, 12, 0, 0);
 
+function blocoDaLista() {
+  const fonte = readFileSync(resolve(here, "routers.ts"), "utf8").replace(/\r\n/g, "\n");
+  const inicio = fonte.indexOf("list: protectedProcedure\n    .input(z.object({ somenteAtivos:");
+  return fonte.slice(inicio, fonte.indexOf("listByPasto:", inicio));
+}
+
 function pessoa(parcial: Partial<IdentidadeUsuario> & Pick<IdentidadeUsuario, "id" | "papel" | "titularUserId" | "situacao">): IdentidadeUsuario {
   return {
     openId: `ficticio-openid-${parcial.id}`,
@@ -321,11 +327,11 @@ describe("lotes.list — autorização da listagem", () => {
   });
 
   it("32. Erro real de banco continua sendo erro", () => {
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
-    const inicio = fonte.indexOf("list: protectedProcedure\n    .input(z.object({ somenteAtivos:");
-    const bloco = fonte.slice(inicio, fonte.indexOf("listByPasto:", inicio));
-    expect(bloco).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(bloco).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    const bloco = blocoDaLista();
+    expect(bloco).toContain("if (error instanceof TRPCError) throw error");
+    expect(bloco).toContain("if (isDatabaseUnavailable(error)) recusarLoteSemMysql()");
+    expect(bloco).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(bloco).not.toContain("listLocalLotes");
     expect(bloco).toContain("eq(lotes.userId, identidade.titularUserId)");
     expect(bloco).toContain("eq(animais.userId, identidade.titularUserId)");
   });
@@ -355,15 +361,13 @@ describe("lotes.list — autorização da listagem", () => {
   });
 
   it("35. O contrato da rota permanece um array enriquecido", () => {
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
-    const inicio = fonte.indexOf("list: protectedProcedure\n    .input(z.object({ somenteAtivos:");
-    const bloco = fonte.slice(inicio, fonte.indexOf("listByPasto:", inicio));
+    const bloco = blocoDaLista();
     expect(bloco).toContain(".input(z.object({ somenteAtivos: z.boolean().optional() }).optional())");
     expect(bloco).toContain("orderBy(desc(lotes.createdAt))");
     expect(bloco).toContain("return resultado.lotes");
     expect(bloco).toContain("comporListaLotes");
-    expect(fonte).toContain('permissaoId: "lotes.visualizar"');
+    expect(readFileSync(resolve(here, "routers.ts"), "utf8")).toContain('permissaoId: "lotes.visualizar"');
     expect(bloco).toContain("consultaMysqlConcluida: true");
-    expect(bloco).toContain("consultaMysqlConcluida: false");
+    expect(bloco).not.toContain("consultaMysqlConcluida: false");
   });
 });

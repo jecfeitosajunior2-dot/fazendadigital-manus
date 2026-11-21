@@ -114,6 +114,7 @@ function consulta(tx: Transacao): ConsultaAnimaisLote {
           loteId: animais.loteId,
           pastoId: animais.pastoId,
           status: animais.status,
+          brinco: animais.brinco,
         })
         .from(animais)
         .where(inArray(animais.id, ids))
@@ -129,6 +130,7 @@ function consulta(tx: Transacao): ConsultaAnimaisLote {
           loteId: animais.loteId,
           pastoId: animais.pastoId,
           status: animais.status,
+          brinco: animais.brinco,
         })
         .from(animais)
         .where(and(eq(animais.userId, titularUserId), inArray(animais.id, ids)))
@@ -146,6 +148,23 @@ function consulta(tx: Transacao): ConsultaAnimaisLote {
         ))
         .limit(1);
       return linha?.dataBaixa ?? null;
+    },
+    async brincoAtivoNaFazenda(titularUserId, fazendaId, brinco, excetoAnimalId) {
+      const chave = brinco.trim().toLowerCase();
+      if (!chave) return false;
+      const linhas = await tx
+        .select({ id: animais.id })
+        .from(animais)
+        .where(and(
+          eq(animais.userId, titularUserId),
+          eq(animais.fazendaId, fazendaId),
+          eq(animais.status, "ativo"),
+          sql`LOWER(TRIM(${animais.brinco})) = ${chave}`,
+          sql`${animais.id} <> ${excetoAnimalId}`,
+        ))
+        .limit(1)
+        .for("update");
+      return linhas.length > 0;
     },
     async atualizarAnimais(ids, titularUserId, patch) {
       if (ids.length === 0) return;

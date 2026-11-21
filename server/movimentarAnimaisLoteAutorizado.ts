@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { avaliarManejoVsBaixa, isStatusAnimalBaixado } from "../shared/animalBaixa";
+import { buildBrincoAtivoConflitoMessage, normalizeBrincoKey } from "../shared/brincoAtivo";
+import { ehBrincoDuplicadoNoMysql } from "./importacaoAnimalAutorizada";
 import { buildEntradaInicialLoteMovimentacao } from "../shared/animalLoteMovimentacaoEntrada";
 import {
   assertDataMovimentacaoNaoFutura,
@@ -93,6 +95,7 @@ export type MotivoAnimaisLote =
   | "data_futura"
   | "pasto_incompativel"
   | "conflito"
+  | "brinco_duplicado"
   | "saida_nao_suportada";
 
 export type RecusaAnimaisLote = {
@@ -123,6 +126,7 @@ export type AnimalLoteLinha = {
   loteId: number | null;
   pastoId: number | null;
   status: string | null;
+  brinco?: string | null;
 };
 
 export type HistoricoAnimalLote = {
@@ -148,6 +152,13 @@ export type ConsultaAnimaisLote = ConsultaAutorizacaoPersistida & {
   animais(ids: number[], titularUserId: number): Promise<AnimalLoteLinha[]>;
   baixaAtiva(animalId: number, titularUserId: number): Promise<string | null>;
   atualizarAnimais(ids: number[], titularUserId: number, patch: Record<string, unknown>): Promise<void>;
+  /** Opcional para os testes antigos. A cópia de produção consulta o brinco ativo na fazenda. */
+  brincoAtivoNaFazenda?(
+    titularUserId: number,
+    fazendaId: number,
+    brinco: string,
+    excetoAnimalId: number,
+  ): Promise<boolean>;
   inserirHistorico(rows: HistoricoAnimalLote[]): Promise<void>;
   sincronizarStatusPasto(pastoId: number, titularUserId: number): Promise<void>;
 };
@@ -211,6 +222,48 @@ export type ResultadoTroca = SucessoTroca | RecusaAnimaisLote;
 
 function recusa(motivo: MotivoAnimaisLote, mensagem?: string): RecusaAnimaisLote {
   return mensagem ? { ok: false, motivo, mensagem } : { ok: false, motivo };
+}
+
+async function brincoImpedeAssumirFazenda(
+  tx: ConsultaAnimaisLote,
+  candidatos: AnimalLoteLinha[],
+  titularUserId: number,
+  fazendaId: number,
+): Promise<RecusaAnimaisLote | null> {
+  const semFazenda = candidatos.filter((animal) => animal.fazendaId == null && normalizeBrincoKey(animal.brinco));
+  if (semFazenda.length === 0) return null;
+  const vistos = new Set<string>();
+  for (const animal of semFazenda) {
+    const chave = normalizeBrincoKey(animal.brinco);
+    if (vistos.has(chave)) {
+      return recusa("brinco_duplicado", buildBrincoAtivoConflitoMessage(animal.brinco ?? chave));
+    }
+    vistos.add(chave);
+    if (!tx.brincoAtivoNaFazenda) continue;
+    const ocupado = await tx.brincoAtivoNaFazenda(titularUserId, fazendaId, animal.brinco ?? chave, animal.id);
+    if (ocupado) return recusa("brinco_duplicado", buildBrincoAtivoConflitoMessage(animal.brinco ?? chave));
+  }
+  return null;
+}
+
+async function gravarAnimais(
+  tx: ConsultaAnimaisLote,
+  ids: number[],
+  titularUserId: number,
+  patch: Record<string, unknown>,
+  brincoParaMensagem: string,
+): Promise<void> {
+  try {
+    await tx.atualizarAnimais(ids, titularUserId, patch);
+  } catch (erro) {
+    if (ehBrincoDuplicadoNoMysql(erro)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: buildBrincoAtivoConflitoMessage(brincoParaMensagem),
+      });
+    }
+    throw erro;
+  }
 }
 
 function nomeDe(usuario: LinhaUsuarioCadastro, informado: string): string {
@@ -398,6 +451,9 @@ async function incluirNaTransacao(
   }
   if (validos.length === 0) return recusa("animal_invalido", erroAmigavel ?? MSG_NENHUM_VALIDO_INCLUSAO);
 
+  const conflitoBrinco = await brincoImpedeAssumirFazenda(tx, validos, titularUserId, fazendaId);
+  if (conflitoBrinco) return conflitoBrinco;
+
   const pastoDestinoId = lote.pastoAtualId;
   const dataMovimentacao = hojeISODateLocal();
   const usuarioNome = nomeDe(
@@ -405,9 +461,10 @@ async function incluirNaTransacao(
     pedido.executorNome,
   );
   const ids = validos.map((animal) => animal.id);
-  await tx.atualizarAnimais(ids, titularUserId, { loteId: lote.id, pastoId: pastoDestinoId });
+  const brincoMensagem = validos.find((animal) => normalizeBrincoKey(animal.brinco))?.brinco?.trim() || "informado";
+  await gravarAnimais(tx, ids, titularUserId, { loteId: lote.id, pastoId: pastoDestinoId }, brincoMensagem);
   const semFazenda = validos.filter((animal) => animal.fazendaId == null).map((animal) => animal.id);
-  if (semFazenda.length > 0) await tx.atualizarAnimais(semFazenda, titularUserId, { fazendaId });
+  if (semFazenda.length > 0) await gravarAnimais(tx, semFazenda, titularUserId, { fazendaId }, brincoMensagem);
   if (io.aposAnimais) await io.aposAnimais();
 
   await tx.inserirHistorico(validos.map((animal) => buildEntradaInicialLoteMovimentacao({
@@ -542,6 +599,9 @@ async function trocarNaTransacao(
     }
   }
 
+  const conflitoBrinco = await brincoImpedeAssumirFazenda(tx, selecionados, titularUserId, fazendaId);
+  if (conflitoBrinco) return conflitoBrinco;
+
   const pastoDestinoId = destino.pastoAtualId;
   const usuarioNome = (pedido.input.responsavel?.trim() || nomeDe(
     { name: pedido.executorNome, email: null } as LinhaUsuarioCadastro,
@@ -549,9 +609,10 @@ async function trocarNaTransacao(
   ));
   const observacoes = pedido.input.observacoes?.trim() || null;
   const ids = selecionados.map((animal) => animal.id);
-  await tx.atualizarAnimais(ids, titularUserId, { loteId: destino.id, pastoId: pastoDestinoId });
+  const brincoMensagem = selecionados.find((animal) => normalizeBrincoKey(animal.brinco))?.brinco?.trim() || "informado";
+  await gravarAnimais(tx, ids, titularUserId, { loteId: destino.id, pastoId: pastoDestinoId }, brincoMensagem);
   const semFazenda = selecionados.filter((animal) => animal.fazendaId == null).map((animal) => animal.id);
-  if (semFazenda.length > 0) await tx.atualizarAnimais(semFazenda, titularUserId, { fazendaId });
+  if (semFazenda.length > 0) await gravarAnimais(tx, semFazenda, titularUserId, { fazendaId }, brincoMensagem);
   if (io.aposAnimais) await io.aposAnimais();
 
   await tx.inserirHistorico(selecionados.map((animal) => ({
@@ -800,12 +861,16 @@ async function alocarNaTransacao(
       if (!avaliacao.permitido) return recusa("animal_invalido", avaliacao.mensagem);
     }
   }
+  const conflitoBrinco = await brincoImpedeAssumirFazenda(tx, selecionados, titularUserId, destino.fazendaId);
+  if (conflitoBrinco) return conflitoBrinco;
+
   const pastoDestinoId = destino.pastoAtualId;
   const usuarioNome = nomeDe({ name: pedido.executorNome, email: null } as LinhaUsuarioCadastro, pedido.executorNome);
   const ids = selecionados.map((animal) => animal.id);
-  await tx.atualizarAnimais(ids, titularUserId, { loteId: destino.id, pastoId: pastoDestinoId });
+  const brincoMensagem = selecionados.find((animal) => normalizeBrincoKey(animal.brinco))?.brinco?.trim() || "informado";
+  await gravarAnimais(tx, ids, titularUserId, { loteId: destino.id, pastoId: pastoDestinoId }, brincoMensagem);
   const semFazenda = selecionados.filter((animal) => animal.fazendaId == null).map((animal) => animal.id);
-  if (semFazenda.length > 0) await tx.atualizarAnimais(semFazenda, titularUserId, { fazendaId: destino.fazendaId });
+  if (semFazenda.length > 0) await gravarAnimais(tx, semFazenda, titularUserId, { fazendaId: destino.fazendaId }, brincoMensagem);
   if (io.aposAnimais) await io.aposAnimais();
   await tx.inserirHistorico(selecionados.map((animal) => ({
     userId: titularUserId,

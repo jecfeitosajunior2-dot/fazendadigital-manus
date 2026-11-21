@@ -128,14 +128,10 @@ import {
   listLocalAbastecimentos,
   listLocalManutencoes,
   listLocalAnimais,
-  listLocalLotes,
-  listLocalLotesGerenciamento,
   listLocalPesagens,
   createLocalLote,
-  getLocalLote,
   moveLocalLoteToPasto,
   updateLocalLote,
-  excluirLocalLote,
   incluirAnimaisLocalLote,
   registrarLocalEntradaInicialLote,
   registrarLocalTransferenciaInterna,
@@ -150,7 +146,6 @@ import {
   createLocalReproducaoRegistro,
   updateLocalReproducaoRegistro,
   deleteLocalReproducaoRegistro,
-  enrichLocalLote,
   updateLocalFazenda,
   updateLocalPasto,
   updateLocalBenfeitoria,
@@ -162,11 +157,6 @@ import {
   createLocalHistoricoBrinco,
   deleteLocalHistoricoBrinco,
   mergeHistoricoBrincosLists,
-  buildLocalMapaRebanhoV2,
-  buildLocalMapaRebanhoGeral,
-  listLocalMapaRebanhoHistorico,
-  excluirLocalLotePastoMovimentacao,
-  cancelarLocalEstadiaSinteticaLote,
 } from "./localFallbackStore";
 import {
   alocarEEspelharAnimais,
@@ -298,11 +288,8 @@ import {
   resolverLocalizacaoAtualLote,
   type MovimentacaoPastoLoteRef,
 } from "../shared/localizacaoAtualLote";
-import {
-  avaliarExclusaoLote,
-  executarExclusaoLote,
-  executarInativacaoLote,
-} from "./loteExclusaoCheck";
+import { mensagemExclusaoLoteBloqueada } from "../shared/loteExclusaoBloqueada";
+import { avaliarExclusaoLoteDb } from "./loteExclusaoCheck";
 import { collectAnimalIdsComHistoricoDb } from "./animalExclusaoCheck";
 import {
   animalStatusNaoAtivo,
@@ -2645,10 +2632,12 @@ async function mapMovimentacoesPorLote(
   return map;
 }
 
-async function countAnimaisLote(loteId: number) {
+async function countAnimaisLote(loteId: number, userId?: number) {
+  const filtros = [eq(animais.loteId, loteId), eq(animais.status, "ativo")];
+  if (userId != null) filtros.push(eq(animais.userId, userId));
   const [row] = await db.select({ count: sql<number>`COUNT(*)` })
     .from(animais)
-    .where(and(eq(animais.loteId, loteId), eq(animais.status, "ativo")));
+    .where(and(...filtros));
   return Number(row?.count ?? 0);
 }
 
@@ -2662,16 +2651,16 @@ async function syncPastoStatus(pastoId: number, userId: number) {
 }
 
 async function enrichLote(lote: typeof lotes.$inferSelect) {
-  const qtdAnimais = await countAnimaisLote(lote.id);
+  const qtdAnimais = await countAnimaisLote(lote.id, lote.userId);
   let pastoNome: string | null = null;
   let pastoCapacidade: number | null = null;
   let fazendaNome: string | null = null;
   if (lote.pastoAtualId) {
-    const [pasto] = await db.select().from(pastos).where(eq(pastos.id, lote.pastoAtualId)).limit(1);
+    const [pasto] = await db.select().from(pastos).where(and(eq(pastos.id, lote.pastoAtualId), eq(pastos.userId, lote.userId))).limit(1);
     pastoNome = pasto?.nome ?? null;
     pastoCapacidade = pasto?.capacidade ?? null;
     if (pasto?.fazendaId) {
-      const [fazenda] = await db.select({ nome: fazendas.nome }).from(fazendas).where(eq(fazendas.id, pasto.fazendaId)).limit(1);
+      const [fazenda] = await db.select({ nome: fazendas.nome }).from(fazendas).where(and(eq(fazendas.id, pasto.fazendaId), eq(fazendas.userId, lote.userId))).limit(1);
       fazendaNome = fazenda?.nome ?? null;
     }
   }
@@ -2817,6 +2806,88 @@ export function resolverConsultaLote<T extends LoteListaMinimo>(
 }
 
 // ─── LOTES ROUTER ─────────────────────────────────────────────────────────────
+function recusarLoteSemMysql(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum lote foi consultado ou alterado.",
+  });
+}
+
+export function recusarExclusaoFisicaLote(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "A exclusão física do lote está bloqueada para preservar o histórico. Inative o lote quando ele não tiver animais ativos.",
+  });
+}
+
+export function recusarExclusaoHistoricoLote(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "A exclusão do histórico de movimentação está bloqueada. O registro permanece para consulta.",
+  });
+}
+
+export function recusarEstadiaSinteticaLote(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "Esta correção direta está bloqueada. Use a movimentação do lote para mudar a subdivisão.",
+  });
+}
+
+async function contextoConsultaLote(
+  user: Parameters<typeof identidadeDaLista>[0],
+  permissaoId: "lotes.visualizar" | "lotes.inativar",
+) {
+  const identidade = identidadeDaLista(user);
+  if (!identidade) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
+  }
+  const permissoes = identidade.papel === "principal"
+    ? []
+    : (await db.select({ permissao: usuarioPermissoes.permissao }).from(usuarioPermissoes).where(and(
+      eq(usuarioPermissoes.userId, identidade.id),
+      eq(usuarioPermissoes.titularUserId, identidade.titularUserId),
+    ))).map((row) => row.permissao);
+  if (identidade.papel !== "principal" && !permissoes.includes(permissaoId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: permissaoId === "lotes.inativar"
+        ? "Sem permissão para inativar o lote."
+        : "Sem permissão para consultar os lotes.",
+    });
+  }
+  const vinculos = identidade.papel === "principal"
+    ? []
+    : await db.select({
+      userId: usuarioFazendas.userId,
+      fazendaId: usuarioFazendas.fazendaId,
+    }).from(usuarioFazendas).where(eq(usuarioFazendas.userId, identidade.id));
+  const fazendasConta = await db.select({ id: fazendas.id, userId: fazendas.userId, nome: fazendas.nome })
+    .from(fazendas).where(eq(fazendas.userId, identidade.titularUserId));
+  const fazendasAutorizadas: number[] = [];
+  for (const fazenda of fazendasConta) {
+    const deciso = autorizarOperacao({
+      identidade,
+      permissoes,
+      permissaoId,
+      fazendasDoTitular: fazendasConta,
+      vinculos,
+      fazendaId: fazenda.id,
+      fazenda,
+    });
+    if (deciso.ok) fazendasAutorizadas.push(fazenda.id);
+  }
+  return { identidade, permissoes, vinculos, fazendasConta, fazendasAutorizadas };
+}
+
+function fazendaDoLoteLiberada(
+  contexto: Awaited<ReturnType<typeof contextoConsultaLote>>,
+  fazendaId: number | null | undefined,
+): boolean {
+  if (contexto.identidade.papel === "principal") return true;
+  return fazendaId != null && contexto.fazendasAutorizadas.includes(fazendaId);
+}
+
 const lotesRouter = router({
   gerenciamento: protectedProcedure
     .input(z.object({
@@ -2825,6 +2896,8 @@ const lotesRouter = router({
     }).optional())
     .query(async ({ ctx, input }) => {
       try {
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
       const {
         calcularIdadeMeses,
         adicionarAnimalAoResumo,
@@ -2832,7 +2905,7 @@ const lotesRouter = router({
       } = await import('../shared/lote-faixas-idade');
 
       const lotesList = await db.select().from(lotes)
-        .where(eq(lotes.userId, ctx.user.id))
+        .where(eq(lotes.userId, titular))
         .orderBy(desc(lotes.createdAt));
 
       const pastoIds = [...new Set(lotesList.map(l => l.pastoAtualId).filter(Boolean) as number[])];
@@ -2869,7 +2942,7 @@ const lotesRouter = router({
         sexo: animais.sexo,
         dataNascimento: animais.dataNascimento,
       }).from(animais).where(and(
-        eq(animais.userId, ctx.user.id),
+        eq(animais.userId, titular),
         eq(animais.status, 'ativo'),
         isNotNull(animais.loteId),
       ));
@@ -2911,7 +2984,12 @@ const lotesRouter = router({
         };
       });
 
+      if (contexto.identidade.papel !== "principal") {
+        resultado = resultado.filter((lote) => fazendaDoLoteLiberada(contexto, lote.fazendaId));
+      }
+
       if (input?.fazendaId) {
+        if (!fazendaDoLoteLiberada(contexto, input.fazendaId)) return [];
         resultado = resultado.filter(l => l.fazendaId === input.fazendaId);
       }
 
@@ -2922,8 +3000,9 @@ const lotesRouter = router({
 
       return resultado;
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return listLocalLotesGerenciamento(ctx.user.id, input ?? undefined);
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
       }
     }),
 
@@ -2934,6 +3013,12 @@ const lotesRouter = router({
       search: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
+      try {
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      if (!fazendaDoLoteLiberada(contexto, input.fazendaId)) {
+        return { rows: [], totalAnimaisSubdivisao: 0 };
+      }
       const {
         calcularIdadeMeses,
         adicionarAnimalAoResumo,
@@ -2942,14 +3027,14 @@ const lotesRouter = router({
 
       const [fazenda] = await db.select({ nome: fazendas.nome })
         .from(fazendas)
-        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)))
+        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, titular)))
         .limit(1);
       if (!fazenda) {
         return { rows: [], totalAnimaisSubdivisao: 0 };
       }
 
       const pastosConditions = [
-        eq(pastos.userId, ctx.user.id),
+        eq(pastos.userId, titular),
         eq(pastos.fazendaId, input.fazendaId),
       ];
       if (input.pastoId) pastosConditions.push(eq(pastos.id, input.pastoId));
@@ -2960,7 +3045,7 @@ const lotesRouter = router({
 
       // Busca lotes da fazenda: com ou sem subdivisão vinculada
       const lotesConditions: Parameters<typeof and>[0][] = [
-        eq(lotes.userId, ctx.user.id),
+        eq(lotes.userId, titular),
         eq(lotes.fazendaId, input.fazendaId),
       ];
       // Se filtrou por subdivisão específica, inclui apenas lotes desse pasto
@@ -2979,7 +3064,7 @@ const lotesRouter = router({
         sexo: animais.sexo,
         dataNascimento: animais.dataNascimento,
       }).from(animais).where(and(
-        eq(animais.userId, ctx.user.id),
+        eq(animais.userId, titular),
         eq(animais.status, 'ativo'),
         inArray(animais.loteId, loteIds),
       ));
@@ -3046,6 +3131,11 @@ const lotesRouter = router({
         : [...totalPorPasto.values()].reduce((s, v) => s + v, 0);
 
       return { rows, totalAnimaisSubdivisao };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
+      }
     }),
 
   list: protectedProcedure
@@ -3138,64 +3228,71 @@ const lotesRouter = router({
         return resultado.lotes;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        const locais = (await listLocalLotes(identidade.titularUserId))
-          .filter((lote) => Number(lote.userId) === identidade.titularUserId);
-        const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-          .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId);
-        const pastosLocais = (await listLocalPastos(identidade.titularUserId))
-          .filter((pasto) => Number(pasto.userId) === identidade.titularUserId);
-        const animaisLocais = (await listLocalAnimais(identidade.titularUserId))
-          .filter((animal) => Number(animal.userId) === identidade.titularUserId && animal.status === "ativo" && animal.loteId != null);
-        const contagem = new Map<number, number>();
-        for (const animal of animaisLocais) {
-          const loteId = Number(animal.loteId);
-          contagem.set(loteId, (contagem.get(loteId) ?? 0) + 1);
-        }
-        const resultado = comporListaLotes({
-          identidade,
-          permissoes: [],
-          vinculos: [],
-          fazendasDoTitular: fazendasLocais,
-          pastosDoTitular: pastosLocais,
-          lotes: [],
-          locais,
-          contagemPorLote: [...contagem.entries()].map(([loteId, quantidade]) => ({ loteId, quantidade })),
-          consultaMysqlConcluida: false,
-          somenteAtivos,
-        });
-        if (!resultado.ok) return [];
-        return resultado.lotes;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
       }
     }),
 
   listByPasto: protectedProcedure
     .input(z.object({ pastoId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const lotesList = await db.select().from(lotes).where(
-        and(eq(lotes.pastoAtualId, input.pastoId), eq(lotes.userId, ctx.user.id))
-      );
-      return Promise.all(lotesList.map(enrichLote));
+      try {
+        const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+        const titular = contexto.identidade.titularUserId;
+        const [pasto] = await db.select({ fazendaId: pastos.fazendaId }).from(pastos)
+          .where(and(eq(pastos.id, input.pastoId), eq(pastos.userId, titular)))
+          .limit(1);
+        if (!pasto || !fazendaDoLoteLiberada(contexto, pasto.fazendaId)) return [];
+        const lotesList = await db.select().from(lotes).where(
+          and(eq(lotes.pastoAtualId, input.pastoId), eq(lotes.userId, titular))
+        );
+        return Promise.all(lotesList.map(enrichLote));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
+      }
     }),
 
   listMovimentacoes: protectedProcedure
     .input(z.object({ loteId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const rows = await db.select().from(lotePastoMovimentacoes).where(
-        and(eq(lotePastoMovimentacoes.loteId, input.loteId), eq(lotePastoMovimentacoes.userId, ctx.user.id))
-      ).orderBy(desc(lotePastoMovimentacoes.dataEntrada));
-      const pastoIds = [...new Set(rows.flatMap(r => [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]))];
-      const pastoMap: Record<number, string> = {};
-      if (pastoIds.length) {
-        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome }).from(pastos).where(inArray(pastos.id, pastoIds));
-        pastosRows.forEach(p => { pastoMap[p.id] = p.nome; });
+      try {
+        const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+        const titular = contexto.identidade.titularUserId;
+        const [lote] = await db.select({ id: lotes.id, fazendaId: lotes.fazendaId }).from(lotes)
+          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, titular)))
+          .limit(1);
+        if (!lote || !fazendaDoLoteLiberada(contexto, lote.fazendaId)) return [];
+        const rows = await db.select().from(lotePastoMovimentacoes).where(
+          and(eq(lotePastoMovimentacoes.loteId, input.loteId), eq(lotePastoMovimentacoes.userId, titular))
+        ).orderBy(desc(lotePastoMovimentacoes.dataEntrada));
+        const pastoIds = [...new Set(rows.flatMap(r => [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]))];
+        const pastoMap = new Map<number, { nome: string; fazendaId: number | null }>();
+        if (pastoIds.length) {
+          const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome, fazendaId: pastos.fazendaId }).from(pastos)
+            .where(and(inArray(pastos.id, pastoIds), eq(pastos.userId, titular)));
+          pastosRows.forEach(p => { pastoMap.set(p.id, { nome: p.nome, fazendaId: p.fazendaId ?? null }); });
+        }
+        return rows.flatMap(r => {
+          const origem = r.pastoOrigemId ? pastoMap.get(r.pastoOrigemId) : undefined;
+          const destino = r.pastoDestinoId ? pastoMap.get(r.pastoDestinoId) : undefined;
+          if (!eventoHistoricoVisivel(
+            { fazendaOrigemId: origem?.fazendaId ?? null, fazendaDestinoId: destino?.fazendaId ?? lote.fazendaId },
+            contexto.fazendasAutorizadas,
+            contexto.identidade.papel === "principal",
+          )) return [];
+          return [{
+            ...r,
+            pastoOrigemNome: origem?.nome ?? null,
+            pastoDestinoNome: destino?.nome ?? null,
+          }];
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
       }
-      return rows.map(r => ({
-        ...r,
-        pastoOrigemNome: r.pastoOrigemId ? pastoMap[r.pastoOrigemId] ?? null : null,
-        pastoDestinoNome: r.pastoDestinoId ? pastoMap[r.pastoDestinoId] ?? null : null,
-      }));
     }),
 
   moveToPasto: protectedProcedure
@@ -3289,29 +3386,8 @@ const lotesRouter = router({
         return resolvido.lote;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        const local = await getLocalLote(identidade.titularUserId, input.id);
-        if (!local || Number(local.userId) !== identidade.titularUserId) ausente();
-        const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-          .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId);
-        const pastosLocais = (await listLocalPastos(identidade.titularUserId))
-          .filter((pasto) => Number(pasto.userId) === identidade.titularUserId);
-        const animaisLocais = (await listLocalAnimais(identidade.titularUserId))
-          .filter((animal) => Number(animal.userId) === identidade.titularUserId && animal.status === "ativo" && animal.loteId === local.id);
-        const resolvido = resolverConsultaLote({
-          identidade,
-          permissoes: [],
-          vinculos: [],
-          fazendasDoTitular: fazendasLocais,
-          pastosDoTitular: pastosLocais,
-          lotes: [],
-          locais: [local],
-          contagemPorLote: [{ loteId: local.id, quantidade: animaisLocais.length }],
-          consultaMysqlConcluida: false,
-        });
-        if (!resolvido.ok) ausente();
-        return resolvido.ficha;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
       }
     }),
 
@@ -3482,23 +3558,45 @@ const lotesRouter = router({
   ultimaMovimentacaoPorAnimais: protectedProcedure
     .input(z.object({ animalIds: z.array(z.number()) }))
     .query(async ({ ctx, input }) => {
-      if (input.animalIds.length === 0) return {} as Record<number, string>;
-      const rows = await db.select({
-        animalId: animalLoteMovimentacoes.animalId,
-        dataMovimentacao: animalLoteMovimentacoes.dataMovimentacao,
-      })
-        .from(animalLoteMovimentacoes)
-        .where(and(
-          eq(animalLoteMovimentacoes.userId, ctx.user.id),
-          inArray(animalLoteMovimentacoes.animalId, input.animalIds),
-        ))
-        .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao), desc(animalLoteMovimentacoes.createdAt));
+      try {
+        if (input.animalIds.length === 0) return {} as Record<number, string>;
+        const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+        const titular = contexto.identidade.titularUserId;
+        const visiveis = await db.select({ id: animais.id, fazendaId: animais.fazendaId }).from(animais)
+          .where(and(eq(animais.userId, titular), inArray(animais.id, input.animalIds)));
+        const ids = visiveis
+          .filter((animal) => fazendaDoLoteLiberada(contexto, animal.fazendaId))
+          .map((animal) => animal.id);
+        if (ids.length === 0) return {} as Record<number, string>;
+        const rows = await db.select({
+          animalId: animalLoteMovimentacoes.animalId,
+          dataMovimentacao: animalLoteMovimentacoes.dataMovimentacao,
+          fazendaId: animalLoteMovimentacoes.fazendaId,
+          fazendaOrigemId: animalLoteMovimentacoes.fazendaOrigemId,
+        })
+          .from(animalLoteMovimentacoes)
+          .where(and(
+            eq(animalLoteMovimentacoes.userId, titular),
+            inArray(animalLoteMovimentacoes.animalId, ids),
+          ))
+          .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao), desc(animalLoteMovimentacoes.createdAt));
 
-      const map: Record<number, string> = {};
-      for (const r of rows) {
-        if (!map[r.animalId]) map[r.animalId] = r.dataMovimentacao;
+        const map: Record<number, string> = {};
+        for (const r of rows) {
+          if (map[r.animalId]) continue;
+          if (!eventoHistoricoVisivel(
+            { fazendaOrigemId: r.fazendaOrigemId, fazendaDestinoId: r.fazendaId },
+            contexto.fazendasAutorizadas,
+            contexto.identidade.papel === "principal",
+          )) continue;
+          map[r.animalId] = r.dataMovimentacao;
+        }
+        return map;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
       }
-      return map;
     }),
 
   transferirAnimaisAlocacao: protectedProcedure
@@ -3543,7 +3641,22 @@ const lotesRouter = router({
   listHistoricoMovimentacoesAnimais: protectedProcedure
     .input(z.object({ animalId: z.number().optional(), loteId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const conditions = [eq(animalLoteMovimentacoes.userId, ctx.user.id)];
+      try {
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      if (input?.animalId) {
+        const [animal] = await db.select({ fazendaId: animais.fazendaId }).from(animais)
+          .where(and(eq(animais.id, input.animalId), eq(animais.userId, titular)))
+          .limit(1);
+        if (!animal || !fazendaDoLoteLiberada(contexto, animal.fazendaId)) return [];
+      }
+      if (input?.loteId) {
+        const [lote] = await db.select({ fazendaId: lotes.fazendaId }).from(lotes)
+          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, titular)))
+          .limit(1);
+        if (!lote || !fazendaDoLoteLiberada(contexto, lote.fazendaId)) return [];
+      }
+      const conditions = [eq(animalLoteMovimentacoes.userId, titular)];
       if (input?.animalId) conditions.push(eq(animalLoteMovimentacoes.animalId, input.animalId));
       if (input?.loteId) {
         conditions.push(or(
@@ -3561,15 +3674,24 @@ const lotesRouter = router({
       if (loteIds.length) {
         const lotesRows = await db.select({ id: lotes.id, nome: lotes.nome })
           .from(lotes)
-          .where(inArray(lotes.id, loteIds));
+          .where(and(inArray(lotes.id, loteIds), eq(lotes.userId, titular)));
         lotesRows.forEach(l => loteMap.set(l.id, l.nome));
       }
 
-      return rows.map(r => ({
+      return rows.filter((r) => eventoHistoricoVisivel(
+        { fazendaOrigemId: r.fazendaOrigemId, fazendaDestinoId: r.fazendaId },
+        contexto.fazendasAutorizadas,
+        contexto.identidade.papel === "principal",
+      )).map(r => ({
         ...r,
         loteOrigemNome: r.loteOrigemId != null ? (loteMap.get(r.loteOrigemId) ?? null) : "Sem lote",
         loteDestinoNome: loteMap.get(r.loteDestinoId) ?? null,
       }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        throw error;
+      }
     }),
 
   removerAnimais: protectedProcedure
@@ -3608,8 +3730,15 @@ const lotesRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       try {
-        return await avaliarExclusaoLote(ctx.user.id, input.id);
+        const contexto = await contextoConsultaLote(ctx.user, "lotes.inativar");
+        const avaliacao = await avaliarExclusaoLoteDb(contexto.identidade.titularUserId, input.id);
+        if (!fazendaDoLoteLiberada(contexto, avaliacao.fazendaId)) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+        }
+        return avaliacao;
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
         const message = error instanceof Error ? error.message : "Não foi possível verificar o Lote.";
         throw new TRPCError({ code: "NOT_FOUND", message });
       }
@@ -3617,38 +3746,35 @@ const lotesRouter = router({
 
   excluir: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const result = await executarExclusaoLote(ctx.user.id, input.id);
-        return { success: true, nomeLote: result.nomeLote };
-      } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Não foi possível excluir o Lote.";
-        const isBlocked = message.includes("possui") && message.includes("animal")
-          || message.includes("movimentações registradas");
-        throw new TRPCError({
-          code: isBlocked ? "PRECONDITION_FAILED" : "BAD_REQUEST",
-          message,
-        });
-      }
+    .mutation(async () => {
+      recusarExclusaoFisicaLote();
     }),
 
   inativar: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const result = await executarInativacaoLote(ctx.user.id, input.id);
-        return { success: true, nomeLote: result.nomeLote };
+        const contexto = await contextoConsultaLote(ctx.user, "lotes.inativar");
+        const titular = contexto.identidade.titularUserId;
+        const avaliacao = await avaliarExclusaoLoteDb(titular, input.id);
+        if (!fazendaDoLoteLiberada(contexto, avaliacao.fazendaId)) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
+        }
+        if (avaliacao.situacao === "bloqueado_animais") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: mensagemExclusaoLoteBloqueada(avaliacao.nomeLote, avaliacao.qtdAnimais),
+          });
+        }
+        await db.update(lotes)
+          .set({ ativo: false })
+          .where(and(eq(lotes.id, input.id), eq(lotes.userId, titular)));
+        return { success: true as const, nomeLote: avaliacao.nomeLote };
       } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : "Não foi possível inativar o Lote.";
-        const isBlocked = message.includes("possui") && message.includes("animal");
-        throw new TRPCError({
-          code: isBlocked ? "PRECONDITION_FAILED" : "BAD_REQUEST",
-          message,
-        });
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
+        const message = error instanceof Error ? error.message : "Não foi possível inativar o Lote.";
+        throw new TRPCError({ code: "BAD_REQUEST", message });
       }
     }),
 
@@ -3661,18 +3787,21 @@ const lotesRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       try {
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      if (!fazendaDoLoteLiberada(contexto, input.fazendaId)) return { subdivisoes: [], semSubdivisao: [] };
       const [fazenda] = await db.select({ id: fazendas.id, nome: fazendas.nome })
         .from(fazendas)
-        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)))
+        .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, titular)))
         .limit(1);
       if (!fazenda) return { subdivisoes: [], semSubdivisao: [] };
 
       const pastosList = await db.select().from(pastos)
-        .where(and(eq(pastos.userId, ctx.user.id), eq(pastos.fazendaId, input.fazendaId)));
+        .where(and(eq(pastos.userId, titular), eq(pastos.fazendaId, input.fazendaId)));
       const pastoMap = new Map(pastosList.map(p => [p.id, p]));
 
       const lotesConditions: Parameters<typeof and>[0][] = [
-        eq(lotes.userId, ctx.user.id),
+        eq(lotes.userId, titular),
         eq(lotes.fazendaId, input.fazendaId),
       ];
       const lotesList = await db.select().from(lotes).where(and(...lotesConditions));
@@ -3688,7 +3817,7 @@ const lotesRouter = router({
           })
           .from(lotePastoMovimentacoes)
           .where(and(
-            eq(lotePastoMovimentacoes.userId, ctx.user.id),
+            eq(lotePastoMovimentacoes.userId, titular),
             inArray(lotePastoMovimentacoes.pastoOrigemId, pastoIds),
             isNotNull(lotePastoMovimentacoes.dataSaida),
           ))
@@ -3705,7 +3834,7 @@ const lotesRouter = router({
       const loteIds = lotesList.map(l => l.id);
       const animaisRows = await db.select({ loteId: animais.loteId })
         .from(animais).where(and(
-          eq(animais.userId, ctx.user.id),
+          eq(animais.userId, titular),
           eq(animais.status, 'ativo'),
           inArray(animais.loteId, loteIds),
         ));
@@ -3716,7 +3845,7 @@ const lotesRouter = router({
       }
 
       const hoje = hojeISO();
-      const movsPorLote = await mapMovimentacoesPorLote(ctx.user.id, loteIds);
+      const movsPorLote = await mapMovimentacoesPorLote(titular, loteIds);
       const { porPasto, semSubdivisao: semSubdivisaoLotes, localizacaoPorLoteId } =
         agruparLotesPorLocalizacaoVigente(lotesList, movsPorLote, hoje);
 
@@ -3795,7 +3924,8 @@ const lotesRouter = router({
 
       return { subdivisoes: [...subdivisoes, ...pastosVazios].sort((a, b) => a.pastoNome.localeCompare(b.pastoNome, 'pt-BR')), semSubdivisao };
       } catch (error) {
-        if (isDatabaseUnavailable(error)) return buildLocalMapaRebanhoV2(ctx.user.id, input);
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
         throw error;
       }
     }),
@@ -3809,15 +3939,18 @@ const lotesRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       try {
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      if (!fazendaDoLoteLiberada(contexto, input.fazendaId)) return [];
       const loteNomeMap = new Map<number, string>();
       const conditions: Parameters<typeof and>[0][] = [
-        eq(lotePastoMovimentacoes.userId, ctx.user.id),
+        eq(lotePastoMovimentacoes.userId, titular),
       ];
 
       if (input.loteId) {
         const [lote] = await db.select({ id: lotes.id, nome: lotes.nome })
           .from(lotes)
-          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
+          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, titular)))
           .limit(1);
         if (!lote) return [];
         loteNomeMap.set(lote.id, lote.nome);
@@ -3825,7 +3958,7 @@ const lotesRouter = router({
       } else {
         const lotesFazenda = await db.select({ id: lotes.id, nome: lotes.nome })
           .from(lotes)
-          .where(and(eq(lotes.userId, ctx.user.id), eq(lotes.fazendaId, input.fazendaId)));
+          .where(and(eq(lotes.userId, titular), eq(lotes.fazendaId, input.fazendaId)));
         if (lotesFazenda.length === 0) return [];
         lotesFazenda.forEach(l => loteNomeMap.set(l.id, l.nome));
         conditions.push(inArray(lotePastoMovimentacoes.loteId, lotesFazenda.map(l => l.id)));
@@ -3849,22 +3982,40 @@ const lotesRouter = router({
         [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]
       ))];
       const pastoNomeMap: Record<number, string> = {};
+      const pastoFazendaMap = new Map<number, number | null>();
       if (pastoIds.length) {
-        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome })
-          .from(pastos).where(inArray(pastos.id, pastoIds));
-        pastosRows.forEach(p => { pastoNomeMap[p.id] = p.nome; });
+        const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome, fazendaId: pastos.fazendaId })
+          .from(pastos).where(and(inArray(pastos.id, pastoIds), eq(pastos.userId, titular)));
+        pastosRows.forEach(p => {
+          pastoNomeMap[p.id] = p.nome;
+          pastoFazendaMap.set(p.id, p.fazendaId ?? null);
+        });
       }
+      const principal = contexto.identidade.papel === "principal";
+      const historicoVisivel = rowsVigentes.filter((r) => {
+        const origemConhecida = r.pastoOrigemId == null || pastoFazendaMap.has(r.pastoOrigemId);
+        const destinoConhecido = r.pastoDestinoId == null || pastoFazendaMap.has(r.pastoDestinoId);
+        if (!origemConhecida || !destinoConhecido) return principal;
+        return eventoHistoricoVisivel(
+          {
+            fazendaOrigemId: r.pastoOrigemId ? pastoFazendaMap.get(r.pastoOrigemId) ?? null : null,
+            fazendaDestinoId: r.pastoDestinoId ? pastoFazendaMap.get(r.pastoDestinoId) ?? null : null,
+          },
+          contexto.fazendasAutorizadas,
+          principal,
+        );
+      });
 
       // Nomes de lotes que aparecem no histórico mas não estavam no mapa inicial
-      const missingLoteIds = [...new Set(rowsVigentes.map(r => r.loteId))].filter(id => !loteNomeMap.has(id));
+      const missingLoteIds = [...new Set(historicoVisivel.map(r => r.loteId))].filter(id => !loteNomeMap.has(id));
       if (missingLoteIds.length) {
         const extraLotes = await db.select({ id: lotes.id, nome: lotes.nome })
           .from(lotes)
-          .where(and(eq(lotes.userId, ctx.user.id), inArray(lotes.id, missingLoteIds)));
+          .where(and(eq(lotes.userId, titular), inArray(lotes.id, missingLoteIds)));
         extraLotes.forEach(l => loteNomeMap.set(l.id, l.nome));
       }
 
-      const mapped = rowsVigentes.slice(0, input.limit).map(r => ({
+      const mapped = historicoVisivel.slice(0, input.limit).map(r => ({
         id: r.id,
         loteId: r.loteId,
         loteNome: loteNomeMap.get(r.loteId) ?? '—',
@@ -3887,11 +4038,11 @@ const lotesRouter = router({
           dataEntradaPasto: lotes.dataEntradaPasto,
         }).from(lotes).where(and(
           eq(lotes.id, input.loteId),
-          eq(lotes.userId, ctx.user.id),
+          eq(lotes.userId, titular),
         )).limit(1);
 
         if (loteAtual) {
-          const movsLote = await mapMovimentacoesPorLote(ctx.user.id, [loteAtual.id]);
+          const movsLote = await mapMovimentacoesPorLote(titular, [loteAtual.id]);
           const loc = resolverLocalizacaoAtualLote(loteAtual, movsLote.get(loteAtual.id) ?? [], hoje);
           const hasOpenMov = mapped.some(m => m.loteId === input.loteId && !m.dataSaida);
           if (!hasOpenMov && loc.pastoId && loc.dataEntradaPasto) {
@@ -3925,7 +4076,8 @@ const lotesRouter = router({
       return mapped;
       } catch (error) {
         if (isDatabaseUnavailable(error)) {
-          return listLocalMapaRebanhoHistorico(ctx.user.id, input);
+          if (error instanceof TRPCError) throw error;
+          recusarLoteSemMysql();
         }
         throw error;
       }
@@ -3936,9 +4088,11 @@ const lotesRouter = router({
     .input(z.object({ search: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       try {
-      // Busca todas as fazendas do usuário
-      const fazendasList = await db.select().from(fazendas)
-        .where(eq(fazendas.userId, ctx.user.id));
+      const contexto = await contextoConsultaLote(ctx.user, "lotes.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      const fazendasList = (await db.select().from(fazendas)
+        .where(eq(fazendas.userId, titular)))
+        .filter((fazenda) => fazendaDoLoteLiberada(contexto, fazenda.id));
       if (fazendasList.length === 0) return [];
 
       const fazendaIds = fazendasList.map(f => f.id);
@@ -3946,12 +4100,12 @@ const lotesRouter = router({
 
       // Busca todos os pastos das fazendas
       const pastosList = await db.select().from(pastos)
-        .where(and(eq(pastos.userId, ctx.user.id), inArray(pastos.fazendaId, fazendaIds)));
+        .where(and(eq(pastos.userId, titular), inArray(pastos.fazendaId, fazendaIds)));
       const pastoMap = new Map(pastosList.map(p => [p.id, p]));
 
       // Busca todos os lotes das fazendas
       const lotesList = await db.select().from(lotes)
-        .where(and(eq(lotes.userId, ctx.user.id), inArray(lotes.fazendaId, fazendaIds)));
+        .where(and(eq(lotes.userId, titular), inArray(lotes.fazendaId, fazendaIds)));
 
       if (lotesList.length === 0) {
         return fazendasList.map(f => ({
@@ -3968,7 +4122,7 @@ const lotesRouter = router({
       // Contagem de animais por lote
       const animaisRows = await db.select({ loteId: animais.loteId })
         .from(animais).where(and(
-          eq(animais.userId, ctx.user.id),
+          eq(animais.userId, titular),
           eq(animais.status, 'ativo'),
           inArray(animais.loteId, loteIds),
         ));
@@ -3980,7 +4134,7 @@ const lotesRouter = router({
 
       const q = input?.search?.trim().toLowerCase() ?? '';
       const hoje = hojeISO();
-      const movsPorLote = await mapMovimentacoesPorLote(ctx.user.id, loteIds);
+      const movsPorLote = await mapMovimentacoesPorLote(titular, loteIds);
 
       // Agrupa por fazenda
       const resultadoPorFazenda = fazendasList.map(fazenda => {
@@ -4045,81 +4199,22 @@ const lotesRouter = router({
         ? resultadoPorFazenda.filter(f => f.subdivisoes.length > 0 || f.semSubdivisao.length > 0 || f.fazendaNome.toLowerCase().includes(q))
         : resultadoPorFazenda;
       } catch (error) {
-        if (isDatabaseUnavailable(error)) return buildLocalMapaRebanhoGeral(ctx.user.id, input ?? undefined);
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarLoteSemMysql();
         throw error;
       }
     }),
 
   excluirMovimentacao: protectedProcedure
     .input(z.object({ movimentacaoId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-      // Busca a movimentação e valida que pertence ao usuário
-      const [mov] = await db.select().from(lotePastoMovimentacoes)
-        .where(and(
-          eq(lotePastoMovimentacoes.id, input.movimentacaoId),
-          eq(lotePastoMovimentacoes.userId, ctx.user.id),
-        ));
-      if (!mov) throw new TRPCError({ code: 'NOT_FOUND', message: 'Movimentação não encontrada.' });
-      const dataSaidaStr = mov.dataSaida ? String(mov.dataSaida).slice(0, 10) : null;
-      if (!dataSaidaStr) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Não é possível excluir a movimentação atual. Use Mover Lote para corrigir a localização do Lote.',
-        });
-      }
-      await db.delete(lotePastoMovimentacoes)
-        .where(eq(lotePastoMovimentacoes.id, input.movimentacaoId));
-      return { ok: true };
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return await excluirLocalLotePastoMovimentacao(ctx.user.id, input.movimentacaoId);
-        } catch (localError) {
-          const msg = localError instanceof Error ? localError.message : "Movimentação não encontrada.";
-          const isAtual = msg.includes("movimentação atual");
-          throw new TRPCError({
-            code: isAtual ? "BAD_REQUEST" : "NOT_FOUND",
-            message: msg,
-          });
-        }
-      }
+    .mutation(async () => {
+      recusarExclusaoHistoricoLote();
     }),
 
   cancelarEstadiaSinteticaLote: protectedProcedure
     .input(z.object({ loteId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const [lote] = await db.select({ id: lotes.id })
-          .from(lotes)
-          .where(and(eq(lotes.id, input.loteId), eq(lotes.userId, ctx.user.id)))
-          .limit(1);
-        if (!lote) throw new TRPCError({ code: 'NOT_FOUND', message: 'Lote não encontrado.' });
-
-        await db.update(lotes)
-          .set({ pastoAtualId: null, dataEntradaPasto: null, localizacao: null })
-          .where(eq(lotes.id, input.loteId));
-
-        await db.update(animais)
-          .set({ pastoId: null })
-          .where(and(
-            eq(animais.userId, ctx.user.id),
-            eq(animais.loteId, input.loteId),
-            eq(animais.status, "ativo"),
-          ));
-
-        return { ok: true };
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return await cancelarLocalEstadiaSinteticaLote(ctx.user.id, input.loteId);
-        } catch (localError) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: localError instanceof Error ? localError.message : "Lote não encontrado.",
-          });
-        }
-      }
+    .mutation(async () => {
+      recusarEstadiaSinteticaLote();
     }),
 });
 const saudeRouter = router({
