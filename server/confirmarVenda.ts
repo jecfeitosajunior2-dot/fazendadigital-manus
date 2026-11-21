@@ -73,7 +73,11 @@ function affectedRowsOf(result: unknown): number {
   return Number(asArray?.[0]?.affectedRows ?? asObj?.affectedRows ?? 0);
 }
 
-export async function confirmarVendaComercial(userId: number, input: ConfirmarVendaInput) {
+export async function confirmarVendaComercial(
+  userId: number,
+  input: ConfirmarVendaInput,
+  opcoes?: { fazendaJaAutorizada?: boolean },
+) {
   if (!input.fazendaId || input.fazendaId <= 0) toTrpc(MSG_VENDA_SEM_FAZENDA);
   if (!input.compradorId || input.compradorId <= 0) toTrpc(MSG_VENDA_SEM_COMPRADOR);
   if (input.formaPrecificacao === "arroba") toTrpc(MSG_VENDA_ARROBA_REQUER_MIGRATION);
@@ -102,7 +106,9 @@ export async function confirmarVendaComercial(userId: number, input: ConfirmarVe
   });
   const totais = resumirItensVenda(itensCalculados, { forma });
 
-  await assertFazendaDoUsuario(userId, input.fazendaId);
+  if (!opcoes?.fazendaJaAutorizada) {
+    await assertFazendaDoUsuario(userId, input.fazendaId);
+  }
   const { loteFazendaById } = await loadLoteFazendaContextForUser(userId);
 
   try {

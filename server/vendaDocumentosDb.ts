@@ -1,7 +1,16 @@
 import { promises as fs } from "node:fs";
+import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { vendaDocumentos, vendas } from "../drizzle/schema";
 import { db } from "./db";
+import { consultaEstoqueNaTransacao } from "./consultaEstoqueDb";
+import {
+  MSG_SEM_PERMISSAO_CRIAR_VENDAS,
+  MSG_SEM_PERMISSAO_VER_VENDAS,
+  PERMISSAO_VISUALIZAR_VENDAS,
+  erroVendaConsulta,
+} from "./consultaVendaAutorizada";
+import { autorizarVendaNaTransacao } from "./consultaVendaDb";
 import { env } from "./_core/env";
 import { getLocalManusStoragePath } from "./_core/localManusStorage";
 import { uploadToStorage } from "./_core/storage";
@@ -113,6 +122,87 @@ export const vendaDocumentosStore: VendaDocumentosStore = {
         0,
     );
     return affected > 0;
+  },
+
+  async autorizarDono(contexto) {
+    return db.transaction(async (tx) => {
+      const [peek] = await tx
+        .select({ fazendaId: vendas.fazendaId, userId: vendas.userId })
+        .from(vendas)
+        .where(eq(vendas.id, contexto.vendaId))
+        .limit(1);
+      if (!peek?.userId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Venda não encontrada." });
+      }
+      if (peek.fazendaId == null) {
+        const usuario = await consultaEstoqueNaTransacao(tx as never).usuario(contexto.executorId);
+        const sessaoOk = contexto.sessionVersionDaSessao == null
+          || contexto.sessionVersionDaSessao === usuario?.sessionVersion;
+        if (
+          !usuario
+          || !sessaoOk
+          || usuario.situacao !== "ativo"
+          || usuario.papel !== "principal"
+          || usuario.titularUserId !== peek.userId
+        ) {
+          throw new TRPCError({ code: "FORBIDDEN", message: MSG_SEM_PERMISSAO_CRIAR_VENDAS });
+        }
+        return usuario.titularUserId;
+      }
+      const acesso = await autorizarVendaNaTransacao(tx as never, {
+        executorId: contexto.executorId,
+        sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+        fazendaId: peek.fazendaId,
+        permissaoId: contexto.permissaoId,
+      }, MSG_SEM_PERMISSAO_CRIAR_VENDAS);
+      if (!acesso.ok) throw erroVendaConsulta(acesso, MSG_SEM_PERMISSAO_CRIAR_VENDAS);
+      if (peek.userId !== acesso.titularUserId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Venda não encontrada." });
+      }
+      return acesso.titularUserId;
+    });
+  },
+
+  async resolverDonoArquivo(contexto) {
+    const [doc] = await db
+      .select({ vendaId: vendaDocumentos.vendaId })
+      .from(vendaDocumentos)
+      .where(eq(vendaDocumentos.id, contexto.documentoId))
+      .limit(1);
+    if (!doc) return null;
+    try {
+      return await db.transaction(async (tx) => {
+        const [peek] = await tx
+          .select({ fazendaId: vendas.fazendaId, userId: vendas.userId })
+          .from(vendas)
+          .where(eq(vendas.id, doc.vendaId))
+          .limit(1);
+        if (!peek?.userId) return null;
+        if (peek.fazendaId == null) {
+          const usuario = await consultaEstoqueNaTransacao(tx as never).usuario(contexto.executorId);
+          const sessaoOk = contexto.sessionVersionDaSessao == null
+            || contexto.sessionVersionDaSessao === usuario?.sessionVersion;
+          if (
+            !usuario
+            || !sessaoOk
+            || usuario.situacao !== "ativo"
+            || usuario.papel !== "principal"
+            || usuario.titularUserId !== peek.userId
+          ) return null;
+          return usuario.titularUserId;
+        }
+        const acesso = await autorizarVendaNaTransacao(tx as never, {
+          executorId: contexto.executorId,
+          sessionVersionDaSessao: contexto.sessionVersionDaSessao,
+          fazendaId: peek.fazendaId,
+          permissaoId: PERMISSAO_VISUALIZAR_VENDAS,
+        }, MSG_SEM_PERMISSAO_VER_VENDAS);
+        if (!acesso.ok || peek.userId !== acesso.titularUserId) return null;
+        return acesso.titularUserId;
+      });
+    } catch {
+      return null;
+    }
   },
 };
 

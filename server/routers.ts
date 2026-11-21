@@ -283,6 +283,15 @@ import {
   recusarCompraSemMysql,
 } from "./consultaCompraAutorizada";
 import { fazendasDaConsultaCompraNoBanco } from "./consultaCompraDb";
+import {
+  MSG_CADASTRO_VENDA_SEM_FAZENDA,
+  MSG_SEM_PERMISSAO_VER_VENDAS,
+  erroVendaConsulta,
+  recusarVendaSemMysql,
+  vendaVisivelNoEscopo,
+} from "./consultaVendaAutorizada";
+import { fazendasDaConsultaVendaNoBanco } from "./consultaVendaDb";
+import { excluirRascunhoVendaAutorizado } from "./excluirVenda";
 import { comprasListInputSchema } from "./comprasListFiltro";
 import { createCancelarVendaFinanceiroService, vendaTemRecebimentoEfetivo } from "./cancelarVendaFinanceiro";
 import { createCancelarVendaFinanceiroMysqlStore } from "./cancelarVendaFinanceiroMysql";
@@ -10223,8 +10232,25 @@ const vendasRouter = router({
   list: protectedProcedure
     .input(vendasListInputSchema)
     .query(async ({ ctx, input }) => {
-    const conditions = [eq(vendas.userId, ctx.user.id)];
-    if (input?.fazendaId) conditions.push(eq(vendas.fazendaId, input.fazendaId));
+    try {
+    const acesso = await fazendasDaConsultaVendaNoBanco({
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+    });
+    if (!acesso.ok) throw erroVendaConsulta(acesso, MSG_SEM_PERMISSAO_VER_VENDAS);
+    if (input?.fazendaId && !acesso.fazendaIds.includes(input.fazendaId)) return [];
+    const conditions = [eq(vendas.userId, acesso.titularUserId)];
+    if (input?.fazendaId) {
+      conditions.push(eq(vendas.fazendaId, input.fazendaId));
+    } else if (acesso.papel === "principal") {
+      conditions.push(acesso.fazendaIds.length
+        ? or(isNull(vendas.fazendaId), inArray(vendas.fazendaId, acesso.fazendaIds))!
+        : isNull(vendas.fazendaId));
+    } else if (acesso.fazendaIds.length === 0) {
+      return [];
+    } else {
+      conditions.push(inArray(vendas.fazendaId, acesso.fazendaIds));
+    }
     const statusFiltro = statusWhereVendasList(input?.status);
     if (statusFiltro) conditions.push(eq(vendas.status, statusFiltro));
     const rows = await db
@@ -10238,7 +10264,7 @@ const vendasRouter = router({
     const itens = await db
       .select()
       .from(vendaItens)
-      .where(and(eq(vendaItens.userId, ctx.user.id), inArray(vendaItens.vendaId, ids)));
+      .where(and(eq(vendaItens.userId, acesso.titularUserId), inArray(vendaItens.vendaId, ids)));
     const itensPorVenda = new Map<number, typeof itens>();
     for (const item of itens) {
       const list = itensPorVenda.get(item.vendaId) ?? [];
@@ -10280,21 +10306,34 @@ const vendasRouter = router({
         valorTotalNumero: temItens ? totais!.valorTotal : Number(v.valorTotal) || 0,
       };
     });
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      if (isDatabaseUnavailable(error)) recusarVendaSemMysql();
+      throw error;
+    }
   }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
+      try {
+      const acesso = await fazendasDaConsultaVendaNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+      });
+      if (!acesso.ok) throw erroVendaConsulta(acesso, MSG_SEM_PERMISSAO_VER_VENDAS);
       const [venda] = await db
         .select()
         .from(vendas)
-        .where(and(eq(vendas.id, input.id), eq(vendas.userId, ctx.user.id)))
+        .where(and(eq(vendas.id, input.id), eq(vendas.userId, acesso.titularUserId)))
         .limit(1);
-      if (!venda) throw new TRPCError({ code: "NOT_FOUND", message: "Venda não encontrada." });
+      if (!venda || !vendaVisivelNoEscopo(venda.fazendaId, acesso)) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Venda não encontrada." });
+      }
       const itens = await db
         .select()
         .from(vendaItens)
-        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.vendaId, venda.id)));
+        .where(and(eq(vendaItens.userId, acesso.titularUserId), eq(vendaItens.vendaId, venda.id)));
       let fazendaNome: string | null = null;
       if (venda.fazendaId != null) {
         const [fazenda] = await db
@@ -10323,29 +10362,46 @@ const vendasRouter = router({
             precoMedioCabeca: null as number | null,
             precoMedioArroba: null as number | null,
           };
-      const documentos = await vendaDocumentosService.listarPublicos(ctx.user.id, venda.id);
+      const documentos = await vendaDocumentosService.listarPublicos(acesso.titularUserId, venda.id);
       const temRecebimentoEfetivo = await financeiroNucleoMysqlStore.transaction(tx =>
-        vendaTemRecebimentoEfetivo(tx, ctx.user.id, venda.id),
+        vendaTemRecebimentoEfetivo(tx, acesso.titularUserId, venda.id),
       );
       return { ...venda, fazendaNome, itens, totais, temItens: itens.length > 0, documentos, temRecebimentoEfetivo };
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarVendaSemMysql();
+        throw error;
+      }
     }),
 
   porAnimal: protectedProcedure
     .input(z.object({ animalId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [item] = await db
+      try {
+      const acesso = await fazendasDaConsultaVendaNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+      });
+      if (!acesso.ok) throw erroVendaConsulta(acesso, MSG_SEM_PERMISSAO_VER_VENDAS);
+      const itensDoAnimal = await db
         .select()
         .from(vendaItens)
-        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.animalId, input.animalId)))
-        .limit(1);
-      if (!item) return null;
-      const [venda] = await db
-        .select()
-        .from(vendas)
-        .where(and(eq(vendas.id, item.vendaId), eq(vendas.userId, ctx.user.id)))
-        .limit(1);
-      if (!venda) return null;
-      return { venda, item };
+        .where(and(eq(vendaItens.userId, acesso.titularUserId), eq(vendaItens.animalId, input.animalId)));
+      const ordenados = [...itensDoAnimal].sort((a, b) => b.vendaId - a.vendaId);
+      for (const item of ordenados) {
+        const [venda] = await db
+          .select()
+          .from(vendas)
+          .where(and(eq(vendas.id, item.vendaId), eq(vendas.userId, acesso.titularUserId)))
+          .limit(1);
+        if (venda && vendaVisivelNoEscopo(venda.fazendaId, acesso)) return { venda, item };
+      }
+      return null;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarVendaSemMysql();
+        throw error;
+      }
     }),
 
   confirmar: protectedProcedure
@@ -10378,7 +10434,7 @@ const vendasRouter = router({
         }, (titularUserId) => confirmarVendaComercialSePermitida(titularUserId, {
           ...input,
           usuarioNome: ctx.user.name,
-        }));
+        }, undefined, { fazendaJaAutorizada: true }));
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (isDatabaseUnavailable(error)) {
@@ -10494,6 +10550,7 @@ const vendasRouter = router({
         substituir: input.substituir,
         uploadedByUserId: ctx.user.id,
         uploadedByNome: ctx.user.name,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
       }),
     ),
 
@@ -10508,6 +10565,7 @@ const vendasRouter = router({
       vendaDocumentosService.excluir(ctx.user.id, {
         vendaId: input.vendaId,
         documentoId: input.documentoId,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
       }),
     ),
 
@@ -10519,27 +10577,27 @@ const vendasRouter = router({
       valorTotal: z.string().optional(),
       observacoes: z.string().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      await db.insert(vendas).values({ userId: ctx.user.id, ...input });
-      return { success: true };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: MSG_CADASTRO_VENDA_SEM_FAZENDA,
+      });
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const [item] = await db
-        .select({ id: vendaItens.id })
-        .from(vendaItens)
-        .where(and(eq(vendaItens.userId, ctx.user.id), eq(vendaItens.vendaId, input.id)))
-        .limit(1);
-      if (item) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Vendas com animais vinculados não podem ser excluídas nesta etapa.",
-        });
+      try {
+        return await excluirRascunhoVendaAutorizado(
+          ctx.user.id,
+          ctx.user.sessionVersion ?? null,
+          input.id,
+        );
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarVendaSemMysql();
+        throw error;
       }
-      await db.delete(vendas).where(and(eq(vendas.id, input.id), eq(vendas.userId, ctx.user.id)));
-      return { success: true };
     }),
 });
 

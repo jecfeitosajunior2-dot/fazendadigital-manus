@@ -21,7 +21,7 @@ export async function handleVendaDocumentoArquivo(req: Request, res: Response) {
     return;
   }
 
-  const arquivo = await vendaDocumentosService.carregarArquivo(user.id, documentoId);
+  const arquivo = await vendaDocumentosService.carregarArquivo(user.id, documentoId, user.sessionVersion ?? null);
   if (!arquivo) {
     res.status(404).send("Documento não encontrado.");
     return;

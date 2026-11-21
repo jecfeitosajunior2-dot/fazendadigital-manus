@@ -66,6 +66,17 @@ export type VendaDocumentosStore = {
     patch: Pick<VendaDocumentoRow, "nomeOriginal" | "storagePath" | "uploadedAt" | "uploadedByUserId" | "uploadedByNome">,
   ): Promise<boolean>;
   deleteDocumento(id: number, userId: number): Promise<boolean>;
+  autorizarDono?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    vendaId: number;
+    permissaoId: string;
+  }): Promise<number>;
+  resolverDonoArquivo?(contexto: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    documentoId: number;
+  }): Promise<number | null>;
 };
 
 export type VendaDocumentosServiceDeps = {
@@ -158,6 +169,21 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     return venda;
   }
 
+  async function donoDoDocumento(
+    userId: number,
+    vendaId: number,
+    sessionVersionDaSessao: number | null | undefined,
+    permissaoId: string,
+  ) {
+    if (sessionVersionDaSessao === undefined || !deps.store.autorizarDono) return userId;
+    return deps.store.autorizarDono({
+      executorId: userId,
+      sessionVersionDaSessao,
+      vendaId,
+      permissaoId,
+    });
+  }
+
   async function listarPublicos(userId: number, vendaId: number): Promise<VendaDocumentoPublico[]> {
     await assertVendaDoUsuario(userId, vendaId);
     const rows = await deps.store.listDocumentos(userId, vendaId);
@@ -175,6 +201,7 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
       substituir?: boolean;
       uploadedByUserId: number;
       uploadedByNome?: string | null;
+      sessionVersionDaSessao?: number | null;
     },
   ) {
     if (!isVendaDocumentoTipo(input.tipo)) toTrpc(MSG_VENDA_DOC_TIPO);
@@ -185,8 +212,9 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     });
     if (!validacao.ok) toTrpc(validacao.message);
 
-    await assertVendaDoUsuario(userId, input.vendaId);
-    const existente = await deps.store.getDocumentoPorTipo(userId, input.vendaId, input.tipo);
+    const dono = await donoDoDocumento(userId, input.vendaId, input.sessionVersionDaSessao, "vendas.criar");
+    await assertVendaDoUsuario(dono, input.vendaId);
+    const existente = await deps.store.getDocumentoPorTipo(dono, input.vendaId, input.tipo);
     if (existente && !input.substituir) toTrpc(MSG_VENDA_DOC_JA_EXISTE);
 
     const nomeOriginal = sanitizarNomeOriginalPdf(input.nomeOriginal);
@@ -205,7 +233,7 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     const uploadedByNome = String(input.uploadedByNome ?? "").trim() || null;
 
     if (existente) {
-      const ok = await deps.store.updateDocumento(existente.id, userId, {
+      const ok = await deps.store.updateDocumento(existente.id, dono, {
         nomeOriginal,
         storagePath,
         uploadedAt,
@@ -222,7 +250,7 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     }
 
     const id = await deps.store.insertDocumento({
-      userId,
+      userId: dono,
       vendaId: input.vendaId,
       tipo: input.tipo,
       nomeOriginal,
@@ -235,13 +263,17 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     return { success: true as const, id, substituido: false, arquivoAnteriorOrfao: null as string | null };
   }
 
-  async function excluir(userId: number, input: { vendaId: number; documentoId: number }) {
-    await assertVendaDoUsuario(userId, input.vendaId);
-    const doc = await deps.store.getDocumento(userId, input.documentoId);
+  async function excluir(
+    userId: number,
+    input: { vendaId: number; documentoId: number; sessionVersionDaSessao?: number | null },
+  ) {
+    const dono = await donoDoDocumento(userId, input.vendaId, input.sessionVersionDaSessao, "vendas.criar");
+    await assertVendaDoUsuario(dono, input.vendaId);
+    const doc = await deps.store.getDocumento(dono, input.documentoId);
     if (!doc || doc.vendaId !== input.vendaId) {
       toTrpc(MSG_VENDA_DOC_DOCUMENTO_NAO_ENCONTRADO, "NOT_FOUND");
     }
-    const ok = await deps.store.deleteDocumento(doc.id, userId);
+    const ok = await deps.store.deleteDocumento(doc.id, dono);
     if (!ok) toTrpc(MSG_VENDA_DOC_DOCUMENTO_NAO_ENCONTRADO, "NOT_FOUND");
     return {
       success: true as const,
@@ -249,10 +281,24 @@ export function createVendaDocumentosService(deps: VendaDocumentosServiceDeps) {
     };
   }
 
-  async function carregarArquivo(userId: number, documentoId: number) {
-    const doc = await deps.store.getDocumento(userId, documentoId);
+  async function carregarArquivo(
+    userId: number,
+    documentoId: number,
+    sessionVersionDaSessao?: number | null,
+  ) {
+    let dono = userId;
+    if (sessionVersionDaSessao !== undefined && deps.store.resolverDonoArquivo) {
+      const resolvido = await deps.store.resolverDonoArquivo({
+        executorId: userId,
+        sessionVersionDaSessao,
+        documentoId,
+      });
+      if (resolvido == null) return null;
+      dono = resolvido;
+    }
+    const doc = await deps.store.getDocumento(dono, documentoId);
     if (!doc) return null;
-    const venda = await deps.store.getVenda(userId, doc.vendaId);
+    const venda = await deps.store.getVenda(dono, doc.vendaId);
     if (!venda) return null;
     const buffer = await deps.readFile(doc.storagePath);
     if (!buffer) return null;

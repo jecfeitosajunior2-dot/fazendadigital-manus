@@ -51,9 +51,10 @@ export async function confirmarVendaComercialSePermitida(
   userId: number,
   input: ConfirmarVendaInput,
   config?: ConfiguracaoConfirmacaoVenda | null,
+  opcoes?: { fazendaJaAutorizada?: boolean },
 ) {
   recusarSeRotaNegada("comercial", config);
-  return confirmarVendaComercial(userId, input);
+  return confirmarVendaComercial(userId, input, opcoes);
 }
 
 export async function confirmarVendaIntegradaSeAtiva(
