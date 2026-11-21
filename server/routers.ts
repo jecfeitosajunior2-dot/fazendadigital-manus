@@ -128,7 +128,6 @@ import {
   listLocalAbastecimentos,
   listLocalManutencoes,
   listLocalAnimais,
-  listLocalPesagens,
   createLocalLote,
   moveLocalLoteToPasto,
   updateLocalLote,
@@ -138,7 +137,6 @@ import {
   movimentarAnimaisLocalLote,
   espelharRetiradaAnimaisLocal,
   createLocalPesagem,
-  deleteLocalPesagem,
   updateLocalPesagemObservacoes,
   listLocalSaudeRegistros,
   createLocalSaudeRegistro,
@@ -212,6 +210,8 @@ import {
   pesarEEspelharAnimal,
 } from "./pesarAnimalAutorizado";
 import { ioPesagemDrizzle } from "./pesarAnimalDb";
+import { listarPesagensNoBanco } from "./consultaPesagemDb";
+import { recusarExclusaoFisicaPesagem, recusarPesagemSemMysql } from "./consultaPesagemAutorizada";
 import {
   assertManejoPermitidoNaData,
   getBaixaAnimal,
@@ -8007,18 +8007,23 @@ const pesagensRouter = router({
     .input(z.object({ animalId: z.number().optional() }).optional())
     .query(async ({ ctx, input }) => {
       try {
-        const conditions = [eq(pesagens.userId, ctx.user.id)];
-        if (input?.animalId) conditions.push(eq(pesagens.animalId, input.animalId));
-        const rows = await db
-          .select()
-          .from(pesagens)
-          .where(and(...conditions))
-          .orderBy(desc(pesagens.createdAt));
-        if (rows.length > 0) return rows;
+        const resultado = await listarPesagensNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          animalId: input?.animalId,
+        });
+        if (!resultado.ok) {
+          throw new TRPCError({
+            code: resultado.motivo === "sem_identidade" ? "UNAUTHORIZED" : "FORBIDDEN",
+            message: resultado.mensagem ?? "Sem permissão para consultar as pesagens.",
+          });
+        }
+        return resultado.pesagens;
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarPesagemSemMysql();
+        throw error;
       }
-      return listLocalPesagens(ctx.user.id, input?.animalId);
     }),
 
   create: protectedProcedure
@@ -8068,15 +8073,8 @@ const pesagensRouter = router({
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await db.delete(pesagens).where(and(eq(pesagens.id, input.id), eq(pesagens.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        await deleteLocalPesagem(ctx.user.id, input.id);
-        return { success: true, localFallback: true };
-      }
+    .mutation(() => {
+      recusarExclusaoFisicaPesagem();
     }),
 });
 
