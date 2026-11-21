@@ -505,6 +505,7 @@ export async function registrarEntradaSemenDb(
           eq(semenPartidas.partida, entrada.partida),
         ),
       )
+      .for("update")
       .limit(1);
 
     const custoTotalStr = entrada.custoTotal.toFixed(2);

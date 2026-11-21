@@ -21,6 +21,13 @@ import {
   SEMEN_ENTRADA_FIELD_LIGHT,
   semenEntradaModalLayout,
 } from "@/lib/semenEntradaModalLayout";
+import {
+  concluirOperacaoEntradaSemen,
+  descartarOperacaoEntradaSemen,
+  lerRascunhoEntradaSemen,
+  operacaoEntradaSemenAtual,
+  type SlotEntradaSemen,
+} from "@/lib/operacaoEntradaSemen";
 import type { SemenEntradaPrefill } from "@/lib/semenEstoqueEntradaPrefill";
 import { trpc } from "@/lib/trpc";
 import { cn, formatCurrencyBrl } from "@/lib/utils";
@@ -35,7 +42,7 @@ import {
   parseSemenCustoTotal,
   parseSemenQuantidadeDoses,
 } from "@shared/semenEstoque";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 function SemenEntradaSection({
@@ -103,6 +110,8 @@ export function NovaEntradaSemenDialog({
   const [custoUnitario, setCustoUnitario] = useState("");
   const [dataEntrada, setDataEntrada] = useState(toDateOnlyISO(new Date()));
   const [cadastroReprodutorOpen, setCadastroReprodutorOpen] = useState(false);
+  const slot: SlotEntradaSemen = locked ? "prefill" : "livre";
+  const tinhaConteudo = useRef(false);
 
   const resetForm = useCallback(() => {
     setOrigem("");
@@ -124,15 +133,35 @@ export function NovaEntradaSemenDialog({
     setCustoUnitario("");
     setDataEntrada(toDateOnlyISO(new Date()));
     if (prefill) {
+      const pendente = lerRascunhoEntradaSemen("prefill", fazendaId);
+      const mesmaPartida = pendente?.partida === prefill.partida && pendente.origem === prefill.origem;
       setOrigem(prefill.origem);
       setReprodutorTexto(prefill.reprodutorTexto);
       setPartida(prefill.partida);
-      setCentralOrigem(prefill.centralOrigem);
+      setCentralOrigem(mesmaPartida ? pendente.centralOrigem : prefill.centralOrigem);
       setMachoSel(null);
+      if (mesmaPartida && pendente) {
+        setQuantidadeDoses(pendente.quantidadeDoses);
+        setCustoUnitario(pendente.custoUnitario);
+        setDataEntrada(pendente.dataEntrada);
+      }
     } else {
-      resetForm();
+      const pendente = lerRascunhoEntradaSemen("livre", fazendaId);
+      if (pendente) {
+        setOrigem(pendente.origem === "interno" || pendente.origem === "externo" ? pendente.origem : "");
+        setReprodutorTexto(pendente.reprodutorTexto);
+        setPartida(pendente.partida);
+        setCentralOrigem(pendente.centralOrigem);
+        setQuantidadeDoses(pendente.quantidadeDoses);
+        setCustoUnitario(pendente.custoUnitario);
+        setDataEntrada(pendente.dataEntrada);
+        setMachoSel(null);
+      } else {
+        descartarOperacaoEntradaSemen("livre");
+        resetForm();
+      }
     }
-  }, [open, prefill, resetForm]);
+  }, [open, prefill, resetForm, fazendaId]);
 
   useEffect(() => {
     if (!open || !prefill || prefill.origem !== SEMEN_ORIGEM_INTERNO || prefill.machoId == null) {
@@ -141,6 +170,30 @@ export function NovaEntradaSemenDialog({
     const found = animais.find(a => a.id === prefill.machoId) ?? null;
     if (found) setMachoSel(found);
   }, [open, prefill, animais]);
+
+  useEffect(() => {
+    if (!open || prefill || origem !== SEMEN_ORIGEM_INTERNO) return;
+    const pendente = lerRascunhoEntradaSemen("livre", fazendaId);
+    if (pendente?.machoId == null) return;
+    const found = animais.find(a => a.id === pendente.machoId) ?? null;
+    if (found) setMachoSel(found);
+  }, [open, prefill, origem, fazendaId, animais]);
+
+  useEffect(() => {
+    const vazio = origem === "" && partida.trim() === "" && quantidadeDoses.trim() === "" && custoUnitario.trim() === "";
+    if (!open) {
+      tinhaConteudo.current = false;
+      return;
+    }
+    if (!vazio) {
+      tinhaConteudo.current = true;
+      return;
+    }
+    if (tinhaConteudo.current) {
+      tinhaConteudo.current = false;
+      descartarOperacaoEntradaSemen(slot);
+    }
+  }, [open, slot, origem, partida, quantidadeDoses, custoUnitario]);
 
   const qtdNum = parseSemenQuantidadeDoses(quantidadeDoses);
   const custoUnitNum = parseSemenCustoTotal(custoUnitario);
@@ -195,7 +248,10 @@ export function NovaEntradaSemenDialog({
     );
 
   const registrar = trpc.semen.registrarEntrada.useMutation({
-    onSuccess: result => onSuccess(result),
+    onSuccess: result => {
+      concluirOperacaoEntradaSemen(slot);
+      onSuccess(result);
+    },
     onError: err => toast.error(err.message),
   });
 
@@ -206,17 +262,43 @@ export function NovaEntradaSemenDialog({
     const custoUnitParsed = parseSemenCustoTotal(custoUnitario);
     const qtdParsed = parseSemenQuantidadeDoses(quantidadeDoses);
     if (custoUnitParsed == null || qtdParsed == null || !origem) return;
+    const machoId = origem === SEMEN_ORIGEM_INTERNO ? (machoSel?.id ?? prefill?.machoId ?? null) : null;
+    const custoTotal = custoUnitParsed * qtdParsed;
+    const assinatura = [
+      fazendaId,
+      origem,
+      machoId ?? "",
+      reprodutorTexto.trim(),
+      partida.trim(),
+      centralOrigem.trim(),
+      qtdParsed,
+      custoTotal,
+      dataEntrada,
+    ].join("|");
+    const operacaoId = operacaoEntradaSemenAtual(slot, {
+      fazendaId,
+      assinatura,
+      origem,
+      partida,
+      quantidadeDoses,
+      custoUnitario,
+      dataEntrada,
+      reprodutorTexto,
+      centralOrigem,
+      machoId,
+    });
 
     registrar.mutate({
       fazendaId,
       origemReprodutor: origem,
-      machoId: origem === SEMEN_ORIGEM_INTERNO ? (machoSel?.id ?? prefill?.machoId ?? undefined) : undefined,
+      machoId: machoId ?? undefined,
       reprodutorTexto: origem === SEMEN_ORIGEM_EXTERNO ? reprodutorTexto : undefined,
       partida,
       centralOrigem: centralOrigem || undefined,
       quantidadeDoses: qtdParsed,
-      custoTotal: custoUnitParsed * qtdParsed,
+      custoTotal,
       dataEntrada,
+      operacaoId,
     });
   };
 

@@ -5,9 +5,17 @@ import {
   SEMEN_ORIGEM_INTERNO,
   SEMEN_STATUS_DISPONIVEL,
   SEMEN_STATUS_ESGOTADO,
-  validateSemenEntradaInput,
 } from "../shared/semenEstoque";
 import { isDatabaseUnavailable } from "./localFallbackStore";
+import { ConflitoEntradaSemen, erroEntradaSemen, registrarEntradaSemenEEspelhar } from "./entradaSemenAutorizado";
+import { ioEntradaSemenDrizzle } from "./entradaSemenDb";
+import {
+  ConflitoCorrecaoAjusteSemen,
+  ajustarEstoqueSemenEEspelhar,
+  corrigirEntradaSemenEEspelhar,
+  erroCorrecaoAjusteSemen,
+} from "./correcaoAjusteSemenAutorizado";
+import { ioCorrecaoAjusteSemenDrizzle } from "./correcaoAjusteSemenDb";
 import { protectedProcedure, router } from "./_core/trpc";
 import {
   getSemenPartidaByIdDb,
@@ -15,9 +23,6 @@ import {
   listSemenPartidasDb,
   listSemenPartidasDisponiveisInseminacaoDb,
   listSemenReprodutoresExternosDisponiveisDb,
-  registrarEntradaSemenDb,
-  corrigirEntradaSemenDb,
-  ajustarEstoqueSemenDb,
 } from "./semenEstoqueDb";
 import {
   getSemenPartidaByIdLocal,
@@ -25,9 +30,6 @@ import {
   listSemenPartidasLocal,
   listSemenPartidasDisponiveisInseminacaoLocal,
   listSemenReprodutoresExternosDisponiveisLocal,
-  registrarEntradaSemenLocal,
-  corrigirEntradaSemenLocal,
-  ajustarEstoqueSemenLocal,
 } from "./semenEstoqueLocal";
 import { getSemenUtilizadoDb, getSemenUtilizadoLocal, listSemenUtilizadoDb, listSemenUtilizadoLocal } from "./semenUtilizado";
 import {
@@ -53,6 +55,7 @@ const entradaInputSchema = z.object({
   custoTotal: z.union([z.number(), z.string()]),
   dataEntrada: z.string().optional(),
   observacoes: z.string().max(2000).optional(),
+  operacaoId: z.string().max(64).optional(),
 });
 
 async function withDbFallback<T>(fn: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
@@ -128,15 +131,34 @@ export const semenRouter = router({
     }),
 
   registrarEntrada: protectedProcedure.input(entradaInputSchema).mutation(async ({ ctx, input }) => {
-    const validacao = validateSemenEntradaInput(input);
-    if (!validacao.ok) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: validacao.message });
+    try {
+      const resultado = await registrarEntradaSemenEEspelhar(ioEntradaSemenDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        fazendaId: input.fazendaId,
+        input,
+      }, {
+        async registrar() {},
+      });
+      if (!resultado.ok) throw erroEntradaSemen(resultado);
+      return {
+        partidaId: resultado.partidaId,
+        movimentacaoId: resultado.movimentacaoId,
+        novaEntrada: resultado.novaEntrada,
+        saldoAtual: resultado.saldoAtual,
+        custoMedioAtual: resultado.custoMedioAtual,
+        repetida: resultado.repetida,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      if (error instanceof ConflitoEntradaSemen) {
+        throw new TRPCError({ code: "CONFLICT", message: error.message });
+      }
+      if (isDatabaseUnavailable(error)) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      }
+      throw error;
     }
-
-    return withDbFallback(
-      () => registrarEntradaSemenDb(ctx.user.id, input.fazendaId, validacao.value),
-      () => registrarEntradaSemenLocal(ctx.user.id, input.fazendaId, validacao.value),
-    );
   }),
 
   listDisponiveisParaInseminacao: protectedProcedure
@@ -194,14 +216,30 @@ export const semenRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withDbFallback(
-          () => corrigirEntradaSemenDb(ctx.user.id, input),
-          () => corrigirEntradaSemenLocal(ctx.user.id, input),
-        );
+        const resultado = await corrigirEntradaSemenEEspelhar(ioCorrecaoAjusteSemenDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async registrar() {},
+        });
+        if (!resultado.ok) throw erroCorrecaoAjusteSemen(resultado);
+        return {
+          partidaId: resultado.partidaId,
+          estornoId: resultado.estornoId,
+          novaEntradaId: resultado.novaEntradaId,
+          saldoAtual: resultado.saldoAtual,
+          custoMedioAtual: resultado.custoMedioAtual,
+        };
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Não foi possível corrigir o lançamento.";
-        throw new TRPCError({ code: "BAD_REQUEST", message });
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoCorrecaoAjusteSemen) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
@@ -219,14 +257,30 @@ export const semenRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withDbFallback(
-          () => ajustarEstoqueSemenDb(ctx.user.id, input),
-          () => ajustarEstoqueSemenLocal(ctx.user.id, input),
-        );
+        const resultado = await ajustarEstoqueSemenEEspelhar(ioCorrecaoAjusteSemenDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          input,
+        }, {
+          async registrar() {},
+        });
+        if (!resultado.ok) throw erroCorrecaoAjusteSemen(resultado);
+        return {
+          partidaId: resultado.partidaId,
+          movimentacaoId: resultado.movimentacaoId,
+          saldoAtual: resultado.saldoAtual,
+          custoMedioAtual: resultado.custoMedioAtual,
+          valorAtualEstoque: resultado.valorAtualEstoque,
+        };
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Não foi possível ajustar o estoque.";
-        throw new TRPCError({ code: "BAD_REQUEST", message });
+        if (error instanceof TRPCError) throw error;
+        if (error instanceof ConflitoCorrecaoAjusteSemen) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
       }
     }),
 
