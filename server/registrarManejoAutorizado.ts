@@ -1,7 +1,8 @@
 /**
  * Castração e registro reprodutivo de um só animal.
  * A rota deixa de chamar o serviço antigo nesses dois caminhos.
- * Sêmen, espelho de matrizes e parto continuam como estavam.
+ * A inseminação com uma matriz e consumo de sêmen tem caminho próprio.
+ * O parto com crias e a estação ou cobertura em grupo têm caminho próprio.
  */
 import { TRPCError } from "@trpc/server";
 import { avaliarManejoVsBaixa } from "../shared/animalBaixa";
