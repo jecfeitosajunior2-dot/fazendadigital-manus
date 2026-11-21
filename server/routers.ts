@@ -109,7 +109,6 @@ import {
   createLocalMaquina,
   createLocalAbastecimento,
   createLocalManutencao,
-  createLocalAnimal,
   deleteLocalFazenda,
   deleteLocalBenfeitoria,
   deleteLocalMaquina,
@@ -121,7 +120,6 @@ import {
   getLocalMaquina,
   getLocalAbastecimento,
   getLocalManutencao,
-  getLocalAnimal,
   isDatabaseUnavailable,
   listLocalFazendas,
   listLocalPastos,
@@ -130,7 +128,6 @@ import {
   listLocalAbastecimentos,
   listLocalManutencoes,
   listLocalAnimais,
-  listLocalAnimaisEnriched,
   listLocalLotes,
   listLocalLotesGerenciamento,
   listLocalPesagens,
@@ -161,7 +158,6 @@ import {
   updateLocalAbastecimento,
   updateLocalManutencao,
   updateLocalAnimal,
-  enrichLocalAnimal,
   listLocalHistoricoBrincos,
   createLocalHistoricoBrinco,
   deleteLocalHistoricoBrinco,
@@ -171,7 +167,6 @@ import {
   listLocalMapaRebanhoHistorico,
   excluirLocalLotePastoMovimentacao,
   cancelarLocalEstadiaSinteticaLote,
-  listLocalHistoricoPastosAnimal,
 } from "./localFallbackStore";
 import {
   alocarEEspelharAnimais,
@@ -188,6 +183,16 @@ import {
   loteIdEfetivoParaHistorico,
 } from "../shared/animalLoteMovimentacaoEntrada";
 import { buildAnimalInsertRow } from "./animalInsertRow";
+import {
+  eventoHistoricoVisivel,
+  inserirAnimalImportadoNaTransacao,
+  decisaoImportacaoSemIndice,
+  errosDeVinculoImportacao,
+  INDICE_BRINCO_ATIVO,
+  indiceBrincoAtivoPresente,
+  resolverVinculosImportacao,
+  type CatalogoImportacaoAnimal,
+} from "./importacaoAnimalAutorizada";
 import { cadastrarEEspelhar, erroCadastroAnimal } from "./cadastroAnimalAutorizado";
 import { ioCadastroDrizzle } from "./cadastroAnimalDb";
 import { cadastrarEEspelharLote, erroCadastroLote } from "./cadastroLoteAutorizado";
@@ -318,14 +323,8 @@ import {
 } from "./consultaReproducaoAutorizada";
 import { ioConsultaReproducaoDrizzle } from "./consultaReproducaoAutorizadaDb";
 import { enrichReproducaoListPartoCriasDb } from "./enrichReproducaoListPartoCrias";
-import {
-  enrichAnimalGenealogiaDisplayDb,
-  enrichAnimalGenealogiaDisplayLocal,
-} from "./enrichAnimalGenealogiaDisplay";
-import {
-  enrichAnimalDescendentesDb,
-  enrichAnimalDescendentesLocal,
-} from "./enrichAnimalDescendentes";
+import { enrichAnimalGenealogiaDisplayDb } from "./enrichAnimalGenealogiaDisplay";
+import { enrichAnimalDescendentesDb } from "./enrichAnimalDescendentes";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
@@ -344,7 +343,6 @@ import {
   assertBrincoUnicoEntreAtivos,
   assertBrincoUnicoEntreAtivosDb,
   loadActiveBrincoKeysFromDb,
-  loadActiveBrincoKeysLocal,
 } from "./brincoAtivoValidation";
 import {
   resolveEffectiveStatus,
@@ -357,7 +355,6 @@ import {
   assertRfidNaoReutilizavel,
 } from "./manejoContexto";
 import { normalizeBrincoKey } from "../shared/brincoAtivo";
-import { escolherAnimalPorRfid, normalizeRfidKey } from "../shared/rfidUnicidade";
 import { buildObservacoesHistoricoIdentificacao } from "../shared/historicoIdentificacao";
 import {
   MSG_PESO_ENTRADA_INVALIDO,
@@ -498,60 +495,42 @@ const animaisListInput = z.object({
   dataManejo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).optional();
 
-/** Usa o espelho local quando existir — evita listas de seed antigas do MySQL no modelo/validação. */
+/** Fazendas do titular lidas no MySQL. O arquivo local não substitui o banco. */
 async function loadFazendasUsuarioParaOperacao(userId: number): Promise<Array<{ id: number; nome: string }>> {
-  const localFazendas = await listLocalFazendas(userId);
-  if (localFazendas.length > 0) {
-    return localFazendas
-      .map(f => ({ id: f.id, nome: String(f.nome || "").trim() }))
-      .filter(f => f.nome);
-  }
-  try {
-    const rows = await db
-      .select({ id: fazendas.id, nome: fazendas.nome })
-      .from(fazendas)
-      .where(eq(fazendas.userId, userId));
-    return rows
-      .map(f => ({ id: f.id, nome: String(f.nome || "").trim() }))
-      .filter(f => f.nome);
-  } catch (error) {
-    if (isDatabaseUnavailable(error)) return [];
-    throw error;
-  }
+  const rows = await db
+    .select({ id: fazendas.id, nome: fazendas.nome })
+    .from(fazendas)
+    .where(eq(fazendas.userId, userId));
+  return rows
+    .map(f => ({ id: f.id, nome: String(f.nome || "").trim() }))
+    .filter(f => f.nome);
 }
 
 async function loadPastosUsuarioParaOperacao(
   userId: number,
 ): Promise<Array<{ id: number; nome: string; fazendaId: number | null }>> {
-  const localFazendas = await listLocalFazendas(userId);
-  const usarLocal = localFazendas.length > 0;
-  if (usarLocal) {
-    const localPastos = await listLocalPastos(userId);
-    return localPastos
-      .map(p => ({ id: p.id, nome: String(p.nome || "").trim(), fazendaId: p.fazendaId ?? null }))
-      .filter(p => p.nome);
-  }
-  try {
-    const rows = await db
-      .select({ id: pastos.id, nome: pastos.nome, fazendaId: pastos.fazendaId })
-      .from(pastos)
-      .where(eq(pastos.userId, userId));
-    return rows
-      .map(p => ({ id: p.id, nome: String(p.nome || "").trim(), fazendaId: p.fazendaId ?? null }))
-      .filter(p => p.nome);
-  } catch (error) {
-    if (isDatabaseUnavailable(error)) return [];
-    throw error;
-  }
+  const rows = await db
+    .select({ id: pastos.id, nome: pastos.nome, fazendaId: pastos.fazendaId })
+    .from(pastos)
+    .where(eq(pastos.userId, userId));
+  return rows
+    .map(p => ({ id: p.id, nome: String(p.nome || "").trim(), fazendaId: p.fazendaId ?? null }))
+    .filter(p => p.nome);
 }
 
-async function loadDadosDropdownModeloAnimais(userId: number): Promise<{
+async function loadDadosDropdownModeloAnimais(
+  userId: number,
+  fazendasPermitidas: number[] | null,
+): Promise<{
   nomesFazendas: string[];
   nomesLotes: string[];
   pastosPorFazendaNome: Map<string, string[]>;
 }> {
-  const fazendasUsuario = await loadFazendasUsuarioParaOperacao(userId);
-  const pastosUsuario = await loadPastosUsuarioParaOperacao(userId);
+  const permitidas = fazendasPermitidas ? new Set(fazendasPermitidas) : null;
+  const fazendasUsuario = (await loadFazendasUsuarioParaOperacao(userId))
+    .filter((fazenda) => !permitidas || permitidas.has(fazenda.id));
+  const pastosUsuario = (await loadPastosUsuarioParaOperacao(userId))
+    .filter((pasto) => !permitidas || (pasto.fazendaId != null && permitidas.has(pasto.fazendaId)));
 
   const nomesFazendas = fazendasUsuario.map(f => f.nome);
   const pastosPorFazendaNome = new Map<string, string[]>();
@@ -564,16 +543,14 @@ async function loadDadosDropdownModeloAnimais(userId: number): Promise<{
     );
   }
 
-  let nomesLotes: string[] = [];
-  try {
-    const lotesAtivos = await db
-      .select({ nome: lotes.nome })
-      .from(lotes)
-      .where(and(eq(lotes.userId, userId), eq(lotes.ativo, true)));
-    nomesLotes = lotesAtivos.map(l => String(l.nome || "").trim()).filter(Boolean);
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-  }
+  const lotesAtivos = await db
+    .select({ nome: lotes.nome, fazendaId: lotes.fazendaId })
+    .from(lotes)
+    .where(and(eq(lotes.userId, userId), eq(lotes.ativo, true)));
+  const nomesLotes = lotesAtivos
+    .filter((lote) => !permitidas || (lote.fazendaId != null && permitidas.has(Number(lote.fazendaId))))
+    .map(l => String(l.nome || "").trim())
+    .filter(Boolean);
 
   return { nomesFazendas, nomesLotes, pastosPorFazendaNome };
 }
@@ -581,48 +558,29 @@ async function loadDadosDropdownModeloAnimais(userId: number): Promise<{
 async function loadLotesUsuarioParaOperacao(userId: number): Promise<{
   loteNomeParaId: Map<string, number>;
   loteInativoSet: Set<string>;
+  lotes: Array<{ id: number; nome: string; fazendaId: number | null; ativo: boolean }>;
 }> {
-  try {
-    const lotesUsuario = await db
-      .select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
-      .from(lotes)
-      .where(and(eq(lotes.userId, userId), eq(lotes.ativo, true)));
-    const todosLotes = await db
-      .select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo })
-      .from(lotes)
-      .where(eq(lotes.userId, userId));
-
-    const loteNomeParaId = new Map(
-      lotesUsuario.map(l => [String(l.nome || '').toLowerCase().trim(), l.id]),
-    );
-    const loteInativoSet = new Set(
-      todosLotes
-        .filter(l => !l.ativo)
-        .map(l => String(l.nome || '').toLowerCase().trim())
-        .filter(Boolean),
-    );
-    return { loteNomeParaId, loteInativoSet };
-  } catch (error) {
-    if (isDatabaseUnavailable(error)) {
-      return { loteNomeParaId: new Map(), loteInativoSet: new Set() };
-    }
-    throw error;
-  }
+  const todosLotes = await db
+    .select({ id: lotes.id, nome: lotes.nome, ativo: lotes.ativo, fazendaId: lotes.fazendaId })
+    .from(lotes)
+    .where(eq(lotes.userId, userId));
+  const detalhes = todosLotes.map((lote) => ({
+    id: lote.id,
+    nome: String(lote.nome || "").trim(),
+    fazendaId: lote.fazendaId ?? null,
+    ativo: Boolean(lote.ativo),
+  })).filter((lote) => lote.nome);
+  const loteNomeParaId = new Map(
+    detalhes.filter((lote) => lote.ativo).map((lote) => [lote.nome.toLowerCase(), lote.id]),
+  );
+  const loteInativoSet = new Set(
+    detalhes.filter((lote) => !lote.ativo).map((lote) => lote.nome.toLowerCase()),
+  );
+  return { loteNomeParaId, loteInativoSet, lotes: detalhes };
 }
 
 async function loadBrincosAtivosParaOperacao(userId: number): Promise<Set<string>> {
-  const localFazendas = await listLocalFazendas(userId);
-  if (localFazendas.length > 0) {
-    return loadActiveBrincoKeysLocal(userId);
-  }
-  try {
-    return await loadActiveBrincoKeysFromDb(userId);
-  } catch (error) {
-    if (isDatabaseUnavailable(error)) {
-      return loadActiveBrincoKeysLocal(userId);
-    }
-    throw error;
-  }
+  return loadActiveBrincoKeysFromDb(userId);
 }
 
 type AnimalListaMinimo = {
@@ -647,7 +605,7 @@ function textoContem(valor: unknown, termo: string): boolean {
 
 /**
  * Escolhe quais animais da conta entram na lista.
- * Consulta concluída não acrescenta animal que só existe no espelho.
+ * O arquivo local não completa a consulta, mesmo quando o banco não respondeu.
  */
 export function filtrarAnimaisDaLista<T extends AnimalListaMinimo>(entrada: {
   identidade: IdentidadeUsuario | null;
@@ -715,13 +673,6 @@ export function filtrarAnimaisDaLista<T extends AnimalListaMinimo>(entrada: {
   };
 
   let animais = entrada.animais.filter(visivel);
-  if (entrada.consultaMysqlConcluida === false && identidade.papel === "principal") {
-    const ids = new Set(animais.map((animal) => animal.id));
-    for (const local of entrada.locais ?? []) {
-      if (ids.has(local.id) || !visivel(local)) continue;
-      animais.push(local);
-    }
-  }
 
   if (entrada.filtroFazendaId != null) {
     if (identidade.papel !== "principal" && !autorizadas.has(entrada.filtroFazendaId)) {
@@ -953,27 +904,135 @@ export function enriquecerAnimalParaLista<T extends {
   };
 }
 
+function recusarAnimalSemMysql(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum animal foi consultado ou alterado.",
+  });
+}
+
+async function contextoConsultaAnimal(
+  user: Parameters<typeof identidadeDaLista>[0],
+  permissaoId: "animais.visualizar" | "animais.criar",
+) {
+  const identidade = identidadeDaLista(user);
+  if (!identidade) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
+  }
+  const permissoes = identidade.papel === "principal"
+    ? []
+    : (await db.select({ permissao: usuarioPermissoes.permissao }).from(usuarioPermissoes).where(and(
+      eq(usuarioPermissoes.userId, identidade.id),
+      eq(usuarioPermissoes.titularUserId, identidade.titularUserId),
+    ))).map((row) => row.permissao);
+  if (identidade.papel !== "principal" && !permissoes.includes(permissaoId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: permissaoId === "animais.criar"
+        ? "Sem permissão para cadastrar animais."
+        : "Sem permissão para consultar os animais.",
+    });
+  }
+  const vinculos = identidade.papel === "principal"
+    ? []
+    : await db.select({
+      userId: usuarioFazendas.userId,
+      fazendaId: usuarioFazendas.fazendaId,
+    }).from(usuarioFazendas).where(eq(usuarioFazendas.userId, identidade.id));
+  const fazendasConta = await db.select({ id: fazendas.id, userId: fazendas.userId, nome: fazendas.nome })
+    .from(fazendas).where(eq(fazendas.userId, identidade.titularUserId));
+  const fazendasAutorizadas: number[] = [];
+  for (const fazenda of fazendasConta) {
+    const deciso = autorizarOperacao({
+      identidade,
+      permissoes,
+      permissaoId,
+      fazendasDoTitular: fazendasConta,
+      vinculos,
+      fazendaId: fazenda.id,
+      fazenda,
+    });
+    if (deciso.ok) fazendasAutorizadas.push(fazenda.id);
+  }
+  return { identidade, permissoes, vinculos, fazendasConta, fazendasAutorizadas };
+}
+
+async function catalogoImportacaoDoTitular(
+  contexto: Awaited<ReturnType<typeof contextoConsultaAnimal>>,
+): Promise<CatalogoImportacaoAnimal> {
+  const titular = contexto.identidade.titularUserId;
+  const principal = contexto.identidade.papel === "principal";
+  const autorizadas = new Set(contexto.fazendasAutorizadas);
+  const [fazendasUsuario, pastosUsuario, lotesUsuario] = await Promise.all([
+    loadFazendasUsuarioParaOperacao(titular),
+    loadPastosUsuarioParaOperacao(titular),
+    loadLotesUsuarioParaOperacao(titular),
+  ]);
+  return {
+    principal,
+    fazendasAutorizadas: contexto.fazendasAutorizadas,
+    fazendas: fazendasUsuario.filter((fazenda) => principal || autorizadas.has(fazenda.id)),
+    pastos: pastosUsuario.filter((pasto) => principal || (pasto.fazendaId != null && autorizadas.has(pasto.fazendaId))),
+    lotes: lotesUsuario.lotes.filter((lote) => principal || (lote.fazendaId != null && autorizadas.has(lote.fazendaId))),
+  };
+}
+
 const animaisRouter = router({
   historicoPastos: protectedProcedure
     .input(z.object({ animalId: z.number() }))
     .query(async ({ ctx, input }) => {
       try {
-        const [animal] = await db.select({ loteId: animais.loteId })
+        const contexto = await contextoConsultaAnimal(ctx.user, "animais.visualizar");
+        const titular = contexto.identidade.titularUserId;
+        const principal = contexto.identidade.papel === "principal";
+        const [animal] = await db.select({
+          id: animais.id,
+          userId: animais.userId,
+          loteId: animais.loteId,
+          fazendaId: animais.fazendaId,
+        })
           .from(animais)
-          .where(and(eq(animais.id, input.animalId), eq(animais.userId, ctx.user.id)))
+          .where(and(eq(animais.id, input.animalId), eq(animais.userId, titular)))
           .limit(1);
         if (!animal) return [];
+        const lotesConta = await db.select({
+          id: lotes.id,
+          userId: lotes.userId,
+          nome: lotes.nome,
+          fazendaId: lotes.fazendaId,
+          pastoAtualId: lotes.pastoAtualId,
+        }).from(lotes).where(eq(lotes.userId, titular));
+        const pastosConta = await db.select({
+          id: pastos.id,
+          userId: pastos.userId,
+          fazendaId: pastos.fazendaId,
+        }).from(pastos).where(eq(pastos.userId, titular));
+        const visivel = filtrarAnimaisDaLista({
+          identidade: contexto.identidade,
+          permissoes: contexto.permissoes,
+          vinculos: contexto.vinculos,
+          fazendasDoTitular: contexto.fazendasConta,
+          lotesDoTitular: lotesConta,
+          pastosDoTitular: pastosConta,
+          animais: [animal],
+          consultaMysqlConcluida: true,
+        });
+        if (!visivel.ok || visivel.animais.length === 0) return [];
 
         const transfers = await db.select().from(animalLoteMovimentacoes)
           .where(and(
-            eq(animalLoteMovimentacoes.userId, ctx.user.id),
+            eq(animalLoteMovimentacoes.userId, titular),
             eq(animalLoteMovimentacoes.animalId, input.animalId),
           ))
           .orderBy(desc(animalLoteMovimentacoes.dataMovimentacao));
+        const transfersVisiveis = transfers.filter((transfer) => eventoHistoricoVisivel({
+          fazendaOrigemId: transfer.fazendaOrigemId,
+          fazendaDestinoId: transfer.fazendaId,
+        }, contexto.fazendasAutorizadas, principal));
 
         const loteIds = new Set<number>();
         if (animal.loteId) loteIds.add(animal.loteId);
-        for (const transfer of transfers) {
+        for (const transfer of transfersVisiveis) {
           if (transfer.loteOrigemId) loteIds.add(transfer.loteOrigemId);
           loteIds.add(transfer.loteDestinoId);
         }
@@ -982,7 +1041,7 @@ const animaisRouter = router({
         const lotePastoRows = loteIds.size
           ? await db.select().from(lotePastoMovimentacoes)
             .where(and(
-              eq(lotePastoMovimentacoes.userId, ctx.user.id),
+              eq(lotePastoMovimentacoes.userId, titular),
               inArray(lotePastoMovimentacoes.loteId, [...loteIds]),
             ))
           : [];
@@ -990,14 +1049,14 @@ const animaisRouter = router({
         const pastoIds = [
           ...new Set([
             ...lotePastoRows.flatMap(r => [r.pastoOrigemId, r.pastoDestinoId].filter(Boolean) as number[]),
-            ...transfers.flatMap(t => [t.pastoOrigemId, t.pastoDestinoId].filter(Boolean) as number[]),
+            ...transfersVisiveis.flatMap(t => [t.pastoOrigemId, t.pastoDestinoId].filter(Boolean) as number[]),
           ]),
         ];
         const pastoMap: Record<number, string> = {};
         if (pastoIds.length) {
           const pastosRows = await db.select({ id: pastos.id, nome: pastos.nome })
             .from(pastos)
-            .where(inArray(pastos.id, pastoIds));
+            .where(and(eq(pastos.userId, titular), inArray(pastos.id, pastoIds)));
           pastosRows.forEach(p => { pastoMap[p.id] = p.nome; });
         }
 
@@ -1005,13 +1064,13 @@ const animaisRouter = router({
         if (loteIds.size) {
           const lotesRows = await db.select({ id: lotes.id, nome: lotes.nome })
             .from(lotes)
-            .where(inArray(lotes.id, [...loteIds]));
+            .where(and(eq(lotes.userId, titular), inArray(lotes.id, [...loteIds])));
           lotesRows.forEach(l => { loteNomeMap[l.id] = l.nome; });
         }
 
         const fazendaIds = [
           ...new Set(
-            transfers.flatMap(t => [t.fazendaOrigemId, t.fazendaId].filter((id): id is number => id != null)),
+            transfersVisiveis.flatMap(t => [t.fazendaOrigemId, t.fazendaId].filter((id): id is number => id != null)),
           ),
         ];
         const fazendaNomeMap: Record<number, string> = {};
@@ -1019,13 +1078,13 @@ const animaisRouter = router({
           const fazendasRows = await db
             .select({ id: fazendas.id, nome: fazendas.nome })
             .from(fazendas)
-            .where(inArray(fazendas.id, fazendaIds));
+            .where(and(eq(fazendas.userId, titular), inArray(fazendas.id, fazendaIds)));
           fazendasRows.forEach(f => { fazendaNomeMap[f.id] = f.nome; });
         }
 
         return buildHistoricoSubdivisaoAnimal({
           currentLoteId: animal.loteId ?? null,
-          transfers: transfers.map(t => ({
+          transfers: transfersVisiveis.map(t => ({
             id: t.id,
             loteOrigemId: t.loteOrigemId,
             loteDestinoId: t.loteDestinoId,
@@ -1051,19 +1110,56 @@ const animaisRouter = router({
           fazendaNomeMap,
         });
       } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          return listLocalHistoricoPastosAnimal(ctx.user.id, input.animalId);
-        }
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
         throw error;
       }
     }),
 
   marcasDistintas: protectedProcedure.query(async ({ ctx }) => {
-    const rows = await db.select({ marca: animais.marca })
-      .from(animais)
-      .where(eq(animais.userId, ctx.user.id));
-    const marcas = [...new Set(rows.map(r => (r.marca || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    return marcas;
+    try {
+      const contexto = await contextoConsultaAnimal(ctx.user, "animais.visualizar");
+      const titular = contexto.identidade.titularUserId;
+      const rows = await db.select({
+        id: animais.id,
+        userId: animais.userId,
+        fazendaId: animais.fazendaId,
+        loteId: animais.loteId,
+        marca: animais.marca,
+      }).from(animais).where(eq(animais.userId, titular));
+      const lotesConta = await db.select({
+        id: lotes.id,
+        userId: lotes.userId,
+        nome: lotes.nome,
+        fazendaId: lotes.fazendaId,
+        pastoAtualId: lotes.pastoAtualId,
+      }).from(lotes).where(eq(lotes.userId, titular));
+      const pastosConta = await db.select({
+        id: pastos.id,
+        userId: pastos.userId,
+        fazendaId: pastos.fazendaId,
+      }).from(pastos).where(eq(pastos.userId, titular));
+      const visiveis = filtrarAnimaisDaLista({
+        identidade: contexto.identidade,
+        permissoes: contexto.permissoes,
+        vinculos: contexto.vinculos,
+        fazendasDoTitular: contexto.fazendasConta,
+        lotesDoTitular: lotesConta,
+        pastosDoTitular: pastosConta,
+        animais: rows,
+        consultaMysqlConcluida: true,
+      });
+      if (!visiveis.ok) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para consultar os animais." });
+      }
+      const marcas = [...new Set(visiveis.animais.map(r => (r.marca || "").trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "pt-BR"));
+      return marcas;
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+      throw error;
+    }
   }),
 
   list: protectedProcedure
@@ -1359,10 +1455,8 @@ const animaisRouter = router({
       return filtered;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        const locais = await listLocalAnimaisEnriched(identidade.titularUserId, input as Record<string, unknown> | undefined);
-        return locais.filter((row) => Number(row.userId) === identidade.titularUserId);
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+        throw error;
       }
     }),
 
@@ -1434,27 +1528,8 @@ const animaisRouter = router({
         return montarFichaAnimal(resolvido.animal, { loteNome, baixa, genealogiaDisplay, descendentes });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        const local = await getLocalAnimal(identidade.titularUserId, input.id);
-        if (!local || Number(local.userId) !== identidade.titularUserId) return null;
-        const resolvido = resolverConsultaAnimal({
-          identidade,
-          permissoes: [],
-          vinculos: [],
-          fazendasDoTitular: [],
-          lotesDoTitular: [],
-          pastosDoTitular: [],
-          animais: [],
-          locais: [local],
-          consultaMysqlConcluida: false,
-        });
-        if (!resolvido.ok) return null;
-        const enriched = await enrichLocalAnimal(identidade.titularUserId, resolvido.animal);
-        const baixa = await getBaixaAnimal(identidade.titularUserId, resolvido.animal.id);
-        const genealogiaDisplay = await enrichAnimalGenealogiaDisplayLocal(identidade.titularUserId, resolvido.animal);
-        const descendentes = await enrichAnimalDescendentesLocal(identidade.titularUserId, resolvido.animal.id);
-        return { ...enriched, baixa, genealogiaDisplay, descendentes };
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+        throw error;
       }
     }),
 
@@ -1565,48 +1640,59 @@ const animaisRouter = router({
       if (!rfid) return null;
 
       try {
-        const [animal] = await db
+        const contexto = await contextoConsultaAnimal(ctx.user, "animais.visualizar");
+        const titular = contexto.identidade.titularUserId;
+        const encontrados = await db
           .select()
           .from(animais)
-          .where(
-            and(
-              eq(animais.userId, ctx.user.id),
-              sql`TRIM(${animais.brincoEletronico}) = ${rfid}`,
-            ),
-          )
-          .orderBy(sql`CASE WHEN LOWER(TRIM(${animais.status})) = 'ativo' THEN 0 ELSE 1 END`)
-          .limit(1);
-
+          .where(and(
+            eq(animais.userId, titular),
+            sql`TRIM(${animais.brincoEletronico}) = ${rfid}`,
+          ));
+        const lotesConta = await db.select({
+          id: lotes.id,
+          userId: lotes.userId,
+          nome: lotes.nome,
+          fazendaId: lotes.fazendaId,
+          pastoAtualId: lotes.pastoAtualId,
+        }).from(lotes).where(eq(lotes.userId, titular));
+        const pastosConta = await db.select({
+          id: pastos.id,
+          userId: pastos.userId,
+          fazendaId: pastos.fazendaId,
+        }).from(pastos).where(eq(pastos.userId, titular));
+        const visiveis = filtrarAnimaisDaLista({
+          identidade: contexto.identidade,
+          permissoes: contexto.permissoes,
+          vinculos: contexto.vinculos,
+          fazendasDoTitular: contexto.fazendasConta,
+          lotesDoTitular: lotesConta,
+          pastosDoTitular: pastosConta,
+          animais: encontrados,
+          consultaMysqlConcluida: true,
+        });
+        if (!visiveis.ok) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissão para consultar os animais." });
+        }
+        const animal = [...visiveis.animais].sort((a, b) => {
+          const ativoA = String(a.status ?? "").trim().toLowerCase() === "ativo" ? 0 : 1;
+          const ativoB = String(b.status ?? "").trim().toLowerCase() === "ativo" ? 0 : 1;
+          return ativoA - ativoB;
+        })[0];
         if (!animal) return null;
 
-        let loteNome: string | null = null;
-        if (animal.loteId) {
-          const [lote] = await db
-            .select({ nome: lotes.nome })
-            .from(lotes)
-            .where(eq(lotes.id, animal.loteId))
-            .limit(1);
-          loteNome = lote?.nome ?? null;
-        }
-
-        // Mesma regra do Rebanho: fazenda do animal OU do lote (lote.fazendaId / pasto).
-        let fazendaIdResolvido: number | null =
-          animal.fazendaId != null ? Number(animal.fazendaId) : null;
-        if (fazendaIdResolvido == null && animal.loteId != null) {
-          const { loteFazendaById } = await loadLoteFazendaContextForUser(ctx.user.id);
-          const fromLote = loteFazendaById.get(Number(animal.loteId));
-          fazendaIdResolvido = fromLote != null ? Number(fromLote) : null;
-        }
-
-        let fazendaNome: string | null = null;
-        if (fazendaIdResolvido != null) {
-          const [fazenda] = await db
-            .select({ nome: fazendas.nome })
-            .from(fazendas)
-            .where(eq(fazendas.id, fazendaIdResolvido))
-            .limit(1);
-          fazendaNome = fazenda?.nome ?? null;
-        }
+        const loteNome = animal.loteId != null
+          ? (lotesConta.find((lote) => lote.id === animal.loteId)?.nome ?? null)
+          : null;
+        const fazendaDireta = animal.fazendaId != null ? Number(animal.fazendaId) : null;
+        const lote = animal.loteId != null ? lotesConta.find((item) => item.id === animal.loteId) : undefined;
+        const fazendaDoPasto = lote?.pastoAtualId != null
+          ? pastosConta.find((pasto) => pasto.id === lote.pastoAtualId)?.fazendaId ?? null
+          : null;
+        const fazendaIdResolvido = fazendaDireta ?? (lote?.fazendaId != null ? Number(lote.fazendaId) : fazendaDoPasto);
+        const fazendaNome = fazendaIdResolvido != null
+          ? (contexto.fazendasConta.find((fazenda) => fazenda.id === fazendaIdResolvido)?.nome ?? null)
+          : null;
 
         return {
           id: animal.id,
@@ -1621,42 +1707,10 @@ const animaisRouter = router({
           fazendaNome,
         };
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+        throw error;
       }
-
-      const lista = await listLocalAnimais(ctx.user.id);
-      const local = escolherAnimalPorRfid(lista, rfid);
-      if (!local) return null;
-      const enriched = await enrichLocalAnimal(ctx.user.id, local);
-
-      let fazendaIdLocal: number | null =
-        enriched.fazendaId != null ? Number(enriched.fazendaId) : null;
-      let fazendaNomeLocal: string | null = null;
-      if (fazendaIdLocal == null && enriched.loteId != null) {
-        const lotesLocais = await listLocalLotes(ctx.user.id);
-        const lote = lotesLocais.find(l => l.id === Number(enriched.loteId));
-        if (lote?.fazendaId != null) {
-          fazendaIdLocal = Number(lote.fazendaId);
-        }
-      }
-      if (fazendaIdLocal != null) {
-        const fazendasLocais = await listLocalFazendas(ctx.user.id);
-        fazendaNomeLocal =
-          fazendasLocais.find(f => f.id === fazendaIdLocal)?.nome ?? null;
-      }
-
-      return {
-        id: enriched.id,
-        brinco: enriched.brinco ?? null,
-        brincoEletronico: enriched.brincoEletronico ?? null,
-        sexo: enriched.sexo,
-        categoria: enriched.categoria ?? null,
-        status: enriched.status ?? null,
-        loteId: enriched.loteId ?? null,
-        loteNome: (enriched as { loteNome?: string | null }).loteNome ?? null,
-        fazendaId: fazendaIdLocal,
-        fazendaNome: fazendaNomeLocal,
-      };
     }),
 
   create: protectedProcedure
@@ -1854,9 +1908,24 @@ const animaisRouter = router({
         });
       }
 
-      // Fazendas, lotes e pastos reais do usuário (espelho local tem prioridade)
-      const { nomesFazendas, nomesLotes, pastosPorFazendaNome } =
-        await loadDadosDropdownModeloAnimais(ctx.user.id);
+      // Fazendas, lotes e pastos do titular, só nas fazendas concedidas.
+      let nomesFazendas: string[];
+      let nomesLotes: string[];
+      let pastosPorFazendaNome: Map<string, string[]>;
+      try {
+        const contexto = await contextoConsultaAnimal(ctx.user, "animais.criar");
+        const dropdown = await loadDadosDropdownModeloAnimais(
+          contexto.identidade.titularUserId,
+          contexto.identidade.papel === "principal" ? null : contexto.fazendasAutorizadas,
+        );
+        nomesFazendas = dropdown.nomesFazendas;
+        nomesLotes = dropdown.nomesLotes;
+        pastosPorFazendaNome = dropdown.pastosPorFazendaNome;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+        throw error;
+      }
 
       const fazendasFormulae = nomesFazendas.length > 0
         ? [`"${nomesFazendas.join(',')}"`]
@@ -2034,17 +2103,16 @@ const animaisRouter = router({
         .map(l => normalizarLinha(l))
         .filter(l => !isLinhaExemplo(l));
 
-      // Busca fazendas e pastos do usuário (espelho local tem prioridade)
-      const fazendasUsuario = await loadFazendasUsuarioParaOperacao(ctx.user.id);
-      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
+      const contexto = await contextoConsultaAnimal(ctx.user, "animais.criar");
+      const catalogo = await catalogoImportacaoDoTitular(contexto);
+      const fazendaNomeParaId = new Map(catalogo.fazendas.map(f => [f.nome.toLowerCase().trim(), f.id]));
+      const pastoNomeParaId = new Map(catalogo.pastos.map(p => [p.nome.toLowerCase().trim(), p.id]));
+      const loteNomeParaId = new Map(
+        catalogo.lotes.filter((lote) => lote.ativo).map((lote) => [lote.nome.toLowerCase().trim(), lote.id]),
+      );
 
-      const pastosUsuario = await loadPastosUsuarioParaOperacao(ctx.user.id);
-      const pastoNomeParaId = new Map(pastosUsuario.map(p => [p.nome.toLowerCase().trim(), p.id]));
-
-      const { loteNomeParaId, loteInativoSet } = await loadLotesUsuarioParaOperacao(ctx.user.id);
-
-      // Brincos em uso por animais ativos (inativos podem reutilizar número)
-      const brincosAtivosBancoSet = await loadBrincosAtivosParaOperacao(ctx.user.id);
+      // Brincos em uso por animais ativos do titular (inativos podem reutilizar número)
+      const brincosAtivosBancoSet = await loadBrincosAtivosParaOperacao(contexto.identidade.titularUserId);
 
       const erros: { linha: number; campo: string; mensagem: string }[] = [];
       const validos: typeof input.linhas = [];
@@ -2055,12 +2123,8 @@ const animaisRouter = router({
         const numLinha = i + 2; // +2 porque linha 1 é cabeçalho
         const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
 
-        // Fazenda obrigatória
-        const fazendaNome = (linha.fazendaNome || '').trim();
-        if (!fazendaNome) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
-        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
+        for (const erro of errosDeVinculoImportacao(linha, catalogo).erros) {
+          errosLinha.push({ linha: numLinha, campo: erro.campo, mensagem: erro.mensagem });
         }
 
         // Brinco obrigatório (unicidade apenas entre animais ativos)
@@ -2127,12 +2191,6 @@ const animaisRouter = router({
           errosLinha.push({ linha: numLinha, campo: 'raca', mensagem: `Raça não cadastrada: "${raca}"` });
         }
 
-        // Subdivisão/Pasto (opcional, mas se informado deve existir)
-        const subdivisaoNome = (linha.subdivisao || '').trim();
-        if (subdivisaoNome && !pastoNomeParaId.has(subdivisaoNome.toLowerCase())) {
-          errosLinha.push({ linha: numLinha, campo: 'Subdivisão', mensagem: `Pasto/Subdivisão não encontrado: "${subdivisaoNome}"` });
-        }
-
         // Datas — aceita DD/MM/AAAA, DD/MM/AA e AAAA-MM-DD
         // Converte automaticamente para YYYY-MM-DD antes de validar
         const parseDateBR = (raw: string): string | null => {
@@ -2185,16 +2243,6 @@ const animaisRouter = router({
           });
         }
 
-        // Lote (opcional, mas se informado deve ser ativo e existir)
-        const loteNome = (linha.lote || '').trim();
-        if (loteNome) {
-          if (loteInativoSet.has(loteNome.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'lote', mensagem: `Lote "${loteNome}" está inativo` });
-          } else if (!loteNomeParaId.has(loteNome.toLowerCase())) {
-            errosLinha.push({ linha: numLinha, campo: 'lote', mensagem: `Lote não encontrado: "${loteNome}"` });
-          }
-        }
-
         if (errosLinha.length > 0) {
           erros.push(...errosLinha);
         } else {
@@ -2217,6 +2265,7 @@ const animaisRouter = router({
       };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
         console.error('[animais.validarImportacao]', error);
         const { MENSAGEM_VALIDACAO_PLANILHA_GENERICA } = await import('../shared/importacaoAnimais');
         throw new TRPCError({
@@ -2257,7 +2306,26 @@ const animaisRouter = router({
         return undefined;
       };
 
-      const brincosAtivosReservados = await loadBrincosAtivosParaOperacao(ctx.user.id);
+      let contexto: Awaited<ReturnType<typeof contextoConsultaAnimal>>;
+      let catalogo: CatalogoImportacaoAnimal;
+      let brincosAtivosReservados: Set<string>;
+      try {
+        contexto = await contextoConsultaAnimal(ctx.user, "animais.criar");
+        catalogo = await catalogoImportacaoDoTitular(contexto);
+        brincosAtivosReservados = await loadBrincosAtivosParaOperacao(contexto.identidade.titularUserId);
+        const indices = await db.execute(sql`SHOW INDEX FROM animais WHERE Key_name = ${INDICE_BRINCO_ATIVO}`);
+        if (decisaoImportacaoSemIndice(indiceBrincoAtivoPresente(indices)) === "bloqueada") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "A importação está bloqueada até a proteção contra brinco repetido existir no banco.",
+          });
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarAnimalSemMysql();
+        throw error;
+      }
+      const titular = contexto.identidade.titularUserId;
 
       for (let i = 0; i < input.linhas.length; i++) {
         // Normaliza cabeçalhos PT-BR → chaves internas
@@ -2291,21 +2359,12 @@ const animaisRouter = router({
             continue;
           }
 
-          // Resolve loteId
-          const loteNome = (linha.lote || '').trim().toLowerCase();
-          const loteId = loteNome ? input.loteNomeParaId[loteNome] : undefined;
-
-          // Resolve fazendaId (opcional, mas se informado deve existir)
-          const fazendaNomeLinha = (linha.fazendaNome || '').trim().toLowerCase();
-          const fazendaId = fazendaNomeLinha && input.fazendaNomeParaId
-            ? input.fazendaNomeParaId[fazendaNomeLinha]
-            : undefined;
-
-          // Resolve pastoId (subdivisão)
-          const subdivisaoNomeLinha = (linha.subdivisao || '').trim().toLowerCase();
-          const pastoId = subdivisaoNomeLinha && input.pastoNomeParaId
-            ? input.pastoNomeParaId[subdivisaoNomeLinha]
-            : undefined;
+          const vinculo = resolverVinculosImportacao(linha, catalogo);
+          if (!vinculo.ok) {
+            rejeitados.push({ linha: numLinha, mensagem: vinculo.mensagem });
+            continue;
+          }
+          const { fazendaId, loteId, pastoId } = vinculo;
 
           // Converte rastreadoNascimento (aceita Sim/Não em PT-BR).
           // Castrado: só macho; fêmea nunca persiste este campo.
@@ -2320,7 +2379,7 @@ const animaisRouter = router({
           }
 
           const animalRow = {
-            ...buildAnimalInsertRow(ctx.user.id, {
+            ...buildAnimalInsertRow(titular, {
               brinco: brinco || undefined,
               brincoEletronico: (linha.brincoEletronico || '').trim() || undefined,
               nome: (linha.nome || '').trim() || brinco || undefined,
@@ -2354,32 +2413,100 @@ const animaisRouter = router({
           };
 
           try {
-            const result = await db.insert(animais).values(animalRow);
-            const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-            if (Number.isFinite(id) && id > 0) {
+            const gravado = await db.transaction(async (tx) => inserirAnimalImportadoNaTransacao({
+              async travarUsuario(id) {
+                const [linhaUsuario] = await tx.select({
+                  id: users.id,
+                  papel: users.papel,
+                  titularUserId: users.titularUserId,
+                  situacao: users.situacao,
+                  sessionVersion: users.sessionVersion,
+                }).from(users).where(eq(users.id, id)).for("update").limit(1);
+                if (!linhaUsuario?.papel || linhaUsuario.titularUserId == null) return null;
+                return {
+                  id: linhaUsuario.id,
+                  papel: linhaUsuario.papel,
+                  titularUserId: linhaUsuario.titularUserId,
+                  situacao: linhaUsuario.situacao ?? "",
+                  sessionVersion: linhaUsuario.sessionVersion ?? 0,
+                };
+              },
+              async permissoes(userId, titularUserId) {
+                const linhas = await tx.select({ permissao: usuarioPermissoes.permissao })
+                  .from(usuarioPermissoes)
+                  .where(and(
+                    eq(usuarioPermissoes.userId, userId),
+                    eq(usuarioPermissoes.titularUserId, titularUserId),
+                  ))
+                  .for("update");
+                return linhas.map((linha) => linha.permissao);
+              },
+              async fazendasDoVinculo(userId) {
+                const linhas = await tx.select({ fazendaId: usuarioFazendas.fazendaId })
+                  .from(usuarioFazendas)
+                  .where(eq(usuarioFazendas.userId, userId))
+                  .for("update");
+                return linhas.map((linha) => linha.fazendaId);
+              },
+              async brincoAtivo(titularUserId, brincoInformado) {
+                const [linhaAtiva] = await tx.select({ id: animais.id }).from(animais).where(and(
+                  eq(animais.userId, titularUserId),
+                  eq(animais.status, "ativo"),
+                  sql`LOWER(TRIM(${animais.brinco})) = LOWER(TRIM(${brincoInformado}))`,
+                )).for("update").limit(1);
+                return linhaAtiva != null;
+              },
+              async rfidAtivo(titularUserId, rfid) {
+                const [linhaAtiva] = await tx.select({ id: animais.id }).from(animais).where(and(
+                  eq(animais.userId, titularUserId),
+                  eq(animais.status, "ativo"),
+                  sql`LOWER(TRIM(${animais.brincoEletronico})) = LOWER(TRIM(${rfid}))`,
+                )).for("update").limit(1);
+                return linhaAtiva != null;
+              },
+              async inserir(row) {
+                const result = await tx.insert(animais).values(row as typeof animalRow);
+                return Number((result as { insertId?: number }[])[0]?.insertId ?? (result as { insertId?: number }).insertId);
+              },
+            }, {
+              executorId: ctx.user.id,
+              titularUserId: titular,
+              sessionVersionDaSessao: ctx.user.sessionVersion ?? 0,
+              fazendaId,
+              brinco,
+              brincoEletronico: (linha.brincoEletronico || "").trim() || null,
+              status: statusImport,
+              row: animalRow,
+            }));
+            if (!gravado.ok) {
+              const mensagem = gravado.motivo === "rfid_duplicado"
+                ? "Brinco eletrônico já cadastrado em animal ativo."
+                : gravado.motivo === "brinco_duplicado"
+                  ? "Brinco já cadastrado em animal ativo."
+                  : gravado.motivo === "sem_permissao"
+                    ? "Sem permissão para importar animais nesta fazenda."
+                    : "Sessão inválida.";
+              rejeitados.push({ linha: numLinha, mensagem });
+              continue;
+            }
+            if (Number.isFinite(gravado.id) && gravado.id > 0) {
               try {
-                await updateLocalAnimal(ctx.user.id, id, animalRow);
+                await updateLocalAnimal(titular, gravado.id, animalRow);
               } catch (mirrorError) {
                 console.warn("[animais.importar] Espelho local não gravado:", mirrorError);
               }
-              importados.push(id);
-            }
-          } catch (err: any) {
-            if (err instanceof TRPCError) throw err;
-            if (isDatabaseUnavailable(err)) {
-              await assertBrincoUnicoEntreAtivos(
-                ctx.user.id,
-                animalRow.brinco,
-                statusImport,
-                undefined,
-                true,
-                animalRow.fazendaId,
-              );
-              const { id } = await createLocalAnimal(ctx.user.id, animalRow);
-              importados.push(id);
+              importados.push(gravado.id);
             } else {
-              rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
+              rejeitados.push({ linha: numLinha, mensagem: "O animal não foi gravado." });
             }
+          } catch (err: unknown) {
+            if (err instanceof TRPCError) throw err;
+            rejeitados.push({
+              linha: numLinha,
+              mensagem: isDatabaseUnavailable(err)
+                ? "O banco de dados está indisponível. Esta linha não foi importada."
+                : formatImportDbError(err),
+            });
           }
         } catch (err: any) {
           if (err instanceof TRPCError) throw err;

@@ -321,14 +321,13 @@ describe("animais.getById — autorização da ficha", () => {
     expect(resultado).toEqual({ ok: false, motivo: "nao_encontrado" });
   });
 
-  it("29. Fallback do Principal devolve o animal da própria conta", () => {
+  it("29. Banco sem resposta não devolve o animal do arquivo", () => {
     const resultado = consultar({
       animais: [],
       locais: [proprio, alheio],
       consultaMysqlConcluida: false,
     });
-    expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
-    expect(resultado.ok && resultado.animal.id).toBe(1);
+    expect(resultado).toEqual({ ok: false, motivo: "nao_encontrado" });
   });
 
   it("30. Secundário e Comum não usam o espelho", () => {
@@ -348,8 +347,9 @@ describe("animais.getById — autorização da ficha", () => {
   it("31. Erro de banco não vira animal inexistente", () => {
     const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
     const bloco = fonte.slice(fonte.indexOf("getById: protectedProcedure"), fonte.indexOf("registrarBaixa: protectedProcedure"));
-    expect(bloco).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(bloco).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(bloco).toContain("if (isDatabaseUnavailable(error)) recusarAnimalSemMysql()");
+    expect(bloco).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(bloco).not.toContain("getLocalAnimal");
     expect(bloco).toContain("eq(animais.userId, identidade.titularUserId)");
     expect(bloco).toContain("consultaMysqlConcluida: true");
   });

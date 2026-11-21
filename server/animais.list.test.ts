@@ -438,10 +438,11 @@ describe("animais.list — autorização e contrato", () => {
   it("34. Falha de banco não vira lista vazia", () => {
     expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
     expect(deveUsarEspelhoQuandoBancoCai(comum)).toBe(false);
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
+    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8").replace(/\r\n/g, "\n");
     const lista = fonte.slice(fonte.indexOf("list: protectedProcedure\n    .input(animaisListInput)"), fonte.indexOf("getById: protectedProcedure"));
-    expect(lista).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(lista).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(lista).toContain("if (isDatabaseUnavailable(error)) recusarAnimalSemMysql()");
+    expect(lista).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(lista).not.toContain("listLocalAnimaisEnriched");
     expect(lista).toContain("eq(animais.userId, identidade.titularUserId)");
     expect(lista).toContain("orderBy(desc(animais.createdAt))");
   });
@@ -453,6 +454,17 @@ describe("animais.list — autorização e contrato", () => {
     if (!resultado.ok) return;
     expect(resultado.animais.map((a) => a.id)).toEqual([1, 8, 2]);
     expect(resultado.animais[0]).toMatchObject({ brinco: "A1", raca: "Nelore", categoria: "Vaca" });
+  });
+
+  it("36. O Principal também não completa a lista com o arquivo", () => {
+    const resultado = listar({
+      animais: [],
+      locais: [naFazendaA],
+      consultaMysqlConcluida: false,
+    });
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.animais).toEqual([]);
   });
 });
 
@@ -602,7 +614,7 @@ describe("animais.list — carência no escopo da fazenda", () => {
   });
 
   it("13. A consulta da lista não lê o estoque inteiro", () => {
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
+    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8").replace(/\r\n/g, "\n");
     const lista = fonte.slice(
       fonte.indexOf("list: protectedProcedure\n    .input(animaisListInput)"),
       fonte.indexOf("getById: protectedProcedure"),
