@@ -24,22 +24,21 @@ import {
   listSemenPartidasDisponiveisInseminacaoDb,
   listSemenReprodutoresExternosDisponiveisDb,
 } from "./semenEstoqueDb";
-import {
-  getSemenPartidaByIdLocal,
-  getSemenEntradaResumoLocal,
-  listSemenPartidasLocal,
-  listSemenPartidasDisponiveisInseminacaoLocal,
-  listSemenReprodutoresExternosDisponiveisLocal,
-} from "./semenEstoqueLocal";
-import { getSemenUtilizadoDb, getSemenUtilizadoLocal, listSemenUtilizadoDb, listSemenUtilizadoLocal } from "./semenUtilizado";
+import { getSemenUtilizadoDb, listSemenUtilizadoDb } from "./semenUtilizado";
 import {
   createSemenReprodutorExternoCatalogoDb,
-  createSemenReprodutorExternoCatalogoLocal,
   listSemenReprodutorExternoCatalogoDb,
-  listSemenReprodutorExternoCatalogoLocal,
   updateSemenReprodutorExternoCatalogoDb,
-  updateSemenReprodutorExternoCatalogoLocal,
 } from "./semenReprodutorExternoCatalogo";
+import {
+  MSG_SEM_PERMISSAO_CATALOGO_SEMEN,
+  PERMISSAO_CATALOGO_SEMEN_CRIAR,
+  PERMISSAO_CATALOGO_SEMEN_EDITAR,
+  PERMISSAO_CONSULTAR_SEMEN,
+  erroSemen,
+  recusarSemenSemMysql,
+} from "./consultaSemenAutorizada";
+import { autorizarSemenNoBanco, identificarLeitorSemenNoBanco } from "./consultaSemenDb";
 
 const origemSchema = z.enum([SEMEN_ORIGEM_INTERNO, SEMEN_ORIGEM_EXTERNO]);
 const statusFilterSchema = z.enum([SEMEN_STATUS_DISPONIVEL, SEMEN_STATUS_ESGOTADO, "todos"]);
@@ -58,12 +57,33 @@ const entradaInputSchema = z.object({
   operacaoId: z.string().max(64).optional(),
 });
 
-async function withDbFallback<T>(fn: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+async function titularDaFazenda(
+  ctx: { user: { id: number; sessionVersion?: number | null } },
+  fazendaId: number,
+  permissaoId: string,
+) {
+  const acesso = await autorizarSemenNoBanco({
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion,
+    fazendaId,
+    permissaoId,
+  });
+  if (!acesso.ok) {
+    throw erroSemen(
+      acesso,
+      permissaoId === PERMISSAO_CONSULTAR_SEMEN ? undefined : MSG_SEM_PERMISSAO_CATALOGO_SEMEN,
+    );
+  }
+  return acesso.titularUserId;
+}
+
+async function consultar<T>(trabalho: () => Promise<T>): Promise<T> {
   try {
-    return await fn();
+    return await trabalho();
   } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    return fallback();
+    if (error instanceof TRPCError) throw error;
+    if (isDatabaseUnavailable(error)) recusarSemenSemMysql();
+    throw error;
   }
 }
 
@@ -85,49 +105,53 @@ export const semenRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      return withDbFallback(
-        () =>
-          listSemenPartidasDb(ctx.user.id, {
-            fazendaId: input.fazendaId,
-            search: input.search,
-            status: input.status ?? "todos",
-          }),
-        () =>
-          listSemenPartidasLocal(ctx.user.id, {
-            fazendaId: input.fazendaId,
-            search: input.search,
-            status: input.status ?? "todos",
-          }),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return listSemenPartidasDb(titular, {
+          fazendaId: input.fazendaId,
+          search: input.search,
+          status: input.status ?? "todos",
+        }, true);
+      });
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const row = await withDbFallback(
-        () => getSemenPartidaByIdDb(ctx.user.id, input.id),
-        () => getSemenPartidaByIdLocal(ctx.user.id, input.id),
-      );
-      if (!row) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Partida de sêmen não encontrada." });
-      }
-      return row;
+      return consultar(async () => {
+        const leitor = await identificarLeitorSemenNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+        });
+        if (!leitor.ok) throw erroSemen(leitor);
+        const row = await getSemenPartidaByIdDb(leitor.titularUserId, input.id);
+        if (!row) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Partida de sêmen não encontrada." });
+        }
+        await titularDaFazenda(ctx, row.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return row;
+      });
     }),
 
   getEntradaResumo: protectedProcedure
     .input(z.object({ movimentacaoId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      const row = await withDbFallback(
-        () => getSemenEntradaResumoDb(ctx.user.id, input.movimentacaoId),
-        () => getSemenEntradaResumoLocal(ctx.user.id, input.movimentacaoId),
-      );
-      if (!row) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Movimentação de entrada não encontrada.",
+      return consultar(async () => {
+        const leitor = await identificarLeitorSemenNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
         });
-      }
-      return row;
+        if (!leitor.ok) throw erroSemen(leitor);
+        const row = await getSemenEntradaResumoDb(leitor.titularUserId, input.movimentacaoId);
+        if (!row) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Movimentação de entrada não encontrada.",
+          });
+        }
+        await titularDaFazenda(ctx, row.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return row;
+      });
     }),
 
   registrarEntrada: protectedProcedure.input(entradaInputSchema).mutation(async ({ ctx, input }) => {
@@ -174,33 +198,25 @@ export const semenRouter = router({
       ) {
         return [];
       }
-      return withDbFallback(
-        () =>
-          listSemenPartidasDisponiveisInseminacaoDb(ctx.user.id, {
-            fazendaId: input.fazendaId,
-            origem: input.origemReprodutor,
-            machoId: input.machoId,
-            reprodutorTexto: input.reprodutorTexto,
-            reprodutorKey: input.reprodutorKey,
-          }),
-        () =>
-          listSemenPartidasDisponiveisInseminacaoLocal(ctx.user.id, {
-            fazendaId: input.fazendaId,
-            origem: input.origemReprodutor,
-            machoId: input.machoId,
-            reprodutorTexto: input.reprodutorTexto,
-            reprodutorKey: input.reprodutorKey,
-          }),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return listSemenPartidasDisponiveisInseminacaoDb(titular, {
+          fazendaId: input.fazendaId,
+          origem: input.origemReprodutor,
+          machoId: input.machoId,
+          reprodutorTexto: input.reprodutorTexto,
+          reprodutorKey: input.reprodutorKey,
+        }, true);
+      });
     }),
 
   listReprodutoresExternosDisponiveis: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      return withDbFallback(
-        () => listSemenReprodutoresExternosDisponiveisDb(ctx.user.id, input.fazendaId),
-        () => listSemenReprodutoresExternosDisponiveisLocal(ctx.user.id, input.fazendaId),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return listSemenReprodutoresExternosDisponiveisDb(titular, input.fazendaId, true);
+      });
     }),
 
   corrigirEntrada: protectedProcedure
@@ -295,10 +311,10 @@ export const semenRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      return withDbFallback(
-        () => listSemenUtilizadoDb(ctx.user.id, input),
-        () => listSemenUtilizadoLocal(ctx.user.id, input),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return listSemenUtilizadoDb(titular, input, true);
+      });
     }),
 
   getUtilizado: protectedProcedure
@@ -313,14 +329,14 @@ export const semenRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const row = await withDbFallback(
-        () => getSemenUtilizadoDb(ctx.user.id, input.key, input),
-        () => getSemenUtilizadoLocal(ctx.user.id, input.key, input),
-      );
-      if (!row) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Utilização de sêmen não encontrada." });
-      }
-      return row;
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        const row = await getSemenUtilizadoDb(titular, input.key, input, true);
+        if (!row) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Utilização de sêmen não encontrada." });
+        }
+        return row;
+      });
     }),
 
   listCatalogoExternos: protectedProcedure
@@ -331,20 +347,15 @@ export const semenRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      return withDbFallback(
-        () =>
-          listSemenReprodutorExternoCatalogoDb(
-            ctx.user.id,
-            input.fazendaId,
-            input.incluirInativos ?? false,
-          ),
-        () =>
-          listSemenReprodutorExternoCatalogoLocal(
-            ctx.user.id,
-            input.fazendaId,
-            input.incluirInativos ?? false,
-          ),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CONSULTAR_SEMEN);
+        return listSemenReprodutorExternoCatalogoDb(
+          titular,
+          input.fazendaId,
+          input.incluirInativos ?? false,
+          true,
+        );
+      });
     }),
 
   createCatalogoExterno: protectedProcedure
@@ -357,20 +368,14 @@ export const semenRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return withDbFallback(
-        () =>
-          createSemenReprodutorExternoCatalogoDb(ctx.user.id, input.fazendaId, {
-            reprodutorTexto: input.reprodutorTexto,
-            centralPadrao: input.centralPadrao,
-            observacoes: input.observacoes,
-          }),
-        () =>
-          createSemenReprodutorExternoCatalogoLocal(ctx.user.id, input.fazendaId, {
-            reprodutorTexto: input.reprodutorTexto,
-            centralPadrao: input.centralPadrao,
-            observacoes: input.observacoes,
-          }),
-      );
+      return consultar(async () => {
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CATALOGO_SEMEN_CRIAR);
+        return createSemenReprodutorExternoCatalogoDb(titular, input.fazendaId, {
+          reprodutorTexto: input.reprodutorTexto,
+          centralPadrao: input.centralPadrao,
+          observacoes: input.observacoes,
+        }, true);
+      });
     }),
 
   updateCatalogoExterno: protectedProcedure
@@ -386,25 +391,17 @@ export const semenRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        return await withDbFallback(
-          () =>
-            updateSemenReprodutorExternoCatalogoDb(ctx.user.id, input.fazendaId, input.reprodutorKey, {
-              reprodutorTexto: input.reprodutorTexto,
-              centralPadrao: input.centralPadrao,
-              observacoes: input.observacoes,
-              ativo: input.ativo,
-            }),
-          () =>
-            updateSemenReprodutorExternoCatalogoLocal(ctx.user.id, input.fazendaId, input.reprodutorKey, {
-              reprodutorTexto: input.reprodutorTexto,
-              centralPadrao: input.centralPadrao,
-              observacoes: input.observacoes,
-              ativo: input.ativo,
-            }),
-        );
+        const titular = await titularDaFazenda(ctx, input.fazendaId, PERMISSAO_CATALOGO_SEMEN_EDITAR);
+        return await updateSemenReprodutorExternoCatalogoDb(titular, input.fazendaId, input.reprodutorKey, {
+          reprodutorTexto: input.reprodutorTexto,
+          centralPadrao: input.centralPadrao,
+          observacoes: input.observacoes,
+          ativo: input.ativo,
+        }, true);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Não foi possível atualizar o cadastro.";
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) recusarSemenSemMysql();
+        const message = error instanceof Error ? error.message : "Não foi possível atualizar o cadastro.";
         throw new TRPCError({ code: "BAD_REQUEST", message });
       }
     }),

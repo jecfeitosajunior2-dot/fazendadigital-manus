@@ -37,6 +37,11 @@ import {
 } from "../shared/semenEstoqueAjuste";
 import { animais, db, reproducaoRegistros, semenMovimentacoes, semenPartidas } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+
+async function exigirFazendaSePrecisar(userId: number, fazendaId: number, jaAutorizado?: boolean) {
+  if (jaAutorizado) return;
+  await assertFazendaDoUsuario(userId, fazendaId);
+}
 import { validateSemenMachoInterno } from "./validateSemenMachoId";
 import {
   enrichSemenMovimentacoesDisplayDb,
@@ -140,8 +145,9 @@ export async function listSemenPartidasDb(
     search?: string;
     status?: SemenStatus | "todos";
   },
+  jaAutorizado = false,
 ): Promise<SemenPartidaListItem[]> {
-  await assertFazendaDoUsuario(userId, input.fazendaId);
+  await exigirFazendaSePrecisar(userId, input.fazendaId, jaAutorizado);
 
   const conditions = [
     eq(semenPartidas.userId, userId),
@@ -204,8 +210,9 @@ export async function listSemenPartidasDisponiveisInseminacaoDb(
     reprodutorTexto?: string;
     reprodutorKey?: string;
   },
+  jaAutorizado = false,
 ): Promise<SemenPartidaDisponivelInseminacao[]> {
-  await assertFazendaDoUsuario(userId, input.fazendaId);
+  await exigirFazendaSePrecisar(userId, input.fazendaId, jaAutorizado);
 
   const conditions = [
     eq(semenPartidas.userId, userId),
@@ -248,8 +255,9 @@ export async function listSemenPartidasDisponiveisInseminacaoDb(
 export async function listSemenReprodutoresExternosDisponiveisDb(
   userId: number,
   fazendaId: number,
+  jaAutorizado = false,
 ): Promise<SemenReprodutorExternoDisponivel[]> {
-  await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
 
   const rows = await db
     .select({

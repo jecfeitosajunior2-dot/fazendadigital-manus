@@ -13,6 +13,11 @@ import {
 import { animais, db, reproducaoRegistros, semenPartidas } from "./db";
 import { listLocalAnimais, listLocalReproducaoRegistros } from "./localFallbackStore";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+
+async function exigirFazendaSePrecisar(userId: number, fazendaId: number, jaAutorizado?: boolean) {
+  if (jaAutorizado || fazendaId <= 0) return;
+  await assertFazendaDoUsuario(userId, fazendaId);
+}
 import { listSemenPartidasCentralLocal } from "./semenEstoqueLocal";
 
 export type SemenUtilizadoListResult = {
@@ -102,9 +107,10 @@ async function loadSemenUtilizadoFontesLocal(userId: number) {
 export async function listSemenUtilizadoDb(
   userId: number,
   filtros: SemenUtilizadoFiltros,
+  jaAutorizado = false,
 ): Promise<SemenUtilizadoListResult> {
   const fazendaId = Number(filtros.fazendaId) || 0;
-  if (fazendaId > 0) await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
   const fontes = await loadSemenUtilizadoFontesDb(userId);
   const visao = buildSemenUtilizadoVisao(
     fontes.registros,
@@ -145,11 +151,12 @@ export async function getSemenUtilizadoDb(
   userId: number,
   key: string,
   filtros: SemenUtilizadoFiltros,
+  jaAutorizado = false,
 ): Promise<SemenUtilizadoDetalheResult | null> {
   const parsed = parseSemenUtilizadoGrupoKey(key);
   if (!parsed) return null;
   const fazendaId = Number(filtros.fazendaId) || 0;
-  if (fazendaId > 0) await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
   const fontes = await loadSemenUtilizadoFontesDb(userId);
   const visao = buildSemenUtilizadoVisao(
     fontes.registros,

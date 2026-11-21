@@ -19,6 +19,11 @@ import {
 import { db, reproducaoRegistros, animais, semenPartidas, semenReprodutoresExternos } from "./db";
 import { listLocalAnimais, listLocalReproducaoRegistros } from "./localFallbackStore";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+
+async function exigirFazendaSePrecisar(userId: number, fazendaId: number, jaAutorizado?: boolean) {
+  if (jaAutorizado) return;
+  await assertFazendaDoUsuario(userId, fazendaId);
+}
 import { listSemenPartidasCentralLocal } from "./semenEstoqueLocal";
 
 const dataDir = path.resolve(process.cwd(), ".local-data");
@@ -178,8 +183,9 @@ export async function listSemenReprodutorExternoCatalogoDb(
   userId: number,
   fazendaId: number,
   incluirInativos = false,
+  jaAutorizado = false,
 ): Promise<SemenReprodutorExternoCatalogoItem[]> {
-  await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
   const [rows, historico] = await Promise.all([
     db
       .select()
@@ -236,8 +242,9 @@ export async function createSemenReprodutorExternoCatalogoDb(
   userId: number,
   fazendaId: number,
   input: SemenReprodutorExternoCreateInput,
+  jaAutorizado = false,
 ): Promise<SemenReprodutorExternoCreateResult> {
-  await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
   const catalogo = await listSemenReprodutorExternoCatalogoDb(userId, fazendaId, true);
   const resolved = resolveSemenReprodutorExternoCreate(input, catalogo);
   if (resolved.status !== "created") return resolved;
@@ -331,8 +338,9 @@ export async function updateSemenReprodutorExternoCatalogoDb(
   fazendaId: number,
   key: string,
   input: SemenReprodutorExternoUpdateInput,
+  jaAutorizado = false,
 ): Promise<SemenReprodutorExternoCatalogoItem> {
-  await assertFazendaDoUsuario(userId, fazendaId);
+  await exigirFazendaSePrecisar(userId, fazendaId, jaAutorizado);
   const catalogo = await listSemenReprodutorExternoCatalogoDb(userId, fazendaId, true);
   const found = catalogo.find(i => i.reprodutorKey === key);
   if (!found) throw new Error(MSG_SEMEN_CATALOGO_NAO_ENCONTRADO);
