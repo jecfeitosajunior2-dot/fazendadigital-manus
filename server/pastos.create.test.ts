@@ -278,8 +278,11 @@ describe("pastos.create", () => {
   it("24. O retorno continua sendo sucesso e id", () => {
     const bloco = blocoDoCadastro();
     expect(bloco).toContain("return { success: true as const, id }");
-    expect(bloco).toContain("return criarPastoNoEspelhoDoPrincipal");
-    expect(readFileSync(resolve(here, "routers.ts"), "utf8")).toContain("localFallback: true as const");
+    expect(bloco).not.toContain("criarPastoNoEspelhoDoPrincipal");
+    expect(bloco).not.toContain("localFallback");
+    expect(bloco.indexOf("espelharPastoDepoisDoCommit")).toBeGreaterThan(bloco.indexOf("await db.transaction"));
+    expect(bloco.slice(bloco.indexOf("} catch"))).not.toContain("updateLocalPasto");
+    expect(bloco.slice(bloco.indexOf("} catch"))).toContain("recusarPastoSemMysql()");
   });
 
   it("25. Recusa não devolve id de pasto novo", () => {
@@ -305,7 +308,8 @@ describe("pastos.create", () => {
     expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
     expect(fazendaLocalDoTitular([fazendaA, fazendaAlheia], 1, 10)?.id).toBe(10);
     expect(fazendaLocalDoTitular([fazendaAlheia], 1, 30)).toBeNull();
-    expect(blocoDoCadastro()).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(blocoDoCadastro()).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(blocoDoCadastro()).toContain("recusarPastoSemMysql()");
   });
 
   it("29. Secundário não cria no espelho", () => {
@@ -317,9 +321,11 @@ describe("pastos.create", () => {
   });
 
   it("31. O espelho grava o userId do titular", () => {
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
-    expect(fonte).toContain("createLocalPasto(identidade.titularUserId");
-    expect(blocoDoCadastro()).not.toContain("createLocalPasto(ctx.user.id");
+    const bloco = blocoDoCadastro();
+    expect(bloco).toContain("updateLocalPasto(");
+    expect(bloco).toContain("identidade.titularUserId");
+    expect(bloco).not.toContain("createLocalPasto");
+    expect(bloco).not.toContain("updateLocalPasto(ctx.user.id");
   });
 
   it("32. O espelho não aceita fazenda de outro proprietário", () => {
@@ -357,7 +363,7 @@ describe("pastos.create", () => {
     });
     await expect(criarPastoNaTransacao(principal, { fazendaId: 999, nome: "Solto" }, tx)).rejects.toBeInstanceOf(TRPCError);
     expect(gravados).toEqual([]);
-    expect(blocoDoCadastro()).not.toContain("updateLocalPasto");
+    expect(blocoDoCadastro().slice(blocoDoCadastro().indexOf("} catch"))).not.toContain("updateLocalPasto");
   });
 
   it("35. Os formulários de pasto e subdivisão continuam cabendo na entrada", () => {

@@ -282,7 +282,8 @@ describe("pastos.update", () => {
 
   it("26. O retorno continua sendo sucesso", () => {
     expect(blocoDaEdicao()).toContain("return { success: true as const }");
-    expect(readFileSync(resolve(here, "routers.ts"), "utf8")).toContain("localFallback: true as const");
+    expect(blocoDaEdicao()).not.toContain("localFallback");
+    expect(blocoDaEdicao().indexOf("espelharPastoDepoisDoCommit")).toBeGreaterThan(blocoDaEdicao().indexOf("await db.transaction"));
   });
 
   it("27. Pasto inexistente não retorna sucesso", async () => {
@@ -314,7 +315,8 @@ describe("pastos.update", () => {
     expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
     expect(pastoLocalDoTitular([pastoNorte, pastoAlheio], 1, 7)?.id).toBe(7);
     expect(pastoLocalDoTitular([pastoAlheio], 1, 9)).toBeNull();
-    expect(blocoDaEdicao()).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(blocoDaEdicao()).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(blocoDaEdicao()).toContain("recusarPastoSemMysql()");
   });
 
   it("32. Secundário não edita no espelho", () => {
@@ -327,9 +329,12 @@ describe("pastos.update", () => {
 
   it("34. O espelho não acha pasto de outro proprietário", () => {
     expect(pastoLocalDoTitular([{ id: 7, userId: 9, fazendaId: 10 }], 1, 7)).toBeNull();
-    const fonte = readFileSync(resolve(here, "routers.ts"), "utf8");
-    expect(fonte).toContain("updateLocalPasto(identidade.titularUserId, input.id, decisao.valores)");
-    expect(blocoDaEdicao()).not.toContain("updateLocalPasto(ctx.user.id");
+    const bloco = blocoDaEdicao();
+    expect(bloco).toContain("updateLocalPasto(");
+    expect(bloco).toContain("identidade.titularUserId");
+    expect(bloco).toContain("valoresEdicaoPasto(input)");
+    expect(bloco).not.toContain("updateLocalPasto(ctx.user.id");
+    expect(bloco.slice(bloco.indexOf("} catch"))).not.toContain("updateLocalPasto");
   });
 
   it("35. Os formulários de pasto e subdivisão continuam cabendo na entrada", () => {

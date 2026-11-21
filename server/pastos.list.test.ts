@@ -284,14 +284,13 @@ describe("pastos.list e pastos.listByFazenda", () => {
     expect(resultado.ok && resultado.pastos).toEqual([]);
   });
 
-  it("29. Fallback do Principal devolve pasto da própria fazenda", () => {
+  it("29. Queda do banco não devolve pasto do arquivo", () => {
     const resultado = listar({
       pastos: [],
       locais: [norte, alheio],
       consultaMysqlConcluida: false,
     });
-    expect(deveUsarEspelhoQuandoBancoCai(principal)).toBe(true);
-    expect(resultado.ok && resultado.pastos.map((pasto) => pasto.id)).toEqual([7]);
+    expect(resultado.ok && resultado.pastos).toEqual([]);
   });
 
   it("30. Fallback não incorpora pasto de outro proprietário", () => {
@@ -332,7 +331,9 @@ describe("pastos.list e pastos.listByFazenda", () => {
   it("33. Erro que não é queda de banco continua sendo erro", () => {
     const bloco = blocoDasListas();
     expect(bloco).toContain("if (!isDatabaseUnavailable(error)) throw error");
-    expect(bloco).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
+    expect(bloco).toContain("recusarPastoSemMysql()");
+    expect(bloco).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(bloco).not.toContain("pastosDoEspelhoDoPrincipal");
     expect(bloco).toContain("eq(pastos.userId, identidade.titularUserId)");
   });
 

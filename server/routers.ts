@@ -105,7 +105,6 @@ import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
 import { animalPertenceFazenda, buildLoteFazendaContext, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
-  createLocalPasto,
   createLocalBenfeitoria,
   createLocalMaquina,
   createLocalAbastecimento,
@@ -10972,6 +10971,22 @@ const fazendasRouter = router({
     }),
 });
 
+function recusarPastoSemMysql(): never {
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum pasto foi consultado ou alterado.",
+  });
+}
+
+/** O arquivo local só é tocado depois que a transação já confirmou. Falha do espelho não desfaz o banco. */
+export async function espelharPastoDepoisDoCommit(gravar: () => Promise<void>): Promise<void> {
+  try {
+    await gravar();
+  } catch (erro) {
+    console.warn("[pastos] Espelho local não gravado:", erro);
+  }
+}
+
 // ─── PASTOS ROUTER ──────────────────────────────────────────────────────────
 const pastosRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -10984,8 +10999,7 @@ const pastosRouter = router({
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       if (!isDatabaseUnavailable(error)) throw error;
-      if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-      return pastosDoEspelhoDoPrincipal(identidade);
+      recusarPastoSemMysql();
     }
   }),
 
@@ -11001,8 +11015,7 @@ const pastosRouter = router({
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        return pastosDoEspelhoDoPrincipal(identidade, input.fazendaId);
+        recusarPastoSemMysql();
       }
     }),
 
@@ -11028,12 +11041,16 @@ const pastosRouter = router({
         const id = await db.transaction(async (tx) => (
           criarPastoNaTransacao(identidade, input, adaptadorCriacaoPasto(tx))
         ));
+        await espelharPastoDepoisDoCommit(() => updateLocalPasto(
+          identidade.titularUserId,
+          id,
+          valoresNovoPasto(identidade.titularUserId, input),
+        ));
         return { success: true as const, id };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        return criarPastoNoEspelhoDoPrincipal(identidade, input, error);
+        recusarPastoSemMysql();
       }
     }),
 
@@ -11059,12 +11076,16 @@ const pastosRouter = router({
         await db.transaction(async (tx) => {
           await editarPastoNaTransacao(identidade, input, adaptadorEdicaoPasto(tx));
         });
+        await espelharPastoDepoisDoCommit(() => updateLocalPasto(
+          identidade.titularUserId,
+          input.id,
+          valoresEdicaoPasto(input),
+        ));
         return { success: true as const };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        return editarPastoNoEspelhoDoPrincipal(identidade, input, error);
+        recusarPastoSemMysql();
       }
     }),
 
@@ -11088,14 +11109,26 @@ const pastosRouter = router({
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
       }
       try {
-        return await db.transaction(async (tx) => (
-          importarCoordenadasNaTransacao(identidade, input, adaptadorImportacaoCoordenadas(tx), new Date().toISOString())
+        const espelho: { id: number; coordenadas: string }[] = [];
+        const resultado = await db.transaction(async (tx) => (
+          importarCoordenadasNaTransacao(
+            identidade,
+            input,
+            adaptadorImportacaoCoordenadas(tx),
+            new Date().toISOString(),
+            espelho,
+          )
         ));
+        await espelharPastoDepoisDoCommit(async () => {
+          for (const item of espelho) {
+            await updateLocalPasto(identidade.titularUserId, item.id, { coordenadas: item.coordenadas });
+          }
+        });
+        return resultado;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         if (!isDatabaseUnavailable(error)) throw error;
-        if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error;
-        return importarCoordenadasNoEspelhoDoPrincipal(identidade, input, error, new Date().toISOString());
+        recusarPastoSemMysql();
       }
     }),
 
@@ -11123,7 +11156,7 @@ export type ResultadoListaPastos<T> =
   | { ok: false; motivo: "sem_identidade" | "sem_permissao" };
 
 /**
- * Escolhe os pastos da conta. Consulta concluída não acrescenta pasto que só existe no arquivo.
+ * Escolhe os pastos da conta. O arquivo local não completa a lista, nem quando a consulta não concluiu.
  * Pasto cuja fazenda não está na conta fica de fora: não há fazenda comprovada.
  */
 export function comporListaPastos<T extends PastoListaMinimo>(entrada: {
@@ -11173,13 +11206,6 @@ export function comporListaPastos<T extends PastoListaMinimo>(entrada: {
   };
 
   let pastos = entrada.pastos.filter(visivel);
-  if (entrada.consultaMysqlConcluida === false && identidade.papel === "principal") {
-    const ids = new Set(pastos.map((pasto) => pasto.id));
-    for (const local of entrada.locais ?? []) {
-      if (ids.has(local.id) || !visivel(local)) continue;
-      pastos.push(local);
-    }
-  }
   if (entrada.filtroFazendaId != null) {
     if (!autorizadas.has(entrada.filtroFazendaId)) return { ok: true, pastos: [], fazendasAutorizadas };
     pastos = pastos.filter((pasto) => Number(pasto.fazendaId) === entrada.filtroFazendaId);
@@ -11239,25 +11265,6 @@ async function consultarPastosAutorizados(identidade: IdentidadeUsuario, filtroF
     filtroFazendaId,
   });
   if (!resultado.ok) recusarListaPastos(resultado.motivo);
-  return resultado.pastos;
-}
-
-async function pastosDoEspelhoDoPrincipal(identidade: IdentidadeUsuario, filtroFazendaId?: number) {
-  const locais = (await listLocalPastos(identidade.titularUserId))
-    .filter((pasto) => Number(pasto.userId) === identidade.titularUserId);
-  const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-    .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId);
-  const resultado = comporListaPastos({
-    identidade,
-    permissoes: [],
-    vinculos: [],
-    fazendasDoTitular: fazendasLocais,
-    pastos: [],
-    locais,
-    consultaMysqlConcluida: false,
-    filtroFazendaId,
-  });
-  if (!resultado.ok) return [];
   return resultado.pastos;
 }
 
@@ -11681,40 +11688,6 @@ function adaptadorCriacaoPasto(tx: Parameters<Parameters<typeof db.transaction>[
   };
 }
 
-async function criarPastoNoEspelhoDoPrincipal(
-  identidade: IdentidadeUsuario,
-  input: EntradaCriarPasto,
-  erroOriginal: unknown,
-) {
-  const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-    .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId)
-    .map((fazenda) => ({ id: Number(fazenda.id), userId: Number(fazenda.userId) }));
-  const fazenda = fazendaLocalDoTitular(fazendasLocais, identidade.titularUserId, input.fazendaId);
-  const decisao = decidirCriacaoPasto({
-    identidade,
-    permissoes: [],
-    vinculos: [],
-    fazendasDoTitular: fazendasLocais,
-    fazenda,
-    campos: input,
-    sessionVersionDaSessao: identidade.sessionVersion,
-  });
-  if (!decisao.ok) throw erroOriginal;
-  const criado = await createLocalPasto(identidade.titularUserId, {
-    fazendaId: decisao.valores.fazendaId,
-    nome: decisao.valores.nome,
-    ...(decisao.valores.sigla !== undefined ? { sigla: decisao.valores.sigla } : {}),
-    tipo: decisao.valores.tipo ?? "Pasto",
-    ...(decisao.valores.tipoPastagem !== undefined ? { tipoPastagem: decisao.valores.tipoPastagem } : {}),
-    ...(decisao.valores.area !== undefined ? { area: decisao.valores.area } : {}),
-    ...(decisao.valores.incluirArea !== undefined ? { incluirArea: decisao.valores.incluirArea } : {}),
-    ...(decisao.valores.capacidade !== undefined ? { capacidade: decisao.valores.capacidade } : {}),
-    ...(decisao.valores.status !== undefined ? { status: decisao.valores.status } : {}),
-    ...(decisao.valores.observacoes !== undefined ? { observacoes: decisao.valores.observacoes } : {}),
-  });
-  return { success: true as const, id: criado.id, localFallback: true as const };
-}
-
 type CamposEdicaoPasto = {
   nome?: string;
   sigla?: string;
@@ -11935,36 +11908,6 @@ function adaptadorEdicaoPasto(tx: Parameters<Parameters<typeof db.transaction>[0
   };
 }
 
-async function editarPastoNoEspelhoDoPrincipal(
-  identidade: IdentidadeUsuario,
-  input: EntradaEditarPasto,
-  erroOriginal: unknown,
-) {
-  const pastosLocais = (await listLocalPastos(identidade.titularUserId))
-    .filter((pasto) => Number(pasto.userId) === identidade.titularUserId);
-  const pastoLocal = pastoLocalDoTitular(pastosLocais, identidade.titularUserId, input.id);
-  const fazendaId = pastoLocal?.fazendaId != null ? Number(pastoLocal.fazendaId) : null;
-  const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-    .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId)
-    .map((fazenda) => ({ id: Number(fazenda.id), userId: Number(fazenda.userId) }));
-  const fazenda = fazendaId == null ? null : fazendaLocalDoTitular(fazendasLocais, identidade.titularUserId, fazendaId);
-  const decisao = avaliarEdicaoPasto({
-    identidade,
-    permissoes: [],
-    vinculos: [],
-    fazendasDoTitular: fazendasLocais,
-    pasto: pastoLocal && fazendaId != null
-      ? { id: pastoLocal.id, userId: pastoLocal.userId, fazendaId }
-      : null,
-    fazenda,
-    campos: input,
-    sessionVersionDaSessao: identidade.sessionVersion,
-  });
-  if (!decisao.ok) throw erroOriginal;
-  await updateLocalPasto(identidade.titularUserId, input.id, decisao.valores);
-  return { success: true as const, localFallback: true as const };
-}
-
 type PastoImportavel = {
   id: number;
   userId: number;
@@ -12103,6 +12046,7 @@ export async function importarCoordenadasNaTransacao(
   input: { fazendaId: number; kmlContent: string },
   tx: TransacaoImportacaoCoordenadas,
   importadoEm: string,
+  espelho?: { id: number; coordenadas: string }[],
 ) {
   const usuario = await tx.travarUsuario(identidade.id);
   const fresca = usuario ? identidadeTravada(usuario) : null;
@@ -12135,6 +12079,7 @@ export async function importarCoordenadasNaTransacao(
     }
     if (confirmado.coordenadas !== item.coordenadas) throw new Error("Coordenadas não confirmadas.");
   }
+  if (espelho) espelho.push(...plano.atualizacoes);
   return { importados: plano.importados, ignorados: plano.ignorados, totalNoArquivo: plano.totalNoArquivo };
 }
 
@@ -12219,50 +12164,6 @@ function adaptadorImportacaoCoordenadas(tx: Parameters<Parameters<typeof db.tran
     },
   };
 }
-
-async function importarCoordenadasNoEspelhoDoPrincipal(
-  identidade: IdentidadeUsuario,
-  input: { fazendaId: number; kmlContent: string },
-  erroOriginal: unknown,
-  importadoEm: string,
-) {
-  const pastosLocais = (await listLocalPastos(identidade.titularUserId))
-    .filter((pasto) => Number(pasto.userId) === identidade.titularUserId)
-    .map((pasto) => ({
-      id: Number(pasto.id),
-      userId: Number(pasto.userId),
-      fazendaId: Number(pasto.fazendaId),
-      nome: String(pasto.nome ?? ""),
-      sigla: pasto.sigla == null ? null : String(pasto.sigla),
-    }));
-  const fazendasLocais = (await listLocalFazendas(identidade.titularUserId))
-    .filter((fazenda) => Number(fazenda.userId) === identidade.titularUserId)
-    .map((fazenda) => ({ id: Number(fazenda.id), userId: Number(fazenda.userId) }));
-  const fazenda = fazendaLocalDoTitular(fazendasLocais, identidade.titularUserId, input.fazendaId);
-  const plano = planejarImportacaoCoordenadas({
-    identidade,
-    permissoes: [],
-    vinculos: [],
-    fazendasDoTitular: fazendasLocais,
-    fazenda,
-    pastos: pastosLocais,
-    fazendaId: input.fazendaId,
-    kmlContent: input.kmlContent,
-    importadoEm,
-    sessionVersionDaSessao: identidade.sessionVersion,
-  });
-  if (!plano.ok) {
-    if (plano.motivo === "kml_vazio" || plano.motivo === "sem_subdivisao") recusarPlanoImportacao(plano);
-    throw erroOriginal;
-  }
-  for (const item of plano.atualizacoes) {
-    const pasto = pastoLocalDoTitular(pastosLocais, identidade.titularUserId, item.id);
-    if (!pasto || Number(pasto.fazendaId) !== input.fazendaId) throw erroOriginal;
-    await updateLocalPasto(identidade.titularUserId, item.id, { coordenadas: item.coordenadas });
-  }
-  return { importados: plano.importados, ignorados: plano.ignorados, totalNoArquivo: plano.totalNoArquivo };
-}
-
 
 // ─── BRINCOS ROUTER ──────────────────────────────────────────────────────────
 const brincosRouter = router({

@@ -384,10 +384,13 @@ describe("pastos.importarCoordenadas", () => {
 
   it("32. Queda do banco continua só para o Principal, sem o espelho antigo", () => {
     const bloco = blocoDaRota();
-    expect(bloco).toContain("if (!deveUsarEspelhoQuandoBancoCai(identidade)) throw error");
-    expect(bloco).toContain("importarCoordenadasNoEspelhoDoPrincipal");
+    expect(bloco).not.toContain("deveUsarEspelhoQuandoBancoCai");
+    expect(bloco).not.toContain("importarCoordenadasNoEspelhoDoPrincipal");
     expect(bloco).not.toContain("listLocalPastosByFazenda");
-    expect(bloco).not.toContain("updateLocalPasto");
+    expect(bloco).toContain("recusarPastoSemMysql()");
+    expect(bloco.indexOf("espelharPastoDepoisDoCommit")).toBeGreaterThan(bloco.indexOf("await db.transaction"));
+    expect(bloco).toContain("updateLocalPasto(identidade.titularUserId, item.id, { coordenadas: item.coordenadas })");
+    expect(bloco.slice(bloco.indexOf("} catch"))).not.toContain("updateLocalPasto");
   });
 
   it("33. Nenhum campo cadastral entra na gravação", () => {
