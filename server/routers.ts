@@ -50,8 +50,20 @@ import {
   MSG_ESTOQUE_ZERAR_CAPITAL,
   MSG_MANUT_CAPITAL_REVERSAO,
 } from "../shared/estoqueCapital";
-import { resolverLeituraEstoqueList } from "../shared/estoqueListFonte";
 import { criarMovimentacaoEstoqueNoTx } from "./estoqueMovimentacaoTx";
+import {
+  autorizarMovimentoEstoque,
+  erroEstoque,
+  MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE,
+  PERMISSAO_CONSULTAR_ESTOQUE,
+  recusarEstoqueSemMysql,
+  recusarExclusaoFisicaEstoque,
+} from "./consultaEstoqueAutorizada";
+import {
+  autorizarMovimentoEstoqueNoBanco,
+  consultaEstoqueNaTransacao,
+  fazendasDaConsultaEstoqueNoBanco,
+} from "./consultaEstoqueDb";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { SaudeEstoqueError } from "./saudeEstoque";
 import { recusarEstornoGenericoSeSanitario, listarVinculosSaudePorMovimentacaoIds } from "./saudeEstoqueMysql";
@@ -346,7 +358,6 @@ import {
   computeIndicadoresPeso,
   isPesoEntradaInformadoInvalido,
 } from "../shared/pesoEntrada";
-import { idsFazendasDoUsuarioParaEstoque } from "./estoqueIsolamentoLeitura";
 import {
   assertFazendasEstoqueDoUsuario,
   assertMovimentacaoEstoqueDoUsuario,
@@ -356,8 +367,6 @@ import {
   recusarEscritaEstoque,
 } from "./estoqueIsolamentoEscrita";
 import {
-  filtrarMovimentacoesEstoque,
-  filtrarProdutosEstoque,
   podeEscreverProdutoEstoque,
   produtoEstoqueNaFazenda,
   produtoEstoqueVisivel,
@@ -8703,73 +8712,59 @@ const estoqueInputFields = {
 
 const estoqueRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
-    const listarLocal = () => filtrarProdutosEstoque(devLocalStore.listEstoque(), fazendaIds);
-    if (fazendaIds.length === 0) return [];
+    const acesso = await fazendasDaConsultaEstoqueNoBanco({
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion,
+      permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+    });
+    if (!acesso.ok) throw erroEstoque(acesso);
+    if (acesso.fazendaIds.length === 0) return [];
     try {
-      const rows = await db
+      return await db
         .select()
         .from(estoque)
-        .where(inArray(estoque.fazendaId, fazendaIds))
+        .where(inArray(estoque.fazendaId, acesso.fazendaIds))
         .orderBy(desc(estoque.createdAt));
-      return resolverLeituraEstoqueList({ ok: true, rows }, listarLocal, isDatabaseUnavailable);
     } catch (error) {
-      return resolverLeituraEstoqueList(
-        { ok: false, error },
-        listarLocal,
-        isDatabaseUnavailable,
-      );
+      if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+      throw error;
     }
   }),
 
   listByFazenda: protectedProcedure
     .input(z.object({ fazendaId: z.number() }))
     .query(async ({ ctx, input }) => {
-      await assertFazendaDoUsuario(ctx.user.id, input.fazendaId);
+      const acesso = await fazendasDaConsultaEstoqueNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+      });
+      if (!acesso.ok) throw erroEstoque(acesso);
+      if (!acesso.fazendaIds.includes(input.fazendaId)) {
+        throw erroEstoque({ ok: false, motivo: "sem_fazenda" });
+      }
       try {
-        const rows = await db
+        return await db
           .select()
           .from(estoque)
           .where(eq(estoque.fazendaId, input.fazendaId))
           .orderBy(desc(estoque.createdAt));
-        const localRows = filtrarProdutosEstoque(devLocalStore.listEstoque(), [input.fazendaId]);
-        if (localRows.length === 0) return rows;
-        return mergeEstoqueListPreferLocal(rows, localRows);
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return filtrarProdutosEstoque(devLocalStore.listEstoque(), [input.fazendaId]);
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
     }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const autorizadas = setFazendasDoUsuario(await idsFazendasDoUsuarioParaEstoque(ctx.user.id));
-      const mergeVinculos = (
-        base: {
-          fazendaId: number;
-          estoqueId: number;
-          produzidoNaFazenda: boolean;
-          controlarSaldo: boolean;
-          monitorarEstoque: boolean;
-          quantidadeMinima: string | null;
-          quantidadeMaxima: string | null;
-          quantidade: string | null;
-        }[],
-        extras: typeof base
-      ) => {
-        const byFarm = new Map<number, (typeof base)[number]>();
-        for (const v of base) {
-          const fid = Number(v.fazendaId);
-          if (Number.isFinite(fid) && fid > 0) byFarm.set(fid, { ...v, fazendaId: fid });
-        }
-        // Vínculos locais sobrescrevem / completam por fazenda
-        for (const v of extras) {
-          const fid = Number(v.fazendaId);
-          if (Number.isFinite(fid) && fid > 0) byFarm.set(fid, { ...v, fazendaId: fid });
-        }
-        return [...byFarm.values()];
-      };
+      const acesso = await fazendasDaConsultaEstoqueNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+      });
+      if (!acesso.ok) throw erroEstoque(acesso);
+      const autorizadas = setFazendasDoUsuario(acesso.fazendaIds);
 
       try {
         const [row] = await db.select().from(estoque).where(eq(estoque.id, input.id));
@@ -8825,30 +8820,17 @@ const estoqueRouter = router({
             ];
           }
 
-          const localRow = devLocalStore.getEstoque(input.id);
-          const localProdutoId = localRow?.produtoId ?? row.produtoId ?? null;
-          const localVinculos = devLocalStore.listEstoquesVinculados(localProdutoId, localRow ?? row);
-          estoquesVinculados = mergeVinculos(estoquesVinculados, localVinculos)
+          estoquesVinculados = estoquesVinculados
             .filter(v => produtoEstoqueVisivel(v, autorizadas));
 
-          const base = localRow ? { ...row, ...localRow, id: row.id } : row;
           const fazendaIds = [...new Set(estoquesVinculados.map(e => e.fazendaId))];
-          return { ...base, fazendaIds, estoquesVinculados };
+          return { ...row, fazendaIds, estoquesVinculados };
         }
+        return null;
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
-      const local = devLocalStore.getEstoque(input.id);
-      if (!local || !produtoEstoqueVisivel(local, autorizadas)) return null;
-      const estoquesVinculados = devLocalStore.listEstoquesVinculados(
-        local.produtoId ?? null,
-        local
-      ).filter(v => produtoEstoqueVisivel(v, autorizadas));
-      return {
-        ...local,
-        fazendaIds: estoquesVinculados.map(e => e.fazendaId),
-        estoquesVinculados,
-      };
     }),
 
   create: protectedProcedure
@@ -8862,6 +8844,14 @@ const estoqueRouter = router({
         });
       }
       await assertFazendasEstoqueDoUsuario(ctx.user.id, fazendaIds);
+      for (const fazendaId of fazendaIds) {
+        const acesso = await autorizarMovimentoEstoqueNoBanco({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          fazendaId,
+        });
+        if (!acesso.ok) throw erroEstoque(acesso, MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE);
+      }
       const catalogoValues = toCatalogoInsertValues(input);
 
       try {
@@ -8889,18 +8879,8 @@ const estoqueRouter = router({
         return { success: true, id: firstEstoqueId ?? produtoId, produtoId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        const result = devLocalStore.createProdutoComEstoques({
-          ...input,
-          embalagens: input.embalagens,
-          fazendaIds,
-        });
-        return {
-          success: true,
-          id: result.id,
-          produtoId: result.produtoId,
-          localFallback: true,
-        };
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
     }),
 
@@ -9181,7 +9161,7 @@ const estoqueRouter = router({
       escopo: z.enum(["fazenda", "catalogo"]).default("fazenda"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { set: autorizadas } = await fazendasAutorizadasEstoque(ctx.user.id);
+      recusarExclusaoFisicaEstoque();
       const deleteLocal = () => {
         try {
           return devLocalStore.deleteEstoque(input.id, input.escopo);
@@ -9390,7 +9370,13 @@ const estoqueRouter = router({
     }),
 
   resumo: protectedProcedure.query(async ({ ctx }) => {
-    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+    const acesso = await fazendasDaConsultaEstoqueNoBanco({
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion,
+      permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+    });
+    if (!acesso.ok) throw erroEstoque(acesso);
+    const fazendaIds = acesso.fazendaIds;
     try {
       const itens = fazendaIds.length === 0
         ? []
@@ -9406,23 +9392,19 @@ const estoqueRouter = router({
         totalAbaixoLimite: abaixoLimite.length,
       };
     } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-      const itens = filtrarProdutosEstoque(devLocalStore.listEstoque(), fazendaIds);
-      const monitorados = itens.filter(i => i.monitorarEstoque);
-      const abaixoLimite = monitorados.filter(i => {
-        const q = Number(i.quantidade ?? 0);
-        const min = Number(i.quantidadeMinima ?? 0);
-        return min > 0 && q <= min;
-      });
-      return {
-        totalMonitorados: monitorados.length,
-        totalAbaixoLimite: abaixoLimite.length,
-      };
+      if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+      throw error;
     }
   }),
 
   listMovimentacoes: protectedProcedure.query(async ({ ctx }) => {
-    const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+    const acesso = await fazendasDaConsultaEstoqueNoBanco({
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion,
+      permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+    });
+    if (!acesso.ok) throw erroEstoque(acesso);
+    const fazendaIds = acesso.fazendaIds;
     if (fazendaIds.length === 0) return [];
     try {
       const rows = await db
@@ -9470,21 +9452,23 @@ const estoqueRouter = router({
           or(isNull(estoqueMovimentacoes.fazendaId), inArray(estoqueMovimentacoes.fazendaId, fazendaIds)),
         ))
         .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
-      const localRows = filtrarMovimentacoesEstoque(devLocalStore.listMovimentacoes(), fazendaIds);
-      if (localRows.length === 0) return rows;
-      const ids = new Set(rows.map(r => r.id));
-      const extras = localRows.filter(r => !ids.has(r.id));
-      return [...rows, ...extras];
+      return rows;
     } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-      return filtrarMovimentacoesEstoque(devLocalStore.listMovimentacoes(), fazendaIds);
+      if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+      throw error;
     }
   }),
 
   getMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const autorizadas = setFazendasDoUsuario(await idsFazendasDoUsuarioParaEstoque(ctx.user.id));
+      const acesso = await fazendasDaConsultaEstoqueNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+      });
+      if (!acesso.ok) throw erroEstoque(acesso);
+      const autorizadas = setFazendasDoUsuario(acesso.fazendaIds);
       try {
         const [row] = await db
           .select({
@@ -9528,12 +9512,11 @@ const estoqueRouter = router({
           .innerJoin(estoque, eq(estoqueMovimentacoes.estoqueId, estoque.id))
           .where(eq(estoqueMovimentacoes.id, input.id));
         if (row && movimentacaoEstoqueVisivel(row, autorizadas)) return row;
+        return null;
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
-      const local = devLocalStore.getMovimentacao(input.id);
-      if (!local || !movimentacaoEstoqueVisivel(local, autorizadas)) return null;
-      return local;
     }),
 
   createMovimentacao: protectedProcedure
@@ -9575,47 +9558,50 @@ const estoqueRouter = router({
       await assertFazendaDoUsuario(userId, input.fazendaId);
       await assertProdutoEstoqueDoUsuario(userId, input.estoqueId);
 
-      const localInput = {
-        ...input,
-        userId,
-        registradoPor,
-        status: "ativa" as const,
-      };
-
       try {
-        const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
-        if (!item) {
-          const result = devLocalStore.createMovimentacao(localInput);
-          return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
-        }
-
-        const criado = await criarMovimentacaoEstoqueNoTx({
-          async findEstoque(id) {
-            const [row] = await db.select().from(estoque).where(eq(estoque.id, id));
-            return row
-              ? {
-                  id: row.id,
-                  fazendaId: row.fazendaId ?? null,
-                  quantidade: row.quantidade,
-                  controlarSaldo: row.controlarSaldo ?? null,
-                  valorUnitario: row.valorUnitario,
-                  valorTotalEstoque: row.valorTotalEstoque,
-                  capitalInicializadoEm: row.capitalInicializadoEm,
-                  nome: row.nome,
-                }
-              : null;
-          },
-          async insertMovimentacao(values) {
-            const result = await db.insert(estoqueMovimentacoes).values(values as typeof estoqueMovimentacoes.$inferInsert);
-            return Number((result as { insertId?: number }[])[0]?.insertId ?? 0);
-          },
-          async updateEstoque(id, patch) {
-            await db.update(estoque).set(patch).where(eq(estoque.id, id));
-          },
-        }, {
-          ...input,
-          userId,
-          registradoPor,
+        const criado = await db.transaction(async (tx) => {
+          const acesso = await autorizarMovimentoEstoque({
+            emTransacao: (fn) => fn(consultaEstoqueNaTransacao(tx)),
+          }, {
+            executorId: userId,
+            sessionVersionDaSessao: ctx.user.sessionVersion,
+            fazendaId: input.fazendaId,
+          });
+          if (!acesso.ok) throw erroEstoque(acesso, MSG_SEM_PERMISSAO_MOVIMENTO_ESTOQUE);
+          const [item] = await tx
+            .select()
+            .from(estoque)
+            .where(eq(estoque.id, input.estoqueId))
+            .for("update");
+          if (!item || item.fazendaId !== input.fazendaId) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Produto não encontrado." });
+          }
+          return criarMovimentacaoEstoqueNoTx({
+            async findEstoque(id) {
+              if (id !== item.id) return null;
+              return {
+                id: item.id,
+                fazendaId: item.fazendaId ?? null,
+                quantidade: item.quantidade,
+                controlarSaldo: item.controlarSaldo ?? null,
+                valorUnitario: item.valorUnitario,
+                valorTotalEstoque: item.valorTotalEstoque,
+                capitalInicializadoEm: item.capitalInicializadoEm,
+                nome: item.nome,
+              };
+            },
+            async insertMovimentacao(values) {
+              const result = await tx.insert(estoqueMovimentacoes).values(values as typeof estoqueMovimentacoes.$inferInsert);
+              return Number((result as { insertId?: number }[])[0]?.insertId ?? 0);
+            },
+            async updateEstoque(id, patch) {
+              await tx.update(estoque).set(patch).where(eq(estoque.id, id));
+            },
+          }, {
+            ...input,
+            userId,
+            registradoPor,
+          });
         });
 
         return {
@@ -9624,15 +9610,15 @@ const estoqueRouter = router({
           grupoId: criado.grupoId,
         };
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         if (error instanceof EstoqueCapitalError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         }
         if (error instanceof Error && /estoque insuficiente|quantidade válida|usuário autenticado/i.test(error.message)) {
           throw error;
         }
-        if (!isDatabaseUnavailable(error)) throw error;
-        const result = devLocalStore.createMovimentacao(localInput);
-        return { success: true, id: result.id, grupoId: input.grupoId ?? null, localFallback: true };
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
     }),
 
@@ -10219,6 +10205,7 @@ const estoqueRouter = router({
   deleteMovimentacao: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      recusarExclusaoFisicaEstoque();
       await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, input.id);
       try {
         const [mov] = await db
@@ -10275,8 +10262,14 @@ const estoqueRouter = router({
   listMovimentacoesByProduto: protectedProcedure
     .input(z.object({ estoqueId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
-      const autorizadas = setFazendasDoUsuario(fazendaIds);
+      const acesso = await fazendasDaConsultaEstoqueNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+      });
+      if (!acesso.ok) throw erroEstoque(acesso);
+      const autorizadas = setFazendasDoUsuario(acesso.fazendaIds);
+      try {
       const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
       if (!item || !produtoEstoqueVisivel(item, autorizadas)) return [];
       const rows = await db
@@ -10298,11 +10291,16 @@ const estoqueRouter = router({
         .where(eq(estoqueMovimentacoes.estoqueId, input.estoqueId))
         .orderBy(desc(estoqueMovimentacoes.dataMovimentacao), desc(estoqueMovimentacoes.id));
       return rows;
+      } catch (error) {
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
+      }
     }),
 
   deleteAllMovimentacoesByProduto: protectedProcedure
     .input(z.object({ estoqueId: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      recusarExclusaoFisicaEstoque();
       await assertProdutoEstoqueDoUsuario(ctx.user.id, input.estoqueId);
       const [item] = await db.select().from(estoque).where(eq(estoque.id, input.estoqueId));
       if (item && capitalEstaInicializado({ capitalInicializadoEm: item.capitalInicializadoEm })) {
@@ -10326,12 +10324,17 @@ const estoqueRouter = router({
   listByCategories: protectedProcedure
     .input(z.object({ categorias: z.array(z.string()).min(1) }))
     .query(async ({ ctx, input }) => {
-      const fazendaIds = await idsFazendasDoUsuarioParaEstoque(ctx.user.id);
+      const acesso = await fazendasDaConsultaEstoqueNoBanco({
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        permissaoId: PERMISSAO_CONSULTAR_ESTOQUE,
+      });
+      if (!acesso.ok) throw erroEstoque(acesso);
+      const fazendaIds = acesso.fazendaIds;
       const sortByNome = <T extends { nome?: string | null }>(rows: T[]) =>
         [...rows].sort((a, b) =>
           String(a.nome ?? "").localeCompare(String(b.nome ?? ""), "pt-BR"),
         );
-      const listarLocal = () => filtrarProdutosEstoque(devLocalStore.listByCategories(input.categorias), fazendaIds);
       if (fazendaIds.length === 0) return [];
 
       try {
@@ -10363,17 +10366,10 @@ const estoqueRouter = router({
             inArray(estoque.fazendaId, fazendaIds),
           ))
           .orderBy(estoque.nome);
-        return sortByNome(resolverLeituraEstoqueList(
-          { ok: true, rows },
-          listarLocal,
-          isDatabaseUnavailable,
-        ));
+        return sortByNome(rows);
       } catch (error) {
-        return sortByNome(resolverLeituraEstoqueList(
-          { ok: false, error },
-          listarLocal,
-          isDatabaseUnavailable,
-        ));
+        if (isDatabaseUnavailable(error)) recusarEstoqueSemMysql();
+        throw error;
       }
     }),
 });

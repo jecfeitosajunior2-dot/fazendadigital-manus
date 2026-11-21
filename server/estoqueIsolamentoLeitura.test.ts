@@ -20,12 +20,12 @@ describe("Fase 5.2B — isolamento de leitura do estoque", () => {
     expect(leitura).toContain("carregarAcessoPorExecutor(userId)");
     expect(acesso).toContain("eq(fazendas.userId, titularUserId)");
     expect(acesso).toContain("identidade.titularUserId");
-    expect(blocoEstoque).toContain("idsFazendasDoUsuarioParaEstoque(ctx.user.id)");
+    expect(blocoEstoque).toContain("fazendasDaConsultaEstoqueNoBanco");
+    expect(blocoEstoque).toContain("inArray(estoque.fazendaId, acesso.fazendaIds)");
     expect(blocoEstoque).toContain("inArray(estoque.fazendaId, fazendaIds)");
-    expect(blocoEstoque).toContain("assertFazendaDoUsuario(ctx.user.id, input.fazendaId)");
     expect(blocoEstoque).toContain("produtoEstoqueVisivel");
     expect(blocoEstoque).toContain("movimentacaoEstoqueVisivel");
-    expect(blocoEstoque).toContain("filtrarMovimentacoesEstoque");
+    expect(blocoEstoque).toContain("recusarEstoqueSemMysql()");
   });
 
   it("não volta a listar estoque ou movimentação sem recorte de dono", () => {
