@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { estoque, estoqueMovimentacoes, estoqueOperacoes, fazendas } from "../drizzle/schema";
 import { db } from "./db";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import { createTransferenciaInsumosService, type TransferenciaInsumosTx, type TransferenciaOperacaoRow } from "./transferenciaInsumos";
 import { mapEstoqueParaMovimentacao } from "./estoqueSaldoTx";
 
@@ -27,7 +28,7 @@ function mapOp(row: typeof estoqueOperacoes.$inferSelect): TransferenciaOperacao
 function criarTx(drizzleTx: Parameters<Parameters<typeof db.transaction>[0]>[0]): TransferenciaInsumosTx {
   const tx: TransferenciaInsumosTx = {
     async findEstoque(id) {
-      const [row] = await drizzleTx.select().from(estoque).where(eq(estoque.id, id));
+      const [row] = await drizzleTx.select().from(estoque).where(eq(estoque.id, id)).for("update").limit(1);
       return row ? mapEstoqueParaMovimentacao(row) : null;
     },
     async insertMovimentacao(values) {
@@ -54,7 +55,7 @@ function criarTx(drizzleTx: Parameters<Parameters<typeof db.transaction>[0]>[0])
       const [row] = await drizzleTx.select().from(estoque).where(and(
         eq(estoque.produtoId, produtoId),
         eq(estoque.fazendaId, fazendaId),
-      )).limit(1);
+      )).for("update").limit(1);
       return row ? mapEstoqueParaMovimentacao(row) : null;
     },
     async insertEstoqueDestino(origem, fazendaDestinoId, inicializarCapital) {
@@ -142,6 +143,9 @@ function criarTx(drizzleTx: Parameters<Parameters<typeof db.transaction>[0]>[0])
 
 export const transferenciaInsumosService = createTransferenciaInsumosService({
   transaction(fn) {
-    return db.transaction(async drizzleTx => fn(criarTx(drizzleTx)));
+    return db.transaction(async drizzleTx => fn(criarTx(drizzleTx))).catch((erro) => {
+      recusarSeDeadlockEstoque(erro);
+      throw erro;
+    });
   },
 });

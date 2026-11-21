@@ -14,6 +14,7 @@ import {
   nutricaoPlanejamentos,
 } from "../drizzle/schema";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import {
   calcularPreviewFornecimento,
   MSG_FORN_BATIDA_SALDO,
@@ -377,7 +378,8 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
 
         const grupoId = `forn-${fornId}`;
-        for (const baixa of preview.baixas) {
+        const baixas = [...preview.baixas].sort((a, b) => (a.estoqueId ?? 0) - (b.estoqueId ?? 0));
+        for (const baixa of baixas) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
             throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_FORN_SALDO_DIETA });
           }
@@ -437,7 +439,8 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
         const grupoId = `e-forn-${atual.id}`;
         const originalGrupoId = `forn-${atual.id}`;
-        for (const mov of movs) {
+        const movsOrdenados = [...movs].sort((a, b) => a.estoqueId - b.estoqueId);
+        for (const mov of movsOrdenados) {
           const qtd = Math.abs(Number(mov.quantidade));
           await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado);
           const fisicaOrig = mov.quantidadeFisicaSnapshot == null ? null : Number(mov.quantidadeFisicaSnapshot);
@@ -743,7 +746,7 @@ export const nutricaoFornecimentosStore: FornStore = {
         await tx.insert(nutricaoFornecimentoIngredientes).values(rows);
       },
       async debitarEstoque(estoqueId, quantidadeUnidade) {
-        const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId));
+        const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
         if (!produtoControlaSaldo(item.controlarSaldo)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
@@ -829,6 +832,8 @@ export const nutricaoFornecimentosStore: FornStore = {
         });
       },
       async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot) {
+        const [item] = await tx.select({ id: estoque.id }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
+        if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
         await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
           tipoOp: "estorno",
           quantidadeOriginal: -Math.abs(quantidadeUnidade),
@@ -871,7 +876,10 @@ export const nutricaoFornecimentosStore: FornStore = {
           custoTotalSnapshot: row.custoTotalSnapshot == null ? null : Number(row.custoTotalSnapshot),
         };
       },
-    }));
+    })).catch((erro) => {
+      recusarSeDeadlockEstoque(erro);
+      throw erro;
+    });
   },
 };
 

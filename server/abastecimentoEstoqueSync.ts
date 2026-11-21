@@ -68,7 +68,19 @@ async function findEstoqueCombustivel(
     .from(estoque)
     .where(eq(estoque.fazendaId, fazendaId));
   const match = itens.find(i => matchCombustivel(i, combustivel));
-  return match ?? null;
+  if (!match) return null;
+  const [travado] = await executor
+    .select({
+      id: estoque.id,
+      nome: estoque.nome,
+      quantidade: estoque.quantidade,
+      controlarSaldo: estoque.controlarSaldo,
+    })
+    .from(estoque)
+    .where(eq(estoque.id, match.id))
+    .for("update")
+    .limit(1);
+  return travado ?? null;
 }
 
 function assertCombustivelEstocavelNaFazenda(item: { controlarSaldo: boolean | null }): void {
@@ -297,6 +309,7 @@ export async function estornarSaidaAbastecimento(
     .select()
     .from(estoque)
     .where(eq(estoque.id, ativa.estoqueId))
+    .for("update")
     .limit(1);
   if (item && litros > 0) {
     await aplicarPatchSaldoNoTx(executorPatchDrizzle(executor), item.id, {
@@ -392,44 +405,11 @@ async function nomeMaquinaLocal(userId: number | null | undefined, maquinaId: nu
  * Espelha syncSaidaAbastecimento no store local (.dev-data), para desenvolvimento sem MySQL.
  */
 export async function syncSaidaAbastecimentoLocal(input: SyncAbastecimentoInput): Promise<number> {
-  const litros = input.litros;
-  if (!(litros > 0)) {
-    friendlyStockError("Informe uma quantidade abastecida válida.");
-  }
-
-  const item = findEstoqueCombustivelLocal(input.fazendaId, input.combustivel);
-  if (!item) {
-    friendlyStockError("Não há estoque disponível deste combustível na Fazenda selecionada.");
-  }
-  assertCombustivelEstocavelNaFazenda(item);
-
-  const maquinaNome = await nomeMaquinaLocal(input.userId, input.maquinaId);
-  const descricao = `Abastecimento da máquina ${maquinaNome}`;
-  const obsUser = input.observacoes?.trim();
-  const observacoes = obsUser ? `${descricao} — ${obsUser}` : descricao;
-  const grupoId = grupoIdAbastecimento(input.abastecimentoId);
-  const registradoPor = input.responsavel?.trim() || null;
-  const valor = input.valorTotal != null && input.valorTotal !== "" ? String(input.valorTotal) : null;
-
-  const movId = devLocalStore.syncSaidaAbastecimento({
-    abastecimentoId: input.abastecimentoId,
-    estoqueId: item.id,
-    fazendaId: input.fazendaId,
-    litros,
-    dataISO: input.dataISO,
-    grupoId,
-    maquinaNome,
-    registradoPor,
-    valor,
-    observacoes,
-    userId: input.userId ?? null,
+  void input;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum saldo foi consultado ou alterado.",
   });
-
-  await updateLocalAbastecimento(input.userId ?? 0, input.abastecimentoId, {
-    movimentacaoEstoqueId: movId,
-  });
-
-  return movId;
 }
 
 /** Estorna a saída vinculada no store local e limpa o vínculo no abastecimento. */
@@ -437,14 +417,10 @@ export async function estornarSaidaAbastecimentoLocal(
   abastecimentoId: number,
   options?: { motivo?: string; userId?: number; registradoPor?: string },
 ): Promise<void> {
-  devLocalStore.estornarSaidaAbastecimento({
-    abastecimentoId,
-    motivo: options?.motivo ?? MOTIVO_ESTORNO_ABASTECIMENTO,
-    userId: options?.userId ?? null,
-    registradoPor: options?.registradoPor ?? null,
-  });
-
-  await updateLocalAbastecimento(options?.userId ?? 0, abastecimentoId, {
-    movimentacaoEstoqueId: null,
+  void abastecimentoId;
+  void options;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum saldo foi consultado ou alterado.",
   });
 }

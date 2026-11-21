@@ -244,7 +244,7 @@ export function createCompraInsumosService(store: CompraInsumosStore) {
         });
         if (!validacao.ok) toTrpc(validacao.message);
 
-        for (const item of input.itens) {
+        for (const item of [...input.itens].sort((a, b) => a.estoqueId - b.estoqueId)) {
           const produto = await tx.findEstoque(item.estoqueId);
           if (!produto) toTrpc("Produto não encontrado.", "NOT_FOUND");
           if (Number(produto.fazendaId) !== Number(input.fazendaId)) toTrpc(MSG_COMPRA_ITEM_FAZENDA);

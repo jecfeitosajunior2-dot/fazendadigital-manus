@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { estoque, estoqueMovimentacoes, estoqueOperacoes, fazendas, pessoas } from "../drizzle/schema";
 import { db } from "./db";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import { createFinanceiroNucleoTxFromDrizzle, type FinanceiroDrizzleTx } from "./financeiroNucleo";
 import {
   createCompraInsumosService,
@@ -57,7 +58,7 @@ export function createCompraInsumosTxFromDrizzle(drizzleTx: FinanceiroDrizzleTx)
       return row ? { id: row.id, nome: row.nome, ativo: Boolean(row.ativo), tipo: row.tipo } : null;
     },
     async findEstoque(id) {
-      const [row] = await drizzleTx.select().from(estoque).where(eq(estoque.id, id)).limit(1);
+      const [row] = await drizzleTx.select().from(estoque).where(eq(estoque.id, id)).for("update").limit(1);
       if (!row) return null;
       return {
         id: row.id,
@@ -190,7 +191,10 @@ export function createCompraInsumosMysqlStore(
 ): CompraInsumosStore {
   return {
     transaction(fn) {
-      return drizzleDb.transaction(async drizzleTx => fn(createCompraInsumosTxFromDrizzle(drizzleTx)));
+      return drizzleDb.transaction(async drizzleTx => fn(createCompraInsumosTxFromDrizzle(drizzleTx))).catch((erro) => {
+        recusarSeDeadlockEstoque(erro);
+        throw erro;
+      });
     },
   };
 }

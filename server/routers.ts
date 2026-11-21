@@ -26,8 +26,6 @@ import {
 import {
   syncSaidaAbastecimento,
   estornarSaidaAbastecimento,
-  syncSaidaAbastecimentoLocal,
-  estornarSaidaAbastecimentoLocal,
   MSG_MOV_VINCULADA_EDITAR,
   MSG_MOV_VINCULADA_EXCLUIR,
   MOTIVO_ESTORNO_ABASTECIMENTO,
@@ -59,6 +57,7 @@ import {
   recusarEstoqueSemMysql,
   recusarExclusaoFisicaEstoque,
 } from "./consultaEstoqueAutorizada";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import {
   autorizarMovimentoEstoqueNoBanco,
   consultaEstoqueNaTransacao,
@@ -6402,6 +6401,7 @@ const abastecimentosRouter = router({
         return { success: true, id: insertId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        recusarSeDeadlockEstoque(error);
         if (!isDatabaseUnavailable(error)) {
           console.error("[abastecimentos.create]", error);
           throw new TRPCError({
@@ -6409,34 +6409,7 @@ const abastecimentosRouter = router({
             message: "Não foi possível registrar o abastecimento. Verifique os dados e tente novamente.",
           });
         }
-        if (interno && input.fazendaId) {
-          const created = await createLocalAbastecimento(ctx.user.id, rowPayload);
-          try {
-            await syncSaidaAbastecimentoLocal({
-              abastecimentoId: created.id,
-              maquinaId: input.maquinaId,
-              fazendaId: input.fazendaId,
-              combustivel: input.combustivel,
-              litros: qtd,
-              dataISO,
-              responsavel: input.responsavel,
-              valorTotal: total,
-              observacoes: input.observacoes,
-              userId: ctx.user.id,
-            });
-          } catch (syncErr) {
-            await deleteLocalAbastecimento(ctx.user.id, created.id);
-            if (syncErr instanceof TRPCError) throw syncErr;
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                syncErr instanceof Error
-                  ? syncErr.message
-                  : "Não foi possível baixar o estoque deste abastecimento.",
-            });
-          }
-          return { success: true, id: created.id, localFallback: true };
-        }
+        if (interno && input.fazendaId) recusarEstoqueSemMysql();
         const created = await createLocalAbastecimento(ctx.user.id, rowPayload);
         return { success: true, id: created.id, localFallback: true };
       }
@@ -6539,6 +6512,7 @@ const abastecimentosRouter = router({
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        recusarSeDeadlockEstoque(error);
         if (!isDatabaseUnavailable(error)) {
           console.error("[abastecimentos.update]", error);
           throw new TRPCError({
@@ -6546,52 +6520,7 @@ const abastecimentosRouter = router({
             message: "Não foi possível atualizar o abastecimento. Verifique os dados e tente novamente.",
           });
         }
-        if (eraInterno || eAgora) {
-          await updateLocalAbastecimento(ctx.user.id, id, {
-            ...rest,
-            ...(dataISO ? { data: dataISO } : {}),
-            ...(litros !== undefined ? { litros: String(novosLitros) } : {}),
-            ...(valorLitro !== undefined ? { valorLitro } : {}),
-            ...(total !== undefined ? { valorTotal: total } : {}),
-            ...(fazendaId !== undefined ? { fazendaId: fazendaId ?? null } : {}),
-            ...(input.abastecidoNaFazenda !== undefined
-              ? { abastecidoNaFazenda: input.abastecidoNaFazenda }
-              : {}),
-          });
-
-          try {
-            if (eraInterno && !eAgora) {
-              await estornarSaidaAbastecimentoLocal(id, {
-                motivo: MOTIVO_ESTORNO_ORIGEM_COMBUSTIVEL_ALTERADA,
-                userId: ctx.user.id,
-                registradoPor: ctx.user.name?.trim() || undefined,
-              });
-            } else if (eAgora && novoFazendaId) {
-              await syncSaidaAbastecimentoLocal({
-                abastecimentoId: id,
-                maquinaId: novoMaquinaId,
-                fazendaId: novoFazendaId,
-                combustivel: novoCombustivel,
-                litros: novosLitros,
-                dataISO: novaData,
-                responsavel: novoResponsavel,
-                valorTotal: valorTotalFinal,
-                observacoes: novasObs,
-                userId: ctx.user.id,
-              });
-            }
-          } catch (syncErr) {
-            if (syncErr instanceof TRPCError) throw syncErr;
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message:
-                syncErr instanceof Error
-                  ? syncErr.message
-                  : "Não foi possível sincronizar o estoque deste abastecimento.",
-            });
-          }
-          return { success: true, localFallback: true };
-        }
+        if (eraInterno || eAgora) recusarEstoqueSemMysql();
         await updateLocalAbastecimento(ctx.user.id, id, {
           ...rest,
           ...(dataISO ? { data: dataISO } : {}),
@@ -6733,6 +6662,7 @@ const abastecimentosRouter = router({
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
+        recusarSeDeadlockEstoque(error);
         if (!isDatabaseUnavailable(error)) {
           console.error("[abastecimentos.estornar]", error);
           throw new TRPCError({
@@ -6740,24 +6670,7 @@ const abastecimentosRouter = router({
             message: "Não foi possível estornar o abastecimento. Tente novamente.",
           });
         }
-        try {
-          await estornarSaidaAbastecimentoLocal(input.id, {
-            motivo,
-            userId: ctx.user.id,
-            registradoPor: ctx.user.name?.trim() || undefined,
-          });
-          await updateLocalAbastecimento(ctx.user.id, input.id, { status: "estornado" });
-          return { success: true, localFallback: true };
-        } catch (syncErr) {
-          if (syncErr instanceof TRPCError) throw syncErr;
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              syncErr instanceof Error
-                ? syncErr.message
-                : "Não foi possível estornar o abastecimento. Tente novamente.",
-          });
-        }
+        recusarEstoqueSemMysql();
       }
     }),
 });
@@ -7093,7 +7006,8 @@ async function aplicarBaixaEstoquePecasManutencao(
   const pendenteLocal = new Map<number, number>();
   const snapshots = new Map<number, string | null>();
 
-  for (const [estoqueId, delta] of deltas.entries()) {
+  for (const estoqueId of [...deltas.keys()].sort((a, b) => a - b)) {
+    const delta = deltas.get(estoqueId)!;
     let appliedOnDb = false;
     try {
       const rows = await tx
@@ -7129,18 +7043,11 @@ async function aplicarBaixaEstoquePecasManutencao(
 }
 
 function aplicarBaixaEstoqueLocalPendente(pendenteLocal: Map<number, number>) {
-  for (const [estoqueId, delta] of pendenteLocal.entries()) {
-    const result = devLocalStore.ajustarQuantidadeEstoque(estoqueId, -delta);
-    if (!result.ok) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          result.reason === "insufficient"
-            ? MSG_MANUT_SALDO_ALTERADO
-            : "Produto de estoque não encontrado. Atualize a lista e tente novamente.",
-      });
-    }
-  }
+  if (pendenteLocal.size === 0) return;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "O banco de dados está indisponível. Nenhum saldo foi consultado ou alterado.",
+  });
 }
 
 function pecasLocaisFromResolvidas(
@@ -10022,21 +9929,16 @@ const estoqueRouter = router({
         await assertMovimentacaoEstoqueDoUsuario(ctx.user.id, id);
       }
 
-      const localPayload = {
-        itemIds: input.itemIds,
-        motivo,
-        userId: ctx.user.id,
-        registradoPor,
-      };
-
       try {
         const seeds = await db
           .select()
           .from(estoqueMovimentacoes)
           .where(inArray(estoqueMovimentacoes.id, input.itemIds));
         if (!seeds.length) {
-          // Itens podem existir só no store local (dev / fallback).
-          return devLocalStore.estornarMovimentacaoGrupo(localPayload);
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Este estorno só vale no banco. Nenhum saldo foi alterado no arquivo local.",
+          });
         }
 
         await recusarEstornoGenericoSeSanitario(seeds);
@@ -10198,7 +10100,7 @@ const estoqueRouter = router({
             "Não foi possível concluir o estorno. Nenhuma alteração foi realizada no estoque. Tente novamente.",
           );
         }
-        return devLocalStore.estornarMovimentacaoGrupo(localPayload);
+        recusarEstoqueSemMysql();
       }
     }),
 

@@ -8,6 +8,7 @@ import {
 } from "../shared/estoqueTransferencia";
 import { transferirEstoqueNoTx, type TransferenciaSaldoExecutor } from "./estoqueSaldoTx";
 import { estornarMovimentacaoEstoqueNoTx } from "./estoqueSaldoTx";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import type { EstoqueItemParaMovimentacao, MovimentacaoEstoqueInsert } from "./estoqueMovimentacaoTx";
 
 function toTrpc(message: string, code: "BAD_REQUEST" | "NOT_FOUND" | "FORBIDDEN" = "BAD_REQUEST"): never {
@@ -71,6 +72,7 @@ export function createTransferenciaInsumosService(store: {
           dataOperacao: input.dataOperacao.slice(0, 10),
         }));
       } catch (error) {
+        recusarSeDeadlockEstoque(error);
         if (error instanceof TRPCError) throw error;
         if (isMysqlDuplicateKey(error)) {
           return store.transaction(async tx => {
@@ -97,7 +99,8 @@ export function createTransferenciaInsumosService(store: {
           return { success: true as const, id: op.id, already: true };
         }
         const movs = await tx.listMovimentacoesOperacao(op.id);
-        const ativas = movs.filter(m => (m.status || "ativa") === "ativa");
+        const ativas = movs.filter(m => (m.status || "ativa") === "ativa")
+          .sort((a, b) => a.estoqueId - b.estoqueId);
         const hoje = new Date().toISOString().slice(0, 10);
         const grupoEstorno = `e-tr-${op.id}`;
 

@@ -266,8 +266,9 @@ export async function transferirEstoqueNoTx(
     valorTotal: "0.00",
   });
 
+  const itens = [...input.itens].sort((a, b) => a.estoqueOrigemId - b.estoqueOrigemId);
   let itemIdx = 0;
-  for (const item of input.itens) {
+  for (const item of itens) {
     itemIdx += 1;
     const origem = await exec.findEstoque(item.estoqueOrigemId);
     if (!origem) throw new Error("Produto de origem não encontrado.");

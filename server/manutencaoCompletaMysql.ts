@@ -141,7 +141,7 @@ export function criarPersistenciaCompletaCtx(tx: DrizzleLike): PersistenciaCompl
 
 export async function persistirManutencaoCompletaMysql(input: PersistirManutencaoCompletaInput) {
   return db.transaction(async (tx) => {
-    for (const peca of input.pecas) {
+    for (const peca of [...input.pecas].sort((a, b) => a.estoqueId - b.estoqueId)) {
       const locked = await tx
         .select({ id: estoque.id })
         .from(estoque)

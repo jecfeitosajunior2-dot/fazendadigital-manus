@@ -11,6 +11,7 @@ import {
   nutricaoFornecimentos,
 } from "../drizzle/schema";
 import { produtoControlaSaldo } from "../shared/estoqueControle";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import {
   alocarCustoBatidaNoFornecimento,
   batidaDisponivelParaDistribuicao,
@@ -328,7 +329,8 @@ export function createNutricaoBatidasService(store: BatidaStore) {
         })));
 
         const grupoId = `bat-${batidaId}`;
-        for (const baixa of preview.baixas) {
+        const baixas = [...preview.baixas].sort((a, b) => (a.estoqueId ?? 0) - (b.estoqueId ?? 0));
+        for (const baixa of baixas) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
             throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_BATIDA_SALDO });
           }
@@ -382,7 +384,8 @@ export function createNutricaoBatidasService(store: BatidaStore) {
         }
         const grupoId = `e-bat-${atual.id}`;
         const originalGrupoId = `bat-${atual.id}`;
-        for (const mov of movs) {
+        const movsOrdenados = [...movs].sort((a, b) => a.estoqueId - b.estoqueId);
+        for (const mov of movsOrdenados) {
           const qtd = Math.abs(Number(mov.quantidade));
           await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado);
           const fisicaOrig = mov.quantidadeFisicaSnapshot == null ? null : Number(mov.quantidadeFisicaSnapshot);
@@ -597,7 +600,7 @@ export const nutricaoBatidasStore: BatidaStore = {
         await tx.insert(nutricaoBatidaIngredientes).values(rows);
       },
       async debitarEstoque(estoqueId, quantidadeUnidade) {
-        const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId));
+        const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
         if (!produtoControlaSaldo(item.controlarSaldo)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
@@ -682,6 +685,8 @@ export const nutricaoBatidasStore: BatidaStore = {
         });
       },
       async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot) {
+        const [item] = await tx.select({ id: estoque.id }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
+        if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
         await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
           tipoOp: "estorno",
           quantidadeOriginal: -Math.abs(quantidadeUnidade),
@@ -705,7 +710,10 @@ export const nutricaoBatidasStore: BatidaStore = {
         ));
         return rows.length;
       },
-    }));
+    })).catch((erro) => {
+      recusarSeDeadlockEstoque(erro);
+      throw erro;
+    });
   },
 };
 

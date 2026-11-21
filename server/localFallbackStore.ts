@@ -2263,13 +2263,7 @@ export async function createLocalSaudeRegistro(
       ? parseFloat(String(input.quantidadeConsumo).replace(",", "."))
       : null;
   if (input.estoqueId != null && qtdConsumo != null && qtdConsumo > 0) {
-    const baixa = devLocalStore.ajustarQuantidadeEstoque(input.estoqueId, -qtdConsumo);
-    if (!baixa.ok) {
-      if (baixa.reason === "insufficient") {
-        throw new Error("Estoque insuficiente para a quantidade informada.");
-      }
-      throw new Error("Produto de estoque não encontrado.");
-    }
+    throw new Error("A baixa de estoque não pode ser feita só no arquivo local.");
   }
 
   const rows = await readSaudeRegistros();
