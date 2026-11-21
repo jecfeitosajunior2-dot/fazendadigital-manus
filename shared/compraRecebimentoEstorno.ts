@@ -53,6 +53,8 @@ export const MSG_ESTORNO_RECEBIMENTO_MOTIVO = "Informe o motivo do estorno.";
 export const MSG_ESTORNO_RECEBIMENTO_OBSERVACAO_OUTRO =
   "Informe a observação quando o motivo for Outro.";
 export const MSG_ESTORNO_RECEBIMENTO_FALHOU = "Não foi possível desfazer o recebimento.";
+export const MSG_ESTORNO_RECEBIMENTO_INDISPONIVEL =
+  "O estorno do recebimento está temporariamente indisponível por segurança. Nenhum animal, compra ou recebimento foi alterado.";
 export const MSG_ESTORNO_RECEBIMENTO_LEGADO =
   "Este animal pertence a um recebimento legado e não pode ser estornado por este fluxo.";
 

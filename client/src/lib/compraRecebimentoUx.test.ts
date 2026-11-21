@@ -147,15 +147,14 @@ describe("Recebimento manual da Compra — etapa 1", () => {
       estornoStart,
       router.indexOf("delete: protectedProcedure", estornoStart),
     );
-    expect(estornoChunk).toContain("desfazerRecebimentoCompra");
+    expect(estornoChunk).toContain("recusarEstornoRecebimentoAutorizado");
+    expect(estornoChunk).toContain("Banco de dados indisponível.");
+    expect(estornoChunk).not.toContain("desfazerRecebimentoCompra");
     expect(estornoChunk).not.toContain("assertAnimalPodeExcluir");
     expect(estornoChunk).not.toContain("animais.delete");
-    const pesagemManejo = router.slice(
-      router.indexOf("const result = await db.insert(pesagens)"),
-      router.indexOf("await db.update(animais).set({ pesoAtual"),
-    );
+    const pesagemManejo = readFileSync(resolve(here, "../../../server/pesarAnimalDb.ts"), "utf8");
     expect(pesagemManejo).toContain("insert(pesagens)");
-    expect(pesagemManejo).not.toContain("compraRecebimentoId");
+    expect(pesagemManejo).toContain("compraRecebimentoId: null");
     expect(transferencia).toContain("insert(animalLoteMovimentacoes)");
     expect(transferencia).not.toContain("compraRecebimentoId");
   });
