@@ -53,15 +53,18 @@ describe("castração e reprodução simples", () => {
     expect(PERMISSAO_REPRODUCAO).toBe("reproducao.criar");
   });
 
-  it("a rota protege castração e diagnóstico e deixa sêmen, parto e estorno como estavam", () => {
+  it("a rota protege castração, diagnóstico, inseminação, parto e a estação", () => {
     const rota = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
     const castracao = rota.slice(rota.indexOf("registrarCastracao: protectedProcedure"), rota.indexOf("REPRODUCAO ROUTER"));
     expect(castracao).toContain("castrarEEspelharAnimal");
     expect(castracao).toContain("Banco de dados indisponível.");
     expect(castracao).not.toContain("registrarCastracao(");
     expect(rota).toContain("registrarReproducaoSimplesEEspelhar");
-    expect(rota).toContain("registrarInseminacaoComSemenDb");
-    expect(rota).toContain("executeRegistrarPartoComCrias");
+    expect(rota).toContain("lancarInseminacaoSemenEEspelhar");
+    expect(rota).toContain("registrarReproducaoColetivaAutorizada");
+    expect(rota).toContain("registrarPartoAutorizado");
+    expect(rota).not.toContain("registrarInseminacaoComSemenLocal");
+    expect(rota).not.toContain("executeRegistrarPartoComCrias");
     expect(rota).toContain("lancarSanidadeEEspelhar");
     expect(rota).toContain("estornarSanidadeAutorizado");
     expect(rota).toContain("recusarExclusaoFisicaAnimal()");

@@ -15,6 +15,8 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateBR } from "@/lib/date-utils";
 import { invalidateSemenQueriesAfterConsumo, invalidateSemenUtilizadoQueries } from "@/lib/invalidateSemenAfterConsumo";
 import { shouldLoadSemenPartidasParaInseminacao } from "@/lib/semenInseminacaoQuery";
+import { concluirOperacaoInseminacao, operacaoInseminacaoAtual } from "@/lib/operacaoInseminacao";
+import { concluirOperacaoColetiva, operacaoColetivaAtual } from "@/lib/operacaoReprodutivaColetiva";
 import {
   curralResultadoToggleGridClass,
   DG_RESULTADOS_CURRAL,
@@ -647,6 +649,11 @@ export function CurralReprodutivoPanel({
 
   const saveMutation = trpc.reproducao.create.useMutation({
     onSuccess: async (data, variables) => {
+      if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
+        concluirOperacaoInseminacao("curral");
+      } else if (variables.operacaoId) {
+        concluirOperacaoColetiva("curral");
+      }
       invalidatePosReproSave();
       if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
         await invalidateSemenQueriesAfterConsumo(trpcUtils, {
@@ -953,6 +960,28 @@ export function CurralReprodutivoPanel({
       fazendaId: fazendaNum || undefined,
       tipo: tipoReprodutivo,
       dataCobertura: data,
+      operacaoId: showCoberturaAlvo
+        ? operacaoColetivaAtual("curral")
+        : isDadosInseminacao && semenPartidaId != null
+          ? operacaoInseminacaoAtual("curral", [
+              fazendaNum || "",
+              tipoReprodutivo,
+              data,
+              animalId,
+              resolveMachoIdFromSelecao(machoSel) ?? "",
+              semenPartidaId,
+              custoDoseSemen.trim(),
+              centralOrigemSemen.trim(),
+              inseminador.trim(),
+              eccPersistido ?? "",
+              reprodutorSemen.trim(),
+              descricaoOutro.trim(),
+              resultadoEfetivo.trim(),
+              descricaoResultadoOutro.trim(),
+              observacoes.trim(),
+              previsaoPartoEstimada ?? "",
+            ].join("|"))
+          : undefined,
       resultado:
         (showResultadoToggle ||
           showResultadoSelect ||

@@ -359,6 +359,27 @@ export const reproducaoRegistros = mysqlTable("reproducao_registros", {
   createdAt: timestamp("createdAt").defaultNow(),
 });
 
+/**
+ * Uma operação lógica de estação ou cobertura coletiva.
+ * A chave pertence ao titular. O registro principal entra na mesma transação.
+ * Sem chave estrangeira: o vínculo é preenchido depois do insert do touro
+ * e não aponta para cópia. Lançamentos antigos não têm linha aqui.
+ */
+export const reproducaoOperacoes = mysqlTable("reproducao_operacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  chave: varchar("chave", { length: 64 }).notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  executorUserId: int("executorUserId").notNull(),
+  conteudoHash: varchar("conteudoHash", { length: 64 }).notNull(),
+  registroPrincipalId: int("registroPrincipalId"),
+  espelhosMatriz: int("espelhosMatriz").notNull().default(0),
+  matrizesIgnoradas: int("matrizesIgnoradas").notNull().default(0),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+}, (table) => ({
+  titularChaveUq: uniqueIndex("reproducao_operacoes_titular_chave_uq").on(table.userId, table.chave),
+}));
+
 /** Vínculo relacional entre evento Parto e cada cria gerada (tabela de relação). */
 export const partoCrias = mysqlTable("parto_crias", {
   id: int("id").primaryKey().autoincrement(),
@@ -916,7 +937,9 @@ export const semenPartidas = mysqlTable("semen_partidas", {
   observacoes: text("observacoes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
-});
+}, (table) => ({
+  identidadeUq: uniqueIndex("semen_partidas_uq").on(table.userId, table.fazendaId, table.reprodutorKey, table.partida),
+}));
 
 /** Cadastro reutilizável de reprodutor/sêmen externo — identidade sem partida/estoque. */
 export const semenReprodutoresExternos = mysqlTable("semen_reprodutores_externos", {
@@ -952,6 +975,24 @@ export const semenMovimentacoes = mysqlTable("semen_movimentacoes", {
   motivoCorrecao: varchar("motivo_correcao", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+/** Entrada de sêmen já confirmada — a mesma chave do titular não soma doses de novo. */
+export const semenEntradaOperacoes = mysqlTable("semen_entrada_operacoes", {
+  id: int("id").primaryKey().autoincrement(),
+  userId: int("userId").notNull(),
+  chave: varchar("chave", { length: 64 }).notNull(),
+  fazendaId: int("fazendaId").notNull(),
+  executorUserId: int("executorUserId").notNull(),
+  conteudoHash: varchar("conteudoHash", { length: 64 }).notNull(),
+  partidaId: int("partidaId"),
+  movimentacaoId: int("movimentacaoId"),
+  saldoAtual: int("saldoAtual"),
+  custoMedioAtual: varchar("custoMedioAtual", { length: 20 }),
+  novaEntrada: boolean("novaEntrada").notNull().default(false),
+  criadoEm: timestamp("criadoEm").defaultNow().notNull(),
+}, (table) => ({
+  titularChaveUq: uniqueIndex("semen_entrada_operacoes_titular_chave_uq").on(table.userId, table.chave),
+}));
 
 /** Cadastro central de parceiros — fornecedores, clientes e funcionários. */
 export const pessoas = mysqlTable("pessoas", {

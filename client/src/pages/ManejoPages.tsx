@@ -35,6 +35,8 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { formatDateBR } from "@/lib/date-utils";
 import { shouldLoadSemenPartidasParaInseminacao } from "@/lib/semenInseminacaoQuery";
 import { invalidateSemenQueriesAfterConsumo, invalidateSemenUtilizadoQueries } from "@/lib/invalidateSemenAfterConsumo";
+import { concluirOperacaoInseminacao, operacaoInseminacaoAtual } from "@/lib/operacaoInseminacao";
+import { concluirOperacaoColetiva, operacaoColetivaAtual } from "@/lib/operacaoReprodutivaColetiva";
 import { formatUltimoPesoKg } from "@/lib/listaAnimaisTable";
 import { sortPesagensDesc } from "@/lib/fichaAnimalDisplay";
 import {
@@ -2084,6 +2086,11 @@ function ManejoReprodutivoForm() {
 
   const saveMutation = trpc.reproducao.create.useMutation({
     onSuccess: async (_data, variables) => {
+      if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
+        concluirOperacaoInseminacao("manejo");
+      } else if (variables.operacaoId) {
+        concluirOperacaoColetiva("manejo");
+      }
       toast.success("Registro reprodutivo salvo com sucesso.");
       invalidatePosReproSave();
       if (variables.semenPartidaId != null && variables.semenPartidaId > 0) {
@@ -2629,6 +2636,28 @@ function ManejoReprodutivoForm() {
       fazendaId: fazendaNum || undefined,
       tipo: tipoReprodutivo,
       dataCobertura: data,
+      operacaoId: showCoberturaAlvo
+        ? operacaoColetivaAtual("manejo")
+        : isDadosInseminacao && semenPartidaId != null
+          ? operacaoInseminacaoAtual("manejo", [
+              fazendaNum || "",
+              tipoReprodutivo,
+              data,
+              animalIdSelecionado,
+              resolveMachoIdFromSelecao(machoSel) ?? "",
+              semenPartidaId,
+              custoDoseSemen.trim(),
+              centralOrigemSemen.trim(),
+              inseminador.trim(),
+              eccPersistido ?? "",
+              reprodutorSemen.trim(),
+              descricaoOutro.trim(),
+              resultado.trim(),
+              descricaoResultadoOutro.trim(),
+              observacoes.trim(),
+              previsaoPartoEstimada ?? "",
+            ].join("|"))
+          : undefined,
       resultado: showResultado && resultado.trim() ? resultado.trim() : undefined,
       ...reprodutorPayload,
       coberturaSelecaoModo:

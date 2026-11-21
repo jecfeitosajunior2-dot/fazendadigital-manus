@@ -151,7 +151,6 @@ import {
   listLocalSaudeRegistros,
   createLocalSaudeRegistro,
   deleteLocalSaudeRegistro,
-  listLocalReproducaoRegistros,
   createLocalReproducaoRegistro,
   updateLocalReproducaoRegistro,
   deleteLocalReproducaoRegistro,
@@ -208,6 +207,8 @@ import {
   registrarReproducaoSimplesEEspelhar,
 } from "./registrarManejoAutorizado";
 import { ioManejoDrizzle } from "./registrarManejoDb";
+import { ConflitoInseminacaoSemen, erroInseminacaoSemen, lancarInseminacaoSemenEEspelhar } from "./inseminacaoSemenAutorizado";
+import { ioInseminacaoSemenDrizzle } from "./inseminacaoSemenDb";
 import { assertAlteracaoSexoAnimal } from "./assertAlteracaoSexoAnimal";
 import {
   ConflitoPesagemAnimal,
@@ -238,6 +239,14 @@ import {
   estadoConfirmacaoVenda,
   integracaoConfirmacaoVendaAtiva,
 } from "./vendaConfirmacaoIntegrada";
+import { cancelarVendaAutorizada, confirmarVendaAutorizada } from "./vendaOperacaoAutorizado";
+import { ioVendaOperacaoDrizzle } from "./vendaOperacaoAutorizadoDb";
+import {
+  editarReproducaoAutorizada,
+  erroEditarReproducao,
+  excluirReproducaoAutorizada,
+} from "./editarReproducaoAutorizado";
+import { ioEditarReproducaoDrizzle } from "./editarReproducaoAutorizadoDb";
 import { confirmarCompraNaoIdentificados } from "./confirmarCompra";
 import { getCompraDetalhe } from "./compraDetalhe";
 import { cancelarCompraComercial } from "./cancelarCompra";
@@ -260,7 +269,8 @@ import {
 import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { compraDocumentosService } from "./compraDocumentosDb";
 import { receberAnimalCompra } from "./receberAnimalCompraDb";
-import { desfazerRecebimentoCompra } from "./desfazerRecebimentoCompraDb";
+import { erroEstornoRecebimento, recusarEstornoRecebimentoAutorizado } from "./estornoRecebimentoBloqueado";
+import { ioEstornoRecebimentoDrizzle } from "./estornoRecebimentoBloqueadoDb";
 import { listarRecebimentosCompra } from "./listarRecebimentosCompra";
 import { MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA } from "../shared/compraRecebimentoEstorno";
 import { resumirItensVenda } from "../shared/vendaComercial";
@@ -294,47 +304,21 @@ import {
   animalStatusNaoAtivo,
   isAnimalExclusaoBloqueada,
 } from "../shared/animalExclusao";
-import { packReproObservacoes, validateReproResultadoForSave } from "../shared/reproRegistroMeta";
-import {
-  assertCustoDoseInseminacaoCreate,
-  resolveOrigemSemenInseminacao,
-  validateReproEcc,
-} from "../shared/reproInseminacao";
-import {
-  MSG_SEMEN_PARTIDA_INCOMPATIVEL,
-  MSG_SEMEN_PARTIDA_NAO_ENCONTRADA,
-  MSG_SEMEN_SEM_DOSES,
-  SEMEN_ORIGEM_EXTERNO,
-  SEMEN_ORIGEM_INTERNO,
-} from "../shared/semenEstoque";
 import { shouldConsumirEstoqueSemenNaInseminacao } from "../shared/semenUtilizado";
-import { registrarInseminacaoComSemenDb } from "./semenEstoqueDb";
-import { registrarInseminacaoComSemenLocal } from "./semenEstoqueLocal";
+import { resolveReproducaoAnimalId } from "./reproducaoCreateInput";
+import { registrarPartoComCriasInputSchema } from "./registrarPartoComCrias";
+import { erroRegistrarParto, registrarPartoAutorizado } from "./registrarPartoAutorizado";
+import { ioRegistrarPartoDrizzle } from "./registrarPartoAutorizadoDb";
+import { erroReproducaoColetiva, registrarReproducaoColetivaAutorizada } from "./registrarReproducaoColetivaAutorizado";
+import { ioRegistrarReproducaoColetivaDrizzle } from "./registrarReproducaoColetivaAutorizadoDb";
 import {
-  buildReproAnimalElegibilidadeInput,
-  isReproTipoPermitidoParaAnimal,
-  mensagemReproInelegivelAnimal,
-} from "../shared/reproElegibilidade";
-import {
-  isMachoEventoComAlvoMatrizes,
-  resolveReproducaoAnimalId,
-  resolveReproducaoMachoIdPersistido,
-} from "./reproducaoCreateInput";
-import { anularEspelhosMatrizAtivos } from "./reproAnularEspelhoMatriz";
-import {
-  espelharRegistrosReproNaMatriz,
-  listRegistrosReproDuplicataUsuario,
-  resolveTipoEspelhoMatriz,
-} from "./reproEspelharRegistrosMatriz";
-import { validateReproducaoCreatePreconditions } from "./reproducaoCreateValidate";
-import {
-  executeRegistrarPartoComCrias,
-  registrarPartoComCriasInputSchema,
-} from "./registrarPartoComCrias";
-import {
-  enrichReproducaoListPartoCriasDb,
-  enrichReproducaoListPartoCriasLocal,
-} from "./enrichReproducaoListPartoCrias";
+  erroConsultaReproducao,
+  gravarPipelineAutorizado,
+  lerPipelineAutorizado,
+  listarReproducaoAutorizada,
+} from "./consultaReproducaoAutorizada";
+import { ioConsultaReproducaoDrizzle } from "./consultaReproducaoAutorizadaDb";
+import { enrichReproducaoListPartoCriasDb } from "./enrichReproducaoListPartoCrias";
 import {
   enrichAnimalGenealogiaDisplayDb,
   enrichAnimalGenealogiaDisplayLocal,
@@ -343,22 +327,6 @@ import {
   enrichAnimalDescendentesDb,
   enrichAnimalDescendentesLocal,
 } from "./enrichAnimalDescendentes";
-import { validateReproMachoIdForFemeaEvent } from "./validateReproMachoId";
-import {
-  MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
-  MSG_REPRO_LOTE_INELEGIVEL,
-  MSG_REPRO_MATRIZ_INELEGIVEL,
-} from "../shared/reproCoberturaAlvo";
-import {
-  formatMsgMatrizJaRegistradaNesteTouro,
-  matrizTemEspelhoReproDuplicado,
-} from "../shared/reproEspelhoDuplicata";
-import {
-  mergeReproPipelineConfig,
-  parseReproPipelineConfigJson,
-  serializeReproPipelineConfigJson,
-} from "../shared/reproPipelineConfig";
-import { resolveAndValidateCoberturaAlvo } from "./reproCoberturaAlvoValidate";
 import { assertFazendaCanDelete, getFazendaDeleteCheck } from "./fazendaDeleteCheck";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
@@ -4155,25 +4123,13 @@ const reproducaoRouter = router({
   getPipelineConfig: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
-      try {
-        const localRow = await getLocalFazenda(ctx.user.id, input.fazendaId);
-        const [row] = await db
-          .select({ configReproPipeline: fazendas.configReproPipeline })
-          .from(fazendas)
-          .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)));
-        const raw =
-          row?.configReproPipeline ??
-          (localRow as { configReproPipeline?: string | null } | null)?.configReproPipeline;
-        return parseReproPipelineConfigJson(raw);
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          const localRow = await getLocalFazenda(ctx.user.id, input.fazendaId);
-          return parseReproPipelineConfigJson(
-            (localRow as { configReproPipeline?: string | null } | null)?.configReproPipeline,
-          );
-        }
-        throw error;
-      }
+      const resultado = await lerPipelineAutorizado(ioConsultaReproducaoDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        fazendaId: input.fazendaId,
+      });
+      if (!resultado.ok) throw erroConsultaReproducao(resultado);
+      return resultado.config;
     }),
 
   updatePipelineConfig: protectedProcedure
@@ -4184,52 +4140,30 @@ const reproducaoRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const serialized = serializeReproPipelineConfigJson(
-        mergeReproPipelineConfig(input.config),
-      );
+      const resultado = await gravarPipelineAutorizado(ioConsultaReproducaoDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        fazendaId: input.fazendaId,
+        config: input.config,
+      });
+      if (!resultado.ok) throw erroConsultaReproducao(resultado);
       try {
-        await db
-          .update(fazendas)
-          .set({ configReproPipeline: serialized })
-          .where(and(eq(fazendas.id, input.fazendaId), eq(fazendas.userId, ctx.user.id)));
-        try {
-          await updateLocalFazenda(ctx.user.id, input.fazendaId, {
-            configReproPipeline: serialized,
-          });
-        } catch (mirrorError) {
-          console.warn("[repro.updatePipelineConfig] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true, config: parseReproPipelineConfigJson(serialized) };
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          await updateLocalFazenda(ctx.user.id, input.fazendaId, {
-            configReproPipeline: serialized,
-          });
-          return {
-            success: true,
-            localFallback: true,
-            config: parseReproPipelineConfigJson(serialized),
-          };
-        }
-        throw error;
+        await updateLocalFazenda(resultado.titularUserId, input.fazendaId, {
+          configReproPipeline: resultado.serializado,
+        });
+      } catch (mirrorError) {
+        console.warn("[repro.updatePipelineConfig] Espelho local não gravado:", mirrorError);
       }
+      return { success: true as const, config: resultado.config };
     }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      const rows = await db
-        .select()
-        .from(reproducaoRegistros)
-        .where(eq(reproducaoRegistros.userId, ctx.user.id))
-        .orderBy(desc(reproducaoRegistros.createdAt));
-      if (rows.length > 0) {
-        return enrichReproducaoListPartoCriasDb(ctx.user.id, rows);
-      }
-    } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-    }
-    const localRows = await listLocalReproducaoRegistros(ctx.user.id);
-    return enrichReproducaoListPartoCriasLocal(ctx.user.id, localRows);
+    const resultado = await listarReproducaoAutorizada(ioConsultaReproducaoDrizzle(), {
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion,
+    });
+    if (!resultado.ok) throw erroConsultaReproducao(resultado);
+    return enrichReproducaoListPartoCriasDb(resultado.titularUserId, resultado.registros);
   }),
 
   create: protectedProcedure
@@ -4254,6 +4188,8 @@ const reproducaoRouter = router({
       inseminador: z.string().max(200).optional(),
       ecc: z.number().min(1).max(5).optional(),
       observacoes: z.string().optional(),
+      /** UUID da operação. Obrigatório na estação, na cobertura em grupo e na inseminação que consome dose. */
+      operacaoId: z.string().max(64).optional(),
       fazendaId: z.number().optional(),
       coberturaSelecaoModo: z.enum(["individual", "lote"]).optional(),
       coberturaMatrizIds: z.array(z.number()).optional(),
@@ -4268,6 +4204,42 @@ const reproducaoRouter = router({
           code: "BAD_REQUEST",
           message: "Informe o animal do registro reprodutivo (animalId).",
         });
+      }
+
+      const caminhoSemen =
+        shouldConsumirEstoqueSemenNaInseminacao(input.semenPartidaId) &&
+        input.tipo.trim() === "Inseminação" &&
+        !(input.coberturaMatrizIds?.length) &&
+        input.coberturaLoteId == null &&
+        !(input.substituirEspelhosMatrizIds?.length);
+      if (caminhoSemen) {
+        try {
+          const resultado = await lancarInseminacaoSemenEEspelhar(ioInseminacaoSemenDrizzle(), {
+            executorId: ctx.user.id,
+            sessionVersionDaSessao: ctx.user.sessionVersion,
+            executorNome: ctx.user.name,
+            input: { ...input, animalId, semenPartidaId: input.semenPartidaId! },
+          }, {
+            async inseminar(userId, dados) {
+              await createLocalReproducaoRegistro(userId, dados);
+            },
+          });
+          if (!resultado.ok) throw erroInseminacaoSemen(resultado);
+          return {
+            success: true as const,
+            id: resultado.id,
+            movimentacaoId: resultado.movimentacaoId,
+          };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          if (error instanceof ConflitoInseminacaoSemen) {
+            throw new TRPCError({ code: "CONFLICT", message: error.message });
+          }
+          if (isDatabaseUnavailable(error)) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+          }
+          throw error;
+        }
       }
 
       const caminhoProtegido =
@@ -4309,328 +4281,79 @@ const reproducaoRouter = router({
         }
       }
 
-      await assertManejoPermitidoNaData(ctx.user.id, animalId, input.dataCobertura);
-      if (input.machoId != null && input.machoId > 0 && input.machoId !== animalId) {
-        await assertManejoPermitidoNaData(ctx.user.id, input.machoId, input.dataCobertura);
-      }
-      for (const matrizId of input.coberturaMatrizIds ?? []) {
-        if (matrizId !== animalId && matrizId !== input.machoId) {
-          await assertManejoPermitidoNaData(ctx.user.id, matrizId, input.dataCobertura);
-        }
-      }
-
-      const { animal: animalAlvo } = await validateReproducaoCreatePreconditions(
-        ctx.user.id,
-        {
-          animalId,
-          fazendaId: input.fazendaId,
-          dataCobertura: input.dataCobertura,
-        },
-      );
-
-      const elegInput = buildReproAnimalElegibilidadeInput(animalAlvo);
-      if (!isReproTipoPermitidoParaAnimal(elegInput, input.tipo)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: mensagemReproInelegivelAnimal(elegInput),
-        });
-      }
-
-      const validacaoResultado = validateReproResultadoForSave({
-        sexo: animalAlvo.sexo,
-        tipo: input.tipo,
-        resultado: input.resultado,
-        descricaoResultadoOutro: input.descricaoResultadoOutro,
+      const coletivo = await registrarReproducaoColetivaAutorizada(ioRegistrarReproducaoColetivaDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        input: { ...input, animalId },
       });
-      if (!validacaoResultado.ok) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: validacaoResultado.message });
-      }
-
-      if (input.tipo.trim() === "Inseminação" && input.ecc != null) {
-        const validacaoEcc = validateReproEcc(input.ecc);
-        if (!validacaoEcc.ok) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: validacaoEcc.message });
-        }
-      }
-
-      const fazendaCtx = input.fazendaId;
-      if (
-        input.machoId != null &&
-        input.machoId > 0 &&
-        animalAlvo.sexo === "femea" &&
-        fazendaCtx
-      ) {
-        await validateReproMachoIdForFemeaEvent(ctx.user.id, {
-          matrizId: animalId,
-          fazendaId: fazendaCtx,
-          machoId: input.machoId,
-          tipo: input.tipo,
-          dataEvento: input.dataCobertura,
-        });
-      }
-
-      let coberturaAlvoPersistida = null as Awaited<
-        ReturnType<typeof resolveAndValidateCoberturaAlvo>
-      > | null;
-
-      if (isMachoEventoComAlvoMatrizes(input.tipo, animalAlvo.sexo)) {
-        const fazendaCtx = input.fazendaId ?? null;
-        if (!fazendaCtx) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: MSG_REPRO_COBERTURA_ALVO_OBRIGATORIO,
-          });
-        }
-        const modoAlvo =
-          input.tipo.trim() === "Estação de monta" ? ("lote" as const) : input.coberturaSelecaoModo;
-        coberturaAlvoPersistida = await resolveAndValidateCoberturaAlvo({
-          userId: ctx.user.id,
-          fazendaId: fazendaCtx,
-          coberturaSelecaoModo: modoAlvo,
-          coberturaMatrizIds: input.coberturaMatrizIds,
-          coberturaLoteId: input.coberturaLoteId,
-          dataEvento: input.dataCobertura,
-        });
-      }
-
-      const machoIdPersistido = resolveReproducaoMachoIdPersistido(
-        animalAlvo.sexo,
-        animalId,
-        input.machoId,
-      );
-
-      const isInseminacao = input.tipo.trim() === "Inseminação";
-      const fazendaCtxInseminacao = input.fazendaId ?? null;
-      const origemSemenInseminacao = resolveOrigemSemenInseminacao({
-        tipo: input.tipo,
-        sexoAnimal: animalAlvo.sexo,
-        machoId: input.machoId,
-        reprodutorSemen: input.reprodutorSemen,
-      });
-
-      const validacaoCustoExterno = assertCustoDoseInseminacaoCreate(
-        origemSemenInseminacao,
-        input.custoDoseSemen,
-      );
-      if (!validacaoCustoExterno.ok) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: validacaoCustoExterno.message });
-      }
-
-      const packInseminacaoObservacoes = (
-        observacoes: string | null | undefined,
-        extras: {
-          partidaSemen: string;
-          inseminador?: string;
-          ecc?: number;
-          semenPartidaId: number;
-          custoDoseSemen: number | null;
-          centralOrigem?: string | null;
-        },
-      ) =>
-        packReproObservacoes(
-          observacoes,
-          coberturaAlvoPersistida ? undefined : input.reprodutorSemen,
-          input.responsavel,
-          input.descricaoResultadoOutro,
-          coberturaAlvoPersistida,
-          {
-            partidaSemen: extras.partidaSemen,
-            inseminador: extras.inseminador ?? input.inseminador,
-            ecc: extras.ecc ?? input.ecc,
-            semenPartidaId: extras.semenPartidaId,
-            custoDoseSemen: extras.custoDoseSemen,
-            centralOrigem: extras.centralOrigem ?? input.centralOrigem,
-          },
-        );
-
-      if (
-        isInseminacao &&
-        origemSemenInseminacao &&
-        fazendaCtxInseminacao &&
-        shouldConsumirEstoqueSemenNaInseminacao(input.semenPartidaId)
-      ) {
-        const inseminacaoParams = {
-          fazendaId: fazendaCtxInseminacao,
-          femeaId: animalId,
-          machoId: machoIdPersistido,
-          dataCobertura: new Date(input.dataCobertura),
-          dataPrevistoParto: input.dataPrevistoParto
-            ? new Date(input.dataPrevistoParto)
-            : null,
-          resultado: input.resultado ?? null,
-          observacoes: input.observacoes ?? null,
-          inseminador: input.inseminador,
-          ecc: input.ecc,
-          semenPartidaId: input.semenPartidaId!,
-          origemReprodutor: origemSemenInseminacao,
-          machoIdReprodutor:
-            origemSemenInseminacao === SEMEN_ORIGEM_INTERNO ? input.machoId : null,
-          reprodutorTextoExterno:
-            origemSemenInseminacao === SEMEN_ORIGEM_EXTERNO ? input.reprodutorSemen : null,
-        };
-
+      if (!coletivo.ok) throw erroReproducaoColetiva(coletivo);
+      if (!coletivo.repetida) {
         try {
-          const result = await registrarInseminacaoComSemenDb(
-            ctx.user.id,
-            inseminacaoParams,
-            packInseminacaoObservacoes,
-          );
-          return { success: true, id: result.id, movimentacaoId: result.movimentacaoId };
+          await createLocalReproducaoRegistro(coletivo.titularUserId, coletivo.principal);
+          for (const copia of coletivo.copias) {
+            await createLocalReproducaoRegistro(coletivo.titularUserId, copia);
+          }
         } catch (error) {
-          const msg =
-            error instanceof Error ? error.message : "Não foi possível registrar a inseminação.";
-          if (
-            msg === MSG_SEMEN_SEM_DOSES ||
-            msg === MSG_SEMEN_PARTIDA_INCOMPATIVEL ||
-            msg === MSG_SEMEN_PARTIDA_NAO_ENCONTRADA
-          ) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: msg });
-          }
-          if (!isDatabaseUnavailable(error)) throw error;
-          const result = await registrarInseminacaoComSemenLocal(
-            ctx.user.id,
-            inseminacaoParams,
-            packInseminacaoObservacoes,
-          );
-          return {
-            success: true,
-            id: result.id,
-            movimentacaoId: result.movimentacaoId,
-            localFallback: true,
-          };
+          console.warn("[reproducao.create] espelho fora do MySQL", error);
         }
       }
-
-      const observacoesPersistidas = packReproObservacoes(
-        input.observacoes,
-        coberturaAlvoPersistida ? undefined : input.reprodutorSemen,
-        input.responsavel,
-        input.descricaoResultadoOutro,
-        coberturaAlvoPersistida,
-        input.tipo.trim() === "Inseminação"
-          ? {
-              partidaSemen: input.partidaSemen,
-              inseminador: input.inseminador,
-              ecc: input.ecc,
-              custoDoseSemen: input.custoDoseSemen,
-              centralOrigem: input.centralOrigem,
-            }
-          : undefined,
-      );
-      const payload = {
-        userId: ctx.user.id,
-        femeaId: animalId,
-        machoId: machoIdPersistido,
-        tipo: input.tipo,
-        resultado: input.resultado,
-        observacoes: observacoesPersistidas,
-        dataCobertura: new Date(input.dataCobertura),
-        dataPrevistoParto: input.dataPrevistoParto
-          ? new Date(input.dataPrevistoParto)
-          : undefined,
-      };
-      let registroId = 0;
-      try {
-        const result = await db.insert(reproducaoRegistros).values(payload);
-        registroId = (result as { insertId?: number }[])[0]?.insertId ?? 0;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const result = await createLocalReproducaoRegistro(ctx.user.id, {
-          femeaId: animalId,
-          machoId: machoIdPersistido,
-          tipo: input.tipo,
-          dataCobertura: input.dataCobertura,
-          dataPrevistoParto: input.dataPrevistoParto,
-          resultado: input.resultado,
-          observacoes: observacoesPersistidas,
-        });
-        registroId = result.id;
-      }
-
-      const tipoEspelho = resolveTipoEspelhoMatriz(input.tipo);
-      let espelhosMatriz = 0;
-      let matrizesIgnoradas = 0;
-
-      if (
-        tipoEspelho &&
-        coberturaAlvoPersistida &&
-        coberturaAlvoPersistida.animalIds.length > 0 &&
-        registroId > 0
-      ) {
-        let existentes = await listRegistrosReproDuplicataUsuario(ctx.user.id);
-        const substituirSet = new Set(input.substituirEspelhosMatrizIds ?? []);
-
-        if (
-          coberturaAlvoPersistida.selectionMode === "individual" &&
-          coberturaAlvoPersistida.animalIds.length === 1
-        ) {
-          const matrizId = coberturaAlvoPersistida.animalIds[0]!;
-          if (
-            !substituirSet.has(matrizId) &&
-            matrizTemEspelhoReproDuplicado(
-              existentes,
-              matrizId,
-              animalId,
-              tipoEspelho,
-              input.dataCobertura,
-            )
-          ) {
-            const brincoLabel =
-              coberturaAlvoPersistida.labelsBrinco[0]?.trim() || String(matrizId);
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: formatMsgMatrizJaRegistradaNesteTouro(brincoLabel),
-            });
-          }
-        }
-
-        if (substituirSet.size > 0) {
-          await anularEspelhosMatrizAtivos(
-            {
-              userId: ctx.user.id,
-              matrizIds: [...substituirSet],
-              touroId: animalId,
-              tipoEspelho,
-              dataCobertura: input.dataCobertura,
-              registroOrigemSubstitutoId: registroId,
-            },
-            existentes,
-          );
-          existentes = await listRegistrosReproDuplicataUsuario(ctx.user.id);
-        }
-
-        const touroLabel =
-          (animalAlvo as { brinco?: string | null; nome?: string | null }).brinco?.trim() ||
-          (animalAlvo as { nome?: string | null }).nome?.trim() ||
-          String(animalId);
-        const espelhoResult = await espelharRegistrosReproNaMatriz(
-          {
-            userId: ctx.user.id,
-            registroOrigemId: registroId,
-            tipoEspelho,
-            touroId: animalId,
-            matrizIds: coberturaAlvoPersistida.animalIds,
-            dataCobertura: input.dataCobertura,
-            touroLabel,
-            resultadoEspelho: "Realizado",
-          },
-          existentes,
-        );
-        espelhosMatriz = espelhoResult.ids.length;
-        matrizesIgnoradas = espelhoResult.ignoradas.length;
-      }
-
       return {
-        success: true,
-        id: registroId,
-        espelhosMatriz,
-        matrizesIgnoradas,
+        success: true as const,
+        id: coletivo.id,
+        espelhosMatriz: coletivo.espelhosMatriz,
+        matrizesIgnoradas: coletivo.matrizesIgnoradas,
+        repetida: coletivo.repetida,
       };
+
     }),
 
   registrarPartoComCrias: protectedProcedure
     .input(registrarPartoComCriasInputSchema)
-    .mutation(async ({ ctx, input }) => executeRegistrarPartoComCrias(ctx.user.id, input)),
+    .mutation(async ({ ctx, input }) => {
+      const resultado = await registrarPartoAutorizado(ioRegistrarPartoDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        input,
+      });
+      if (!resultado.ok) throw erroRegistrarParto(resultado);
+      for (const cria of resultado.crias) {
+        try {
+          await updateLocalAnimal(resultado.titularUserId, cria.animalId, {
+            brinco: cria.brinco,
+            fazendaId: cria.fazendaId,
+            loteId: cria.loteDestinoId,
+            pastoId: cria.pastoId,
+            maeId: input.femeaId,
+            paiId: resultado.paiId,
+            status: "ativo",
+          });
+          if (cria.loteDestinoId != null) {
+            await registrarLocalEntradaInicialLote({
+              userId: resultado.titularUserId,
+              animalId: cria.animalId,
+              loteDestinoId: cria.loteDestinoId,
+              pastoOrigemId: null,
+              pastoDestinoId: cria.pastoId,
+              fazendaId: cria.fazendaId,
+              dataMovimentacao: input.dataParto.slice(0, 10),
+              usuarioNome: input.responsavel?.trim() || "Usuário",
+            });
+          }
+        } catch (error) {
+          console.warn("[reproducao.registrarPartoComCrias] espelho fora do MySQL", error);
+        }
+      }
+      return {
+        success: true as const,
+        partoRegistroId: resultado.partoRegistroId,
+        crias: resultado.crias.map((cria) => ({
+          animalId: cria.animalId,
+          ordem: cria.ordem,
+          pesagemId: cria.pesagemId,
+        })),
+        isNatimorto: resultado.isNatimorto,
+      };
+    }),
 
   update: protectedProcedure
     .input(z.object({
@@ -4644,52 +4367,42 @@ const reproducaoRouter = router({
       observacoes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const {
-        id,
-        dataCobertura,
-        dataPrevistoParto,
-        reprodutorSemen,
-        responsavel,
-        observacoes,
-        tipo,
-        resultado,
-      } = input;
-      const payload = {
-        tipo,
-        resultado: resultado ?? null,
-        observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel) ?? null,
-        dataCobertura: new Date(dataCobertura),
-        dataPrevistoParto: dataPrevistoParto ? new Date(dataPrevistoParto) : null,
-      };
+      const resultado = await editarReproducaoAutorizada(ioEditarReproducaoDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        registroId: input.id,
+        tipo: input.tipo,
+        dataCobertura: input.dataCobertura,
+        dataPrevistoParto: input.dataPrevistoParto,
+        resultado: input.resultado,
+        reprodutorSemen: input.reprodutorSemen,
+        responsavel: input.responsavel,
+        observacoes: input.observacoes,
+      });
+      if (!resultado.ok) throw erroEditarReproducao(resultado);
       try {
-        await db.update(reproducaoRegistros).set(payload).where(
-          and(eq(reproducaoRegistros.id, id), eq(reproducaoRegistros.userId, ctx.user.id)),
-        );
-        return { success: true };
+        await updateLocalReproducaoRegistro(resultado.titularUserId, input.id, resultado.espelho);
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        await updateLocalReproducaoRegistro(ctx.user.id, id, {
-          tipo,
-          dataCobertura,
-          dataPrevistoParto: dataPrevistoParto ?? null,
-          resultado,
-          observacoes: packReproObservacoes(observacoes, reprodutorSemen, responsavel),
-        });
-        return { success: true, localFallback: true };
+        console.warn("[reproducao.update] espelho fora do MySQL", error);
       }
+      return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const resultado = await excluirReproducaoAutorizada(ioEditarReproducaoDrizzle(), {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion,
+        registroId: input.id,
+      });
+      if (!resultado.ok) throw erroEditarReproducao(resultado);
       try {
-        await db.delete(reproducaoRegistros).where(and(eq(reproducaoRegistros.id, input.id), eq(reproducaoRegistros.userId, ctx.user.id)));
-        return { success: true };
+        await deleteLocalReproducaoRegistro(resultado.titularUserId, input.id);
       } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        await deleteLocalReproducaoRegistro(ctx.user.id, input.id);
-        return { success: true, localFallback: true };
+        console.warn("[reproducao.delete] espelho fora do MySQL", error);
       }
+      return { success: true };
     }),
 });
 
@@ -10601,9 +10314,24 @@ const comprasRouter = router({
         observacao: z.string().optional().nullable(),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      desfazerRecebimentoCompra(ctx.user.id, input, { estornadoPorUserId: ctx.user.id }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const resultado = await recusarEstornoRecebimentoAutorizado(ioEstornoRecebimentoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          recebimentoId: input.recebimentoId,
+          motivo: input.motivo,
+          observacao: input.observacao,
+        });
+        throw erroEstornoRecebimento(resultado);
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
+    }),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => excluirCompraLegada(ctx.user.id, input.id)),
@@ -10760,12 +10488,24 @@ const vendasRouter = router({
           .min(1),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      confirmarVendaComercialSePermitida(ctx.user.id, {
-        ...input,
-        usuarioNome: ctx.user.name,
-      }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await confirmarVendaAutorizada(ioVendaOperacaoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          fazendaId: input.fazendaId,
+        }, (titularUserId) => confirmarVendaComercialSePermitida(titularUserId, {
+          ...input,
+          usuarioNome: ctx.user.name,
+        }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
+    }),
 
   cancelar: protectedProcedure
     .input(
@@ -10774,14 +10514,28 @@ const vendasRouter = router({
         motivo: z.string().trim().min(1).max(255),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar(ctx.user.id, {
-        vendaId: input.id,
-        motivo: input.motivo,
-        canceladoPorUserId: ctx.user.id,
-        canceladoPorNome: ctx.user.name,
-      }),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await cancelarVendaAutorizada(ioVendaOperacaoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          vendaId: input.id,
+          motivo: input.motivo,
+        }, (titularUserId) =>
+          createCancelarVendaFinanceiroService(createCancelarVendaFinanceiroMysqlStore(db)).cancelar(titularUserId, {
+            vendaId: input.id,
+            motivo: input.motivo,
+            canceladoPorUserId: ctx.user.id,
+            canceladoPorNome: ctx.user.name,
+          }));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
+    }),
 
   integracaoConfirmacaoAtiva: protectedProcedure.query(() => integracaoConfirmacaoVendaAtiva()),
 
@@ -10818,13 +10572,25 @@ const vendasRouter = router({
           .optional(),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      confirmarVendaIntegradaSeAtiva(
-        createConfirmarVendaFinanceiroMysqlStore(db),
-        ctx.user.id,
-        { ...input, usuarioNome: ctx.user.name },
-      ),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await confirmarVendaAutorizada(ioVendaOperacaoDrizzle(), {
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion,
+          fazendaId: input.fazendaId,
+        }, (titularUserId) => confirmarVendaIntegradaSeAtiva(
+          createConfirmarVendaFinanceiroMysqlStore(db),
+          titularUserId,
+          { ...input, usuarioNome: ctx.user.name },
+        ));
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        if (isDatabaseUnavailable(error)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        }
+        throw error;
+      }
+    }),
 
   documentosAnexar: protectedProcedure
     .input(
