@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { nutricaoFornecimentosService } from "./nutricaoFornecimentos";
+import type { SessaoNutricao } from "./nutricaoOperacaoAutorizada";
 import { NUTRICAO_FORN_STATUS } from "../shared/nutricaoFornecimentos";
 
 const fornInput = z.object({
@@ -53,7 +54,12 @@ export const nutricaoFornecimentosRouter = router({
     .input(fornInput)
     .mutation(({ ctx, input }) => {
       const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "Usuário";
-      return nutricaoFornecimentosService.confirmar(ctx.user.id, registradoPor, input);
+      const sessao: SessaoNutricao = {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        permissaoId: "nutricao.confirmar",
+      };
+      return nutricaoFornecimentosService.confirmar(ctx.user.id, registradoPor, input, undefined, sessao);
     }),
 
   estornar: protectedProcedure
@@ -64,6 +70,11 @@ export const nutricaoFornecimentosRouter = router({
     }))
     .mutation(({ ctx, input }) => {
       const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "Usuário";
-      return nutricaoFornecimentosService.estornar(ctx.user.id, registradoPor, input);
+      const sessao: SessaoNutricao = {
+        executorId: ctx.user.id,
+        sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        permissaoId: "nutricao.estornar",
+      };
+      return nutricaoFornecimentosService.estornar(ctx.user.id, registradoPor, input, undefined, sessao);
     }),
 });

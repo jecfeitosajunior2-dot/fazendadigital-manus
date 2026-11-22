@@ -51,9 +51,24 @@ import {
   type NutricaoPlanLoteRef,
 } from "../shared/nutricaoPlanejamento";
 import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
-import { db } from "./db";
+import { db as dbPadrao } from "./db";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+import {
+  exigirProdutoDaFazenda,
+  MSG_NUTRICAO_FAZENDA,
+  MSG_NUTRICAO_SEM_SESSAO,
+  resolverDonoNutricao,
+  autorizarNutricaoNaTransacao,
+  type SessaoNutricao,
+} from "./nutricaoOperacaoAutorizada";
+
+let bancoFornecimentos: typeof dbPadrao = dbPadrao;
+
+/** Teste isolado aponta o serviço para um MySQL descartável. Null devolve o banco do processo. */
+export function definirBancoNutricaoFornecimentos(banco: typeof dbPadrao | null) {
+  bancoFornecimentos = banco ?? dbPadrao;
+}
 
 export type FornPersistido = {
   id: number;
@@ -120,7 +135,7 @@ export type FornMovPersistido = {
 export type FornTx = {
   insertFornecimento(row: Omit<FornPersistido, "id">): Promise<number>;
   insertIngredientes(rows: FornIngPersistido[]): Promise<void>;
-  debitarEstoque(estoqueId: number, quantidadeUnidade: number): Promise<{ valorEstoqueMovimentado: string | null; usaCapital: boolean }>;
+  debitarEstoque(estoqueId: number, quantidadeUnidade: number, fazendaId?: number): Promise<{ valorEstoqueMovimentado: string | null; usaCapital: boolean }>;
   insertSaida(row: {
     fornecimentoId: number;
     grupoId: string;
@@ -158,9 +173,11 @@ export type FornTx = {
     quantidadeFisicaSnapshot?: string | number | null;
     unidadeFisicaSnapshot?: string | null;
   }): Promise<void>;
-  creditarEstoque(estoqueId: number, quantidadeUnidade: number, valorSnapshot?: string | null): Promise<void>;
+  creditarEstoque(estoqueId: number, quantidadeUnidade: number, valorSnapshot?: string | null, fazendaId?: number): Promise<void>;
   setEstornado(id: number, patch: { motivoEstorno: string; observacaoEstorno: string | null; estornadoPorUserId: number }): Promise<void>;
   lockBatida(id: number): Promise<NutricaoFornBatidaRef | null>;
+  revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
+  travarFornecimento?(id: number): Promise<{ status: string; userId: number; fazendaId: number } | null>;
 };
 
 export type FornStore = {
@@ -174,6 +191,7 @@ export type FornStore = {
   getBatida(userId: number, id: number): Promise<NutricaoFornBatidaRef | null>;
   listPlanejamentosLote(userId: number, fazendaId: number, loteId: number): Promise<NutricaoFornPlanejamentoRef[]>;
   find(userId: number, id: number): Promise<FornPersistido | null>;
+  findPorId?(id: number): Promise<FornPersistido | null>;
   list(userId: number, fazendaId: number): Promise<FornPersistido[]>;
   listIngredientes(fornecimentoId: number): Promise<FornIngPersistido[]>;
   listMovimentacoes(fornecimentoId: number): Promise<FornMovPersistido[]>;
@@ -203,8 +221,8 @@ export function createNutricaoFornecimentosService(store: FornStore) {
     return { lote, produto, dieta, planejamento, produtos, cocho, batida };
   }
 
-  async function previewDe(userId: number, input: NutricaoFornInput, hojeISO: string) {
-    await store.assertFazenda(userId, input.fazendaId);
+  async function previewDe(userId: number, input: NutricaoFornInput, hojeISO: string, pularAssert = false) {
+    if (!pularAssert) await store.assertFazenda(userId, input.fazendaId);
     const ctx = await ctxDe(userId, input);
     const check = validarFornecimentoInput(input, { ...ctx, hojeISO });
     const animalIds = ctx.lote ? await store.listAnimaisAtivosLote(userId, input.loteId) : [];
@@ -291,9 +309,10 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       registradoPor: string,
       input: NutricaoFornInput,
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      const { check, preview, ctx } = await previewDe(userId, input, hojeISO);
+      const { dono } = await resolverDonoNutricao(userId, input.fazendaId, sessao, bancoFornecimentos);
+      const { check, preview, ctx } = await previewDe(dono, input, hojeISO, Boolean(sessao));
       if (!check.ok) toTrpc(check.message);
       if (!preview.podeConfirmar) toTrpc(preview.motivoBloqueio ?? MSG_FORN_SALDO);
       const origem = origemNormalizada(input);
@@ -303,6 +322,12 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         : origem.tipoOrigem === "dieta" ? (ctx.dieta?.nome ?? "Dieta") : (ctx.produto?.nome ?? "Produto");
 
       const id = await store.transaction(async tx => {
+        if (sessao) {
+          if (!tx.revalidar) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, input.fazendaId, dono);
+        }
         let custo = preview.custo;
         if (op === "batida") {
           const locked = await tx.lockBatida(Number(input.batidaId));
@@ -325,7 +350,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
 
         const fornId = await tx.insertFornecimento({
-          userId,
+          userId: dono,
           fazendaId: input.fazendaId,
           loteId: input.loteId,
           planejamentoId: input.planejamentoId ?? null,
@@ -383,13 +408,13 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
             throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_FORN_SALDO_DIETA });
           }
-          const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade);
+          const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade, input.fazendaId);
           await tx.insertSaida({
             fornecimentoId: fornId,
             grupoId,
             estoqueId: baixa.estoqueId,
             fazendaId: input.fazendaId,
-            userId,
+            userId: dono,
             registradoPor,
             data: normalizarDataCivil(input.data)!,
             quantidadeUnidade: baixa.quantidadeUnidade,
@@ -416,41 +441,71 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       registradoPor: string,
       input: { id: number; motivo: string; observacao?: string | null },
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      const atual = await store.find(userId, input.id);
-      if (!atual) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
-      await store.assertFazenda(userId, atual.fazendaId);
+      let atual: FornPersistido | null;
+      let dono = userId;
+      let executor = userId;
+      if (sessao) {
+        if (!store.findPorId) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+        }
+        const bruto = await store.findPorId(input.id);
+        if (!bruto) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+        const acesso = await resolverDonoNutricao(userId, bruto.fazendaId, sessao, bancoFornecimentos);
+        if (bruto.userId !== acesso.dono) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+        dono = acesso.dono;
+        executor = acesso.executor;
+        atual = bruto;
+      } else {
+        atual = await store.find(userId, input.id);
+        if (!atual) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+        await store.assertFazenda(userId, atual.fazendaId);
+      }
       if (atual.status === "estornado") toTrpc(MSG_FORN_JA_ESTORNADO);
       const motivo = input.motivo.trim();
       if (!motivo) toTrpc(MSG_FORN_MOTIVO);
+      const lancamento = atual;
 
       await store.transaction(async tx => {
-        if (atual.origemOperacional === "batida") {
-          await tx.setEstornado(atual.id, {
+        if (sessao) {
+          if (!tx.revalidar || !tx.travarFornecimento) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, lancamento.fazendaId, dono);
+          const locked = await tx.travarFornecimento(lancamento.id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+          if (locked.fazendaId !== lancamento.fazendaId) {
+            throw new TRPCError({ code: "FORBIDDEN", message: MSG_NUTRICAO_FAZENDA });
+          }
+          if (locked.status === "estornado") toTrpc(MSG_FORN_JA_ESTORNADO);
+        }
+        if (lancamento.origemOperacional === "batida") {
+          await tx.setEstornado(lancamento.id, {
             motivoEstorno: motivo.slice(0, 255),
             observacaoEstorno: input.observacao?.trim() || null,
-            estornadoPorUserId: userId,
+            estornadoPorUserId: executor,
           });
           return;
         }
-        const movs = await tx.listMovimentacoesAtivas(atual.id);
+        const movs = await tx.listMovimentacoesAtivas(lancamento.id);
         if (movs.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Não há movimentações ativas para estornar." });
         }
-        const grupoId = `e-forn-${atual.id}`;
-        const originalGrupoId = `forn-${atual.id}`;
+        const grupoId = `e-forn-${lancamento.id}`;
+        const originalGrupoId = `forn-${lancamento.id}`;
         const movsOrdenados = [...movs].sort((a, b) => a.estoqueId - b.estoqueId);
         for (const mov of movsOrdenados) {
           const qtd = Math.abs(Number(mov.quantidade));
-          await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado);
+          await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado, lancamento.fazendaId);
           const fisicaOrig = mov.quantidadeFisicaSnapshot == null ? null : Number(mov.quantidadeFisicaSnapshot);
           await tx.insertEstorno({
-            fornecimentoId: atual.id,
+            fornecimentoId: lancamento.id,
             grupoId,
             originalGrupoId,
             estoqueId: mov.estoqueId,
-            fazendaId: atual.fazendaId,
-            userId,
+            fazendaId: lancamento.fazendaId,
+            userId: dono,
             registradoPor,
             data: hojeISO,
             quantidadeUnidade: qtd,
@@ -463,10 +518,10 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           });
         }
         await tx.marcarEstornadas(movs.map(m => m.id));
-        await tx.setEstornado(atual.id, {
+        await tx.setEstornado(lancamento.id, {
           motivoEstorno: motivo.slice(0, 255),
           observacaoEstorno: input.observacao?.trim() || null,
-          estornadoPorUserId: userId,
+          estornadoPorUserId: executor,
         });
       });
       return { success: true as const, status: "estornado" as const };
@@ -479,13 +534,13 @@ export function createNutricaoFornecimentosService(store: FornStore) {
 }
 
 async function dietaComIngredientes(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null> {
-  const [dieta] = await db
+  const [dieta] = await bancoFornecimentos
     .select()
     .from(nutricaoDietas)
     .where(and(eq(nutricaoDietas.id, dietaId), eq(nutricaoDietas.userId, userId)))
     .limit(1);
   if (!dieta) return null;
-  const ings = await db.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
+  const ings = await bancoFornecimentos.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
   return {
     id: dieta.id,
     userId: dieta.userId,
@@ -501,11 +556,11 @@ async function dietaComIngredientes(userId: number, dietaId: number): Promise<Nu
 }
 
 async function carregarBatidaRef(userId: number, id: number): Promise<NutricaoFornBatidaRef | null> {
-  const [row] = await db.select().from(nutricaoBatidas).where(and(
+  const [row] = await bancoFornecimentos.select().from(nutricaoBatidas).where(and(
     eq(nutricaoBatidas.id, id), eq(nutricaoBatidas.userId, userId),
   )).limit(1);
   if (!row) return null;
-  const forns = await db.select({
+  const forns = await bancoFornecimentos.select({
     quantidadeFornecidaKg: nutricaoFornecimentos.quantidadeFornecidaKg,
     status: nutricaoFornecimentos.status,
   }).from(nutricaoFornecimentos).where(eq(nutricaoFornecimentos.batidaId, id));
@@ -569,18 +624,18 @@ export const nutricaoFornecimentosStore: FornStore = {
     await assertFazendaDoUsuario(userId, fazendaId);
   },
   async getLote(userId, loteId) {
-    const [row] = await db.select().from(lotes).where(and(eq(lotes.id, loteId), eq(lotes.userId, userId))).limit(1);
+    const [row] = await bancoFornecimentos.select().from(lotes).where(and(eq(lotes.id, loteId), eq(lotes.userId, userId))).limit(1);
     if (!row) return null;
     return { id: row.id, userId: row.userId, fazendaId: row.fazendaId ?? null, ativo: row.ativo !== false, nome: row.nome };
   },
   async listAnimaisAtivosLote(userId, loteId) {
-    const rows = await db.select({ id: animais.id }).from(animais).where(and(
+    const rows = await bancoFornecimentos.select({ id: animais.id }).from(animais).where(and(
       eq(animais.userId, userId), eq(animais.loteId, loteId), eq(animais.status, "ativo"),
     ));
     return rows.map(r => r.id);
   },
   async listProdutosFazenda(fazendaId) {
-    const rows = await db.select().from(estoque).where(eq(estoque.fazendaId, fazendaId));
+    const rows = await bancoFornecimentos.select().from(estoque).where(eq(estoque.fazendaId, fazendaId));
     return rows
       .filter(r => r.produtoId != null && r.produtoId > 0 && (r.situacao ?? "ativo") !== "inativo")
       .map(r => ({
@@ -607,7 +662,7 @@ export const nutricaoFornecimentosStore: FornStore = {
     return carregarBatidaRef(userId, id);
   },
   async getCocho(userId, id) {
-    const [row] = await db.select().from(nutricaoCochos).where(and(
+    const [row] = await bancoFornecimentos.select().from(nutricaoCochos).where(and(
       eq(nutricaoCochos.id, id), eq(nutricaoCochos.userId, userId),
     )).limit(1);
     if (!row) return null;
@@ -621,7 +676,7 @@ export const nutricaoFornecimentosStore: FornStore = {
     };
   },
   async getPlanejamento(userId, id) {
-    const [row] = await db.select().from(nutricaoPlanejamentos).where(and(
+    const [row] = await bancoFornecimentos.select().from(nutricaoPlanejamentos).where(and(
       eq(nutricaoPlanejamentos.id, id), eq(nutricaoPlanejamentos.userId, userId),
     )).limit(1);
     if (!row) return null;
@@ -640,7 +695,7 @@ export const nutricaoFornecimentosStore: FornStore = {
     };
   },
   async listPlanejamentosLote(userId, fazendaId, loteId) {
-    const rows = await db.select().from(nutricaoPlanejamentos).where(and(
+    const rows = await bancoFornecimentos.select().from(nutricaoPlanejamentos).where(and(
       eq(nutricaoPlanejamentos.userId, userId),
       eq(nutricaoPlanejamentos.fazendaId, fazendaId),
       eq(nutricaoPlanejamentos.loteId, loteId),
@@ -660,19 +715,25 @@ export const nutricaoFornecimentosStore: FornStore = {
     }));
   },
   async find(userId, id) {
-    const [row] = await db.select().from(nutricaoFornecimentos).where(and(
+    const [row] = await bancoFornecimentos.select().from(nutricaoFornecimentos).where(and(
       eq(nutricaoFornecimentos.id, id), eq(nutricaoFornecimentos.userId, userId),
     )).limit(1);
     return row ? toFornRow(row) : null;
   },
+  async findPorId(id) {
+    const [row] = await bancoFornecimentos.select().from(nutricaoFornecimentos).where(
+      eq(nutricaoFornecimentos.id, id),
+    ).limit(1);
+    return row ? toFornRow(row) : null;
+  },
   async list(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoFornecimentos).where(and(
+    const rows = await bancoFornecimentos.select().from(nutricaoFornecimentos).where(and(
       eq(nutricaoFornecimentos.userId, userId), eq(nutricaoFornecimentos.fazendaId, fazendaId),
     )).orderBy(desc(nutricaoFornecimentos.data), desc(nutricaoFornecimentos.id));
     return rows.map(toFornRow);
   },
   async listIngredientes(fornecimentoId) {
-    const rows = await db.select().from(nutricaoFornecimentoIngredientes).where(
+    const rows = await bancoFornecimentos.select().from(nutricaoFornecimentoIngredientes).where(
       eq(nutricaoFornecimentoIngredientes.fornecimentoId, fornecimentoId),
     );
     return rows.map(r => ({
@@ -690,7 +751,7 @@ export const nutricaoFornecimentosStore: FornStore = {
     }));
   },
   async listMovimentacoes(fornecimentoId) {
-    const rows = await db.select().from(estoqueMovimentacoes).where(
+    const rows = await bancoFornecimentos.select().from(estoqueMovimentacoes).where(
       eq(estoqueMovimentacoes.nutricaoFornecimentoId, fornecimentoId),
     );
     return rows.map(r => ({
@@ -704,7 +765,7 @@ export const nutricaoFornecimentosStore: FornStore = {
     }));
   },
   transaction(fn) {
-    return db.transaction(async tx => fn({
+    return bancoFornecimentos.transaction(async tx => fn({
       async insertFornecimento(row) {
         const result = await tx.insert(nutricaoFornecimentos).values({
           userId: row.userId,
@@ -745,9 +806,10 @@ export const nutricaoFornecimentosStore: FornStore = {
         if (!rows.length) return;
         await tx.insert(nutricaoFornecimentoIngredientes).values(rows);
       },
-      async debitarEstoque(estoqueId, quantidadeUnidade) {
+      async debitarEstoque(estoqueId, quantidadeUnidade, fazendaId) {
         const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
+        exigirProdutoDaFazenda(item.fazendaId, fazendaId);
         if ((item.situacao ?? "ativo") === "inativo") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Produto inativo não recebe movimentação." });
         }
@@ -834,14 +896,29 @@ export const nutricaoFornecimentosStore: FornStore = {
           unidadeFisicaSnapshot: row.unidadeFisicaSnapshot ?? undefined,
         });
       },
-      async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot) {
-        const [item] = await tx.select({ id: estoque.id }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
+      async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot, fazendaId) {
+        const [item] = await tx.select({ id: estoque.id, fazendaId: estoque.fazendaId }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FORN_SALDO });
+        exigirProdutoDaFazenda(item.fazendaId, fazendaId);
         await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
           tipoOp: "estorno",
           quantidadeOriginal: -Math.abs(quantidadeUnidade),
           valorSnapshot,
         });
+      },
+      async revalidar(sessao, fazendaId, donoEsperado) {
+        const acesso = await autorizarNutricaoNaTransacao(tx, sessao, fazendaId);
+        if (acesso.titularUserId !== donoEsperado) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+        }
+      },
+      async travarFornecimento(id) {
+        const [row] = await tx.select({
+          status: nutricaoFornecimentos.status,
+          userId: nutricaoFornecimentos.userId,
+          fazendaId: nutricaoFornecimentos.fazendaId,
+        }).from(nutricaoFornecimentos).where(eq(nutricaoFornecimentos.id, id)).for("update").limit(1);
+        return row ?? null;
       },
       async setEstornado(id, patch) {
         await tx.update(nutricaoFornecimentos).set({
@@ -879,7 +956,7 @@ export const nutricaoFornecimentosStore: FornStore = {
           custoTotalSnapshot: row.custoTotalSnapshot == null ? null : Number(row.custoTotalSnapshot),
         };
       },
-    })).catch((erro) => {
+    }), { isolationLevel: "read committed" }).catch((erro) => {
       recusarSeDeadlockEstoque(erro);
       throw erro;
     });

@@ -42,9 +42,24 @@ import {
   type NutricaoPlanDietaRef,
 } from "../shared/nutricaoPlanejamento";
 import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
-import { db } from "./db";
+import { db as dbPadrao } from "./db";
 import { aplicarPatchSaldoNoTx, executorPatchDrizzle } from "./estoqueSaldoTx";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+import {
+  autorizarNutricaoNaTransacao,
+  exigirProdutoDaFazenda,
+  MSG_NUTRICAO_FAZENDA,
+  MSG_NUTRICAO_SEM_SESSAO,
+  resolverDonoNutricao,
+  type SessaoNutricao,
+} from "./nutricaoOperacaoAutorizada";
+
+let bancoBatidas: typeof dbPadrao = dbPadrao;
+
+/** Teste isolado aponta o serviço para um MySQL descartável. Null devolve o banco do processo. */
+export function definirBancoNutricaoBatidas(banco: typeof dbPadrao | null) {
+  bancoBatidas = banco ?? dbPadrao;
+}
 
 export type BatidaPersistida = {
   id: number;
@@ -110,7 +125,7 @@ export type BatidaFornVinculado = {
 export type BatidaTx = {
   insertBatida(row: Omit<BatidaPersistida, "id">): Promise<number>;
   insertIngredientes(rows: BatidaIngPersistido[]): Promise<void>;
-  debitarEstoque(estoqueId: number, quantidadeUnidade: number): Promise<{ valorEstoqueMovimentado: string | null; usaCapital: boolean }>;
+  debitarEstoque(estoqueId: number, quantidadeUnidade: number, fazendaId?: number): Promise<{ valorEstoqueMovimentado: string | null; usaCapital: boolean }>;
   insertSaida(row: {
     batidaId: number;
     grupoId: string;
@@ -147,9 +162,11 @@ export type BatidaTx = {
     quantidadeFisicaSnapshot?: string | number | null;
     unidadeFisicaSnapshot?: string | null;
   }): Promise<void>;
-  creditarEstoque(estoqueId: number, quantidadeUnidade: number, valorSnapshot?: string | null): Promise<void>;
+  creditarEstoque(estoqueId: number, quantidadeUnidade: number, valorSnapshot?: string | null, fazendaId?: number): Promise<void>;
   setEstornado(id: number, patch: { motivoEstorno: string; observacaoEstorno: string | null; estornadoPorUserId: number }): Promise<void>;
   contarFornecimentosConfirmados(batidaId: number): Promise<number>;
+  revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
+  travarBatida?(id: number): Promise<{ status: string; userId: number; fazendaId: number } | null>;
 };
 
 export type BatidaStore = {
@@ -158,6 +175,7 @@ export type BatidaStore = {
   listDietasFazenda(userId: number, fazendaId: number): Promise<NutricaoPlanDietaRef[]>;
   getDieta(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null>;
   find(userId: number, id: number): Promise<BatidaPersistida | null>;
+  findPorId?(id: number): Promise<BatidaPersistida | null>;
   list(userId: number, fazendaId: number): Promise<BatidaPersistida[]>;
   listIngredientes(batidaId: number): Promise<BatidaIngPersistido[]>;
   listMovimentacoes(batidaId: number): Promise<BatidaMovPersistido[]>;
@@ -193,8 +211,8 @@ function enriquecer(row: BatidaPersistida, fornecimentos: BatidaFornVinculado[])
 }
 
 export function createNutricaoBatidasService(store: BatidaStore) {
-  async function previewDe(userId: number, input: NutricaoBatidaInput, hojeISO: string) {
-    await store.assertFazenda(userId, input.fazendaId);
+  async function previewDe(userId: number, input: NutricaoBatidaInput, hojeISO: string, pularAssert = false) {
+    if (!pularAssert) await store.assertFazenda(userId, input.fazendaId);
     const produtos = await store.listProdutosFazenda(input.fazendaId);
     const produtosPorId = new Map(produtos.map(p => [p.produtoId, p]));
     const dieta = input.dietaId ? await store.getDieta(userId, input.dietaId) : null;
@@ -290,15 +308,22 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       registradoPor: string,
       input: NutricaoBatidaInput,
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      const { check, preview, dieta } = await previewDe(userId, input, hojeISO);
+      const { dono } = await resolverDonoNutricao(userId, input.fazendaId, sessao, bancoBatidas);
+      const { check, preview, dieta } = await previewDe(dono, input, hojeISO, Boolean(sessao));
       if (!check.ok) toTrpc(check.message);
       if (!preview.podeConfirmar) toTrpc(preview.motivoBloqueio ?? MSG_BATIDA_SALDO);
 
       const id = await store.transaction(async tx => {
+        if (sessao) {
+          if (!tx.revalidar) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, input.fazendaId, dono);
+        }
         const batidaId = await tx.insertBatida({
-          userId,
+          userId: dono,
           fazendaId: input.fazendaId,
           dietaId: input.dietaId,
           data: normalizarDataCivil(input.data)!,
@@ -334,13 +359,13 @@ export function createNutricaoBatidasService(store: BatidaStore) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
             throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_BATIDA_SALDO });
           }
-          const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade);
+          const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade, input.fazendaId);
           await tx.insertSaida({
             batidaId,
             grupoId,
             estoqueId: baixa.estoqueId,
             fazendaId: input.fazendaId,
-            userId,
+            userId: dono,
             registradoPor,
             data: normalizarDataCivil(input.data)!,
             quantidadeUnidade: baixa.quantidadeUnidade,
@@ -366,36 +391,66 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       registradoPor: string,
       input: { id: number; motivo: string; observacao?: string | null },
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      const atual = await store.find(userId, input.id);
-      if (!atual) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
-      await store.assertFazenda(userId, atual.fazendaId);
+      let atual: BatidaPersistida | null;
+      let dono = userId;
+      let executor = userId;
+      if (sessao) {
+        if (!store.findPorId) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+        }
+        const bruto = await store.findPorId(input.id);
+        if (!bruto) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+        const acesso = await resolverDonoNutricao(userId, bruto.fazendaId, sessao, bancoBatidas);
+        if (bruto.userId !== acesso.dono) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+        dono = acesso.dono;
+        executor = acesso.executor;
+        atual = bruto;
+      } else {
+        atual = await store.find(userId, input.id);
+        if (!atual) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+        await store.assertFazenda(userId, atual.fazendaId);
+      }
       if (atual.status === "estornado") toTrpc(MSG_BATIDA_JA_ESTORNADA);
       const motivo = input.motivo.trim();
       if (!motivo) toTrpc(MSG_BATIDA_MOTIVO);
+      const lancamento = atual;
 
       await store.transaction(async tx => {
-        const confirmados = await tx.contarFornecimentosConfirmados(atual.id);
-        const lock = podeEstornarBatida(atual.status, confirmados);
+        if (sessao) {
+          if (!tx.revalidar || !tx.travarBatida) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, lancamento.fazendaId, dono);
+          const locked = await tx.travarBatida(lancamento.id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+          if (locked.fazendaId !== lancamento.fazendaId) {
+            throw new TRPCError({ code: "FORBIDDEN", message: MSG_NUTRICAO_FAZENDA });
+          }
+          if (locked.status === "estornado") toTrpc(MSG_BATIDA_JA_ESTORNADA);
+        }
+        const confirmados = await tx.contarFornecimentosConfirmados(lancamento.id);
+        const lock = podeEstornarBatida(lancamento.status, confirmados);
         if (!lock.ok) toTrpc(lock.message);
-        const movs = await tx.listMovimentacoesAtivas(atual.id);
+        const movs = await tx.listMovimentacoesAtivas(lancamento.id);
         if (movs.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Não há movimentações ativas para estornar." });
         }
-        const grupoId = `e-bat-${atual.id}`;
-        const originalGrupoId = `bat-${atual.id}`;
+        const grupoId = `e-bat-${lancamento.id}`;
+        const originalGrupoId = `bat-${lancamento.id}`;
         const movsOrdenados = [...movs].sort((a, b) => a.estoqueId - b.estoqueId);
         for (const mov of movsOrdenados) {
           const qtd = Math.abs(Number(mov.quantidade));
-          await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado);
+          await tx.creditarEstoque(mov.estoqueId, qtd, mov.valorEstoqueMovimentado, lancamento.fazendaId);
           const fisicaOrig = mov.quantidadeFisicaSnapshot == null ? null : Number(mov.quantidadeFisicaSnapshot);
           await tx.insertEstorno({
-            batidaId: atual.id,
+            batidaId: lancamento.id,
             grupoId,
             originalGrupoId,
             estoqueId: mov.estoqueId,
-            fazendaId: atual.fazendaId,
-            userId,
+            fazendaId: lancamento.fazendaId,
+            userId: dono,
             registradoPor,
             data: hojeISO,
             quantidadeUnidade: qtd,
@@ -408,10 +463,10 @@ export function createNutricaoBatidasService(store: BatidaStore) {
           });
         }
         await tx.marcarEstornadas(movs.map(m => m.id));
-        await tx.setEstornado(atual.id, {
+        await tx.setEstornado(lancamento.id, {
           motivoEstorno: motivo.slice(0, 255),
           observacaoEstorno: input.observacao?.trim() || null,
-          estornadoPorUserId: userId,
+          estornadoPorUserId: executor,
         });
       });
       return { success: true as const, status: "estornado" as const };
@@ -420,13 +475,13 @@ export function createNutricaoBatidasService(store: BatidaStore) {
 }
 
 async function dietaComIngredientes(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null> {
-  const [dieta] = await db
+  const [dieta] = await bancoBatidas
     .select()
     .from(nutricaoDietas)
     .where(and(eq(nutricaoDietas.id, dietaId), eq(nutricaoDietas.userId, userId)))
     .limit(1);
   if (!dieta) return null;
-  const ings = await db.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
+  const ings = await bancoBatidas.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
   return {
     id: dieta.id,
     userId: dieta.userId,
@@ -467,7 +522,7 @@ export const nutricaoBatidasStore: BatidaStore = {
     await assertFazendaDoUsuario(userId, fazendaId);
   },
   async listProdutosFazenda(fazendaId) {
-    const rows = await db.select().from(estoque).where(eq(estoque.fazendaId, fazendaId));
+    const rows = await bancoBatidas.select().from(estoque).where(eq(estoque.fazendaId, fazendaId));
     return rows
       .filter(r => r.produtoId != null && r.produtoId > 0 && (r.situacao ?? "ativo") !== "inativo")
       .map(r => ({
@@ -488,7 +543,7 @@ export const nutricaoBatidasStore: BatidaStore = {
       }));
   },
   async listDietasFazenda(userId, fazendaId) {
-    const rows = await db
+    const rows = await bancoBatidas
       .select()
       .from(nutricaoDietas)
       .where(and(
@@ -508,19 +563,23 @@ export const nutricaoBatidasStore: BatidaStore = {
     return dietaComIngredientes(userId, dietaId);
   },
   async find(userId, id) {
-    const [row] = await db.select().from(nutricaoBatidas).where(and(
+    const [row] = await bancoBatidas.select().from(nutricaoBatidas).where(and(
       eq(nutricaoBatidas.id, id), eq(nutricaoBatidas.userId, userId),
     )).limit(1);
     return row ? toBatidaRow(row) : null;
   },
+  async findPorId(id) {
+    const [row] = await bancoBatidas.select().from(nutricaoBatidas).where(eq(nutricaoBatidas.id, id)).limit(1);
+    return row ? toBatidaRow(row) : null;
+  },
   async list(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoBatidas).where(and(
+    const rows = await bancoBatidas.select().from(nutricaoBatidas).where(and(
       eq(nutricaoBatidas.userId, userId), eq(nutricaoBatidas.fazendaId, fazendaId),
     )).orderBy(desc(nutricaoBatidas.data), desc(nutricaoBatidas.id));
     return rows.map(toBatidaRow);
   },
   async listIngredientes(batidaId) {
-    const rows = await db.select().from(nutricaoBatidaIngredientes).where(
+    const rows = await bancoBatidas.select().from(nutricaoBatidaIngredientes).where(
       eq(nutricaoBatidaIngredientes.batidaId, batidaId),
     );
     return rows.map(r => ({
@@ -538,7 +597,7 @@ export const nutricaoBatidasStore: BatidaStore = {
     }));
   },
   async listMovimentacoes(batidaId) {
-    const rows = await db.select().from(estoqueMovimentacoes).where(
+    const rows = await bancoBatidas.select().from(estoqueMovimentacoes).where(
       eq(estoqueMovimentacoes.nutricaoBatidaId, batidaId),
     );
     return rows.map(r => ({
@@ -551,7 +610,7 @@ export const nutricaoBatidasStore: BatidaStore = {
     }));
   },
   async listFornecimentos(batidaId) {
-    const rows = await db.select().from(nutricaoFornecimentos).where(
+    const rows = await bancoBatidas.select().from(nutricaoFornecimentos).where(
       eq(nutricaoFornecimentos.batidaId, batidaId),
     );
     return rows.map(r => ({
@@ -565,13 +624,13 @@ export const nutricaoBatidasStore: BatidaStore = {
     }));
   },
   async getLoteNome(userId, loteId) {
-    const [row] = await db.select({ nome: lotes.nome }).from(lotes).where(and(
+    const [row] = await bancoBatidas.select({ nome: lotes.nome }).from(lotes).where(and(
       eq(lotes.id, loteId), eq(lotes.userId, userId),
     )).limit(1);
     return row?.nome ?? null;
   },
   transaction(fn) {
-    return db.transaction(async tx => fn({
+    return bancoBatidas.transaction(async tx => fn({
       async insertBatida(row) {
         const result = await tx.insert(nutricaoBatidas).values({
           userId: row.userId,
@@ -599,9 +658,10 @@ export const nutricaoBatidasStore: BatidaStore = {
         if (!rows.length) return;
         await tx.insert(nutricaoBatidaIngredientes).values(rows);
       },
-      async debitarEstoque(estoqueId, quantidadeUnidade) {
+      async debitarEstoque(estoqueId, quantidadeUnidade, fazendaId) {
         const [item] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
+        exigirProdutoDaFazenda(item.fazendaId, fazendaId);
         if ((item.situacao ?? "ativo") === "inativo") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Produto inativo não recebe movimentação." });
         }
@@ -687,14 +747,29 @@ export const nutricaoBatidasStore: BatidaStore = {
           unidadeFisicaSnapshot: row.unidadeFisicaSnapshot ?? undefined,
         });
       },
-      async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot) {
-        const [item] = await tx.select({ id: estoque.id }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
+      async creditarEstoque(estoqueId, quantidadeUnidade, valorSnapshot, fazendaId) {
+        const [item] = await tx.select({ id: estoque.id, fazendaId: estoque.fazendaId }).from(estoque).where(eq(estoque.id, estoqueId)).for("update");
         if (!item) throw new TRPCError({ code: "BAD_REQUEST", message: MSG_BATIDA_SALDO });
+        exigirProdutoDaFazenda(item.fazendaId, fazendaId);
         await aplicarPatchSaldoNoTx(executorPatchDrizzle(tx), estoqueId, {
           tipoOp: "estorno",
           quantidadeOriginal: -Math.abs(quantidadeUnidade),
           valorSnapshot,
         });
+      },
+      async revalidar(sessao, fazendaId, donoEsperado) {
+        const acesso = await autorizarNutricaoNaTransacao(tx, sessao, fazendaId);
+        if (acesso.titularUserId !== donoEsperado) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
+        }
+      },
+      async travarBatida(id) {
+        const [row] = await tx.select({
+          status: nutricaoBatidas.status,
+          userId: nutricaoBatidas.userId,
+          fazendaId: nutricaoBatidas.fazendaId,
+        }).from(nutricaoBatidas).where(eq(nutricaoBatidas.id, id)).for("update").limit(1);
+        return row ?? null;
       },
       async setEstornado(id, patch) {
         await tx.update(nutricaoBatidas).set({
@@ -713,7 +788,7 @@ export const nutricaoBatidasStore: BatidaStore = {
         ));
         return rows.length;
       },
-    })).catch((erro) => {
+    }), { isolationLevel: "read committed" }).catch((erro) => {
       recusarSeDeadlockEstoque(erro);
       throw erro;
     });

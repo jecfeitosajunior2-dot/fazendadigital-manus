@@ -366,11 +366,15 @@ describe("nutricaoDietas service", () => {
 });
 
 describe("nutricaoDietas — sem estoque e rota nova", () => {
-  it("14: service não referencia movimentação de estoque", () => {
+  it("14: leitura de saldo da formulação não grava estoque", () => {
     const src = readFileSync(new URL("./nutricaoDietas.ts", import.meta.url), "utf8");
+    const lista = src.slice(src.indexOf("async listProdutosFazenda"), src.indexOf("async findDieta"));
+    expect(lista).toContain("quantidade: estoque.quantidade");
+    expect(lista).toContain("custoMedioFonteTecnica");
     expect(src).not.toMatch(/estoqueMovimentacoes/);
-    expect(src).not.toMatch(/estoque\.quantidade/);
     expect(src).not.toMatch(/createMovimentacao/);
+    expect(src).not.toMatch(/update\(estoque\)/);
+    expect(src).not.toMatch(/insert\(estoque\)/);
     expect(src).toContain("listProdutosFazenda");
   });
 
