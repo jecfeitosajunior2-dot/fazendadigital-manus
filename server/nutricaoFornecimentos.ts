@@ -62,6 +62,18 @@ import {
   autorizarNutricaoNaTransacao,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
+import { conteudoCanonicoFornecimento } from "../shared/nutricaoIdempotencia";
+import { MSG_NUTRICAO_SEM_IDEMPOTENCIA } from "../shared/nutricaoIdempotencia";
+import {
+  buscarConfirmacaoPorChave,
+  confirmarEmAndamento,
+  ehChaveDuplicada,
+  exigirEstruturaIdempotente,
+  exigirIdempotenciaOuRecusar,
+  gravarChaveNutricao,
+  prepararChaveNutricao,
+  responderConfirmacaoRepetida,
+} from "./nutricaoIdempotenciaMysql";
 
 let bancoFornecimentos: typeof dbPadrao = dbPadrao;
 
@@ -178,6 +190,8 @@ export type FornTx = {
   lockBatida(id: number): Promise<NutricaoFornBatidaRef | null>;
   revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
   travarFornecimento?(id: number): Promise<{ status: string; userId: number; fazendaId: number } | null>;
+  exigirIdempotencia?(): Promise<void>;
+  gravarChave?(id: number, userId: number, chave: string, hash: string): Promise<void>;
 };
 
 export type FornStore = {
@@ -312,6 +326,16 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       sessao?: SessaoNutricao,
     ) {
       const { dono } = await resolverDonoNutricao(userId, input.fazendaId, sessao, bancoFornecimentos);
+      const preparada = sessao
+        ? prepararChaveNutricao("forn", input.chaveOperacao, conteudoCanonicoFornecimento(input))
+        : null;
+      if (preparada) {
+        await exigirIdempotenciaOuRecusar(bancoFornecimentos, "nutricao_fornecimentos");
+        const ja = await buscarConfirmacaoPorChave(
+          bancoFornecimentos, "nutricao_fornecimentos", dono, preparada.chave,
+        );
+        if (ja) return responderConfirmacaoRepetida(ja, preparada.hash);
+      }
       const { check, preview, ctx } = await previewDe(dono, input, hojeISO, Boolean(sessao));
       if (!check.ok) toTrpc(check.message);
       if (!preview.podeConfirmar) toTrpc(preview.motivoBloqueio ?? MSG_FORN_SALDO);
@@ -321,12 +345,15 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         ? (ctx.batida?.dietaNomeSnapshot ?? ctx.dieta?.nome ?? "Dieta")
         : origem.tipoOrigem === "dieta" ? (ctx.dieta?.nome ?? "Dieta") : (ctx.produto?.nome ?? "Produto");
 
-      const id = await store.transaction(async tx => {
+      let id: number;
+      try {
+      id = await store.transaction(async tx => {
         if (sessao) {
-          if (!tx.revalidar) {
-            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          if (!tx.revalidar || !tx.exigirIdempotencia || !tx.gravarChave) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
           }
           await tx.revalidar(sessao, input.fazendaId, dono);
+          await tx.exigirIdempotencia();
         }
         let custo = preview.custo;
         if (op === "batida") {
@@ -382,6 +409,8 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           observacaoEstorno: null,
         });
 
+        if (preparada) await tx.gravarChave!(fornId, dono, preparada.chave, preparada.hash);
+
         if (op === "batida") {
           return fornId;
         }
@@ -432,8 +461,18 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
         return fornId;
       });
+      } catch (erro) {
+        if (preparada && ehChaveDuplicada(erro)) {
+          const ja = await buscarConfirmacaoPorChave(
+            bancoFornecimentos, "nutricao_fornecimentos", dono, preparada.chave,
+          );
+          if (!ja) confirmarEmAndamento();
+          return responderConfirmacaoRepetida(ja, preparada.hash);
+        }
+        throw erro;
+      }
 
-      return { success: true as const, id };
+      return { success: true as const, id, repetido: false as const, status: "confirmado" as const };
     },
 
     async estornar(
@@ -911,6 +950,12 @@ export const nutricaoFornecimentosStore: FornStore = {
         if (acesso.titularUserId !== donoEsperado) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
         }
+      },
+      async exigirIdempotencia() {
+        await exigirEstruturaIdempotente(tx, "nutricao_fornecimentos");
+      },
+      async gravarChave(id, userId, chave, hash) {
+        await gravarChaveNutricao(tx, "nutricao_fornecimentos", id, userId, chave, hash);
       },
       async travarFornecimento(id) {
         const [row] = await tx.select({

@@ -4,7 +4,7 @@ import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { db } from "./db";
 import {
   users, animais, animalBaixas, lotes, saudeRegistros, reproducaoRegistros,
-  maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens, batidas,
+  maquinas, abastecimentos, manutencoes, manutencaoPecas, pesagens,
   benfeitorias, estoque, estoqueMovimentacoes, estoqueOperacoes,
   compras, compraGrupos, vendas, vendaItens, fazendas, pastos, lotePastoMovimentacoes, animalLoteMovimentacoes,
   historicoBrincos, produtosCatalogo, pessoas, usuarioFazendas, usuarioPermissoes,
@@ -8018,9 +8018,10 @@ const pesagensRouter = router({
 
 // ─── NUTRICAO ROUTER ──────────────────────────────────────────────────────────
 const nutricaoRouter = router({
-  listBatidas: protectedProcedure.query(async ({ ctx }) => {
-    return db.select().from(batidas).where(eq(batidas.userId, ctx.user.id)).orderBy(desc(batidas.createdAt));
-  }),
+  listBatidas: protectedProcedure.query(({ ctx }) => listarBatidasAntigas({
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+  })),
 
   createBatida: protectedProcedure
     .input(z.object({
@@ -8029,21 +8030,14 @@ const nutricaoRouter = router({
       responsavel: z.string().optional(),
       observacoes: z.string().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const { data, ...rest } = input;
-      const result = await db.insert(batidas).values({
-        userId: ctx.user.id,
-        ...rest,
-        data: new Date(data),
-      });
-      return { success: true, id: (result as any)[0]?.insertId };
+    .mutation(() => {
+      recusarCadastroBatidaAntiga();
     }),
 
   deleteBatida: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      await db.delete(batidas).where(and(eq(batidas.id, input.id), eq(batidas.userId, ctx.user.id)));
-      return { success: true };
+    .mutation(() => {
+      recusarExclusaoBatidaAntiga();
     }),
 });
 
@@ -12675,6 +12669,7 @@ import { nutricaoCochosRouter } from "./nutricaoCochosRouter";
 import { nutricaoBatidasRouter } from "./nutricaoBatidasRouter";
 import { nutricaoCochoLeiturasRouter } from "./nutricaoCochoLeiturasRouter";
 import { nutricaoVisaoGeralRouter } from "./nutricaoVisaoGeralRouter";
+import { listarBatidasAntigas, recusarCadastroBatidaAntiga, recusarExclusaoBatidaAntiga } from "./nutricaoBatidasAntigas";
 import { financeiroV2Router } from "./financeiroV2Router";
 export const appRouter = router({
   auth: authRouter,

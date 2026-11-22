@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
@@ -7,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../drizzle/schema";
 import { env } from "./_core/env";
 import { afirmarBancoDescartavel } from "./isolamentoMysql";
+import { definirBancoBatidasAntigas, listarBatidasAntigas, recusarCadastroBatidaAntiga, recusarExclusaoBatidaAntiga } from "./nutricaoBatidasAntigas";
 import { definirBancoNutricaoBatidas, nutricaoBatidasService } from "./nutricaoBatidas";
 import { definirBancoNutricaoFornecimentos, nutricaoFornecimentosService } from "./nutricaoFornecimentos";
 import {
@@ -15,16 +17,23 @@ import {
   MSG_NUTRICAO_SEM_PERMISSAO,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
+import {
+  MSG_BATIDA_ANTIGA_CADASTRO,
+  MSG_BATIDA_ANTIGA_EXCLUSAO,
+  MSG_BATIDA_ANTIGA_LISTA,
+  MSG_NUTRICAO_CHAVE_DIFERENTE,
+  MSG_NUTRICAO_SEM_IDEMPOTENCIA,
+} from "../shared/nutricaoIdempotencia";
 
 if (!env.DATABASE_URL || env.DATABASE_URL.includes(":3306") || env.DATABASE_URL.includes("fazenda_digital")) {
   throw new Error("Este teste não usa o banco da fazenda.");
 }
 
 const exec = promisify(execFile);
-const CONTAINER = "fd-h4bf-nutri";
-const PORTA = 3382;
-const SENHA = "isolado-h4bf";
-const BANCO = "fd_h4bf";
+const CONTAINER = "fd-h4bg-nutri";
+const PORTA = 3384;
+const SENHA = "isolado-h4bg";
+const BANCO = "fd_h4bg";
 const HOJE = "2026-11-21";
 
 const ESQUEMA = `
@@ -138,6 +147,11 @@ CREATE TABLE nutricao_batida_ingredientes (
   custoTotalSnapshot decimal(12,2) NULL, custoConhecido tinyint(1) NOT NULL,
   ordem int NOT NULL, createdAt timestamp NULL, PRIMARY KEY (id)
 ) ENGINE=InnoDB;
+CREATE TABLE batidas (
+  id int NOT NULL AUTO_INCREMENT, userId int NOT NULL, cochoId int NULL, dietaId int NULL,
+  data date NOT NULL, quantidade decimal(8,2) NULL, responsavel varchar(200) NULL,
+  observacoes text NULL, createdAt timestamp NULL, PRIMARY KEY (id)
+) ENGINE=InnoDB;
 `;
 
 type Banco = ReturnType<typeof drizzle<typeof schema>>;
@@ -158,8 +172,45 @@ function pedidoProduto(qtd = 10, extra: Record<string, unknown> = {}) {
     produtoId: 101,
     data: "2026-11-01",
     quantidadeFornecidaKg: qtd,
+    chaveOperacao: `forn-${randomUUID()}`,
     ...extra,
   };
+}
+
+function pedidoBatida(qtd = 10, extra: Record<string, unknown> = {}) {
+  return {
+    fazendaId: 10,
+    dietaId: 1,
+    data: "2026-11-01",
+    quantidadePreparadaKg: qtd,
+    chaveOperacao: `bat-${randomUUID()}`,
+    ...extra,
+  };
+}
+
+function pedidoDaBatida(batidaId: number, qtd = 10, extra: Record<string, unknown> = {}) {
+  return {
+    fazendaId: 10,
+    loteId: 1,
+    tipoOrigem: "dieta" as const,
+    dietaId: 1,
+    origemOperacional: "batida" as const,
+    batidaId,
+    data: "2026-11-01",
+    quantidadeFornecidaKg: qtd,
+    chaveOperacao: `forn-${randomUUID()}`,
+    ...extra,
+  };
+}
+
+function sentencasProposta() {
+  return readFileSync(new URL("../drizzle/propostas/0073_nutricao_idempotencia.sql", import.meta.url), "utf8")
+    .split("\n")
+    .filter((linha) => !linha.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((parte) => parte.trim())
+    .filter(Boolean);
 }
 
 describe.sequential("nutrição crítica no mysql descartável", () => {
@@ -177,6 +228,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
   }
 
   async function limpar() {
+    await pool.query("DELETE FROM batidas");
     await pool.query("DELETE FROM estoque_movimentacoes");
     await pool.query("DELETE FROM nutricao_fornecimentos");
     await pool.query("DELETE FROM nutricao_batida_ingredientes");
@@ -198,6 +250,18 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
       INSERT INTO usuario_fazendas (userId, fazendaId, concedidoPorUserId) VALUES
         (2, 10, 1), (2, 20, 1), (4, 10, 1), (5, 10, 1), (6, 10, 1)
     `);
+  }
+
+  async function restaurarIdempotencia() {
+    for (const tabela of ["nutricao_fornecimentos", "nutricao_batidas"]) {
+      const indice = tabela === "nutricao_fornecimentos"
+        ? "nutricao_fornecimentos_user_chave_uq"
+        : "nutricao_batidas_user_chave_uq";
+      await pool.query(`ALTER TABLE ${tabela} DROP INDEX ${indice}`).catch(() => undefined);
+      await pool.query(`ALTER TABLE ${tabela} DROP COLUMN chaveOperacao`).catch(() => undefined);
+      await pool.query(`ALTER TABLE ${tabela} DROP COLUMN conteudoHash`).catch(() => undefined);
+    }
+    for (const sentenca of sentencasProposta()) await pool.query(sentenca);
   }
 
   async function segurarEstoque(id: number, depois: () => Promise<void>) {
@@ -233,6 +297,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
         });
         await conn.query("SELECT 1 AS ok");
         await conn.query(ESQUEMA);
+        for (const sentenca of sentencasProposta()) await conn.query(sentenca);
         await conn.query(`
           INSERT INTO users (id, openId, name, role, papel, titularUserId, situacao, sessionVersion) VALUES
             (1, 'p1', 'Principal', 'user', 'principal', 1, 'ativo', 1),
@@ -265,6 +330,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
         banco = drizzle(pool, { schema, mode: "default" });
         definirBancoNutricaoFornecimentos(banco);
         definirBancoNutricaoBatidas(banco);
+        definirBancoBatidasAntigas(banco);
         return;
       } catch (erro) {
         ultimo = erro instanceof Error ? erro.message : String(erro);
@@ -277,6 +343,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
   afterAll(async () => {
     definirBancoNutricaoFornecimentos(null);
     definirBancoNutricaoBatidas(null);
+    definirBancoBatidasAntigas(null);
     await pool?.end();
     await exec("docker", ["rm", "-f", CONTAINER], { windowsHide: true }).catch(() => undefined);
   });
@@ -392,9 +459,9 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
 
   it("batida confirmada baixa o ingrediente e congela o custo", async () => {
     await limpar();
-    const r = await nutricaoBatidasService.confirmar(1, "Principal", {
-      fazendaId: 10, dietaId: 1, data: "2026-11-01", quantidadePreparadaKg: 20,
-    }, HOJE, sessao(1, "nutricao.confirmar"));
+    const r = await nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(20), HOJE, sessao(1, "nutricao.confirmar"),
+    );
     expect(await saldo(1)).toBe(80);
     const [linhas] = await pool.query(
       "SELECT userId, custoTotalSnapshot, custoKgSnapshot FROM nutricao_batidas WHERE id = ?",
@@ -410,14 +477,13 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
 
   it("fornecimento da batida não baixa o estoque de novo", async () => {
     await limpar();
-    const batida = await nutricaoBatidasService.confirmar(1, "Principal", {
-      fazendaId: 10, dietaId: 1, data: "2026-11-01", quantidadePreparadaKg: 20,
-    }, HOJE, sessao(1, "nutricao.confirmar"));
+    const batida = await nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(20), HOJE, sessao(1, "nutricao.confirmar"),
+    );
     expect(await saldo(1)).toBe(80);
-    await nutricaoFornecimentosService.confirmar(2, "Ambos", {
-      fazendaId: 10, loteId: 1, tipoOrigem: "dieta", dietaId: 1,
-      origemOperacional: "batida", batidaId: batida.id, data: "2026-11-01", quantidadeFornecidaKg: 10,
-    }, HOJE, sessao(2, "nutricao.confirmar"));
+    await nutricaoFornecimentosService.confirmar(
+      2, "Ambos", pedidoDaBatida(batida.id, 10), HOJE, sessao(2, "nutricao.confirmar"),
+    );
     expect(await saldo(1)).toBe(80);
     expect(await contar("estoque_movimentacoes")).toBe(1);
   });
@@ -451,9 +517,9 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
 
   it("estorno da batida devolve o ingrediente", async () => {
     await limpar();
-    const r = await nutricaoBatidasService.confirmar(2, "Ambos", {
-      fazendaId: 10, dietaId: 1, data: "2026-11-01", quantidadePreparadaKg: 15,
-    }, HOJE, sessao(2, "nutricao.confirmar"));
+    const r = await nutricaoBatidasService.confirmar(
+      2, "Ambos", pedidoBatida(15), HOJE, sessao(2, "nutricao.confirmar"),
+    );
     expect(await saldo(1)).toBe(85);
     await nutricaoBatidasService.estornar(
       2, "Ambos", { id: r.id, motivo: "batida errada" }, HOJE, sessao(2, "nutricao.estornar"),
@@ -480,10 +546,9 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
 
   it("duas batidas do mesmo ingrediente não furam o saldo", async () => {
     await limpar();
-    const pedido = { fazendaId: 10, dietaId: 1, data: "2026-11-01", quantidadePreparadaKg: 60 };
     const corrida = await segurarEstoque(1, () => Promise.allSettled([
-      nutricaoBatidasService.confirmar(1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar")),
-      nutricaoBatidasService.confirmar(2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar")),
+      nutricaoBatidasService.confirmar(1, "Principal", pedidoBatida(60), HOJE, sessao(1, "nutricao.confirmar")),
+      nutricaoBatidasService.confirmar(2, "Ambos", pedidoBatida(60), HOJE, sessao(2, "nutricao.confirmar")),
     ]));
     expect(corrida.filter((item) => item.status === "fulfilled")).toHaveLength(1);
     expect(await saldo(1)).toBe(40);
@@ -493,9 +558,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
   it("batida e fornecimento disputam o mesmo insumo", async () => {
     await limpar();
     const corrida = await segurarEstoque(1, () => Promise.allSettled([
-      nutricaoBatidasService.confirmar(1, "Principal", {
-        fazendaId: 10, dietaId: 1, data: "2026-11-01", quantidadePreparadaKg: 60,
-      }, HOJE, sessao(1, "nutricao.confirmar")),
+      nutricaoBatidasService.confirmar(1, "Principal", pedidoBatida(60), HOJE, sessao(1, "nutricao.confirmar")),
       nutricaoFornecimentosService.confirmar(2, "Ambos", pedidoProduto(60), HOJE, sessao(2, "nutricao.confirmar")),
     ]));
     expect(corrida.filter((item) => item.status === "fulfilled")).toHaveLength(1);
@@ -545,7 +608,7 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
     expect(await contar("estoque_movimentacoes")).toBe(2);
   });
 
-  it("repetir a confirmação ainda grava outro fornecimento quando há saldo", async () => {
+  it("duas chaves diferentes do mesmo produto continuam sendo duas operações", async () => {
     await limpar();
     await nutricaoFornecimentosService.confirmar(
       1, "Principal", pedidoProduto(10), HOJE, sessao(1, "nutricao.confirmar"),
@@ -555,8 +618,6 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
     );
     expect(await saldo(1)).toBe(80);
     expect(await contar("nutricao_fornecimentos")).toBe(2);
-    const journal = readFileSync(new URL("../drizzle/migrations/meta/_journal.json", import.meta.url), "utf8");
-    expect(journal).not.toContain("0073_nutricao_idempotencia");
   });
 
   it("permissão revogada no meio impede a baixa", async () => {
@@ -647,6 +708,331 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
     expect(await contar("nutricao_fornecimentos")).toBe(0);
   });
 
+  it("a mesma chave de fornecimento não baixa o estoque de novo", async () => {
+    await limpar();
+    const pedido = pedidoProduto(10);
+    const primeira = await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    const segunda = await nutricaoFornecimentosService.confirmar(
+      2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar"),
+    );
+    expect(segunda.id).toBe(primeira.id);
+    expect(segunda.repetido).toBe(true);
+    expect(segunda.status).toBe("confirmado");
+    expect(await saldo(1)).toBe(90);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+    expect(await contar("estoque_movimentacoes")).toBe(1);
+  });
+
+  it("duas conexões com a mesma chave geram um só consumo", async () => {
+    await limpar();
+    const pedido = pedidoProduto(10);
+    const corrida = await segurarEstoque(1, () => Promise.allSettled([
+      nutricaoFornecimentosService.confirmar(1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar")),
+      nutricaoFornecimentosService.confirmar(2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar")),
+    ]));
+    const ok = corrida.filter((item) => item.status === "fulfilled") as PromiseFulfilledResult<{ id: number }>[];
+    expect(ok.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(ok.map((item) => item.value.id)).size).toBe(1);
+    expect(await saldo(1)).toBe(90);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+    expect(await contar("estoque_movimentacoes")).toBe(1);
+  });
+
+  it("a mesma chave com quantidade diferente é recusada", async () => {
+    await limpar();
+    const chave = `forn-${randomUUID()}`;
+    await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(10, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await expect(nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(12, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    )).rejects.toMatchObject({ code: "BAD_REQUEST", message: MSG_NUTRICAO_CHAVE_DIFERENTE });
+    expect(await saldo(1)).toBe(90);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+  });
+
+  it("titulares diferentes podem repetir a mesma chave", async () => {
+    await limpar();
+    const chave = `forn-${randomUUID()}`;
+    await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(5, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await nutricaoFornecimentosService.confirmar(
+      3, "Outro", pedidoProduto(5, { fazendaId: 30, loteId: 3, produtoId: 301, chaveOperacao: chave }), HOJE, sessao(3, "nutricao.confirmar"),
+    );
+    expect(await saldo(1)).toBe(95);
+    expect(await saldo(3)).toBe(45);
+    expect(await contar("nutricao_fornecimentos")).toBe(2);
+  });
+
+  it("falha antes do commit libera a chave para uma nova tentativa", async () => {
+    await limpar();
+    const chave = `forn-${randomUUID()}`;
+    await pool.query("UPDATE estoque SET quantidade = 4 WHERE id = 1");
+    await expect(nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(10, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    )).rejects.toBeTruthy();
+    expect(await contar("nutricao_fornecimentos")).toBe(0);
+    await pool.query("UPDATE estoque SET quantidade = 100 WHERE id = 1");
+    const r = await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(10, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    expect(r.repetido).toBe(false);
+    expect(await saldo(1)).toBe(90);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+  });
+
+  it("reenviar a chave depois do estorno não recria o consumo", async () => {
+    await limpar();
+    const pedido = pedidoProduto(10);
+    const r = await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await nutricaoFornecimentosService.estornar(
+      2, "Ambos", { id: r.id, motivo: "trato errado" }, HOJE, sessao(2, "nutricao.estornar"),
+    );
+    const deNovo = await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    expect(deNovo.id).toBe(r.id);
+    expect(deNovo.repetido).toBe(true);
+    expect(deNovo.status).toBe("estornado");
+    expect(await saldo(1)).toBe(100);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+    expect(await contar("estoque_movimentacoes")).toBe(2);
+  });
+
+  it("a mesma chave de batida não baixa o ingrediente de novo", async () => {
+    await limpar();
+    const pedido = pedidoBatida(20);
+    const primeira = await nutricaoBatidasService.confirmar(
+      1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    const segunda = await nutricaoBatidasService.confirmar(
+      2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar"),
+    );
+    expect(segunda.id).toBe(primeira.id);
+    expect(segunda.repetido).toBe(true);
+    expect(await saldo(1)).toBe(80);
+    expect(await contar("nutricao_batidas")).toBe(1);
+    expect(await contar("estoque_movimentacoes")).toBe(1);
+  });
+
+  it("duas conexões com a mesma chave de batida geram um só consumo", async () => {
+    await limpar();
+    const pedido = pedidoBatida(20);
+    const corrida = await segurarEstoque(1, () => Promise.allSettled([
+      nutricaoBatidasService.confirmar(1, "Principal", pedido, HOJE, sessao(1, "nutricao.confirmar")),
+      nutricaoBatidasService.confirmar(2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar")),
+    ]));
+    const ok = corrida.filter((item) => item.status === "fulfilled") as PromiseFulfilledResult<{ id: number }>[];
+    expect(ok.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(ok.map((item) => item.value.id)).size).toBe(1);
+    expect(await saldo(1)).toBe(80);
+    expect(await contar("nutricao_batidas")).toBe(1);
+  });
+
+  it("a mesma chave de batida com quantidade diferente é recusada", async () => {
+    await limpar();
+    const chave = `bat-${randomUUID()}`;
+    await nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(10, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await expect(nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(12, { chaveOperacao: chave }), HOJE, sessao(1, "nutricao.confirmar"),
+    )).rejects.toMatchObject({ message: MSG_NUTRICAO_CHAVE_DIFERENTE });
+    expect(await saldo(1)).toBe(90);
+    expect(await contar("nutricao_batidas")).toBe(1);
+  });
+
+  it("duas chaves de batida parecidas continuam sendo duas operações", async () => {
+    await limpar();
+    await nutricaoBatidasService.confirmar(1, "Principal", pedidoBatida(10), HOJE, sessao(1, "nutricao.confirmar"));
+    await nutricaoBatidasService.confirmar(1, "Principal", pedidoBatida(10), HOJE, sessao(1, "nutricao.confirmar"));
+    expect(await saldo(1)).toBe(80);
+    expect(await contar("nutricao_batidas")).toBe(2);
+  });
+
+  it("reenviar o fornecimento da batida não distribui duas vezes", async () => {
+    await limpar();
+    const batida = await nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(20), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    const pedido = pedidoDaBatida(batida.id, 10);
+    const primeira = await nutricaoFornecimentosService.confirmar(
+      2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar"),
+    );
+    const segunda = await nutricaoFornecimentosService.confirmar(
+      2, "Ambos", pedido, HOJE, sessao(2, "nutricao.confirmar"),
+    );
+    expect(segunda.id).toBe(primeira.id);
+    expect(await saldo(1)).toBe(80);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+    expect(await contar("estoque_movimentacoes")).toBe(1);
+  });
+
+  it("duas distribuições da mesma batida não passam do preparado", async () => {
+    await limpar();
+    const batida = await nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(20), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    const trava = await mysql.createConnection({
+      host: "127.0.0.1", port: PORTA, user: "root", password: SENHA, database: BANCO,
+    });
+    await trava.beginTransaction();
+    await trava.query("SELECT id FROM nutricao_batidas WHERE id = ? FOR UPDATE", [batida.id]);
+    const corrida = Promise.allSettled([
+      nutricaoFornecimentosService.confirmar(1, "Principal", pedidoDaBatida(batida.id, 15), HOJE, sessao(1, "nutricao.confirmar")),
+      nutricaoFornecimentosService.confirmar(2, "Ambos", pedidoDaBatida(batida.id, 15), HOJE, sessao(2, "nutricao.confirmar")),
+    ]);
+    await new Promise((resolver) => setTimeout(resolver, 250));
+    await trava.rollback();
+    await trava.end();
+    const resultados = await corrida;
+    expect(resultados.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(await contar("nutricao_fornecimentos")).toBe(1);
+    expect(await saldo(1)).toBe(80);
+  });
+
+  it("saída manual no meio da confirmação desfaz o lançamento", async () => {
+    await limpar();
+    const trava = await mysql.createConnection({
+      host: "127.0.0.1", port: PORTA, user: "root", password: SENHA, database: BANCO,
+    });
+    await trava.beginTransaction();
+    await trava.query("SELECT id FROM estoque WHERE id = 1 FOR UPDATE");
+    const andamento = nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(10), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await new Promise((resolver) => setTimeout(resolver, 250));
+    await trava.query("UPDATE estoque SET quantidade = 2 WHERE id = 1");
+    await trava.commit();
+    await trava.end();
+    await expect(andamento).rejects.toBeTruthy();
+    expect(await saldo(1)).toBe(2);
+    expect(await contar("nutricao_fornecimentos")).toBe(0);
+  });
+
+  it("tratamento que trava o mesmo produto desfaz a confirmação", async () => {
+    await limpar();
+    const trava = await mysql.createConnection({
+      host: "127.0.0.1", port: PORTA, user: "root", password: SENHA, database: BANCO,
+    });
+    await trava.beginTransaction();
+    await trava.query("SELECT id FROM estoque WHERE id = 1 FOR UPDATE");
+    const andamento = nutricaoBatidasService.confirmar(
+      1, "Principal", pedidoBatida(10), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    await new Promise((resolver) => setTimeout(resolver, 250));
+    await trava.query("UPDATE estoque SET quantidade = 1 WHERE id = 1");
+    await trava.commit();
+    await trava.end();
+    await expect(andamento).rejects.toBeTruthy();
+    expect(await saldo(1)).toBe(1);
+    expect(await contar("nutricao_batidas")).toBe(0);
+  });
+
+  it("sem a estrutura da proposta a confirmação não baixa estoque", async () => {
+    await limpar();
+    await pool.query("ALTER TABLE nutricao_fornecimentos DROP INDEX nutricao_fornecimentos_user_chave_uq");
+    await pool.query("ALTER TABLE nutricao_fornecimentos DROP COLUMN chaveOperacao, DROP COLUMN conteudoHash");
+    try {
+      await expect(nutricaoFornecimentosService.confirmar(
+        1, "Principal", pedidoProduto(10), HOJE, sessao(1, "nutricao.confirmar"),
+      )).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
+      expect(await saldo(1)).toBe(100);
+      expect(await contar("nutricao_fornecimentos")).toBe(0);
+    } finally {
+      await restaurarIdempotencia();
+    }
+  });
+
+  it("sem o índice único a confirmação não baixa estoque", async () => {
+    await limpar();
+    await pool.query("ALTER TABLE nutricao_batidas DROP INDEX nutricao_batidas_user_chave_uq");
+    try {
+      await expect(nutricaoBatidasService.confirmar(
+        1, "Principal", pedidoBatida(10), HOJE, sessao(1, "nutricao.confirmar"),
+      )).rejects.toMatchObject({ message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
+      expect(await saldo(1)).toBe(100);
+      expect(await contar("nutricao_batidas")).toBe(0);
+    } finally {
+      await restaurarIdempotencia();
+    }
+  });
+
+  it("coluna incompatível impede a confirmação", async () => {
+    await limpar();
+    await pool.query("ALTER TABLE nutricao_fornecimentos DROP INDEX nutricao_fornecimentos_user_chave_uq");
+    await pool.query("ALTER TABLE nutricao_fornecimentos DROP COLUMN chaveOperacao");
+    await pool.query("ALTER TABLE nutricao_fornecimentos ADD COLUMN chaveOperacao int NULL");
+    try {
+      await expect(nutricaoFornecimentosService.confirmar(
+        1, "Principal", pedidoProduto(10), HOJE, sessao(1, "nutricao.confirmar"),
+      )).rejects.toMatchObject({ message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
+      expect(await saldo(1)).toBe(100);
+    } finally {
+      await restaurarIdempotencia();
+    }
+  });
+
+  it("segunda aplicação da proposta não apaga a identidade já gravada", async () => {
+    await limpar();
+    await expect(pool.query(sentencasProposta()[0])).rejects.toBeTruthy();
+    const r = await nutricaoFornecimentosService.confirmar(
+      1, "Principal", pedidoProduto(10), HOJE, sessao(1, "nutricao.confirmar"),
+    );
+    expect(r.repetido).toBe(false);
+    expect(await saldo(1)).toBe(90);
+  });
+
+  it("cadastro e exclusão antigos de batida não gravam nem apagam", () => {
+    expect(() => recusarCadastroBatidaAntiga()).toThrow(MSG_BATIDA_ANTIGA_CADASTRO);
+    expect(() => recusarExclusaoBatidaAntiga()).toThrow(MSG_BATIDA_ANTIGA_EXCLUSAO);
+  });
+
+  it("consulta antiga mostra só o rascunho do titular", async () => {
+    await limpar();
+    await pool.query(`
+      INSERT INTO batidas (userId, data, quantidade, responsavel) VALUES
+        (1, '2026-11-01', 3, 'Titular'),
+        (2, '2026-11-01', 9, 'Funcionario')
+    `);
+    const linhas = await listarBatidasAntigas({ executorId: 1, sessionVersionDaSessao: 1 });
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]?.userId).toBe(1);
+    await expect(listarBatidasAntigas({ executorId: 2, sessionVersionDaSessao: 1 }))
+      .rejects.toMatchObject({ code: "FORBIDDEN", message: MSG_BATIDA_ANTIGA_LISTA });
+    await expect(listarBatidasAntigas({ executorId: 1, sessionVersionDaSessao: 9 }))
+      .rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    const [ainda] = await pool.query("SELECT userId FROM batidas ORDER BY userId");
+    expect((ainda as Array<{ userId: number }>).map((row) => row.userId)).toEqual([1, 2]);
+  });
+
+  it("fornecimento antigo no nome do funcionário não muda de dono", async () => {
+    await limpar();
+    await pool.query(`
+      INSERT INTO nutricao_fornecimentos
+        (userId, fazendaId, loteId, tipoOrigem, origemOperacional, data, quantidadeFornecidaKg, populacaoSnapshot, custoCompleto, status)
+      VALUES (2, 10, 1, 'produto', 'direta', '2026-11-01', 5, 1, 1, 'confirmado')
+    `);
+    const [linhas] = await pool.query("SELECT id FROM nutricao_fornecimentos");
+    const id = Number((linhas as Array<{ id: number }>)[0]?.id);
+    await expect(nutricaoFornecimentosService.estornar(
+      1, "Principal", { id, motivo: "antigo" }, HOJE, sessao(1, "nutricao.estornar"),
+    )).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(nutricaoFornecimentosService.estornar(
+      2, "Ambos", { id, motivo: "antigo" }, HOJE, sessao(2, "nutricao.estornar"),
+    )).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const [depois] = await pool.query("SELECT userId, status FROM nutricao_fornecimentos WHERE id = ?", [id]);
+    const row = (depois as Array<{ userId: number; status: string }>)[0];
+    expect(row.userId).toBe(2);
+    expect(row.status).toBe("confirmado");
+    expect(await saldo(1)).toBe(100);
+  });
+
   it("caminhos adaptados não usam o arquivo local", () => {
     const fornecimento = readFileSync(new URL("./nutricaoFornecimentos.ts", import.meta.url), "utf8");
     const batida = readFileSync(new URL("./nutricaoBatidas.ts", import.meta.url), "utf8");
@@ -669,6 +1055,21 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
       expect(tela).toContain("onError: e => toast.error(e.message)");
     }
     expect(form).toContain("nutricaoFornecimentos.confirmar");
+    expect(form).toContain("decidirChaveNutricao");
+    expect(form.split("chaveRef.current = null").length - 1).toBe(1);
     expect(formBat).toContain("nutricaoBatidas.confirmar");
+    expect(formBat).toContain("decidirChaveNutricao");
+    expect(formBat.split("chaveRef.current = null").length - 1).toBe(1);
+    expect(rotaForn).toContain("chaveOperacao");
+    expect(rotaBat).toContain("chaveOperacao");
+    const rotas = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
+    expect(rotas).toContain("recusarCadastroBatidaAntiga");
+    expect(rotas).toContain("recusarExclusaoBatidaAntiga");
+    expect(rotas).not.toContain("db.insert(batidas)");
+    expect(rotas).not.toContain("db.delete(batidas)");
+    const journal = readFileSync(new URL("../drizzle/migrations/meta/_journal.json", import.meta.url), "utf8");
+    expect(journal).not.toContain("0073_nutricao_idempotencia");
+    expect(existsSync(new URL("../drizzle/propostas/0073_nutricao_idempotencia.sql", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("../drizzle/migrations/0073_nutricao_idempotencia.sql", import.meta.url))).toBe(false);
   });
 });

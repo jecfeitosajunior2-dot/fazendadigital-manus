@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -13,6 +13,11 @@ import {
   MSG_BATIDA_SEM_DIETA_PREPARO,
   MSG_BATIDA_SEM_DIETA_PREPARO_COMPLEMENTO,
 } from "@shared/nutricaoDietas";
+import {
+  conteudoCanonicoBatida,
+  decidirChaveNutricao,
+  type EstadoChaveNutricao,
+} from "@shared/nutricaoIdempotencia";
 
 function hojeISO() {
   const n = new Date();
@@ -66,14 +71,29 @@ export default function NutricaoBatidaFormPage() {
   const { data: previewPack } = trpc.nutricaoBatidas.preview.useQuery(payload!, { enabled: payload != null });
   const preview = previewPack?.preview;
   const utils = trpc.useUtils();
+  const chaveRef = useRef<EstadoChaveNutricao | null>(null);
   const confirmar = trpc.nutricaoBatidas.confirmar.useMutation({
-    onSuccess: () => {
-      toast.success("Batida confirmada. Ingredientes baixados do estoque.");
+    onSuccess: (resultado) => {
+      chaveRef.current = null;
+      if (resultado.repetido && resultado.status === "estornado") {
+        toast.success("Esta batida já foi estornada. Nada foi consumido de novo.");
+      } else if (resultado.repetido) {
+        toast.success("Esta batida já estava confirmada.");
+      } else {
+        toast.success("Batida confirmada. Ingredientes baixados do estoque.");
+      }
       utils.nutricaoBatidas.list.invalidate();
       setLocation(`/nutricao/batidas?fazendaId=${fazendaId}`);
     },
     onError: e => toast.error(e.message),
   });
+  function confirmarComChave() {
+    if (!payload) return;
+    const conteudo = conteudoCanonicoBatida(payload);
+    const estado = decidirChaveNutricao(chaveRef.current, conteudo, "bat");
+    chaveRef.current = estado;
+    confirmar.mutate({ ...payload, chaveOperacao: estado.chave });
+  }
 
   const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/batidas", fazendaId));
 
@@ -209,7 +229,7 @@ export default function NutricaoBatidaFormPage() {
             <button
               type="button"
               disabled={!payload || previewPack?.ok === false || !preview?.podeConfirmar || confirmar.isPending}
-              onClick={() => payload && confirmar.mutate(payload)}
+              onClick={confirmarComChave}
               className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50"
               style={{ backgroundColor: FD_PRIMARY }}
             >

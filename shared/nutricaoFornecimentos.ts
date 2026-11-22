@@ -95,6 +95,7 @@ export type NutricaoFornInput = {
   hora?: string | null;
   quantidadeFornecidaKg: number;
   observacoes?: string | null;
+  chaveOperacao?: string | null;
 };
 
 export type NutricaoFornEstoqueRef = NutricaoPlanProdutoRef & {

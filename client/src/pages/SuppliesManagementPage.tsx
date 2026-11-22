@@ -23,7 +23,10 @@ export default function SuppliesManagementPage() {
     onSuccess: () => { toast.success("Batida registrada!"); setOpen(false); setForm({ data: "", quantidade: "", responsavel: "", observacoes: "" }); refetch(); },
     onError: (e) => toast.error(e.message),
   });
-  const deleteMutation = trpc.nutricao.deleteBatida.useMutation({ onSuccess: () => { toast.success("Registro excluído!"); refetch(); } });
+  const deleteMutation = trpc.nutricao.deleteBatida.useMutation({
+    onSuccess: () => { toast.success("Registro excluído!"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const handleSubmit = () => {
     if (!form.data) { toast.error("Data é obrigatória"); return; }

@@ -53,6 +53,17 @@ import {
   resolverDonoNutricao,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
+import { conteudoCanonicoBatida, MSG_NUTRICAO_SEM_IDEMPOTENCIA } from "../shared/nutricaoIdempotencia";
+import {
+  buscarConfirmacaoPorChave,
+  confirmarEmAndamento,
+  ehChaveDuplicada,
+  exigirEstruturaIdempotente,
+  exigirIdempotenciaOuRecusar,
+  gravarChaveNutricao,
+  prepararChaveNutricao,
+  responderConfirmacaoRepetida,
+} from "./nutricaoIdempotenciaMysql";
 
 let bancoBatidas: typeof dbPadrao = dbPadrao;
 
@@ -167,6 +178,8 @@ export type BatidaTx = {
   contarFornecimentosConfirmados(batidaId: number): Promise<number>;
   revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
   travarBatida?(id: number): Promise<{ status: string; userId: number; fazendaId: number } | null>;
+  exigirIdempotencia?(): Promise<void>;
+  gravarChave?(id: number, userId: number, chave: string, hash: string): Promise<void>;
 };
 
 export type BatidaStore = {
@@ -311,16 +324,27 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       sessao?: SessaoNutricao,
     ) {
       const { dono } = await resolverDonoNutricao(userId, input.fazendaId, sessao, bancoBatidas);
+      const preparada = sessao
+        ? prepararChaveNutricao("bat", input.chaveOperacao, conteudoCanonicoBatida(input))
+        : null;
+      if (preparada) {
+        await exigirIdempotenciaOuRecusar(bancoBatidas, "nutricao_batidas");
+        const ja = await buscarConfirmacaoPorChave(bancoBatidas, "nutricao_batidas", dono, preparada.chave);
+        if (ja) return responderConfirmacaoRepetida(ja, preparada.hash);
+      }
       const { check, preview, dieta } = await previewDe(dono, input, hojeISO, Boolean(sessao));
       if (!check.ok) toTrpc(check.message);
       if (!preview.podeConfirmar) toTrpc(preview.motivoBloqueio ?? MSG_BATIDA_SALDO);
 
-      const id = await store.transaction(async tx => {
+      let id: number;
+      try {
+      id = await store.transaction(async tx => {
         if (sessao) {
-          if (!tx.revalidar) {
-            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          if (!tx.revalidar || !tx.exigirIdempotencia || !tx.gravarChave) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
           }
           await tx.revalidar(sessao, input.fazendaId, dono);
+          await tx.exigirIdempotencia();
         }
         const batidaId = await tx.insertBatida({
           userId: dono,
@@ -338,6 +362,8 @@ export function createNutricaoBatidasService(store: BatidaStore) {
           motivoEstorno: null,
           observacaoEstorno: null,
         });
+
+        if (preparada) await tx.gravarChave!(batidaId, dono, preparada.chave, preparada.hash);
 
         await tx.insertIngredientes(preview.baixas.map((b, ordem) => ({
           batidaId,
@@ -382,8 +408,16 @@ export function createNutricaoBatidasService(store: BatidaStore) {
         }
         return batidaId;
       });
+      } catch (erro) {
+        if (preparada && ehChaveDuplicada(erro)) {
+          const ja = await buscarConfirmacaoPorChave(bancoBatidas, "nutricao_batidas", dono, preparada.chave);
+          if (!ja) confirmarEmAndamento();
+          return responderConfirmacaoRepetida(ja, preparada.hash);
+        }
+        throw erro;
+      }
 
-      return { success: true as const, id };
+      return { success: true as const, id, repetido: false as const, status: "confirmado" as const };
     },
 
     async estornar(
@@ -762,6 +796,12 @@ export const nutricaoBatidasStore: BatidaStore = {
         if (acesso.titularUserId !== donoEsperado) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Registro não encontrado." });
         }
+      },
+      async exigirIdempotencia() {
+        await exigirEstruturaIdempotente(tx, "nutricao_batidas");
+      },
+      async gravarChave(id, userId, chave, hash) {
+        await gravarChaveNutricao(tx, "nutricao_batidas", id, userId, chave, hash);
       },
       async travarBatida(id) {
         const [row] = await tx.select({

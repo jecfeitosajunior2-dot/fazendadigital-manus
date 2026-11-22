@@ -375,7 +375,7 @@ describe("nutricaoBatidas — rotas, schema e coexistência", () => {
     const src = readFileSync(new URL("../client/src/pages/NutricaoBatidaFormPage.tsx", import.meta.url), "utf8");
     expect(src).toContain("preview.useQuery");
     expect(src).toContain("confirmar.useMutation");
-    expect(src).toContain("confirmar.mutate(payload)");
+    expect(src).toContain("confirmar.mutate({ ...payload, chaveOperacao: estado.chave })");
     expect(src).toContain("A prévia não movimenta estoque");
   });
 

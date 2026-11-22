@@ -70,6 +70,7 @@ export type NutricaoBatidaInput = {
   hora?: string | null;
   quantidadePreparadaKg: number;
   observacoes?: string | null;
+  chaveOperacao?: string | null;
 };
 
 export type NutricaoBatidaFornecimentoRef = {

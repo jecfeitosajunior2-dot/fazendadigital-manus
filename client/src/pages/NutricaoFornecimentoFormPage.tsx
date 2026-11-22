@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import AppLayout from "@/components/AppLayout";
@@ -15,6 +15,11 @@ import {
 } from "@shared/nutricaoDietas";
 import { formatarMetaPlan } from "@shared/nutricaoPlanejamento";
 import { MSG_FORN_LOTE_VAZIO, MSG_FORN_SEM_PLAN } from "@shared/nutricaoFornecimentos";
+import {
+  conteudoCanonicoFornecimento,
+  decidirChaveNutricao,
+  type EstadoChaveNutricao,
+} from "@shared/nutricaoIdempotencia";
 
 function hojeISO() {
   const n = new Date();
@@ -110,17 +115,32 @@ export default function NutricaoFornecimentoFormPage() {
   const { data: previewPack } = trpc.nutricaoFornecimentos.preview.useQuery(payload!, { enabled: payload != null });
   const preview = previewPack?.preview;
   const utils = trpc.useUtils();
+  const chaveRef = useRef<EstadoChaveNutricao | null>(null);
   const confirmar = trpc.nutricaoFornecimentos.confirmar.useMutation({
-    onSuccess: () => {
-      toast.success(origemOp === "batida"
-        ? "Fornecimento confirmado. Nenhuma baixa de estoque — apenas distribuição da batida."
-        : "Fornecimento confirmado. Estoque atualizado.");
+    onSuccess: (resultado) => {
+      chaveRef.current = null;
+      if (resultado.repetido && resultado.status === "estornado") {
+        toast.success("Este fornecimento já foi estornado. Nada foi consumido de novo.");
+      } else if (resultado.repetido) {
+        toast.success("Este fornecimento já estava confirmado.");
+      } else {
+        toast.success(origemOp === "batida"
+          ? "Fornecimento confirmado. Nenhuma baixa de estoque — apenas distribuição da batida."
+          : "Fornecimento confirmado. Estoque atualizado.");
+      }
       utils.nutricaoFornecimentos.list.invalidate();
       utils.nutricaoBatidas.list.invalidate();
       setLocation(`/nutricao/fornecimentos?fazendaId=${fazendaId}`);
     },
     onError: e => toast.error(e.message),
   });
+  function confirmarComChave() {
+    if (!payload) return;
+    const conteudo = conteudoCanonicoFornecimento(payload);
+    const estado = decidirChaveNutricao(chaveRef.current, conteudo, "forn");
+    chaveRef.current = estado;
+    confirmar.mutate({ ...payload, chaveOperacao: estado.chave });
+  }
 
   const voltarLista = () => setLocation(listaNutricaoComFazenda("/nutricao/fornecimentos", fazendaId));
 
@@ -344,7 +364,7 @@ export default function NutricaoFornecimentoFormPage() {
             <button
               type="button"
               disabled={!payload || exigePreparoDireto || previewPack?.ok === false || !preview?.podeConfirmar || confirmar.isPending}
-              onClick={() => payload && confirmar.mutate(payload)}
+              onClick={confirmarComChave}
               className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50"
               style={{ backgroundColor: FD_PRIMARY }}
             >

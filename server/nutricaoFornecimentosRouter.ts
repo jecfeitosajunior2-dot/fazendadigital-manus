@@ -51,7 +51,7 @@ export const nutricaoFornecimentosRouter = router({
     .query(({ ctx, input }) => nutricaoFornecimentosService.preview(ctx.user.id, input)),
 
   confirmar: protectedProcedure
-    .input(fornInput)
+    .input(fornInput.extend({ chaveOperacao: z.string().min(8).max(80) }))
     .mutation(({ ctx, input }) => {
       const registradoPor = ctx.user.name?.trim() || ctx.user.email?.trim() || "Usuário";
       const sessao: SessaoNutricao = {
