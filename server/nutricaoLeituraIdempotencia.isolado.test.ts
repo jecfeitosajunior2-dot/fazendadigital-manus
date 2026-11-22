@@ -14,7 +14,7 @@ import {
   MSG_NUTRICAO_CHAVE_INVALIDA,
   MSG_NUTRICAO_SEM_IDEMPOTENCIA,
 } from "../shared/nutricaoIdempotencia";
-import { MSG_LEITURA_COCHO_INATIVO, MSG_LEITURA_FORN_ESTORNADO, type NutricaoLeituraInput } from "../shared/nutricaoCochoLeituras";
+import { MSG_LEITURA_COCHO_INATIVO, MSG_LEITURA_FORN_ESTORNADO, MSG_LEITURA_HORA, type NutricaoLeituraInput } from "../shared/nutricaoCochoLeituras";
 import { env } from "./_core/env";
 import { afirmarBancoDescartavel } from "./isolamentoMysql";
 import { definirBancoNutricaoCochoLeituras, nutricaoCochoLeiturasService } from "./nutricaoCochoLeituras";
@@ -263,6 +263,32 @@ describe.sequential("idempotência da leitura de cocho", () => {
     expect(router).toContain("chaveOperacao");
     expect(readFileSync(new URL("../drizzle/propostas/0074_nutricao_leitura_idempotencia.sql", import.meta.url), "utf8"))
       .toContain("nutricao_cocho_leituras_user_chave_uq");
+  });
+
+  it("hora inválida não vira ausência nem reaproveita a leitura sem hora", async () => {
+    await limpar();
+    const chave = `lei-${randomUUID()}`;
+    const criada = await nutricaoCochoLeiturasService.criar(
+      2, leitura({ chaveOperacao: chave, hora: null }), HOJE, sessao(2, "nutricao.criar"),
+    );
+    expect(await texto(nutricaoCochoLeiturasService.criar(
+      2, leitura({ chaveOperacao: chave, hora: "17:00:00" }), HOJE, sessao(2, "nutricao.criar"),
+    ))).toBe(MSG_LEITURA_HORA);
+    expect(await texto(nutricaoCochoLeiturasService.criar(
+      2, leitura({ chaveOperacao: chave, hora: "25:99" }), HOJE, sessao(2, "nutricao.criar"),
+    ))).toBe(MSG_LEITURA_HORA);
+    const deNovo = await nutricaoCochoLeiturasService.criar(
+      2, leitura({ chaveOperacao: chave, hora: "   " }), HOJE, sessao(2, "nutricao.criar"),
+    );
+    expect(deNovo).toMatchObject({ id: criada.id, repetido: true });
+    expect(await contar()).toBe(1);
+    const [linha] = await pool.query("SELECT hora FROM nutricao_cocho_leituras WHERE id = ?", [criada.id]);
+    expect((linha as Array<{ hora: string | null }>)[0].hora).toBeNull();
+    expect(await texto(nutricaoCochoLeiturasService.criar(
+      2, leitura({ hora: "25:99" }), HOJE, sessao(2, "nutricao.criar"),
+    ))).toBe(MSG_LEITURA_HORA);
+    expect(await contar()).toBe(1);
+    expect(await saldo()).toBe(100);
   });
 
   it("duas leituras iguais com chaves diferentes ficam separadas", async () => {

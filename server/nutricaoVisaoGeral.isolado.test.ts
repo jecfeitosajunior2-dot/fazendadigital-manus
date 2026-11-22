@@ -268,9 +268,11 @@ describe.sequential("visão geral e identidade da leitura no mysql descartável"
     expect(src).toContain("resolverDonoNutricao");
     expect(src).not.toMatch(/insert\(|update\(|delete\(|debitarEstoque|creditarEstoque/);
     expect(app).not.toContain("SuppliesManagementPage");
-    expect(antiga).toContain("nutricao.listBatidas");
-    expect(antiga).toContain("nutricao.createBatida");
-    expect(antiga).toContain("nutricao.deleteBatida");
+    expect(antiga).toContain("Este cadastro foi encerrado.");
+    expect(antiga).toContain("/nutricao/batidas");
+    expect(antiga).not.toContain("nutricao.createBatida");
+    expect(antiga).not.toContain("nutricao.deleteBatida");
+    expect(antiga).not.toContain("nutricao.listBatidas");
     expect(rotas).toContain("recusarCadastroBatidaAntiga");
     expect(rotas).toContain("recusarExclusaoBatidaAntiga");
     expect(rotas).toContain("listarBatidasAntigas");

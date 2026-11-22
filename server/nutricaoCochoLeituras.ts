@@ -12,6 +12,7 @@ import {
   consumoFornCicloJaFechado,
   MSG_LEITURA_CANCELADA,
   MSG_LEITURA_COCHO,
+  MSG_LEITURA_HORA,
   MSG_LEITURA_COCHO_FAZENDA,
   MSG_LEITURA_NAO_EDITAR,
   MSG_LEITURA_NAO_ENCONTRADA,
@@ -24,7 +25,7 @@ import {
   type NutricaoLeituraInput,
   type NutricaoLeituraStatus,
 } from "../shared/nutricaoCochoLeituras";
-import { conteudoCanonicoLeitura, MSG_NUTRICAO_SEM_IDEMPOTENCIA } from "../shared/nutricaoIdempotencia";
+import { conteudoCanonicoLeitura, horaLeituraInformadaInvalida, MSG_NUTRICAO_SEM_IDEMPOTENCIA } from "../shared/nutricaoIdempotencia";
 import { hojeISODateLocal, normalizarDataCivil, type NutricaoPlanLoteRef } from "../shared/nutricaoPlanejamento";
 import { db as dbPadrao } from "./db";
 import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
@@ -356,6 +357,7 @@ export function createNutricaoCochoLeiturasService(store: LeituraStore) {
         return { success: true as const, id, repetido: false as const, status: "ativa" as const };
       }
       const dono = await donoConsulta(userId, input.fazendaId, sessao);
+      if (horaLeituraInformadaInvalida(input.hora)) toTrpc(MSG_LEITURA_HORA);
       const preparada = prepararChaveNutricao("lei", input.chaveOperacao, conteudoCanonicoLeitura(input));
       await exigirIdempotenciaOuRecusar(bancoLeituras, "nutricao_cocho_leituras");
       const ja = await buscarConfirmacaoPorChave(

@@ -98,6 +98,19 @@ export type ConteudoLeitura = {
   observacoes?: string | null;
 };
 
+/** Hora em branco continua opcional. Hora escrita e inválida não vira ausência. */
+export function horaLeituraInformadaInvalida(hora?: string | null): boolean {
+  if (hora == null) return false;
+  const texto = String(hora).trim();
+  if (!texto) return false;
+  return normalizarHoraFornecimento(texto) == null;
+}
+
+function horaCanonicoLeitura(hora?: string | null): string | null {
+  if (hora == null || String(hora).trim() === "") return null;
+  return normalizarHoraFornecimento(hora) ?? `invalida:${String(hora).trim()}`;
+}
+
 export function conteudoCanonicoLeitura(input: ConteudoLeitura): string {
   const bruto = input.sobraKg == null || input.sobraKg === ("" as unknown) ? null : Number(input.sobraKg);
   return JSON.stringify({
@@ -106,7 +119,7 @@ export function conteudoCanonicoLeitura(input: ConteudoLeitura): string {
     loteId: numOuNulo(input.loteId),
     fornecimentoId: numOuNulo(input.fornecimentoId),
     data: String(input.data).slice(0, 10),
-    hora: normalizarHoraFornecimento(input.hora ?? null),
+    hora: horaCanonicoLeitura(input.hora),
     sobraKg: bruto == null || !Number.isFinite(bruto) ? null : bruto.toFixed(3),
     escore: normalizarEscore(input.escore),
     observacoes: String(input.observacoes ?? "").trim() || null,
