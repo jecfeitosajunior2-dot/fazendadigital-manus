@@ -356,7 +356,7 @@ export default function MaquinasListPage() {
     typeof uiInicial.sortAsc === "boolean" ? uiInicial.sortAsc : true,
   );
 
-  const { data: list = [], isLoading, refetch } = trpc.maquinas.list.useQuery();
+  const { data: list = [], isLoading, isError: listErro, error: listError, refetch } = trpc.maquinas.list.useQuery();
   const { data: fazendas = [], isLoading: loadingFazendas } = trpc.fazendas.list.useQuery();
   const {
     data: idsComVinculo = [],
@@ -724,7 +724,7 @@ export default function MaquinasListPage() {
   }, [fazendaSelecionadaNome]);
 
   const emptyTotal =
-    fazendaSelecionada && !isLoading && maquinasDaFazenda.length === 0;
+    fazendaSelecionada && !isLoading && !listErro && maquinasDaFazenda.length === 0;
   const emptyFiltro =
     fazendaSelecionada && !isLoading && maquinasDaFazenda.length > 0 && filtered.length === 0;
   const isEmptySemFazenda = !fazendaSelecionada && fazendaInitDone;
@@ -1094,6 +1094,13 @@ export default function MaquinasListPage() {
                         className="px-4 py-10 text-center text-gray-400 align-middle"
                       >
                     Carregando...
+                  </td>
+                </tr>
+              )}
+              {listErro && (
+                <tr>
+                  <td colSpan={colCount} className="px-4 py-10 text-center text-red-700 align-middle">
+                    {listError?.message ?? "As máquinas não puderam ser carregadas."}
                   </td>
                 </tr>
               )}

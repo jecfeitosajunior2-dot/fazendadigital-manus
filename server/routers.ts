@@ -130,13 +130,13 @@ import {
 } from "../shared/manutencaoPecasOrigem";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA, isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
+import { maquinasOperacao, MSG_MAQUINA_SEM_MYSQL, type PermissaoMaquina } from "./maquinasOperacao";
 import { compraInsumosService } from "./compraInsumosMysql";
 import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
 import { animalPertenceFazenda, buildLoteFazendaContext, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
   createLocalFazenda,
   createLocalBenfeitoria,
-  createLocalMaquina,
   createLocalAbastecimento,
   createLocalManutencao,
   deleteLocalFazenda,
@@ -154,7 +154,6 @@ import {
   listLocalFazendas,
   listLocalPastos,
   listLocalBenfeitorias,
-  listLocalMaquinas,
   listLocalAbastecimentos,
   listLocalManutencoes,
   listLocalAnimais,
@@ -4920,17 +4919,7 @@ async function assertMaquinaSemDuplicidade(opts: {
       .where(and(eq(maquinas.userId, opts.userId), eq(maquinas.fazendaId, opts.fazendaId)));
   } catch (error) {
     if (!isDatabaseUnavailable(error)) throw error;
-    const locais = await listLocalMaquinas(opts.userId);
-    rows = locais
-      .filter(m => Number(m.fazendaId) === opts.fazendaId)
-      .map(m => ({
-        id: m.id,
-        nome: m.nome ?? null,
-        placa: m.placa ?? null,
-        status: m.status ?? null,
-        dataDesativacao: m.dataDesativacao ?? null,
-        fazendaId: m.fazendaId ?? null,
-      }));
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
   }
 
   const nomeNorm = opts.nome.trim().toLowerCase();
@@ -5011,10 +5000,22 @@ const maquinasInputFields = {
   tipoMedidor: TIPOS_MEDIDOR_Z,
 };
 
+function sessaoMaquina(
+  user: { id: number; sessionVersion?: number | null },
+  permissaoId: PermissaoMaquina,
+) {
+  return {
+    executorId: user.id,
+    sessionVersionDaSessao: user.sessionVersion ?? null,
+    permissaoId,
+  };
+}
+
 const maquinasRouter = router({
   // ── Gera planilha-modelo para importação de maquinários ──────────────────────────
   gerarModeloPlanilha: protectedProcedure
-    .mutation(async () => {
+    .mutation(async ({ ctx }) => {
+      await maquinasOperacao.exigirPermissao(sessaoMaquina(ctx.user, "maquinas.criar"));
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = (ExcelJSModule as any).default ?? ExcelJSModule;
       const {
@@ -5178,45 +5179,15 @@ const maquinasRouter = router({
       return { base64, filename: 'modelo_importacao_maquinarios.xlsx' };
     }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const locais = await listLocalMaquinas(ctx.user.id).catch(() => [] as Awaited<ReturnType<typeof listLocalMaquinas>>);
-    try {
-      const rows = await db
-        .select()
-        .from(maquinas)
-        .where(eq(maquinas.userId, ctx.user.id))
-        .orderBy(desc(maquinas.createdAt));
-      if (locais.length === 0) return rows;
-      const localById = new Map(locais.map(m => [m.id, m]));
-      const merged = rows.map(row => mergeMaquinaDbComLocal(row, localById.get(row.id)));
-      const rowIds = new Set(rows.map(r => r.id));
-      for (const local of locais) {
-        if (!rowIds.has(local.id)) merged.push(local as (typeof rows)[number]);
-      }
-      return merged.sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt));
-    } catch (error) {
-      if (!isDatabaseUnavailable(error)) throw error;
-      return locais;
-    }
-  }),
+  list: protectedProcedure.query(({ ctx }) =>
+    maquinasOperacao.listar(sessaoMaquina(ctx.user, "maquinas.visualizar")),
+  ),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      const local = await getLocalMaquina(ctx.user.id, input.id).catch(() => null);
-      try {
-        const [row] = await db.select().from(maquinas).where(
-          and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id))
-        );
-        if (!row && !local) return null;
-        if (!row) return local;
-        if (!local) return row;
-        return mergeMaquinaDbComLocal(row, local);
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return local;
-      }
-    }),
+    .query(({ ctx, input }) =>
+      maquinasOperacao.obter(sessaoMaquina(ctx.user, "maquinas.visualizar"), input.id),
+    ),
 
   create: protectedProcedure
     .input(z.object(maquinasInputFields))
@@ -5271,13 +5242,6 @@ const maquinasRouter = router({
         }
       }
 
-      await assertMaquinaSemDuplicidade({
-        userId: ctx.user.id,
-        fazendaId: input.fazendaId,
-        nome: nomeTrim,
-        placa: placaNorm,
-      });
-
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       const anoFromData = dataAquisicao?.trim()
         ? parseInt(dataAquisicao.slice(0, 4), 10)
@@ -5300,26 +5264,13 @@ const maquinasRouter = router({
         imagem3: img3,
       };
 
+      const gravado = await maquinasOperacao.criar(sessaoMaquina(ctx.user, "maquinas.criar"), row);
       try {
-        const result = await db.insert(maquinas).values(row);
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-        if (Number.isFinite(id) && id > 0) {
-          try {
-            await updateLocalMaquina(ctx.user.id, id, row);
-          } catch (mirrorError) {
-            console.warn("[maquinas.create] Espelho local não gravado:", mirrorError);
-          }
-        }
-        return { success: true, id };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        if (isDatabaseUnavailable(err)) {
-          const result = await createLocalMaquina(ctx.user.id, row);
-          return { success: true, id: result.id, localFallback: true };
-        }
-        console.error("[maquinas.create]", err);
-        throw new Error("Não foi possível salvar a máquina. Verifique os dados e tente novamente.");
+        await updateLocalMaquina(gravado.userId, gravado.id, { ...row, userId: gravado.userId });
+      } catch (mirrorError) {
+        console.warn("[maquinas.create] Espelho local não gravado:", mirrorError);
       }
+      return { success: true, id: gravado.id };
     }),
 
   update: protectedProcedure
@@ -5343,22 +5294,7 @@ const maquinasRouter = router({
         ...rest
       } = input;
 
-      let existing: Record<string, any> | null = null;
-      let usingLocal = false;
-      try {
-        const [row] = await db
-          .select()
-          .from(maquinas)
-          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
-        existing = row ?? null;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        usingLocal = true;
-      }
-      if (!existing) {
-        existing = await getLocalMaquina(ctx.user.id, id);
-        if (existing) usingLocal = true;
-      }
+      const existing = await maquinasOperacao.ler(sessaoMaquina(ctx.user, "maquinas.editar"), id);
       if (!existing) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
       }
@@ -5401,16 +5337,6 @@ const maquinasRouter = router({
         }
       }
 
-      if (nextFazendaId) {
-        await assertMaquinaSemDuplicidade({
-          userId: ctx.user.id,
-          fazendaId: nextFazendaId,
-          nome: nextNome,
-          placa: nextPlaca,
-          excludeId: id,
-        });
-      }
-
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
       const leitura =
         horimetro !== undefined
@@ -5451,214 +5377,70 @@ const maquinasRouter = router({
         imagem3: img3,
       };
 
-      // Sempre grava no espelho local primeiro — fonte confiável com MySQL offline.
-      await updateLocalMaquina(ctx.user.id, id, patch);
-      const localAfter = await getLocalMaquina(ctx.user.id, id);
-
-      if (usingLocal) {
-        return {
-          success: true,
-          localFallback: true,
-          maquina: localAfter ?? { ...existing, ...patch, id, userId: ctx.user.id },
-        };
-      }
-
+      const gravado = await maquinasOperacao.editar(
+        sessaoMaquina(ctx.user, "maquinas.editar"),
+        id,
+        patch,
+        { nome: nextNome, placa: nextPlaca ?? null, fazendaId: nextFazendaId ?? null },
+      );
       try {
-        await db
-          .update(maquinas)
-          .set({ ...patch, updatedAt: new Date() })
-          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
-        const [row] = await db
-          .select()
-          .from(maquinas)
-          .where(and(eq(maquinas.id, id), eq(maquinas.userId, ctx.user.id)));
-        return {
-          success: true,
-          maquina: mergeMaquinaDbComLocal(row ?? { ...existing, ...patch, id }, localAfter),
-        };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        if (isDatabaseUnavailable(err)) {
-          return {
-            success: true,
-            localFallback: true,
-            maquina: localAfter ?? { ...existing, ...patch, id, userId: ctx.user.id },
-          };
-        }
-        throw err;
+        await updateLocalMaquina(gravado.maquina.userId, id, patch);
+      } catch (mirrorError) {
+        console.warn("[maquinas.update] Espelho local não gravado:", mirrorError);
       }
+      return { success: true, maquina: gravado.maquina };
     }),
 
   inativar: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const patch = {
-        status: "inativo" as const,
-        dataDesativacao: new Date(),
-      };
+      const gravado = await maquinasOperacao.inativar(sessaoMaquina(ctx.user, "maquinas.inativar"), input.id);
       try {
-        const [existing] = await db
-          .select({ id: maquinas.id })
-          .from(maquinas)
-          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
-          .limit(1);
-        if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-        }
-        await db
-          .update(maquinas)
-          .set(patch)
-          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
-        try {
-          await updateLocalMaquina(ctx.user.id, input.id, {
-            status: "inativo",
-            dataDesativacao: new Date().toISOString().slice(0, 10),
-          });
-        } catch (mirrorError) {
-          console.warn("[maquinas.inativar] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        if (isDatabaseUnavailable(err)) {
-          const local = await getLocalMaquina(ctx.user.id, input.id);
-          if (!local) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-          }
-          await updateLocalMaquina(ctx.user.id, input.id, {
-            status: "inativo",
-            dataDesativacao: new Date().toISOString().slice(0, 10),
-          });
-          return { success: true, localFallback: true };
-        }
-        throw err;
+        await updateLocalMaquina(ctx.user.id, input.id, {
+          status: "inativo",
+          dataDesativacao: new Date().toISOString().slice(0, 10),
+        });
+      } catch (mirrorError) {
+        console.warn("[maquinas.inativar] Espelho local não gravado:", mirrorError);
       }
+      return gravado;
     }),
 
   reativar: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const patch = {
-        status: "ativo" as const,
-        dataDesativacao: null,
-      };
+      const gravado = await maquinasOperacao.reativar(sessaoMaquina(ctx.user, "maquinas.inativar"), input.id);
       try {
-        const [existing] = await db
-          .select({ id: maquinas.id })
-          .from(maquinas)
-          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
-          .limit(1);
-        if (!existing) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-        }
-        await db
-          .update(maquinas)
-          .set(patch)
-          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
-        try {
-          await updateLocalMaquina(ctx.user.id, input.id, {
-            status: "ativo",
-            dataDesativacao: null,
-          });
-        } catch (mirrorError) {
-          console.warn("[maquinas.reativar] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true };
-      } catch (err) {
-        if (err instanceof TRPCError) throw err;
-        if (isDatabaseUnavailable(err)) {
-          const local = await getLocalMaquina(ctx.user.id, input.id);
-          if (!local) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-          }
-          await updateLocalMaquina(ctx.user.id, input.id, {
-            status: "ativo",
-            dataDesativacao: null,
-          });
-          return { success: true, localFallback: true };
-        }
-        throw err;
+        await updateLocalMaquina(ctx.user.id, input.id, { status: "ativo", dataDesativacao: null });
+      } catch (mirrorError) {
+        console.warn("[maquinas.reativar] Espelho local não gravado:", mirrorError);
       }
+      return gravado;
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const gravado = await maquinasOperacao.excluir(sessaoMaquina(ctx.user, "maquinas.inativar"), input.id);
       try {
-        const [existing] = await db
-          .select({ id: maquinas.id })
-          .from(maquinas)
-          .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)))
-          .limit(1);
-        if (!existing) {
-          const local = await getLocalMaquina(ctx.user.id, input.id);
-          if (!local) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-          }
-        }
-
-        // Revalida sempre no momento da exclusão (concorrência / vínculo novo).
-        await assertMaquinaSemVinculos(ctx.user.id, input.id);
-
-        if (existing) {
-          await db
-            .delete(maquinas)
-            .where(and(eq(maquinas.id, input.id), eq(maquinas.userId, ctx.user.id)));
-        }
-        try {
-          await deleteLocalMaquina(ctx.user.id, input.id);
-        } catch (mirrorError) {
-          console.warn("[maquinas.delete] Espelho local não removido:", mirrorError);
-        }
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (isDatabaseUnavailable(error)) {
-          // Offline: não há espelho local de abastecimentos/manutenções.
-          // Permite excluir só o cadastro local (sem apagar históricos remotos inexistentes aqui).
-          const local = await getLocalMaquina(ctx.user.id, input.id);
-          if (!local) {
-            throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-          }
-          await deleteLocalMaquina(ctx.user.id, input.id);
-          return { success: true, localFallback: true };
-        }
-        throw error;
+        await deleteLocalMaquina(ctx.user.id, input.id);
+      } catch (mirrorError) {
+        console.warn("[maquinas.delete] Espelho local não removido:", mirrorError);
       }
+      return gravado;
     }),
 
-  /** IDs de máquinas com abastecimento, manutenção ou histórico operacional. */
-  idsComVinculo: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      return await listMaquinaIdsComVinculo(ctx.user.id);
-    } catch (error) {
-      if (isDatabaseUnavailable(error)) {
-        // Offline: sem tabelas locais de vínculo operacional → nenhum ID bloqueado.
-        return [] as number[];
-      }
-      throw error;
-    }
-  }),
+  /** IDs de máquinas com abastecimento ou manutenção, só das fazendas concedidas. */
+  idsComVinculo: protectedProcedure.query(({ ctx }) =>
+    maquinasOperacao.idsComVinculo(sessaoMaquina(ctx.user, "maquinas.visualizar")),
+  ),
 
   /** Checagem pontual antes de abrir o modal / confirmar exclusão. */
   podeExcluir: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        await assertMaquinaSemVinculos(ctx.user.id, input.id);
-        return { podeExcluir: true as const };
-      } catch (error) {
-        if (error instanceof TRPCError && error.message === MSG_MAQUINA_COM_VINCULOS) {
-          return { podeExcluir: false as const };
-        }
-        if (error instanceof TRPCError) throw error;
-        if (isDatabaseUnavailable(error)) {
-          // Offline: cadastro local pode ser excluído (sem histórico operacional local).
-          return { podeExcluir: true as const };
-        }
-        throw error;
-      }
-    }),
+    .query(({ ctx, input }) =>
+      maquinasOperacao.podeExcluir(sessaoMaquina(ctx.user, "maquinas.visualizar"), input.id),
+    ),
 
   // ── Valida linhas antes de importar maquinários ──────────────────────────────
   validarImportacao: protectedProcedure
@@ -5667,13 +5449,10 @@ const maquinasRouter = router({
       fazendaId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const MSG_FAZENDA =
-        "Selecione uma Fazenda válida antes de importar máquinas.";
-
-      const fazendaOk = await fazendaExisteParaImportacao(ctx.user.id, input.fazendaId);
-      if (!fazendaOk) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FAZENDA });
-      }
+      const acesso = await maquinasOperacao.exigirFazenda(
+        sessaoMaquina(ctx.user, "maquinas.criar"),
+        input.fazendaId,
+      );
 
       const {
         normalizarLinha,
@@ -5716,18 +5495,10 @@ const maquinasRouter = router({
             dataDesativacao: maquinas.dataDesativacao,
           })
           .from(maquinas)
-          .where(and(eq(maquinas.userId, ctx.user.id), eq(maquinas.fazendaId, input.fazendaId)));
+          .where(and(eq(maquinas.userId, acesso.titularUserId), eq(maquinas.fazendaId, input.fazendaId)));
       } catch (error) {
         if (!isDatabaseUnavailable(error)) throw error;
-        const locais = await listLocalMaquinas(ctx.user.id);
-        existentes = locais
-          .filter(m => Number(m.fazendaId) === input.fazendaId)
-          .map(m => ({
-            nome: m.nome ?? null,
-            placa: m.placa ?? null,
-            status: m.status ?? null,
-            dataDesativacao: m.dataDesativacao ?? null,
-          }));
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
       }
 
       const nomesBanco = new Set(
@@ -6029,13 +5800,10 @@ const maquinasRouter = router({
       fazendaId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const MSG_FAZENDA =
-        "Selecione uma Fazenda válida antes de importar máquinas.";
-
-      const fazendaOk = await fazendaExisteParaImportacao(ctx.user.id, input.fazendaId);
-      if (!fazendaOk) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_FAZENDA });
-      }
+      const acesso = await maquinasOperacao.exigirFazenda(
+        sessaoMaquina(ctx.user, "maquinas.criar"),
+        input.fazendaId,
+      );
 
       // Revalida o arquivo inteiro antes de gravar — sem importação parcial
       const {
@@ -6233,7 +6001,7 @@ const maquinasRouter = router({
         try {
           const placaNorm = p.placa ? normalizePlacaIdent(p.placa) : undefined;
           await assertMaquinaSemDuplicidade({
-            userId: ctx.user.id,
+            userId: acesso.titularUserId,
             fazendaId: input.fazendaId,
             nome: p.nome,
             placa: placaNorm,
@@ -6244,7 +6012,7 @@ const maquinasRouter = router({
             : undefined;
 
           const rowPayload = {
-            userId: ctx.user.id,
+            userId: acesso.titularUserId,
             fazendaId: input.fazendaId,
             nome: p.nome,
             tipo: p.tipo,
@@ -6279,11 +6047,7 @@ const maquinasRouter = router({
             }
           } catch (dbErr) {
             if (!isDatabaseUnavailable(dbErr)) throw dbErr;
-            const created = await createLocalMaquina(ctx.user.id, {
-              ...rowPayload,
-              nome: rowPayload.nome,
-            });
-            importados.push(created.id);
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
           }
         } catch (err: any) {
           rejeitados.push({ linha: p.numLinha, mensagem: formatImportDbError(err) });
