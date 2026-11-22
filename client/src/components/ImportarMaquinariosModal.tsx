@@ -240,6 +240,10 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
         onSuccess: (res) => {
           setResultado(res);
           setEtapa('resultado');
+          if (res.rejeitados > 0) {
+            toast.error('A importação não foi concluída.');
+            return;
+          }
           utils.maquinas.list.invalidate();
           onImportado?.();
         },
@@ -540,7 +544,7 @@ export const ImportarMaquinariosModal: React.FC<Props> = ({
             className="text-[18px] font-semibold text-gray-900"
             style={{ fontFamily: 'Fraunces, serif' }}
           >
-            {sucesso ? 'Importação concluída!' : 'Importação concluída com avisos'}
+            {sucesso ? 'Importação concluída!' : 'A importação não foi concluída.'}
           </h3>
         </div>
 

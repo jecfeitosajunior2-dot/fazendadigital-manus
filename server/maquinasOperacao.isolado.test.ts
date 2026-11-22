@@ -19,6 +19,7 @@ import {
   MSG_MAQUINA_PLACA,
   MSG_MAQUINA_SEM_MYSQL,
   MSG_MAQUINA_SEM_PERMISSAO,
+  MSG_MAQUINA_TRANSFERENCIA,
   type SessaoMaquina,
 } from "./maquinasOperacao";
 
@@ -396,37 +397,46 @@ describe.sequential("máquinas no mysql descartável", () => {
 
   it("mudar de fazenda exige as duas e preserva abastecimento e manutenção", async () => {
     await limpar();
-    const gravado = await maquinasOperacao.criar(sessao(2, "maquinas.criar"), ficha());
+    const comManutencao = await maquinasOperacao.criar(sessao(2, "maquinas.criar"), ficha());
     await pool.query(
       "INSERT INTO abastecimentos (userId, maquinaId, data, combustivel, litros, fazendaId, horimetro, valorTotal) VALUES (1, ?, '2026-11-22', 'diesel', 40, 10, '100', 200)",
-      [gravado.id],
+      [comManutencao.id],
     );
     await pool.query(
       "INSERT INTO manutencoes (userId, maquinaId, tipo, data, custo, horimetro, valorTotal) VALUES (1, ?, 'preventiva', '2026-11-22', 80, '100', 80)",
-      [gravado.id],
+      [comManutencao.id],
     );
     await expect(maquinasOperacao.editar(
       sessao(5, "maquinas.editar"),
-      gravado.id,
+      comManutencao.id,
       { fazendaId: 20 },
       { nome: "Trator Norte", placa: "TRT10", fazendaId: 20 },
     )).rejects.toMatchObject({ message: MSG_MAQUINA_SEM_PERMISSAO });
-    const mudou = await maquinasOperacao.editar(
+    await expect(maquinasOperacao.editar(
       sessao(2, "maquinas.editar"),
-      gravado.id,
+      comManutencao.id,
       { fazendaId: 20 },
       { nome: "Trator Norte", placa: "TRT10", fazendaId: 20 },
+    )).rejects.toMatchObject({ message: MSG_MAQUINA_TRANSFERENCIA });
+    expect((await linha(comManutencao.id))?.fazendaId).toBe(10);
+    const soCombustivel = await maquinasOperacao.criar(sessao(2, "maquinas.criar"), ficha({ nome: "Caminhao", placa: "CAM1" }));
+    await pool.query(
+      "INSERT INTO abastecimentos (userId, maquinaId, data, combustivel, litros, fazendaId, valorTotal) VALUES (1, ?, '2026-11-22', 'diesel', 12, 10, 90)",
+      [soCombustivel.id],
+    );
+    const mudou = await maquinasOperacao.editar(
+      sessao(2, "maquinas.editar"),
+      soCombustivel.id,
+      { fazendaId: 20 },
+      { nome: "Caminhao", placa: "CAM1", fazendaId: 20 },
     );
     expect(mudou.maquina.fazendaId).toBe(20);
     expect(mudou.maquina.userId).toBe(1);
-    const [ab] = await pool.query("SELECT fazendaId, valorTotal, horimetro FROM abastecimentos WHERE maquinaId = ?", [gravado.id]);
-    const [man] = await pool.query("SELECT custo, horimetro FROM manutencoes WHERE maquinaId = ?", [gravado.id]);
+    const [ab] = await pool.query("SELECT fazendaId, valorTotal FROM abastecimentos WHERE maquinaId = ?", [soCombustivel.id]);
+    const [man] = await pool.query("SELECT custo FROM manutencoes WHERE maquinaId = ?", [comManutencao.id]);
     expect(Number((ab as Array<{ fazendaId: number }>)[0]?.fazendaId)).toBe(10);
-    expect(Number((ab as Array<{ valorTotal: string }>)[0]?.valorTotal)).toBe(200);
-    expect((ab as Array<{ horimetro: string }>)[0]?.horimetro).toBe("100");
+    expect(Number((ab as Array<{ valorTotal: string }>)[0]?.valorTotal)).toBe(90);
     expect(Number((man as Array<{ custo: string }>)[0]?.custo)).toBe(80);
-    expect((man as Array<{ horimetro: string }>)[0]?.horimetro).toBe("100");
-    expect((await linha(gravado.id))?.fazendaId).toBe(20);
   });
 
   it("edição e inativação juntas deixam um cadastro coerente", async () => {

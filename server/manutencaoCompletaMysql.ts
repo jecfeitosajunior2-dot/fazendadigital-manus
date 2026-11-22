@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { estoque, manutencaoPecas, manutencoes } from "../drizzle/schema";
+import { estoque, maquinas, manutencaoPecas, manutencoes } from "../drizzle/schema";
 import { db } from "./db";
 import {
   estornarManutencaoCompletaNoTx,
@@ -139,9 +139,32 @@ export function criarPersistenciaCompletaCtx(tx: DrizzleLike): PersistenciaCompl
   };
 }
 
-export async function persistirManutencaoCompletaMysql(input: PersistirManutencaoCompletaInput) {
+export async function persistirManutencaoCompletaMysql(
+  input: PersistirManutencaoCompletaInput & {
+    executor?: { id: number; sessionVersion?: number | null };
+  },
+) {
   return db.transaction(async (tx) => {
-    for (const peca of [...input.pecas].sort((a, b) => a.estoqueId - b.estoqueId)) {
+    const { executor, ...resto } = input;
+    if (executor) {
+      const { travarMaquinaNoTx } = await import("./maquinasOperacao");
+      await travarMaquinaNoTx(tx, {
+        executorId: executor.id,
+        sessionVersionDaSessao: executor.sessionVersion ?? null,
+        permissaoId: "manutencoes.criar",
+      }, resto.maquinaId);
+    } else {
+      const [presa] = await tx
+        .select({ id: maquinas.id })
+        .from(maquinas)
+        .where(eq(maquinas.id, resto.maquinaId))
+        .for("update")
+        .limit(1);
+      if (!presa) {
+        throw new ManutencaoEstoqueError("Máquina não encontrada.");
+      }
+    }
+    for (const peca of [...resto.pecas].sort((a, b) => a.estoqueId - b.estoqueId)) {
       const locked = await tx
         .select({ id: estoque.id })
         .from(estoque)
@@ -151,7 +174,7 @@ export async function persistirManutencaoCompletaMysql(input: PersistirManutenca
         throw new ManutencaoEstoqueError(MSG_MANUT_ESTOQUE_AUSENTE_MYSQL);
       }
     }
-    return persistirManutencaoCompletaNoTx(criarPersistenciaCompletaCtx(tx), input);
+    return persistirManutencaoCompletaNoTx(criarPersistenciaCompletaCtx(tx), resto);
   });
 }
 

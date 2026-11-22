@@ -18,6 +18,10 @@ export const MSG_MAQUINA_PLACA =
   "Já existe uma máquina ativa com esta identificação na Fazenda selecionada.";
 export const MSG_MAQUINA_COM_VINCULOS =
   "Esta máquina possui registros vinculados e não pode ser excluída. Inative a máquina para impedir novos lançamentos sem perder o histórico.";
+export const MSG_MAQUINA_TRANSFERENCIA =
+  "Esta máquina tem manutenção sem a fazenda da época. A mudança de fazenda fica bloqueada para o custo não aparecer em outra fazenda.";
+export const MSG_MAQUINA_INATIVA =
+  "Máquina inativa. Reative a máquina para novos lançamentos operacionais.";
 
 export type PermissaoMaquina =
   | "maquinas.visualizar"
@@ -29,6 +33,29 @@ export type SessaoMaquina = {
   executorId: number;
   sessionVersionDaSessao: number | null;
   permissaoId: PermissaoMaquina;
+};
+
+export type SessaoOperacao = {
+  executorId: number;
+  sessionVersionDaSessao: number | null;
+  permissaoId: string;
+};
+
+export type LinhaImportacaoMaquina = {
+  numLinha: number;
+  nome: string;
+  tipo: string;
+  marca: string;
+  modelo?: string | null;
+  placa?: string | null;
+  ano?: number | null;
+  dataAquisicao?: string | null;
+  estado?: string | null;
+  valor?: string | null;
+  vidaUtil?: string | null;
+  tipoMedidor: string;
+  horimetro?: string | null;
+  observacoes?: string | null;
 };
 
 type Banco = typeof dbPadrao;
@@ -58,7 +85,7 @@ async function pausaTrava() {
 
 async function autorizarFazendas(
   tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
-  sessao: SessaoMaquina,
+  sessao: SessaoOperacao,
   ids: Array<number | null | undefined>,
 ) {
   const unicas = [...new Set(ids.filter((id): id is number => Number.isInteger(id) && (id ?? 0) > 0))].sort((a, b) => a - b);
@@ -104,7 +131,7 @@ async function correr<T>(fn: (tx: Parameters<Parameters<Banco["transaction"]>[0]
 
 async function autorizar(
   tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
-  sessao: SessaoMaquina,
+  sessao: SessaoOperacao,
   fazendaId: number,
 ) {
   const deciso = await autorizarOperacaoPersistida(consultaEstoqueNaTransacao(tx), {
@@ -121,7 +148,7 @@ async function autorizar(
   return deciso.contexto;
 }
 
-async function identificar(tx: Parameters<Parameters<Banco["transaction"]>[0]>[0], sessao: SessaoMaquina) {
+async function identificar(tx: Parameters<Parameters<Banco["transaction"]>[0]>[0], sessao: SessaoOperacao) {
   const consulta = consultaEstoqueNaTransacao(tx);
   const usuario = await consulta.usuario(sessao.executorId);
   if (!usuario || usuario.situacao !== "ativo") recusar("sem_identidade");
@@ -193,19 +220,56 @@ async function lerMaquina(
 
 async function contarVinculos(
   tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
-  titular: number,
   id: number,
 ) {
   const [ab] = await tx
     .select({ id: abastecimentos.id })
     .from(abastecimentos)
-    .where(and(eq(abastecimentos.maquinaId, id), eq(abastecimentos.userId, titular)))
+    .where(eq(abastecimentos.maquinaId, id))
+    .for("update")
     .limit(1);
   if (ab) return true;
   const [man] = await tx
     .select({ id: manutencoes.id })
     .from(manutencoes)
-    .where(and(eq(manutencoes.maquinaId, id), eq(manutencoes.userId, titular)))
+    .where(eq(manutencoes.maquinaId, id))
+    .for("update")
+    .limit(1);
+  return Boolean(man);
+}
+
+export async function travarMaquinaNoTx(
+  tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
+  sessao: SessaoOperacao,
+  maquinaId: number,
+  opts?: { permitirInativa?: boolean; fazendaExtra?: number | null },
+) {
+  const previa = await identificar(tx, sessao);
+  const [vista] = await tx
+    .select({ fazendaId: maquinas.fazendaId })
+    .from(maquinas)
+    .where(and(eq(maquinas.id, maquinaId), eq(maquinas.userId, previa.titular)))
+    .limit(1);
+  if (!vista) recusar("outro_titular");
+  if (vista.fazendaId == null && !previa.principal) recusar("outro_titular");
+  await autorizarFazendas(tx, sessao, [vista.fazendaId, opts?.fazendaExtra]);
+  await pausaTrava();
+  const atual = await lerMaquina(tx, previa.titular, maquinaId);
+  if (!atual) recusar("outro_titular");
+  if (!opts?.permitirInativa && !ativa(atual)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_INATIVA });
+  }
+  return atual;
+}
+
+async function existeManutencao(
+  tx: Parameters<Parameters<Banco["transaction"]>[0]>[0],
+  id: number,
+) {
+  const [man] = await tx
+    .select({ id: manutencoes.id })
+    .from(manutencoes)
+    .where(eq(manutencoes.maquinaId, id))
     .limit(1);
   return Boolean(man);
 }
@@ -314,6 +378,9 @@ export const maquinasOperacao = {
         await autorizar(tx, pedido, atual.fazendaId);
       }
       const destino = fazendaNova ?? atual.fazendaId ?? null;
+      if (destino != null && atual.fazendaId != null && destino !== atual.fazendaId && await existeManutencao(tx, id)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_TRANSFERENCIA });
+      }
       if (destino != null) {
         const travadas = await travarDaFazenda(tx, previa.titular, destino);
         recusarDuplicidade(travadas, identidade.nome, identidade.placa, id);
@@ -341,6 +408,12 @@ export const maquinasOperacao = {
   async reativar(sessao: SessaoMaquina, id: number) {
     return correr(async (tx) => {
       const previa = await prepararSituacao(tx, sessao, id);
+      const atual = await lerMaquina(tx, previa.titular, id);
+      if (!atual) recusar("outro_titular");
+      if (atual.fazendaId != null) {
+        const travadas = await travarDaFazenda(tx, previa.titular, atual.fazendaId);
+        recusarDuplicidade(travadas, atual.nome, atual.placa, atual.id);
+      }
       await tx
         .update(maquinas)
         .set({ status: "ativo", dataDesativacao: null })
@@ -352,7 +425,7 @@ export const maquinasOperacao = {
   async excluir(sessao: SessaoMaquina, id: number) {
     return correr(async (tx) => {
       const previa = await prepararSituacao(tx, sessao, id);
-      if (await contarVinculos(tx, previa.titular, id)) {
+      if (await contarVinculos(tx, id)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: MSG_MAQUINA_COM_VINCULOS });
       }
       await tx.delete(maquinas).where(and(eq(maquinas.id, id), eq(maquinas.userId, previa.titular)));
@@ -378,11 +451,11 @@ export const maquinasOperacao = {
       const ab = await tx
         .select({ maquinaId: abastecimentos.maquinaId })
         .from(abastecimentos)
-        .where(and(eq(abastecimentos.userId, acesso.titular), inArray(abastecimentos.maquinaId, lista)));
+        .where(inArray(abastecimentos.maquinaId, lista));
       const man = await tx
         .select({ maquinaId: manutencoes.maquinaId })
         .from(manutencoes)
-        .where(and(eq(manutencoes.userId, acesso.titular), inArray(manutencoes.maquinaId, lista)));
+        .where(inArray(manutencoes.maquinaId, lista));
       const ids = new Set<number>();
       for (const row of [...ab, ...man]) {
         if (row.maquinaId != null && idsVisiveis.has(row.maquinaId)) ids.add(row.maquinaId);
@@ -403,8 +476,121 @@ export const maquinasOperacao = {
       if (!acesso.principal && (row.fazendaId == null || !acesso.fazendas.includes(row.fazendaId))) {
         recusar("outro_titular");
       }
-      const preso = await contarVinculos(tx, acesso.titular, id);
+      const preso = await contarVinculos(tx, id);
       return { podeExcluir: !preso as boolean };
+    });
+  },
+
+  async importarLote(sessao: SessaoMaquina, fazendaId: number, linhas: LinhaImportacaoMaquina[]) {
+    if (linhas.length === 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Nenhuma linha válida para importar. Nenhuma máquina foi importada.",
+      });
+    }
+    return correr(async (tx) => {
+      const acesso = await autorizar(tx, { ...sessao, permissaoId: "maquinas.criar" }, fazendaId);
+      await pausaTrava();
+      const travadas = await travarDaFazenda(tx, acesso.titularUserId, fazendaId);
+      const vistas = [...travadas];
+      const ids: number[] = [];
+      for (const linha of linhas) {
+        try {
+          recusarDuplicidade(vistas, linha.nome, linha.placa);
+        } catch (erro) {
+          const texto = erro instanceof Error ? erro.message : "Linha inválida.";
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Importação bloqueada na linha ${linha.numLinha}. ${texto} Nenhuma máquina foi importada.`,
+          });
+        }
+        const result = await tx.insert(maquinas).values({
+          userId: acesso.titularUserId,
+          fazendaId,
+          nome: linha.nome,
+          tipo: linha.tipo,
+          marca: linha.marca,
+          modelo: linha.modelo ?? null,
+          placa: linha.placa ? placaNorm(linha.placa) : null,
+          ano: linha.ano ?? null,
+          dataAquisicao: linha.dataAquisicao ?? null,
+          anoAquisicao: linha.dataAquisicao ? Number(linha.dataAquisicao.slice(0, 4)) : null,
+          valor: linha.valor ?? null,
+          vidaUtil: linha.vidaUtil ?? null,
+          estado: linha.estado ?? null,
+          tipoMedidor: linha.tipoMedidor,
+          horimetro: linha.horimetro ?? null,
+          observacoes: linha.observacoes ?? null,
+          status: "ativo",
+        });
+        const id = Number((result as { insertId?: number }[])[0]?.insertId ?? (result as { insertId?: number }).insertId);
+        if (!Number.isFinite(id) || id <= 0) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Importação bloqueada na linha ${linha.numLinha}. Não foi possível salvar a máquina. Nenhuma máquina foi importada.`,
+          });
+        }
+        ids.push(id);
+        vistas.push({
+          id,
+          nome: linha.nome,
+          placa: linha.placa ?? null,
+          status: "ativo",
+          dataDesativacao: null,
+        });
+      }
+      return {
+        success: true as const,
+        ids,
+        userId: acesso.titularUserId,
+        total: linhas.length,
+        importados: ids.length,
+        rejeitados: 0,
+        detalhesRejeitados: [] as { linha: number; mensagem: string }[],
+      };
+    });
+  },
+
+  async afirmarOperavel(sessao: SessaoOperacao, maquinaId: number, opts?: { permitirInativa?: boolean }) {
+    return correr(async (tx) => travarMaquinaNoTx(tx, sessao, maquinaId, opts));
+  },
+
+  async lancarAbastecimento(
+    sessao: SessaoOperacao,
+    row: { maquinaId: number; fazendaId: number | null; litros: string; data: string; combustivel: "diesel" | "gasolina" | "etanol" | "arla" },
+  ) {
+    return correr(async (tx) => {
+      const maquina = await travarMaquinaNoTx(tx, sessao, row.maquinaId, { fazendaExtra: row.fazendaId });
+      const result = await tx.insert(abastecimentos).values({
+        userId: maquina.userId,
+        maquinaId: maquina.id,
+        data: row.data,
+        combustivel: row.combustivel,
+        litros: row.litros,
+        fazendaId: row.fazendaId,
+        status: "registrado",
+      });
+      const id = Number((result as { insertId?: number }[])[0]?.insertId ?? (result as { insertId?: number }).insertId);
+      return { id, userId: maquina.userId };
+    });
+  },
+
+  async lancarManutencao(
+    sessao: SessaoOperacao,
+    row: { maquinaId: number; data: string; tipo: string; custo: string },
+  ) {
+    return correr(async (tx) => {
+      const maquina = await travarMaquinaNoTx(tx, sessao, row.maquinaId);
+      const result = await tx.insert(manutencoes).values({
+        userId: maquina.userId,
+        maquinaId: maquina.id,
+        tipo: row.tipo,
+        data: row.data,
+        custo: row.custo,
+        status: "concluida",
+      });
+      const id = Number((result as { insertId?: number }[])[0]?.insertId ?? (result as { insertId?: number }).insertId);
+      return { id, userId: maquina.userId, fazendaId: maquina.fazendaId };
     });
   },
 

@@ -130,7 +130,8 @@ import {
 } from "../shared/manutencaoPecasOrigem";
 import { MSG_COMPRA_EDITAR_INTEGRADA, MSG_COMPRA_LINHA_ISOLADA, isMysqlDuplicateKey } from "../shared/compraInsumos";
 import { isOperacaoTransferenciaInsumos } from "../shared/estoqueTransferencia";
-import { maquinasOperacao, MSG_MAQUINA_SEM_MYSQL, type PermissaoMaquina } from "./maquinasOperacao";
+import { maquinasOperacao, MSG_MAQUINA_SEM_MYSQL, travarMaquinaNoTx, type PermissaoMaquina } from "./maquinasOperacao";
+import { importarPlanilhaMaquinas } from "./maquinasImportacao";
 import { compraInsumosService } from "./compraInsumosMysql";
 import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
 import { animalPertenceFazenda, buildLoteFazendaContext, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
@@ -4795,43 +4796,20 @@ function mergeMaquinaDbComLocal<T extends Record<string, any>>(
 
 /** Bloqueia novos vínculos operacionais em máquinas Inativas. */
 async function assertMaquinaAtivaParaOperacao(
-  userId: number,
+  user: { id: number; sessionVersion?: number | null },
   maquinaId: number,
+  permissaoId: "abastecimentos.criar" | "abastecimentos.editar" | "manutencoes.criar" | "manutencoes.editar",
   opts?: { allowSameInactiveId?: number | null },
 ) {
-  let row: { id: number; status: string | null; dataDesativacao: unknown } | null = null;
-  try {
-    const [found] = await db
-      .select({
-        id: maquinas.id,
-        status: maquinas.status,
-        dataDesativacao: maquinas.dataDesativacao,
-      })
-      .from(maquinas)
-      .where(and(eq(maquinas.id, maquinaId), eq(maquinas.userId, userId)))
-      .limit(1);
-    row = found ?? null;
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    const local = await getLocalMaquina(userId, maquinaId);
-    row = local
-      ? {
-          id: local.id,
-          status: (local.status as string | null) ?? null,
-          dataDesativacao: local.dataDesativacao ?? null,
-        }
-      : null;
-  }
-
-  if (!row) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Máquina não encontrada." });
-  }
-  if (isMaquinaAtivaRow(row)) return;
-  if (opts?.allowSameInactiveId != null && opts.allowSameInactiveId === maquinaId) return;
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: "Máquina inativa. Reative a máquina para novos lançamentos operacionais.",
-  });
+  await maquinasOperacao.afirmarOperavel(
+    {
+      executorId: user.id,
+      sessionVersionDaSessao: user.sessionVersion ?? null,
+      permissaoId,
+    },
+    maquinaId,
+    { permitirInativa: opts?.allowSameInactiveId != null && opts.allowSameInactiveId === maquinaId },
+  );
 }
 
 const MSG_MAQUINA_COM_VINCULOS =
@@ -5800,275 +5778,27 @@ const maquinasRouter = router({
       fazendaId: z.number().int().positive(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const acesso = await maquinasOperacao.exigirFazenda(
+      await maquinasOperacao.exigirFazenda(
         sessaoMaquina(ctx.user, "maquinas.criar"),
         input.fazendaId,
       );
-
-      // Revalida o arquivo inteiro antes de gravar — sem importação parcial
-      const {
-        normalizarLinha,
-        normalizarCondicaoAquisicao,
-        normalizarTipoMedidor,
-        parseDataAquisicaoImportacao,
-        parseValorAquisicaoImportacao,
-        isLinhaExemplo,
-        isLinhaVazia,
-        OBSERVACOES_MAX_CHARS,
-        TIPOS_MAQUINA: TIPOS_MAQUINA_VALIDOS,
-        hojeISOLocal,
-        leituraInicialEhVaziaParaSemMedidor,
-        parseLeituraMedidorImportacao,
-        formatLeituraMedidorGravacao,
-      } = await import('../shared/importacaoMaquinarios');
-      const { isMarcaValidaParaTipo } = await import('../shared/maquina-types');
-
-      const TIPOS_VALIDOS = [...TIPOS_MAQUINA_VALIDOS] as string[];
-      const anoAtual = new Date().getFullYear();
-      const hojeIso = hojeISOLocal();
-
-      type LinhaPronta = {
-        numLinha: number;
-        nome: string;
-        tipo: string;
-        marca: string;
-        modelo?: string;
-        placa?: string;
-        ano?: number;
-        dataAquisicao?: string;
-        estado: "novo" | "usado";
-        valor?: string;
-        vidaUtil?: string;
-        tipoMedidor: "horimetro" | "quilometragem" | "sem_medidor";
-        horimetro?: string;
-        observacoes?: string;
-      };
-
-      const prontas: LinhaPronta[] = [];
-      const errosPre: { linha: number; mensagem: string }[] = [];
-
-      for (let i = 0; i < input.linhas.length; i++) {
-        const linha = normalizarLinha(input.linhas[i]);
-        const numLinha = i + 2;
-        if (isLinhaVazia(linha) || isLinhaExemplo(linha)) continue;
-
-        const nome = (linha.nome || "").trim();
-        const tipo = (linha.tipo || "").trim();
-        const marca = (linha.marca || "").trim();
-        const tipoMedidor = normalizarTipoMedidor(linha.tipoMedidor || "");
-        const leituraRaw = (linha.leituraInicial || "").trim();
-
-        if (!nome || !tipo || !marca || !tipoMedidor) {
-          errosPre.push({ linha: numLinha, mensagem: "Linha incompleta ou inválida. Valide a planilha novamente." });
-          continue;
-        }
-        if (!TIPOS_VALIDOS.includes(tipo) || !isMarcaValidaParaTipo(tipo, marca)) {
-          errosPre.push({ linha: numLinha, mensagem: "Tipo ou Marca inválidos. Valide a planilha novamente." });
-          continue;
-        }
-
-        let ano: number | undefined;
-        const anoRaw = (linha.ano || "").trim();
-        if (anoRaw) {
-          if (!/^\d{4}$/.test(anoRaw) || parseInt(anoRaw, 10) > anoAtual || parseInt(anoRaw, 10) < 1900) {
-            errosPre.push({ linha: numLinha, mensagem: "Ano de fabricação inválido." });
-            continue;
-          }
-          ano = parseInt(anoRaw, 10);
-        }
-
-        let dataAquisicao: string | undefined;
-        const dataRaw = (linha.dataAquisicao || "").trim();
-        if (dataRaw) {
-          const parsed = parseDataAquisicaoImportacao(dataRaw);
-          if (!parsed.ok || parsed.iso > hojeIso) {
-            errosPre.push({ linha: numLinha, mensagem: "Data de aquisição inválida." });
-            continue;
-          }
-          dataAquisicao = parsed.iso;
-        }
-
-        let estado = normalizarCondicaoAquisicao(linha.estado || "");
-        if (linha.estado?.trim() && !estado) {
-          errosPre.push({ linha: numLinha, mensagem: "Condição de aquisição inválida." });
-          continue;
-        }
-        if (!estado) estado = "novo";
-
-        let valor: string | undefined;
-        const valorRaw = (linha.valor || "").trim();
-        if (valorRaw) {
-          const n = parseValorAquisicaoImportacao(valorRaw);
-          if (n == null || Number.isNaN(n) || n < 0) {
-            errosPre.push({ linha: numLinha, mensagem: "Valor de aquisição inválido." });
-            continue;
-          }
-          valor = n.toFixed(2);
-        }
-
-        let vidaUtil: string | undefined;
-        const vidaRaw = (linha.vidaUtil || "").trim();
-        if (vidaRaw) {
-          const vida = parseInt(vidaRaw.replace(/[^\d]/g, ""), 10);
-          if (Number.isNaN(vida) || vida <= 0) {
-            errosPre.push({ linha: numLinha, mensagem: "Vida útil inválida." });
-            continue;
-          }
-          vidaUtil = String(vida);
-        }
-
-        let horimetro: string | undefined;
-        if (tipoMedidor === "sem_medidor") {
-          if (leituraRaw && !leituraInicialEhVaziaParaSemMedidor(leituraRaw)) {
-            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial deve ficar vazia para Sem medidor." });
-            continue;
-          }
-        } else {
-          if (!leituraRaw) {
-            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial obrigatória para o medidor informado." });
-            continue;
-          }
-          const n = parseLeituraMedidorImportacao(leituraRaw);
-          if (n == null) {
-            errosPre.push({ linha: numLinha, mensagem: "Leitura inicial inválida." });
-            continue;
-          }
-          horimetro = formatLeituraMedidorGravacao(n);
-        }
-
-        const obs = (linha.observacoes || "").trim();
-        if (obs.length > OBSERVACOES_MAX_CHARS) {
-          errosPre.push({ linha: numLinha, mensagem: "Observações excedem o limite permitido." });
-          continue;
-        }
-
-        prontas.push({
-          numLinha,
-          nome,
-          tipo,
-          marca,
-          modelo: (linha.modelo || "").trim() || undefined,
-          placa: (linha.placa || "").trim() || undefined,
-          ano,
-          dataAquisicao,
-          estado,
-          valor,
-          vidaUtil,
-          tipoMedidor,
-          horimetro,
-          observacoes: obs || undefined,
-        });
-      }
-
-      if (errosPre.length > 0 || prontas.length === 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            errosPre.length > 0
-              ? `Importação bloqueada: ${errosPre.length} linha(s) com erro. Corrija a planilha e envie novamente. Nenhuma máquina foi importada.`
-              : "Nenhuma linha válida para importar.",
-        });
-      }
-
-      // Segunda passada: duplicidade entre linhas da própria importação
-      const nomesSet = new Set<string>();
-      const placasSet = new Set<string>();
-      for (const p of prontas) {
-        const nk = p.nome.toLowerCase();
-        if (nomesSet.has(nk)) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Importação bloqueada: nome "${p.nome}" duplicado na planilha. Nenhuma máquina foi importada.`,
-          });
-        }
-        nomesSet.add(nk);
-        if (p.placa) {
-          const pk = normalizePlacaIdent(p.placa);
-          if (placasSet.has(pk)) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: `Importação bloqueada: identificação "${p.placa}" duplicada na planilha. Nenhuma máquina foi importada.`,
-            });
-          }
-          placasSet.add(pk);
-        }
-      }
-
-      const importados: number[] = [];
-      const rejeitados: { linha: number; mensagem: string }[] = [];
-
-      for (const p of prontas) {
+      const gravado = await importarPlanilhaMaquinas(
+        sessaoMaquina(ctx.user, "maquinas.criar"),
+        input.fazendaId,
+        input.linhas,
+      );
+      for (const id of gravado.ids) {
         try {
-          const placaNorm = p.placa ? normalizePlacaIdent(p.placa) : undefined;
-          await assertMaquinaSemDuplicidade({
-            userId: acesso.titularUserId,
-            fazendaId: input.fazendaId,
-            nome: p.nome,
-            placa: placaNorm,
-          });
-
-          const anoFromData = p.dataAquisicao
-            ? parseInt(p.dataAquisicao.slice(0, 4), 10)
-            : undefined;
-
-          const rowPayload = {
-            userId: acesso.titularUserId,
-            fazendaId: input.fazendaId,
-            nome: p.nome,
-            tipo: p.tipo,
-            marca: p.marca,
-            modelo: p.modelo,
-            placa: placaNorm,
-            ano: p.ano,
-            dataAquisicao: p.dataAquisicao,
-            anoAquisicao: anoFromData && !Number.isNaN(anoFromData) ? anoFromData : undefined,
-            valor: p.valor,
-            vidaUtil: p.vidaUtil,
-            estado: p.estado,
-            tipoMedidor: p.tipoMedidor,
-            horimetro: p.horimetro,
-            status: "ativo" as const,
-            observacoes: p.observacoes,
-          };
-
-          try {
-            const result = await db.insert(maquinas).values(rowPayload);
-            const insertId = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-            if (Number.isFinite(insertId) && insertId > 0) {
-              importados.push(insertId);
-              try {
-                await updateLocalMaquina(ctx.user.id, insertId, {
-                  ...rowPayload,
-                  id: insertId,
-                });
-              } catch (mirrorError) {
-                console.warn("[maquinas.importar] Espelho local não gravado:", mirrorError);
-              }
-            }
-          } catch (dbErr) {
-            if (!isDatabaseUnavailable(dbErr)) throw dbErr;
-            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
-          }
-        } catch (err: any) {
-          rejeitados.push({ linha: p.numLinha, mensagem: formatImportDbError(err) });
+          await updateLocalMaquina(ctx.user.id, id, { id, userId: gravado.userId, fazendaId: input.fazendaId });
+        } catch (mirrorError) {
+          console.warn("[maquinas.importar] Espelho local não gravado:", mirrorError);
         }
       }
-
-      // Tudo ou nada: se alguma linha falhou na gravação, reporta (já gravadas permanecem —
-      // preferência do spec é não importar nenhuma; em falha rara de DB a meio do lote,
-      // sinalizamos rejeições). Para falhas de validação já bloqueamos antes.
-      if (rejeitados.length > 0 && importados.length === 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Importação bloqueada. ${rejeitados[0]?.mensagem || "Erro ao gravar."}`,
-        });
-      }
-
       return {
-        total: prontas.length,
-        importados: importados.length,
-        rejeitados: rejeitados.length,
-        detalhesRejeitados: rejeitados,
+        total: gravado.total,
+        importados: gravado.importados,
+        rejeitados: 0,
+        detalhesRejeitados: [],
       };
     }),
 });
@@ -6139,7 +5869,7 @@ const abastecimentosRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Informe uma quantidade abastecida válida." });
       }
 
-      await assertMaquinaAtivaParaOperacao(ctx.user.id, input.maquinaId);
+      await assertMaquinaAtivaParaOperacao(ctx.user, input.maquinaId, "abastecimentos.criar");
 
       const total = input.valorTotal
         ?? (input.valorLitro && input.litros
@@ -6168,6 +5898,11 @@ const abastecimentosRouter = router({
 
       try {
         const insertId = await db.transaction(async tx => {
+          await travarMaquinaNoTx(tx, {
+            executorId: ctx.user.id,
+            sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+            permissaoId: "abastecimentos.criar",
+          }, input.maquinaId, { fazendaExtra: input.fazendaId ?? null });
           const result = await tx.insert(abastecimentos).values(rowPayload);
           const id = Number((result as any)[0]?.insertId ?? 0);
           if (!id) {
@@ -6210,8 +5945,7 @@ const abastecimentosRouter = router({
           });
         }
         if (interno && input.fazendaId) recusarEstoqueSemMysql();
-        const created = await createLocalAbastecimento(ctx.user.id, rowPayload);
-        return { success: true, id: created.id, localFallback: true };
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
       }
     }),
 
@@ -6244,7 +5978,7 @@ const abastecimentosRouter = router({
       }
 
       const maquinaDestino = rest.maquinaId ?? anterior.maquinaId;
-      await assertMaquinaAtivaParaOperacao(ctx.user.id, maquinaDestino, {
+      await assertMaquinaAtivaParaOperacao(ctx.user, maquinaDestino, "abastecimentos.editar", {
         allowSameInactiveId: anterior.maquinaId,
       });
 
@@ -7145,7 +6879,7 @@ const manutencoesRouter = router({
     .input(manutencaoBaseInput)
     .mutation(async ({ ctx, input }) => {
       const { data, proximaManutencao, pecas, valorMaoObra, ...rest } = input;
-      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId);
+      await assertMaquinaAtivaParaOperacao(ctx.user, rest.maquinaId, "manutencoes.criar");
       const valorMaoObraOficial = valorMaoObraOficialDaOs(rest.tipoExecucao, valorMaoObra);
       const { pecasEstoqueInput, pecasOficina } = prepararPecasManutencaoDoInput(
         pecas,
@@ -7157,21 +6891,6 @@ const manutencoesRouter = router({
         pecasOficina,
         valorMaoObra: valorMaoObraOficial,
       });
-      const totaisOs = valoresOsDosCustos(custos);
-      const pecasPayload = [
-        ...pecasLocaisFromResolvidas(pecasResolvidas).map(p => ({
-          ...p,
-          origem: MANUT_PECA_ORIGEM_ESTOQUE,
-        })),
-        ...pecasOficina.map(p => ({
-          estoqueId: null,
-          nome: p.nome,
-          quantidade: p.quantidade.toFixed(2),
-          valorUnitario: p.valorUnitario.toFixed(2),
-          valorTotal: p.valorTotal.toFixed(2),
-          origem: MANUT_PECA_ORIGEM_OFICINA,
-        })),
-      ];
 
       try {
         const prestadorPessoaId = await resolverPrestadorPessoaOs(
@@ -7185,6 +6904,7 @@ const manutencoesRouter = router({
           pecasResolvidas.length > 0,
         );
         const persistido = await persistirManutencaoCompletaMysql({
+          executor: { id: ctx.user.id, sessionVersion: ctx.user.sessionVersion ?? null },
           userId: ctx.user.id,
           registradoPor: ctx.user.name?.trim() || `user-${ctx.user.id}`,
           maquinaId: rest.maquinaId,
@@ -7213,17 +6933,7 @@ const manutencoesRouter = router({
         if (pecasResolvidas.length > 0) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MANUT_MYSQL_OBRIGATORIO });
         }
-        const created = await createLocalManutencao(ctx.user.id, {
-          ...rest,
-          data,
-          status: "concluida",
-          proximaManutencao: proximaManutencao || undefined,
-          prestadorPessoaId:
-            lerPrestadorPessoaId(rest.tipoExecucao === "externa" ? rest.prestadorPessoaId : null),
-          ...totaisOs,
-          pecas: pecasPayload,
-        });
-        return { success: true, id: created.id, localFallback: true };
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_MAQUINA_SEM_MYSQL });
       }
     }),
 
@@ -7313,7 +7023,7 @@ const manutencoesRouter = router({
         });
       }
 
-      await assertMaquinaAtivaParaOperacao(ctx.user.id, rest.maquinaId, {
+      await assertMaquinaAtivaParaOperacao(ctx.user, rest.maquinaId, "manutencoes.editar", {
         allowSameInactiveId: anterior.maquinaId,
       });
 
