@@ -69,7 +69,7 @@ describe("Painel de Controle — tela", () => {
     expect(bloco).toContain("formatarValorRelatorioV2(painel.financeiro.resultadoRealizado)");
     expect(bloco).toContain("brlCompact(painel.estoque.valorTotal)");
     expect(bloco).toContain("painel.rebanho.pesoMedio");
-    expect(bloco).toContain('value={`${num(painel.areaTotal, 0)} ha`}');
+    expect(bloco).toContain("autorizacao.area === \"autorizado\" ? `${num(painel.areaTotal, 0)} ha` : \"—\"");
     expect(bloco).toContain("num(painel.rebanho.total)");
     expect(ui).toContain("wrapText = false");
     expect(ui).toContain('compact ? "text-[18px]" : "text-[22px]"');

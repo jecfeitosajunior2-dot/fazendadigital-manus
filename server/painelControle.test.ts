@@ -31,6 +31,9 @@ describe("consulta resumida do Painel no servidor", () => {
     expect(painelServer).toContain("inArray(pastos.fazendaId, fazendaIds)");
     expect(painelServer).toContain("inArray(maquinas.fazendaId, fazendaIds)");
     expect(painelServer).toContain("animalNasFazendasPainel");
+    expect(painelServer).not.toContain("listLocalAnimais");
+    expect(painelServer).not.toContain("listLocalFazendas");
+    expect(painelServer).not.toContain("devLocalStore");
   });
 
   it("o resumo financeiro passa pelo apurador oficial do V2", () => {

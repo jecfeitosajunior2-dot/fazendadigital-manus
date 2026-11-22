@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import {
+  animalLoteMovimentacoes,
   animais,
+  benfeitorias,
   compras,
   estoque,
   estoqueMovimentacoes,
@@ -20,6 +22,8 @@ import {
   agregarOcupacaoPainel,
   agregarRebanhoPainel,
   animalNasFazendasPainel,
+  type AutorizacaoBlocoPainel,
+  type AutorizacaoPainel,
   emptyPainelComercial,
   emptyPainelFinanceiro,
   haRegistrosSemFazendaNoRelatorioV2,
@@ -37,7 +41,11 @@ import {
   type PainelOverview,
 } from "../shared/painelControle";
 import { filtrarMovimentacoesEstoque, filtrarProdutosEstoque } from "../shared/estoqueIsolamento";
-import { loadLoteFazendaContextForUser } from "./animaisPorFazenda";
+import { buildLoteFazendaContext } from "./animaisPorFazenda";
+import { autorizarOperacaoPersistida } from "./cadastroAnimalAutorizado";
+import { compraVisivelNoEscopo } from "./consultaCompraAutorizada";
+import { consultaEstoqueNaTransacao } from "./consultaEstoqueDb";
+import { vendaVisivelNoEscopo } from "./consultaVendaAutorizada";
 import { db } from "./db";
 import { financeiroNucleoService } from "./financeiroNucleo";
 import { acessoFinanceiroNoBanco } from "./consultaFinanceiroDb";
@@ -47,45 +55,116 @@ import {
   type AcessoFinanceiro,
 } from "./consultaFinanceiroAutorizada";
 import type { RelatorioFinanceiroV2 } from "../shared/financeiroRelatoriosV2";
-import { devLocalStore } from "./devLocalStore";
-import {
-  isDatabaseUnavailable,
-  listLocalAnimais,
-  listLocalFazendas,
-  listLocalLotes,
-  listLocalMaquinas,
-  listLocalManutencoes,
-  listLocalPastos,
-  listLocalReproducaoRegistros,
-  listLocalSaudeRegistros,
-} from "./localFallbackStore";
+import { isDatabaseUnavailable } from "./localFallbackStore";
 
-async function listarFazendasAutorizadasPainel(userId: number): Promise<PainelFazendaRef[]> {
-  const mapa = new Map<number, PainelFazendaRef>();
-  try {
-    const rows = await db
+type BancoPainel = typeof db;
+
+const PERMISSOES_PAINEL = [
+  "animais.visualizar",
+  "lotes.visualizar",
+  "pastos.visualizar",
+  "fazendas.visualizar",
+  "estoque.visualizar",
+  "saude.visualizar",
+  "reproducao.visualizar",
+  "manutencoes.visualizar",
+  "maquinas.visualizar",
+  "benfeitorias.visualizar",
+  "compras.visualizar",
+  "vendas.visualizar",
+] as const;
+
+type PermissaoPainel = (typeof PERMISSOES_PAINEL)[number];
+
+type AcessosPainel = {
+  titularUserId: number;
+  papel: string;
+  fazendas: PainelFazendaRef[];
+  concedidas: Record<PermissaoPainel, number[] | null>;
+};
+
+export const MSG_PAINEL_SEM_MYSQL =
+  "O Painel precisa do banco oficial. Nada foi lido do arquivo local.";
+
+function recorteFazendas(ids: number[] | null, selecionada: number | null): number[] | null {
+  if (ids == null) return null;
+  if (selecionada == null) return ids;
+  return ids.includes(selecionada) ? [selecionada] : [];
+}
+
+function estadoRecorte(ids: number[] | null, selecionada: number | null): AutorizacaoBlocoPainel {
+  if (ids == null) return "sem_permissao";
+  if (selecionada != null && !ids.includes(selecionada)) return "sem_permissao";
+  return "autorizado";
+}
+
+function sessaoInvalida(): TRPCError {
+  return new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
+}
+
+async function resolverAcessosPainel(
+  banco: BancoPainel,
+  executorId: number,
+  sessionVersion: number | null,
+): Promise<AcessosPainel> {
+  return banco.transaction(async (tx) => {
+    const consulta = consultaEstoqueNaTransacao(tx);
+    const usuario = await consulta.usuario(executorId);
+    if (!usuario || usuario.titularUserId == null || usuario.situacao !== "ativo") throw sessaoInvalida();
+    if (sessionVersion != null && sessionVersion !== usuario.sessionVersion) throw sessaoInvalida();
+    const fazendasTitular = await consulta.fazendasDoTitular(usuario.titularUserId);
+    const concedidas = {} as AcessosPainel["concedidas"];
+    for (const permissaoId of PERMISSOES_PAINEL) {
+      const ids: number[] = [];
+      let negada = false;
+      for (const fazenda of fazendasTitular) {
+        const decisao = await autorizarOperacaoPersistida(consulta, {
+          executorId,
+          sessionVersionDaSessao: sessionVersion,
+          permissaoId,
+          fazendaId: fazenda.id,
+        });
+        if (!decisao.ok) {
+          if (decisao.motivo === "sem_identidade") throw sessaoInvalida();
+          if (decisao.motivo === "sem_permissao" || decisao.motivo === "permissao_invalida") {
+            negada = true;
+            break;
+          }
+          continue;
+        }
+        ids.push(fazenda.id);
+      }
+      concedidas[permissaoId] = negada ? null : ids;
+    }
+    const detalhes = await tx
       .select({ id: fazendas.id, nome: fazendas.nome, area: fazendas.area })
       .from(fazendas)
-      .where(eq(fazendas.userId, userId));
-    for (const row of rows) {
-      if (row.id > 0) {
-        mapa.set(row.id, { id: row.id, nome: row.nome, area: Number(row.area) || 0 });
+      .where(eq(fazendas.userId, usuario.titularUserId));
+    const areaLiberada = new Set(concedidas["fazendas.visualizar"] ?? []);
+    const uniao = new Set<number>();
+    if (usuario.papel === "principal") {
+      for (const fazenda of detalhes) if (fazenda.id > 0) uniao.add(fazenda.id);
+    } else {
+      for (const ids of Object.values(concedidas)) {
+        if (!ids) continue;
+        for (const id of ids) uniao.add(id);
       }
     }
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-  }
-  const locais = await listLocalFazendas(userId);
-  for (const fazenda of locais) {
-    if (fazenda.id > 0 && !mapa.has(fazenda.id)) {
-      mapa.set(fazenda.id, {
-        id: fazenda.id,
-        nome: fazenda.nome,
-        area: Number(fazenda.area) || 0,
-      });
-    }
-  }
-  return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    const lista = detalhes
+      .filter((row) => row.id > 0 && uniao.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        nome: row.nome,
+        area: usuario.papel === "principal" || areaLiberada.has(row.id) ? Number(row.area) || 0 : 0,
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    return {
+      titularUserId: usuario.titularUserId,
+      papel: usuario.papel,
+      fazendas: lista,
+      concedidas,
+    };
+  }, { isolationLevel: "read committed" });
 }
 
 function valorOperacaoPainel(valor: unknown): number | null {
@@ -184,464 +263,495 @@ export async function financeiroDoPainel(
   }
 }
 
+
+type OpcoesPainel = {
+  banco?: BancoPainel;
+  financeiro?: IoFinanceiroPainel;
+};
+
+export type StatsPainel = {
+  totalAnimais: number | null;
+  totalLotes: number | null;
+  totalMaquinas: number | null;
+  totalBenfeitorias: number | null;
+  totalReceitas: null;
+  totalDespesas: null;
+  saldoTotal: null;
+};
+
+function bancoDe(opcoes?: OpcoesPainel): BancoPainel {
+  return opcoes?.banco ?? db;
+}
+
+function falhaPainel(error: unknown): never {
+  if (
+    error instanceof TRPCError
+    && (error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN" || error.code === "PRECONDITION_FAILED")
+  ) {
+    throw error;
+  }
+  if (isDatabaseUnavailable(error)) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_PAINEL_SEM_MYSQL });
+  }
+  throw error instanceof Error ? error : new Error(String(error));
+}
+
+async function contextoLotes(banco: BancoPainel, titularUserId: number) {
+  const [lotesList, pastosList] = await Promise.all([
+    banco
+      .select({ id: lotes.id, fazendaId: lotes.fazendaId, pastoAtualId: lotes.pastoAtualId })
+      .from(lotes)
+      .where(eq(lotes.userId, titularUserId)),
+    banco
+      .select({ id: pastos.id, fazendaId: pastos.fazendaId })
+      .from(pastos)
+      .where(eq(pastos.userId, titularUserId)),
+  ]);
+  return buildLoteFazendaContext(lotesList, pastosList).loteFazendaById;
+}
+
 async function carregarComercialPainel(
-  userId: number,
+  banco: BancoPainel,
+  acessos: AcessosPainel,
+  comprasIds: number[] | null,
+  vendasIds: number[] | null,
   fazendaSelecionadaId: number | null,
 ): Promise<PainelComercial> {
-  try {
-    const compraWhere = [eq(compras.userId, userId)];
-    const vendaWhere = [eq(vendas.userId, userId)];
-    if (fazendaSelecionadaId != null) {
-      compraWhere.push(eq(compras.fazendaId, fazendaSelecionadaId));
-      vendaWhere.push(eq(vendas.fazendaId, fazendaSelecionadaId));
-    }
-    const [compraRows, vendaRows] = await Promise.all([
-      db
-        .select({
-          id: compras.id,
-          data: compras.data,
-          fornecedor: compras.fornecedor,
-          valorTotal: compras.valorTotal,
-          custoTotal: compras.custoTotal,
-          status: compras.status,
-          fazendaId: compras.fazendaId,
-        })
-        .from(compras)
-        .where(and(...compraWhere))
-        .orderBy(desc(compras.data), desc(compras.id))
-        .limit(20),
-      db
-        .select({
-          id: vendas.id,
-          data: vendas.data,
-          comprador: vendas.comprador,
-          valorTotal: vendas.valorTotal,
-          status: vendas.status,
-          fazendaId: vendas.fazendaId,
-        })
-        .from(vendas)
-        .where(and(...vendaWhere))
-        .orderBy(desc(vendas.data), desc(vendas.id))
-        .limit(20),
-    ]);
-
-    const comprasVisiveis: PainelOperacaoRecente[] = compraRows
-      .filter(row => operacaoComercialVisivelPainel(row, fazendaSelecionadaId))
-      .slice(0, PAINEL_COMERCIAL_RECENTES)
-      .map(row => ({
+  const escopoCompra = {
+    titularUserId: acessos.titularUserId,
+    fazendaIds: comprasIds ?? [],
+    papel: acessos.papel,
+  };
+  const escopoVenda = {
+    titularUserId: acessos.titularUserId,
+    fazendaIds: vendasIds ?? [],
+    papel: acessos.papel,
+  };
+  const comprasVisiveis: PainelOperacaoRecente[] = [];
+  const vendasVisiveis: PainelOperacaoRecente[] = [];
+  if (comprasIds != null && (comprasIds.length > 0 || acessos.papel === "principal")) {
+    const filtro = acessos.papel === "principal" && fazendaSelecionadaId == null
+      ? eq(compras.userId, acessos.titularUserId)
+      : and(eq(compras.userId, acessos.titularUserId), inArray(compras.fazendaId, comprasIds));
+    const rows = await banco
+      .select({
+        id: compras.id,
+        data: compras.data,
+        fornecedor: compras.fornecedor,
+        valorTotal: compras.valorTotal,
+        custoTotal: compras.custoTotal,
+        status: compras.status,
+        fazendaId: compras.fazendaId,
+      })
+      .from(compras)
+      .where(filtro)
+      .orderBy(desc(compras.data), desc(compras.id))
+      .limit(20);
+    for (const row of rows) {
+      if (!compraVisivelNoEscopo(row.fazendaId, escopoCompra)) continue;
+      if (!operacaoComercialVisivelPainel(row, fazendaSelecionadaId)) continue;
+      if (comprasVisiveis.length >= PAINEL_COMERCIAL_RECENTES) break;
+      comprasVisiveis.push({
         id: row.id,
-        tipo: "compra" as const,
+        tipo: "compra",
         data: row.data ?? null,
         parceiro: String(row.fornecedor ?? "").trim() || "—",
         valor: valorOperacaoPainel(row.custoTotal ?? row.valorTotal),
-      }));
-    const vendasVisiveis: PainelOperacaoRecente[] = vendaRows
-      .filter(row => operacaoComercialVisivelPainel(row, fazendaSelecionadaId))
-      .slice(0, PAINEL_COMERCIAL_RECENTES)
-      .map(row => ({
+      });
+    }
+  }
+  if (vendasIds != null && (vendasIds.length > 0 || acessos.papel === "principal")) {
+    const filtro = acessos.papel === "principal" && fazendaSelecionadaId == null
+      ? eq(vendas.userId, acessos.titularUserId)
+      : and(eq(vendas.userId, acessos.titularUserId), inArray(vendas.fazendaId, vendasIds));
+    const rows = await banco
+      .select({
+        id: vendas.id,
+        data: vendas.data,
+        comprador: vendas.comprador,
+        valorTotal: vendas.valorTotal,
+        status: vendas.status,
+        fazendaId: vendas.fazendaId,
+      })
+      .from(vendas)
+      .where(filtro)
+      .orderBy(desc(vendas.data), desc(vendas.id))
+      .limit(20);
+    for (const row of rows) {
+      if (!vendaVisivelNoEscopo(row.fazendaId, escopoVenda)) continue;
+      if (!operacaoComercialVisivelPainel(row, fazendaSelecionadaId)) continue;
+      if (vendasVisiveis.length >= PAINEL_COMERCIAL_RECENTES) break;
+      vendasVisiveis.push({
         id: row.id,
-        tipo: "venda" as const,
+        tipo: "venda",
         data: row.data ?? null,
         parceiro: String(row.comprador ?? "").trim() || "—",
         valor: valorOperacaoPainel(row.valorTotal),
-      }));
-    return { compras: comprasVisiveis, vendas: vendasVisiveis };
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) {
-      console.warn("[painel] Compra/venda recente indisponível:", error);
+      });
     }
-    return emptyPainelComercial();
   }
-}
-
-async function anexarFinanceiroComercial(
-  userId: number,
-  sessionVersion: number | null,
-  escopo: Extract<ReturnType<typeof resolverEscopoFazendasPainel>, { ok: true }>,
-  base: PainelOverview,
-): Promise<PainelOverview> {
-  const [financeiro, comercial] = await Promise.all([
-    financeiroDoPainel(ioFinanceiroPainel(), {
-      executorId: userId,
-      sessionVersionDaSessao: sessionVersion,
-      fazendaSelecionadaId: escopo.fazendaSelecionadaId,
-    }),
-    carregarComercialPainel(userId, escopo.fazendaSelecionadaId),
-  ]);
-  return { ...base, financeiro, comercial };
-}
-
-function montarDeFontes(input: {
-  escopo: Extract<ReturnType<typeof resolverEscopoFazendasPainel>, { ok: true }>;
-  animaisAtivos: Parameters<typeof agregarRebanhoPainel>[0];
-  produtos: Parameters<typeof agregarEstoquePainel>[0];
-  movimentacoes: { nome?: string | null; dataValidade?: string | Date | null }[];
-  saudeAlertas: { tipo?: string | null; medicamento?: string | null; proximaData?: string | Date | null }[];
-  partos: Parameters<typeof agregarAlertasPainel>[0]["partos"];
-  manutencoes: Parameters<typeof agregarAlertasPainel>[0]["manutencoes"];
-  pastos: { id: number; nome: string; capacidade?: number | null; qtdAnimais?: number | null }[];
-  totalLotes: number;
-  saudeRecente: PainelOverview["saudeRecente"];
-}): PainelOverview {
-  const estoqueResumo = agregarEstoquePainel(input.produtos);
-  return montarPainelOverview({
-    escopo: input.escopo,
-    totalLotes: input.totalLotes,
-    totalPastos: input.pastos.length,
-    rebanho: agregarRebanhoPainel(input.animaisAtivos),
-    estoque: estoqueResumo,
-    alertas: agregarAlertasPainel({
-      estoqueBaixo: estoqueResumo.baixo,
-      movimentacoes: input.movimentacoes,
-      saude: input.saudeAlertas,
-      partos: input.partos,
-      manutencoes: input.manutencoes,
-    }),
-    ocupacao: agregarOcupacaoPainel(input.pastos),
-    saudeRecente: input.saudeRecente,
-  });
+  return { compras: comprasVisiveis, vendas: vendasVisiveis };
 }
 
 async function carregarPainelMysql(
-  userId: number,
+  banco: BancoPainel,
+  acessos: AcessosPainel,
   escopo: Extract<ReturnType<typeof resolverEscopoFazendasPainel>, { ok: true }>,
 ): Promise<PainelOverview> {
-  const fazendaIds = escopo.fazendaIds;
-  if (fazendaIds.length === 0) {
-    return montarPainelOverview({
-      escopo,
-      totalLotes: 0,
-      totalPastos: 0,
-      rebanho: agregarRebanhoPainel([]),
-      estoque: { valorTotal: 0, totalProdutos: 0, baixo: [] },
-      alertas: agregarAlertasPainel({
-        estoqueBaixo: [],
-        movimentacoes: [],
-        saude: [],
-        partos: [],
-        manutencoes: [],
-      }),
-      ocupacao: [],
-      saudeRecente: [],
-    });
-  }
+  const selecionada = escopo.fazendaSelecionadaId;
+  const titular = acessos.titularUserId;
+  const animaisIds = recorteFazendas(acessos.concedidas["animais.visualizar"], selecionada);
+  const lotesIds = recorteFazendas(acessos.concedidas["lotes.visualizar"], selecionada);
+  const pastosIds = recorteFazendas(acessos.concedidas["pastos.visualizar"], selecionada);
+  const estoqueIds = recorteFazendas(acessos.concedidas["estoque.visualizar"], selecionada);
+  const saudeIds = recorteFazendas(acessos.concedidas["saude.visualizar"], selecionada);
+  const reproIds = recorteFazendas(acessos.concedidas["reproducao.visualizar"], selecionada);
+  const manutIds = recorteFazendas(acessos.concedidas["manutencoes.visualizar"], selecionada);
+  const comprasIds = recorteFazendas(acessos.concedidas["compras.visualizar"], selecionada);
+  const vendasIds = recorteFazendas(acessos.concedidas["vendas.visualizar"], selecionada);
+  const autorizacao: AutorizacaoPainel = {
+    rebanho: estadoRecorte(acessos.concedidas["animais.visualizar"], selecionada),
+    estoque: estadoRecorte(acessos.concedidas["estoque.visualizar"], selecionada),
+    lotes: estadoRecorte(acessos.concedidas["lotes.visualizar"], selecionada),
+    pastos: estadoRecorte(acessos.concedidas["pastos.visualizar"], selecionada),
+    area: estadoRecorte(acessos.concedidas["fazendas.visualizar"], selecionada),
+    sanidade: estadoRecorte(acessos.concedidas["saude.visualizar"], selecionada),
+    reproducao: estadoRecorte(acessos.concedidas["reproducao.visualizar"], selecionada),
+    manutencao: estadoRecorte(acessos.concedidas["manutencoes.visualizar"], selecionada),
+    compras: estadoRecorte(acessos.concedidas["compras.visualizar"], selecionada),
+    vendas: estadoRecorte(acessos.concedidas["vendas.visualizar"], selecionada),
+  };
 
-  const { loteFazendaById } = await loadLoteFazendaContextForUser(userId);
-  const animaisAtivos = await db
-    .select({
-      id: animais.id,
-      sexo: animais.sexo,
-      categoria: animais.categoria,
-      dataNascimento: animais.dataNascimento,
-      pesoAtual: animais.pesoAtual,
-      fazendaId: animais.fazendaId,
-      loteId: animais.loteId,
-      brinco: animais.brinco,
-      nome: animais.nome,
-    })
-    .from(animais)
-    .where(and(eq(animais.userId, userId), eq(animais.status, "ativo")));
+  const loteFazendaById = await contextoLotes(banco, titular);
+  const animaisAtivos = animaisIds == null
+    ? []
+    : await banco
+      .select({
+        id: animais.id,
+        sexo: animais.sexo,
+        categoria: animais.categoria,
+        dataNascimento: animais.dataNascimento,
+        pesoAtual: animais.pesoAtual,
+        fazendaId: animais.fazendaId,
+        loteId: animais.loteId,
+        brinco: animais.brinco,
+        nome: animais.nome,
+      })
+      .from(animais)
+      .where(and(eq(animais.userId, titular), eq(animais.status, "ativo")));
+  const visiveis = animaisIds == null
+    ? []
+    : animaisAtivos.filter((animal) => animalNasFazendasPainel(animal, animaisIds, loteFazendaById));
+  const animalIds = visiveis.map((animal) => animal.id);
+  const animalPorId = new Map(visiveis.map((animal) => [animal.id, animal]));
 
-  const visiveis = animaisAtivos.filter(a => animalNasFazendasPainel(a, fazendaIds, loteFazendaById));
-  const animalIds = visiveis.map(a => a.id);
-  const animalPorId = new Map(visiveis.map(a => [a.id, a]));
-
-  const produtos = await db
-    .select()
-    .from(estoque)
-    .where(inArray(estoque.fazendaId, fazendaIds));
-
-  const movs = await db
-    .select({
-      nome: estoque.nome,
-      dataValidade: estoqueMovimentacoes.dataValidade,
-      fazendaId: estoqueMovimentacoes.fazendaId,
-      produtoFazendaId: estoque.fazendaId,
-    })
-    .from(estoqueMovimentacoes)
-    .innerJoin(estoque, eq(estoque.id, estoqueMovimentacoes.estoqueId))
-    .where(and(inArray(estoque.fazendaId, fazendaIds), isNotNull(estoqueMovimentacoes.dataValidade)));
-
-  const saudeAlertas = animalIds.length
-    ? await db
+  const fazendaIds = estoqueIds ?? [];
+  const produtos = fazendaIds.length === 0
+    ? []
+    : filtrarProdutosEstoque(
+      await banco.select({
+        id: estoque.id,
+        fazendaId: estoque.fazendaId,
+        nome: estoque.nome,
+        quantidade: estoque.quantidade,
+        quantidadeMinima: estoque.quantidadeMinima,
+        unidade: estoque.unidade,
+        monitorarEstoque: estoque.monitorarEstoque,
+        controlarSaldo: estoque.controlarSaldo,
+        valorUnitario: estoque.valorUnitario,
+        valorTotalEstoque: estoque.valorTotalEstoque,
+        capitalInicializadoEm: estoque.capitalInicializadoEm,
+      }).from(estoque).where(inArray(estoque.fazendaId, fazendaIds)),
+      fazendaIds,
+    );
+  const movs = fazendaIds.length === 0
+    ? []
+    : filtrarMovimentacoesEstoque(
+      await banco
         .select({
-          tipo: saudeRegistros.tipo,
-          medicamento: saudeRegistros.medicamento,
-          proximaData: saudeRegistros.proximaData,
+          nome: estoque.nome,
+          dataValidade: estoqueMovimentacoes.dataValidade,
+          fazendaId: estoqueMovimentacoes.fazendaId,
+          produtoFazendaId: estoque.fazendaId,
         })
-        .from(saudeRegistros)
-        .where(and(
-          eq(saudeRegistros.userId, userId),
-          inArray(saudeRegistros.animalId, animalIds),
-          isNotNull(saudeRegistros.proximaData),
-        ))
-    : [];
+        .from(estoqueMovimentacoes)
+        .innerJoin(estoque, eq(estoque.id, estoqueMovimentacoes.estoqueId))
+        .where(and(inArray(estoque.fazendaId, fazendaIds), isNotNull(estoqueMovimentacoes.dataValidade))),
+      fazendaIds,
+    );
 
-  const saudeRecente = animalIds.length
-    ? await db
-        .select({
-          id: saudeRegistros.id,
-          animalId: saudeRegistros.animalId,
-          tipo: saudeRegistros.tipo,
-          medicamento: saudeRegistros.medicamento,
-          dataRegistro: saudeRegistros.dataRegistro,
-        })
-        .from(saudeRegistros)
-        .where(and(eq(saudeRegistros.userId, userId), inArray(saudeRegistros.animalId, animalIds)))
-        .orderBy(desc(saudeRegistros.createdAt))
-        .limit(6)
-    : [];
+  const animaisSaude = await animaisSemHistoricoFora(banco, titular, animalIds, saudeIds);
+  const animaisRepro = await animaisSemHistoricoFora(banco, titular, animalIds, reproIds);
+  const saudeAlertas = animaisSaude.length === 0
+    ? []
+    : await banco
+      .select({
+        tipo: saudeRegistros.tipo,
+        medicamento: saudeRegistros.medicamento,
+        proximaData: saudeRegistros.proximaData,
+      })
+      .from(saudeRegistros)
+      .where(and(
+        eq(saudeRegistros.userId, titular),
+        inArray(saudeRegistros.animalId, animaisSaude),
+        isNotNull(saudeRegistros.proximaData),
+      ));
+  const saudeRecente = animaisSaude.length === 0
+    ? []
+    : await banco
+      .select({
+        id: saudeRegistros.id,
+        animalId: saudeRegistros.animalId,
+        tipo: saudeRegistros.tipo,
+        medicamento: saudeRegistros.medicamento,
+        dataRegistro: saudeRegistros.dataRegistro,
+      })
+      .from(saudeRegistros)
+      .where(and(eq(saudeRegistros.userId, titular), inArray(saudeRegistros.animalId, animaisSaude)))
+      .orderBy(desc(saudeRegistros.createdAt))
+      .limit(6);
+  const partosRows = animaisRepro.length === 0
+    ? []
+    : await banco
+      .select({
+        femeaId: reproducaoRegistros.femeaId,
+        dataPrevistoParto: reproducaoRegistros.dataPrevistoParto,
+        dataPartoReal: reproducaoRegistros.dataPartoReal,
+      })
+      .from(reproducaoRegistros)
+      .where(and(
+        eq(reproducaoRegistros.userId, titular),
+        inArray(reproducaoRegistros.femeaId, animaisRepro),
+        isNotNull(reproducaoRegistros.dataPrevistoParto),
+      ));
 
-  const partosRows = animalIds.length
-    ? await db
-        .select({
-          femeaId: reproducaoRegistros.femeaId,
-          dataPrevistoParto: reproducaoRegistros.dataPrevistoParto,
-          dataPartoReal: reproducaoRegistros.dataPartoReal,
-        })
-        .from(reproducaoRegistros)
-        .where(and(
-          eq(reproducaoRegistros.userId, userId),
-          inArray(reproducaoRegistros.femeaId, animalIds),
-          isNotNull(reproducaoRegistros.dataPrevistoParto),
-        ))
-    : [];
+  const maquinasEscopo = await listarMaquinasPainel(banco, titular, manutIds);
+  const maquinaIds = maquinasEscopo.map((item) => item.id);
+  const manutRows = maquinaIds.length === 0
+    ? []
+    : await banco
+      .select({
+        tipo: manutencoes.tipo,
+        status: manutencoes.status,
+        proximaManutencao: manutencoes.proximaManutencao,
+      })
+      .from(manutencoes)
+      .where(and(
+        eq(manutencoes.userId, titular),
+        inArray(manutencoes.maquinaId, maquinaIds),
+        ne(manutencoes.status, "concluida"),
+        isNotNull(manutencoes.proximaManutencao),
+      ));
 
-  const maquinasEscopo = await db
-    .select({ id: maquinas.id })
-    .from(maquinas)
-    .where(and(eq(maquinas.userId, userId), inArray(maquinas.fazendaId, fazendaIds)));
-  const maquinaIds = maquinasEscopo.map(m => m.id);
-
-  const manutRows = maquinaIds.length
-    ? await db
-        .select({
-          tipo: manutencoes.tipo,
-          status: manutencoes.status,
-          proximaManutencao: manutencoes.proximaManutencao,
-        })
-        .from(manutencoes)
-        .where(and(
-          eq(manutencoes.userId, userId),
-          inArray(manutencoes.maquinaId, maquinaIds),
-          ne(manutencoes.status, "concluida"),
-          isNotNull(manutencoes.proximaManutencao),
-        ))
-    : [];
-
-  const pastosRows = await db
-    .select({
-      id: pastos.id,
-      nome: pastos.nome,
-      capacidade: pastos.capacidade,
-    })
-    .from(pastos)
-    .where(and(eq(pastos.userId, userId), inArray(pastos.fazendaId, fazendaIds)));
-
-  const pastoIds = pastosRows.map(p => p.id);
-  const lotesNoPasto = pastoIds.length
-    ? await db
-        .select({
-          id: lotes.id,
-          pastoAtualId: lotes.pastoAtualId,
-        })
-        .from(lotes)
-        .where(and(
-          eq(lotes.userId, userId),
-          inArray(lotes.pastoAtualId, pastoIds),
-        ))
-    : [];
-
-  const loteIdsPasto = lotesNoPasto.map(l => l.id);
-  const contagemPorLote = loteIdsPasto.length
-    ? await db
-        .select({
-          loteId: animais.loteId,
-          qtd: sql<number>`COUNT(*)`,
-        })
-        .from(animais)
-        .where(and(
-          eq(animais.userId, userId),
-          eq(animais.status, "ativo"),
-          inArray(animais.loteId, loteIdsPasto),
-        ))
-        .groupBy(animais.loteId)
-    : [];
-  const qtdPorLote = new Map(contagemPorLote.map(r => [Number(r.loteId), Number(r.qtd)]));
+  const pastosRows = await listarPastosPainel(banco, titular, pastosIds);
+  const pastoIds = pastosRows.map((pasto) => pasto.id);
+  const lotesNoPasto = pastoIds.length === 0
+    ? []
+    : await banco
+      .select({ id: lotes.id, pastoAtualId: lotes.pastoAtualId })
+      .from(lotes)
+      .where(and(eq(lotes.userId, titular), inArray(lotes.pastoAtualId, pastoIds)));
+  const loteIdsPasto = lotesNoPasto.map((lote) => lote.id);
+  const contagemPorLote = loteIdsPasto.length === 0 || animaisIds == null
+    ? []
+    : await banco
+      .select({ loteId: animais.loteId, qtd: sql<number>`COUNT(*)` })
+      .from(animais)
+      .where(and(
+        eq(animais.userId, titular),
+        eq(animais.status, "ativo"),
+        inArray(animais.loteId, loteIdsPasto),
+      ))
+      .groupBy(animais.loteId);
+  const qtdPorLote = new Map(contagemPorLote.map((row) => [Number(row.loteId), Number(row.qtd)]));
   const qtdPorPasto = new Map<number, number>();
   for (const lote of lotesNoPasto) {
     if (lote.pastoAtualId == null) continue;
+    const fazendaLote = loteFazendaById.get(lote.id) ?? null;
+    if (animaisIds != null && (fazendaLote == null || !animaisIds.includes(fazendaLote))) continue;
     qtdPorPasto.set(
       lote.pastoAtualId,
       (qtdPorPasto.get(lote.pastoAtualId) ?? 0) + (qtdPorLote.get(lote.id) ?? 0),
     );
   }
+  const totalLotes = lotesIds == null
+    ? 0
+    : [...loteFazendaById.entries()].filter(([, fazendaId]) => fazendaId != null && lotesIds.includes(fazendaId)).length;
 
-  const totalLotes = [...loteFazendaById.entries()]
-    .filter(([, fid]) => fid != null && fazendaIds.includes(fid))
-    .length;
-
-  return montarDeFontes({
+  const estoqueResumo = agregarEstoquePainel(autorizacao.estoque === "autorizado" ? produtos : []);
+  const painel = montarPainelOverview({
     escopo,
-    animaisAtivos: visiveis,
-    produtos,
-    movimentacoes: movs,
-    saudeAlertas,
-    partos: partosRows.map(r => ({
-      ...r,
-      femea: animalPorId.get(r.femeaId) ?? null,
-    })),
-    manutencoes: manutRows,
-    pastos: pastosRows.map(p => ({
-      ...p,
-      qtdAnimais: qtdPorPasto.get(p.id) ?? 0,
-    })),
-    totalLotes,
-    saudeRecente: saudeRecente.map(s => ({
-      id: s.id,
-      animalId: s.animalId,
-      tipo: s.tipo,
-      medicamento: s.medicamento ?? null,
-      dataRegistro: s.dataRegistro ?? null,
-    })),
+    totalLotes: autorizacao.lotes === "autorizado" ? totalLotes : 0,
+    totalPastos: autorizacao.pastos === "autorizado" ? pastosRows.length : 0,
+    rebanho: agregarRebanhoPainel(autorizacao.rebanho === "autorizado" ? visiveis : []),
+    estoque: autorizacao.estoque === "autorizado" ? estoqueResumo : { valorTotal: 0, totalProdutos: 0, baixo: [] },
+    alertas: agregarAlertasPainel({
+      estoqueBaixo: autorizacao.estoque === "autorizado" ? estoqueResumo.baixo : [],
+      movimentacoes: autorizacao.estoque === "autorizado" ? movs : [],
+      saude: autorizacao.sanidade === "autorizado" ? saudeAlertas : [],
+      partos: autorizacao.reproducao === "autorizado"
+        ? partosRows.map((row) => ({ ...row, femea: animalPorId.get(row.femeaId) ?? null }))
+        : [],
+      manutencoes: autorizacao.manutencao === "autorizado" ? manutRows : [],
+    }),
+    ocupacao: autorizacao.pastos === "autorizado"
+      ? agregarOcupacaoPainel(pastosRows.map((pasto) => ({ ...pasto, qtdAnimais: qtdPorPasto.get(pasto.id) ?? 0 })))
+      : [],
+    saudeRecente: autorizacao.sanidade === "autorizado"
+      ? saudeRecente.map((item) => ({
+        id: item.id,
+        animalId: item.animalId,
+        tipo: item.tipo,
+        medicamento: item.medicamento ?? null,
+        dataRegistro: item.dataRegistro ?? null,
+      }))
+      : [],
+    comercial: await carregarComercialPainel(banco, acessos, comprasIds, vendasIds, selecionada),
+    autorizacao,
   });
+  if (autorizacao.area !== "autorizado") painel.areaTotal = 0;
+  else {
+    const areaIds = new Set(recorteFazendas(acessos.concedidas["fazendas.visualizar"], selecionada) ?? []);
+    painel.areaTotal = painel.fazendas
+      .filter((fazenda) => areaIds.has(fazenda.id) && (selecionada == null || fazenda.id === selecionada))
+      .reduce((soma, fazenda) => soma + (Number(fazenda.area) || 0), 0);
+  }
+  if (autorizacao.compras !== "autorizado") painel.comercial.compras = [];
+  if (autorizacao.vendas !== "autorizado") painel.comercial.vendas = [];
+  return painel;
 }
 
-async function carregarPainelLocal(
-  userId: number,
-  escopo: Extract<ReturnType<typeof resolverEscopoFazendasPainel>, { ok: true }>,
-): Promise<PainelOverview> {
-  const fazendaIds = escopo.fazendaIds;
-  if (fazendaIds.length === 0) {
-    return montarPainelOverview({
-      escopo,
-      totalLotes: 0,
-      totalPastos: 0,
-      rebanho: agregarRebanhoPainel([]),
-      estoque: { valorTotal: 0, totalProdutos: 0, baixo: [] },
-      alertas: agregarAlertasPainel({
-        estoqueBaixo: [],
-        movimentacoes: [],
-        saude: [],
-        partos: [],
-        manutencoes: [],
-      }),
-      ocupacao: [],
-      saudeRecente: [],
-    });
+async function listarPastosPainel(banco: BancoPainel, titularUserId: number, fazendaIds: number[] | null) {
+  if (fazendaIds == null || fazendaIds.length === 0) return [];
+  return banco
+    .select({ id: pastos.id, nome: pastos.nome, capacidade: pastos.capacidade })
+    .from(pastos)
+    .where(and(eq(pastos.userId, titularUserId), inArray(pastos.fazendaId, fazendaIds)));
+}
+
+async function listarMaquinasPainel(banco: BancoPainel, titularUserId: number, fazendaIds: number[] | null) {
+  if (fazendaIds == null || fazendaIds.length === 0) return [];
+  return banco
+    .select({ id: maquinas.id })
+    .from(maquinas)
+    .where(and(eq(maquinas.userId, titularUserId), inArray(maquinas.fazendaId, fazendaIds)));
+}
+
+async function animaisSemHistoricoFora(
+  banco: BancoPainel,
+  titularUserId: number,
+  animalIds: number[],
+  fazendasEvento: number[] | null,
+): Promise<number[]> {
+  if (fazendasEvento == null || animalIds.length === 0) return [];
+  const permitidas = new Set(fazendasEvento);
+  const movimentos = await banco
+    .select({
+      animalId: animalLoteMovimentacoes.animalId,
+      fazendaId: animalLoteMovimentacoes.fazendaId,
+      fazendaOrigemId: animalLoteMovimentacoes.fazendaOrigemId,
+    })
+    .from(animalLoteMovimentacoes)
+    .where(and(
+      eq(animalLoteMovimentacoes.userId, titularUserId),
+      inArray(animalLoteMovimentacoes.animalId, animalIds),
+    ));
+  const fora = new Set<number>();
+  for (const movimento of movimentos) {
+    const destinoFora = movimento.fazendaId != null && !permitidas.has(movimento.fazendaId);
+    const origemFora = movimento.fazendaOrigemId != null && !permitidas.has(movimento.fazendaOrigemId);
+    if (destinoFora || origemFora) fora.add(movimento.animalId);
   }
+  return animalIds.filter((id) => !fora.has(id));
+}
 
-  const [animaisLocais, lotesLocais, pastosLocais, saude, repro, manut, maqs] = await Promise.all([
-    listLocalAnimais(userId),
-    listLocalLotes(userId),
-    listLocalPastos(userId),
-    listLocalSaudeRegistros(userId),
-    listLocalReproducaoRegistros(userId),
-    listLocalManutencoes(userId),
-    listLocalMaquinas(userId),
-  ]);
-
-  const loteFazendaById = new Map<number, number | null>();
-  const pastoFazenda = new Map(pastosLocais.map(p => [p.id, p.fazendaId ?? null]));
-  for (const lote of lotesLocais) {
-    loteFazendaById.set(
-      lote.id,
-      lote.fazendaId ?? (lote.pastoAtualId != null ? pastoFazenda.get(lote.pastoAtualId) ?? null : null),
-    );
+async function contarOnde(
+  banco: BancoPainel,
+  tabela: typeof animais | typeof lotes | typeof maquinas | typeof benfeitorias,
+  titularUserId: number,
+  fazendaIds: number[] | null,
+  papel: string,
+): Promise<number | null> {
+  if (fazendaIds == null) return null;
+  if (papel === "principal") {
+    const [linha] = await banco
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(tabela)
+      .where(eq(tabela.userId, titularUserId));
+    return Number(linha?.count || 0);
   }
-
-  const visiveis = animaisLocais.filter(
-    a => a.status === "ativo" && animalNasFazendasPainel(
-      { fazendaId: a.fazendaId ?? null, loteId: a.loteId ?? null },
-      fazendaIds,
-      loteFazendaById,
-    ),
-  );
-  const animalIds = new Set(visiveis.map(a => a.id));
-  const animalPorId = new Map(visiveis.map(a => [a.id, a]));
-
-  const produtos = filtrarProdutosEstoque(devLocalStore.listEstoque(), fazendaIds);
-  const movs = filtrarMovimentacoesEstoque(
-    devLocalStore.listMovimentacoes().map(m => ({
-      ...m,
-      nome: produtos.find(p => p.id === m.estoqueId)?.nome,
-      produtoFazendaId: produtos.find(p => p.id === m.estoqueId)?.fazendaId ?? null,
-    })),
-    fazendaIds,
-  );
-
-  const maquinaIds = new Set(
-    maqs.filter(m => m.fazendaId != null && fazendaIds.includes(Number(m.fazendaId))).map(m => m.id),
-  );
-  const pastosEscopo = pastosLocais.filter(p => fazendaIds.includes(Number(p.fazendaId)));
-  const qtdPorPasto = new Map<number, number>();
-  for (const lote of lotesLocais) {
-    if (lote.pastoAtualId == null) continue;
-    const qtd = visiveis.filter(a => a.loteId === lote.id).length;
-    qtdPorPasto.set(lote.pastoAtualId, (qtdPorPasto.get(lote.pastoAtualId) ?? 0) + qtd);
+  if (fazendaIds.length === 0) return 0;
+  if (tabela === animais) {
+    const linhas = await banco
+      .select({ fazendaId: animais.fazendaId, loteId: animais.loteId })
+      .from(animais)
+      .where(eq(animais.userId, titularUserId));
+    const loteFazendaById = await contextoLotes(banco, titularUserId);
+    return linhas.filter((animal) => animalNasFazendasPainel(animal, fazendaIds, loteFazendaById)).length;
   }
+  if (tabela === lotes) {
+    const loteFazendaById = await contextoLotes(banco, titularUserId);
+    return [...loteFazendaById.values()].filter((fazendaId) => fazendaId != null && fazendaIds.includes(fazendaId)).length;
+  }
+  const [linha] = await banco
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(tabela)
+    .where(and(eq(tabela.userId, titularUserId), inArray(tabela.fazendaId, fazendaIds)));
+  return Number(linha?.count || 0);
+}
 
-  return montarDeFontes({
-    escopo,
-    animaisAtivos: visiveis,
-    produtos,
-    movimentacoes: movs,
-    saudeAlertas: saude.filter(s => animalIds.has(s.animalId)),
-    partos: repro
-      .filter(r => animalIds.has(r.femeaId))
-      .map(r => {
-        const femea = animalPorId.get(r.femeaId);
-        return {
-          femeaId: r.femeaId,
-          dataPrevistoParto: r.dataPrevistoParto,
-          dataPartoReal: r.dataPartoReal,
-          femea: femea ? { brinco: femea.brinco ?? null, nome: femea.nome ?? null } : null,
-        };
-      }),
-    manutencoes: manut.filter(m => maquinaIds.has(m.maquinaId)),
-    pastos: pastosEscopo.map(p => ({
-      id: p.id,
-      nome: p.nome,
-      capacidade: p.capacidade ?? null,
-      qtdAnimais: qtdPorPasto.get(p.id) ?? 0,
-    })),
-    totalLotes: lotesLocais.filter(l => {
-      const fid = loteFazendaById.get(l.id);
-      return fid != null && fazendaIds.includes(fid);
-    }).length,
-    saudeRecente: saude
-      .filter(s => animalIds.has(s.animalId))
-      .slice(0, 6)
-      .map(s => ({
-        id: s.id,
-        animalId: s.animalId,
-        tipo: s.tipo,
-        medicamento: s.medicamento ?? null,
-        dataRegistro: s.dataRegistro ?? null,
-      })),
-  });
+export async function carregarStatsPainel(
+  executorId: number,
+  sessionVersion?: number | null,
+  opcoes?: OpcoesPainel,
+): Promise<StatsPainel> {
+  try {
+    const banco = bancoDe(opcoes);
+    const acessos = await resolverAcessosPainel(banco, executorId, sessionVersion ?? null);
+    const [totalAnimais, totalLotes, totalMaquinas, totalBenfeitorias] = await Promise.all([
+      contarOnde(banco, animais, acessos.titularUserId, acessos.concedidas["animais.visualizar"], acessos.papel),
+      contarOnde(banco, lotes, acessos.titularUserId, acessos.concedidas["lotes.visualizar"], acessos.papel),
+      contarOnde(banco, maquinas, acessos.titularUserId, acessos.concedidas["maquinas.visualizar"], acessos.papel),
+      contarOnde(banco, benfeitorias, acessos.titularUserId, acessos.concedidas["benfeitorias.visualizar"], acessos.papel),
+    ]);
+    return {
+      totalAnimais,
+      totalLotes,
+      totalMaquinas,
+      totalBenfeitorias,
+      totalReceitas: null,
+      totalDespesas: null,
+      saldoTotal: null,
+    };
+  } catch (error) {
+    falhaPainel(error);
+  }
 }
 
 export async function carregarPainelControle(
   userId: number,
   fazendaId?: number | null,
   sessionVersion?: number | null,
+  opcoes?: OpcoesPainel,
 ): Promise<PainelOverview> {
-  const fazendasAutorizadas = await listarFazendasAutorizadasPainel(userId);
-  const escopo = resolverEscopoFazendasPainel({ fazendaId, fazendasAutorizadas });
-  if (!escopo.ok) {
-    throw new TRPCError({ code: "FORBIDDEN", message: MSG_PAINEL_FAZENDA_NEGADA });
-  }
-  const versao = sessionVersion ?? null;
-
   try {
-    const operacional = await carregarPainelMysql(userId, escopo);
-    return anexarFinanceiroComercial(userId, versao, escopo, operacional);
+    const banco = bancoDe(opcoes);
+    const acessos = await resolverAcessosPainel(banco, userId, sessionVersion ?? null);
+    const escopo = resolverEscopoFazendasPainel({
+      fazendaId,
+      fazendasAutorizadas: acessos.fazendas,
+    });
+    if (!escopo.ok) {
+      throw new TRPCError({ code: "FORBIDDEN", message: MSG_PAINEL_FAZENDA_NEGADA });
+    }
+    const operacional = await carregarPainelMysql(banco, acessos, escopo);
+    const financeiro = await financeiroDoPainel(opcoes?.financeiro ?? ioFinanceiroPainel(), {
+      executorId: userId,
+      sessionVersionDaSessao: sessionVersion ?? null,
+      fazendaSelecionadaId: escopo.fazendaSelecionadaId,
+    });
+    return { ...operacional, financeiro };
   } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    const operacional = await carregarPainelLocal(userId, escopo);
-    return anexarFinanceiroComercial(userId, versao, escopo, operacional);
+    falhaPainel(error);
   }
 }
-
-export { listarFazendasAutorizadasPainel };

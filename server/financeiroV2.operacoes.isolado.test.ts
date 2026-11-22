@@ -213,7 +213,7 @@ describe.sequential("financeiro V2 no mysql descartável", () => {
       origemItemChave: `p-${seq}`,
       parcelas: [{ numero: 1, vencimento: "2026-03-20", valorOriginal: valor }],
     }, { ...sessaoTitular, permissaoId: "financeiro.criar", exigirPrincipal: false });
-    const detalhe = await svc.detalheTitulo(1, criado.id);
+    const detalhe = await svc.detalheTitulo(1, criado.id, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     return { tituloId: criado.id, parcelaId: detalhe.parcelas[0]!.id, valor };
   }
 
@@ -268,7 +268,7 @@ describe.sequential("financeiro V2 no mysql descartável", () => {
       "SELECT titulo_id AS tituloId FROM financeiro_parcelas WHERE id = ?",
       [parcelaId],
     );
-    const detalhe = await svc.detalheTitulo(1, Number(parcela[0]!.tituloId));
+    const detalhe = await svc.detalheTitulo(1, Number(parcela[0]!.tituloId), { titularUserId: 1, papel: "principal", fazendaIds: [] });
     expect(detalhe.parcelas[0]!.saldoPrincipal).toBe(0);
   });
 
@@ -281,7 +281,7 @@ describe.sequential("financeiro V2 no mysql descartável", () => {
       idempotencyKey: `rec-parcial-${parcelaId}`,
       alocacoes: [{ parcelaId, principalLiquidado: 40 }],
     }, sessaoFunc);
-    const detalhe = await svc.detalheTitulo(1, tituloId);
+    const detalhe = await svc.detalheTitulo(1, tituloId, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     expect(detalhe.parcelas[0]!.saldoPrincipal).toBe(60);
     expect(detalhe.parcelas[0]!.quitada).toBe(false);
   });
@@ -421,7 +421,7 @@ describe.sequential("financeiro V2 no mysql descartável", () => {
       }, sessaoEstorno),
       pagamento(parcelaId, 20, `pag-depois-${parcelaId}`),
     ]);
-    const detalhe = await svc.detalheTitulo(1, tituloId);
+    const detalhe = await svc.detalheTitulo(1, tituloId, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     expect(detalhe.parcelas[0]!.saldoPrincipal).toBeGreaterThanOrEqual(0);
     expect(detalhe.parcelas[0]!.saldoPrincipal).toBeLessThanOrEqual(20);
   });

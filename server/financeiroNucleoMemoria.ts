@@ -388,6 +388,6 @@ export async function cenarioBase() {
       { numero: 3, vencimento: "2026-05-01", valorOriginal: 10000 },
     ],
   });
-  const detalhe = await svc.detalheTitulo(10, titulo.id);
+  const detalhe = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
   return { store, svc, contaId: conta.id, tituloId: titulo.id, parcelas: detalhe.parcelas };
 }

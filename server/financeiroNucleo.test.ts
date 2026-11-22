@@ -36,7 +36,7 @@ describe("financeiroNucleo — Fase 1", () => {
     const { svc, tituloId } = await cenarioBase();
     const ok = await svc.validarIntegridadeTitulo(10, tituloId);
     expect(ok).toEqual({ ok: true });
-    const d = await svc.detalheTitulo(10, tituloId);
+    const d = await svc.detalheTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas).toHaveLength(3);
     expect(d.parcelas.reduce((a, p) => a + Number(p.valorOriginal), 0)).toBe(30000);
   });
@@ -50,7 +50,7 @@ describe("financeiroNucleo — Fase 1", () => {
       idempotencyKey: "pag-parcial",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
     });
-    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId);
+    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas[0]!.saldoPrincipal).toBe(6000);
     expect(d.parcelas[0]!.quitada).toBe(false);
   });
@@ -79,7 +79,7 @@ describe("financeiroNucleo — Fase 1", () => {
       idempotencyKey: "pag-desc",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000, desconto: 200 }],
     });
-    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId);
+    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas[0]!.quitada).toBe(true);
     expect(store.movimentos[0]!.valor).toBe("9800.00");
   });
@@ -177,7 +177,7 @@ describe("financeiroNucleo — Fase 1", () => {
     const inverso = store.movimentos.find(m => m.natureza === "estorno_pagamento");
     expect(inverso?.direcao).toBe("entrada");
     expect(inverso?.valor).toBe("4000.00");
-    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId);
+    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas[0]!.saldoPrincipal).toBe(10000);
   });
 
@@ -204,8 +204,8 @@ describe("financeiroNucleo — Fase 1", () => {
       tipo: "pagar", pessoaId: 2, descricao: "B", dataCompetencia: "2026-01-01", valorOriginal: 1000,
       parcelas: [{ numero: 1, vencimento: "2026-02-01", valorOriginal: 1000 }],
     });
-    const d1 = await svc.detalheTitulo(10, t1.id);
-    const d2 = await svc.detalheTitulo(10, t2.id);
+    const d1 = await svc.detalheTitulo(10, t1.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    const d2 = await svc.detalheTitulo(10, t2.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await expect(svc.criarPagamento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-03-01",
@@ -262,8 +262,8 @@ describe("financeiroNucleo — Fase 1", () => {
       valorOriginal: 7000,
       parcelas: [{ numero: 1, vencimento: "2026-02-10", valorOriginal: 7000 }],
     });
-    const r = await svc.detalheTitulo(10, receber.id);
-    const p = await svc.detalheTitulo(10, pagar.id);
+    const r = await svc.detalheTitulo(10, receber.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    const p = await svc.detalheTitulo(10, pagar.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await svc.criarRecebimento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-02-10",
@@ -346,7 +346,7 @@ describe("financeiroNucleo — Fase 1", () => {
       valorOriginal: 1000,
       parcelas: [{ numero: 1, vencimento: "2026-09-30", valorOriginal: 1000 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await expect(svc.criarPagamento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-09-30",
@@ -629,7 +629,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
       valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-02-10", valorOriginal: 10000 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-02-10",
@@ -637,7 +637,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
       idempotencyKey: "3e8b-rec",
       alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 10000 }],
     });
-    const depois = await svc.detalheTitulo(10, titulo.id);
+    const depois = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(depois.parcelas[0]!.quitada).toBe(true);
     expect(depois.parcelas[0]!.saldoPrincipal).toBe(0);
     expect(store.liquidacoes).toHaveLength(1);
@@ -656,7 +656,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
       idempotencyKey: "3e8b-pag",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000 }],
     });
-    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId);
+    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas[0]!.quitada).toBe(true);
     expect(store.liquidacoes[0]!.tipo).toBe("pagamento");
     expect(store.movimentos[0]!.direcao).toBe("saida");
@@ -674,7 +674,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
       valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-02-10", valorOriginal: 10000 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-02-10",
@@ -702,7 +702,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
     expect(store.movimentos).toHaveLength(2);
     expect(store.movimentos.find(m => m.natureza === "estorno_recebimento")!.movimentoOriginalId)
       .toBe(store.movimentos.find(m => m.liquidacaoId === rec.id)!.id);
-    const depois = await svc.detalheTitulo(10, titulo.id);
+    const depois = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(depois.parcelas[0]!.saldoPrincipal).toBe(10000);
     expect(await svc.calcularSaldoConta(10, conta.id)).toBe(50000);
   });
@@ -725,7 +725,7 @@ describe("financeiroNucleo — segurança transacional 3E.8B", () => {
     expect(store.liquidacoes[1]!.valorMovimentado).toBe(store.liquidacoes[0]!.valorMovimentado);
     expect(store.alocacoes).toHaveLength(2);
     expect(store.movimentos).toHaveLength(2);
-    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId);
+    const d = await svc.detalheTitulo(10, parcelas[0]!.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(d.parcelas[0]!.saldoPrincipal).toBe(10000);
     expect(await svc.calcularSaldoConta(10, contaId)).toBe(50000);
   });
@@ -940,7 +940,7 @@ describe("financeiroNucleo — recuperação de deadlock 3E.8G", () => {
       tipo: "pagar", pessoaId: 1, descricao: "Compra", dataCompetencia: "2026-02-01", valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 10000 }],
     });
-    const detalhe = await svc.detalheTitulo(10, titulo.id);
+    const detalhe = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const antes = store.transacoes;
     const pag = await svc.criarPagamento(10, {
       contaId: conta.id, dataLiquidacao: "2026-03-02", valorMovimentado: 4000, idempotencyKey: "pag-dl-a",
@@ -982,7 +982,7 @@ describe("financeiroNucleo — recuperação de deadlock 3E.8G", () => {
       tipo: "pagar", pessoaId: 1, descricao: "Compra", dataCompetencia: "2026-02-01", valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 10000 }],
     });
-    const detalhe = await svc.detalheTitulo(10, titulo.id);
+    const detalhe = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(store.liquidacoes).toHaveLength(0);
     await svc.criarPagamento(10, {
       contaId: conta.id, dataLiquidacao: "2026-03-02", valorMovimentado: 4000, idempotencyKey: "pag-dl-cd",
@@ -1025,7 +1025,7 @@ describe("financeiroNucleo — recuperação de deadlock 3E.8G", () => {
       tipo: "pagar", pessoaId: 1, descricao: "Compra", dataCompetencia: "2026-02-01", valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 10000 }],
     });
-    const detalhe = await svc.detalheTitulo(10, titulo.id);
+    const detalhe = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await expect(svc.criarPagamento(10, {
       contaId: conta.id, dataLiquidacao: "2026-03-02", valorMovimentado: 4000, idempotencyKey: "pag-dl-f",
       alocacoes: [{ parcelaId: detalhe.parcelas[0]!.id, principalLiquidado: 4000 }],
@@ -1106,7 +1106,7 @@ describe("financeiroNucleo — recuperação de deadlock 3E.8G", () => {
       tipo: "receber", pessoaId: 1, descricao: "Venda", dataCompetencia: "2026-02-01", valorOriginal: 10000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 10000 }],
     });
-    const detalhe = await svc.detalheTitulo(10, titulo.id);
+    const detalhe = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: conta.id, dataLiquidacao: "2026-03-02", valorMovimentado: 4000, idempotencyKey: "rec-k",
       alocacoes: [{ parcelaId: detalhe.parcelas[0]!.id, principalLiquidado: 4000 }],
@@ -1517,10 +1517,10 @@ describe("financeiroNucleo — despesa manual 4.3", () => {
     });
     expect(store.movimentos).toHaveLength(0);
     expect(store.liquidacoes).toHaveLength(0);
-    expect((await svc.detalheTitulo(10, unico.id)).condicaoStatus).toBe("definida");
-    expect((await svc.detalheTitulo(10, depois.id)).parcelas).toHaveLength(2);
-    expect((await svc.detalheTitulo(10, aDefinir.id)).condicaoStatus).toBe("a_definir");
-    expect((await svc.detalheTitulo(10, aDefinir.id)).parcelas).toHaveLength(0);
+    expect((await svc.detalheTitulo(10, unico.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).condicaoStatus).toBe("definida");
+    expect((await svc.detalheTitulo(10, depois.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).parcelas).toHaveLength(2);
+    expect((await svc.detalheTitulo(10, aDefinir.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).condicaoStatus).toBe("a_definir");
+    expect((await svc.detalheTitulo(10, aDefinir.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).parcelas).toHaveLength(0);
   });
 
   it("recusa valor, pessoa, soma de parcelas e isola usuário", async () => {
@@ -1546,7 +1546,7 @@ describe("financeiroNucleo — despesa manual 4.3", () => {
     const ok = await svc.criarTitulo(10, {
       tipo: "pagar", pessoaId: 1, descricao: "Y", dataCompetencia: "2026-03-01", valorOriginal: 10,
     });
-    await expect(svc.detalheTitulo(99, ok.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(svc.detalheTitulo(99, ok.id, { titularUserId: 99, papel: "principal", fazendaIds: [] })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("pagamento sem saldo na conta é recusado pela mesma regra da transferência", async () => {
@@ -1563,7 +1563,7 @@ describe("financeiroNucleo — despesa manual 4.3", () => {
       valorOriginal: 25,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 25 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await expect(svc.criarPagamento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-03-10",
@@ -1587,7 +1587,7 @@ describe("financeiroNucleo — saldo do pagamento 4.3A", () => {
       valorOriginal: valor,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: valor }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     return d.parcelas[0]!;
   }
 
@@ -1616,7 +1616,7 @@ describe("financeiroNucleo — saldo do pagamento 4.3A", () => {
       contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 200, idempotencyKey: "pag-parc-ok",
       alocacoes: [{ parcelaId: p3.id, principalLiquidado: 200 }],
     });
-    expect((await svc.detalheTitulo(10, p3.tituloId)).parcelas[0]!.saldoPrincipal).toBe(1300);
+    expect((await svc.detalheTitulo(10, p3.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] })).parcelas[0]!.saldoPrincipal).toBe(1300);
     expect(await svc.calcularSaldoConta(10, conta.id)).toBe(0);
 
     await expect(svc.criarPagamento(10, {
@@ -1666,7 +1666,7 @@ describe("financeiroNucleo — saldo do pagamento 4.3A", () => {
       liquidacaoId: a.id, idempotencyKey: "est-43a", dataLiquidacao: "2026-03-11",
     });
     expect(await svc.calcularSaldoConta(10, conta.id)).toBe(300);
-    expect((await svc.detalheTitulo(10, p.tituloId)).parcelas[0]!.saldoPrincipal).toBe(100);
+    expect((await svc.detalheTitulo(10, p.tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] })).parcelas[0]!.saldoPrincipal).toBe(100);
   });
 
   it("recebimento não é bloqueado por saldo e disputa sequencial do mesmo saldo", async () => {
@@ -1679,7 +1679,7 @@ describe("financeiroNucleo — saldo do pagamento 4.3A", () => {
       tipo: "receber", pessoaId: 1, descricao: "Venda", dataCompetencia: "2026-03-01", valorOriginal: 80,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
     });
-    const dr = await svc.detalheTitulo(10, rec.id);
+    const dr = await svc.detalheTitulo(10, rec.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await svc.criarRecebimento(10, {
       contaId: conta.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-43a",
       alocacoes: [{ parcelaId: dr.parcelas[0]!.id, principalLiquidado: 80 }],
@@ -1751,8 +1751,8 @@ describe("financeiroNucleo — receita manual 4.4", () => {
     });
     expect(store.movimentos).toHaveLength(0);
     expect(store.liquidacoes).toHaveLength(0);
-    expect((await svc.detalheTitulo(10, unico.id)).tipo).toBe("receber");
-    expect((await svc.detalheTitulo(10, aDefinir.id)).condicaoStatus).toBe("a_definir");
+    expect((await svc.detalheTitulo(10, unico.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).tipo).toBe("receber");
+    expect((await svc.detalheTitulo(10, aDefinir.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).condicaoStatus).toBe("a_definir");
     await expect(svc.criarTitulo(10, {
       tipo: "receber", pessoaId: 1, descricao: "X", dataCompetencia: "2026-03-01", valorOriginal: 0,
     })).rejects.toMatchObject({ message: MSG_FIN_VALOR_POSITIVO });
@@ -1773,7 +1773,7 @@ describe("financeiroNucleo — receita manual 4.4", () => {
         { numero: 2, vencimento: "2026-04-10", valorOriginal: 40 },
       ],
     })).rejects.toMatchObject({ message: MSG_FIN_PARCELAS_SOMA });
-    await expect(svc.detalheTitulo(99, unico.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(svc.detalheTitulo(99, unico.id, { titularUserId: 99, papel: "principal", fazendaIds: [] })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("recebimento atualiza o caixa; estorno sem saldo é bloqueado e não cria movimento", async () => {
@@ -1793,7 +1793,7 @@ describe("financeiroNucleo — receita manual 4.4", () => {
       valorOriginal: 80,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-44",
       alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 80 }],
@@ -1809,7 +1809,7 @@ describe("financeiroNucleo — receita manual 4.4", () => {
     expect(await svc.calcularSaldoConta(10, caixa.id)).toBe(0);
     expect(store.liquidacoes.filter(l => l.tipo === "estorno_recebimento")).toHaveLength(0);
     expect(store.movimentos.filter(m => m.natureza === "estorno_recebimento")).toHaveLength(0);
-    expect((await svc.detalheTitulo(10, titulo.id)).parcelas[0]!.saldoPrincipal).toBe(0);
+    expect((await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] })).parcelas[0]!.saldoPrincipal).toBe(0);
   });
 });
 
@@ -1830,7 +1830,7 @@ describe("financeiroNucleo — segurança 4.5", () => {
       tipo: "receber", pessoaId: 1, descricao: "Aluguel", dataCompetencia: "2026-03-01", valorOriginal: 80,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
     });
-    const recDet = await svc.detalheTitulo(10, recTit.id);
+    const recDet = await svc.detalheTitulo(10, recTit.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-45",
       alocacoes: [{ parcelaId: recDet.parcelas[0]!.id, principalLiquidado: 80 }],
@@ -1852,12 +1852,12 @@ describe("financeiroNucleo — segurança 4.5", () => {
       tipo: "receber", pessoaId: 1, descricao: "Serviço", dataCompetencia: "2026-03-01", valorOriginal: 50,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 50 }],
     });
-    const rec2 = await svc.detalheTitulo(10, rec2Tit.id);
+    const rec2 = await svc.detalheTitulo(10, rec2Tit.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await svc.criarRecebimento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-14", valorMovimentado: 50, idempotencyKey: "rec-45c",
       alocacoes: [{ parcelaId: rec2.parcelas[0]!.id, principalLiquidado: 50 }],
     });
-    const pagDet = await svc.detalheTitulo(10, pagTit.id);
+    const pagDet = await svc.detalheTitulo(10, pagTit.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const pag = await svc.criarPagamento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-15", valorMovimentado: 50, idempotencyKey: "pag-45",
       alocacoes: [{ parcelaId: pagDet.parcelas[0]!.id, principalLiquidado: 50 }],
@@ -1882,7 +1882,7 @@ describe("financeiroNucleo — segurança 4.5", () => {
       tipo: "receber", pessoaId: 1, descricao: "Aluguel", dataCompetencia: "2026-03-01", valorOriginal: 80,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
     });
-    const d = await svc.detalheTitulo(10, titulo.id);
+    const d = await svc.detalheTitulo(10, titulo.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const rec = await svc.criarRecebimento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rec-45-conc",
       alocacoes: [{ parcelaId: d.parcelas[0]!.id, principalLiquidado: 80 }],
@@ -2045,7 +2045,7 @@ describe("financeiroNucleo — relatórios 4.6", () => {
       valorOriginal: 80, fazendaOrigemId: 1,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 80 }],
     });
-    const recDet = await svc.detalheTitulo(10, rec.id);
+    const recDet = await svc.detalheTitulo(10, rec.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await svc.criarRecebimento(10, {
       contaId: caixa.id, dataLiquidacao: "2026-03-10", valorMovimentado: 80, idempotencyKey: "rel-rec",
       alocacoes: [{ parcelaId: recDet.parcelas[0]!.id, principalLiquidado: 80 }],
@@ -2071,6 +2071,12 @@ describe("financeiroNucleo — relatórios 4.6", () => {
     expect(isolado.receber.linhas.some(l => l.tituloId === rec.id)).toBe(false);
     await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31" }))
       .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.listarTitulos(10)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.detalheTitulo(10, rec.id)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.historicoPagamentosTitulo(10, rec.id)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.listarCentrosCusto(10)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.listarTitulos(10, { titularUserId: 99, papel: "principal", fazendaIds: [] }))
+      .rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31", fazendaId: 99 }, chefe))
       .rejects.toMatchObject({ message: MSG_FIN_FAZENDA_INVALIDA });
   });

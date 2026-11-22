@@ -100,6 +100,20 @@ function toTrpc(message: string, code: "BAD_REQUEST" | "NOT_FOUND" | "FORBIDDEN"
   throw new TRPCError({ code, message });
 }
 
+/** Consulta de uma conta. Sem escopo a leitura não acontece. */
+function exigirEscopoConsultaFinanceira(userId: number, escopo: AcessoFinanceiro | undefined): AcessoFinanceiro {
+  if (!escopo) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "A consulta financeira precisa do escopo autorizado.",
+    });
+  }
+  if (escopo.titularUserId !== userId) {
+    toTrpc("Registro não encontrado.", "NOT_FOUND");
+  }
+  return escopo;
+}
+
 function insertIdOf(result: unknown): number {
   const asArray = result as { insertId?: number }[];
   const asObj = result as { insertId?: number };
@@ -1094,7 +1108,8 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async detalheTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro) {
+    async detalheTitulo(userId: number, tituloId: number, escopo: AcessoFinanceiro) {
+      const acesso = exigirEscopoConsultaFinanceira(userId, escopo);
       return store.transaction(async tx => {
         const titulo = await tx.findTitulo(userId, tituloId);
         if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
@@ -1111,7 +1126,7 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           return { ...p, ...saldo };
         });
         const apropriacoes = await tx.listApropriacoes(userId, tituloId);
-        if (escopo && !documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) {
+        if (!documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, acesso)) {
           toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
         }
         const situacao = derivarSituacaoTitulo({
@@ -1131,16 +1146,15 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async historicoPagamentosTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro): Promise<HistoricoPagamentosTitulo> {
+    async historicoPagamentosTitulo(userId: number, tituloId: number, escopo: AcessoFinanceiro): Promise<HistoricoPagamentosTitulo> {
+      const acesso = exigirEscopoConsultaFinanceira(userId, escopo);
       return store.transaction(async tx => {
         const titulo = await tx.findTitulo(userId, tituloId);
         if (!titulo) toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
         assertUser(titulo.userId, userId);
-        if (escopo) {
-          const apropriacoes = await tx.listApropriacoes(userId, tituloId);
-          if (!documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) {
-            toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
-          }
+        const apropriacoes = await tx.listApropriacoes(userId, tituloId);
+        if (!documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, acesso)) {
+          toTrpc(MSG_FIN_TITULO_NAO_ENCONTRADO, "NOT_FOUND");
         }
 
         const parcelas = await tx.listParcelasTitulo(userId, tituloId);
@@ -1244,14 +1258,15 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async listarTitulos(userId: number, escopo?: AcessoFinanceiro) {
+    async listarTitulos(userId: number, escopo: AcessoFinanceiro) {
+      const acesso = exigirEscopoConsultaFinanceira(userId, escopo);
       return store.transaction(async tx => {
         const titulos = await tx.listTitulos(userId);
-        if (!escopo || escopo.papel === "principal") return titulos;
+        if (acesso.papel === "principal") return titulos;
         const visiveis = [];
         for (const titulo of titulos) {
           const apropriacoes = await tx.listApropriacoes(userId, titulo.id);
-          if (documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, escopo)) visiveis.push(titulo);
+          if (documentoFinanceiroVisivel(titulo.fazendaOrigemId, apropriacoes, acesso)) visiveis.push(titulo);
         }
         return visiveis;
       });
@@ -1262,17 +1277,8 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       ate: string;
       fazendaId?: number | null;
       contaId?: number | null;
-    }, escopo?: AcessoFinanceiro) {
-      if (!escopo) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "A consulta financeira precisa do escopo autorizado.",
-        });
-      }
-      if (escopo.titularUserId !== userId) {
-        toTrpc("Registro não encontrado.", "NOT_FOUND");
-      }
-      const acesso = escopo;
+    }, escopo: AcessoFinanceiro) {
+      const acesso = exigirEscopoConsultaFinanceira(userId, escopo);
       return store.transaction(async tx => {
         if (input.fazendaId) {
           const fazenda = await tx.findFazenda(userId, input.fazendaId);
@@ -1887,11 +1893,12 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       });
     },
 
-    async listarCentrosCusto(userId: number, escopo?: AcessoFinanceiro) {
+    async listarCentrosCusto(userId: number, escopo: AcessoFinanceiro) {
+      const acesso = exigirEscopoConsultaFinanceira(userId, escopo);
       return store.transaction(async tx => {
         const centros = await tx.listCentros(userId);
-        if (!escopo || escopo.papel === "principal") return centros;
-        return centros.filter((centro) => centro.fazendaId != null && escopo.fazendaIds.includes(centro.fazendaId));
+        if (acesso.papel === "principal") return centros;
+        return centros.filter((centro) => centro.fazendaId != null && acesso.fazendaIds.includes(centro.fazendaId));
       });
     },
 

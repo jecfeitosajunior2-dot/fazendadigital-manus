@@ -206,19 +206,19 @@ describe.sequential("relatório financeiro no mysql descartável", () => {
       { valor: 6000, fazendaId: 10 },
       { valor: 4000, fazendaId: 20 },
     ]);
-    const pago = await svc.detalheTitulo(1, mixPago);
+    const pago = await svc.detalheTitulo(1, mixPago, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     await svc.criarPagamento(1, {
       contaId, dataLiquidacao: "2026-06-02", valorMovimentado: 10000, idempotencyKey: "pag-mix",
       alocacoes: [{ parcelaId: pago.parcelas[0]!.id, principalLiquidado: 10000 }],
     });
     const so10 = await titulo(1, "pagar", 250, 10);
-    const det10 = await svc.detalheTitulo(1, so10);
+    const det10 = await svc.detalheTitulo(1, so10, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     await svc.criarPagamento(1, {
       contaId, dataLiquidacao: "2026-06-02", valorMovimentado: 50, idempotencyKey: "pag-10",
       alocacoes: [{ parcelaId: det10.parcelas[0]!.id, principalLiquidado: 50 }],
     });
     const so20 = await titulo(1, "receber", 300, 20);
-    const det20 = await svc.detalheTitulo(1, so20);
+    const det20 = await svc.detalheTitulo(1, so20, { titularUserId: 1, papel: "principal", fazendaIds: [] });
     const receb = await svc.criarRecebimento(1, {
       contaId, dataLiquidacao: "2026-06-02", valorMovimentado: 300, idempotencyKey: "rec-20",
       alocacoes: [{ parcelaId: det20.parcelas[0]!.id, principalLiquidado: 300 }],

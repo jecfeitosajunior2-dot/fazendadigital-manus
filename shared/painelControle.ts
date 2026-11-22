@@ -121,6 +121,34 @@ export type PainelComercial = {
   vendas: PainelOperacaoRecente[];
 };
 
+export type AutorizacaoBlocoPainel = "autorizado" | "sem_permissao";
+
+export type AutorizacaoPainel = {
+  rebanho: AutorizacaoBlocoPainel;
+  estoque: AutorizacaoBlocoPainel;
+  lotes: AutorizacaoBlocoPainel;
+  pastos: AutorizacaoBlocoPainel;
+  area: AutorizacaoBlocoPainel;
+  sanidade: AutorizacaoBlocoPainel;
+  reproducao: AutorizacaoBlocoPainel;
+  manutencao: AutorizacaoBlocoPainel;
+  compras: AutorizacaoBlocoPainel;
+  vendas: AutorizacaoBlocoPainel;
+};
+
+export const AUTORIZACAO_PAINEL_LIBERADA: AutorizacaoPainel = {
+  rebanho: "autorizado",
+  estoque: "autorizado",
+  lotes: "autorizado",
+  pastos: "autorizado",
+  area: "autorizado",
+  sanidade: "autorizado",
+  reproducao: "autorizado",
+  manutencao: "autorizado",
+  compras: "autorizado",
+  vendas: "autorizado",
+};
+
 export type PainelOverview = {
   fazendas: PainelFazendaRef[];
   fazendaSelecionadaId: number | null;
@@ -134,6 +162,7 @@ export type PainelOverview = {
   saudeRecente: PainelSaudeRecente[];
   financeiro: PainelFinanceiro;
   comercial: PainelComercial;
+  autorizacao: AutorizacaoPainel;
 };
 
 export type EscopoFazendasPainel =
@@ -569,6 +598,7 @@ export function emptyPainelOverview(): PainelOverview {
     saudeRecente: [],
     financeiro: emptyPainelFinanceiro(),
     comercial: emptyPainelComercial(),
+    autorizacao: { ...AUTORIZACAO_PAINEL_LIBERADA },
   };
 }
 
@@ -583,6 +613,7 @@ export function montarPainelOverview(input: {
   saudeRecente: PainelSaudeRecente[];
   financeiro?: PainelFinanceiro;
   comercial?: PainelComercial;
+  autorizacao?: AutorizacaoPainel;
 }): PainelOverview {
   return {
     fazendas: input.escopo.fazendas,
@@ -599,6 +630,7 @@ export function montarPainelOverview(input: {
     saudeRecente: input.saudeRecente.slice(0, 6),
     financeiro: input.financeiro ?? emptyPainelFinanceiro(),
     comercial: input.comercial ?? emptyPainelComercial(),
+    autorizacao: input.autorizacao ?? { ...AUTORIZACAO_PAINEL_LIBERADA },
   };
 }
 

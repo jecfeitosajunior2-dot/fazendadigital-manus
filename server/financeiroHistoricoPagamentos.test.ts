@@ -26,7 +26,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
     expect(routerSrc).toContain("detalheTitulo(acesso.titularUserId, input.id, acesso)");
     expect(routerSrc).toContain("z.object({ id: z.number().int().positive() })");
     expect(routerSrc).toContain("tituloHistoricoPagamentos: protectedProcedure");
-    expect(nucleoSrc).toContain("async historicoPagamentosTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro)");
+    expect(nucleoSrc).toContain("async historicoPagamentosTitulo(userId: number, tituloId: number, escopo: AcessoFinanceiro)");
     expect(nucleoSrc).toContain("listAlocacoesPorParcelas");
     expect(nucleoSrc).toContain("listAlocacoesLiquidacao");
     expect(nucleoSrc).toContain("titulosNaLiquidacao");
@@ -50,7 +50,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       alocacoes: store.alocacoes.length,
       movimentos: store.movimentos.length,
     };
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist.tituloId).toBe(tituloId);
     expect(hist.eventos).toEqual([]);
     expect(hist.parcelas).toHaveLength(3);
@@ -71,7 +71,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       observacoes: "Quitação da primeira",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000 }],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist.eventos).toHaveLength(1);
     expect(idsUnicos(hist.eventos.map(e => e.liquidacaoId))).toBe(true);
     const ev = hist.eventos[0]!;
@@ -110,7 +110,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-parcial",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist.eventos).toHaveLength(1);
     expect(hist.eventos[0]!.valorMovimentado).toBe("4000.00");
     expect(hist.eventos[0]!.valorAlocadoNesteTitulo).toBe(4000);
@@ -135,7 +135,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-parcela-2",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 6000 }],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist.eventos).toHaveLength(2);
     expect(hist.eventos.map(e => e.liquidacaoId)).toEqual([a.id, b.id]);
     expect(idsUnicos(hist.eventos.map(e => e.liquidacaoId))).toBe(true);
@@ -157,7 +157,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
         { parcelaId: parcelas[2]!.id, principalLiquidado: 5000 },
       ],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(store.movimentos).toHaveLength(1);
     expect(hist.eventos).toHaveLength(1);
     expect(hist.eventos[0]!.liquidacaoId).toBe(pag.id);
@@ -192,8 +192,8 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       valorOriginal: 5000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 5000 }],
     });
-    const d1 = await svc.detalheTitulo(10, t1.id);
-    const d2 = await svc.detalheTitulo(10, t2.id);
+    const d1 = await svc.detalheTitulo(10, t1.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    const d2 = await svc.detalheTitulo(10, t2.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const pag = await svc.criarPagamento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-03-05",
@@ -205,8 +205,8 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       ],
     });
 
-    const hist1 = await svc.historicoPagamentosTitulo(10, t1.id);
-    const hist2 = await svc.historicoPagamentosTitulo(10, t2.id);
+    const hist1 = await svc.historicoPagamentosTitulo(10, t1.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    const hist2 = await svc.historicoPagamentosTitulo(10, t2.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist1.eventos).toHaveLength(1);
     expect(hist2.eventos).toHaveLength(1);
     expect(hist1.eventos[0]!.liquidacaoId).toBe(pag.id);
@@ -238,7 +238,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-desc",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000, desconto: 200 }],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const ev = hist.eventos[0]!;
     expect(ev.valorMovimentado).toBe("9800.00");
     expect(ev.valorAlocadoNesteTitulo).toBe(9800);
@@ -261,7 +261,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-juros",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000, juros: 200, multa: 50 }],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const ev = hist.eventos[0]!;
     expect(ev.valorMovimentado).toBe("10250.00");
     expect(ev.valorAlocadoNesteTitulo).toBe(10250);
@@ -288,7 +288,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-est-1",
       dataLiquidacao: "2026-03-08",
     });
-    const hist = await svc.historicoPagamentosTitulo(10, tituloId);
+    const hist = await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(hist.eventos).toHaveLength(2);
     expect(idsUnicos(hist.eventos.map(e => e.liquidacaoId))).toBe(true);
     const original = hist.eventos.find(e => e.liquidacaoId === pag.id)!;
@@ -311,15 +311,15 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
 
   it("título de outro usuário e título inexistente seguem NOT_FOUND do V2", async () => {
     const { svc, tituloId } = await cenarioBase();
-    await expect(svc.historicoPagamentosTitulo(99, tituloId)).rejects.toMatchObject({
+    await expect(svc.historicoPagamentosTitulo(99, tituloId, { titularUserId: 99, papel: "principal", fazendaIds: [] })).rejects.toMatchObject({
       code: "NOT_FOUND",
       message: MSG_FIN_TITULO_NAO_ENCONTRADO,
     });
-    await expect(svc.historicoPagamentosTitulo(10, 9_999_999)).rejects.toMatchObject({
+    await expect(svc.historicoPagamentosTitulo(10, 9_999_999, { titularUserId: 10, papel: "principal", fazendaIds: [] })).rejects.toMatchObject({
       code: "NOT_FOUND",
       message: MSG_FIN_TITULO_NAO_ENCONTRADO,
     });
-    await expect(svc.historicoPagamentosTitulo(99, tituloId)).rejects.toBeInstanceOf(TRPCError);
+    await expect(svc.historicoPagamentosTitulo(99, tituloId, { titularUserId: 99, papel: "principal", fazendaIds: [] })).rejects.toBeInstanceOf(TRPCError);
   });
 
   it("a consulta não grava liquidação, alocação nem movimento", async () => {
@@ -338,8 +338,8 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       parcelas: store.parcelas,
       titulos: store.titulos,
     });
-    await svc.historicoPagamentosTitulo(10, tituloId);
-    await svc.historicoPagamentosTitulo(10, tituloId);
+    await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     expect(JSON.stringify({
       liquidacoes: store.liquidacoes,
       alocacoes: store.alocacoes,
@@ -358,7 +358,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-f-unico",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 4000 }],
     });
-    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] })).eventos[0]!;
     expect(ev.alcanceCompleto).toBe(true);
     expect(ev.quantidadeTitulosNaLiquidacao).toBe(1);
     expect(ev.titulosNaLiquidacao).toEqual([{ tituloId, descricao: "Compra teste", valorAlocado: 4000 }]);
@@ -391,8 +391,8 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       valorOriginal: 5000,
       parcelas: [{ numero: 1, vencimento: "2026-03-01", valorOriginal: 5000 }],
     });
-    const d1 = await svc.detalheTitulo(10, t1.id);
-    const d2 = await svc.detalheTitulo(10, t2.id);
+    const d1 = await svc.detalheTitulo(10, t1.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
+    const d2 = await svc.detalheTitulo(10, t2.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     await svc.criarPagamento(10, {
       contaId: conta.id,
       dataLiquidacao: "2026-03-05",
@@ -403,7 +403,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
         { parcelaId: d2.parcelas[0]!.id, principalLiquidado: 5000, desconto: 5000 },
       ],
     });
-    const hist = await svc.historicoPagamentosTitulo(10, t1.id);
+    const hist = await svc.historicoPagamentosTitulo(10, t1.id, { titularUserId: 10, papel: "principal", fazendaIds: [] });
     const ev = hist.eventos[0]!;
     expect(ev.valorMovimentado).toBe("10000.00");
     expect(ev.valorAlocadoNesteTitulo).toBe(10000);
@@ -428,7 +428,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
         { parcelaId: parcelas[2]!.id, principalLiquidado: 5000 },
       ],
     });
-    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] })).eventos[0]!;
     expect(ev.alocacoesDesteTitulo).toHaveLength(3);
     expect(ev.quantidadeTitulosNaLiquidacao).toBe(1);
     expect(ev.titulosNaLiquidacao[0]).toEqual({ tituloId, descricao: "Compra teste", valorAlocado: 25000 });
@@ -443,7 +443,7 @@ describe("financeiroV2.tituloHistoricoPagamentos — Fase 3C.3.1", () => {
       idempotencyKey: "hist-i-juros",
       alocacoes: [{ parcelaId: parcelas[0]!.id, principalLiquidado: 10000, juros: 200, multa: 50 }],
     });
-    const ev = (await svc.historicoPagamentosTitulo(10, tituloId)).eventos[0]!;
+    const ev = (await svc.historicoPagamentosTitulo(10, tituloId, { titularUserId: 10, papel: "principal", fazendaIds: [] })).eventos[0]!;
     expect(ev.valorMovimentado).toBe("10250.00");
     expect(ev.valorAlocadoNesteTitulo).toBe(10250);
     expect(ev.alocacoesDesteTitulo[0]).toMatchObject({ juros: "200.00", multa: "50.00" });

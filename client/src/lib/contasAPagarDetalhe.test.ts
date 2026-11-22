@@ -487,7 +487,7 @@ describe("contasAPagarDetalhe — tela e compatibilidade", () => {
     expect(v2Router).toContain("titulosGet: protectedProcedure");
     expect(v2Router).toContain("detalheTitulo(acesso.titularUserId, input.id, acesso)");
     expect(v2Router).toContain("tituloHistoricoPagamentos: protectedProcedure");
-    expect(nucleo).toContain("async detalheTitulo(userId: number, tituloId: number, escopo?: AcessoFinanceiro)");
+    expect(nucleo).toContain("async detalheTitulo(userId: number, tituloId: number, escopo: AcessoFinanceiro)");
     expect(nucleo).toContain("assertUser(titulo.userId, userId)");
     expect(page).toContain("financeiroV2.tituloHistoricoPagamentos");
     expect(page).toContain("financeiroV2.titulosGet");

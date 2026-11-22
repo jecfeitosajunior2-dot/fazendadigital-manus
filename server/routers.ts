@@ -16,7 +16,7 @@ import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
 import { toBenfeitoriaRow, toBenfeitoriaUpdateRow } from "./benfeitoriasDb";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
-import { carregarPainelControle } from "./painelControle";
+import { carregarPainelControle, carregarStatsPainel } from "./painelControle";
 import { MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA } from "../shared/financeiroLegadoBloqueio";
 import {
   extrairCoordenadasKml,
@@ -10005,22 +10005,10 @@ const dashboardRouter = router({
       input?.fazendaId,
       ctx.user.sessionVersion ?? null,
     )),
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    const [totalAnimaisResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(animais).where(eq(animais.userId, ctx.user.id));
-    const [totalLotesResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(lotes).where(eq(lotes.userId, ctx.user.id));
-    const [totalMaquinasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(maquinas).where(eq(maquinas.userId, ctx.user.id));
-    const [totalBenfeitoriasResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id));
-
-    return {
-      totalAnimais: Number(totalAnimaisResult?.count || 0),
-      totalLotes: Number(totalLotesResult?.count || 0),
-      totalMaquinas: Number(totalMaquinasResult?.count || 0),
-      totalBenfeitorias: Number(totalBenfeitoriasResult?.count || 0),
-      totalReceitas: null,
-      totalDespesas: null,
-      saldoTotal: null,
-    };
-  }),
+  stats: protectedProcedure.query(({ ctx }) => carregarStatsPainel(
+    ctx.user.id,
+    ctx.user.sessionVersion ?? null,
+  )),
 });
 
 // ─── COMPRAS ROUTER ─────────────────────────────────────────────────────────

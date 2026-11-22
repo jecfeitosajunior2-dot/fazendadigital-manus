@@ -126,7 +126,14 @@ export default function DashboardPage() {
     painel.alertas.manut[0] ??
     painel.alertas.pendentes[0];
 
-  const statusOperacao = statusOperacaoPainel(estadoAlertas, painel.alertas);
+  const statusBase = statusOperacaoPainel(estadoAlertas, painel.alertas);
+  const alertaRestrito = painel.autorizacao.estoque === "sem_permissao"
+    || painel.autorizacao.sanidade === "sem_permissao"
+    || painel.autorizacao.reproducao === "sem_permissao"
+    || painel.autorizacao.manutencao === "sem_permissao";
+  const statusOperacao = alertaRestrito && statusBase.tom === "ok" && estadoAlertas === "pronto"
+    ? { label: "Consulta parcial", detalhe: "Há alertas sem permissão", tom: "neutro" as const }
+    : statusBase;
   const statusColor =
     statusOperacao.tom === "ok" ? GREEN
       : statusOperacao.tom === "critico" ? RED
@@ -168,7 +175,7 @@ export default function DashboardPage() {
       value: carregando ? "Carregando…" : `${num(fazendas.length)} fazenda${fazendas.length === 1 ? "" : "s"}`,
       detail: carregando
         ? "Consultando lotes e pastos"
-        : `${num(painel.totalLotes)} lotes · ${num(painel.totalPastos)} pastos`,
+        : `${painel.autorizacao.lotes === "autorizado" ? num(painel.totalLotes) : "—"} lotes · ${painel.autorizacao.pastos === "autorizado" ? num(painel.totalPastos) : "—"} pastos`,
       icon: "map",
       color: NAVY,
     },
@@ -248,21 +255,21 @@ export default function DashboardPage() {
         <KpiCard
           wrapText
           label="Rebanho ativo"
-          value={num(painel.rebanho.total)}
+          value={!comErro && painel.autorizacao.rebanho === "autorizado" ? num(painel.rebanho.total) : "—"}
           loading={carregando}
           icon="pets"
           color={TEAL}
-          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.rebanho.machos)} machos · {num(painel.rebanho.femeas)} fêmeas</span>}
+          sub={carregando ? <span>Carregando…</span> : painel.autorizacao.rebanho === "autorizado" ? <span>{num(painel.rebanho.machos)} machos · {num(painel.rebanho.femeas)} fêmeas</span> : <span>Sem permissão para consultar o rebanho.</span>}
           onClick={() => setLocation("/rebanho/visao-geral")}
         />
         <KpiCard
           wrapText
           label="Peso médio"
-          value={`${num(painel.rebanho.pesoMedio, 0)} kg`}
+          value={!comErro && painel.autorizacao.rebanho === "autorizado" ? `${num(painel.rebanho.pesoMedio, 0)} kg` : "—"}
           loading={carregando}
           icon="monitor_weight"
           color={NAVY}
-          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.rebanho.pesoTotal / 1000, 1)} t no rebanho</span>}
+          sub={carregando ? <span>Carregando…</span> : painel.autorizacao.rebanho === "autorizado" ? <span>{num(painel.rebanho.pesoTotal / 1000, 1)} t no rebanho</span> : <span>Sem permissão para consultar o rebanho.</span>}
           onClick={() => setLocation("/rebanho/visao-geral")}
         />
         <KpiCard
@@ -308,21 +315,21 @@ export default function DashboardPage() {
         <KpiCard
           wrapText
           label="Valor em estoque"
-          value={brlCompact(painel.estoque.valorTotal)}
+          value={!comErro && painel.autorizacao.estoque === "autorizado" ? brlCompact(painel.estoque.valorTotal) : "—"}
           loading={carregando}
           icon="inventory_2"
           color={GOLD}
-          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.estoque.totalProdutos)} produtos</span>}
+          sub={carregando ? <span>Carregando…</span> : painel.autorizacao.estoque === "autorizado" ? <span>{num(painel.estoque.totalProdutos)} produtos</span> : <span>Sem permissão para consultar o estoque.</span>}
           onClick={() => setLocation("/insumos/visao-geral")}
         />
         <KpiCard
           wrapText
           label="Área total"
-          value={`${num(painel.areaTotal, 0)} ha`}
+          value={!comErro && painel.autorizacao.area === "autorizado" ? `${num(painel.areaTotal, 0)} ha` : "—"}
           loading={carregando}
           icon="map"
           color="#0891B2"
-          sub={carregando ? <span>Carregando…</span> : <span>{num(painel.totalLotes)} lotes · {num(painel.totalPastos)} pastos</span>}
+          sub={carregando ? <span>Carregando…</span> : <span>{painel.autorizacao.lotes === "autorizado" ? num(painel.totalLotes) : "—"} lotes · {painel.autorizacao.pastos === "autorizado" ? num(painel.totalPastos) : "—"} pastos</span>}
           onClick={() => setLocation("/fazendas/visao-geral")}
         />
       </div>
@@ -414,13 +421,17 @@ export default function DashboardPage() {
           <div className="p-4">
             {carregando ? (
               <EmptyState icon="swap_horiz" text="Carregando operações…" />
+            ) : painel.autorizacao.compras !== "autorizado" && painel.autorizacao.vendas !== "autorizado" ? (
+              <EmptyState icon="swap_horiz" text="Sem permissão para consultar compras e vendas." />
             ) : painel.comercial.compras.length === 0 && painel.comercial.vendas.length === 0 ? (
               <EmptyState icon="swap_horiz" text="Sem compras ou vendas recentes neste recorte." />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Compras</p>
-                  {painel.comercial.compras.length === 0 ? (
+                  {painel.autorizacao.compras !== "autorizado" ? (
+                    <p className="text-[12px] text-gray-400">Sem permissão para consultar compras.</p>
+                  ) : painel.comercial.compras.length === 0 ? (
                     <p className="text-[12px] text-gray-400">Nenhuma compra recente.</p>
                   ) : (
                     <div className="divide-y divide-gray-50">
@@ -443,7 +454,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Vendas</p>
-                  {painel.comercial.vendas.length === 0 ? (
+                  {painel.autorizacao.vendas !== "autorizado" ? (
+                    <p className="text-[12px] text-gray-400">Sem permissão para consultar vendas.</p>
+                  ) : painel.comercial.vendas.length === 0 ? (
                     <p className="text-[12px] text-gray-400">Nenhuma venda recente.</p>
                   ) : (
                     <div className="divide-y divide-gray-50">
@@ -490,6 +503,8 @@ export default function DashboardPage() {
           <div className="p-4">
             {carregando ? (
               <EmptyState icon="donut_large" text="Carregando composição…" />
+            ) : painel.autorizacao.rebanho !== "autorizado" ? (
+              <EmptyState icon="pets" text="Sem permissão para consultar o rebanho." />
             ) : painel.rebanho.composicao.length === 0 ? (
               <EmptyState icon="pets" text="Sem animais cadastrados" />
             ) : (
@@ -537,6 +552,8 @@ export default function DashboardPage() {
         <SectionCard title="Ocupação de Pastos" icon="grass" className="lg:col-span-2">
           {carregando ? (
             <EmptyState icon="grass" text="Carregando pastos…" />
+          ) : painel.autorizacao.pastos !== "autorizado" ? (
+            <EmptyState icon="grass" text="Sem permissão para consultar os pastos." />
           ) : painel.ocupacao.length === 0 ? (
             <EmptyState icon="grass" text="Sem pastos cadastrados" />
           ) : (
@@ -567,6 +584,8 @@ export default function DashboardPage() {
           <div className="p-4">
             {carregando ? (
               <EmptyState icon="cake" text="Carregando idades…" />
+            ) : painel.autorizacao.rebanho !== "autorizado" ? (
+              <EmptyState icon="cake" text="Sem permissão para consultar o rebanho." />
             ) : painel.rebanho.total === 0 ? (
               <EmptyState icon="cake" text="Sem animais cadastrados" />
             ) : (
@@ -615,6 +634,8 @@ export default function DashboardPage() {
         >
           {carregando ? (
             <EmptyState icon="health_and_safety" text="Carregando registros…" />
+          ) : painel.autorizacao.sanidade !== "autorizado" ? (
+            <EmptyState icon="health_and_safety" text="Sem permissão para consultar a sanidade." />
           ) : painel.saudeRecente.length === 0 ? (
             <EmptyState icon="health_and_safety" text="Sem registros" />
           ) : (
