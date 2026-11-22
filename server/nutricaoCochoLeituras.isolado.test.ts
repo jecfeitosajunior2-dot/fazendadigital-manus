@@ -197,7 +197,9 @@ CREATE TABLE nutricao_cocho_leituras (
   escore varchar(40) NULL, observacoes text NULL,
   cochoNomeSnapshot varchar(160) NULL, loteNomeSnapshot varchar(120) NULL,
   alimentoNomeSnapshot varchar(120) NULL, status varchar(20) NOT NULL DEFAULT 'ativa',
-  createdAt timestamp NULL, updatedAt timestamp NULL, PRIMARY KEY (id)
+  createdAt timestamp NULL, updatedAt timestamp NULL,
+  chaveOperacao varchar(80) NULL, conteudoHash varchar(64) NULL,
+  PRIMARY KEY (id), UNIQUE KEY nutricao_cocho_leituras_user_chave_uq (userId, chaveOperacao)
 ) ENGINE=InnoDB;
 `;
 
@@ -215,6 +217,7 @@ function leitura(extra: Partial<NutricaoLeituraInput> = {}): NutricaoLeituraInpu
     data: HOJE,
     hora: "17:00",
     sobraKg: 20,
+    chaveOperacao: `lei-${randomUUID()}`,
     ...extra,
   };
 }
@@ -645,11 +648,12 @@ describe.sequential("leituras de cocho no mysql descartável", () => {
       .toBe(MSG_LEITURA_CANCELADA);
   });
 
-  it("reenvio idêntico devolve a mesma leitura e horário diferente abre outra", async () => {
+  it("reenvio da mesma chave devolve a leitura e outra chave igual abre outra", async () => {
     await limpar();
-    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
-    const repetida = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
-    const outra = await nutricaoCochoLeiturasService.criar(2, leitura({ hora: "18:00", sobraKg: 4 }), HOJE, sessao(2, "nutricao.criar"));
+    const chave = `lei-${randomUUID()}`;
+    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"));
+    const repetida = await nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"));
+    const outra = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
     expect(repetida.id).toBe(primeira.id);
     expect(repetida.repetido).toBe(true);
     expect(outra.id).not.toBe(primeira.id);
@@ -658,16 +662,17 @@ describe.sequential("leituras de cocho no mysql descartável", () => {
 
   it("duas criações iguais ao mesmo tempo deixam uma linha", async () => {
     await limpar();
+    const chave = `lei-${randomUUID()}`;
     let segunda: Promise<string> = Promise.resolve("");
     definirGanchoTravaLeitura(async () => {
       definirGanchoTravaLeitura(null);
-      segunda = nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"))
+      segunda = nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"))
         .then((resultado) => resultado.repetido ? `repetiu:${resultado.id}` : `nova:${resultado.id}`)
         .catch((erro: { message?: string }) => erro.message ?? "");
       await pausa();
       expect(await contar("nutricao_cocho_leituras")).toBe(0);
     });
-    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
+    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"));
     expect(await segunda).toBe(`repetiu:${primeira.id}`);
     definirGanchoTravaLeitura(null);
     expect(await contar("nutricao_cocho_leituras")).toBe(1);

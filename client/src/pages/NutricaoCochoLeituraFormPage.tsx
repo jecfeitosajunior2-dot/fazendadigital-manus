@@ -14,6 +14,8 @@ import {
   rotuloSobraInicialBalanco,
 } from "@shared/nutricaoCochoLeituras";
 import { formatarDataHoraFornecimento } from "@shared/nutricaoFornecimentos";
+import { conteudoCanonicoLeitura } from "@shared/nutricaoIdempotencia";
+import { chaveLeituraPendente, concluirLeituraPendente } from "@/lib/operacaoLeituraCocho";
 
 function hojeISO() {
   const n = new Date();
@@ -94,8 +96,15 @@ export default function NutricaoCochoLeituraFormPage() {
   const voltar = () => setLocation(listaNutricaoComFazenda("/nutricao/cochos/leituras", fazendaId));
 
   const criar = trpc.nutricaoCochoLeituras.create.useMutation({
-    onSuccess: () => {
-      toast.success("Leitura registrada. Estoque não foi movimentado.");
+    onSuccess: (resultado) => {
+      concluirLeituraPendente();
+      if (resultado.repetido && resultado.status === "cancelada") {
+        toast.success("Esta leitura já foi cancelada. Nada foi gravado de novo.");
+      } else if (resultado.repetido) {
+        toast.success("Esta leitura já estava registrada.");
+      } else {
+        toast.success("Leitura registrada. Estoque não foi movimentado.");
+      }
       utils.nutricaoCochoLeituras.list.invalidate();
       voltar();
     },
@@ -116,6 +125,15 @@ export default function NutricaoCochoLeituraFormPage() {
     ? Number(consumo?.cicloFechado?.leituraId)
     : 0;
   const pending = criar.isPending || editar.isPending;
+  function registrar() {
+    if (!payload) return;
+    if (editId) {
+      editar.mutate({ id: editId, ...payload });
+      return;
+    }
+    const estado = chaveLeituraPendente(conteudoCanonicoLeitura(payload));
+    criar.mutate({ ...payload, chaveOperacao: estado.chave });
+  }
 
   return (
     <AppLayout>
@@ -249,7 +267,7 @@ export default function NutricaoCochoLeituraFormPage() {
             <button
               type="button"
               disabled={!payload || previewPack?.ok === false || pending || cicloFechado}
-              onClick={() => payload && (editId ? editar.mutate({ id: editId, ...payload }) : criar.mutate(payload))}
+              onClick={registrar}
               className="px-5 py-2 rounded-full text-[11px] font-semibold uppercase text-gray-900 disabled:opacity-50"
               style={{ backgroundColor: FD_PRIMARY }}
             >

@@ -11,7 +11,7 @@ import {
 } from "../shared/nutricaoIdempotencia";
 import { MSG_NUTRICAO_SEM_MYSQL } from "./nutricaoOperacaoAutorizada";
 
-export type TabelaIdempotente = "nutricao_fornecimentos" | "nutricao_batidas";
+export type TabelaIdempotente = "nutricao_fornecimentos" | "nutricao_batidas" | "nutricao_cocho_leituras";
 export type ConfirmacaoGravada = { id: number; conteudoHash: string; status: string };
 export type ChavePreparada = { chave: string; hash: string };
 
@@ -95,16 +95,24 @@ export async function gravarChaveNutricao(
       SET chaveOperacao = ${chave}, conteudoHash = ${hash}
       WHERE id = ${id} AND userId = ${userId}
     `);
-  } else {
+  } else if (tabela === "nutricao_batidas") {
     await tx.execute(sql`
       UPDATE nutricao_batidas
+      SET chaveOperacao = ${chave}, conteudoHash = ${hash}
+      WHERE id = ${id} AND userId = ${userId}
+    `);
+  } else {
+    await tx.execute(sql`
+      UPDATE nutricao_cocho_leituras
       SET chaveOperacao = ${chave}, conteudoHash = ${hash}
       WHERE id = ${id} AND userId = ${userId}
     `);
   }
   const consulta = tabela === "nutricao_fornecimentos"
     ? sql`SELECT id FROM nutricao_fornecimentos WHERE id = ${id} AND userId = ${userId} AND chaveOperacao = ${chave} AND conteudoHash = ${hash} LIMIT 1`
-    : sql`SELECT id FROM nutricao_batidas WHERE id = ${id} AND userId = ${userId} AND chaveOperacao = ${chave} AND conteudoHash = ${hash} LIMIT 1`;
+    : tabela === "nutricao_batidas"
+      ? sql`SELECT id FROM nutricao_batidas WHERE id = ${id} AND userId = ${userId} AND chaveOperacao = ${chave} AND conteudoHash = ${hash} LIMIT 1`
+      : sql`SELECT id FROM nutricao_cocho_leituras WHERE id = ${id} AND userId = ${userId} AND chaveOperacao = ${chave} AND conteudoHash = ${hash} LIMIT 1`;
   const gravada = linhas(await tx.execute(consulta));
   if (!gravada.length) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
@@ -119,7 +127,9 @@ export async function buscarConfirmacaoPorChave(
 ): Promise<ConfirmacaoGravada | null> {
   const consulta = tabela === "nutricao_fornecimentos"
     ? sql`SELECT id, conteudoHash, status FROM nutricao_fornecimentos WHERE userId = ${userId} AND chaveOperacao = ${chave} LIMIT 1`
-    : sql`SELECT id, conteudoHash, status FROM nutricao_batidas WHERE userId = ${userId} AND chaveOperacao = ${chave} LIMIT 1`;
+    : tabela === "nutricao_batidas"
+      ? sql`SELECT id, conteudoHash, status FROM nutricao_batidas WHERE userId = ${userId} AND chaveOperacao = ${chave} LIMIT 1`
+      : sql`SELECT id, conteudoHash, status FROM nutricao_cocho_leituras WHERE userId = ${userId} AND chaveOperacao = ${chave} LIMIT 1`;
   const rows = linhas(await banco.execute(consulta));
   const row = rows[0];
   if (!row) return null;

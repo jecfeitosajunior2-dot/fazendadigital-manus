@@ -69,7 +69,7 @@ export const nutricaoCochoLeiturasRouter = router({
     }),
 
   create: protectedProcedure
-    .input(leituraInput)
+    .input(leituraInput.extend({ chaveOperacao: z.string().min(8).max(80) }))
     .mutation(({ ctx, input }) => nutricaoCochoLeiturasService.criar(
       ctx.user.id, input, undefined, sessaoDe(ctx.user, "nutricao.criar"),
     )),

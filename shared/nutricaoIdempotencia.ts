@@ -1,3 +1,6 @@
+import { normalizarEscore } from "./nutricaoCochoLeituras";
+import { normalizarHoraFornecimento } from "./nutricaoFornecimentos";
+
 export const MSG_NUTRICAO_SEM_IDEMPOTENCIA =
   "A confirmação precisa da identidade gravada no banco. Nada foi consumido.";
 export const MSG_NUTRICAO_CHAVE_DIFERENTE =
@@ -13,9 +16,9 @@ export const MSG_BATIDA_ANTIGA_EXCLUSAO =
 export const MSG_BATIDA_ANTIGA_LISTA =
   "A consulta antiga de batida não tem fazenda. Só o titular da conta pode vê-la.";
 
-export type TipoChaveNutricao = "forn" | "bat";
+export type TipoChaveNutricao = "forn" | "bat" | "lei";
 
-const CHAVE = /^(forn|bat)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CHAVE = /^(forn|bat|lei)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function criarChaveNutricao(tipo: TipoChaveNutricao): string {
   return `${tipo}-${globalThis.crypto.randomUUID()}`;
@@ -80,6 +83,33 @@ export function conteudoCanonicoBatida(input: ConteudoBatida): string {
     data: String(input.data).slice(0, 10),
     hora: input.hora?.trim() || null,
     quantidadePreparadaKg: Number(input.quantidadePreparadaKg).toFixed(3),
+  });
+}
+
+export type ConteudoLeitura = {
+  fazendaId: number;
+  cochoId: number;
+  loteId?: number | null;
+  fornecimentoId?: number | null;
+  data: string;
+  hora?: string | null;
+  sobraKg?: number | null;
+  escore?: string | null;
+  observacoes?: string | null;
+};
+
+export function conteudoCanonicoLeitura(input: ConteudoLeitura): string {
+  const bruto = input.sobraKg == null || input.sobraKg === ("" as unknown) ? null : Number(input.sobraKg);
+  return JSON.stringify({
+    fazendaId: Number(input.fazendaId),
+    cochoId: Number(input.cochoId),
+    loteId: numOuNulo(input.loteId),
+    fornecimentoId: numOuNulo(input.fornecimentoId),
+    data: String(input.data).slice(0, 10),
+    hora: normalizarHoraFornecimento(input.hora ?? null),
+    sobraKg: bruto == null || !Number.isFinite(bruto) ? null : bruto.toFixed(3),
+    escore: normalizarEscore(input.escore),
+    observacoes: String(input.observacoes ?? "").trim() || null,
   });
 }
 

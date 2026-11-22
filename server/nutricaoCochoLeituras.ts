@@ -24,9 +24,20 @@ import {
   type NutricaoLeituraInput,
   type NutricaoLeituraStatus,
 } from "../shared/nutricaoCochoLeituras";
+import { conteudoCanonicoLeitura, MSG_NUTRICAO_SEM_IDEMPOTENCIA } from "../shared/nutricaoIdempotencia";
 import { hojeISODateLocal, normalizarDataCivil, type NutricaoPlanLoteRef } from "../shared/nutricaoPlanejamento";
 import { db as dbPadrao } from "./db";
 import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
+import {
+  buscarConfirmacaoPorChave,
+  confirmarEmAndamento,
+  ehChaveDuplicada,
+  exigirEstruturaIdempotente,
+  exigirIdempotenciaOuRecusar,
+  gravarChaveNutricao,
+  prepararChaveNutricao,
+  responderConfirmacaoRepetida,
+} from "./nutricaoIdempotenciaMysql";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import {
   MSG_NUTRICAO_SEM_SESSAO,
@@ -73,6 +84,8 @@ export type LeituraTx = {
   travarFornecimento(id: number): Promise<NutricaoLeituraFornRef | null>;
   getLote(userId: number, id: number): Promise<NutricaoPlanLoteRef | null>;
   buscarIdentica(row: Omit<LeituraPersistida, "id" | "status">): Promise<number | null>;
+  exigirIdempotencia?(): Promise<void>;
+  gravarChave?(id: number, userId: number, chave: string, hash: string): Promise<void>;
   insert(row: Omit<LeituraPersistida, "id">): Promise<number>;
   update(id: number, userId: number, patch: PatchLeitura): Promise<void>;
   setStatus(id: number, userId: number, status: NutricaoLeituraStatus): Promise<void>;
@@ -340,33 +353,50 @@ export function createNutricaoCochoLeiturasService(store: LeituraStore) {
           ...payloadDe(userId, input, { cocho: ctx.cocho!, lote: ctx.lote, fornecimento: ctx.fornecimento }),
           status: "ativa",
         });
-        return { success: true as const, id, repetido: false as const };
+        return { success: true as const, id, repetido: false as const, status: "ativa" as const };
       }
       const dono = await donoConsulta(userId, input.fazendaId, sessao);
-      const gravado = await gravarNaTrava(async tx => {
-        await tx.revalidar(sessao, input.fazendaId, dono);
-        const cocho = await tx.travarCocho(input.cochoId);
-        if (!cocho || cocho.userId !== dono) toTrpc(MSG_LEITURA_COCHO);
-        if (cocho.fazendaId !== input.fazendaId) toTrpc(MSG_LEITURA_COCHO_FAZENDA);
-        await avisarTravaLeitura();
-        const fornecimento = Number(input.fornecimentoId) > 0
-          ? await tx.travarFornecimento(Number(input.fornecimentoId))
-          : null;
-        const loteId = Number(input.loteId) > 0 ? Number(input.loteId) : Number(fornecimento?.loteId) || 0;
-        const lote = loteId > 0 ? await tx.getLote(dono, loteId) : null;
-        const ctx = { cocho, lote, fornecimento };
-        const check = validarLeituraInput(input, { ...ctx, hojeISO, novaLeitura: true });
-        if (!check.ok) toTrpc(check.message);
-        const payload = payloadDe(dono, input, { cocho, lote, fornecimento });
-        // Proteção provisória contra o duplo clique. Igualdade de campos não prova que a
-        // solicitação é a mesma: duas leituras legítimas iguais no mesmo horário continuam
-        // indistinguíveis até existir uma chave gravada no banco. Por isso o cadastro fica parcial.
-        const ja = await tx.buscarIdentica(payload);
-        if (ja) return { id: ja, repetido: true as const };
-        const id = await tx.insert({ ...payload, status: "ativa" });
-        return { id, repetido: false as const };
-      });
-      return { success: true as const, ...gravado };
+      const preparada = prepararChaveNutricao("lei", input.chaveOperacao, conteudoCanonicoLeitura(input));
+      await exigirIdempotenciaOuRecusar(bancoLeituras, "nutricao_cocho_leituras");
+      const ja = await buscarConfirmacaoPorChave(
+        bancoLeituras, "nutricao_cocho_leituras", dono, preparada.chave,
+      );
+      if (ja) return responderConfirmacaoRepetida(ja, preparada.hash);
+      try {
+        const gravado = await gravarNaTrava(async tx => {
+          if (!tx.revalidar || !tx.exigirIdempotencia || !tx.gravarChave) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_IDEMPOTENCIA });
+          }
+          await tx.revalidar(sessao, input.fazendaId, dono);
+          await tx.exigirIdempotencia();
+          const cocho = await tx.travarCocho(input.cochoId);
+          if (!cocho || cocho.userId !== dono) toTrpc(MSG_LEITURA_COCHO);
+          if (cocho.fazendaId !== input.fazendaId) toTrpc(MSG_LEITURA_COCHO_FAZENDA);
+          await avisarTravaLeitura();
+          const fornecimento = Number(input.fornecimentoId) > 0
+            ? await tx.travarFornecimento(Number(input.fornecimentoId))
+            : null;
+          const loteId = Number(input.loteId) > 0 ? Number(input.loteId) : Number(fornecimento?.loteId) || 0;
+          const lote = loteId > 0 ? await tx.getLote(dono, loteId) : null;
+          const ctx = { cocho, lote, fornecimento };
+          const check = validarLeituraInput(input, { ...ctx, hojeISO, novaLeitura: true });
+          if (!check.ok) toTrpc(check.message);
+          const payload = payloadDe(dono, input, { cocho, lote, fornecimento });
+          const id = await tx.insert({ ...payload, status: "ativa" });
+          await tx.gravarChave(id, dono, preparada.chave, preparada.hash);
+          return { id, repetido: false as const };
+        });
+        return { success: true as const, ...gravado, status: "ativa" as const };
+      } catch (erro) {
+        if (ehChaveDuplicada(erro)) {
+          const deNovo = await buscarConfirmacaoPorChave(
+            bancoLeituras, "nutricao_cocho_leituras", dono, preparada.chave,
+          );
+          if (!deNovo) confirmarEmAndamento();
+          return responderConfirmacaoRepetida(deNovo, preparada.hash);
+        }
+        throw erro;
+      }
     },
 
     async editar(
@@ -680,6 +710,12 @@ export const nutricaoCochoLeiturasStore: LeituraStore = {
         const [row] = await tx.select().from(lotes).where(and(eq(lotes.id, id), eq(lotes.userId, userId))).limit(1);
         if (!row) return null;
         return { id: row.id, userId: row.userId, fazendaId: row.fazendaId ?? null, ativo: row.ativo !== false, nome: row.nome };
+      },
+      async exigirIdempotencia() {
+        await exigirEstruturaIdempotente(tx, "nutricao_cocho_leituras");
+      },
+      async gravarChave(id, userId, chave, hash) {
+        await gravarChaveNutricao(tx, "nutricao_cocho_leituras", id, userId, chave, hash);
       },
       async buscarIdentica(alvo) {
         const rows = await tx.select().from(nutricaoCochoLeituras).where(and(

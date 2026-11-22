@@ -70,7 +70,10 @@ function sessao(executorId: number, permissaoId: SessaoNutricao["permissaoId"], 
 }
 
 function leitura(extra: Partial<NutricaoLeituraInput> = {}): NutricaoLeituraInput {
-  return { fazendaId: 10, cochoId: 1, loteId: 1, data: HOJE, hora: "17:00", sobraKg: 20, ...extra };
+  return {
+    fazendaId: 10, cochoId: 1, loteId: 1, data: HOJE, hora: "17:00", sobraKg: 20,
+    chaveOperacao: `lei-${randomUUID()}`, ...extra,
+  };
 }
 
 function periodo(fazendaId = 10) {
@@ -303,22 +306,24 @@ describe.sequential("visão geral e identidade da leitura no mysql descartável"
 
   it("espaço, vazio, hora e decimal igual não abrem outra linha", async () => {
     await limpar();
+    const chave = `lei-${randomUUID()}`;
     const primeira = await nutricaoCochoLeiturasService.criar(
-      2, leitura({ observacoes: "  chuva  ", escore: "  baixo  ", sobraKg: 20 }), HOJE, sessao(2, "nutricao.criar"),
+      2, leitura({ chaveOperacao: chave, observacoes: "  chuva  ", escore: "  baixo  ", sobraKg: 20 }), HOJE, sessao(2, "nutricao.criar"),
     );
     const igual = await nutricaoCochoLeiturasService.criar(
-      2, leitura({ observacoes: "chuva", escore: "baixo", sobraKg: 20.0, hora: " 17:00 " }), HOJE, sessao(2, "nutricao.criar"),
+      2, leitura({ chaveOperacao: chave, observacoes: "chuva", escore: "baixo", sobraKg: 20.0, hora: " 17:00 " }), HOJE, sessao(2, "nutricao.criar"),
     );
     expect(igual.id).toBe(primeira.id);
     expect(igual.repetido).toBe(true);
     expect(await texto(nutricaoCochoLeiturasService.criar(
       2, leitura({ observacoes: "chuva", escore: "baixo", hora: "17:00:00" }), HOJE, sessao(2, "nutricao.criar"),
     ))).toBe(MSG_LEITURA_HORA);
+    const chaveTarde = `lei-${randomUUID()}`;
     const vazia = await nutricaoCochoLeiturasService.criar(
-      2, leitura({ hora: "19:00", observacoes: "   " }), HOJE, sessao(2, "nutricao.criar"),
+      2, leitura({ chaveOperacao: chaveTarde, hora: "19:00", observacoes: "   " }), HOJE, sessao(2, "nutricao.criar"),
     );
     const nula = await nutricaoCochoLeiturasService.criar(
-      2, leitura({ hora: "19:00" }), HOJE, sessao(2, "nutricao.criar"),
+      2, leitura({ chaveOperacao: chaveTarde, hora: "19:00" }), HOJE, sessao(2, "nutricao.criar"),
     );
     expect(nula.id).toBe(vazia.id);
     expect(await contar("nutricao_cocho_leituras")).toBe(2);
@@ -326,14 +331,15 @@ describe.sequential("visão geral e identidade da leitura no mysql descartável"
 
   it("dois reenvios iguais ao mesmo tempo ficam numa leitura só", async () => {
     await limpar();
+    const chave = `lei-${randomUUID()}`;
     let segunda: Promise<{ id: number; repetido?: boolean }> = Promise.resolve({ id: 0 });
     definirGanchoTravaLeitura(async () => {
       definirGanchoTravaLeitura(null);
-      segunda = nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
+      segunda = nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"));
       await pausa();
       expect(await contar("nutricao_cocho_leituras")).toBe(0);
     });
-    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
+    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura({ chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"));
     const outra = await segunda;
     definirGanchoTravaLeitura(null);
     expect(outra.id).toBe(primeira.id);
@@ -360,12 +366,13 @@ describe.sequential("visão geral e identidade da leitura no mysql descartável"
     expect(await contar("nutricao_cocho_leituras")).toBe(2);
   }, 20_000);
 
-  it("segunda leitura igual de propósito não se separa do reenvio", async () => {
+  it("duas leituras iguais com chaves diferentes ficam separadas", async () => {
     await limpar();
     const primeira = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
     const segunda = await nutricaoCochoLeiturasService.criar(2, leitura(), HOJE, sessao(2, "nutricao.criar"));
-    expect(segunda.id).toBe(primeira.id);
-    expect(await contar("nutricao_cocho_leituras")).toBe(1);
+    expect(segunda.id).not.toBe(primeira.id);
+    expect(segunda.repetido).toBe(false);
+    expect(await contar("nutricao_cocho_leituras")).toBe(2);
   });
 
   it("leitura cancelada não impede outra igual", async () => {
@@ -379,24 +386,29 @@ describe.sequential("visão geral e identidade da leitura no mysql descartável"
     expect(await contar("nutricao_cocho_leituras")).toBe(2);
   });
 
-  it("edição da sobra faz o reenvio antigo abrir outra linha", async () => {
+  it("reenvio da mesma chave depois da edição não abre outra linha", async () => {
     await limpar();
-    const primeira = await nutricaoCochoLeiturasService.criar(2, leitura({ sobraKg: 20 }), HOJE, sessao(2, "nutricao.criar"));
-    let reenvio: Promise<{ id: number }> = Promise.resolve({ id: 0 });
+    const chave = `lei-${randomUUID()}`;
+    const primeira = await nutricaoCochoLeiturasService.criar(
+      2, leitura({ sobraKg: 20, chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"),
+    );
+    let reenvio: Promise<{ id: number; repetido?: boolean }> = Promise.resolve({ id: 0 });
     definirGanchoTravaLeitura(async () => {
       definirGanchoTravaLeitura(null);
-      reenvio = nutricaoCochoLeiturasService.criar(2, leitura({ sobraKg: 20 }), HOJE, sessao(2, "nutricao.criar"));
+      reenvio = nutricaoCochoLeiturasService.criar(
+        2, leitura({ sobraKg: 20, chaveOperacao: chave }), HOJE, sessao(2, "nutricao.criar"),
+      );
       await pausa();
       expect(Number((await donoLeitura(primeira.id)).sobraKg)).toBe(20);
       expect(await contar("nutricao_cocho_leituras")).toBe(1);
     });
     await nutricaoCochoLeiturasService.editar(2, primeira.id, leitura({ sobraKg: 5 }), HOJE, sessao(2, "nutricao.editar"));
-    const nova = await reenvio;
+    const deNovo = await reenvio;
     definirGanchoTravaLeitura(null);
-    expect(nova.id).not.toBe(primeira.id);
+    expect(deNovo.id).toBe(primeira.id);
+    expect(deNovo.repetido).toBe(true);
     expect(Number((await donoLeitura(primeira.id)).sobraKg)).toBe(5);
-    expect(Number((await donoLeitura(nova.id)).sobraKg)).toBe(20);
-    expect(await contar("nutricao_cocho_leituras")).toBe(2);
+    expect(await contar("nutricao_cocho_leituras")).toBe(1);
   }, 20_000);
 
   it("funcionário vê o total do titular na fazenda concedida", async () => {

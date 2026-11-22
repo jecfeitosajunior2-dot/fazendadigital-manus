@@ -63,6 +63,7 @@ export type NutricaoLeituraInput = {
   sobraKg?: number | null;
   escore?: string | null;
   observacoes?: string | null;
+  chaveOperacao?: string | null;
 };
 
 export type NutricaoLeituraFornRef = {
