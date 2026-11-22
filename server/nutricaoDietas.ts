@@ -12,8 +12,21 @@ import {
   validarDietaInput,
 } from "../shared/nutricaoDietas";
 import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
-import { db } from "./db";
+import { db as dbPadrao } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
+import {
+  MSG_NUTRICAO_SEM_SESSAO,
+  resolverDonoNutricao,
+  autorizarNutricaoNaTransacao,
+  type SessaoNutricao,
+} from "./nutricaoOperacaoAutorizada";
+
+let bancoDietas: typeof dbPadrao = dbPadrao;
+
+export function definirBancoNutricaoDietas(banco: typeof dbPadrao | null) {
+  bancoDietas = banco ?? dbPadrao;
+}
 
 export type NutricaoDietaProdutoFazenda = NutricaoDietaProdutoRef & {
   nome: string;
@@ -52,12 +65,15 @@ export type NutricaoDietasTx = {
   updateDieta(id: number, userId: number, patch: Omit<NutricaoDietaPersistida, "id" | "userId">): Promise<void>;
   deleteIngredientes(dietaId: number): Promise<void>;
   setStatus(id: number, userId: number, status: NutricaoDietaStatus): Promise<void>;
+  revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
+  travarDieta?(id: number): Promise<{ userId: number; fazendaId: number; status: string } | null>;
 };
 
 export type NutricaoDietasStore = {
   assertFazenda(userId: number, fazendaId: number): Promise<void>;
   listProdutosFazenda(fazendaId: number): Promise<NutricaoDietaProdutoFazenda[]>;
   findDieta(userId: number, id: number): Promise<NutricaoDietaPersistida | null>;
+  findPorId?(id: number): Promise<NutricaoDietaPersistida | null>;
   listDietas(
     userId: number,
     fazendaId: number,
@@ -110,13 +126,41 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
     if (!check.ok) toTrpc(check.message);
   }
 
+  async function donoDaFazenda(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      await store.assertFazenda(userId, fazendaId);
+      return userId;
+    }
+    const acesso = await resolverDonoNutricao(userId, fazendaId, sessao, bancoDietas);
+    return acesso.dono;
+  }
+
+  async function dietaDoDono(userId: number, id: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      const dieta = await store.findDieta(userId, id);
+      if (!dieta) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+      if (dieta.userId !== userId) toTrpc(MSG_DIETA_OWNERSHIP, "FORBIDDEN");
+      await store.assertFazenda(userId, dieta.fazendaId);
+      return { dieta, dono: userId };
+    }
+    if (!store.findPorId) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+    }
+    const dieta = await store.findPorId(id);
+    if (!dieta) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+    const dono = await donoDaFazenda(userId, dieta.fazendaId, sessao);
+    if (dieta.userId !== dono) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+    return { dieta, dono };
+  }
+
   return {
     async listar(
       userId: number,
       input: { fazendaId: number; status?: NutricaoDietaStatus; search?: string },
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      const dietas = await store.listDietas(userId, input.fazendaId, {
+      const dono = await donoDaFazenda(userId, input.fazendaId, sessao);
+      const dietas = await store.listDietas(dono, input.fazendaId, {
         status: input.status,
         search: input.search?.trim() || undefined,
       });
@@ -139,10 +183,8 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
       });
     },
 
-    async obter(userId: number, id: number) {
-      const dieta = await store.findDieta(userId, id);
-      if (!dieta) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
-      await store.assertFazenda(userId, dieta.fazendaId);
+    async obter(userId: number, id: number, sessao?: SessaoNutricao) {
+      const { dieta } = await dietaDoDono(userId, id, sessao);
       const ingredientes = await store.listIngredientes([dieta.id]);
       const produtos = await produtosDaFazenda(dieta.fazendaId);
       const porId = new Map(produtos.map(p => [p.produtoId, p]));
@@ -170,18 +212,24 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
       };
     },
 
-    async listarProdutosFormulacao(userId: number, fazendaId: number) {
-      await store.assertFazenda(userId, fazendaId);
+    async listarProdutosFormulacao(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      await donoDaFazenda(userId, fazendaId, sessao);
       return produtosDaFazenda(fazendaId);
     },
 
-    async criar(userId: number, input: NutricaoDietaInput) {
-      await store.assertFazenda(userId, input.fazendaId);
+    async criar(userId: number, input: NutricaoDietaInput, sessao?: SessaoNutricao) {
+      const dono = await donoDaFazenda(userId, input.fazendaId, sessao);
       const produtos = await produtosDaFazenda(input.fazendaId);
       validarOuErro(input, produtos);
       const id = await store.transaction(async tx => {
+        if (sessao) {
+          if (!tx.revalidar) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, input.fazendaId, dono);
+        }
         const dietaId = await tx.insertDieta({
-          userId,
+          userId: dono,
           fazendaId: input.fazendaId,
           nome: input.nome.trim(),
           descricao: input.descricao?.trim() || null,
@@ -208,18 +256,24 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
       return { success: true as const, id };
     },
 
-    async editar(userId: number, id: number, input: NutricaoDietaInput) {
-      const atual = await store.findDieta(userId, id);
-      if (!atual) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
-      if (atual.userId !== userId) toTrpc(MSG_DIETA_OWNERSHIP, "FORBIDDEN");
-      await store.assertFazenda(userId, atual.fazendaId);
+    async editar(userId: number, id: number, input: NutricaoDietaInput, sessao?: SessaoNutricao) {
+      const { dieta: atual, dono } = await dietaDoDono(userId, id, sessao);
       if (input.fazendaId !== atual.fazendaId) {
         toTrpc("A fazenda da dieta não pode ser alterada.");
       }
       const produtos = await produtosDaFazenda(atual.fazendaId);
       validarOuErro({ ...input, fazendaId: atual.fazendaId }, produtos);
       await store.transaction(async tx => {
-        await tx.updateDieta(id, userId, {
+        if (sessao) {
+          if (!tx.revalidar || !tx.travarDieta) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarDieta(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+          if (locked.fazendaId !== atual.fazendaId) toTrpc("A fazenda da dieta não pode ser alterada.");
+        }
+        await tx.updateDieta(id, dono, {
           fazendaId: atual.fazendaId,
           nome: input.nome.trim(),
           descricao: input.descricao?.trim() || null,
@@ -246,22 +300,34 @@ export function createNutricaoDietasService(store: NutricaoDietasStore) {
       return { success: true as const, id };
     },
 
-    async inativar(userId: number, id: number) {
-      const atual = await store.findDieta(userId, id);
-      if (!atual) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
-      await store.assertFazenda(userId, atual.fazendaId);
+    async inativar(userId: number, id: number, sessao?: SessaoNutricao) {
+      const { dieta: atual, dono } = await dietaDoDono(userId, id, sessao);
       await store.transaction(async tx => {
-        await tx.setStatus(id, userId, "inativa");
+        if (sessao) {
+          if (!tx.revalidar || !tx.travarDieta) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarDieta(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+        }
+        await tx.setStatus(id, dono, "inativa");
       });
       return { success: true as const, status: "inativa" as const };
     },
 
-    async reativar(userId: number, id: number) {
-      const atual = await store.findDieta(userId, id);
-      if (!atual) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
-      await store.assertFazenda(userId, atual.fazendaId);
+    async reativar(userId: number, id: number, sessao?: SessaoNutricao) {
+      const { dieta: atual, dono } = await dietaDoDono(userId, id, sessao);
       await store.transaction(async tx => {
-        await tx.setStatus(id, userId, "ativa");
+        if (sessao) {
+          if (!tx.revalidar || !tx.travarDieta) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarDieta(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_DIETA_NAO_ENCONTRADA, "NOT_FOUND");
+        }
+        await tx.setStatus(id, dono, "ativa");
       });
       return { success: true as const, status: "ativa" as const };
     },
@@ -293,7 +359,7 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
   },
 
   async listProdutosFazenda(fazendaId) {
-    const rows = await db
+    const rows = await bancoDietas
       .select({
         estoqueId: estoque.id,
         produtoId: estoque.produtoId,
@@ -329,10 +395,19 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
   },
 
   async findDieta(userId, id) {
-    const [row] = await db
+    const [row] = await bancoDietas
       .select()
       .from(nutricaoDietas)
       .where(and(eq(nutricaoDietas.id, id), eq(nutricaoDietas.userId, userId)))
+      .limit(1);
+    return row ? toDietaRow(row) : null;
+  },
+
+  async findPorId(id) {
+    const [row] = await bancoDietas
+      .select()
+      .from(nutricaoDietas)
+      .where(eq(nutricaoDietas.id, id))
       .limit(1);
     return row ? toDietaRow(row) : null;
   },
@@ -344,7 +419,7 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
     ];
     if (filters?.status) conditions.push(eq(nutricaoDietas.status, filters.status));
     if (filters?.search) conditions.push(like(nutricaoDietas.nome, `%${filters.search}%`));
-    const rows = await db
+    const rows = await bancoDietas
       .select()
       .from(nutricaoDietas)
       .where(and(...conditions))
@@ -354,7 +429,7 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
 
   async listIngredientes(dietaIds) {
     if (dietaIds.length === 0) return [];
-    const rows = await db
+    const rows = await bancoDietas
       .select()
       .from(nutricaoDietaIngredientes)
       .where(inArray(nutricaoDietaIngredientes.dietaId, dietaIds));
@@ -368,7 +443,7 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
   },
 
   transaction(fn) {
-    return db.transaction(async tx => {
+    return bancoDietas.transaction(async tx => {
       return fn({
         async insertDieta(row) {
           const result = await tx.insert(nutricaoDietas).values(row);
@@ -399,7 +474,24 @@ export const nutricaoDietasStore: NutricaoDietasStore = {
             .set({ status })
             .where(and(eq(nutricaoDietas.id, id), eq(nutricaoDietas.userId, userId)));
         },
+        async revalidar(sessao, fazendaId, donoEsperado) {
+          const acesso = await autorizarNutricaoNaTransacao(tx, sessao, fazendaId);
+          if (acesso.titularUserId !== donoEsperado) {
+            throw new TRPCError({ code: "NOT_FOUND", message: MSG_DIETA_NAO_ENCONTRADA });
+          }
+        },
+        async travarDieta(id) {
+          const [row] = await tx.select({
+            userId: nutricaoDietas.userId,
+            fazendaId: nutricaoDietas.fazendaId,
+            status: nutricaoDietas.status,
+          }).from(nutricaoDietas).where(eq(nutricaoDietas.id, id)).for("update").limit(1);
+          return row ?? null;
+        },
       });
+    }, { isolationLevel: "read committed" }).catch((erro) => {
+      recusarSeDeadlockEstoque(erro);
+      throw erro;
     });
   },
 };

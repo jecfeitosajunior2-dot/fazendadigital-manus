@@ -1033,6 +1033,29 @@ describe.sequential("nutrição crítica no mysql descartável", () => {
     expect(await saldo(1)).toBe(100);
   });
 
+  it("reenvio por funcionário sem a fazenda não devolve o lançamento", async () => {
+    await limpar();
+    const chave = `forn-${randomUUID()}`;
+    const r = await nutricaoFornecimentosService.confirmar(
+      2, "Ambos", pedidoProduto(10, { chaveOperacao: chave }), HOJE, sessao(2, "nutricao.confirmar"),
+    );
+    await expect(nutricaoFornecimentosService.confirmar(
+      5, "Uma",
+      pedidoProduto(10, { chaveOperacao: chave, fazendaId: 20, loteId: 2, produtoId: 201 }),
+      HOJE,
+      sessao(5, "nutricao.confirmar"),
+    )).rejects.toMatchObject({ code: "FORBIDDEN", message: MSG_NUTRICAO_FAZENDA });
+    expect(await saldo(1)).toBe(90);
+    expect(await saldo(2)).toBe(40);
+    const [linhas] = await pool.query(
+      "SELECT id, conteudoHash FROM nutricao_fornecimentos WHERE chaveOperacao = ?",
+      [chave],
+    );
+    const row = (linhas as Array<{ id: number; conteudoHash: string }>)[0];
+    expect(row.id).toBe(r.id);
+    expect(row.conteudoHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it("caminhos adaptados não usam o arquivo local", () => {
     const fornecimento = readFileSync(new URL("./nutricaoFornecimentos.ts", import.meta.url), "utf8");
     const batida = readFileSync(new URL("./nutricaoBatidas.ts", import.meta.url), "utf8");

@@ -8,7 +8,13 @@ import { db } from "./db";
 export type SessaoNutricao = {
   executorId: number;
   sessionVersionDaSessao: number | null;
-  permissaoId: "nutricao.confirmar" | "nutricao.estornar";
+  permissaoId:
+    | "nutricao.visualizar"
+    | "nutricao.criar"
+    | "nutricao.editar"
+    | "nutricao.inativar"
+    | "nutricao.confirmar"
+    | "nutricao.estornar";
 };
 
 export type AcessoNutricao = {
