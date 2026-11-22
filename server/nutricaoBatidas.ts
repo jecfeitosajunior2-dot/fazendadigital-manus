@@ -203,6 +203,10 @@ export type BatidaStore = {
   listMovimentacoes(batidaId: number): Promise<BatidaMovPersistido[]>;
   listFornecimentos(batidaId: number): Promise<BatidaFornVinculado[]>;
   getLoteNome(userId: number, loteId: number): Promise<string | null>;
+  lerPreviaConsistente?(userId: number, fazendaId: number, dietaId: number): Promise<{
+    dieta: NutricaoPlanDietaRef | null;
+    produtos: NutricaoFornEstoqueRef[];
+  }>;
   transaction<T>(fn: (tx: BatidaTx) => Promise<T>): Promise<T>;
 };
 
@@ -233,6 +237,14 @@ function enriquecer(row: BatidaPersistida, fornecimentos: BatidaFornVinculado[])
 }
 
 export function createNutricaoBatidasService(store: BatidaStore) {
+  async function donoConsulta(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      await store.assertFazenda(userId, fazendaId);
+      return userId;
+    }
+    return (await resolverDonoNutricao(userId, fazendaId, sessao, bancoBatidas)).dono;
+  }
+
   async function previewDe(userId: number, input: NutricaoBatidaInput, hojeISO: string, pularAssert = false) {
     if (!pularAssert) await store.assertFazenda(userId, input.fazendaId);
     const produtos = await store.listProdutosFazenda(input.fazendaId);
@@ -258,9 +270,10 @@ export function createNutricaoBatidasService(store: BatidaStore) {
         dataInicio?: string;
         dataFim?: string;
       },
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      let rows = await store.list(userId, input.fazendaId);
+      const dono = await donoConsulta(userId, input.fazendaId, sessao);
+      let rows = await store.list(dono, input.fazendaId);
       if (input.dietaId) rows = rows.filter(r => r.dietaId === input.dietaId);
       if (input.status) rows = rows.filter(r => r.status === input.status);
       if (input.dataInicio) rows = rows.filter(r => r.data >= input.dataInicio!);
@@ -275,21 +288,31 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       return out;
     },
 
-    async listarDisponiveis(userId: number, fazendaId: number) {
-      const rows = await this.listar(userId, { fazendaId, status: "confirmado" });
+    async listarDisponiveis(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      const rows = await this.listar(userId, { fazendaId, status: "confirmado" }, sessao);
       return rows.filter(r => r.disponivelDistribuicao);
     },
 
-    async listarDietasParaBatida(userId: number, fazendaId: number) {
-      await store.assertFazenda(userId, fazendaId);
-      const dietas = await store.listDietasFazenda(userId, fazendaId);
+    async listarDietasParaBatida(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      const dono = await donoConsulta(userId, fazendaId, sessao);
+      const dietas = await store.listDietasFazenda(dono, fazendaId);
       return dietas.filter(dietaElegivelParaNovaBatida);
     },
 
-    async obter(userId: number, id: number) {
-      const row = await store.find(userId, id);
-      if (!row) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
-      await store.assertFazenda(userId, row.fazendaId);
+    async obter(userId: number, id: number, sessao?: SessaoNutricao) {
+      let row: BatidaPersistida | null;
+      let dono = userId;
+      if (sessao) {
+        if (!store.findPorId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+        row = await store.findPorId(id);
+        if (!row) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+        dono = await donoConsulta(userId, row.fazendaId, sessao);
+        if (row.userId !== dono) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+      } else {
+        row = await store.find(userId, id);
+        if (!row) toTrpc(MSG_BATIDA_NAO_ENCONTRADA, "NOT_FOUND");
+        await store.assertFazenda(userId, row.fazendaId);
+      }
       const ingredientes = await store.listIngredientes(row.id);
       const movimentacoes = await store.listMovimentacoes(row.id);
       const fornecimentos = await store.listFornecimentos(row.id);
@@ -297,7 +320,7 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       const nomePorEstoque = new Map(produtos.map(p => [p.estoqueId, p.nome]));
       const fornsComLote = [];
       for (const f of fornecimentos) {
-        const loteNome = f.loteNome ?? (await store.getLoteNome(userId, f.loteId)) ?? `Lote ${f.loteId}`;
+        const loteNome = f.loteNome ?? (await store.getLoteNome(dono, f.loteId)) ?? `Lote ${f.loteId}`;
         fornsComLote.push({ ...f, loteNome });
       }
       return {
@@ -320,8 +343,23 @@ export function createNutricaoBatidasService(store: BatidaStore) {
       };
     },
 
-    async preview(userId: number, input: NutricaoBatidaInput, hojeISO = hojeISODateLocal()) {
-      const { check, preview } = await previewDe(userId, input, hojeISO);
+    async preview(userId: number, input: NutricaoBatidaInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (!sessao) {
+        const { check, preview } = await previewDe(userId, input, hojeISO);
+        return { ok: check.ok, message: check.ok ? null : check.message, preview };
+      }
+      const dono = await donoConsulta(userId, input.fazendaId, sessao);
+      if (!store.lerPreviaConsistente) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+      }
+      const foto = await store.lerPreviaConsistente(dono, input.fazendaId, input.dietaId);
+      const produtosPorId = new Map(foto.produtos.map(p => [p.produtoId, p]));
+      const check = validarBatidaInput(input, { dieta: foto.dieta, produtosPorId, hojeISO });
+      const preview = calcularPreviewBatida({
+        quantidadePreparadaKg: input.quantidadePreparadaKg,
+        dieta: foto.dieta,
+        produtosPorId,
+      });
       return { ok: check.ok, message: check.ok ? null : check.message, preview };
     },
 
@@ -534,13 +572,14 @@ export function createNutricaoBatidasService(store: BatidaStore) {
 }
 
 async function dietaComIngredientes(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null> {
-  const [dieta] = await bancoBatidas
+  return bancoBatidas.transaction(async (tx) => {
+  const [dieta] = await tx
     .select()
     .from(nutricaoDietas)
     .where(and(eq(nutricaoDietas.id, dietaId), eq(nutricaoDietas.userId, userId)))
     .limit(1);
   if (!dieta) return null;
-  const ings = await bancoBatidas.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
+  const ings = await tx.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
   return {
     id: dieta.id,
     userId: dieta.userId,
@@ -553,6 +592,7 @@ async function dietaComIngredientes(userId: number, dietaId: number): Promise<Nu
     baseQuantidade: Number(dieta.baseQuantidade),
     ingredientes: ings.map(i => ({ produtoId: i.produtoId, quantidadeKg: Number(i.quantidade) })),
   };
+  }, { isolationLevel: "repeatable read" });
 }
 
 function toBatidaRow(row: typeof nutricaoBatidas.$inferSelect): BatidaPersistida {
@@ -620,6 +660,50 @@ export const nutricaoBatidasStore: BatidaStore = {
   },
   async getDieta(userId, dietaId) {
     return dietaComIngredientes(userId, dietaId);
+  },
+  async lerPreviaConsistente(userId, fazendaId, dietaId) {
+    return bancoBatidas.transaction(async (tx) => {
+      const [dieta] = await tx.select().from(nutricaoDietas).where(and(
+        eq(nutricaoDietas.id, dietaId),
+        eq(nutricaoDietas.userId, userId),
+      )).limit(1);
+      let receita: NutricaoPlanDietaRef | null = null;
+      if (dieta) {
+        const ings = await tx.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
+        receita = {
+          id: dieta.id,
+          userId: dieta.userId,
+          fazendaId: dieta.fazendaId,
+          nome: dieta.nome,
+          status: dieta.status,
+          formaUso: dieta.formaUso ?? null,
+          dataInicio: dieta.dataInicio ?? null,
+          dataFim: dieta.dataFim ?? null,
+          baseQuantidade: Number(dieta.baseQuantidade),
+          ingredientes: ings.map(i => ({ produtoId: i.produtoId, quantidadeKg: Number(i.quantidade) })),
+        };
+      }
+      const rows = await tx.select().from(estoque).where(eq(estoque.fazendaId, fazendaId));
+      const produtos = rows
+        .filter(r => r.produtoId != null && r.produtoId > 0 && (r.situacao ?? "ativo") !== "inativo")
+        .map(r => ({
+          estoqueId: r.id,
+          produtoId: Number(r.produtoId),
+          nome: r.nome,
+          unidade: r.unidade ?? null,
+          valorUnitario: custoMedioFonteTecnica({
+            quantidade: r.quantidade,
+            valorUnitario: r.valorUnitario,
+            valorTotalEstoque: r.valorTotalEstoque,
+            capitalInicializadoEm: r.capitalInicializadoEm,
+          }) ?? r.valorUnitario ?? null,
+          quantidade: r.quantidade ?? null,
+          controlarSaldo: produtoControlaSaldo(r.controlarSaldo),
+          embalagens: r.embalagens ?? null,
+          vinculadoFazenda: true,
+        }));
+      return { dieta: receita, produtos };
+    }, { isolationLevel: "repeatable read" });
   },
   async find(userId, id) {
     const [row] = await bancoBatidas.select().from(nutricaoBatidas).where(and(

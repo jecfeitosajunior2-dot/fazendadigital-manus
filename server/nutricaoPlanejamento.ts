@@ -53,6 +53,7 @@ import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import {
   autorizarNutricaoNaTransacao,
+  avisarTravaPlano,
   MSG_NUTRICAO_SEM_SESSAO,
   resolverDonoNutricao,
   type SessaoNutricao,
@@ -444,6 +445,7 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
           await tx.revalidar(sessao, atual.fazendaId, dono);
           const locked = await tx.travarPlano(id);
           if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          await avisarTravaPlano();
           if (locked.fazendaId !== atual.fazendaId) toTrpc("A fazenda do planejamento não pode ser alterada.");
           if (locked.status === "cancelado" || locked.status === "encerrado") {
             toTrpc("Planejamento encerrado ou cancelado não pode ser editado.");
@@ -494,6 +496,7 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
           await tx.revalidar(sessao, atual.fazendaId, dono);
           const locked = await tx.travarPlano(id);
           if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          await avisarTravaPlano();
           if (locked.status !== "ativo") toTrpc(MSG_PLAN_SUBSTITUIR_STATUS);
           if (!planejamentoJaIniciou(locked.dataInicio, hojeISO)) {
             if (input.fazendaId !== locked.fazendaId) toTrpc("A fazenda do planejamento não pode ser alterada.");
@@ -555,6 +558,7 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
           await tx.revalidar(sessao, atual.fazendaId, dono);
           const locked = await tx.travarPlano(id);
           if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          await avisarTravaPlano();
           const check = podeEncerrarPlanejamento({
             status: locked.status,
             dataInicio: locked.dataInicio,
@@ -591,6 +595,7 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
           await tx.revalidar(sessao, atual.fazendaId, dono);
           const locked = await tx.travarPlano(id);
           if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          await avisarTravaPlano();
           const execucoes = await tx.contarFornecimentos(dono, id);
           const check = podeCancelarPlanejamento({
             status: locked.status,

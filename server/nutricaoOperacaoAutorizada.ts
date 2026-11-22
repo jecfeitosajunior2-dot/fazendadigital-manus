@@ -114,3 +114,14 @@ export async function resolverDonoNutricao(
   const acesso = await autorizarNutricaoNoBanco(sessao, fazendaId, banco);
   return { dono: acesso.titularUserId, executor: acesso.executorUserId };
 }
+
+/** O teste de concorrência entra aqui, com a prescrição já travada e antes da baixa. */
+let ganchoTravaPlano: (() => Promise<void>) | null = null;
+
+export function definirGanchoTravaPlano(gancho: (() => Promise<void>) | null) {
+  ganchoTravaPlano = gancho;
+}
+
+export async function avisarTravaPlano() {
+  if (ganchoTravaPlano) await ganchoTravaPlano();
+}

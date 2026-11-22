@@ -60,6 +60,7 @@ import {
   MSG_NUTRICAO_SEM_SESSAO,
   resolverDonoNutricao,
   autorizarNutricaoNaTransacao,
+  avisarTravaPlano,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
 import { conteudoCanonicoFornecimento } from "../shared/nutricaoIdempotencia";
@@ -192,6 +193,9 @@ export type FornTx = {
   travarFornecimento?(id: number): Promise<{ status: string; userId: number; fazendaId: number } | null>;
   exigirIdempotencia?(): Promise<void>;
   gravarChave?(id: number, userId: number, chave: string, hash: string): Promise<void>;
+  travarPlanejamento?(userId: number, id: number): Promise<NutricaoFornPlanejamentoRef | null>;
+  lerDietaTravada?(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null>;
+  listarProdutosTravados?(fazendaId: number, produtoIds: number[]): Promise<NutricaoFornEstoqueRef[]>;
 };
 
 export type FornStore = {
@@ -204,6 +208,16 @@ export type FornStore = {
   getCocho(userId: number, id: number): Promise<NutricaoCochoRef | null>;
   getBatida(userId: number, id: number): Promise<NutricaoFornBatidaRef | null>;
   listPlanejamentosLote(userId: number, fazendaId: number, loteId: number): Promise<NutricaoFornPlanejamentoRef[]>;
+  lerPreviaConsistente?(userId: number, input: NutricaoFornInput): Promise<{
+    lote: NutricaoPlanLoteRef | null;
+    produto: NutricaoFornEstoqueRef | null;
+    dieta: NutricaoPlanDietaRef | null;
+    planejamento: NutricaoFornPlanejamentoRef | null;
+    produtos: NutricaoFornEstoqueRef[];
+    cocho: NutricaoCochoRef | null;
+    batida: NutricaoFornBatidaRef | null;
+    animalIds: number[];
+  }>;
   find(userId: number, id: number): Promise<FornPersistido | null>;
   findPorId?(id: number): Promise<FornPersistido | null>;
   list(userId: number, fazendaId: number): Promise<FornPersistido[]>;
@@ -255,6 +269,14 @@ export function createNutricaoFornecimentosService(store: FornStore) {
     return { check, preview, ctx, animalIds };
   }
 
+  async function donoConsulta(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      await store.assertFazenda(userId, fazendaId);
+      return userId;
+    }
+    return (await resolverDonoNutricao(userId, fazendaId, sessao, bancoFornecimentos)).dono;
+  }
+
   return {
     async listar(
       userId: number,
@@ -266,9 +288,10 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         dataInicio?: string;
         dataFim?: string;
       },
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      let rows = await store.list(userId, input.fazendaId);
+      const dono = await donoConsulta(userId, input.fazendaId, sessao);
+      let rows = await store.list(dono, input.fazendaId);
       if (input.loteId) rows = rows.filter(r => r.loteId === input.loteId);
       if (input.tipoOrigem) rows = rows.filter(r => r.tipoOrigem === input.tipoOrigem);
       if (input.status) rows = rows.filter(r => r.status === input.status);
@@ -276,7 +299,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       if (input.dataFim) rows = rows.filter(r => r.data <= input.dataFim!);
       const out = [];
       for (const row of rows) {
-        const lote = await store.getLote(userId, row.loteId);
+        const lote = await store.getLote(dono, row.loteId);
         out.push({
           ...row,
           loteNome: lote?.nome ?? `Lote ${row.loteId}`,
@@ -286,11 +309,21 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       return out;
     },
 
-    async obter(userId: number, id: number) {
-      const row = await store.find(userId, id);
-      if (!row) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
-      await store.assertFazenda(userId, row.fazendaId);
-      const lote = await store.getLote(userId, row.loteId);
+    async obter(userId: number, id: number, sessao?: SessaoNutricao) {
+      let row: FornPersistido | null;
+      let dono = userId;
+      if (sessao) {
+        if (!store.findPorId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+        row = await store.findPorId(id);
+        if (!row) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+        dono = await donoConsulta(userId, row.fazendaId, sessao);
+        if (row.userId !== dono) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+      } else {
+        row = await store.find(userId, id);
+        if (!row) toTrpc(MSG_FORN_NAO_ENCONTRADO, "NOT_FOUND");
+        await store.assertFazenda(userId, row.fazendaId);
+      }
+      const lote = await store.getLote(dono, row.loteId);
       const ingredientes = await store.listIngredientes(row.id);
       const movimentacoes = await store.listMovimentacoes(row.id);
       const produtos = await store.listProdutosFazenda(row.fazendaId);
@@ -307,14 +340,34 @@ export function createNutricaoFornecimentosService(store: FornStore) {
       };
     },
 
-    async listarPlanejamentos(userId: number, fazendaId: number, loteId: number, data: string) {
-      await store.assertFazenda(userId, fazendaId);
-      const todos = await store.listPlanejamentosLote(userId, fazendaId, loteId);
+    async listarPlanejamentos(userId: number, fazendaId: number, loteId: number, data: string, sessao?: SessaoNutricao) {
+      const dono = await donoConsulta(userId, fazendaId, sessao);
+      const todos = await store.listPlanejamentosLote(dono, fazendaId, loteId);
       return todos.filter(p => planejamentoVigenteNaData(p, data));
     },
 
-    async preview(userId: number, input: NutricaoFornInput, hojeISO = hojeISODateLocal()) {
-      const { check, preview } = await previewDe(userId, input, hojeISO);
+    async preview(userId: number, input: NutricaoFornInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (!sessao) {
+        const { check, preview } = await previewDe(userId, input, hojeISO);
+        return { ok: check.ok, message: check.ok ? null : check.message, preview };
+      }
+      const dono = await donoConsulta(userId, input.fazendaId, sessao);
+      if (!store.lerPreviaConsistente) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+      }
+      const ctx = await store.lerPreviaConsistente(dono, input);
+      const check = validarFornecimentoInput(input, { ...ctx, hojeISO });
+      const preview = calcularPreviewFornecimento({
+        quantidadeKg: input.quantidadeFornecidaKg,
+        tipoOrigem: input.tipoOrigem,
+        animalIds: ctx.animalIds,
+        produto: ctx.produto,
+        dieta: ctx.dieta,
+        produtosPorId: new Map(ctx.produtos.map(p => [p.produtoId, p])),
+        planejamento: ctx.planejamento,
+        origemOperacional: input.origemOperacional,
+        batida: ctx.batida,
+      });
       return { ok: check.ok, message: check.ok ? null : check.message, preview };
     },
 
@@ -336,14 +389,11 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         );
         if (ja) return responderConfirmacaoRepetida(ja, preparada.hash);
       }
-      const { check, preview, ctx } = await previewDe(dono, input, hojeISO, Boolean(sessao));
+      const { check, preview, ctx, animalIds } = await previewDe(dono, input, hojeISO, Boolean(sessao));
       if (!check.ok) toTrpc(check.message);
       if (!preview.podeConfirmar) toTrpc(preview.motivoBloqueio ?? MSG_FORN_SALDO);
       const origem = origemNormalizada(input);
       const op = input.origemOperacional === "batida" ? "batida" : "direta";
-      const origemNome = op === "batida"
-        ? (ctx.batida?.dietaNomeSnapshot ?? ctx.dieta?.nome ?? "Dieta")
-        : origem.tipoOrigem === "dieta" ? (ctx.dieta?.nome ?? "Dieta") : (ctx.produto?.nome ?? "Produto");
 
       let id: number;
       try {
@@ -355,7 +405,50 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           await tx.revalidar(sessao, input.fazendaId, dono);
           await tx.exigirIdempotencia();
         }
-        let custo = preview.custo;
+        let foto = preview;
+        let dietaUsada = ctx.dieta;
+        if (sessao && Number(input.planejamentoId) > 0) {
+          if (!tx.travarPlanejamento || !tx.lerDietaTravada || !tx.listarProdutosTravados) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+          }
+          const planoTravado = await tx.travarPlanejamento(dono, Number(input.planejamentoId));
+          if (op !== "batida" && origem.dietaId) {
+            dietaUsada = await tx.lerDietaTravada(dono, origem.dietaId);
+          }
+          await avisarTravaPlano();
+          const produtoIds = op === "batida"
+            ? []
+            : origem.tipoOrigem === "dieta"
+              ? (dietaUsada?.ingredientes ?? []).map(i => i.produtoId)
+              : origem.produtoId ? [origem.produtoId] : [];
+          const produtosTravados = produtoIds.length
+            ? await tx.listarProdutosTravados(input.fazendaId, produtoIds)
+            : ctx.produtos;
+          const produtoTravado = origem.produtoId
+            ? produtosTravados.find(p => p.produtoId === origem.produtoId) ?? null
+            : null;
+          const checkTx = validarFornecimentoInput(input, {
+            ...ctx,
+            planejamento: planoTravado,
+            dieta: dietaUsada,
+            produto: origem.produtoId ? produtoTravado : ctx.produto,
+            hojeISO,
+          });
+          if (!checkTx.ok) toTrpc(checkTx.message);
+          foto = calcularPreviewFornecimento({
+            quantidadeKg: input.quantidadeFornecidaKg,
+            tipoOrigem: input.tipoOrigem,
+            animalIds,
+            produto: origem.produtoId ? produtoTravado : ctx.produto,
+            dieta: dietaUsada,
+            produtosPorId: new Map(produtosTravados.map(p => [p.produtoId, p])),
+            planejamento: planoTravado,
+            origemOperacional: input.origemOperacional,
+            batida: ctx.batida,
+          });
+          if (!foto.podeConfirmar) toTrpc(foto.motivoBloqueio ?? MSG_FORN_SALDO);
+        }
+        let custo = foto.custo;
         if (op === "batida") {
           const locked = await tx.lockBatida(Number(input.batidaId));
           if (!locked || locked.status !== "confirmado") {
@@ -393,16 +486,18 @@ export function createNutricaoFornecimentosService(store: FornStore) {
           data: normalizarDataCivil(input.data)!,
           hora: normalizarHoraFornecimento(input.hora ?? null),
           quantidadeFornecidaKg: String(input.quantidadeFornecidaKg),
-          populacaoSnapshot: preview.animaisAtuais,
-          origemNomeSnapshot: origemNome,
+          populacaoSnapshot: foto.animaisAtuais,
+          origemNomeSnapshot: op === "batida"
+            ? (ctx.batida?.dietaNomeSnapshot ?? dietaUsada?.nome ?? "Dieta")
+            : origem.tipoOrigem === "dieta" ? (dietaUsada?.nome ?? "Dieta") : (ctx.produto?.nome ?? "Produto"),
           custoUnitarioSnapshot: custo.custoPorKg != null ? String(custo.custoPorKg) : null,
           custoTotalSnapshot: custo.custoTotal != null ? String(custo.custoTotal) : null,
           custoPorKgSnapshot: custo.custoPorKg != null ? String(custo.custoPorKg) : null,
           custoCompleto: custo.completo,
-          planejamentoMetaSnapshot: preview.planejamento?.metaLabel ?? null,
-          planejamentoModalidadeSnapshot: preview.planejamento?.modalidade ?? null,
+          planejamentoMetaSnapshot: foto.planejamento?.metaLabel ?? null,
+          planejamentoModalidadeSnapshot: foto.planejamento?.modalidade ?? null,
           planejamentoNecessidadeKgSnapshot:
-            preview.planejamento?.necessidadeKg != null ? String(preview.planejamento.necessidadeKg) : null,
+            foto.planejamento?.necessidadeKg != null ? String(foto.planejamento.necessidadeKg) : null,
           observacoes: input.observacoes?.trim() || null,
           status: "confirmado",
           motivoEstorno: null,
@@ -416,7 +511,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
 
         if (origem.tipoOrigem === "dieta") {
-          await tx.insertIngredientes(preview.baixas.map((b, ordem) => ({
+          await tx.insertIngredientes(foto.baixas.map((b, ordem) => ({
             fornecimentoId: fornId,
             produtoId: b.produtoId,
             produtoNomeSnapshot: b.nome,
@@ -432,10 +527,10 @@ export function createNutricaoFornecimentosService(store: FornStore) {
         }
 
         const grupoId = `forn-${fornId}`;
-        const baixas = [...preview.baixas].sort((a, b) => (a.estoqueId ?? 0) - (b.estoqueId ?? 0));
+        const baixas = [...foto.baixas].sort((a, b) => (a.estoqueId ?? 0) - (b.estoqueId ?? 0));
         for (const baixa of baixas) {
           if (!(baixa.quantidadeUnidade > 0) || !baixa.estoqueId) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: preview.motivoBloqueio ?? MSG_FORN_SALDO_DIETA });
+            throw new TRPCError({ code: "BAD_REQUEST", message: foto.motivoBloqueio ?? MSG_FORN_SALDO_DIETA });
           }
           const saldo = await tx.debitarEstoque(baixa.estoqueId, baixa.quantidadeUnidade, input.fazendaId);
           await tx.insertSaida({
@@ -789,6 +884,123 @@ export const nutricaoFornecimentosStore: FornStore = {
       ordem: r.ordem,
     }));
   },
+  async lerPreviaConsistente(userId, input) {
+    return bancoFornecimentos.transaction(async (tx) => {
+      const origem = origemNormalizada(input);
+      const [loteRow] = await tx.select({
+        id: lotes.id, userId: lotes.userId, fazendaId: lotes.fazendaId, ativo: lotes.ativo, nome: lotes.nome,
+      }).from(lotes).where(and(eq(lotes.id, input.loteId), eq(lotes.userId, userId))).limit(1);
+      const lote = loteRow
+        ? { id: loteRow.id, userId: loteRow.userId, fazendaId: loteRow.fazendaId ?? null, ativo: loteRow.ativo !== false, nome: loteRow.nome }
+        : null;
+      const animaisRows = await tx.select({ id: animais.id }).from(animais).where(and(
+        eq(animais.userId, userId), eq(animais.loteId, input.loteId), eq(animais.status, "ativo"),
+      ));
+      const produtosRows = await tx.select().from(estoque).where(eq(estoque.fazendaId, input.fazendaId));
+      const produtos: NutricaoFornEstoqueRef[] = produtosRows
+        .filter(r => r.produtoId != null && r.produtoId > 0 && (r.situacao ?? "ativo") !== "inativo")
+        .map(r => ({
+          estoqueId: r.id,
+          produtoId: Number(r.produtoId),
+          nome: r.nome,
+          unidade: r.unidade ?? null,
+          valorUnitario: custoMedioFonteTecnica({
+            quantidade: r.quantidade,
+            valorUnitario: r.valorUnitario,
+            valorTotalEstoque: r.valorTotalEstoque,
+            capitalInicializadoEm: r.capitalInicializadoEm,
+          }) ?? r.valorUnitario ?? null,
+          quantidade: r.quantidade ?? null,
+          controlarSaldo: produtoControlaSaldo(r.controlarSaldo),
+          embalagens: r.embalagens ?? null,
+          vinculadoFazenda: true,
+        }));
+      const produto = origem.produtoId ? produtos.find(p => p.produtoId === origem.produtoId) ?? null : null;
+      let dieta: NutricaoPlanDietaRef | null = null;
+      if (origem.dietaId) {
+        const [dietaRow] = await tx.select().from(nutricaoDietas).where(and(
+          eq(nutricaoDietas.id, origem.dietaId), eq(nutricaoDietas.userId, userId),
+        )).limit(1);
+        if (dietaRow) {
+          const ings = await tx.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dietaRow.id));
+          dieta = {
+            id: dietaRow.id,
+            userId: dietaRow.userId,
+            fazendaId: dietaRow.fazendaId,
+            nome: dietaRow.nome,
+            status: dietaRow.status,
+            formaUso: dietaRow.formaUso ?? null,
+            dataInicio: dietaRow.dataInicio ?? null,
+            dataFim: dietaRow.dataFim ?? null,
+            baseQuantidade: Number(dietaRow.baseQuantidade),
+            ingredientes: ings.map(i => ({ produtoId: i.produtoId, quantidadeKg: Number(i.quantidade) })),
+          };
+        }
+      }
+      let planejamento: NutricaoFornPlanejamentoRef | null = null;
+      if (Number(input.planejamentoId) > 0) {
+        const [plan] = await tx.select().from(nutricaoPlanejamentos).where(and(
+          eq(nutricaoPlanejamentos.id, Number(input.planejamentoId)),
+          eq(nutricaoPlanejamentos.userId, userId),
+        )).limit(1);
+        if (plan) {
+          planejamento = {
+            id: plan.id,
+            fazendaId: plan.fazendaId,
+            loteId: plan.loteId,
+            tipoOrigem: plan.tipoOrigem,
+            produtoId: plan.produtoId,
+            dietaId: plan.dietaId,
+            modalidadeMeta: plan.modalidadeMeta,
+            valorMeta: plan.valorMeta == null ? null : Number(plan.valorMeta),
+            status: plan.status,
+            dataInicio: plan.dataInicio,
+            dataFim: plan.dataFim,
+          };
+        }
+      }
+      let cocho: NutricaoCochoRef | null = null;
+      if (Number(input.cochoId) > 0) {
+        const [row] = await tx.select().from(nutricaoCochos).where(and(
+          eq(nutricaoCochos.id, Number(input.cochoId)), eq(nutricaoCochos.userId, userId),
+        )).limit(1);
+        if (row) {
+          cocho = { id: row.id, userId: row.userId, fazendaId: row.fazendaId, nome: row.nome, codigo: row.codigo ?? null, status: row.status };
+        }
+      }
+      let batida: NutricaoFornBatidaRef | null = null;
+      if (Number(input.batidaId) > 0) {
+        const [row] = await tx.select().from(nutricaoBatidas).where(and(
+          eq(nutricaoBatidas.id, Number(input.batidaId)), eq(nutricaoBatidas.userId, userId),
+        )).limit(1);
+        if (row) {
+          const forns = await tx.select({
+            quantidadeFornecidaKg: nutricaoFornecimentos.quantidadeFornecidaKg,
+            status: nutricaoFornecimentos.status,
+          }).from(nutricaoFornecimentos).where(eq(nutricaoFornecimentos.batidaId, row.id));
+          const distribuida = calcularQuantidadeDistribuidaKg(
+            forns.map(f => ({ quantidadeFornecidaKg: Number(f.quantidadeFornecidaKg), status: f.status })),
+          );
+          const preparada = Number(row.quantidadePreparadaKg);
+          batida = {
+            id: row.id,
+            userId: row.userId,
+            fazendaId: row.fazendaId,
+            dietaId: row.dietaId,
+            dietaNomeSnapshot: row.dietaNomeSnapshot ?? "",
+            quantidadePreparadaKg: preparada,
+            quantidadeDistribuidaKg: distribuida,
+            saldoDisponivelKg: calcularSaldoBatida(preparada, distribuida),
+            status: row.status,
+            custoCompleto: Boolean(row.custoCompleto),
+            custoPorKgSnapshot: row.custoKgSnapshot == null ? null : Number(row.custoKgSnapshot),
+            custoTotalSnapshot: row.custoTotalSnapshot == null ? null : Number(row.custoTotalSnapshot),
+          };
+        }
+      }
+      return { lote, produto, dieta, planejamento, produtos, cocho, batida, animalIds: animaisRows.map(r => r.id) };
+    }, { isolationLevel: "repeatable read" });
+  },
   async listMovimentacoes(fornecimentoId) {
     const rows = await bancoFornecimentos.select().from(estoqueMovimentacoes).where(
       eq(estoqueMovimentacoes.nutricaoFornecimentoId, fornecimentoId),
@@ -973,6 +1185,78 @@ export const nutricaoFornecimentosStore: FornStore = {
           estornadoPorUserId: patch.estornadoPorUserId,
           estornadoEm: new Date(),
         }).where(eq(nutricaoFornecimentos.id, id));
+      },
+      async travarPlanejamento(userId, id) {
+        const [row] = await tx.select().from(nutricaoPlanejamentos).where(and(
+          eq(nutricaoPlanejamentos.id, id),
+          eq(nutricaoPlanejamentos.userId, userId),
+        )).for("update").limit(1);
+        if (!row) return null;
+        return {
+          id: row.id,
+          fazendaId: row.fazendaId,
+          loteId: row.loteId,
+          tipoOrigem: row.tipoOrigem,
+          produtoId: row.produtoId,
+          dietaId: row.dietaId,
+          modalidadeMeta: row.modalidadeMeta,
+          valorMeta: row.valorMeta == null ? null : Number(row.valorMeta),
+          status: row.status,
+          dataInicio: row.dataInicio,
+          dataFim: row.dataFim,
+        };
+      },
+      async lerDietaTravada(userId, dietaId) {
+        const [dieta] = await tx.select().from(nutricaoDietas).where(and(
+          eq(nutricaoDietas.id, dietaId),
+          eq(nutricaoDietas.userId, userId),
+        )).for("update").limit(1);
+        if (!dieta) return null;
+        const ings = await tx.select().from(nutricaoDietaIngredientes).where(
+          eq(nutricaoDietaIngredientes.dietaId, dieta.id),
+        );
+        return {
+          id: dieta.id,
+          userId: dieta.userId,
+          fazendaId: dieta.fazendaId,
+          nome: dieta.nome,
+          status: dieta.status,
+          formaUso: dieta.formaUso ?? null,
+          dataInicio: dieta.dataInicio ?? null,
+          dataFim: dieta.dataFim ?? null,
+          baseQuantidade: Number(dieta.baseQuantidade),
+          ingredientes: ings.map(i => ({ produtoId: i.produtoId, quantidadeKg: Number(i.quantidade) })),
+        };
+      },
+      async listarProdutosTravados(fazendaId, produtoIds) {
+        if (!produtoIds.length) return [];
+        const alvos = await tx.select({ id: estoque.id }).from(estoque).where(and(
+          eq(estoque.fazendaId, fazendaId),
+          inArray(estoque.produtoId, produtoIds),
+        ));
+        const ids = alvos.map(r => r.id).sort((a, b) => a - b);
+        const saida: NutricaoFornEstoqueRef[] = [];
+        for (const estoqueId of ids) {
+          const [r] = await tx.select().from(estoque).where(eq(estoque.id, estoqueId)).for("update").limit(1);
+          if (!r || r.produtoId == null || r.produtoId <= 0 || (r.situacao ?? "ativo") === "inativo") continue;
+          saida.push({
+            estoqueId: r.id,
+            produtoId: Number(r.produtoId),
+            nome: r.nome,
+            unidade: r.unidade ?? null,
+            valorUnitario: custoMedioFonteTecnica({
+              quantidade: r.quantidade,
+              valorUnitario: r.valorUnitario,
+              valorTotalEstoque: r.valorTotalEstoque,
+              capitalInicializadoEm: r.capitalInicializadoEm,
+            }) ?? r.valorUnitario ?? null,
+            quantidade: r.quantidade ?? null,
+            controlarSaldo: produtoControlaSaldo(r.controlarSaldo),
+            embalagens: r.embalagens ?? null,
+            vinculadoFazenda: true,
+          });
+        }
+        return saida;
       },
       async lockBatida(id) {
         await tx.execute(sql`SELECT id FROM nutricao_batidas WHERE id = ${id} FOR UPDATE`);

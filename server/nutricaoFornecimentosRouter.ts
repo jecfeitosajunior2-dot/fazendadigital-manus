@@ -4,6 +4,14 @@ import { nutricaoFornecimentosService } from "./nutricaoFornecimentos";
 import type { SessaoNutricao } from "./nutricaoOperacaoAutorizada";
 import { NUTRICAO_FORN_STATUS } from "../shared/nutricaoFornecimentos";
 
+function sessaoDe(user: { id: number; sessionVersion?: number | null }, permissaoId: SessaoNutricao["permissaoId"]): SessaoNutricao {
+  return {
+    executorId: user.id,
+    sessionVersionDaSessao: user.sessionVersion ?? null,
+    permissaoId,
+  };
+}
+
 const fornInput = z.object({
   fazendaId: z.number().int().positive(),
   loteId: z.number().int().positive(),
@@ -30,11 +38,11 @@ export const nutricaoFornecimentosRouter = router({
       dataInicio: z.string().optional(),
       dataFim: z.string().optional(),
     }))
-    .query(({ ctx, input }) => nutricaoFornecimentosService.listar(ctx.user.id, input)),
+    .query(({ ctx, input }) => nutricaoFornecimentosService.listar(ctx.user.id, input, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(({ ctx, input }) => nutricaoFornecimentosService.obter(ctx.user.id, input.id)),
+    .query(({ ctx, input }) => nutricaoFornecimentosService.obter(ctx.user.id, input.id, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   listPlanejamentos: protectedProcedure
     .input(z.object({
@@ -43,12 +51,12 @@ export const nutricaoFornecimentosRouter = router({
       data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     }))
     .query(({ ctx, input }) =>
-      nutricaoFornecimentosService.listarPlanejamentos(ctx.user.id, input.fazendaId, input.loteId, input.data),
+      nutricaoFornecimentosService.listarPlanejamentos(ctx.user.id, input.fazendaId, input.loteId, input.data, sessaoDe(ctx.user, "nutricao.visualizar")),
     ),
 
   preview: protectedProcedure
     .input(fornInput)
-    .query(({ ctx, input }) => nutricaoFornecimentosService.preview(ctx.user.id, input)),
+    .query(({ ctx, input }) => nutricaoFornecimentosService.preview(ctx.user.id, input, undefined, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   confirmar: protectedProcedure
     .input(fornInput.extend({ chaveOperacao: z.string().min(8).max(80) }))
