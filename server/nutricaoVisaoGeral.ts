@@ -18,9 +18,16 @@ import {
   type VgLote,
   type VgPlan,
 } from "../shared/nutricaoVisaoGeral";
-import { db } from "./db";
+import { db as dbPadrao } from "./db";
 import { assertFazendaDoUsuario } from "./manejoContexto";
 import { nutricaoPlanejamentoStore } from "./nutricaoPlanejamento";
+import { resolverDonoNutricao, type SessaoNutricao } from "./nutricaoOperacaoAutorizada";
+
+let bancoVisao: typeof dbPadrao = dbPadrao;
+
+export function definirBancoNutricaoVisaoGeral(banco: typeof dbPadrao | null) {
+  bancoVisao = banco ?? dbPadrao;
+}
 
 export type VgStore = {
   assertFazenda(userId: number, fazendaId: number): Promise<void>;
@@ -46,36 +53,40 @@ export function createNutricaoVisaoGeralService(store: VgStore) {
       userId: number,
       input: { fazendaId: number; de: string; ate: string; loteId?: number | null },
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
+      const dono = sessao
+        ? (await resolverDonoNutricao(userId, input.fazendaId, sessao, bancoVisao)).dono
+        : userId;
+      if (!sessao) await store.assertFazenda(userId, input.fazendaId);
       const de = normalizarDataCivil(input.de);
       const ate = normalizarDataCivil(input.ate);
       if (!de || !ate) toTrpc("Informe o período com datas civis válidas.");
       if (de > ate) toTrpc("A data final não pode ser anterior à inicial.");
       const loteId = Number(input.loteId) > 0 ? Number(input.loteId) : null;
       if (loteId) {
-        const lote = await store.getLote(userId, loteId);
+        const lote = await store.getLote(dono, loteId);
         if (!lote || lote.fazendaId !== input.fazendaId) toTrpc("Este lote não pertence à fazenda selecionada.");
       }
 
       const [fornecimentos, planejamentos, leituras, batidas, lotes, produtos, dietas] = await Promise.all([
-        store.listFornecimentos(userId, input.fazendaId),
-        store.listPlanejamentos(userId, input.fazendaId),
-        store.listLeituras(userId, input.fazendaId),
-        store.listBatidas(userId, input.fazendaId),
-        store.listLotes(userId, input.fazendaId),
+        store.listFornecimentos(dono, input.fazendaId),
+        store.listPlanejamentos(dono, input.fazendaId),
+        store.listLeituras(dono, input.fazendaId),
+        store.listBatidas(dono, input.fazendaId),
+        store.listLotes(dono, input.fazendaId),
         store.listProdutos(input.fazendaId),
-        store.listDietas(userId, input.fazendaId),
+        store.listDietas(dono, input.fazendaId),
       ]);
 
       const periodo: PeriodoCivil = { de, ate };
       const loteIdsPlan = [...new Set(planejamentos.map(p => p.loteId))];
       const animaisPorLote = new Map<number, number[]>();
       for (const id of loteIdsPlan) {
-        animaisPorLote.set(id, await store.listAnimaisAtivosLote(userId, id));
+        animaisPorLote.set(id, await store.listAnimaisAtivosLote(dono, id));
       }
       const animalIds = [...animaisPorLote.values()].flat();
-      const pesagens = animalIds.length ? await store.listPesagens(userId, animalIds) : [];
+      const pesagens = animalIds.length ? await store.listPesagens(dono, animalIds) : [];
 
       return montarPainelNutricao({
         periodo,
@@ -111,7 +122,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
     return { id: lote.id, nome: lote.nome, fazendaId: lote.fazendaId ?? 0 };
   },
   async listFornecimentos(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoFornecimentos).where(and(
+    const rows = await bancoVisao.select().from(nutricaoFornecimentos).where(and(
       eq(nutricaoFornecimentos.userId, userId),
       eq(nutricaoFornecimentos.fazendaId, fazendaId),
     ));
@@ -141,13 +152,13 @@ export const nutricaoVisaoGeralStore: VgStore = {
     }));
   },
   async listPlanejamentos(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoPlanejamentos).where(and(
+    const rows = await bancoVisao.select().from(nutricaoPlanejamentos).where(and(
       eq(nutricaoPlanejamentos.userId, userId),
       eq(nutricaoPlanejamentos.fazendaId, fazendaId),
     ));
     const [produtos, dietas] = await Promise.all([
       nutricaoPlanejamentoStore.listProdutosFazenda(fazendaId),
-      db.select({ id: nutricaoDietas.id, nome: nutricaoDietas.nome }).from(nutricaoDietas).where(and(
+      bancoVisao.select({ id: nutricaoDietas.id, nome: nutricaoDietas.nome }).from(nutricaoDietas).where(and(
         eq(nutricaoDietas.userId, userId),
         eq(nutricaoDietas.fazendaId, fazendaId),
       )),
@@ -176,7 +187,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
     }));
   },
   async listLeituras(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoCochoLeituras).where(and(
+    const rows = await bancoVisao.select().from(nutricaoCochoLeituras).where(and(
       eq(nutricaoCochoLeituras.userId, userId),
       eq(nutricaoCochoLeituras.fazendaId, fazendaId),
     ));
@@ -197,7 +208,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
     }));
   },
   async listBatidas(userId, fazendaId) {
-    const rows = await db.select().from(nutricaoBatidas).where(and(
+    const rows = await bancoVisao.select().from(nutricaoBatidas).where(and(
       eq(nutricaoBatidas.userId, userId),
       eq(nutricaoBatidas.fazendaId, fazendaId),
     ));
@@ -212,7 +223,7 @@ export const nutricaoVisaoGeralStore: VgStore = {
     }));
   },
   async listLotes(userId, fazendaId) {
-    const rows = await db.select().from(lotes).where(and(
+    const rows = await bancoVisao.select().from(lotes).where(and(
       eq(lotes.userId, userId),
       eq(lotes.fazendaId, fazendaId),
     ));

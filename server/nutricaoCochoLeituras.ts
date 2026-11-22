@@ -358,6 +358,9 @@ export function createNutricaoCochoLeiturasService(store: LeituraStore) {
         const check = validarLeituraInput(input, { ...ctx, hojeISO, novaLeitura: true });
         if (!check.ok) toTrpc(check.message);
         const payload = payloadDe(dono, input, { cocho, lote, fornecimento });
+        // Proteção provisória contra o duplo clique. Igualdade de campos não prova que a
+        // solicitação é a mesma: duas leituras legítimas iguais no mesmo horário continuam
+        // indistinguíveis até existir uma chave gravada no banco. Por isso o cadastro fica parcial.
         const ja = await tx.buscarIdentica(payload);
         if (ja) return { id: ja, repetido: true as const };
         const id = await tx.insert({ ...payload, status: "ativa" });

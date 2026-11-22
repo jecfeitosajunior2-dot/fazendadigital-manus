@@ -189,7 +189,7 @@ export default function NutricaoVisaoGeralPage() {
     setFazendaInitDone(true);
   }, [fazendas, fazendaInitDone, loadingFazendas, searchString, hoje]);
 
-  const { data, isLoading } = trpc.nutricaoVisaoGeral.carregar.useQuery({
+  const { data, isLoading, isError, error } = trpc.nutricaoVisaoGeral.carregar.useQuery({
     fazendaId: fazendaNum,
     de,
     ate,
@@ -277,6 +277,10 @@ export default function NutricaoVisaoGeralPage() {
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-white rounded-lg border border-gray-100 min-h-[64px] animate-pulse" />
             ))}
+          </div>
+        ) : isError ? (
+          <div className="bg-white rounded-lg border border-gray-100 px-4 py-10 text-center text-[13px] text-gray-700">
+            {error?.message ?? "A Visão Geral não pôde ser carregada."}
           </div>
         ) : !data || data.vazio ? (
           <div className="bg-white rounded-lg border border-gray-100 px-4 py-12 text-center">
