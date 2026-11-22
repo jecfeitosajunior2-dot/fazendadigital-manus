@@ -125,3 +125,14 @@ export function definirGanchoTravaPlano(gancho: (() => Promise<void>) | null) {
 export async function avisarTravaPlano() {
   if (ganchoTravaPlano) await ganchoTravaPlano();
 }
+
+/** O teste de concorrência entra com o cocho ou a leitura já travados. */
+let ganchoTravaLeitura: (() => Promise<void>) | null = null;
+
+export function definirGanchoTravaLeitura(gancho: (() => Promise<void>) | null) {
+  ganchoTravaLeitura = gancho;
+}
+
+export async function avisarTravaLeitura() {
+  if (ganchoTravaLeitura) await ganchoTravaLeitura();
+}

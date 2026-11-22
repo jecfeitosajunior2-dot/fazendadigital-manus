@@ -61,6 +61,7 @@ import {
   resolverDonoNutricao,
   autorizarNutricaoNaTransacao,
   avisarTravaPlano,
+  avisarTravaLeitura,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
 import { conteudoCanonicoFornecimento } from "../shared/nutricaoIdempotencia";
@@ -613,6 +614,7 @@ export function createNutricaoFornecimentosService(store: FornStore) {
             throw new TRPCError({ code: "FORBIDDEN", message: MSG_NUTRICAO_FAZENDA });
           }
           if (locked.status === "estornado") toTrpc(MSG_FORN_JA_ESTORNADO);
+          await avisarTravaLeitura();
         }
         if (lancamento.origemOperacional === "batida") {
           await tx.setEstornado(lancamento.id, {

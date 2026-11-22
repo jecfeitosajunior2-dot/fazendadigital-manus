@@ -20,6 +20,7 @@ import {
   MSG_NUTRICAO_SEM_SESSAO,
   resolverDonoNutricao,
   autorizarNutricaoNaTransacao,
+  avisarTravaLeitura,
   type SessaoNutricao,
 } from "./nutricaoOperacaoAutorizada";
 
@@ -270,6 +271,7 @@ export function createNutricaoCochosService(store: CochosStore) {
         const locked = await tx.travarCocho(id);
         if (!locked || locked.userId !== dono) toTrpc(MSG_COCHO_NAO_ENCONTRADO, "NOT_FOUND");
         if (locked.fazendaId !== atual.fazendaId) toTrpc(MSG_COCHO_FAZENDA_FIXA);
+        await avisarTravaLeitura();
         await aplicar(tx, tx.update.bind(tx));
       });
       return { success: true as const, id };
@@ -290,6 +292,7 @@ export function createNutricaoCochosService(store: CochosStore) {
         const locked = await tx.travarCocho(id);
         if (!locked || locked.userId !== dono) toTrpc(MSG_COCHO_NAO_ENCONTRADO, "NOT_FOUND");
         if (locked.status === "inativo") toTrpc(MSG_COCHO_JA_INATIVO);
+        await avisarTravaLeitura();
         await tx.setStatus(id, dono, "inativo");
       });
       return { success: true as const, status: "inativo" as const };
