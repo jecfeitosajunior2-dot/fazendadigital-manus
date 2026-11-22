@@ -14,7 +14,8 @@ export type SessaoNutricao = {
     | "nutricao.editar"
     | "nutricao.inativar"
     | "nutricao.confirmar"
-    | "nutricao.estornar";
+    | "nutricao.estornar"
+    | "nutricao.cancelar";
 };
 
 export type AcessoNutricao = {

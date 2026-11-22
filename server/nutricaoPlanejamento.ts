@@ -21,6 +21,7 @@ import {
   mesmaOrigemNutricional,
   MSG_PLAN_CANCELAR_STATUS,
   MSG_PLAN_CONFLITO,
+  MSG_PLAN_DIETA,
   MSG_PLAN_ENCERRAR_STATUS,
   MSG_PLAN_MATERIAL_INICIADO,
   MSG_PLAN_NAO_ENCONTRADO,
@@ -47,8 +48,21 @@ import {
   type NutricaoPlanStatusAdmin,
 } from "../shared/nutricaoPlanejamento";
 import { custoMedioFonteTecnica } from "../shared/estoqueCapital";
-import { db } from "./db";
+import { db as dbPadrao } from "./db";
+import { recusarSeDeadlockEstoque } from "./estoqueConcorrencia";
 import { assertFazendaDoUsuario } from "./manejoContexto";
+import {
+  autorizarNutricaoNaTransacao,
+  MSG_NUTRICAO_SEM_SESSAO,
+  resolverDonoNutricao,
+  type SessaoNutricao,
+} from "./nutricaoOperacaoAutorizada";
+
+let bancoPlan: typeof dbPadrao = dbPadrao;
+
+export function definirBancoNutricaoPlanejamento(banco: typeof dbPadrao | null) {
+  bancoPlan = banco ?? dbPadrao;
+}
 
 export type NutricaoPlanPersistido = {
   id: number;
@@ -74,6 +88,21 @@ export type NutricaoPlanPersistido = {
 export type NutricaoPlanTx = {
   insert(row: Omit<NutricaoPlanPersistido, "id">): Promise<number>;
   update(id: number, userId: number, patch: Partial<Omit<NutricaoPlanPersistido, "id" | "userId">>): Promise<void>;
+  revalidar?(sessao: SessaoNutricao, fazendaId: number, donoEsperado: number): Promise<void>;
+  travarPlano?(id: number): Promise<{
+    userId: number;
+    fazendaId: number;
+    status: string;
+    dataInicio: string;
+    dataFim: string | null;
+    loteId: number;
+  } | null>;
+  travarDieta?(id: number): Promise<{ userId: number; fazendaId: number; status: string } | null>;
+  list?(userId: number, fazendaId: number): Promise<NutricaoPlanPersistido[]>;
+  getLote?(userId: number, loteId: number): Promise<NutricaoPlanLoteRef | null>;
+  getDieta?(userId: number, dietaId: number): Promise<NutricaoPlanDietaRef | null>;
+  listProdutos?(fazendaId: number): Promise<NutricaoPlanProdutoRef[]>;
+  contarFornecimentos?(userId: number, planejamentoId: number): Promise<number>;
 };
 
 export type NutricaoPlanStore = {
@@ -86,6 +115,7 @@ export type NutricaoPlanStore = {
   listAnimaisAtivosLote(userId: number, loteId: number): Promise<number[]>;
   listPesagensAnimais(userId: number, animalIds: number[]): Promise<NutricaoPlanPesagemRef[]>;
   find(userId: number, id: number): Promise<NutricaoPlanPersistido | null>;
+  findPorId?(id: number): Promise<NutricaoPlanPersistido | null>;
   list(userId: number, fazendaId: number): Promise<NutricaoPlanPersistido[]>;
   contarFornecimentosConfirmados(userId: number, planejamentoId: number): Promise<number>;
   transaction<T>(fn: (tx: NutricaoPlanTx) => Promise<T>): Promise<T>;
@@ -128,6 +158,48 @@ function toRowInput(userId: number, input: NutricaoPlanInput, status: NutricaoPl
 }
 
 export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
+  async function donoDaFazenda(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      await store.assertFazenda(userId, fazendaId);
+      return userId;
+    }
+    const acesso = await resolverDonoNutricao(userId, fazendaId, sessao, bancoPlan);
+    return acesso.dono;
+  }
+
+  async function planoDoDono(userId: number, id: number, sessao?: SessaoNutricao) {
+    if (!sessao) {
+      const plano = await store.find(userId, id);
+      if (!plano) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+      if (plano.userId !== userId) toTrpc(MSG_PLAN_OWNERSHIP, "FORBIDDEN");
+      await store.assertFazenda(userId, plano.fazendaId);
+      return { plano, dono: userId };
+    }
+    if (!store.findPorId) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+    }
+    const plano = await store.findPorId(id);
+    if (!plano) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+    const dono = await donoDaFazenda(userId, plano.fazendaId, sessao);
+    if (plano.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+    return { plano, dono };
+  }
+
+  function exigirLeitura(tx: NutricaoPlanTx): asserts tx is NutricaoPlanTx & {
+    revalidar: NonNullable<NutricaoPlanTx["revalidar"]>;
+    list: NonNullable<NutricaoPlanTx["list"]>;
+    getLote: NonNullable<NutricaoPlanTx["getLote"]>;
+    getDieta: NonNullable<NutricaoPlanTx["getDieta"]>;
+    listProdutos: NonNullable<NutricaoPlanTx["listProdutos"]>;
+    travarDieta: NonNullable<NutricaoPlanTx["travarDieta"]>;
+    travarPlano: NonNullable<NutricaoPlanTx["travarPlano"]>;
+    contarFornecimentos: NonNullable<NutricaoPlanTx["contarFornecimentos"]>;
+  } {
+    if (!tx.revalidar || !tx.list || !tx.getLote || !tx.getDieta || !tx.listProdutos || !tx.travarDieta || !tx.travarPlano || !tx.contarFornecimentos) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_NUTRICAO_SEM_SESSAO });
+    }
+  }
+
   async function contextoValidacao(userId: number, input: NutricaoPlanInput) {
     const lote = await store.getLote(userId, input.loteId);
     const origem = origemNormalizada(input);
@@ -149,6 +221,41 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
     ignoreId?: number,
   ) {
     const existentes = await store.list(userId, input.fazendaId);
+    const origem = origemNormalizada(input);
+    for (const atual of existentes) {
+      if (ignoreId && atual.id === ignoreId) continue;
+      if (atual.loteId !== input.loteId) continue;
+      if (atual.status === "cancelado") continue;
+      if (!origem.tipoOrigem || !mesmaOrigemNutricional(atual, { ...origem, tipoOrigem: origem.tipoOrigem })) continue;
+      if (periodosSobrepostos(atual.dataInicio, atual.dataFim, input.dataInicio, input.dataFim ?? null)) {
+        toTrpc(MSG_PLAN_CONFLITO);
+      }
+    }
+  }
+
+  async function contextoNoTx(tx: NutricaoPlanTx, dono: number, input: NutricaoPlanInput) {
+    exigirLeitura(tx);
+    const lote = await tx.getLote(dono, input.loteId);
+    const origem = origemNormalizada(input);
+    let produto: NutricaoPlanProdutoRef | null = null;
+    let dieta: NutricaoPlanDietaRef | null = null;
+    if (origem.tipoOrigem === "produto" && origem.produtoId) {
+      const produtos = await tx.listProdutos(input.fazendaId);
+      produto = produtos.find(p => p.produtoId === origem.produtoId) ?? null;
+    }
+    if (origem.tipoOrigem === "dieta" && origem.dietaId) {
+      const locked = await tx.travarDieta(origem.dietaId);
+      if (!locked || locked.userId !== dono || locked.fazendaId !== input.fazendaId) {
+        toTrpc(MSG_PLAN_DIETA);
+      }
+      dieta = await tx.getDieta(dono, origem.dietaId);
+    }
+    return { lote, produto, dieta };
+  }
+
+  async function conflitoNoTx(tx: NutricaoPlanTx, dono: number, input: NutricaoPlanInput, ignoreId?: number) {
+    exigirLeitura(tx);
+    const existentes = await tx.list(dono, input.fazendaId);
     const origem = origemNormalizada(input);
     for (const atual of existentes) {
       if (ignoreId && atual.id === ignoreId) continue;
@@ -247,13 +354,14 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       userId: number,
       input: { fazendaId: number; loteId?: number; situacao?: NutricaoPlanSituacao; search?: string },
       hojeISO = hojeISODateLocal(),
+      sessao?: SessaoNutricao,
     ) {
-      await store.assertFazenda(userId, input.fazendaId);
-      const rows = await store.list(userId, input.fazendaId);
+      const dono = await donoDaFazenda(userId, input.fazendaId, sessao);
+      const rows = await store.list(dono, input.fazendaId);
       const hidratados = [];
       for (const row of rows) {
         if (input.loteId && row.loteId !== input.loteId) continue;
-        const item = await hidratar(userId, row, hojeISO);
+        const item = await hidratar(dono, row, hojeISO);
         if (input.situacao && item.situacao !== input.situacao) continue;
         if (input.search) {
           const q = input.search.trim().toLowerCase();
@@ -265,38 +373,54 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       return hidratados;
     },
 
-    async obter(userId: number, id: number, hojeISO = hojeISODateLocal()) {
-      const row = await store.find(userId, id);
-      if (!row) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
-      await store.assertFazenda(userId, row.fazendaId);
-      const execucoes = await store.contarFornecimentosConfirmados(userId, row.id);
-      return hidratar(userId, row, hojeISO, execucoes > 0);
+    async obter(userId: number, id: number, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      const { plano, dono } = await planoDoDono(userId, id, sessao);
+      const execucoes = await store.contarFornecimentosConfirmados(dono, plano.id);
+      return hidratar(dono, plano, hojeISO, execucoes > 0);
     },
 
-    async listarLotes(userId: number, fazendaId: number) {
-      await store.assertFazenda(userId, fazendaId);
-      return store.listLotesFazenda(userId, fazendaId);
+    async listarLotes(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      const dono = await donoDaFazenda(userId, fazendaId, sessao);
+      return store.listLotesFazenda(dono, fazendaId);
     },
 
-    async listarProdutos(userId: number, fazendaId: number) {
-      await store.assertFazenda(userId, fazendaId);
+    async listarProdutos(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      await donoDaFazenda(userId, fazendaId, sessao);
       return store.listProdutosFazenda(fazendaId);
     },
 
-    async listarDietas(userId: number, fazendaId: number) {
-      await store.assertFazenda(userId, fazendaId);
-      return store.listDietasFazenda(userId, fazendaId);
+    async listarDietas(userId: number, fazendaId: number, sessao?: SessaoNutricao) {
+      const dono = await donoDaFazenda(userId, fazendaId, sessao);
+      return store.listDietasFazenda(dono, fazendaId);
     },
 
-    async preview(userId: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal()) {
-      await store.assertFazenda(userId, input.fazendaId);
-      return montarProjecao(userId, {
+    async preview(userId: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      const dono = await donoDaFazenda(userId, input.fazendaId, sessao);
+      return montarProjecao(dono, {
         ...input,
         valorMeta: input.valorMeta,
       }, hojeISO);
     },
 
-    async criar(userId: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal()) {
+    async criar(userId: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (sessao) {
+        const dono = await donoDaFazenda(userId, input.fazendaId, sessao);
+        const id = await store.transaction(async tx => {
+          exigirLeitura(tx);
+          await tx.revalidar(sessao, input.fazendaId, dono);
+          const ctx = await contextoNoTx(tx, dono, input);
+          const check = validarPlanejamentoInput(input, ctx);
+          if (!check.ok) toTrpc(check.message);
+          await conflitoNoTx(tx, dono, input);
+          return tx.insert(toRowInput(dono, input, "ativo"));
+        });
+        return { success: true as const, id, situacao: situacaoTemporal({
+          status: "ativo",
+          dataInicio: input.dataInicio,
+          dataFim: input.dataFim ?? null,
+          hojeISO,
+        }) };
+      }
       await store.assertFazenda(userId, input.fazendaId);
       const ctx = await contextoValidacao(userId, input);
       const check = validarPlanejamentoInput(input, ctx);
@@ -311,7 +435,33 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       }) };
     },
 
-    async editar(userId: number, id: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal()) {
+    async editar(userId: number, id: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (sessao) {
+        const { plano: atual, dono } = await planoDoDono(userId, id, sessao);
+        if (input.fazendaId !== atual.fazendaId) toTrpc("A fazenda do planejamento não pode ser alterada.");
+        await store.transaction(async tx => {
+          exigirLeitura(tx);
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarPlano(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          if (locked.fazendaId !== atual.fazendaId) toTrpc("A fazenda do planejamento não pode ser alterada.");
+          if (locked.status === "cancelado" || locked.status === "encerrado") {
+            toTrpc("Planejamento encerrado ou cancelado não pode ser editado.");
+          }
+          const base = { ...atual, status: toStatus(locked.status), dataInicio: locked.dataInicio, dataFim: locked.dataFim };
+          if (mudouCampoMaterial(base, input) && !podeEditarMaterialmente(locked.dataInicio, hojeISO)) {
+            toTrpc(MSG_PLAN_MATERIAL_INICIADO);
+          }
+          const ctx = await contextoNoTx(tx, dono, { ...input, fazendaId: atual.fazendaId });
+          const check = validarPlanejamentoInput({ ...input, fazendaId: atual.fazendaId }, ctx);
+          if (!check.ok) toTrpc(check.message);
+          await conflitoNoTx(tx, dono, { ...input, fazendaId: atual.fazendaId }, id);
+          const row = toRowInput(dono, { ...input, fazendaId: atual.fazendaId }, toStatus(locked.status));
+          const { userId: _u, ...patch } = row;
+          await tx.update(id, dono, patch);
+        });
+        return { success: true as const, id };
+      }
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       if (atual.userId !== userId) toTrpc(MSG_PLAN_OWNERSHIP, "FORBIDDEN");
@@ -336,7 +486,44 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       return { success: true as const, id };
     },
 
-    async substituir(userId: number, id: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal()) {
+    async substituir(userId: number, id: number, input: NutricaoPlanInput, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (sessao) {
+        const { plano: atual, dono } = await planoDoDono(userId, id, sessao);
+        const resultado = await store.transaction(async tx => {
+          exigirLeitura(tx);
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarPlano(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          if (locked.status !== "ativo") toTrpc(MSG_PLAN_SUBSTITUIR_STATUS);
+          if (!planejamentoJaIniciou(locked.dataInicio, hojeISO)) {
+            if (input.fazendaId !== locked.fazendaId) toTrpc("A fazenda do planejamento não pode ser alterada.");
+            const base = { ...atual, status: toStatus(locked.status), dataInicio: locked.dataInicio, dataFim: locked.dataFim };
+            if (mudouCampoMaterial(base, input) && !podeEditarMaterialmente(locked.dataInicio, hojeISO)) {
+              toTrpc(MSG_PLAN_MATERIAL_INICIADO);
+            }
+            const ctx = await contextoNoTx(tx, dono, { ...input, fazendaId: locked.fazendaId });
+            const check = validarPlanejamentoInput({ ...input, fazendaId: locked.fazendaId }, ctx);
+            if (!check.ok) toTrpc(check.message);
+            await conflitoNoTx(tx, dono, { ...input, fazendaId: locked.fazendaId }, id);
+            const row = toRowInput(dono, { ...input, fazendaId: locked.fazendaId }, "ativo");
+            const { userId: _u, ...patch } = row;
+            await tx.update(id, dono, patch);
+            return { id, encerradoId: null as number | null, dataFimAnterior: null as string | null };
+          }
+          const novoInicio = normalizarDataCivil(input.dataInicio) ?? hojeISO;
+          const corte = dataFimAoSubstituir(locked.dataInicio, novoInicio);
+          if (!corte.ok) toTrpc(corte.message);
+          const novoInput: NutricaoPlanInput = { ...input, fazendaId: locked.fazendaId, dataInicio: novoInicio };
+          const ctx = await contextoNoTx(tx, dono, novoInput);
+          const check = validarPlanejamentoInput(novoInput, ctx);
+          if (!check.ok) toTrpc(check.message);
+          await conflitoNoTx(tx, dono, novoInput, id);
+          await tx.update(id, dono, { status: "encerrado", dataFim: corte.dataFim });
+          const novoId = await tx.insert(toRowInput(dono, novoInput, "ativo"));
+          return { id: novoId, encerradoId: id, dataFimAnterior: corte.dataFim };
+        });
+        return { success: true as const, ...resultado };
+      }
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
@@ -360,7 +547,26 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       return { success: true as const, id: novoId, encerradoId: id, dataFimAnterior: corte.dataFim };
     },
 
-    async encerrar(userId: number, id: number, hojeISO = hojeISODateLocal()) {
+    async encerrar(userId: number, id: number, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (sessao) {
+        const { plano: atual, dono } = await planoDoDono(userId, id, sessao);
+        const dataFim = await store.transaction(async tx => {
+          exigirLeitura(tx);
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarPlano(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          const check = podeEncerrarPlanejamento({
+            status: locked.status,
+            dataInicio: locked.dataInicio,
+            hojeISO,
+          });
+          if (!check.ok) toTrpc(check.message ?? MSG_PLAN_ENCERRAR_STATUS);
+          const fim = dataFimEncerramentoManual(hojeISO);
+          await tx.update(id, dono, { status: "encerrado", dataFim: fim });
+          return fim;
+        });
+        return { success: true as const, status: "encerrado" as const, dataFim };
+      }
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
@@ -377,7 +583,26 @@ export function createNutricaoPlanejamentoService(store: NutricaoPlanStore) {
       return { success: true as const, status: "encerrado" as const, dataFim };
     },
 
-    async cancelar(userId: number, id: number, hojeISO = hojeISODateLocal()) {
+    async cancelar(userId: number, id: number, hojeISO = hojeISODateLocal(), sessao?: SessaoNutricao) {
+      if (sessao) {
+        const { plano: atual, dono } = await planoDoDono(userId, id, sessao);
+        await store.transaction(async tx => {
+          exigirLeitura(tx);
+          await tx.revalidar(sessao, atual.fazendaId, dono);
+          const locked = await tx.travarPlano(id);
+          if (!locked || locked.userId !== dono) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
+          const execucoes = await tx.contarFornecimentos(dono, id);
+          const check = podeCancelarPlanejamento({
+            status: locked.status,
+            dataInicio: locked.dataInicio,
+            hojeISO,
+            temFornecimentoConfirmado: execucoes > 0,
+          });
+          if (!check.ok) toTrpc(check.message ?? MSG_PLAN_CANCELAR_STATUS);
+          await tx.update(id, dono, { status: "cancelado" });
+        });
+        return { success: true as const, status: "cancelado" as const };
+      }
       const atual = await store.find(userId, id);
       if (!atual) toTrpc(MSG_PLAN_NAO_ENCONTRADO, "NOT_FOUND");
       await store.assertFazenda(userId, atual.fazendaId);
@@ -424,13 +649,13 @@ async function dietaComIngredientes(
   userId: number,
   dietaId: number,
 ): Promise<NutricaoPlanDietaRef | null> {
-  const [dieta] = await db
+  const [dieta] = await bancoPlan
     .select()
     .from(nutricaoDietas)
     .where(and(eq(nutricaoDietas.id, dietaId), eq(nutricaoDietas.userId, userId)))
     .limit(1);
   if (!dieta) return null;
-  const ings = await db
+  const ings = await bancoPlan
     .select()
     .from(nutricaoDietaIngredientes)
     .where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
@@ -454,7 +679,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async listProdutosFazenda(fazendaId) {
-    const rows = await db
+    const rows = await bancoPlan
       .select({
         produtoId: estoque.produtoId,
         nome: estoque.nome,
@@ -489,7 +714,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async listDietasFazenda(userId, fazendaId) {
-    const rows = await db
+    const rows = await bancoPlan
       .select()
       .from(nutricaoDietas)
       .where(and(
@@ -511,8 +736,10 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async getLote(userId, loteId) {
-    const [row] = await db
-      .select()
+    const [row] = await bancoPlan
+      .select({
+        id: lotes.id, userId: lotes.userId, fazendaId: lotes.fazendaId, ativo: lotes.ativo, nome: lotes.nome,
+      })
       .from(lotes)
       .where(and(eq(lotes.id, loteId), eq(lotes.userId, userId)))
       .limit(1);
@@ -527,11 +754,13 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async listLotesFazenda(userId, fazendaId) {
-    const rows = await db
-      .select()
+    const rows = await bancoPlan
+      .select({
+        id: lotes.id, userId: lotes.userId, fazendaId: lotes.fazendaId, ativo: lotes.ativo, nome: lotes.nome,
+      })
       .from(lotes)
       .where(and(eq(lotes.userId, userId), eq(lotes.fazendaId, fazendaId), eq(lotes.ativo, true)))
-      .orderBy(desc(lotes.updatedAt));
+      .orderBy(desc(lotes.id));
     return rows.map(row => ({
       id: row.id,
       userId: row.userId,
@@ -542,7 +771,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async listAnimaisAtivosLote(userId, loteId) {
-    const rows = await db
+    const rows = await bancoPlan
       .select({ id: animais.id })
       .from(animais)
       .where(and(eq(animais.userId, userId), eq(animais.loteId, loteId), eq(animais.status, "ativo")));
@@ -551,7 +780,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
 
   async listPesagensAnimais(userId, animalIds) {
     if (animalIds.length === 0) return [];
-    const rows = await db
+    const rows = await bancoPlan
       .select({
         animalId: pesagens.animalId,
         peso: pesagens.peso,
@@ -569,7 +798,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async find(userId, id) {
-    const [row] = await db
+    const [row] = await bancoPlan
       .select()
       .from(nutricaoPlanejamentos)
       .where(and(eq(nutricaoPlanejamentos.id, id), eq(nutricaoPlanejamentos.userId, userId)))
@@ -577,8 +806,17 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
     return row ? toPlanRow(row) : null;
   },
 
+  async findPorId(id) {
+    const [row] = await bancoPlan
+      .select()
+      .from(nutricaoPlanejamentos)
+      .where(eq(nutricaoPlanejamentos.id, id))
+      .limit(1);
+    return row ? toPlanRow(row) : null;
+  },
+
   async list(userId, fazendaId) {
-    const rows = await db
+    const rows = await bancoPlan
       .select()
       .from(nutricaoPlanejamentos)
       .where(and(eq(nutricaoPlanejamentos.userId, userId), eq(nutricaoPlanejamentos.fazendaId, fazendaId)))
@@ -587,7 +825,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   async contarFornecimentosConfirmados(userId, planejamentoId) {
-    const [row] = await db
+    const [row] = await bancoPlan
       .select({ n: count() })
       .from(nutricaoFornecimentos)
       .where(and(
@@ -599,7 +837,7 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
   },
 
   transaction(fn) {
-    return db.transaction(async tx => fn({
+    return bancoPlan.transaction(async tx => fn({
       async insert(row) {
         const result = await tx.insert(nutricaoPlanejamentos).values(row);
         const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
@@ -614,7 +852,90 @@ export const nutricaoPlanejamentoStore: NutricaoPlanStore = {
           .set(patch)
           .where(and(eq(nutricaoPlanejamentos.id, id), eq(nutricaoPlanejamentos.userId, userId)));
       },
-    }));
+      async revalidar(sessao, fazendaId, donoEsperado) {
+        const acesso = await autorizarNutricaoNaTransacao(tx, sessao, fazendaId);
+        if (acesso.titularUserId !== donoEsperado) {
+          throw new TRPCError({ code: "NOT_FOUND", message: MSG_PLAN_NAO_ENCONTRADO });
+        }
+      },
+      async travarPlano(id) {
+        const [row] = await tx.select({
+          userId: nutricaoPlanejamentos.userId,
+          fazendaId: nutricaoPlanejamentos.fazendaId,
+          status: nutricaoPlanejamentos.status,
+          dataInicio: nutricaoPlanejamentos.dataInicio,
+          dataFim: nutricaoPlanejamentos.dataFim,
+          loteId: nutricaoPlanejamentos.loteId,
+        }).from(nutricaoPlanejamentos).where(eq(nutricaoPlanejamentos.id, id)).for("update").limit(1);
+        return row ?? null;
+      },
+      async travarDieta(id) {
+        const [row] = await tx.select({
+          userId: nutricaoDietas.userId,
+          fazendaId: nutricaoDietas.fazendaId,
+          status: nutricaoDietas.status,
+        }).from(nutricaoDietas).where(eq(nutricaoDietas.id, id)).for("update").limit(1);
+        return row ?? null;
+      },
+      async list(userId, fazendaId) {
+        const rows = await tx.select().from(nutricaoPlanejamentos).where(and(
+          eq(nutricaoPlanejamentos.userId, userId),
+          eq(nutricaoPlanejamentos.fazendaId, fazendaId),
+        )).for("update");
+        return rows.map(toPlanRow);
+      },
+      async getLote(userId, loteId) {
+        const [row] = await tx.select({
+          id: lotes.id,
+          userId: lotes.userId,
+          fazendaId: lotes.fazendaId,
+          ativo: lotes.ativo,
+          nome: lotes.nome,
+        }).from(lotes).where(and(eq(lotes.id, loteId), eq(lotes.userId, userId))).limit(1);
+        if (!row) return null;
+        return {
+          id: row.id,
+          userId: row.userId,
+          fazendaId: row.fazendaId ?? null,
+          ativo: row.ativo !== false,
+          nome: row.nome,
+        };
+      },
+      async getDieta(userId, dietaId) {
+        const [dieta] = await tx.select().from(nutricaoDietas).where(and(
+          eq(nutricaoDietas.id, dietaId),
+          eq(nutricaoDietas.userId, userId),
+        )).limit(1);
+        if (!dieta) return null;
+        const ings = await tx.select().from(nutricaoDietaIngredientes).where(eq(nutricaoDietaIngredientes.dietaId, dieta.id));
+        return {
+          id: dieta.id,
+          userId: dieta.userId,
+          fazendaId: dieta.fazendaId,
+          nome: dieta.nome,
+          status: dieta.status,
+          formaUso: dieta.formaUso ?? null,
+          dataInicio: dieta.dataInicio ?? null,
+          dataFim: dieta.dataFim ?? null,
+          baseQuantidade: Number(dieta.baseQuantidade),
+          ingredientes: ings.map(i => ({ produtoId: i.produtoId, quantidadeKg: Number(i.quantidade) })),
+        };
+      },
+      async listProdutos(fazendaId) {
+        return nutricaoPlanejamentoStore.listProdutosFazenda(fazendaId);
+      },
+      async contarFornecimentos(userId, planejamentoId) {
+        const [row] = await tx.select({ n: count() }).from(nutricaoFornecimentos).where(and(
+          eq(nutricaoFornecimentos.userId, userId),
+          eq(nutricaoFornecimentos.planejamentoId, planejamentoId),
+          eq(nutricaoFornecimentos.status, "confirmado"),
+        ));
+        return Number(row?.n ?? 0);
+      },
+    }), { isolationLevel: "read committed" }).catch((erro) => {
+      recusarSeDeadlockEstoque(erro);
+      throw erro;
+    });
   },
 };
 

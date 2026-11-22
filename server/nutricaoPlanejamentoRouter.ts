@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "./_core/trpc";
 import { nutricaoPlanejamentoService } from "./nutricaoPlanejamento";
+import type { SessaoNutricao } from "./nutricaoOperacaoAutorizada";
 import { NUTRICAO_PLAN_SITUACOES } from "../shared/nutricaoPlanejamento";
+
+function sessaoDe(user: { id: number; sessionVersion?: number | null }, permissaoId: SessaoNutricao["permissaoId"]): SessaoNutricao {
+  return {
+    executorId: user.id,
+    sessionVersionDaSessao: user.sessionVersion ?? null,
+    permissaoId,
+  };
+}
 
 const planejamentoInput = z.object({
   fazendaId: z.number().int().positive(),
@@ -29,51 +38,51 @@ export const nutricaoPlanejamentoRouter = router({
       situacao: z.enum(NUTRICAO_PLAN_SITUACOES).optional(),
       search: z.string().optional(),
     }))
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.listar(ctx.user.id, input)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.listar(ctx.user.id, input, undefined, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   get: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.obter(ctx.user.id, input.id)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.obter(ctx.user.id, input.id, undefined, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   listLotes: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive() }))
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarLotes(ctx.user.id, input.fazendaId)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarLotes(ctx.user.id, input.fazendaId, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   listProdutos: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive() }))
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarProdutos(ctx.user.id, input.fazendaId)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarProdutos(ctx.user.id, input.fazendaId, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   listDietas: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive() }))
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarDietas(ctx.user.id, input.fazendaId)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.listarDietas(ctx.user.id, input.fazendaId, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   preview: protectedProcedure
     .input(planejamentoInput)
-    .query(({ ctx, input }) => nutricaoPlanejamentoService.preview(ctx.user.id, input)),
+    .query(({ ctx, input }) => nutricaoPlanejamentoService.preview(ctx.user.id, input, undefined, sessaoDe(ctx.user, "nutricao.visualizar"))),
 
   create: protectedProcedure
     .input(planejamentoInput)
-    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.criar(ctx.user.id, input)),
+    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.criar(ctx.user.id, input, undefined, sessaoDe(ctx.user, "nutricao.criar"))),
 
   update: protectedProcedure
     .input(planejamentoInput.extend({ id: z.number().int().positive() }))
     .mutation(({ ctx, input }) => {
       const { id, ...rest } = input;
-      return nutricaoPlanejamentoService.editar(ctx.user.id, id, rest);
+      return nutricaoPlanejamentoService.editar(ctx.user.id, id, rest, undefined, sessaoDe(ctx.user, "nutricao.editar"));
     }),
 
   substituir: protectedProcedure
     .input(planejamentoInput.extend({ id: z.number().int().positive() }))
     .mutation(({ ctx, input }) => {
       const { id, ...rest } = input;
-      return nutricaoPlanejamentoService.substituir(ctx.user.id, id, rest);
+      return nutricaoPlanejamentoService.substituir(ctx.user.id, id, rest, undefined, sessaoDe(ctx.user, "nutricao.editar"));
     }),
 
   encerrar: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.encerrar(ctx.user.id, input.id)),
+    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.encerrar(ctx.user.id, input.id, undefined, sessaoDe(ctx.user, "nutricao.inativar"))),
 
   cancelar: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.cancelar(ctx.user.id, input.id)),
+    .mutation(({ ctx, input }) => nutricaoPlanejamentoService.cancelar(ctx.user.id, input.id, undefined, sessaoDe(ctx.user, "nutricao.cancelar"))),
 });
