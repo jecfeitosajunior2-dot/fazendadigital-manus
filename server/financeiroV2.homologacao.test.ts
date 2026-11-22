@@ -136,8 +136,11 @@ describe("financeiro V2 — contrato da conta", () => {
     expect(pagina).toContain("ListExportButtons");
     expect(pagina).not.toContain("/api/");
     const painel = ler("painelControle.ts");
-    const chamada = painel.slice(painel.indexOf("async function carregarFinanceiroPainel"), painel.indexOf("async function carregarComercialPainel"));
-    expect(chamada).toContain("financeiroNucleoService.relatorioFinanceiro(userId,");
-    expect(chamada).not.toContain("relatorioFinanceiro(userId, periodo,");
+    const chamada = painel.slice(painel.indexOf("export async function financeiroDoPainel"), painel.indexOf("async function carregarComercialPainel"));
+    expect(chamada).toContain("io.relatorio(acesso.titularUserId,");
+    expect(chamada).toContain(", acesso)");
+    expect(chamada).not.toContain("relatorioFinanceiro(userId,");
+    expect(painel).toContain("PERMISSAO_VER_FINANCEIRO");
+    expect(painel).toContain("sessionVersionDaSessao");
   });
 });

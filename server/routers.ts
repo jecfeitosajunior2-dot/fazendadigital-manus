@@ -10000,7 +10000,11 @@ const financeiroRouter = router({
 const dashboardRouter = router({
   overview: protectedProcedure
     .input(z.object({ fazendaId: z.number().int().positive().optional() }).optional())
-    .query(({ ctx, input }) => carregarPainelControle(ctx.user.id, input?.fazendaId)),
+    .query(({ ctx, input }) => carregarPainelControle(
+      ctx.user.id,
+      input?.fazendaId,
+      ctx.user.sessionVersion ?? null,
+    )),
   stats: protectedProcedure.query(async ({ ctx }) => {
     const [totalAnimaisResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(animais).where(eq(animais.userId, ctx.user.id));
     const [totalLotesResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(lotes).where(eq(lotes.userId, ctx.user.id));

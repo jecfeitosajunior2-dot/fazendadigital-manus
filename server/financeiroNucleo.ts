@@ -1263,6 +1263,16 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
       fazendaId?: number | null;
       contaId?: number | null;
     }, escopo?: AcessoFinanceiro) {
+      if (!escopo) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "A consulta financeira precisa do escopo autorizado.",
+        });
+      }
+      if (escopo.titularUserId !== userId) {
+        toTrpc("Registro não encontrado.", "NOT_FOUND");
+      }
+      const acesso = escopo;
       return store.transaction(async tx => {
         if (input.fazendaId) {
           const fazenda = await tx.findFazenda(userId, input.fazendaId);
@@ -1355,22 +1365,22 @@ export function createFinanceiroNucleoService(store: FinanceiroNucleoStore) {
           apropriacoesPorTitulo.set(titulo.id, await tx.listApropriacoes(userId, titulo.id));
         }
         const tituloLiberado = (titulo: { id: number; fazendaOrigemId: number | null }) => {
-          if (!escopo || escopo.papel === "principal") return true;
+          if (acesso.papel === "principal") return true;
           return documentoFinanceiroVisivel(
             titulo.fazendaOrigemId,
             apropriacoesPorTitulo.get(titulo.id) ?? [],
-            escopo,
+            acesso,
           );
         };
         const titulosVisiveis = titulosEntrada.filter((titulo) => tituloLiberado(titulo));
         const idsVisiveis = new Set(titulosVisiveis.map((titulo) => titulo.id));
-        const movimentosVisiveis = !escopo || escopo.papel === "principal"
+        const movimentosVisiveis = acesso.papel === "principal"
           ? movimentos
           : movimentos.filter((mov) => {
             const ids = titulosTocados.get(mov.id) ?? [];
             return ids.length > 0 && ids.every((id) => idsVisiveis.has(id));
           });
-        const contasVisiveis = !escopo || escopo.papel === "principal"
+        const contasVisiveis = acesso.papel === "principal"
           ? contasComSaldo
           : [];
         return montarRelatorioFinanceiroV2({

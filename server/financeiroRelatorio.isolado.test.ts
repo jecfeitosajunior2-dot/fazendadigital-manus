@@ -392,7 +392,9 @@ describe.sequential("relatório financeiro no mysql descartável", () => {
     const svcMorto = createFinanceiroNucleoService(
       createFinanceiroNucleoMysqlStore(drizzle(morto, { mode: "default" }) as never),
     );
-    await expect(svcMorto.relatorioFinanceiro(1, PERIODO)).rejects.toBeTruthy();
+    await expect(svcMorto.relatorioFinanceiro(1, PERIODO, {
+      titularUserId: 1, papel: "principal", fazendaIds: [],
+    })).rejects.toBeTruthy();
     await morto.end().catch(() => undefined);
   });
 });

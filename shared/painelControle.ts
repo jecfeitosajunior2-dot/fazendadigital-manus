@@ -85,9 +85,13 @@ export type PainelSaudeRecente = {
   dataRegistro: string | null;
 };
 
+export type MotivoFinanceiroPainel = "autorizado" | "sem_permissao" | "indisponivel";
+
 export type PainelFinanceiro = {
   disponivel: boolean;
+  motivoFinanceiro: MotivoFinanceiroPainel;
   saldoCaixaBancos: number;
+  saldoCaixaAutorizado: boolean;
   saldoCaixaConsolidado: true;
   avisoCaixa: string;
   totalAReceber: number;
@@ -463,11 +467,16 @@ export function haRegistrosSemFazendaNoRelatorioV2(rel: {
   return titulos || movimentos;
 }
 
-export function emptyPainelFinanceiro(referencia = new Date()): PainelFinanceiro {
+export function emptyPainelFinanceiro(
+  referencia = new Date(),
+  motivo: Exclude<MotivoFinanceiroPainel, "autorizado"> = "indisponivel",
+): PainelFinanceiro {
   const periodo = periodoMesCorrentePainel(referencia);
   return {
     disponivel: false,
+    motivoFinanceiro: motivo,
     saldoCaixaBancos: 0,
+    saldoCaixaAutorizado: false,
     saldoCaixaConsolidado: true,
     avisoCaixa: MSG_RELATORIO_SALDO_CONSOLIDADO,
     totalAReceber: 0,
@@ -508,7 +517,9 @@ export function indicadoresFinanceirosDoRelatorioV2(
   const avisoSemAtribuicao = avisoRegistrosSemFazendaPainel(porFazenda, Boolean(opts.temRegistrosSemFazenda));
   return {
     disponivel: true,
+    motivoFinanceiro: "autorizado",
     saldoCaixaBancos: visao.saldoCaixaBancos,
+    saldoCaixaAutorizado: true,
     saldoCaixaConsolidado: true,
     avisoCaixa: MSG_RELATORIO_SALDO_CONSOLIDADO,
     totalAReceber: visao.totalAReceber,

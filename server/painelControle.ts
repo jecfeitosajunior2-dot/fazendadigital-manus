@@ -40,6 +40,13 @@ import { filtrarMovimentacoesEstoque, filtrarProdutosEstoque } from "../shared/e
 import { loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import { db } from "./db";
 import { financeiroNucleoService } from "./financeiroNucleo";
+import { acessoFinanceiroNoBanco } from "./consultaFinanceiroDb";
+import {
+  MSG_EXTRATO_SO_PRINCIPAL,
+  PERMISSAO_VER_FINANCEIRO,
+  type AcessoFinanceiro,
+} from "./consultaFinanceiroAutorizada";
+import type { RelatorioFinanceiroV2 } from "../shared/financeiroRelatoriosV2";
 import { devLocalStore } from "./devLocalStore";
 import {
   isDatabaseUnavailable,
@@ -87,33 +94,93 @@ function valorOperacaoPainel(valor: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function carregarFinanceiroPainel(
-  userId: number,
-  fazendaSelecionadaId: number | null,
+export type IoFinanceiroPainel = {
+  autorizar(pedido: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+  }): Promise<AcessoFinanceiro>;
+  relatorio(
+    titularUserId: number,
+    input: { de: string; ate: string; fazendaId?: number | null },
+    escopo: AcessoFinanceiro,
+  ): Promise<RelatorioFinanceiroV2>;
+};
+
+function ioFinanceiroPainel(): IoFinanceiroPainel {
+  return {
+    autorizar(pedido) {
+      return acessoFinanceiroNoBanco({
+        executorId: pedido.executorId,
+        sessionVersionDaSessao: pedido.sessionVersionDaSessao,
+        permissaoId: PERMISSAO_VER_FINANCEIRO,
+      });
+    },
+    relatorio(titularUserId, input, escopo) {
+      return financeiroNucleoService.relatorioFinanceiro(titularUserId, input, escopo);
+    },
+  };
+}
+
+export async function financeiroDoPainel(
+  io: IoFinanceiroPainel,
+  pedido: {
+    executorId: number;
+    sessionVersionDaSessao: number | null;
+    fazendaSelecionadaId: number | null;
+    referencia?: Date;
+  },
 ): Promise<PainelFinanceiro> {
+  let acesso: AcessoFinanceiro;
   try {
-    const periodo = periodoMesCorrentePainel();
-    const rel = await financeiroNucleoService.relatorioFinanceiro(userId, {
+    acesso = await io.autorizar({
+      executorId: pedido.executorId,
+      sessionVersionDaSessao: pedido.sessionVersionDaSessao,
+    });
+  } catch (error) {
+    if (error instanceof TRPCError && error.code === "UNAUTHORIZED") throw error;
+    if (error instanceof TRPCError && error.code === "FORBIDDEN") {
+      return emptyPainelFinanceiro(pedido.referencia, "sem_permissao");
+    }
+    if (isDatabaseUnavailable(error)) return emptyPainelFinanceiro(pedido.referencia, "indisponivel");
+    throw error;
+  }
+  if (
+    pedido.fazendaSelecionadaId != null
+    && acesso.papel !== "principal"
+    && !acesso.fazendaIds.includes(pedido.fazendaSelecionadaId)
+  ) {
+    throw new TRPCError({ code: "FORBIDDEN", message: MSG_PAINEL_FAZENDA_NEGADA });
+  }
+  try {
+    const periodo = periodoMesCorrentePainel(pedido.referencia);
+    const rel = await io.relatorio(acesso.titularUserId, {
       de: periodo.de,
       ate: periodo.ate,
-      fazendaId: fazendaSelecionadaId,
-    });
-    const consolidado = fazendaSelecionadaId == null
+      fazendaId: pedido.fazendaSelecionadaId,
+    }, acesso);
+    const consolidado = pedido.fazendaSelecionadaId == null
       ? rel
-      : await financeiroNucleoService.relatorioFinanceiro(userId, {
+      : await io.relatorio(acesso.titularUserId, {
         de: periodo.de,
         ate: periodo.ate,
         fazendaId: null,
-      });
-    return indicadoresFinanceirosDoRelatorioV2(rel.visao, {
-      fazendaSelecionadaId,
+      }, acesso);
+    const indicadores = indicadoresFinanceirosDoRelatorioV2(rel.visao, {
+      fazendaSelecionadaId: pedido.fazendaSelecionadaId,
       periodo,
       temRegistrosSemFazenda: haRegistrosSemFazendaNoRelatorioV2(consolidado),
     });
+    if (acesso.papel === "principal") return indicadores;
+    return {
+      ...indicadores,
+      saldoCaixaAutorizado: false,
+      saldoCaixaBancos: 0,
+      avisoCaixa: MSG_EXTRATO_SO_PRINCIPAL,
+    };
   } catch (error) {
-    if (error instanceof TRPCError && error.code === "FORBIDDEN") throw error;
+    if (error instanceof TRPCError && (error.code === "FORBIDDEN" || error.code === "UNAUTHORIZED")) throw error;
     console.warn("[painel] Financeiro V2 indisponível no resumo:", error);
-    return emptyPainelFinanceiro();
+    return emptyPainelFinanceiro(pedido.referencia, "indisponivel");
   }
 }
 
@@ -189,11 +256,16 @@ async function carregarComercialPainel(
 
 async function anexarFinanceiroComercial(
   userId: number,
+  sessionVersion: number | null,
   escopo: Extract<ReturnType<typeof resolverEscopoFazendasPainel>, { ok: true }>,
   base: PainelOverview,
 ): Promise<PainelOverview> {
   const [financeiro, comercial] = await Promise.all([
-    carregarFinanceiroPainel(userId, escopo.fazendaSelecionadaId),
+    financeiroDoPainel(ioFinanceiroPainel(), {
+      executorId: userId,
+      sessionVersionDaSessao: sessionVersion,
+      fazendaSelecionadaId: escopo.fazendaSelecionadaId,
+    }),
     carregarComercialPainel(userId, escopo.fazendaSelecionadaId),
   ]);
   return { ...base, financeiro, comercial };
@@ -553,20 +625,22 @@ async function carregarPainelLocal(
 export async function carregarPainelControle(
   userId: number,
   fazendaId?: number | null,
+  sessionVersion?: number | null,
 ): Promise<PainelOverview> {
   const fazendasAutorizadas = await listarFazendasAutorizadasPainel(userId);
   const escopo = resolverEscopoFazendasPainel({ fazendaId, fazendasAutorizadas });
   if (!escopo.ok) {
     throw new TRPCError({ code: "FORBIDDEN", message: MSG_PAINEL_FAZENDA_NEGADA });
   }
+  const versao = sessionVersion ?? null;
 
   try {
     const operacional = await carregarPainelMysql(userId, escopo);
-    return anexarFinanceiroComercial(userId, escopo, operacional);
+    return anexarFinanceiroComercial(userId, versao, escopo, operacional);
   } catch (error) {
     if (!isDatabaseUnavailable(error)) throw error;
     const operacional = await carregarPainelLocal(userId, escopo);
-    return anexarFinanceiroComercial(userId, escopo, operacional);
+    return anexarFinanceiroComercial(userId, versao, escopo, operacional);
   }
 }
 

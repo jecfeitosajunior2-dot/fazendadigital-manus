@@ -2058,15 +2058,20 @@ describe("financeiroNucleo — relatórios 4.6", () => {
       tipo: "receber", pessoaId: 3, descricao: "Alheio", dataCompetencia: "2026-03-01", valorOriginal: 500,
       parcelas: [{ numero: 1, vencimento: "2026-03-10", valorOriginal: 500 }],
     });
-    const rel = await svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31" });
+    const chefe = { titularUserId: 10, papel: "principal", fazendaIds: [] as number[] };
+    const rel = await svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31" }, chefe);
     expect(rel.visao.recebimentosPeriodo).toBe(80);
     expect(rel.visao.resultadoRealizado).toBe(80);
     expect(rel.fluxoRealizado.linhas.some(l => l.tipo === "transferencia")).toBe(true);
     expect(rel.receber.linhas.some(l => l.tituloId === outro.id)).toBe(false);
-    const isolado = await svc.relatorioFinanceiro(99, { de: "2026-01-01", ate: "2026-12-31" });
+    const isolado = await svc.relatorioFinanceiro(99, { de: "2026-01-01", ate: "2026-12-31" }, {
+      titularUserId: 99, papel: "principal", fazendaIds: [],
+    });
     expect(isolado.visao.recebimentosPeriodo).toBe(0);
     expect(isolado.receber.linhas.some(l => l.tituloId === rec.id)).toBe(false);
-    await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31", fazendaId: 99 }))
+    await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31" }))
+      .rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(svc.relatorioFinanceiro(10, { de: "2026-01-01", ate: "2026-12-31", fazendaId: 99 }, chefe))
       .rejects.toMatchObject({ message: MSG_FIN_FAZENDA_INVALIDA });
   });
 });

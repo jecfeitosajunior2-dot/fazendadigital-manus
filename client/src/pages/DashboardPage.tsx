@@ -51,6 +51,12 @@ import {
   statusOperacaoPainel,
 } from "@shared/painelControle";
 
+function textoFinanceiroFechado(motivo: string) {
+  return motivo === "sem_permissao"
+    ? "Sem permissão para consultar o financeiro."
+    : "Financeiro oficial indisponível";
+}
+
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const [filtro, setFiltro] = usePersistedState<{ fazendaId: string }>(PAINEL_STORAGE_KEY, {
@@ -262,11 +268,11 @@ export default function DashboardPage() {
         <KpiCard
           wrapText
           label="Caixa e Bancos"
-          value={painel.financeiro.disponivel ? formatarValorRelatorioV2(painel.financeiro.saldoCaixaBancos) : "—"}
+          value={painel.financeiro.disponivel && painel.financeiro.saldoCaixaAutorizado ? formatarValorRelatorioV2(painel.financeiro.saldoCaixaBancos) : "—"}
           loading={carregando}
           icon="account_balance"
           color={GREEN}
-          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? painel.financeiro.avisoCaixa : "Financeiro oficial indisponível"}</span>}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? painel.financeiro.avisoCaixa : textoFinanceiroFechado(painel.financeiro.motivoFinanceiro)}</span>}
           onClick={() => setLocation(FINANCEIRO_CAIXA_OFICIAL_PATH)}
         />
         <KpiCard
@@ -276,7 +282,7 @@ export default function DashboardPage() {
           loading={carregando}
           icon="south_west"
           color={TEAL}
-          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : "Financeiro oficial indisponível"}</span>}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : textoFinanceiroFechado(painel.financeiro.motivoFinanceiro)}</span>}
           onClick={() => setLocation("/financeiro/contas-a-receber")}
         />
         <KpiCard
@@ -286,7 +292,7 @@ export default function DashboardPage() {
           loading={carregando}
           icon="north_east"
           color={RED}
-          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : "Financeiro oficial indisponível"}</span>}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.titulosFiltradosPorFazenda ? "Títulos desta fazenda" : "Títulos autorizados", painel.financeiro.avisoTitulos].filter(Boolean).join(" · ") : textoFinanceiroFechado(painel.financeiro.motivoFinanceiro)}</span>}
           onClick={() => setLocation("/financeiro/contas-a-pagar")}
         />
         <KpiCard
@@ -296,7 +302,7 @@ export default function DashboardPage() {
           loading={carregando}
           icon="trending_up"
           color={painel.financeiro.resultadoRealizado < 0 ? RED : TEAL}
-          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.avisoResultado, painel.financeiro.avisoSemAtribuicao].filter(Boolean).join(" ") : "Financeiro oficial indisponível"}</span>}
+          sub={<span>{carregando ? "Carregando…" : painel.financeiro.disponivel ? [painel.financeiro.avisoResultado, painel.financeiro.avisoSemAtribuicao].filter(Boolean).join(" ") : textoFinanceiroFechado(painel.financeiro.motivoFinanceiro)}</span>}
           onClick={() => setLocation("/financeiro/relatorios")}
         />
         <KpiCard
