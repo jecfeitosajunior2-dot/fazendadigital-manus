@@ -19,7 +19,7 @@ import { createConfirmarVendaFinanceiroMysqlStore } from "./confirmarVendaFinanc
 import type { ConfirmarVendaFinanceiroInput } from "./confirmarVendaFinanceiro";
 import { afirmarBancoDescartavel } from "./isolamentoMysql";
 import { MSG_SEM_FAZENDA_MANEJO } from "./registrarManejoAutorizado";
-import { MSG_VENDA_ANIMAL_OUTRA_FAZENDA } from "../shared/vendaComercial";
+import { MSG_VENDA_ANIMAL_OUTRA_FAZENDA, MSG_VENDA_ARROBA_REQUER_MIGRATION } from "../shared/vendaComercial";
 import {
   MSG_VENDA_CONFIRMACAO_JA_CANCELADA,
   MSG_VENDA_CONFLITO_IDEMPOTENCIA,
@@ -302,6 +302,10 @@ describe("tela Nova Venda", () => {
     expect(fluxo).toContain("confirmarIntegrada");
     expect(integrada).toContain("confirmarVendaIntegradaSeAtiva");
     expect(integrada).toContain("createConfirmarVendaFinanceiroMysqlStore");
+    expect(integrada).toContain('z.enum(["kg", "cabeca"])');
+    expect(integrada).not.toContain('"arroba"');
+    expect(pagina).toContain("A gravação desta modalidade aguarda atualização do banco.");
+    expect(pagina).toContain("isFormaPrecificacaoVendaPersistivel");
     expect(integrada).not.toContain("localFallback");
     expect(vendas).toContain("MSG_CADASTRO_VENDA_SEM_FAZENDA");
     expect(vendas).not.toContain("localFallback");
@@ -519,6 +523,20 @@ describe("confirmação integrada no MySQL descartável", () => {
     expect(item).toHaveLength(1);
     expect(item[0]?.lote_nome_snapshot).toBe("Lote A");
     expect(Number(item[0]?.animal_id)).toBe(101);
+  });
+
+  it("arroba é recusada antes de gravar venda, baixa ou título", async () => {
+    await expect(confirmar(2, {
+      idempotencyKey: "ven-arroba-01",
+      formaPrecificacao: "arroba",
+      itens: [{ animalId: 101, pesoVenda: 350, precoUnitario: 300 }],
+    })).rejects.toMatchObject({ message: MSG_VENDA_ARROBA_REQUER_MIGRATION });
+    expect(await contar("vendas")).toBe(0);
+    expect(await contar("venda_itens")).toBe(0);
+    expect(await contar("animal_baixas")).toBe(0);
+    expect(await contar("financeiro_titulos")).toBe(0);
+    const [animal] = await pool.query("SELECT status FROM animais WHERE id = 101") as [Array<{ status: string }>, unknown];
+    expect(animal[0]?.status).toBe("ativo");
   });
 
   it("vende vários animais numa operação só, com um título e valores somados", async () => {
