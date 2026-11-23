@@ -15,6 +15,18 @@ import { consultaEstoqueNaTransacao } from "../consultaEstoqueDb";
 export const MSG_REBANHO_SEM_MYSQL =
   "A visão do rebanho precisa do banco. Nada foi completado com o arquivo local.";
 
+type BancoVisao = typeof db;
+let bancoVisao: BancoVisao = db;
+
+export function definirBancoVisao(banco: BancoVisao | null) {
+  bancoVisao = banco ?? db;
+}
+
+export type SessaoVisao = {
+  executorId: number;
+  sessionVersionDaSessao: number | null;
+};
+
 function textoErro(erro: unknown) {
   return erro instanceof Error
     ? `${erro.message} ${String((erro as { code?: string }).code ?? "")}`
@@ -24,15 +36,21 @@ function textoErro(erro: unknown) {
 export const rebanhoOverviewRouter = router({
   overview: protectedProcedure
     .input(z.object({ fazendaId: z.number().optional() }).optional())
-    .query(async ({ ctx, input }) => {
+    .query(({ ctx, input }) => consultarVisaoRebanho({
+      executorId: ctx.user.id,
+      sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+    }, input?.fazendaId)),
+});
+
+export async function consultarVisaoRebanho(sessao: SessaoVisao, fazendaId?: number) {
       try {
-        const escopo = await db.transaction(async (tx) => {
+        const escopo = await bancoVisao.transaction(async (tx) => {
           const consulta = consultaEstoqueNaTransacao(tx);
-          const usuario = await consulta.usuario(ctx.user.id);
+          const usuario = await consulta.usuario(sessao.executorId);
           if (!usuario || !loginPermitido(usuario.situacao) || usuario.titularUserId == null) {
             throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
           }
-          if (ctx.user.sessionVersion != null && ctx.user.sessionVersion !== usuario.sessionVersion) {
+          if (sessao.sessionVersionDaSessao != null && sessao.sessionVersionDaSessao !== usuario.sessionVersion) {
             throw new TRPCError({ code: "UNAUTHORIZED", message: "Sessão inválida." });
           }
           const titular = Number(usuario.titularUserId);
@@ -62,11 +80,11 @@ export const rebanhoOverviewRouter = router({
           let fazendasIds = acesso.papel === "principal"
             ? fazendasDoTitular.map((row) => row.id)
             : acesso.fazendasAutorizadas;
-          if (input?.fazendaId != null) {
-            if (!fazendasIds.includes(input.fazendaId)) {
+          if (fazendaId != null) {
+            if (!fazendasIds.includes(fazendaId)) {
               throw new TRPCError({ code: "NOT_FOUND", message: "Fazenda não encontrada." });
             }
-            fazendasIds = [input.fazendaId];
+            fazendasIds = [fazendaId];
           }
           return { titular, fazendasIds };
         }, { isolationLevel: "read committed" });
@@ -74,7 +92,17 @@ export const rebanhoOverviewRouter = router({
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
         const lista = escopo.fazendasIds.length
-          ? await db.select().from(animais).where(and(
+          ? await bancoVisao.select({
+            id: animais.id,
+            brinco: animais.brinco,
+            categoria: animais.categoria,
+            sexo: animais.sexo,
+            raca: animais.raca,
+            loteId: animais.loteId,
+            dataNascimento: animais.dataNascimento,
+            dataEntrada: animais.dataEntrada,
+            pesoAtual: animais.pesoAtual,
+          }).from(animais).where(and(
             eq(animais.userId, escopo.titular),
             eq(animais.status, "ativo"),
             inArray(animais.fazendaId, escopo.fazendasIds),
@@ -84,7 +112,11 @@ export const rebanhoOverviewRouter = router({
         const animalIds = lista.map(a => a.id);
         const loteIds = [...new Set(lista.map(a => a.loteId).filter(Boolean) as number[])];
         const todasPesagens = animalIds.length
-          ? await db.select().from(pesagens)
+          ? await bancoVisao.select({
+            animalId: pesagens.animalId,
+            peso: pesagens.peso,
+            data: pesagens.data,
+          }).from(pesagens)
             .where(and(eq(pesagens.userId, escopo.titular), inArray(pesagens.animalId, animalIds)))
             .orderBy(pesagens.animalId, pesagens.data)
           : [];
@@ -94,7 +126,7 @@ export const rebanhoOverviewRouter = router({
           pesagensPorAnimal.get(p.animalId)!.push(p);
         }
         const saudeAll = animalIds.length
-          ? await db.select({
+          ? await bancoVisao.select({
             animalId: saudeRegistros.animalId,
             medicamento: saudeRegistros.medicamento,
             dataRegistro: saudeRegistros.dataRegistro,
@@ -103,7 +135,7 @@ export const rebanhoOverviewRouter = router({
             .where(and(eq(saudeRegistros.userId, escopo.titular), inArray(saudeRegistros.animalId, animalIds)))
             .orderBy(desc(saudeRegistros.dataRegistro))
           : [];
-        const medicamentosCarencia = await db.select({
+        const medicamentosCarencia = await bancoVisao.select({
           nome: estoque.nome,
           carenciaAbateDias: estoque.carenciaAbateDias,
         }).from(estoque).where(eq(estoque.possuiCarencia, true));
@@ -112,13 +144,13 @@ export const rebanhoOverviewRouter = router({
         );
         const fimCarenciaPorAnimal = buildFimCarenciaPorAnimal(saudeAll, medCarenciaMap, hoje);
         const lotesRows = loteIds.length
-          ? await db.select({ id: lotes.id, nome: lotes.nome, pastoAtualId: lotes.pastoAtualId })
+          ? await bancoVisao.select({ id: lotes.id, nome: lotes.nome, pastoAtualId: lotes.pastoAtualId })
             .from(lotes)
             .where(and(eq(lotes.userId, escopo.titular), inArray(lotes.id, loteIds)))
           : [];
         const pastoIdsSuperlot = [...new Set(lotesRows.map(l => l.pastoAtualId).filter(Boolean) as number[])];
         const pastosCapacidade = pastoIdsSuperlot.length
-          ? await db.select({ id: pastos.id, capacidade: pastos.capacidade })
+          ? await bancoVisao.select({ id: pastos.id, capacidade: pastos.capacidade })
             .from(pastos)
             .where(and(eq(pastos.userId, escopo.titular), inArray(pastos.id, pastoIdsSuperlot)))
           : [];
@@ -128,7 +160,7 @@ export const rebanhoOverviewRouter = router({
         const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         const inicioMesStr = inicioMes.toISOString().slice(0, 10);
         const saidas = escopo.fazendasIds.length
-          ? await db.select({ count: sql<number>`count(*)` }).from(animalBaixas).where(and(
+          ? await bancoVisao.select({ count: sql<number>`count(*)` }).from(animalBaixas).where(and(
             eq(animalBaixas.userId, escopo.titular),
             sql`${animalBaixas.dataBaixa} >= ${inicioMesStr}`,
             inArray(animalBaixas.fazendaId, escopo.fazendasIds),
@@ -160,5 +192,4 @@ export const rebanhoOverviewRouter = router({
         }
         throw err;
       }
-    }),
-});
+}

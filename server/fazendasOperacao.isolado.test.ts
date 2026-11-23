@@ -12,6 +12,7 @@ import {
   definirBancoFazendas,
   definirGanchoTravaFazenda,
   fazendasOperacao,
+  MSG_FAZENDA_EXCLUSAO_BLOQUEADA,
   MSG_FAZENDA_HISTORICO,
   MSG_FAZENDA_SEM_MYSQL,
   MSG_FAZENDA_SEM_PERMISSAO,
@@ -226,7 +227,7 @@ describe("fazendas no MySQL descartável", () => {
     expect(linhas[0]?.userId).toBe(1);
   });
 
-  it("não apaga fazenda com pasto nem com concessão, e apaga a que está vazia", async () => {
+  it("não apaga fazenda com pasto, com concessão, nem a que está vazia", async () => {
     await pool.query("INSERT INTO pastos (id, userId, fazendaId, nome) VALUES (1, 1, 10, 'Mangueira')");
     await expect(fazendasOperacao.excluir(sessao(1), 10)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     const [comPasto] = await banco.select({ id: fazendas.id }).from(fazendas).where(eq(fazendas.id, 10));
@@ -244,8 +245,31 @@ describe("fazendas no MySQL descartável", () => {
     const vazia = await fazendasOperacao.criar(sessao(1), { nome: "Vazia" });
     const conferencia = await fazendasOperacao.conferirExclusao(sessao(1), vazia.id);
     expect(conferencia.canDelete).toBe(true);
-    await fazendasOperacao.excluir(sessao(1), vazia.id);
-    await expect(fazendasOperacao.obter(sessao(1), vazia.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(fazendasOperacao.excluir(sessao(1), vazia.id)).rejects.toThrow(MSG_FAZENDA_EXCLUSAO_BLOQUEADA);
+    const [ainda] = await banco.select({ id: fazendas.id }).from(fazendas).where(eq(fazendas.id, vazia.id));
+    expect(ainda?.id).toBe(vazia.id);
+  });
+
+  it("não apaga a fazenda se um pasto entra no meio, nem a fazenda de outra conta", async () => {
+    const criada = await fazendasOperacao.criar(sessao(1), { nome: "No meio" });
+    let gravou: Promise<unknown> = Promise.resolve();
+    definirGanchoTravaFazenda(async () => {
+      gravou = pool.query(
+        "INSERT INTO pastos (id, userId, fazendaId, nome) VALUES (77, 1, ?, 'Chegou')",
+        [criada.id],
+      );
+      await gravou;
+    });
+    await expect(fazendasOperacao.excluir(sessao(1), criada.id)).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await gravou;
+    const [fazenda] = await pool.query("SELECT id FROM fazendas WHERE id = ?", [criada.id]) as [Array<{ id: number }>, unknown];
+    const [pastos] = await pool.query("SELECT id FROM pastos WHERE fazendaId = ?", [criada.id]) as [Array<{ id: number }>, unknown];
+    expect(fazenda[0]?.id).toBe(criada.id);
+    expect(pastos.length).toBeGreaterThan(0);
+    await expect(fazendasOperacao.excluir(sessao(5), 10)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(fazendasOperacao.excluir(sessao(1), 30)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const [alheia] = await pool.query("SELECT id FROM fazendas WHERE id = 30") as [Array<{ id: number }>, unknown];
+    expect(alheia[0]?.id).toBe(30);
   });
 
   it("sem o banco a fazenda não cai no arquivo", async () => {

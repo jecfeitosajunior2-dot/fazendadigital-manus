@@ -14,7 +14,6 @@ import { createSession, clearAuthCookie, setAuthCookie } from "./_core/cookies";
 import { env } from "./_core/env";
 import { resolveImageSlots } from "./_core/storage";
 import { formatImportDbError } from "./importacaoErrors";
-import { toBenfeitoriaRow, toBenfeitoriaUpdateRow } from "./benfeitoriasDb";
 import { rebanhoOverviewRouter } from "./routers/rebanhoOverview";
 import { carregarPainelControle, carregarStatsPainel } from "./painelControle";
 import { MSG_FINANCEIRO_LEGADO_ESCRITA_BLOQUEADA } from "../shared/financeiroLegadoBloqueio";
@@ -138,25 +137,17 @@ import { compraInsumosService } from "./compraInsumosMysql";
 import { transferenciaInsumosService } from "./transferenciaInsumosMysql";
 import { animalPertenceFazenda, buildLoteFazendaContext, loadLoteFazendaContextForUser } from "./animaisPorFazenda";
 import {
-  createLocalFazenda,
-  createLocalBenfeitoria,
   createLocalAbastecimento,
   createLocalManutencao,
-  deleteLocalFazenda,
-  deleteLocalBenfeitoria,
   deleteLocalMaquina,
   deleteLocalAbastecimento,
   deleteLocalManutencao,
   registrarLocalAnimalBaixa,
-  getLocalFazenda,
-  getLocalBenfeitoria,
   getLocalMaquina,
   getLocalAbastecimento,
   getLocalManutencao,
   isDatabaseUnavailable,
-  listLocalFazendas,
   listLocalPastos,
-  listLocalBenfeitorias,
   listLocalAbastecimentos,
   listLocalManutencoes,
   listLocalAnimais,
@@ -176,15 +167,10 @@ import {
   deleteLocalReproducaoRegistro,
   updateLocalFazenda,
   updateLocalPasto,
-  updateLocalBenfeitoria,
   updateLocalMaquina,
   updateLocalAbastecimento,
   updateLocalManutencao,
   updateLocalAnimal,
-  listLocalHistoricoBrincos,
-  createLocalHistoricoBrinco,
-  deleteLocalHistoricoBrinco,
-  mergeHistoricoBrincosLists,
 } from "./localFallbackStore";
 import {
   alocarEEspelharAnimais,
@@ -355,6 +341,8 @@ import { enrichAnimalDescendentesDb } from "./enrichAnimalDescendentes";
 import { fazendasOperacao } from "./fazendasOperacao";
 import { pessoasOperacao } from "./pessoasOperacao";
 import { brincosOperacao } from "./brincosOperacao";
+import { registrarBrincoPontual } from "./registrarBrincoPontual";
+import { benfeitoriasOperacao } from "./benfeitoriasOperacao";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
@@ -6777,71 +6765,11 @@ const nutricaoRouter = router({
 
 // ─── BENFEITORIAS ROUTER ──────────────────────────────────────────────────────
 
-async function listarFazendasParaImportacao(userId: number): Promise<{ id: number; nome: string }[]> {
-  try {
-    const rows = await db
-      .select({ id: fazendas.id, nome: fazendas.nome })
-      .from(fazendas)
-      .where(eq(fazendas.userId, userId));
-    const localRows = await listLocalFazendas(userId);
-    const dbIds = new Set(rows.map(row => row.id));
-    const localOnly = localRows
-      .filter(row => !dbIds.has(row.id))
-      .map(row => ({ id: row.id, nome: row.nome }));
-    return [...rows, ...localOnly];
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    const localRows = await listLocalFazendas(userId);
-    return localRows.map(row => ({ id: row.id, nome: row.nome }));
-  }
-}
-
-async function fazendaExisteParaImportacao(userId: number, fazendaId: number): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ id: fazendas.id })
-      .from(fazendas)
-      .where(and(eq(fazendas.id, fazendaId), eq(fazendas.userId, userId)));
-    if (row) return true;
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-  }
-  return (await getLocalFazenda(userId, fazendaId)) != null;
-}
-
-/** Mesma estrutura do cadastro manual (create), sem imagens. */
-async function inserirBenfeitoriaImportada(
-  userId: number,
-  data: {
-    fazendaId: number;
-    nome: string;
-    anoConstrucao: number;
-    tipo?: string;
-    localizacao?: string;
-    estado?: string;
-    vidaUtil?: string;
-    valorEstimado?: string;
-    observacoes?: string;
-  }
-): Promise<number | undefined> {
-  const row = toBenfeitoriaRow(userId, data, [null, null, null]);
-  try {
-    const result = await db.insert(benfeitorias).values(row);
-    const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-    if (Number.isFinite(id) && id > 0) {
-      try {
-        await updateLocalBenfeitoria(userId, id, row);
-      } catch (mirrorError) {
-        console.warn("[benfeitorias.importar] Espelho local não gravado:", mirrorError);
-      }
-      return id;
-    }
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    const result = await createLocalBenfeitoria(userId, row);
-    return result.id;
-  }
-  return undefined;
+function sessaoBenfeitoria(ctx: { user: { id: number; sessionVersion?: number | null } }) {
+  return {
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+  };
 }
 
 const benfeitoriasInputFields = {
@@ -6892,19 +6820,7 @@ const benfeitoriasRouter = router({
       const COR_COL_BG = '2D5A5A';
       const COR_LINHA_ALT = 'F2F7F7';
 
-      let nomesFazendas: string[] = [];
-      try {
-        const fazendasUsuario = await db
-          .select({ nome: fazendas.nome })
-          .from(fazendas)
-          .where(eq(fazendas.userId, ctx.user.id))
-          .orderBy(fazendas.nome);
-        nomesFazendas = fazendasUsuario.map(f => f.nome);
-      } catch (error) {
-        console.warn("[benfeitorias.gerarModeloPlanilha] Banco indisponível; usando fazendas locais no modelo:", error);
-        const fazendasLocais = await listLocalFazendas(ctx.user.id);
-        nomesFazendas = fazendasLocais.map(f => f.nome).filter(Boolean);
-      }
+      const nomesFazendas = await benfeitoriasOperacao.nomesParaModelo(sessaoBenfeitoria(ctx));
 
       const ws = wb.addWorksheet('Benfeitorias', {
         properties: { tabColor: { argb: COR_COL_BG } },
@@ -7008,62 +6924,22 @@ const benfeitoriasRouter = router({
       return { base64, filename: 'Modelo Importação (Benfeitorias).xlsx' };
     }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      const rows = await db.select().from(benfeitorias).where(eq(benfeitorias.userId, ctx.user.id)).orderBy(desc(benfeitorias.createdAt));
-      const localRows = await listLocalBenfeitorias(ctx.user.id);
-      const dbIds = new Set(rows.map(row => row.id));
-      const localOnly = localRows.filter(row => !dbIds.has(row.id));
-      return [...rows, ...localOnly];
-    } catch (error) {
-      if (isDatabaseUnavailable(error)) return listLocalBenfeitorias(ctx.user.id);
-      throw error;
-    }
-  }),
+  list: protectedProcedure.query(({ ctx }) => benfeitoriasOperacao.listar(sessaoBenfeitoria(ctx))),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        const [row] = await db.select().from(benfeitorias).where(
-          and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id))
-        );
-        if (row) return row;
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-      }
-      return getLocalBenfeitoria(ctx.user.id, input.id);
-    }),
+    .query(({ ctx, input }) => benfeitoriasOperacao.obter(sessaoBenfeitoria(ctx), input.id)),
 
   create: protectedProcedure
     .input(z.object(benfeitoriasInputFields))
     .mutation(async ({ ctx, input }) => {
       const { dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      const row = toBenfeitoriaRow(
-        ctx.user.id,
+      return benfeitoriasOperacao.criar(
+        sessaoBenfeitoria(ctx),
         { ...rest, dataInstalacao, percentualAtividade },
         [img1, img2, img3],
       );
-      try {
-        const result = await db.insert(benfeitorias).values(row);
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-        if (Number.isFinite(id) && id > 0) {
-          try {
-            await updateLocalBenfeitoria(ctx.user.id, id, row);
-          } catch (mirrorError) {
-            console.warn("[benfeitorias.create] Espelho local não gravado:", mirrorError);
-          }
-        }
-        return { success: true, id };
-      } catch (err) {
-        if (isDatabaseUnavailable(err)) {
-          const result = await createLocalBenfeitoria(ctx.user.id, row);
-          return { success: true, id: result.id, localFallback: true };
-        }
-        console.error("[benfeitorias.create]", err);
-        throw new Error(formatImportDbError(err));
-      }
     }),
 
   update: protectedProcedure
@@ -7071,224 +6947,31 @@ const benfeitoriasRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, dataInstalacao, imageSlots, percentualAtividade, ...rest } = input;
       const [img1, img2, img3] = await resolveImageSlots(imageSlots);
-      const row = toBenfeitoriaUpdateRow(
+      return benfeitoriasOperacao.atualizar(
+        sessaoBenfeitoria(ctx),
+        id,
         { ...rest, dataInstalacao, percentualAtividade },
         [img1, img2, img3],
       );
-      try {
-        await db.update(benfeitorias).set(row).where(
-          and(eq(benfeitorias.id, id), eq(benfeitorias.userId, ctx.user.id)),
-        );
-        try {
-          await updateLocalBenfeitoria(ctx.user.id, id, row);
-        } catch (mirrorError) {
-          console.warn("[benfeitorias.update] Espelho local não gravado:", mirrorError);
-        }
-        return { success: true };
-      } catch (err) {
-        if (isDatabaseUnavailable(err)) {
-          await updateLocalBenfeitoria(ctx.user.id, id, row);
-          return { success: true, localFallback: true };
-        }
-        console.error("[benfeitorias.update]", err);
-        throw new Error(formatImportDbError(err));
-      }
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await db.delete(benfeitorias).where(and(eq(benfeitorias.id, input.id), eq(benfeitorias.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (isDatabaseUnavailable(error)) {
-          await deleteLocalBenfeitoria(ctx.user.id, input.id);
-          return { success: true, localFallback: true };
-        }
-        throw error;
-      }
-    }),
+    .mutation(({ ctx, input }) => benfeitoriasOperacao.recusarExclusao(sessaoBenfeitoria(ctx), input.id)),
 
   validarImportacao: protectedProcedure
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, isLinhaExemplo, parseValorImport } = await import('../shared/importacaoBenfeitorias');
-
-      input.linhas = input.linhas
-        .map(l => normalizarLinha(l))
-        .filter(l => !isLinhaExemplo(l))
-        .filter(l => Object.values(l).some(v => (v || '').trim() !== ''));
-
-      const fazendasUsuario = await listarFazendasParaImportacao(ctx.user.id);
-      const fazendaNomeParaId = new Map(fazendasUsuario.map(f => [f.nome.toLowerCase().trim(), f.id]));
-
-      const erros: { linha: number; campo: string; mensagem: string }[] = [];
-      const validos: typeof input.linhas = [];
-      const anoAtual = new Date().getFullYear();
-
-      for (let i = 0; i < input.linhas.length; i++) {
-        const linha = input.linhas[i];
-        const numLinha = i + 2;
-        const errosLinha: { linha: number; campo: string; mensagem: string }[] = [];
-
-        const fazendaNome = (linha.fazendaNome || '').trim();
-        if (!fazendaNome) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: 'Fazenda é obrigatória' });
-        } else if (!fazendaNomeParaId.has(fazendaNome.toLowerCase())) {
-          errosLinha.push({ linha: numLinha, campo: 'Fazenda', mensagem: `Fazenda não encontrada: "${fazendaNome}"` });
-        }
-
-        const nome = (linha.nome || '').trim();
-        if (!nome) {
-          errosLinha.push({ linha: numLinha, campo: 'Nome', mensagem: 'Nome da benfeitoria é obrigatório' });
-        }
-
-        const tipo = (linha.tipo || '').trim();
-        if (!tipo) {
-          errosLinha.push({ linha: numLinha, campo: 'Tipo de Benfeitoria', mensagem: 'Tipo de Benfeitoria é obrigatório' });
-        }
-
-        const estado = (linha.estado || '').trim();
-        if (!estado) {
-          errosLinha.push({ linha: numLinha, campo: 'Estado de Conservação', mensagem: 'Estado de Conservação é obrigatório' });
-        }
-
-        const anoRaw = (linha.anoConstrucao || '').trim();
-        if (!anoRaw) {
-          errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: 'Ano de Construção é obrigatório' });
-        } else {
-          const ano = parseInt(anoRaw.replace(/[^0-9]/g, ''), 10);
-          if (isNaN(ano) || ano < 1900 || ano > anoAtual + 1) {
-            errosLinha.push({ linha: numLinha, campo: 'Ano de Construção', mensagem: `Ano de Construção inválido: "${anoRaw}"` });
-          } else {
-            linha.anoConstrucao = String(ano);
-          }
-        }
-
-        const valorRaw = (linha.valor || '').trim();
-        if (valorRaw) {
-          const valorParsed = parseValorImport(valorRaw);
-          if (!valorParsed) {
-            errosLinha.push({ linha: numLinha, campo: 'Valor', mensagem: `Valor inválido: "${valorRaw}"` });
-          } else {
-            linha.valor = valorParsed;
-          }
-        }
-
-        const vidaUtilRaw = (linha.vidaUtil || '').trim();
-        if (vidaUtilRaw) {
-          const vidaUtilNum = parseInt(vidaUtilRaw.replace(/[^0-9]/g, ''), 10);
-          if (isNaN(vidaUtilNum) || vidaUtilNum <= 0) {
-            errosLinha.push({ linha: numLinha, campo: 'Vida Útil', mensagem: `Vida Útil inválida: "${vidaUtilRaw}"` });
-          } else {
-            linha.vidaUtil = String(vidaUtilNum);
-          }
-        }
-
-        if (errosLinha.length > 0) {
-          erros.push(...errosLinha);
-        } else {
-          validos.push(linha);
-        }
-      }
-
-      return {
-        total: input.linhas.length,
-        validos: validos.length,
-        invalidos: erros.length > 0 ? input.linhas.length - validos.length : 0,
-        erros,
-        fazendaNomeParaId: Object.fromEntries(fazendaNomeParaId),
-      };
-    }),
+    .mutation(({ ctx, input }) => benfeitoriasOperacao.validar(sessaoBenfeitoria(ctx), input.linhas)),
 
   importar: protectedProcedure
     .input(z.object({
       linhas: z.array(z.record(z.string(), z.string())),
-      fazendaNomeParaId: z.record(z.string(), z.number()),
+      fazendaNomeParaId: z.record(z.string(), z.number()).optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const { normalizarLinha, isLinhaExemplo, parseValorImport } = await import('../shared/importacaoBenfeitorias');
-
-      const importados: number[] = [];
-      const rejeitados: { linha: number; mensagem: string }[] = [];
-
-      for (let i = 0; i < input.linhas.length; i++) {
-        const linha = normalizarLinha(input.linhas[i]);
-        const numLinha = i + 2;
-        if (isLinhaExemplo(linha)) continue;
-        try {
-          const fazendaNome = (linha.fazendaNome || '').trim().toLowerCase();
-          const fazendaId = fazendaNome ? input.fazendaNomeParaId[fazendaNome] : undefined;
-          if (!fazendaId) {
-            rejeitados.push({ linha: numLinha, mensagem: 'A Fazenda informada não foi encontrada.' });
-            continue;
-          }
-
-          const fazendaValida = await fazendaExisteParaImportacao(ctx.user.id, fazendaId);
-          if (!fazendaValida) {
-            rejeitados.push({ linha: numLinha, mensagem: 'A Fazenda informada não foi encontrada.' });
-            continue;
-          }
-
-          const nome = (linha.nome || '').trim();
-          if (!nome) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Nome é obrigatório.' });
-            continue;
-          }
-
-          const tipo = (linha.tipo || '').trim();
-          if (!tipo) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Tipo de Benfeitoria é obrigatório.' });
-            continue;
-          }
-
-          const estado = (linha.estado || '').trim();
-          if (!estado) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Estado de Conservação é obrigatório.' });
-            continue;
-          }
-
-          const anoNum = parseInt(String(linha.anoConstrucao || '').replace(/[^0-9]/g, ''), 10);
-          if (isNaN(anoNum)) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Ano de Construção deve conter um número válido.' });
-            continue;
-          }
-
-          const valorRaw = (linha.valor || '').trim();
-          const valorNum = valorRaw ? parseValorImport(valorRaw) : undefined;
-          if (valorRaw && !valorNum) {
-            rejeitados.push({ linha: numLinha, mensagem: 'O campo Valor possui um formato inválido.' });
-            continue;
-          }
-
-          const insertId = await inserirBenfeitoriaImportada(ctx.user.id, {
-            fazendaId,
-            nome,
-            anoConstrucao: anoNum,
-            tipo,
-            estado,
-            valorEstimado: valorNum,
-            vidaUtil: (linha.vidaUtil || '').trim() || undefined,
-            observacoes: (linha.observacoes || '').trim() || undefined,
-          });
-          if (insertId) importados.push(insertId);
-        } catch (err: unknown) {
-          rejeitados.push({ linha: numLinha, mensagem: formatImportDbError(err) });
-        }
-      }
-
-      return {
-        total: input.linhas.length,
-        importados: importados.length,
-        rejeitados: rejeitados.length,
-        detalhesRejeitados: rejeitados,
-      };
-    }),
+    .mutation(({ ctx, input }) => benfeitoriasOperacao.importar(sessaoBenfeitoria(ctx), input.linhas)),
 });
-
 // ─── ESTOQUE ROUTER ───────────────────────────────────────────────────────────
 
 /** Une DB + local; evita fantasma de produto duplicado na mesma fazenda. */
@@ -10986,29 +10669,24 @@ const manejoRouter = router({
         await assertBrincoOuMensagemAmigavel(false);
         await assertRfidOuMensagem(false);
 
-        const setData: Record<string, unknown> = {};
-        if (alteraBrinco) setData.brinco = novoBrinco;
-        if (alteraRfid) setData.brincoEletronico = novoRfid;
-
         const historicoRow = montarHistoricoRow();
-
-        await db.transaction(async tx => {
-          if (alteraBrinco) {
-            const indice = await tx.execute(sql`SHOW INDEX FROM animais WHERE Key_name = 'animais_brinco_ativo_fazenda_uq'`);
-            const pacote = indice as unknown as [unknown[], unknown];
-            const linhas = Array.isArray(pacote?.[0]) ? pacote[0] : [];
-            if (linhas.length === 0) {
-              throw new TRPCError({
-                code: "PRECONDITION_FAILED",
-                message: "O banco ainda não garante o brinco único nesta fazenda. Nada foi alterado.",
-              });
-            }
-          }
-          await tx
-            .update(animais)
-            .set(setData)
-            .where(and(eq(animais.id, input.animalId), eq(animais.userId, titularId), eq(animais.fazendaId, input.fazendaId)));
-          await tx.insert(historicoBrincos).values(historicoRow);
+        await registrarBrincoPontual({
+          executorId: ctx.user.id,
+          sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+        }, {
+          fazendaId: input.fazendaId,
+          animalId: input.animalId,
+          alteraBrinco,
+          alteraRfid,
+          novoBrinco,
+          novoRfid,
+          historico: {
+            brincoAnterior: historicoRow.brincoAnterior,
+            brincoNovo: historicoRow.brincoNovo,
+            motivo: historicoRow.motivo,
+            observacoes: historicoRow.observacoes,
+            dataAlteracao: historicoRow.dataAlteracao,
+          },
         });
 
         return {

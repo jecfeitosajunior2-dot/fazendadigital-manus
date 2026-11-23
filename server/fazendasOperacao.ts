@@ -26,6 +26,8 @@ export const MSG_FAZENDA_HISTORICO =
   "Esta fazenda ainda tem concessões ou lançamentos. Esse histórico não é apagado.";
 export const MSG_FAZENDA_VINCULO_OPACO =
   "Não foi possível conferir os vínculos desta fazenda. Nada foi apagado.";
+export const MSG_FAZENDA_EXCLUSAO_BLOQUEADA =
+  "A fazenda não é apagada. Um pasto ou lançamento pode ser confirmado no mesmo instante, e o banco não segura essa brecha. O cadastro permanece.";
 
 export type SessaoFazenda = {
   executorId: number;
@@ -274,6 +276,7 @@ export const fazendasOperacao = {
   async excluir(sessao: SessaoFazenda, id: number) {
     return correr(async (tx) => {
       const contexto = await autorizarFazenda(tx, sessao, id, "fazendas.inativar");
+      await pausaTrava();
       const [row] = await tx.select({ nome: fazendas.nome, userId: fazendas.userId }).from(fazendas).where(eq(fazendas.id, id)).for("update").limit(1);
       if (!row || row.userId !== contexto.titularUserId) recusar("fazenda_inexistente");
       const achados = await vinculos(tx, contexto.titularUserId, id);
@@ -290,8 +293,7 @@ export const fazendasOperacao = {
           message: `Não é possível excluir a fazenda "${row.nome}". ${MSG_FAZENDA_HISTORICO}`,
         });
       }
-      await tx.delete(fazendas).where(and(eq(fazendas.id, id), eq(fazendas.userId, contexto.titularUserId)));
-      return { success: true as const };
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: MSG_FAZENDA_EXCLUSAO_BLOQUEADA });
     });
   },
 };
