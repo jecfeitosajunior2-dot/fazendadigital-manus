@@ -300,14 +300,6 @@ import { createCancelarVendaFinanceiroMysqlStore } from "./cancelarVendaFinancei
 import { financeiroNucleoMysqlStore } from "./financeiroNucleo";
 import { createConfirmarVendaFinanceiroMysqlStore } from "./confirmarVendaFinanceiroMysql";
 import { statusWhereVendasList, vendasListInputSchema } from "./vendasListFiltro";
-import { deveRestringirPessoasListAosAtivos } from "./pessoasListFiltro";
-import { MSG_PESSOA_REATIVAR_NAO_ENCONTRADA, reativarPessoa } from "./reativarPessoa";
-import { normalizeUfBrasil } from "../shared/ufsBrasil";
-import {
-  MSG_COMPRADOR_DOC_INVALIDO,
-  avaliarDocumentoClienteCreate,
-  avaliarDocumentoClienteUpdate,
-} from "../shared/pessoaDocumentoCliente";
 import { vendaDocumentosService } from "./vendaDocumentosDb";
 import { compraDocumentosService } from "./compraDocumentosDb";
 import { receberAnimalCompra } from "./receberAnimalCompraDb";
@@ -361,6 +353,7 @@ import { enrichReproducaoListPartoCriasDb } from "./enrichReproducaoListPartoCri
 import { enrichAnimalGenealogiaDisplayDb } from "./enrichAnimalGenealogiaDisplay";
 import { enrichAnimalDescendentesDb } from "./enrichAnimalDescendentes";
 import { fazendasOperacao } from "./fazendasOperacao";
+import { pessoasOperacao } from "./pessoasOperacao";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
@@ -10838,49 +10831,11 @@ const pessoaFieldsSchema = z.object({
   uf: z.string().max(2).optional(),
 });
 
-function throwSeDocumentoClienteInvalido(result: { ok: true } | { ok: false; message: string }) {
-  if (result.ok) return;
-  throw new TRPCError({
-    code: result.message === MSG_COMPRADOR_DOC_INVALIDO ? "BAD_REQUEST" : "CONFLICT",
-    message: result.message,
-  });
-}
-
-async function clientesDocumentoDoUsuario(userId: number) {
-  try {
-    return await db
-      .select({
-        id: pessoas.id,
-        userId: pessoas.userId,
-        tipo: pessoas.tipo,
-        documento: pessoas.documento,
-        ativo: pessoas.ativo,
-      })
-      .from(pessoas)
-      .where(and(eq(pessoas.userId, userId), eq(pessoas.tipo, "cliente")));
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    return devLocalStore.listPessoas(userId, "cliente", true);
-  }
-}
-
-async function pessoaDoUsuario(userId: number, id: number) {
-  try {
-    const [row] = await db
-      .select({
-        id: pessoas.id,
-        userId: pessoas.userId,
-        tipo: pessoas.tipo,
-        documento: pessoas.documento,
-      })
-      .from(pessoas)
-      .where(and(eq(pessoas.id, id), eq(pessoas.userId, userId)))
-      .limit(1);
-    return row;
-  } catch (error) {
-    if (!isDatabaseUnavailable(error)) throw error;
-    return devLocalStore.listPessoas(userId, undefined, true).find(p => p.id === id);
-  }
+function sessaoPessoa(ctx: { user: { id: number; sessionVersion?: number | null } }) {
+  return {
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+  };
 }
 
 const pessoasRouter = router({
@@ -10893,174 +10848,26 @@ const pessoasRouter = router({
         })
         .optional(),
     )
-    .query(async ({ ctx, input }) => {
-      try {
-        const conditions = [eq(pessoas.userId, ctx.user.id)];
-        if (deveRestringirPessoasListAosAtivos(input?.incluirInativos)) {
-          conditions.push(eq(pessoas.ativo, true));
-        }
-        if (input?.tipo) conditions.push(eq(pessoas.tipo, input.tipo));
-        return await db
-          .select()
-          .from(pessoas)
-          .where(and(...conditions))
-          .orderBy(pessoas.nome);
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return devLocalStore.listPessoas(ctx.user.id, input?.tipo, Boolean(input?.incluirInativos));
-      }
-    }),
+    .query(({ ctx, input }) => pessoasOperacao.listar(sessaoPessoa(ctx), input)),
 
   create: protectedProcedure
     .input(pessoaFieldsSchema)
-    .mutation(async ({ ctx, input }) => {
-      const documento = input.documento?.trim() || null;
-      throwSeDocumentoClienteInvalido(
-        avaliarDocumentoClienteCreate({
-          userId: ctx.user.id,
-          tipo: input.tipo,
-          documento,
-          existentes: await clientesDocumentoDoUsuario(ctx.user.id),
-        }),
-      );
-
-      try {
-        const result = await db.insert(pessoas).values({
-          userId: ctx.user.id,
-          nome: input.nome.trim(),
-          tipo: input.tipo,
-          funcao: input.funcao?.trim() || null,
-          documento,
-          endereco: input.endereco?.trim() || null,
-          telefone: input.telefone?.trim() || null,
-          email: input.email?.trim() || null,
-          observacoes: input.observacoes?.trim() || null,
-          propriedadeEstabelecimento: input.propriedadeEstabelecimento?.trim() || null,
-          nomeContato: input.nomeContato?.trim() || null,
-          cidade: input.cidade?.trim() || null,
-          uf: normalizeUfBrasil(input.uf),
-          ativo: true,
-        });
-        const id = Number((result as [{ insertId?: number }])[0]?.insertId ?? 0);
-        return { success: true, id };
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        const row = devLocalStore.createPessoa(ctx.user.id, {
-          nome: input.nome,
-          tipo: input.tipo,
-          funcao: input.funcao ?? null,
-          documento,
-          endereco: input.endereco ?? null,
-          telefone: input.telefone ?? null,
-          email: input.email ?? null,
-          observacoes: input.observacoes ?? null,
-          propriedadeEstabelecimento: input.propriedadeEstabelecimento ?? null,
-          nomeContato: input.nomeContato ?? null,
-          cidade: input.cidade ?? null,
-          uf: normalizeUfBrasil(input.uf),
-        });
-        return { success: true, id: row.id, localFallback: true };
-      }
-    }),
+    .mutation(({ ctx, input }) => pessoasOperacao.criar(sessaoPessoa(ctx), input)),
 
   update: protectedProcedure
     .input(pessoaFieldsSchema.partial().extend({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(({ ctx, input }) => {
       const { id, ...rest } = input;
-      const atual = await pessoaDoUsuario(ctx.user.id, id);
-      if (atual) {
-        throwSeDocumentoClienteInvalido(
-          avaliarDocumentoClienteUpdate({
-            userId: ctx.user.id,
-            id,
-            tipoAtual: atual.tipo,
-            tipoNovo: rest.tipo,
-            documentoAtual: atual.documento,
-            documentoNovo: rest.documento,
-            documentoInformado: rest.documento !== undefined,
-            existentes: await clientesDocumentoDoUsuario(ctx.user.id),
-          }),
-        );
-      }
-      try {
-        const patch: Record<string, unknown> = {};
-        if (rest.nome !== undefined) patch.nome = rest.nome.trim();
-        if (rest.tipo !== undefined) patch.tipo = rest.tipo;
-        if (rest.funcao !== undefined) patch.funcao = rest.funcao?.trim() || null;
-        if (rest.documento !== undefined) {
-          patch.documento = rest.documento.trim() || null;
-        }
-        if (rest.endereco !== undefined) patch.endereco = rest.endereco?.trim() || null;
-        if (rest.telefone !== undefined) patch.telefone = rest.telefone?.trim() || null;
-        if (rest.email !== undefined) patch.email = rest.email?.trim() || null;
-        if (rest.observacoes !== undefined) patch.observacoes = rest.observacoes?.trim() || null;
-        if (rest.propriedadeEstabelecimento !== undefined) {
-          patch.propriedadeEstabelecimento = rest.propriedadeEstabelecimento?.trim() || null;
-        }
-        if (rest.nomeContato !== undefined) patch.nomeContato = rest.nomeContato?.trim() || null;
-        if (rest.cidade !== undefined) patch.cidade = rest.cidade?.trim() || null;
-        if (rest.uf !== undefined) patch.uf = normalizeUfBrasil(rest.uf);
-
-        await db
-          .update(pessoas)
-          .set(patch)
-          .where(and(eq(pessoas.id, id), eq(pessoas.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (error instanceof Error && /CPF\/CNPJ|Informe o nome/i.test(error.message)) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        devLocalStore.updatePessoa(ctx.user.id, id, {
-          nome: rest.nome,
-          tipo: rest.tipo,
-          funcao: rest.funcao,
-          documento: rest.documento,
-          endereco: rest.endereco,
-          telefone: rest.telefone,
-          email: rest.email,
-          observacoes: rest.observacoes,
-          propriedadeEstabelecimento: rest.propriedadeEstabelecimento,
-          nomeContato: rest.nomeContato,
-          cidade: rest.cidade,
-          uf: rest.uf !== undefined ? normalizeUfBrasil(rest.uf) : undefined,
-        });
-        return { success: true, localFallback: true };
-      }
+      return pessoasOperacao.atualizar(sessaoPessoa(ctx), id, rest);
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await db
-          .update(pessoas)
-          .set({ ativo: false })
-          .where(and(eq(pessoas.id, input.id), eq(pessoas.userId, ctx.user.id)));
-        return { success: true };
-      } catch (error) {
-        if (!isDatabaseUnavailable(error)) throw error;
-        return { ...devLocalStore.deletePessoa(ctx.user.id, input.id), localFallback: true };
-      }
-    }),
+    .mutation(({ ctx, input }) => pessoasOperacao.inativar(sessaoPessoa(ctx), input.id)),
 
   reativar: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        return await reativarPessoa(ctx.user.id, input.id);
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        if (!isDatabaseUnavailable(error)) throw error;
-        try {
-          return { ...devLocalStore.reativarPessoa(ctx.user.id, input.id), localFallback: true };
-        } catch {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: MSG_PESSOA_REATIVAR_NAO_ENCONTRADA,
-          });
-        }
-      }
-    }),
+    .mutation(({ ctx, input }) => pessoasOperacao.reativar(sessaoPessoa(ctx), input.id)),
 });
 
 // ─── MANEJO ROUTER ───────────────────────────────────────────────────────────
