@@ -169,7 +169,9 @@ describe("Recebimento manual da Compra — etapa 1", () => {
     expect(page).toContain("desfazerMut.mutateAsync");
     expect(page).toContain("onConfirm={handleDesfazerRecebimento}");
     expect(dialog).toContain("Desfazer recebimento");
-    expect(dialog).toContain("AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA");
+    expect(dialog).toContain("MSG_ESTORNO_RECEBIMENTO_INDISPONIVEL");
+    expect(dialog).not.toContain("AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA");
+    expect(dialog).toContain("const estornoIndisponivel = true");
     expect(dialog).toContain("validarFormularioDesfazerRecebimento");
     expect(dialog).toContain("montarPayloadDesfazerRecebimento");
     expect(dialog).toContain("alvo.recebimentoId");

@@ -11,8 +11,7 @@ import { FormSelect } from "@/components/FormFields";
 import { SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
-  AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA,
-  AVISO_DESFAZER_RECEBIMENTO_IRREVERSIVEL,
+  MSG_ESTORNO_RECEBIMENTO_INDISPONIVEL,
   MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA,
   MOTIVO_ESTORNO_RECEBIMENTO_COMPRA_LABEL,
   isMotivoEstornoRecebimentoCompra,
@@ -68,15 +67,19 @@ export default function DesfazerRecebimentoDialog({
   });
   const outro = motivo === "outro";
   const mostrarErro = tocou && !validacao.ok;
-  const confirmarHabilitado = botaoDesfazerRecebimentoHabilitado({
-    formularioValido: validacao.ok,
-    pending: submitting,
-  });
+  const estornoIndisponivel = true;
+  const confirmarHabilitado =
+    !estornoIndisponivel &&
+    botaoDesfazerRecebimentoHabilitado({
+      formularioValido: validacao.ok,
+      pending: submitting,
+    });
   const motivoLabel = isMotivoEstornoRecebimentoCompra(motivo)
     ? MOTIVO_ESTORNO_RECEBIMENTO_COMPRA_LABEL[motivo]
     : undefined;
 
   const confirmar = () => {
+    if (estornoIndisponivel) return;
     if (!alvo || !validacao.ok) return;
     if (!deveAceitarCliqueDesfazerRecebimento({ formularioValido: true, pending: submitting })) {
       return;
@@ -116,10 +119,12 @@ export default function DesfazerRecebimentoDialog({
           ) : null}
 
           <div className="space-y-1">
-            <p className="text-[13px] text-gray-600 leading-relaxed">
-              {AVISO_DESFAZER_RECEBIMENTO_CONSEQUENCIA}
+            <p className="text-[13px] text-amber-900 leading-relaxed">
+              {MSG_ESTORNO_RECEBIMENTO_INDISPONIVEL}
             </p>
-            <p className="text-[12px] text-gray-500">{AVISO_DESFAZER_RECEBIMENTO_IRREVERSIVEL}</p>
+            <p className="text-[12px] text-gray-600">
+              O animal, a pesagem de entrada e a movimentação permanecem. Esta tela não apaga o recebimento.
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -137,7 +142,7 @@ export default function DesfazerRecebimentoDialog({
               }}
               placeholder="Selecionar"
               invalid={mostrarErro && !motivo}
-              disabled={submitting}
+              disabled={estornoIndisponivel || submitting}
               triggerClassName="rounded-md px-2.5 h-auto min-h-[34px]"
             >
               {MOTIVOS_ESTORNO_RECEBIMENTO_COMPRA.map(codigo => (
@@ -160,7 +165,7 @@ export default function DesfazerRecebimentoDialog({
               }}
               placeholder={outro ? "Obrigatória para o motivo Outro" : "Opcional"}
               rows={3}
-              disabled={submitting}
+              disabled={estornoIndisponivel || submitting}
               className={cn(
                 "border border-gray-200 rounded-md px-2.5 py-1.5 text-[12px] text-gray-700 bg-white w-full resize-y min-h-[72px] outline-none focus:border-[#4ECDC4] transition-colors placeholder:text-gray-400 disabled:bg-gray-50",
                 mostrarErro && outro && !observacao.trim() ? "border-red-500" : null,
