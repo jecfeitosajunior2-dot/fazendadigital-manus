@@ -354,6 +354,7 @@ import { enrichAnimalGenealogiaDisplayDb } from "./enrichAnimalGenealogiaDisplay
 import { enrichAnimalDescendentesDb } from "./enrichAnimalDescendentes";
 import { fazendasOperacao } from "./fazendasOperacao";
 import { pessoasOperacao } from "./pessoasOperacao";
+import { brincosOperacao } from "./brincosOperacao";
 import { carregarIdentidade } from "./_core/carregarIdentidade";
 import { identificadorDeLogin } from "./_core/identificadorLogin";
 import { MSG_LOGIN_INVALIDO, senhaConfereComHash } from "./_core/loginSenha";
@@ -10722,30 +10723,17 @@ function adaptadorImportacaoCoordenadas(tx: Parameters<Parameters<typeof db.tran
 }
 
 // ─── BRINCOS ROUTER ──────────────────────────────────────────────────────────
+function sessaoBrinco(ctx: { user: { id: number; sessionVersion?: number | null } }) {
+  return {
+    executorId: ctx.user.id,
+    sessionVersionDaSessao: ctx.user.sessionVersion ?? null,
+  };
+}
+
 const brincosRouter = router({
   list: protectedProcedure
     .input(z.object({ animalId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      try {
-        const dbRows = await db
-          .select()
-          .from(historicoBrincos)
-          .where(
-            and(
-              eq(historicoBrincos.animalId, input.animalId),
-              eq(historicoBrincos.userId, ctx.user.id)
-            )
-          )
-          .orderBy(desc(historicoBrincos.createdAt));
-        const localRows = await listLocalHistoricoBrincos(ctx.user.id, input.animalId);
-        return mergeHistoricoBrincosLists(dbRows, localRows);
-      } catch (err) {
-        if (isDatabaseUnavailable(err)) {
-          return listLocalHistoricoBrincos(ctx.user.id, input.animalId);
-        }
-        throw err;
-      }
-    }),
+    .query(({ ctx, input }) => brincosOperacao.listar(sessaoBrinco(ctx), input.animalId)),
 
   registrar: protectedProcedure
     .input(
@@ -10755,62 +10743,14 @@ const brincosRouter = router({
         brincoNovo: z.string().min(1),
         motivo: z.enum(["perda", "danificado", "reidentificacao", "erro_cadastro", "outro"]),
         observacoes: z.string().nullable().optional(),
-        dataAlteracao: z.string(), // YYYY-MM-DD
+        dataAlteracao: z.string(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const row = {
-        userId: ctx.user.id,
-        animalId: input.animalId,
-        brincoAnterior: input.brincoAnterior ?? null,
-        brincoNovo: input.brincoNovo,
-        motivo: input.motivo,
-        observacoes: input.observacoes ?? null,
-        dataAlteracao: input.dataAlteracao,
-        usuarioNome: ctx.user.name ?? null,
-      };
-      try {
-        const result = await db.insert(historicoBrincos).values(row);
-        const id = Number((result as any)[0]?.insertId ?? (result as any).insertId);
-        if (Number.isFinite(id) && id > 0) {
-          try {
-            await createLocalHistoricoBrinco(ctx.user.id, { id, ...row });
-          } catch (mirrorError) {
-            console.warn("[brincos.registrar] Espelho local não gravado:", mirrorError);
-          }
-        }
-        return { success: true, id };
-      } catch (err) {
-        if (isDatabaseUnavailable(err)) {
-          const result = await createLocalHistoricoBrinco(ctx.user.id, row);
-          return { success: true, id: result.id, localFallback: true };
-        }
-        console.error("[brincos.registrar]", err);
-        throw err;
-      }
-    }),
+    .mutation(({ ctx, input }) => brincosOperacao.registrar(sessaoBrinco(ctx), input)),
 
   deletar: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        await db
-          .delete(historicoBrincos)
-          .where(
-            and(
-              eq(historicoBrincos.id, input.id),
-              eq(historicoBrincos.userId, ctx.user.id)
-            )
-          );
-        return { success: true };
-      } catch (err) {
-        if (isDatabaseUnavailable(err)) {
-          await deleteLocalHistoricoBrinco(ctx.user.id, input.id);
-          return { success: true, localFallback: true };
-        }
-        throw err;
-      }
-    }),
+    .mutation(({ ctx, input }) => brincosOperacao.recusarExclusao(sessaoBrinco(ctx), input.id)),
 });
 
 // ─── PESSOAS (fornecedores, clientes, funcionários) ───────────────────────────
